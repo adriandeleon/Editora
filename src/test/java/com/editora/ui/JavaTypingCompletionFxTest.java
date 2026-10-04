@@ -666,4 +666,25 @@ class JavaTypingCompletionFxTest {
         press("ENTER");
         assertEquals("System.out.println()", FxTestSupport.callOnFx(buffer::text));
     }
+
+    /** A commit character on a plain item typed inside another snippet's field must leave that session alone. */
+    @Test
+    void aCommitCharacterOnAPlainItemKeepsTheEnclosingSnippet() throws Exception {
+        invoke();
+        respond(0, false, method("println(String)", "println(${1:value})", 11, 11));
+        expectCompletion("println");
+        press("ENTER");
+        type("us");
+        invoke();
+        respond(
+                requests.size() - 1,
+                false,
+                Completion.lsp("user", "user", "").withProtocol(new Completion.Protocol("user", null, List.of("."))));
+        expectCompletion("user");
+        FxTestSupport.runOnFx(() -> buffer.getArea()
+                .fireEvent(new KeyEvent(KeyEvent.KEY_TYPED, ".", ".", KeyCode.UNDEFINED, false, false, false, false)));
+        scope.awaitFx();
+        assertEquals("System.out.println(user.)", FxTestSupport.callOnFx(buffer::text));
+        assertTrue(FxTestSupport.callOnFx(buffer::hasActiveSnippet), "the argument's session is still running");
+    }
 }

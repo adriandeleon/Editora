@@ -178,4 +178,33 @@ class SnippetSessionTest {
                 SnippetSession.normalize(new ParsedSnippet("a\rb\r\nc", List.of()), null)
                         .text());
     }
+
+    // --- shift with the parser's nesting order in slots 2 and 3 ---
+
+    @Test
+    void identicalOffsetsAreToldApartByTheNestingOrder() {
+        // `${2:${1}foo}`: $1 = [10,10] nested at the start of $2 = [10,13]. Typing in $1 grows $2.
+        List<int[]> nested = ranges(new int[] {10, 10, 1, 2}, new int[] {10, 13, 0, 3});
+        SnippetSession.shift(nested, 0, 10, 0, 1);
+        assertArrayEquals(new int[] {10, 11, 1, 2}, nested.get(0));
+        assertArrayEquals(new int[] {10, 14, 0, 3}, nested.get(1), "the parent keeps its start");
+        // `${1}${2:foo}`: the same offsets, but $2 follows $1 and is pushed.
+        List<int[]> adjacent = ranges(new int[] {10, 10, 0, 1}, new int[] {10, 13, 2, 3});
+        SnippetSession.shift(adjacent, 0, 10, 0, 1);
+        assertArrayEquals(new int[] {11, 14, 2, 3}, adjacent.get(1), "the neighbour moves, same length");
+        // `$1$2` with $2 active: the empty stop in front of it stays in front.
+        List<int[]> before = ranges(new int[] {5, 5, 0, 1}, new int[] {5, 5, 2, 3});
+        SnippetSession.shift(before, 1, 5, 0, 1);
+        assertArrayEquals(new int[] {5, 5, 0, 1}, before.get(0));
+        assertArrayEquals(new int[] {5, 6, 2, 3}, before.get(1));
+    }
+
+    @Test
+    void aStopAroundARewrittenMirrorFollowsItInsteadOfCollapsing() {
+        // `${4:$1}`: the mirror [73,74] is rewritten to 4 characters; $4 has the same extent, around it.
+        List<int[]> rs = ranges(new int[] {73, 74, 5, 6}, new int[] {73, 74, 4, 7});
+        SnippetSession.shift(rs, 0, 73, 1, 4);
+        assertArrayEquals(new int[] {73, 77, 5, 6}, rs.get(0));
+        assertArrayEquals(new int[] {73, 77, 4, 7}, rs.get(1));
+    }
 }

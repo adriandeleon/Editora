@@ -201,6 +201,11 @@ public class EditorBuffer implements TabContent {
         }
 
         @Override
+        public int snippetDepth() {
+            return snippetSession.depth();
+        }
+
+        @Override
         public void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
             EditorBuffer.this.startSnippet(a, snippet, from, to, reindent);
         }
@@ -501,7 +506,7 @@ public class EditorBuffer implements TabContent {
     private javafx.scene.control.ContextMenu previewContextMenu;
     private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
-    private final SnippetSessions snippetSession = new SnippetSessions();
+    private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */

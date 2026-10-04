@@ -219,6 +219,29 @@ class CodeActionPopupFxTest {
         });
     }
 
+    /**
+     * A real keyboard sends Control's own key press before the N of C-n. That press is not a keystroke that
+     * moves or edits, so the list has to survive it — otherwise the chords can never reach it.
+     */
+    @Test
+    void aModifierPressedOnItsOwnLeavesTheListOpenForTheChord() throws Exception {
+        EditorBuffer b = openBuffer();
+        AtomicReference<CodeAction> accepted = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> b.showCodeActions(ACTIONS, accepted::set));
+
+        FxTestSupport.runOnFx(() -> pressCtrl(b, KeyCode.CONTROL)); // the modifier going down, as hardware sends it
+        assertTrue(FxTestSupport.callOnFx(b::codeActionsShowing), "Control alone did not dismiss the list");
+        FxTestSupport.runOnFx(() -> press(b, KeyCode.SHIFT));
+        assertTrue(FxTestSupport.callOnFx(b::codeActionsShowing), "nor did Shift");
+
+        FxTestSupport.runOnFx(() -> pressCtrl(b, KeyCode.CONTROL));
+        FxTestSupport.runOnFx(() -> pressCtrl(b, KeyCode.P)); // B -> A
+        FxTestSupport.runOnFx(() -> press(b, KeyCode.ENTER));
+        assertEquals("A", accepted.get().token(), "C-p, typed as Control then P, moved the selection");
+
+        close(b);
+    }
+
     private static void press(EditorBuffer b, KeyCode code) {
         fire(b, code, false);
     }

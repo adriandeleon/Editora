@@ -19,6 +19,12 @@ import java.util.List;
  * <p>{@code primaryIndex} exists because the value-defining occurrence need not be first in the document —
  * in {@code foreach (${1/.../} in ${1:collection})} the transform occurrence is emitted before the
  * placeholder that gives the field its value, so the editable field is {@code ranges().get(1)}.
+ *
+ * <p>{@link #spans()} also runs parallel to {@link #ranges()}: {@code int[]{open, close}} sequence numbers
+ * the parser hands out as it enters and leaves each occurrence, shared by all the stops of one snippet. They
+ * say what offsets cannot once two ranges touch or coincide — whether one stop <em>contains</em> another
+ * ({@code ${2:${1}foo}}) or merely sits next to it ({@code ${1}${2:foo}}). {@code null} when the stop was
+ * not built by the parser; the session then infers the nesting from the offsets.
  */
 public record TabStop(
         int number,
@@ -26,7 +32,19 @@ public record TabStop(
         String placeholder,
         List<String> choices,
         List<SnippetTransform> transforms,
-        int primaryIndex) {
+        int primaryIndex,
+        List<int[]> spans) {
+
+    /** A stop with no recorded nesting (see {@link #spans()}). */
+    public TabStop(
+            int number,
+            List<int[]> ranges,
+            String placeholder,
+            List<String> choices,
+            List<SnippetTransform> transforms,
+            int primaryIndex) {
+        this(number, ranges, placeholder, choices, transforms, primaryIndex, null);
+    }
 
     /** Full stop with no transforms and the first range editable. */
     public TabStop(int number, List<int[]> ranges, String placeholder, List<String> choices) {

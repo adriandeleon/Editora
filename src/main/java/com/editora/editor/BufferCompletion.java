@@ -69,6 +69,11 @@ final class BufferCompletion {
 
         void finishSnippet();
 
+        /** How many snippet sessions are stacked (0 = none): tells a newly started one from an enclosing one. */
+        default int snippetDepth() {
+            return hasActiveSnippet() ? 1 : 0;
+        }
+
         default Runnable beginCompletionUndo() {
             return () -> {};
         }
@@ -507,9 +512,13 @@ final class BufferCompletion {
                     || item.protocol() == null
                     || !item.protocol().commitCharacters().contains(e.getCharacter())) return;
             String typed = e.getCharacter();
+            int enclosing = host.snippetDepth();
             if (!acceptCompletion(a, item)) return;
             if (!typed.equals("(")) {
-                host.finishSnippet();
+                // Only a snippet this acceptance started is finished. A plain item accepted inside another
+                // snippet's field leaves that session alone, or `.` after `user` in println(${1:value})
+                // landed behind the closing parenthesis with the session gone.
+                if (host.snippetDepth() > enclosing) host.finishSnippet();
                 int caret = a.getCaretPosition();
                 if (caret > 0 && a.getText(caret - 1, caret).equals(";")) {
                     if (typed.equals(";")) {
@@ -597,8 +606,9 @@ final class BufferCompletion {
                     }
                     default -> {
                         // Anything else dismisses: the list is about the caret's current position, and a
-                        // keystroke that moves or edits invalidates it.
-                        hideCodeActions();
+                        // keystroke that moves or edits invalidates it. A modifier on its own does neither —
+                        // and Control goes down before the N/P/G of the chords above, so it must not close.
+                        if (!e.getCode().isModifierKey()) hideCodeActions();
                     }
                 }
                 return;
@@ -1391,12 +1401,13 @@ final class BufferCompletion {
             } catch (RuntimeException ignored) {
                 // Range no longer valid (document moved) — fall back to the identifier walk above.
             }
-        } else if (start == caret && caret > 0 && c.snippet() == null) {
-            // The identifier walk captured nothing: the char before the caret is a non-identifier trigger
-            // (e.g. phpactor's `$`, a bash variable sigil). If the insert begins with that overlap, extend the
-            // replaced range back over it so accepting `$user` after typing `$` yields `$user`, not `$$user`.
+        } else if (caret > 0 && c.snippet() == null) {
+            // No server range: the identifier walk is only a guess at what was typed towards this item. When
+            // the text before the caret overlaps the start of the insert by more than that run, the overlap is
+            // what gets replaced — phpactor's `$user` after `$` or `$us` (not `$$user`), bash-language-server's
+            // `apt-get` after `apt-g` (not `apt-apt-get`). It never shortens the identifier walk.
             int overlap = CompletionEngine.prefixOverlap(text.substring(0, caret), c.insert());
-            start = caret - overlap;
+            start = Math.min(start, caret - overlap);
         }
         hideCompletion();
         // Measured around our own edit so a later completionItem/resolve's additionalTextEdits — positions the
