@@ -1835,6 +1835,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupMruTracking() {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
         editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> editing.deactivateMark());
+        editorArea.addSelectionListener((obs, was, now) -> findBar.onActiveBufferChanged());
         editorArea.addSelectionListener((obs, was, now) -> {
             if (now != null) {
                 mru.remove(now);

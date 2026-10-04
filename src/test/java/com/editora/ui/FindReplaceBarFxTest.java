@@ -435,4 +435,170 @@ class FindReplaceBarFxTest {
         });
         assertEquals("BAR one\nbar two\nBar three\n", h.content());
     }
+
+    // --- zero-width matches ---
+
+    private static String selection(Harness h) {
+        return h.area().getSelection().getStart() + "-"
+                + h.area().getSelection().getEnd();
+    }
+
+    @Test
+    void findNextStepsThroughZeroWidthMatches() throws Exception {
+        Harness h = harness("a\n\nb\n\nc\n\nd");
+        List<String> seen = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false);
+            h.toggle("regex", true);
+            h.query("^$", "");
+            FxTestSupport.invoke(h.bar, "recompute"); // what the query debounce does
+            seen.add(selection(h));
+            for (int i = 0; i < 3; i++) {
+                h.bar.findNext();
+                seen.add(selection(h));
+            }
+        });
+        assertEquals(List.of("2-2", "5-5", "8-8", "2-2"), seen, "each blank line in turn, then wrap");
+    }
+
+    @Test
+    void replaceActsOnAZeroWidthMatchAndMovesOn() throws Exception {
+        Harness h = harness("a\nb\nc");
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false);
+            h.toggle("regex", true);
+            h.query("$", ";");
+            h.bar.findNext();
+            h.bar.replaceCurrentMatch();
+            h.bar.replaceCurrentMatch();
+            h.bar.replaceCurrentMatch();
+        });
+        assertEquals("a;\nb;\nc;", h.content());
+    }
+
+    // --- a regex the engine cannot finish ---
+
+    @Test
+    void aRegexThatOverflowsTheStackIsReportedNotThrown() throws Exception {
+        String comment = "/*" + "x".repeat(400_000) + "*/";
+        Harness h = harness("foo foo\n" + comment);
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false);
+            h.query("foo", "");
+            h.bar.findNext(); // a previous query's count that must not survive
+            h.toggle("regex", true);
+            h.query("/\\*(.|\\n)*?\\*/", "");
+            FxTestSupport.invoke(h.bar, "recompute"); // what the query debounce does
+            assertEquals(com.editora.i18n.Messages.tr("find.tooComplex"), h.lastStatus());
+            assertTrue(h.bar.currentMatches().isEmpty());
+            h.statuses.clear();
+            h.bar.replaceAllMatches();
+            assertEquals(com.editora.i18n.Messages.tr("find.tooComplex"), h.lastStatus());
+        });
+        assertEquals("foo foo\n" + comment, h.content());
+    }
+
+    // --- closing the bar ---
+
+    private static List<int[]> overlayMatches(EditorBuffer buffer) {
+        Object overlay = FxTestSupport.field(buffer, "searchOverlay");
+        return overlay == null ? List.of() : FxTestSupport.field(overlay, "matches");
+    }
+
+    @Test
+    void closingAScopedBarDoesNotSearchAgain() throws Exception {
+        Harness h = harness("foo\nfoo\nfoo\nfoo\nfoo\nfoo");
+        FxTestSupport.runOnFx(() -> {
+            h.area().selectRange(4, 11); // lines 2-3 → "Sel" switches on
+            h.bar.show(false);
+            h.query("foo", "");
+            h.bar.findNext();
+            h.area().moveTo(21);
+            h.bar.hideBar();
+            assertTrue(overlayMatches(h.buffer).isEmpty(), "no highlights once the bar is closed");
+            assertEquals("21-21", selection(h), "and the caret stays where it was");
+            assertTrue(h.bar.currentMatches().isEmpty());
+        });
+    }
+
+    @Test
+    void aQueryTypedJustBeforeClosingIsNotSearchedAfterwards() throws Exception {
+        Harness h = harness("foo foo");
+        FxTestSupport.runOnFx(() -> {
+            h.bar.show(false);
+            h.query("foo", ""); // starts the 150 ms query debounce
+            h.bar.hideBar();
+            String caret = selection(h);
+            assertEquals(
+                    javafx.animation.Animation.Status.STOPPED,
+                    FxTestSupport.<javafx.animation.PauseTransition>field(h.bar, "debounce")
+                            .getStatus());
+            // …and even a search that does get asked for is refused while the bar is hidden.
+            FxTestSupport.invoke(h.bar, "recompute");
+            assertTrue(overlayMatches(h.buffer).isEmpty());
+            assertEquals(caret, selection(h));
+        });
+    }
+
+    // --- switching tabs under an open bar ---
+
+    @Test
+    void switchingBuffersRetargetsTheBar() throws Exception {
+        EditorBuffer[] active = new EditorBuffer[1];
+        List<String> statuses = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            EditorBuffer a = new EditorBuffer();
+            a.setContent("foo foo foo foo foo foo");
+            EditorBuffer b = new EditorBuffer();
+            b.setContent("0123456789 nothing to see here");
+            active[0] = a;
+            FindReplaceBar bar = new FindReplaceBar(() -> active[0], statuses::add);
+            new Scene(new VBox(bar, a.getNode(), b.getNode()), 800, 600);
+            bar.show(false);
+            FxTestSupport.<TextField>field(bar, "findField").setText("foo");
+            bar.findNext();
+            bar.findNext();
+            assertEquals(6, overlayMatches(a).size());
+
+            active[0] = b; // the user clicks the other tab
+            bar.onActiveBufferChanged();
+            assertTrue(overlayMatches(a).isEmpty(), "the tab that was left keeps no highlights");
+            assertTrue(bar.currentMatches().isEmpty(), "the new tab has no match");
+            assertEquals(
+                    "",
+                    FxTestSupport.<javafx.scene.control.Label>field(bar, "countLabel")
+                            .getText());
+
+            b.getFocusedArea().moveTo(0);
+            bar.findNext();
+            assertEquals(0, b.getFocusedArea().getSelection().getLength(), "nothing is selected in it");
+            assertTrue(overlayMatches(b).isEmpty());
+
+            // Without the notification the next action still notices the switch.
+            active[0] = a;
+            a.getFocusedArea().moveTo(0);
+            bar.findNext();
+            assertEquals("foo", a.getFocusedArea().getSelectedText());
+            active[0] = b;
+            assertTrue(bar.currentMatches().isEmpty(), "matches are never another buffer's offsets");
+            bar.hideBar();
+            assertTrue(overlayMatches(a).isEmpty());
+        });
+    }
+
+    // --- folded text ---
+
+    @Test
+    void findRevealsAMatchHiddenInAFold() throws Exception {
+        Harness h = harness("class A {\n    void first() {\n        int needle = 1;\n    }\n}\n");
+        FxTestSupport.runOnFx(() -> {
+            h.area().foldParagraphs(1, 3);
+            assertTrue(h.area().isFolded(2));
+            h.bar.show(false);
+            h.query("needle", "");
+            h.bar.findNext();
+            assertFalse(h.area().isFolded(2), "the line holding the match is shown");
+            assertEquals("needle", h.area().getSelectedText());
+        });
+    }
 }

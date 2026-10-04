@@ -72,7 +72,8 @@ class SearchServiceRematchTest {
 
     @Test
     void wholeWordWithAPunctuationEdgeListsWhatReplaceAllChanges() {
-        // rg -w matches the standalone "@Override"; the Java \\b...\\b reading matches only "x@Override".
+        // Whole word is "no word character just outside the match" in both engines: the standalone
+        // "@Override" is one, the "@Override" glued to "x" is not — what rg -w lists is what is replaced.
         SearchQuery q = new SearchQuery("@Override", true, false, true);
         Path file = Path.of("Anno.java");
         String text = "class A {\n    @Override\n    int x@Override;\n}\n";
@@ -81,7 +82,7 @@ class SearchServiceRematchTest {
 
         SearchService.rematch(files, q, Map.of(file, text)::get, 100, () -> false);
 
-        assertEquals(List.of("3:10+9"), spans(files.get(0).matches()));
+        assertEquals(List.of("2:5+9"), spans(files.get(0).matches()));
         assertEquals(1, replaced(text, q));
     }
 

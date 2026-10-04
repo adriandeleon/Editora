@@ -188,12 +188,12 @@ class SearchCoordinatorRipgrepReplaceFxTest {
             SearchQuery query = new SearchQuery("@Override", true, false, true);
 
             List<String> listed = search(async, host, coordinator, query, dir);
-            assertEquals(List.of("Anno.java:3:10+9"), listed);
+            assertEquals(List.of("Anno.java:2:5+9"), listed);
 
             SearchCoordinator.ReplaceResult result = replaceAll(async, host, coordinator, query, "@Deprecated");
 
             assertEquals(listed.size(), result.count());
-            assertTrue(Files.readString(file).contains("    @Override\n    int x@Deprecated;"));
+            assertTrue(Files.readString(file).contains("    @Deprecated\n    int x@Override;"));
         }
     }
 }

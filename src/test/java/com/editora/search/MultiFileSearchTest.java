@@ -218,10 +218,9 @@ class MultiFileSearchTest {
         SearchQuery sum = new SearchQuery("sum", true, true, true);
         assertTrue(MultiFileSearch.matchesInText("résumé", sum, 10, MultiFileSearch.UNICODE_CLASSES)
                 .isEmpty());
-        assertEquals(
-                1,
-                MultiFileSearch.matchesInText("résumé", sum, 10).size(),
-                "the ASCII \\b sees a boundary on both sides of an accented letter");
+        assertTrue(
+                MultiFileSearch.matchesInText("résumé", sum, 10).isEmpty(),
+                "whole-word tests the neighbouring characters as letters in the find-bar dialect too");
     }
 
     @Test

@@ -1012,8 +1012,13 @@ final class EditingCoordinator {
         }
 
         void start() {
-            if (!showNext()) {
-                host.setStatus(tr("status.queryReplace.none"));
+            try {
+                if (!showNext()) {
+                    host.setStatus(tr("status.queryReplace.none"));
+                    return;
+                }
+            } catch (RuntimeException badReference) { // a $n the pattern has no group for
+                host.setStatus(tr("find.badReplacement", String.valueOf(badReference.getMessage())));
                 return;
             }
             active = true;
@@ -1043,8 +1048,7 @@ final class EditingCoordinator {
         private void replaceCurrentOnly() {
             area.replaceText(current.start(), current.end(), current.replacement());
             replaced++;
-            from = com.editora.editor.QueryReplace.advance(
-                    current, current.replacement().length());
+            from = com.editora.editor.QueryReplace.afterReplace(current);
         }
 
         private void replaceCurrentAndAdvance() {
@@ -1055,7 +1059,7 @@ final class EditingCoordinator {
         }
 
         private void skip() {
-            from = com.editora.editor.QueryReplace.advance(current, current.end() - current.start());
+            from = com.editora.editor.QueryReplace.afterSkip(current);
             if (!showNext()) {
                 finish();
             }
