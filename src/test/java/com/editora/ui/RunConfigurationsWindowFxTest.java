@@ -70,4 +70,77 @@ class RunConfigurationsWindowFxTest {
         assertFalse(Arrays.stream(category.getEnumConstants())
                 .anyMatch(value -> value.toString().equals("RUN_CONFIGS")));
     }
+
+    private static RunConfiguration persisted(ConfigManager config, String name) {
+        return config.getWorkspaceState().getRunConfigurations().stream()
+                .filter(c -> name.equals(c.name()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    /**
+     * With a single configuration (always the case while creating the first one), committing a field replaced
+     * the list's only element, which cleared the selection: the form was disabled and every field emptied
+     * after each Enter.
+     */
+    @Test
+    void committingAFieldOfTheOnlyConfigurationKeepsItSelectedAndTheFormFilled(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(new RunConfiguration("Only", "example.Only", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("Only", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ListView<RunConfiguration> list = FxTestSupport.field(window, "list");
+        javafx.scene.control.TextField args =
+                (javafx.scene.control.TextField) stage.getScene().lookup("#run-config-args");
+
+        FxTestSupport.runOnFx(() -> {
+            args.setText("--port 8080");
+            args.getOnAction().handle(new javafx.event.ActionEvent());
+        });
+
+        assertEquals("--port 8080", persisted(config, "Only").args());
+        assertEquals(0, FxTestSupport.callOnFx(() -> list.getSelectionModel().getSelectedIndex()));
+        assertEquals("--port 8080", FxTestSupport.callOnFx(args::getText), "the form still shows the row");
+        assertFalse(FxTestSupport.callOnFx(() -> args.getParent().isDisabled()));
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    /**
+     * A field only commits on focus loss, which arrives after a click on another row has already changed the
+     * selection: the edit was overwritten by that row's values and silently dropped.
+     */
+    @Test
+    void anUncommittedEditIsKeptWhenAnotherConfigurationIsSelected(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration("First", "example.First", "", "", "", ""),
+                        new RunConfiguration("Second", "example.Second", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("First", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ListView<RunConfiguration> list = FxTestSupport.field(window, "list");
+        javafx.scene.control.TextField args =
+                (javafx.scene.control.TextField) stage.getScene().lookup("#run-config-args");
+
+        FxTestSupport.runOnFx(() -> {
+            args.setText("--port 8080"); // typed, not yet committed
+            list.getSelectionModel().select(1); // the click on the other row
+        });
+
+        assertEquals("--port 8080", persisted(config, "First").args());
+        assertEquals("", persisted(config, "Second").args());
+        assertEquals("", FxTestSupport.callOnFx(args::getText), "the form now shows Second");
+        assertEquals(
+                "Second",
+                FxTestSupport.callOnFx(
+                        () -> list.getSelectionModel().getSelectedItem().name()));
+        FxTestSupport.runOnFx(stage::close);
+    }
 }

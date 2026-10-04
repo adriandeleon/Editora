@@ -49,7 +49,7 @@ public final class TestRunRecognizer {
     /**
      * The task args that run one test class ({@code methodName == null}) or one method — the gutter ▶ / run-at-
      * caret dispatch. Only the JVM tools have a usable per-test filter; Go/Cargo in-file runs are out of scope
-     * (returns an empty list). Maven's {@code -Dtest} matches the <b>simple</b> class name (like
+     * (returns an empty list). Maven's {@code -Dtest} takes the class name without its package (like
      * {@link TestRun#failedTestFilters}); Gradle's {@code --tests} takes the FQN. The method is reduced to a
      * name a filter accepts ({@link TestSourceLocator#filterMethodName}); see {@link #mavenTestFilter} for
      * the reactor flags.
@@ -59,8 +59,8 @@ public final class TestRunRecognizer {
         boolean wholeClass = method == null || method.isEmpty();
         return switch (tool) {
             case MAVEN -> {
-                String cls = TestSourceLocator.simpleName(className);
-                yield mavenTestFilter(wholeClass ? cls : cls + "#" + method);
+                String cls = TestSourceLocator.filterClassName(className); // keeps a @Nested class's $Inner
+                yield mavenTestFilter(wholeClass ? cls : cls + "#" + TestSourceLocator.mavenMethodFilter(methodName));
             }
             case GRADLE -> List.of("test", "--tests", wholeClass ? className : className + "." + method);
             default -> List.of();

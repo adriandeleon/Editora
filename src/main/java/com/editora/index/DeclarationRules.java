@@ -88,16 +88,24 @@ final class DeclarationRules {
             "instanceof");
 
     private static Rule rule(String regex, SymbolKind kind) {
-        return new Rule(Pattern.compile(regex), kind, false);
+        return new Rule(Pattern.compile(unicodeWords(regex)), kind, false);
     }
 
     /** A rule whose pattern has no declaring keyword, so the line's shape must confirm it. */
     private static Rule signatureRule(String regex, SymbolKind kind) {
-        return new Rule(Pattern.compile(regex), kind, true);
+        return new Rule(Pattern.compile(unicodeWords(regex)), kind, true);
     }
 
-    /** An identifier as most C-family languages spell it. */
-    private static final String ID = "[A-Za-z_$][A-Za-z0-9_$]*";
+    /**
+     * {@code \w} is ASCII-only in {@code java.util.regex}, so a name was cut at its first non-ASCII letter
+     * ({@code def größe} indexed as {@code gr}). Widened here, for every rule at once, to any letter or digit.
+     */
+    private static String unicodeWords(String regex) {
+        return regex.replace("\\w", "[\\p{L}\\p{N}_]");
+    }
+
+    /** An identifier as most C-family languages spell it (any letter, not just ASCII: {@code class Café}). */
+    private static final String ID = "[\\p{L}_$][\\p{L}\\p{N}_$]*";
 
     /**
      * A type as it appears before a declared name: one or more whitespace-separated runs of type

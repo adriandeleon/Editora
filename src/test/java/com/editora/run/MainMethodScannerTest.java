@@ -99,4 +99,25 @@ class MainMethodScannerTest {
         assertTrue(MainMethodScanner.scan(null).isEmpty());
         assertTrue(MainMethodScanner.scan("   ").isEmpty());
     }
+
+    @Test
+    void nonAsciiClassAndPackageNamesAreWhole() {
+        // \\w is ASCII-only: Café came out as Caf (a class that does not exist) and Übung1 was not seen.
+        assertEquals(
+                "demo.Café",
+                MainMethodScanner.scan(
+                                "package demo;\npublic class Café {\n  public static void main(String[] a) {}\n}\n")
+                        .get(0)
+                        .fqn());
+        assertEquals(
+                "Übung1",
+                MainMethodScanner.scan("class Übung1 {\n  public static void main(String[] a) {}\n}\n")
+                        .get(0)
+                        .fqn());
+        assertEquals(
+                "größe.学生Main",
+                MainMethodScanner.scan("package größe;\nclass 学生Main {\n  static void main(String... 引数) {}\n}\n")
+                        .get(0)
+                        .fqn());
+    }
 }

@@ -119,7 +119,7 @@ public final class ProcessRunner {
      */
     public static Result runInUserLocale(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
-        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true, false));
+        return decodedInUserLocale(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true, false));
     }
 
     /**
@@ -146,6 +146,14 @@ public final class ProcessRunner {
     public static Result runScrubbed(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, null, true, true));
+    }
+
+    /**
+     * As {@link #decoded} for a child that ran in the user's locale and so may have written its native
+     * encoding rather than UTF-8 ({@link ChildText}) — {@code date +%B} under {@code de_DE} is Latin-1.
+     */
+    private static Result decodedInUserLocale(BytesResult raw) {
+        return new Result(raw.exit(), ChildText.decode(raw.out()), raw.err(), raw.outTruncated(), raw.errTruncated());
     }
 
     private static Result decoded(BytesResult raw) {
@@ -262,7 +270,11 @@ public final class ProcessRunner {
             return new BytesResult(-1, new byte[0], "interrupted");
         }
         return new BytesResult(
-                process.exitValue(), outBuf.toByteArray(), text(errBuf), outTruncated.get(), errTruncated.get());
+                process.exitValue(),
+                outBuf.toByteArray(),
+                userLocale ? ChildText.decode(errBuf.toByteArray()) : text(errBuf),
+                outTruncated.get(),
+                errTruncated.get());
     }
 
     /**
@@ -500,21 +512,40 @@ public final class ProcessRunner {
         boolean windows = System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)
                 .contains("win");
-        for (String dir : augmentedPath().split(File.pathSeparator)) {
+        return resolveExecutable(command, augmentedPath(), windows);
+    }
+
+    private static final List<String> WINDOWS_EXECUTABLE_EXTENSIONS = List.of(".exe", ".cmd", ".bat");
+
+    /**
+     * {@link #resolveExecutable(List)} against an explicit {@code path} and platform (the form the unit tests
+     * drive).
+     *
+     * <p>On Windows the {@code .exe}/{@code .cmd}/{@code .bat} forms are tried <em>first</em>, and an
+     * extension-less file is never taken: npm, Maven, Gradle, yarn and pnpm all ship a POSIX shell shim
+     * ({@code npm}) beside the real launcher ({@code npm.cmd}), {@code Files.isExecutable} is true for any
+     * ordinary file there, and {@code CreateProcess} cannot start the shim (error 193).
+     */
+    static List<String> resolveExecutable(List<String> command, String path, boolean windows) {
+        String exe = command.get(0);
+        String lower = exe.toLowerCase(java.util.Locale.ROOT);
+        boolean hasWindowsExtension = WINDOWS_EXECUTABLE_EXTENSIONS.stream().anyMatch(lower::endsWith);
+        for (String dir : path.split(File.pathSeparator)) {
             if (dir.isBlank()) {
                 continue;
             }
-            Path candidate = Path.of(dir, exe);
-            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
-                return rewriteFirst(command, candidate.toString());
-            }
-            if (windows) {
-                for (String ext : List.of(".exe", ".cmd", ".bat")) {
+            if (windows && !hasWindowsExtension) {
+                for (String ext : WINDOWS_EXECUTABLE_EXTENSIONS) {
                     Path w = Path.of(dir, exe + ext);
                     if (Files.isRegularFile(w)) {
                         return rewriteFirst(command, w.toString());
                     }
                 }
+                continue;
+            }
+            Path candidate = Path.of(dir, exe);
+            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return rewriteFirst(command, candidate.toString());
             }
         }
         return command;

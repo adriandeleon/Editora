@@ -47,6 +47,12 @@ public final class RunConfigurationsWindow {
     private boolean built;
     private boolean loading;
 
+    /** Set while a commit swaps a row's value, so the selection listener leaves the form alone. */
+    private boolean replacingRow;
+
+    /** Set while the rows are re-read from the workspace state. */
+    private boolean reloading;
+
     public RunConfigurationsWindow(ConfigManager config, Supplier<String> suggestion, Runnable onChanged) {
         this.config = config;
         this.suggestion = suggestion;
@@ -128,25 +134,25 @@ public final class RunConfigurationsWindow {
         formRow(form, 10, "settings.runConfig.jdk", jdk);
         form.setDisable(true);
 
+        args.setId("run-config-args");
+        java.util.function.Supplier<RunConfiguration> fromForm = () -> new RunConfiguration(
+                name.getText(),
+                type.getValue() == null ? "java" : type.getValue(),
+                target.getText(),
+                mainClass.getText(),
+                projectName.getText(),
+                args.getText(),
+                vmArgs.getText(),
+                workingDir.getText(),
+                env.getText(),
+                beforeLaunch.getText(),
+                jdk.getValue() == null ? "" : jdk.getValue().home());
         Runnable commit = () -> {
             int index = list.getSelectionModel().getSelectedIndex();
             if (index < 0 || loading) {
                 return;
             }
-            items.set(
-                    index,
-                    new RunConfiguration(
-                            name.getText(),
-                            type.getValue() == null ? "java" : type.getValue(),
-                            target.getText(),
-                            mainClass.getText(),
-                            projectName.getText(),
-                            args.getText(),
-                            vmArgs.getText(),
-                            workingDir.getText(),
-                            env.getText(),
-                            beforeLaunch.getText(),
-                            jdk.getValue() == null ? "" : jdk.getValue().home()));
+            replaceRow(index, fromForm.get(), true);
             list.refresh();
             persist();
         };
@@ -163,6 +169,21 @@ public final class RunConfigurationsWindow {
         }
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
+            if (replacingRow) {
+                return; // a commit swapping the row's value: the form already shows it
+            }
+            // A field commits on focus loss, which arrives after a click on another row has already moved the
+            // selection — so the pending edit was written over by that row's values and lost. Commit it into
+            // the row being left, before the form is reloaded.
+            int left = was == null || reloading ? -1 : identityIndexOf(was);
+            if (left >= 0) {
+                RunConfiguration edited = fromForm.get();
+                if (!edited.equals(was)) {
+                    replaceRow(left, edited, false);
+                    list.refresh();
+                    persist();
+                }
+            }
             loading = true;
             try {
                 form.setDisable(now == null);
@@ -256,12 +277,44 @@ public final class RunConfigurationsWindow {
         return spacer;
     }
 
+    /**
+     * Replaces the row at {@code index} without the selection listener reloading (or blanking) the form.
+     * {@code ListView} clears the selection when the selected element is replaced — always, when it is the only
+     * one — which disabled the form and emptied every field after each committed edit; {@code keepSelected}
+     * puts the selection back.
+     */
+    private void replaceRow(int index, RunConfiguration value, boolean keepSelected) {
+        replacingRow = true;
+        try {
+            items.set(index, value);
+            if (keepSelected) {
+                list.getSelectionModel().select(index);
+            }
+        } finally {
+            replacingRow = false;
+        }
+    }
+
+    private int identityIndexOf(RunConfiguration value) {
+        for (int i = 0; i < items.size(); i++) {
+            if (items.get(i) == value) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     private void reload(String selectName) {
         String previous = selectName;
         if ((previous == null || previous.isBlank()) && list.getSelectionModel().getSelectedItem() != null) {
             previous = list.getSelectionModel().getSelectedItem().name();
         }
-        items.setAll(config.getWorkspaceState().getRunConfigurations());
+        reloading = true; // the rows are being replaced from disk: nothing in the form is a pending edit
+        try {
+            items.setAll(config.getWorkspaceState().getRunConfigurations());
+        } finally {
+            reloading = false;
+        }
         RunConfiguration selected = null;
         if (previous != null) {
             for (RunConfiguration value : items) {

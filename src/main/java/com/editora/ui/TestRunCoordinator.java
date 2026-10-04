@@ -25,6 +25,7 @@ import com.editora.build.BuildTool;
 import com.editora.run.StackTraceLinks;
 import com.editora.search.GitignoreFilter;
 import com.editora.search.ProjectWalk;
+import com.editora.test.GradleTaskOutcomes;
 import com.editora.test.JavaTestScanner;
 import com.editora.test.JvmReportDirs;
 import com.editora.test.ParsedSuite;
@@ -118,6 +119,11 @@ final class TestRunCoordinator implements TestRunHook {
     private Timeline elapsedTimer;
     private boolean refreshPending;
 
+    /** Gradle's own account of this run: whether it printed task lines, and the tasks it reused. */
+    private boolean sawGradleTaskLines;
+
+    private final Set<String> reusedGradleTasks = new java.util.HashSet<>();
+
     // npm TAP sniffing
     private boolean npm;
     private boolean tapDecided;
@@ -160,6 +166,13 @@ final class TestRunCoordinator implements TestRunHook {
         if (!isEnabled()) {
             return false;
         }
+        // There is one run state — one tree, one parser — and the hook's callbacks carry no run identity.
+        // Build tools run concurrently by design, so a second tool's test run started while this one is in
+        // flight would take over that state: the first tool's remaining output would go to the wrong
+        // parser and its exit would finish the wrong run. Decline; it runs in its own console instead.
+        if (currentRun != null && currentRun.isRunning() && currentTool != tool) {
+            return false;
+        }
         currentTool = tool;
         currentRun = new TestRun(tool, workingDir, taskArgs, toggleArgs, System.currentTimeMillis());
         parser = TestResultParsers.forTool(tool);
@@ -170,6 +183,8 @@ final class TestRunCoordinator implements TestRunHook {
         seeded = false;
         followTarget = null;
         awaitingAttachFor = null;
+        sawGradleTaskLines = false;
+        reusedGradleTasks.clear();
 
         panel.startRun(String.join(" ", taskArgs));
         ops.setTestResultsAvailable(true);
@@ -211,6 +226,13 @@ final class TestRunCoordinator implements TestRunHook {
             }
         }
         if (fileBased) {
+            if (currentTool == BuildTool.GRADLE) {
+                sawGradleTaskLines |= GradleTaskOutcomes.isTaskLine(line);
+                String reused = GradleTaskOutcomes.reusedTask(line);
+                if (reused != null) {
+                    reusedGradleTasks.add(reused);
+                }
+            }
             return; // JVM: results come from the report files, not the console
         }
         if (npm && !tapDecided) {
@@ -260,16 +282,25 @@ final class TestRunCoordinator implements TestRunHook {
         if (fileBased) {
             BuildTool tool = currentTool;
             Path dir = run.workingDir();
+            // Which leftover reports may stand for this run if it rewrote nothing: those of the test tasks
+            // Gradle itself reported as up to date. Sweeping every report under the project showed another
+            // module's week-old failure for a successful `:app:test`. Under -q there are no task lines to go
+            // by, and every report is taken as before.
+            Set<String> reusedTasks = Set.copyOf(reusedGradleTasks);
+            boolean sawTaskLines = sawGradleTaskLines;
+            java.util.function.Predicate<Path> leftovers =
+                    sawTaskLines ? file -> GradleTaskOutcomes.reportBelongsTo(dir, file, reusedTasks) : file -> true;
             // The final sweep walks + DOM-parses the reports — file I/O, never on the FX thread. The
             // single-threaded poller serializes this after any in-flight tick; its mergeAll runLater is posted
             // before completeRun, so the last class lands before the run is marked finished.
             poller.execute(() -> {
-                sweepReports(gen, tool, dir, true, false); // full: catch the last class + anything a tick missed
+                sweepReports(gen, tool, dir, true, null); // full: catch the last class + anything a tick missed
                 // An up-to-date Gradle test task rewrote nothing, so every report equals its baseline and
                 // the sweep above found no results: show the ones on disk rather than an empty tree.
-                boolean reused = TestRunRecognizer.showsExistingReports(tool, code, !seenMtimes.isEmpty());
+                boolean reused = TestRunRecognizer.showsExistingReports(tool, code, !seenMtimes.isEmpty())
+                        && (!sawTaskLines || !reusedTasks.isEmpty());
                 if (reused) {
-                    sweepReports(gen, tool, dir, true, true);
+                    sweepReports(gen, tool, dir, true, leftovers);
                 }
                 Platform.runLater(() -> {
                     completeRun(run, gen, code);
@@ -300,6 +331,14 @@ final class TestRunCoordinator implements TestRunHook {
         }
         run.finish(code, System.currentTimeMillis());
         panel.finishRun(run, code);
+        // A Maven filter that matches nothing is not an error (the flags a reactor needs see to that), so
+        // the build is green and the tree empty. Say so: "0 of 0 tests passed" reads as a pass.
+        if (code == 0
+                && run.tool() == BuildTool.MAVEN
+                && TestRunRecognizer.isFilteredRun(run.tool(), run.taskArgs())
+                && run.counts().total() == 0) {
+            host.setStatus(tr("status.testrunner.noMatch"));
+        }
     }
 
     private void mergeAll(List<ParsedSuite> suites) {
@@ -363,7 +402,7 @@ final class TestRunCoordinator implements TestRunHook {
 
     private void startPolling(int gen, BuildTool tool, Path root) {
         pollTask = poller.scheduleWithFixedDelay(
-                () -> sweepReports(gen, tool, root, false, false), POLL_MS, POLL_MS, TimeUnit.MILLISECONDS);
+                () -> sweepReports(gen, tool, root, false, null), POLL_MS, POLL_MS, TimeUnit.MILLISECONDS);
     }
 
     /** Poller thread: snapshot the pre-run report mtimes (and reset the seen/baseline maps for the new run). */
@@ -457,16 +496,18 @@ final class TestRunCoordinator implements TestRunHook {
     /**
      * Scans the report dirs for {@code TEST-*.xml} files, parses those whose mtime advanced (all of them when
      * {@code full}), and merges the results on the FX thread. Runs on the poll thread (or the FX thread for the
-     * final sweep — parsing is bounded and off the hot path either way). {@code includeLeftovers} also parses
-     * reports untouched since before the run (see {@link TestRunRecognizer#showsExistingReports}).
+     * final sweep — parsing is bounded and off the hot path either way). {@code leftovers}, when not null,
+     * also admits the reports it accepts although they are untouched since before the run (see
+     * {@link TestRunRecognizer#showsExistingReports}).
      */
-    private void sweepReports(int gen, BuildTool tool, Path root, boolean full, boolean includeLeftovers) {
+    private void sweepReports(
+            int gen, BuildTool tool, Path root, boolean full, java.util.function.Predicate<Path> leftovers) {
         try {
             List<ParsedSuite> parsed = new ArrayList<>();
             for (Path file : reportFiles(tool, root)) {
                 long mtime = Files.getLastModifiedTime(file).toMillis();
                 Long base = baselineMtimes.get(file);
-                if (!includeLeftovers && base != null && base == mtime) {
+                if (base != null && base == mtime && (leftovers == null || !leftovers.test(file))) {
                     continue; // an untouched leftover from a previous run — never this run's result
                 }
                 Long seen = seenMtimes.get(file);

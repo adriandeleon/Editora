@@ -43,10 +43,15 @@ public final class BuildService {
      */
     private final OutputPump pump = new OutputPump("build", OutputPump.Overflow.BLOCK, false);
 
-    /** True while a launched process is still alive. */
+    /**
+     * True from a successful launch until its exit has been <b>delivered</b> to the listener — not merely
+     * until the process dies. The exit is reported only after the readers and the queue have drained, and a
+     * run started in that gap would {@code pump.begin()} over it: the previous run's remaining output and its
+     * {@code onExit} were discarded, leaving whoever waited for that exit (a test run, a before-launch step)
+     * "running" forever.
+     */
     public boolean isRunning() {
-        Process p = current;
-        return p != null && p.isAlive();
+        return current != null;
     }
 
     /** Launches {@code argv} in {@code workingDir} and streams output to {@code listener}. Refuses to start
@@ -105,7 +110,9 @@ public final class BuildService {
                     pump.finish(stdout, stderr);
                     int finalCode = code;
                     pump.post(gen, () -> {
-                        current = null;
+                        if (current == process) {
+                            current = null;
+                        }
                         listener.onExit(finalCode);
                     });
                 },

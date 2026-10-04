@@ -5621,7 +5621,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         public void setCommitWindowAvailable(boolean available) {
             // Also require an open buffer: these act on the active file/tab, so they hide on Welcome
             // (and any non-buffer tab) even inside a repo.
-            toolWindows.setAvailable(commitToolWindow, available && activeBuffer() != null);
+            toolWindows.setAvailable(commitToolWindow, available && GitWindowGate.allows(editorArea.selectedTab()));
             // Git's answer to "are we in a repo" has just landed, and it arrives asynchronously well after
             // the window (and its menu) were built — this is the signal that ungreys the VCS menu.
             refreshMenuEnablement();
@@ -5633,7 +5633,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // writes its command transcripts there. Hooked here because this runs on every applyGitState
             // (tab switch / focus / save / mutation), which is exactly when the repo context can change.
             refreshBuildOutputAvailability();
-            toolWindows.setAvailable(gitLogToolWindow, available && activeBuffer() != null);
+            toolWindows.setAvailable(gitLogToolWindow, available && GitWindowGate.allows(editorArea.selectedTab()));
         }
 
         @Override
@@ -6645,7 +6645,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void runTest(BuildTool tool, Path root, List<String> taskArgs, List<String> toggleArgs) {
-                    testNavigation.buildCoordinatorFor(tool).ifPresent(c -> c.runTask(taskArgs, toggleArgs));
+                    testNavigation.buildCoordinatorFor(tool).ifPresent(c -> c.runTaskAt(root, taskArgs, toggleArgs));
                 }
 
                 @Override
@@ -9235,9 +9235,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (pluginCoordinator != null) {
             pluginCoordinator.gateToolWindows(buffer);
         }
-        // Git Commit / Git Log act on the active file's repo — hide on a non-buffer tab (e.g. Welcome).
-        // When a buffer IS open, leave them to the Git coordinator's in-repo gating (don't force-show).
-        if (!buffer) {
+        // Git Commit / Git Log act on the active file's repo — hide on a tab with no Git context (e.g. Welcome;
+        // not the diff tabs they open). Otherwise leave them to the Git coordinator's in-repo gating.
+        if (!GitWindowGate.allows(editorArea.selectedTab())) {
             if (commitToolWindow != null) {
                 toolWindows.setAvailable(commitToolWindow, false);
             }

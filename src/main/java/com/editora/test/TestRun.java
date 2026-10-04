@@ -93,8 +93,8 @@ public final class TestRun {
                 // Surefire accepts neither the parameter list nor the index, and a duplicate adds nothing.
                 Set<String> filters = new LinkedHashSet<>();
                 for (TestNode t : failed) {
-                    filters.add(TestSourceLocator.simpleName(t.className()) + "#"
-                            + TestSourceLocator.filterMethodName(t.methodName()));
+                    filters.add(TestSourceLocator.filterClassName(t.className()) + "#"
+                            + TestSourceLocator.mavenMethodFilter(t.methodName()));
                 }
                 yield TestRunRecognizer.mavenTestFilter(String.join(",", filters));
             }
@@ -120,7 +120,7 @@ public final class TestRun {
                 if (names.isEmpty()) {
                     yield List.of(); // only a package/build failure — the caller does a full rerun
                 }
-                yield List.of("test", "-run", "^(" + String.join("|", names) + ")$", "./...");
+                yield List.of("test", "-run", TestSourceLocator.goRunPattern(names), "./...");
             }
             case CARGO -> {
                 List<String> args = new ArrayList<>(List.of("test", "--"));
