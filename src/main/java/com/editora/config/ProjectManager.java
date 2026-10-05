@@ -1,13 +1,14 @@
 package com.editora.config;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.function.BiConsumer;
 
+import com.editora.config.migration.ConfigLoadProblem;
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -71,26 +72,71 @@ public class ProjectManager {
         }
     }
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(ProjectManager.class.getName());
+
     private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
     private final Path configDir;
     private Index index = new Index();
+    /** What {@link #load()} could not read as written (see {@link #loadProblems()}). */
+    private final List<ConfigLoadProblem> loadProblems = new ArrayList<>();
+    /** Told of a failed {@link #save()}; the default only logs. */
+    private BiConsumer<Path, IOException> onWriteError =
+            (file, e) -> LOG.log(java.util.logging.Level.SEVERE, "Failed to write " + file, e);
 
     public ProjectManager(Path configDir) {
         this.configDir = configDir;
         load();
     }
 
-    private void load() {
-        index = ConfigMigrations.readVersioned(
-                configDir.resolve(INDEX_FILE_NAME), json, new Index(), ConfigSchema.PROJECTS);
+    private Path indexFile() {
+        return configDir.resolve(INDEX_FILE_NAME);
     }
 
-    public void save() {
+    private void load() {
+        index = ConfigMigrations.readVersioned(
+                indexFile(), json, new Index(), ConfigSchema.PROJECTS, loadProblems::add);
+    }
+
+    /**
+     * What could not be read from {@code projects.json} as written: an unparseable index, one written by a
+     * newer build, or values that kept their default. {@link SharedConfig} reports these with its own.
+     */
+    List<ConfigLoadProblem> loadProblems() {
+        return List.copyOf(loadProblems);
+    }
+
+    /** Routes a failed {@link #save()} to {@code handler} instead of the log alone. */
+    void setOnWriteError(BiConsumer<Path, IOException> handler) {
+        this.onWriteError = handler;
+    }
+
+    /** True when the index on disk holds content that was neither loaded nor copied aside. */
+    private boolean writeProtected() {
+        return loadProblems.stream().anyMatch(ConfigLoadProblem::mustNotOverwrite);
+    }
+
+    /**
+     * Writes the index to {@code projects.json}.
+     *
+     * <p>Never throws: this runs inside window open/close/focus handlers, where an exception from a full disk
+     * or a read-only config dir used to abort the rest of the handler with nothing shown. A failure is
+     * reported through the write-error handler instead. An index that could be neither read nor backed up is
+     * left alone — the one in memory is the defaults loaded in its place.
+     *
+     * @return whether the index in memory is now the one on disk
+     */
+    public boolean save() {
+        if (writeProtected()) {
+            return false;
+        }
         try {
             Files.createDirectories(configDir);
-            ConfigWriter.writeAtomic(configDir.resolve(INDEX_FILE_NAME), json, index);
+            ConfigWriter.writeAtomic(indexFile(), json, index);
+            return true;
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write " + INDEX_FILE_NAME, e);
+            onWriteError.accept(indexFile(), e);
+            return false;
         }
     }
 

@@ -338,12 +338,22 @@ public class ConfigManager {
      */
     public void setWorkspaceStateFile(Path file) {
         this.workspaceStateFile = file;
-        this.workspaceState = ConfigMigrations.readVersioned(file, json, new WorkspaceState(), ConfigSchema.WORKSPACE);
+        this.workspaceState = readWorkspaceState(file);
     }
 
     /** Points the session back at the default {@code workspace-state.json} (no project) and reloads it. */
     public void useDefaultWorkspaceStateFile() {
         setWorkspaceStateFile(getConfigDir().resolve(WORKSPACE_FILE_NAME));
+    }
+
+    /**
+     * Reads a session file, reporting what could not be read as written to the shared config — so the window
+     * shows it (a newer or unparseable session used to open as an empty one with no message) and a file that
+     * could be neither read nor backed up is not overwritten ({@link SharedConfig#isWriteProtected}).
+     */
+    private WorkspaceState readWorkspaceState(Path file) {
+        return ConfigMigrations.readVersioned(
+                file, json, new WorkspaceState(), ConfigSchema.WORKSPACE, shared::onLoadProblem);
     }
 
     public WorkspaceState getWorkspaceState() {
@@ -376,8 +386,7 @@ public class ConfigManager {
     /** Reads all config (shared + this window's session), merging stored values onto defaults. */
     public Settings load() {
         shared.load();
-        workspaceState =
-                ConfigMigrations.readVersioned(workspaceStateFile, json, new WorkspaceState(), ConfigSchema.WORKSPACE);
+        workspaceState = readWorkspaceState(workspaceStateFile);
         return shared.getSettings();
     }
 
@@ -402,7 +411,9 @@ public class ConfigManager {
 
     /** Queues this window's session state ({@code workspace-state.json}, possibly in a project sub-dir). */
     private void enqueueWorkspace() {
-        shared.writer().enqueue(workspaceStateFile, workspaceBytes());
+        if (!shared.isWriteProtected(workspaceStateFile)) {
+            shared.writer().enqueue(workspaceStateFile, workspaceBytes());
+        }
     }
 
     private byte[] workspaceBytes() {
