@@ -256,7 +256,7 @@ public class Settings {
     private boolean pluginSupport = false;
     /** Registry index URL for browsing/installing plugins (HTTPS); overridable, defaults to
      *  {@link #DEFAULT_PLUGIN_REGISTRY}. */
-    private String pluginRegistryUrl = DEFAULT_PLUGIN_REGISTRY;
+    private String pluginRegistryUrl = "";
     /** Require the registry index to be signed by the bundled key before installing (default on; turn off
      *  to use an unsigned or custom registry). */
     private boolean pluginRequireSignature = true;
@@ -1676,9 +1676,16 @@ public class Settings {
         return pluginRegistryUrl == null ? "" : pluginRegistryUrl;
     }
 
+    /**
+     * Sets the registry URL. The built-in URL is stored as blank ("follow the default"), whether it comes
+     * from the Settings field (which shows the URL in force and hands it back) or from a file an earlier
+     * build froze it into — otherwise such an install would keep the old address after the default moves.
+     */
     @JsonProperty("pluginRegistryUrl")
     public void setPluginRegistryUrl(String pluginRegistryUrl) {
-        this.pluginRegistryUrl = pluginRegistryUrl;
+        this.pluginRegistryUrl = pluginRegistryUrl != null && DEFAULT_PLUGIN_REGISTRY.equals(pluginRegistryUrl.strip())
+                ? ""
+                : pluginRegistryUrl;
     }
 
     public boolean isPluginRequireSignature() {

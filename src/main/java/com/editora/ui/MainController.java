@@ -9844,25 +9844,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void exportConfig() {
-        try {
-            java.nio.file.Path zip = config.exportConfig();
-            setStatus(tr("status.config.exported", zip.toString()));
-            Alert ok = new Alert(Alert.AlertType.INFORMATION);
-            ok.initOwner(stage);
-            ok.setTitle(tr("dialog.exportConfig.title"));
-            ok.setHeaderText(tr("dialog.exportConfig.done"));
-            ok.setContentText(zip.toString());
-            ok.showAndWait();
-        } catch (Exception e) {
-            String msg = String.valueOf(e.getMessage());
-            setStatus(tr("status.config.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(stage);
-            err.setTitle(tr("dialog.exportConfig.title"));
-            err.setHeaderText(tr("dialog.exportConfig.failed"));
-            err.setContentText(msg);
-            err.showAndWait();
-        }
+        BackgroundTasks.Handle task = backgroundTasks.start(tr("dialog.exportConfig.title"));
+        // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
+        config.shared()
+                .exportConfigAsync()
+                .whenComplete((zip, failure) -> Platform.runLater(() -> {
+                    task.done();
+                    String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
+                    setStatus(tr(failure == null ? "status.config.exported" : "status.config.exportFailed", detail));
+                    Alert alert = new Alert(failure == null ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR);
+                    alert.initOwner(stage);
+                    alert.setTitle(tr("dialog.exportConfig.title"));
+                    alert.setHeaderText(
+                            tr(failure == null ? "dialog.exportConfig.done" : "dialog.exportConfig.failed"));
+                    alert.setContentText(detail);
+                    alert.showAndWait();
+                }));
     }
 
     /** Re-runs the spell pass over every open buffer in this window (after the user dictionary changed). */

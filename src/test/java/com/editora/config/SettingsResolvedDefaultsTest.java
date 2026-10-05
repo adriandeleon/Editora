@@ -73,4 +73,40 @@ class SettingsResolvedDefaultsTest {
         JsonNode tree = JSON.valueToTree(new Settings());
         assertFalse(tree.has("ijhttpCommand"));
     }
+
+    @Test
+    void aFreshSettingsFileDoesNotFreezeTheDefaultPluginRegistry(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+        config.save();
+
+        JsonNode saved = JSON.readTree(dir.resolve("settings.json").toFile());
+        assertEquals("", saved.get("pluginRegistryUrl").asText(), "blank = follow the built-in registry");
+        assertEquals(Settings.DEFAULT_PLUGIN_REGISTRY, config.getSettings().getPluginRegistryUrl());
+    }
+
+    @Test
+    void resetToDefaultsDoesNotFreezeTheDefaultPluginRegistry() {
+        Settings live = new Settings();
+        live.setPluginRegistryUrl("https://example.com/index.json");
+        Settings.resetToDefaults(live);
+        assertEquals("", live.getPluginRegistryUrlRaw());
+    }
+
+    @Test
+    void aStoredDefaultPluginRegistryIsReadAsFollowTheDefault(@TempDir Path dir) throws Exception {
+        // What every earlier first save wrote, and what the Settings field hands back when it is left alone.
+        java.nio.file.Files.writeString(
+                dir.resolve("settings.json"),
+                "{\"schemaVersion\": " + Settings.SCHEMA_VERSION + ", \"pluginRegistryUrl\": \""
+                        + Settings.DEFAULT_PLUGIN_REGISTRY + "\"}");
+        ConfigManager config = new ConfigManager(dir);
+        Settings settings = config.load();
+
+        assertEquals("", settings.getPluginRegistryUrlRaw());
+        assertEquals(Settings.DEFAULT_PLUGIN_REGISTRY, settings.getPluginRegistryUrl());
+
+        settings.setPluginRegistryUrl("https://example.com/index.json");
+        assertEquals("https://example.com/index.json", settings.getPluginRegistryUrlRaw(), "a custom URL is kept");
+    }
 }
