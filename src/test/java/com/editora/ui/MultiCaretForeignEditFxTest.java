@@ -274,4 +274,43 @@ class MultiCaretForeignEditFxTest {
             FxTestSupport.runOnFx(() -> fx.shared.getSettings().setCopyLineWhenNoSelection(before));
         }
     }
+
+    // --- Tab with several carets is the buffer's Tab, not a tab character -------------------------
+
+    private void pressTab(EditorBuffer b, boolean shift) throws Exception {
+        FxTestSupport.runOnFx(() -> b.getArea()
+                .fireEvent(new KeyEvent(KeyEvent.KEY_PRESSED, "", "", KeyCode.TAB, shift, false, false, false)));
+    }
+
+    @Test
+    void tabWithSeveralCaretsInsertsTheIndentUnitAtEachNotATabCharacter() throws Exception {
+        EditorBuffer b = carets("tab.txt", "ab cd\nef gh\nij kl", 2, 8, 14);
+        FxTestSupport.runOnFx(() -> b.setIndentOverride(Boolean.TRUE, 4));
+        pressTab(b, false);
+        assertEquals("ab     cd\nef     gh\nij     kl", text(b), "four spaces at every caret, no tab character");
+        assertEquals(List.of(6, 16, 26), positions(b));
+        type(b, "x");
+        assertEquals("ab    x cd\nef    x gh\nij    x kl", text(b), "and the carets go on typing where they are");
+
+        run("edit.undo", "edit.undo");
+        assertEquals("ab cd\nef gh\nij kl", text(b), "the Tab at all carets was one undo step");
+    }
+
+    @Test
+    void tabAndShiftTabWithSeveralCaretsIndentAndDedentCode() throws Exception {
+        EditorBuffer b = carets("Tab.java", "class A {\n    int x;\n    int y;\n}\n", 20, 31);
+        FxTestSupport.runOnFx(() -> b.setIndentOverride(Boolean.TRUE, 4));
+        pressTab(b, true);
+        assertEquals("class A {\nint x;\nint y;\n}\n", text(b), "Shift-Tab dedents every caret's line");
+        assertEquals(List.of(16, 23), positions(b));
+
+        // With a selection at each caret, Tab indents the selected lines instead of replacing them.
+        FxTestSupport.runOnFx(() -> {
+            b.collapseCarets();
+            b.getArea().selectRange(10, 13);
+            FxTestSupport.call(manager(b), "addCaretWithSelection", new Class[] {int.class, int.class}, 17, 20);
+        });
+        pressTab(b, false);
+        assertEquals("class A {\n    int x;\n    int y;\n}\n", text(b));
+    }
 }

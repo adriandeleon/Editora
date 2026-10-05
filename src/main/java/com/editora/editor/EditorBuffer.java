@@ -5360,10 +5360,10 @@ public class EditorBuffer implements TabContent {
         this.multiCaretEnabled = enabled;
         if (enabled && !hugeFile) {
             if (multiCaret == null) {
-                multiCaret = MultiCarets.install(area);
+                multiCaret = MultiCarets.install(area, this::tabEdit);
             }
             if (area2 != null && multiCaret2 == null) {
-                multiCaret2 = MultiCarets.install(area2);
+                multiCaret2 = MultiCarets.install(area2, this::tabEdit);
             }
         } else {
             disposeMultiCaret();
@@ -6547,7 +6547,7 @@ public class EditorBuffer implements TabContent {
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installImageDrop(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
-            multiCaret2 = MultiCarets.install(area2); // same multi-caret add-on in the split view
+            multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
         }
         area2.setLineHighlighterFill(lineHighlightColor);
         refreshGutter();
@@ -8331,34 +8331,37 @@ public class EditorBuffer implements TabContent {
      * read-only/large-file mode.
      */
     private boolean applySmartTab(CodeArea a, boolean shift) {
-        if (!isEditable() || hugeFile) {
+        Indenter.TabEdit edit = tabEdit(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), shift);
+        if (edit == null) {
             return false;
-        }
-        Indenter.TabEdit edit = Indenter.smartTab(
-                a.getText(),
-                a.getSelection().getStart(),
-                a.getSelection().getEnd(),
-                language,
-                tabSize,
-                shift,
-                indentInsertSpacesOverride,
-                indentSizeOverride);
-        if (edit == null) { // PLAIN (prose/plaintext): no context re-indent, but still the file's indent unit
-            edit = com.editora.editops.PlainTab.edit(
-                    a.getText(),
-                    a.getSelection().getStart(),
-                    a.getSelection().getEnd(),
-                    language,
-                    tabSize,
-                    shift,
-                    indentInsertSpacesOverride,
-                    indentSizeOverride);
         }
         if (edit.from() != edit.to() || !edit.replacement().isEmpty()) {
             a.replaceText(edit.from(), edit.to(), edit.replacement());
         }
         a.selectRange(edit.selStart(), edit.selEnd());
         return true;
+    }
+
+    /** The Tab edit for one selection of {@code text} (every caret's, with several); null = leave the key. */
+    private Indenter.TabEdit tabEdit(String text, int selStart, int selEnd, boolean shift) {
+        if (!isEditable() || hugeFile) {
+            return null;
+        }
+        Indenter.TabEdit edit = Indenter.smartTab(
+                text, selStart, selEnd, language, tabSize, shift, indentInsertSpacesOverride, indentSizeOverride);
+        // PLAIN (prose/plaintext): no context re-indent, but still the file's indent unit.
+        return edit != null
+                ? edit
+                : com.editora.editops.PlainTab.edit(
+                        text,
+                        selStart,
+                        selEnd,
+                        language,
+                        tabSize,
+                        shift,
+                        indentInsertSpacesOverride,
+                        indentSizeOverride);
     }
 
     /**
