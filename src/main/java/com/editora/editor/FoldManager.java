@@ -118,6 +118,8 @@ public final class FoldManager {
     /** Extra CSS class for a line's breakpoint glyph (e.g. {@code conditional}/{@code logpoint}/disabled),
      *  or {@code null} for a plain breakpoint. */
     private IntFunction<String> breakpointClass = i -> null;
+    /** Hover text for a line's breakpoint glyph (what a live debug session says about it), or {@code null}. */
+    private IntFunction<String> breakpointTooltip = i -> null;
     /** Invoked when the user clicks the breakpoint strip on a line (toggles the breakpoint). */
     private IntConsumer onBreakpointToggle = i -> {};
 
@@ -456,18 +458,10 @@ public final class FoldManager {
         // untouched (this runs on every 250 ms settle), and at startup the recompute that setLanguage
         // triggers runs against a still-empty document, measured at ~10 ms of pure forced layout.
         if (!changed.isEmpty()) {
-            int first = 0;
-            int last = -1;
-            try {
-                first = Math.max(0, area.firstVisibleParToAllParIndex());
-                last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            } catch (RuntimeException notLaidOutYet) {
-                last = -1; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
-            }
-            for (int line : changed) {
-                if (line >= first && line <= last) {
-                    area.recreateParagraphGraphic(line);
-                }
+            recreateVisibleGutter(area, changed, total);
+            CodeArea second = secondView.get();
+            if (second != null && second.getScene() != null) { // a split's second view shows the same chevrons
+                recreateVisibleGutter(second, changed, total);
             }
         }
         // The line-number gutter pads to the digit width of the line count (see formatLineNo). Since the
@@ -482,16 +476,35 @@ public final class FoldManager {
         onRegionsChanged.run();
     }
 
+    /** Recreates the gutter graphics of those of {@code lines} (null = all) that {@code view} is showing. */
+    private static void recreateVisibleGutter(CodeArea view, java.util.Collection<Integer> lines, int total) {
+        int first;
+        int last;
+        try {
+            first = Math.max(0, view.firstVisibleParToAllParIndex());
+            last = Math.min(total - 1, view.lastVisibleParToAllParIndex());
+        } catch (RuntimeException notLaidOutYet) {
+            return; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
+        }
+        if (lines == null) {
+            for (int i = first; i <= last; i++) {
+                view.recreateParagraphGraphic(i);
+            }
+            return;
+        }
+        for (int line : lines) {
+            if (line >= first && line <= last) {
+                view.recreateParagraphGraphic(line);
+            }
+        }
+    }
+
     /** Recreates the visible rows' gutter graphics so their line numbers re-pad to a new digit width. */
     private void repadVisibleLineNumbers(int total) {
-        try {
-            int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            for (int i = first; i <= last; i++) {
-                area.recreateParagraphGraphic(i);
-            }
-        } catch (RuntimeException ignored) {
-            // viewport mid-layout — the next build picks up the new width anyway
+        recreateVisibleGutter(area, null, total);
+        CodeArea second = secondView.get();
+        if (second != null && second.getScene() != null) {
+            recreateVisibleGutter(second, null, total);
         }
     }
 
@@ -547,6 +560,11 @@ public final class FoldManager {
         this.isBreakpoint = isBreakpoint == null ? i -> false : isBreakpoint;
         this.breakpointClass = classFor == null ? i -> null : classFor;
         this.onBreakpointToggle = onToggle == null ? i -> {} : onToggle;
+    }
+
+    /** Supplies the hover text of a line's breakpoint glyph ({@code null} = none). */
+    public void setBreakpointTooltip(IntFunction<String> tooltipFor) {
+        this.breakpointTooltip = tooltipFor == null ? i -> null : tooltipFor;
     }
 
     /**
@@ -757,6 +775,7 @@ public final class FoldManager {
         hidePreview();
         int topPar = firstVisiblePar();
         int caret = area.getCaretPosition();
+        int anchor = area.getAnchor();
         int bodyStart = area.getAbsolutePosition(region.startLine(), area.getParagraphLength(region.startLine()));
         int bodyEnd = area.getAbsolutePosition(region.endLine(), area.getParagraphLength(region.endLine()));
 
@@ -764,9 +783,11 @@ public final class FoldManager {
         shadeHeader(region.startLine(), true);
 
         // foldParagraphs() moves the caret to the fold header; restore it unless it was in the
-        // now-hidden body, so folding a block elsewhere doesn't relocate the user's cursor.
+        // now-hidden body, so folding a block elsewhere doesn't relocate the user's cursor — nor drop the
+        // selection it ends, unless that started in the body.
         if (caret <= bodyStart || caret > bodyEnd) {
-            area.moveTo(Math.min(caret, area.getLength()));
+            int to = Math.min(caret, area.getLength());
+            area.selectRange(anchor <= bodyStart || anchor > bodyEnd ? Math.min(anchor, area.getLength()) : to, to);
         }
         restoreViewport(topPar);
         if (!restoring) {
@@ -777,7 +798,12 @@ public final class FoldManager {
     public void unfold(int startLine) {
         hidePreview();
         int topPar = firstVisiblePar();
+        int anchor = area.getAnchor();
+        int caret = area.getCaretPosition();
         area.unfoldParagraphs(startLine);
+        if (anchor != caret) {
+            area.selectRange(anchor, caret); // unfoldParagraphs() collapses the selection, as folding does
+        }
         shadeHeader(startLine, false);
         restoreViewport(topPar);
         if (!restoring) {
@@ -1242,6 +1268,36 @@ public final class FoldManager {
         return idx -> buildGutter(idx, showLineNumbers);
     }
 
+    /**
+     * Keeps a press on a gutter control from also being a press on the text. The gutter is a paragraph
+     * graphic <em>inside</em> the area, so a press that bubbles out of it reaches the area's own handlers,
+     * which move the caret to that row and drop the selection and any extra carets — toggling a breakpoint
+     * or a fold must not cost you your place. The click itself is a separate event and still arrives. One
+     * shared handler: gutter rows are rebuilt as cells recycle.
+     */
+    private static final javafx.event.EventHandler<javafx.scene.input.MouseEvent> OWN_POINTER = e -> {
+        var type = e.getEventType();
+        if (type == javafx.scene.input.MouseEvent.MOUSE_PRESSED) {
+            // The press it swallows was also what focused the editor; keep that, in whichever view this is.
+            for (Node n = (Node) e.getSource(); n != null; n = n.getParent()) {
+                if (n instanceof CodeArea view) {
+                    view.requestFocus();
+                    break;
+                }
+            }
+        }
+        if (type == javafx.scene.input.MouseEvent.MOUSE_PRESSED
+                || type == javafx.scene.input.MouseEvent.MOUSE_DRAGGED
+                || type == javafx.scene.input.MouseEvent.MOUSE_RELEASED
+                || type == javafx.scene.input.MouseEvent.DRAG_DETECTED) {
+            e.consume();
+        }
+    };
+
+    private static void ownPointer(Node control) {
+        control.addEventHandler(javafx.scene.input.MouseEvent.ANY, OWN_POINTER);
+    }
+
     private Node buildGutter(int idx, boolean showLineNumbers) {
         HBox box = new HBox();
         box.getStyleClass().add("fold-gutter");
@@ -1279,7 +1335,12 @@ public final class FoldManager {
             bpSlot.setCursor(Cursor.HAND);
             if (isBreakpoint.test(idx)) {
                 bpSlot.getChildren().add(breakpointMarker(breakpointClass.apply(idx)));
+                String bpTip = breakpointTooltip.apply(idx);
+                if (bpTip != null && !bpTip.isEmpty()) {
+                    Tooltip.install(bpSlot, new Tooltip(bpTip));
+                }
             }
+            ownPointer(bpSlot);
             bpSlot.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY) {
                     onBreakpointToggle.accept(idx);
@@ -1327,6 +1388,7 @@ public final class FoldManager {
                     Tooltip.install(marker, tip);
                 }
                 final int runIdx = idx;
+                ownPointer(marker);
                 marker.setOnMouseClicked(e -> {
                     if (e.getButton() == MouseButton.PRIMARY) {
                         onRun.accept(runIdx);
@@ -1357,6 +1419,7 @@ public final class FoldManager {
             boolean collapsed = isCollapsed(idx);
             chevron.setText(collapsed ? "▸" : "▾"); // ▸ / ▾
             chevron.setCursor(Cursor.HAND);
+            ownPointer(chevron);
             chevron.setOnMouseClicked(e -> {
                 if (isCollapsed(idx)) {
                     unfold(idx);
@@ -1433,6 +1496,7 @@ public final class FoldManager {
         }
         slot.setCursor(Cursor.HAND);
         final int blameIdx = idx;
+        ownPointer(slot);
         slot.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY) {
                 onBlameClick.accept(blameIdx);
@@ -1474,13 +1538,16 @@ public final class FoldManager {
     }
 
     /** A small filled red dot for the gutter breakpoint marker; colored via {@code .breakpoint-marker}.
-     *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}) tweaks the look. */
+     *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}, space-separated when
+     *  there are several) tweaks the look. */
     private Node breakpointMarker(String extraClass) {
         SVGPath svg = new SVGPath();
         svg.setContent(BREAKPOINT_GLYPH_PATH);
         svg.getStyleClass().add("breakpoint-marker");
         if (extraClass != null && !extraClass.isEmpty()) {
-            svg.getStyleClass().add("breakpoint-" + extraClass);
+            for (String one : extraClass.split(" ")) { // a kind and/or the live-session state
+                svg.getStyleClass().add("breakpoint-" + one);
+            }
         }
         svg.setScaleX(0.5);
         svg.setScaleY(0.5);

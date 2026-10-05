@@ -329,8 +329,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final LinkedList<Tab> mru = new LinkedList<>();
     /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
     private final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** Guards programmatic tab reordering so the MRU list listener doesn't drop the moved tab. */
-    private boolean reordering;
     /** The tab currently being dragged to reorder the strip, or null. */
     private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
@@ -1024,7 +1022,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Chrome.PaletteContext paletteContext() {
         EditorBuffer b = activeBuffer();
         boolean debugActive = debugCoordinator != null && debugCoordinator.sessionLive(); // incl. starting/building
-        boolean suspended = dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED;
         return new Chrome.PaletteContext(
                 b != null,
                 git.repoRoot() != null,
@@ -1034,7 +1031,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b != null && b.isTypst(),
                 b != null && b.hasPreview(),
                 debugActive,
-                suspended);
+                dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED,
+                debugCoordinator == null || debugCoordinator.restartAvailable());
     }
 
     private void setupRecentFiles() {
@@ -1641,29 +1639,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.renamedTo", target.getFileName()));
     }
 
-    /** Re-keys every path-keyed session map (folds, markdown mode, spell language, read-only) on rename. */
+    /** Everything stored under the renamed path (a file, or a folder and the files below it) follows it. */
     private void migrateFileState(Path old, Path target) {
-        WorkspaceState ws = config.getWorkspaceState();
-        String oldKey = old.toString();
-        String newKey = target.toString();
-        rekey(ws.getFoldedRegions(), oldKey, newKey);
-        rekey(ws.getMarkdownViewModes(), oldKey, newKey);
-        rekey(ws.getSpellLanguages(), oldKey, newKey);
-        if (ws.getReadOnlyFiles().remove(oldKey)) {
-            ws.getReadOnlyFiles().add(newKey);
-        }
+        RenamedFileState.rekeyWorkspace(config.getWorkspaceState(), old, target);
         if (recentFiles != null) {
             recentFiles.remove(old);
         }
-        // Bookmarks (re-anchored by lineText) and notes (re-keyed by content hash) self-heal on reopen.
-    }
-
-    /** Moves a value from {@code oldKey} to {@code newKey} if present, preserving it across a rename. */
-    private static <V> void rekey(Map<String, V> map, String oldKey, String newKey) {
-        V value = map.remove(oldKey);
-        if (value != null) {
-            map.put(newKey, value);
-        }
+        bookmarkCoordinator.pathRenamed(old, target);
+        notesCoordinator.pathRenamed(old, target);
+        debugCoordinator.pathRenamed(old, target);
     }
 
     /** Syncs editor/session state after the Project tree deletes a file on disk. */
@@ -1774,9 +1758,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchCoordinator.refreshHistory();
     }
 
-    /** Brings this window's Settings window (if showing) in line with preferences changed in another window. */
-    void syncSettingsWindow() {
-        settingsWindow.syncAll();
+    /** This window's Settings window, for {@link WindowManager} to bring in line with a change made elsewhere. */
+    SettingsWindow settingsWindow() {
+        return settingsWindow;
     }
 
     private void rebuildRecentMenu() {
@@ -1920,7 +1904,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // A pin reorder removes+re-adds the same tab, and so does moving one between editor groups
                 // (EditorArea.isRelocating) — in both cases the tab is not closing, so skip the cleanup or
                 // the buffer would be disposed and its language server shut down out from under a live tab.
-                if (c.wasRemoved() && !reordering && !editorArea.isRelocating()) {
+                if (c.wasRemoved() && !editorArea.isRelocating()) {
                     mru.removeAll(c.getRemoved());
                     pinned.removeAll(c.getRemoved());
                     // Tear down each closed buffer. dispose() bumps the generation guards so any
@@ -5067,6 +5051,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
                     lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
                     debugCoordinator.bufferPathChanged(buffer, oldPath);
+                    bookmarkCoordinator.bufferPathChanged(buffer, oldPath); // Save As: its marks go with it
+                    notesCoordinator.bufferPathChanged(buffer, oldPath);
+                    RenamedFileState.copyWorkspace(config.getWorkspaceState(), oldPath, buffer.getPath());
                 }
 
                 @Override
@@ -5107,6 +5094,20 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public Tab tabForPath(Path file) {
                     return MainController.this.tabForPath(file);
+                }
+
+                @Override
+                public boolean openInAnotherWindow(Path file) {
+                    return windowManager != null && windowManager.openInAnotherWindow(MainController.this, file);
+                }
+
+                @Override
+                public void editorConfigSaved() {
+                    if (windowManager == null) {
+                        applyEditorConfigLocal();
+                    } else {
+                        windowManager.editorConfigSavedAcrossWindows();
+                    }
                 }
 
                 @Override
@@ -6360,7 +6361,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         return;
                     }
                     org.fxmisc.richtext.CodeArea area = b.getArea();
-                    int idx = line - 1;
+                    int idx = navigation.areaLine(b, line - 1); // a narrowed area numbers its lines from the region
                     int paragraphs = area.getParagraphs().size();
                     if (idx < 0 || idx >= paragraphs) {
                         setStatus(tr("status.todo.lineChanged")); // the file shrank under the scan snapshot
@@ -7377,6 +7378,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Open buffers in this window whose path is exactly {@code target} or a descendant of it. */
+    void applyEditorConfigLocal() {
+        editorSettings.applyEditorConfigSupport();
+    }
+
     List<EditorBuffer> buffersAtOrUnderLocal(Path target) {
         return OpenBufferLifecycle.atOrUnder(editorArea, MainController::bufferOf, target);
     }
@@ -8230,8 +8235,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             boolean done = false;
             if (draggedTab != null && draggedTab != tab) {
                 // Drop on the right half of the target inserts after it, left half before it.
-                reorderTab(draggedTab, tab, e.getX() > header.getBoundsInLocal().getWidth() / 2);
-                done = true;
+                done = editorArea.moveBeside(
+                        draggedTab, tab, e.getX() > header.getBoundsInLocal().getWidth() / 2, pinned::contains);
             }
             e.setDropCompleted(done);
             e.consume();
@@ -8252,28 +8257,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (on) {
             node.getStyleClass().add(styleClass);
         }
-    }
-
-    /**
-     * Moves {@code dragged} next to {@code target} (after it when {@code after} is true, else before),
-     * keeping pinned tabs grouped at the front: a drop is clamped to the dragged tab's own group.
-     */
-    private void reorderTab(Tab dragged, Tab target, boolean after) {
-        boolean draggedPinned = pinned.contains(dragged);
-        reordering = true;
-        try {
-            editorArea.remove(dragged);
-            // Every index below is read *after* the removal, so it already accounts for the gap it left.
-            int idx = editorArea.indexOf(target) + (after ? 1 : 0);
-            int pinnedInStrip =
-                    (int) editorArea.tabs().stream().filter(pinned::contains).count();
-            int lo = draggedPinned ? 0 : pinnedInStrip;
-            int hi = draggedPinned ? pinnedInStrip : editorArea.size();
-            editorArea.add(Math.max(lo, Math.min(idx, hi)), dragged);
-        } finally {
-            reordering = false;
-        }
-        editorArea.select(dragged);
     }
 
     private static void toggleClass(Tab tab, String styleClass, boolean on) {
@@ -8766,33 +8749,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (tab == null) {
             return;
         }
-        if (pinned.remove(tab)) {
-            // Unpinned: move just past the remaining pinned group.
-            moveTab(tab, pinned.size());
-        } else {
+        if (!pinned.remove(tab)) {
             pinned.add(tab);
-            // Pinned: park at the end of the pinned group so multiple pins stay grouped.
-            moveTab(tab, pinned.size() - 1);
         }
+        // Either way the tab belongs at the end of its strip's pinned group: last of them once pinned, first
+        // after them once unpinned.
+        editorArea.moveToPinBoundary(tab, pinned::contains);
         updateTabMeta(tab, bufferOf(tab));
         setStatus(tr(pinned.contains(tab) ? "status.pinned" : "status.unpinned"));
-    }
-
-    /** Moves {@code tab} to {@code target} without corrupting the MRU (see the reordering guard). */
-    private void moveTab(Tab tab, int target) {
-        int from = editorArea.indexOf(tab);
-        if (from < 0) {
-            return;
-        }
-        reordering = true;
-        try {
-            editorArea.remove(tab);
-            int clamped = Math.max(0, Math.min(target, editorArea.size()));
-            editorArea.add(clamped, tab);
-        } finally {
-            reordering = false;
-        }
-        editorArea.select(tab);
     }
 
     /** Prompts for a new name for the buffer's file; see {@link #renameFileTo}. */
@@ -8822,10 +8786,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.renameFailedExists", target.getFileName()));
             return;
         }
-        // Capture the per-file storage keys while the old file still exists (the note key is the
-        // canonical/real path, which can't be recomputed once the file has moved away).
-        String oldBookmarkKey = old.toString();
-        String oldNoteKey = noteKey(buffer);
         fileWorkflows.invalidatePendingWrite(old);
         try {
             if (caseOnly) {
@@ -8844,9 +8804,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (recentFiles != null) {
             recentFiles.add(target);
         }
-        // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
-        bookmarkCoordinator.migrateKey(oldBookmarkKey, target.toString());
-        notesCoordinator.migrateKey(oldNoteKey, noteKey(buffer));
         statusBar.refresh();
     }
 
@@ -9655,7 +9612,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Log files open in View mode by default — the log viewer is for reading, and follow-tail still
         // appends programmatically while read-only — but the "Enable Editing" banner lets the user opt in.
         boolean logDefault = logViewer.isEnabled() && buffer.isLog();
-        if (shouldOpenReadOnly(persisted, Files.isWritable(file)) || logDefault) {
+        if (shouldOpenReadOnly(persisted, com.editora.vfs.Vfs.isWritableOnDisk(file)) || logDefault) {
             buffer.setViewMode(true);
         }
     }

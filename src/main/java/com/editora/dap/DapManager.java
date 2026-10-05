@@ -93,6 +93,20 @@ public final class DapManager implements DapClient.Host {
         void onOutput(String text, String category);
 
         void onError(String message);
+
+        /**
+         * What the adapter says about {@code file}'s breakpoints (see {@link DapModels.BreakpointStatus}):
+         * with {@code whole}, its answer for all of them — a breakpoint it does not list has no answer yet;
+         * otherwise a later change to the ones listed. Only arrives while a session is live.
+         */
+        default void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {}
+
+        /** The exception {@code threadId} is stopped on; follows the {@link #onStopped} of an exception stop. */
+        default void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {}
+
+        /** A message from the adapter for the user that is not program output — java-debug reports a
+         *  breakpoint condition or logpoint message it could not evaluate this way. */
+        default void onNotice(String message, boolean error) {}
     }
 
     private final LspManager lsp;
@@ -1582,7 +1596,7 @@ public final class DapManager implements DapClient.Host {
                     if (client == c) {
                         cb.accept(
                                 e != null
-                                        ? new DapModels.EvalResult(msg(e), 0, null)
+                                        ? DapModels.EvalResult.failure(msg(e))
                                         : (r == null ? new DapModels.EvalResult("", 0, null) : r));
                     }
                 }));
@@ -1685,7 +1699,45 @@ public final class DapManager implements DapClient.Host {
                     state = State.SUSPENDED;
                     listener.onState(State.SUSPENDED);
                     listener.onStopped(threadId, reason, originalFrames(frames));
+                    if ("exception".equals(reason)) {
+                        reportException(epoch, c, threadId, stopCount);
+                    }
                 }));
+    }
+
+    /** Asks which exception {@code threadId} stopped on and reports it, unless the stop has ended meanwhile. */
+    private void reportException(long epoch, DapClient c, int threadId, int stop) {
+        c.exceptionInfo(threadId)
+                .whenComplete((info, e) -> Platform.runLater(() -> {
+                    if (info != null
+                            && !info.isEmpty()
+                            && isCurrent(epoch, c)
+                            && state == State.SUSPENDED
+                            && stopCount == stop
+                            && currentThreadId == threadId) {
+                        listener.onExceptionInfo(threadId, info);
+                    }
+                }));
+    }
+
+    private void onBreakpointStatus(long epoch, Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch) || file == null) {
+                return;
+            }
+            SourceAlias alias = activeSourceAlias(); // a compiled copy stands in for the file the user sees
+            listener.onBreakpointStatus(
+                    alias != null && alias.compiled().equals(file) ? alias.original() : file, statuses, whole);
+        });
+    }
+
+    private void onNotice(long epoch, String message, boolean error) {
+        Platform.runLater(() -> {
+            if (isCurrent(epoch)) {
+                outputPump.flush(); // keep it after the program output that preceded it
+                listener.onNotice(message, error);
+            }
+        });
     }
 
     @Override
@@ -1858,6 +1910,16 @@ public final class DapManager implements DapClient.Host {
             @Override
             public void onError(String message) {
                 DapManager.this.onError(epoch, message);
+            }
+
+            @Override
+            public void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+                DapManager.this.onBreakpointStatus(epoch, file, statuses, whole);
+            }
+
+            @Override
+            public void onNotice(String message, boolean error) {
+                DapManager.this.onNotice(epoch, message, error);
             }
 
             @Override

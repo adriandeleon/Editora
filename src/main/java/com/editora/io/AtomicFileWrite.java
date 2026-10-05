@@ -56,6 +56,8 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  * cannot reach or would damage — a writable file in a directory that does not allow new entries, a file
  * that cannot be renamed over, one with several hard links or another owner: the previous bytes are first
  * copied to a backup file, and only then is the target overwritten in place (see {@link Outcome#IN_PLACE}).
+ * The same holds for a file on an SFTP server; its backup is a local file, so the previous bytes survive
+ * the connection.
  */
 public final class AtomicFileWrite {
 
@@ -147,6 +149,22 @@ public final class AtomicFileWrite {
         @Override
         public void writeNew(Path path, byte[] bytes) throws IOException {
             Files.write(path, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        }
+
+        @Override
+        public void overwrite(Path path, byte[] bytes) throws IOException {
+            if (isRemote(path)) {
+                // No fsync over SFTP; the caller holds the previous bytes in a local backup meanwhile.
+                try {
+                    Files.write(path, bytes, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                } catch (RuntimeException closed) {
+                    // A closed SFTP filesystem throws unchecked; the caller's restore-or-keep-the-backup
+                    // handling must see it as the failed write it is.
+                    throw new IOException(String.valueOf(closed.getMessage()), closed);
+                }
+                return;
+            }
+            FileOperations.super.overwrite(path, bytes);
         }
 
         @Override
@@ -297,14 +315,20 @@ public final class AtomicFileWrite {
         if (dir == null || !files.isDirectory(dir)) {
             return writeUnstagedNewTarget(target, bytes, commit, files, null);
         }
-        if (inPlaceAllowed && hasOtherLinks(target) && canOverwrite(target)) {
+        boolean remote = isRemote(target);
+        if (inPlaceAllowed && canOverwrite(target) && hasOtherLinks(target)) {
             return writeInPlace(target, bytes, commit, files, backupDir, null);
+        }
+        if (remote) {
+            SftpFiles.sweepOrphans(target);
         }
         Path tmp;
         try {
             tmp = createStagingFile(files, dir, target);
         } catch (IOException cannotStage) {
-            if (inPlaceAllowed && canOverwrite(target)) {
+            // Over SFTP only a refusal for permissions leads to an in-place write: a full disk, a quota or a
+            // failing link is no reason to truncate the one good copy on the server.
+            if (inPlaceAllowed && (!remote || SftpFiles.permissionDenied(cannotStage)) && canOverwrite(target)) {
                 return writeInPlace(target, bytes, commit, files, backupDir, cannotStage);
             }
             return writeUnstagedNewTarget(target, bytes, commit, files, cannotStage);
@@ -345,7 +369,7 @@ public final class AtomicFileWrite {
             }
         } finally {
             if (!replaced) {
-                files.deleteIfExists(tmp);
+                discardStaged(files, tmp);
             }
         }
         return writeInPlace(target, bytes, commit, files, backupDir, cannotReplace);
@@ -364,16 +388,33 @@ public final class AtomicFileWrite {
         return Outcome.REPLACED;
     }
 
-    /** An existing local regular file this process may write: the only thing ever overwritten in place. */
+    /**
+     * An existing regular file this process may write: the only thing ever overwritten in place. For a
+     * remote file "may write" is read off its mode bits ({@code Files.isWritable} says yes to 0444 there).
+     */
     private static boolean canOverwrite(Path target) {
-        return !isRemote(target) && Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS) && Files.isWritable(target);
+        if (isRemote(target)) {
+            return SftpFiles.looksOverwritable(target);
+        }
+        return Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS) && Files.isWritable(target);
+    }
+
+    /** Removes an unused staging file; over SFTP that can fail with the connection, and must not mask why. */
+    private static void discardStaged(FileOperations files, Path tmp) throws IOException {
+        if (isRemote(tmp)) {
+            SftpFiles.discardStaged(tmp);
+        } else {
+            files.deleteIfExists(tmp);
+        }
     }
 
     /** True when {@code target} has another name: a replacement would leave that name on the old content. */
     private static boolean hasOtherLinks(Path target) {
+        if (isRemote(target)) {
+            return SftpFiles.hasOtherLinks(target);
+        }
         try {
-            return !isRemote(target)
-                    && Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)
+            return Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)
                     && Files.getAttribute(target, "unix:nlink") instanceof Integer links
                     && links > 1;
         } catch (IOException | RuntimeException noLinkCount) {
@@ -387,6 +428,9 @@ public final class AtomicFileWrite {
      * away, so a file that belongs to someone else is written in place rather than re-owned by a save.
      */
     private static boolean keepsOwnership(Path target, Path tmp) {
+        if (isRemote(target)) {
+            return SftpFiles.sameOwner(target, tmp);
+        }
         try {
             if (!Objects.equals(Files.getAttribute(target, "unix:uid"), Files.getAttribute(tmp, "unix:uid"))) {
                 return false;
@@ -429,6 +473,10 @@ public final class AtomicFileWrite {
             try {
                 files.overwrite(target, bytes);
             } catch (IOException torn) {
+                if (isRemote(target) && unchanged(files, target, previous)) {
+                    // The server refused before anything was written (the usual "permission denied").
+                    throw new IOException("Could not write " + target + " in place: " + torn.getMessage(), torn);
+                }
                 try {
                     files.overwrite(target, previous);
                 } catch (IOException notRestored) {
@@ -453,6 +501,14 @@ public final class AtomicFileWrite {
                     // The save itself is decided; a stray backup copy must not turn it into a failure.
                 }
             }
+        }
+    }
+
+    private static boolean unchanged(FileOperations files, Path target, byte[] previous) {
+        try {
+            return Arrays.equals(previous, files.readAllBytes(target));
+        } catch (IOException | RuntimeException unreadable) {
+            return false;
         }
     }
 
@@ -539,7 +595,7 @@ public final class AtomicFileWrite {
             return true;
         } finally {
             if (!replaced) {
-                files.deleteIfExists(tmp);
+                discardStaged(files, tmp);
             }
         }
     }
@@ -576,8 +632,11 @@ public final class AtomicFileWrite {
      */
     static Path resolveLink(Path file) {
         try {
+            if (isRemote(file)) {
+                return SftpFiles.resolveLink(file); // an SFTP path's toRealPath() does not follow links
+            }
             return Files.isSymbolicLink(file) ? file.toRealPath() : file;
-        } catch (IOException brokenLink) {
+        } catch (IOException | RuntimeException brokenLink) {
             return file;
         }
     }

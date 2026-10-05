@@ -16,18 +16,26 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.editora.process.ProcessRegistry;
+import org.eclipse.lsp4j.debug.Breakpoint;
+import org.eclipse.lsp4j.debug.BreakpointEventArguments;
+import org.eclipse.lsp4j.debug.BreakpointEventArgumentsReason;
+import org.eclipse.lsp4j.debug.BreakpointNotVerifiedReason;
 import org.eclipse.lsp4j.debug.Capabilities;
 import org.eclipse.lsp4j.debug.ConfigurationDoneArguments;
 import org.eclipse.lsp4j.debug.ContinueArguments;
 import org.eclipse.lsp4j.debug.ContinuedEventArguments;
 import org.eclipse.lsp4j.debug.DisconnectArguments;
 import org.eclipse.lsp4j.debug.EvaluateArguments;
+import org.eclipse.lsp4j.debug.ExceptionDetails;
+import org.eclipse.lsp4j.debug.ExceptionInfoArguments;
+import org.eclipse.lsp4j.debug.ExceptionInfoResponse;
 import org.eclipse.lsp4j.debug.InitializeRequestArguments;
 import org.eclipse.lsp4j.debug.NextArguments;
 import org.eclipse.lsp4j.debug.OutputEventArguments;
 import org.eclipse.lsp4j.debug.Scope;
 import org.eclipse.lsp4j.debug.ScopesArguments;
 import org.eclipse.lsp4j.debug.SetBreakpointsArguments;
+import org.eclipse.lsp4j.debug.SetBreakpointsResponse;
 import org.eclipse.lsp4j.debug.SetExceptionBreakpointsArguments;
 import org.eclipse.lsp4j.debug.SetVariableArguments;
 import org.eclipse.lsp4j.debug.Source;
@@ -44,6 +52,7 @@ import org.eclipse.lsp4j.debug.launch.DSPLauncher;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
 import org.eclipse.lsp4j.jsonrpc.Launcher;
+import org.eclipse.lsp4j.jsonrpc.services.JsonNotification;
 
 /**
  * One Debug Adapter Protocol session over a TCP socket to the Microsoft java-debug adapter (started inside
@@ -98,6 +107,17 @@ public final class DapClient implements IDebugProtocolClient {
         default void onTransportClosed(Throwable error) {
             onTerminated();
         }
+
+        /**
+         * What the adapter says about {@code file}'s breakpoints. {@code whole} is a {@code setBreakpoints}
+         * answer, standing for every breakpoint of the file (one not listed has no answer yet); otherwise
+         * the statuses are {@code breakpoint} events, each changing one breakpoint and leaving the rest.
+         */
+        default void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {}
+
+        /** Something the adapter wants the user told that is not program output (java-debug's
+         *  {@code usernotification}: a breakpoint condition or log message it could not evaluate). */
+        default void onNotice(String message, boolean error) {}
     }
 
     private final Host host;
@@ -418,7 +438,50 @@ public final class DapClient implements IDebugProtocolClient {
     @Override
     public void stopped(StoppedEventArguments args) {
         Integer tid = args.getThreadId();
-        host.onStopped(tid == null ? 0 : tid, args.getReason(), Boolean.TRUE.equals(args.getAllThreadsStopped()));
+        int threadId = tid == null ? 0 : tid;
+        // Kept for exceptionInfo(): the only description of an exception stop some adapters ever give.
+        String text = args.getText() != null && !args.getText().isBlank() ? args.getText() : args.getDescription();
+        if (text == null || text.isBlank()) {
+            stopTexts.remove(threadId);
+        } else {
+            stopTexts.put(threadId, text.strip());
+        }
+        host.onStopped(threadId, args.getReason(), Boolean.TRUE.equals(args.getAllThreadsStopped()));
+    }
+
+    /**
+     * The adapter changed its mind about a breakpoint after answering {@code setBreakpoints} — how java-debug
+     * reports that a breakpoint was bound once its class loaded. The event names the breakpoint by id only.
+     */
+    @Override
+    public void breakpoint(BreakpointEventArguments args) {
+        Breakpoint b = args == null ? null : args.getBreakpoint();
+        if (b == null || disposed || BreakpointEventArgumentsReason.REMOVED.equals(args.getReason())) {
+            return;
+        }
+        BreakpointKey key = b.getId() == null ? null : breakpointIds.get(b.getId());
+        if (key == null) {
+            Path file = sourcePath(b.getSource());
+            if (file == null || b.getLine() == null || b.getLine() < 1) {
+                return; // nothing says which of the breakpoints this is
+            }
+            key = new BreakpointKey(file, b.getLine() - 1);
+        }
+        host.onBreakpointStatus(key.file(), List.of(status(key.line(), b)), false);
+    }
+
+    /** The body of java-debug's {@code usernotification} event (not part of the protocol). */
+    public static final class UserNotification {
+        String notificationType;
+        String message;
+    }
+
+    /** java-debug's way of saying a breakpoint condition or a logpoint message failed to evaluate. */
+    @JsonNotification("usernotification")
+    public void userNotification(UserNotification args) {
+        if (args != null && args.message != null && !args.message.isBlank() && !disposed) {
+            host.onNotice(args.message.strip(), "ERROR".equalsIgnoreCase(args.notificationType));
+        }
     }
 
     @Override
@@ -584,6 +647,16 @@ public final class DapClient implements IDebugProtocolClient {
             public void onTransportClosed(Throwable error) {
                 childEnded(child);
             }
+
+            @Override
+            public void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+                host.onBreakpointStatus(file, statuses, whole);
+            }
+
+            @Override
+            public void onNotice(String message, boolean error) {
+                host.onNotice(message, error);
+            }
         };
     }
 
@@ -642,7 +715,120 @@ public final class DapClient implements IDebugProtocolClient {
         a.setSource(source);
         a.setBreakpoints(sbs.toArray(new SourceBreakpoint[0]));
         a.setSourceModified(false);
-        return timed(server.setBreakpoints(a)).thenApply(r -> null);
+        List<DapModels.LineBreakpoint> sent = List.copyOf(fb.breakpoints());
+        return timed(server.setBreakpoints(a))
+                .whenComplete((r, e) -> reportBreakpoints(fb.file(), sent, r, e))
+                .thenApply(r -> null);
+    }
+
+    /** Which breakpoint an adapter-assigned id stands for: {@code breakpoint} events carry only the id. */
+    private record BreakpointKey(Path file, int line) {}
+
+    private final Map<Integer, BreakpointKey> breakpointIds = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** The text of each thread's last stop event, when it had one. */
+    private final Map<Integer, String> stopTexts = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Passes a {@code setBreakpoints} answer on: the adapter answers in the order the breakpoints were sent. */
+    private void reportBreakpoints(
+            Path file, List<DapModels.LineBreakpoint> sent, SetBreakpointsResponse response, Throwable error) {
+        if (disposed || (root == null && !children.isEmpty())) {
+            // A session that only starts child sessions (js-debug's first connection) debugs nothing: its
+            // "unbound" answers would overwrite what the session that owns the program said.
+            return;
+        }
+        List<DapModels.BreakpointStatus> statuses = new ArrayList<>();
+        if (error != null) {
+            String message = adapterMessage(error);
+            if (message == null) {
+                return; // no answer (a timeout): nothing is known, which is not the same as rejected
+            }
+            for (DapModels.LineBreakpoint lb : sent) {
+                statuses.add(new DapModels.BreakpointStatus(lb.line(), false, true, message, -1));
+            }
+        } else {
+            breakpointIds.values().removeIf(key -> key.file().equals(file));
+            Breakpoint[] answered = response == null ? null : response.getBreakpoints();
+            for (int i = 0; answered != null && i < answered.length && i < sent.size(); i++) {
+                Breakpoint b = answered[i];
+                if (b == null) {
+                    continue;
+                }
+                int line = sent.get(i).line();
+                if (b.getId() != null) {
+                    breakpointIds.put(b.getId(), new BreakpointKey(file, line));
+                }
+                statuses.add(status(line, b));
+            }
+        }
+        host.onBreakpointStatus(file, statuses, true);
+    }
+
+    /** Pure: one adapter breakpoint as a {@link DapModels.BreakpointStatus} for the 0-based line asked for. */
+    static DapModels.BreakpointStatus status(int requestedLine, Breakpoint b) {
+        boolean verified = b.isVerified();
+        boolean failed = !verified && b.getReason() == BreakpointNotVerifiedReason.FAILED;
+        Integer line = b.getLine();
+        return new DapModels.BreakpointStatus(
+                requestedLine, verified, failed, b.getMessage(), line == null || line < 1 ? -1 : line - 1);
+    }
+
+    /** What the adapter said when it refused a request, or null when the failure is not an answer at all. */
+    private static String adapterMessage(Throwable error) {
+        for (Throwable t = error; t != null; t = t.getCause()) {
+            if (t instanceof org.eclipse.lsp4j.jsonrpc.ResponseErrorException refused) {
+                String message = refused.getResponseError() == null
+                        ? refused.getMessage()
+                        : refused.getResponseError().getMessage();
+                return message == null || message.isBlank() ? null : message;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The exception {@code threadId} is stopped on, or null when the adapter cannot say. Asks
+     * {@code exceptionInfo} where the adapter supports it; otherwise (and when that fails) falls back to the
+     * text its stop event carried.
+     */
+    public CompletableFuture<DapModels.ExceptionInfo> exceptionInfo(int threadId) {
+        DapClient session = target();
+        if (session != this) {
+            return session.exceptionInfo(threadId);
+        }
+        String stopText = stopTexts.get(threadId);
+        DapModels.ExceptionInfo fromStop = stopText == null ? null : new DapModels.ExceptionInfo("", stopText);
+        Capabilities caps = capabilities;
+        if (server == null || caps == null || !Boolean.TRUE.equals(caps.getSupportsExceptionInfoRequest())) {
+            return CompletableFuture.completedFuture(fromStop);
+        }
+        ExceptionInfoArguments a = new ExceptionInfoArguments();
+        a.setThreadId(threadId);
+        return timed(server.exceptionInfo(a))
+                .thenApply(r -> {
+                    DapModels.ExceptionInfo info = exceptionInfo(r);
+                    return info == null ? fromStop : info;
+                })
+                .exceptionally(e -> fromStop);
+    }
+
+    /** Pure: the type and message of an {@code exceptionInfo} answer; null when it names neither. */
+    static DapModels.ExceptionInfo exceptionInfo(ExceptionInfoResponse r) {
+        if (r == null) {
+            return null;
+        }
+        ExceptionDetails d = r.getDetails();
+        String type = d != null
+                        && d.getFullTypeName() != null
+                        && !d.getFullTypeName().isBlank()
+                ? d.getFullTypeName()
+                : d != null && d.getTypeName() != null && !d.getTypeName().isBlank()
+                        ? d.getTypeName()
+                        : r.getExceptionId();
+        String message =
+                d != null && d.getMessage() != null && !d.getMessage().isBlank() ? d.getMessage() : r.getDescription();
+        DapModels.ExceptionInfo info = new DapModels.ExceptionInfo(type, message);
+        return info.isEmpty() ? null : info;
     }
 
     /** Replaces {@code fb}'s file in the set installed on a session's {@code initialized} event. */

@@ -105,6 +105,43 @@ class NarrowedNavigationFxTest {
         assertFalse(FxTestSupport.callOnFx(b::isNarrowed));
     }
 
+    /** A TODO tool-window edit names a document line; a narrowed area numbers its lines from the region. */
+    private void todoEdit(EditorBuffer b, int line1, String expected, String replacement) throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                e.fx.controller,
+                "applyTodoLineEdit",
+                new Class<?>[] {Path.class, int.class, String.class, String.class, Runnable.class},
+                b.getPath(),
+                line1,
+                expected,
+                replacement,
+                null));
+        e.pulses(25);
+    }
+
+    @Test
+    void aTodoEditInsideTheRegionEditsThatLineAndStaysNarrowed() throws Exception {
+        EditorBuffer b = narrowed("todo-inside.txt");
+        todoEdit(b, 22, "line 22", "line 22 done"); // used to compare against region line 22: "line changed"
+        assertTrue(FxTestSupport.callOnFx(b::isNarrowed));
+        assertEquals(
+                "line 22 done",
+                FxTestSupport.callOnFx(() -> b.getArea().getParagraph(2).getText()));
+        String[] document = FxTestSupport.callOnFx(b::getContent).split("\n", -1);
+        assertEquals("line 22 done", document[21]);
+        assertEquals("line 3", document[2], "and no other line was touched");
+    }
+
+    @Test
+    void aTodoEditOutsideTheRegionWidensAndEditsTheRightLine() throws Exception {
+        EditorBuffer b = narrowed("todo-outside.txt");
+        todoEdit(b, 3, "line 3", "line 3 done"); // region line 3 reads "line 22": it used to refuse
+        assertFalse(FxTestSupport.callOnFx(b::isNarrowed), "widened to reach it");
+        String[] document = FxTestSupport.callOnFx(b::getContent).split("\n", -1);
+        assertEquals("line 3 done", document[2]);
+        assertEquals("line 22", document[21]);
+    }
+
     @Test
     void theNarrowedChipBelongsToTheNarrowedTabOnly() throws Exception {
         EditorBuffer a = narrowed("chip-a.txt");
