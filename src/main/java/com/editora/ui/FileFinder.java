@@ -255,8 +255,20 @@ public class FileFinder {
         if (selected != null) {
             return selected;
         }
-        String text = input.getText();
-        return text.isBlank() ? null : Path.of(text);
+        return typedPath(input.getText(), currentDir);
+    }
+
+    /**
+     * The path a typed text names: a bare name belongs to the directory being listed, exactly as the list
+     * shows it filtered — not to the process working directory, where {@code Path.of("notes.txt")} put a new
+     * buffer and its first save.
+     */
+    static Path typedPath(String text, Path currentDir) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Path typed = Path.of(text);
+        return typed.isAbsolute() || currentDir == null ? typed : currentDir.resolve(typed);
     }
 
     private void descendInto(Path dir) {

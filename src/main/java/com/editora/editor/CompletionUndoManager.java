@@ -19,6 +19,9 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
     private final UndoManager<C> delegate;
     private final CompletionUndoFactory.RebasableQueue<?> queue;
     private final ArrayDeque<Group<C>> groups = new ArrayDeque<>();
+    /** Follow-up edits joined onto a user edit (see {@link #joinLast}); kept apart so they never evict a completion. */
+    private final ArrayDeque<Group<C>> joins = new ArrayDeque<>();
+
     private Group<C> recording;
     private Subscription capture;
     private boolean closed;
@@ -35,12 +38,51 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
 
     @SuppressWarnings("unchecked")
     void replaceEntries(java.util.IdentityHashMap<?, ?> replacements) {
-        for (var group : groups) {
-            for (int i = 0; i < group.changes.size(); i++) {
-                Object replacement = replacements.get(group.changes.get(i));
-                if (replacement != null) group.changes.set(i, (C) replacement);
+        for (var all : List.of(groups, joins)) {
+            for (var group : all) {
+                for (int i = 0; i < group.changes.size(); i++) {
+                    Object replacement = replacements.get(group.changes.get(i));
+                    if (replacement != null) group.changes.set(i, (C) replacement);
+                }
             }
         }
+    }
+
+    /** Every group, newest first, the joined ones ahead of the completions. */
+    private List<Group<C>> newestFirst() {
+        var out = new ArrayList<Group<C>>(joins.size() + groups.size());
+        joins.descendingIterator().forEachRemaining(out::add);
+        groups.descendingIterator().forEachRemaining(out::add);
+        return out;
+    }
+
+    private Runnable beginJoined() {
+        C last = delegate.getNextUndo();
+        if (closed || recording != null || last == null || delegate.isPerformingAction()) return () -> {};
+        Group<C> group = null;
+        for (var candidate : newestFirst()) {
+            if (candidate.valid && !candidate.changes.isEmpty() && candidate.changes.getLast() == last) {
+                group = candidate; // already the tail of a step: extend that one
+                break;
+            }
+        }
+        if (group == null) {
+            group = new Group<>();
+            group.changes.add(last);
+            if (joins.size() == MAX_GROUPS) joins.removeFirst();
+            joins.addLast(group);
+        }
+        begin(group);
+        return this::end;
+    }
+
+    /**
+     * Makes the edits applied until the returned action runs part of the undo step of the change recorded
+     * last — for an edit that follows from the user's own and cannot merge with it because it is elsewhere
+     * in the document (a snippet field's mirrors). A no-op inside a completion, which is grouped already.
+     */
+    static Runnable joinLast(CodeArea area) {
+        return area.getUndoManager() instanceof CompletionUndoManager<?> manager ? manager.beginJoined() : () -> {};
     }
 
     private void begin(Group<C> group) {
@@ -99,6 +141,41 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         };
     }
 
+    /** Runs {@code action} with its edits grouped, for undo and redo, with the edit now on top of the history. */
+    private void joinLast(Runnable action) {
+        C last = delegate.getNextUndo();
+        if (closed || recording != null || last == null || delegate.isPerformingAction()) {
+            action.run();
+            return;
+        }
+        var group = new Group<C>();
+        group.changes.add(last);
+        if (groups.size() == MAX_GROUPS) groups.removeFirst();
+        groups.addLast(group);
+        begin(group);
+        try {
+            action.run();
+        } finally {
+            end();
+        }
+    }
+
+    /**
+     * Runs {@code action} so that whatever it edits is undone and redone together with the edit that was
+     * just committed — a follow-up that belongs to the user's keystroke (the paired-tag rename) must not
+     * be a separate undo step, or one undo leaves the document in a state the user never made.
+     */
+    static void joinLastEdit(CodeArea first, CodeArea second, Runnable action) {
+        Runnable run = action;
+        for (CodeArea area : second == null ? List.of(first) : List.of(first, second)) {
+            if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) {
+                Runnable inner = run;
+                run = () -> manager.joinLast(inner);
+            }
+        }
+        run.run();
+    }
+
     static Runnable begin(CodeArea first, CodeArea second) {
         var ends = new ArrayList<Runnable>();
         for (CodeArea area : second == null ? List.of(first) : List.of(first, second)) {
@@ -132,9 +209,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
     private boolean perform(boolean redo) {
         C next = redo ? delegate.getNextRedo() : delegate.getNextUndo();
         if (next == null) return false;
-        var reverse = groups.descendingIterator();
-        while (reverse.hasNext()) {
-            var group = reverse.next();
+        for (var group : newestFirst()) {
             if (!group.valid || group.changes.isEmpty()) continue;
             int first = redo ? 0 : group.changes.size() - 1;
             if (group.changes.get(first) != next) continue;
@@ -198,6 +273,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
     @Override
     public void forgetHistory() {
         groups.clear();
+        joins.clear();
         delegate.forgetHistory();
     }
 
@@ -221,6 +297,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         closed = true;
         end();
         groups.clear();
+        joins.clear();
         delegate.close();
     }
 }

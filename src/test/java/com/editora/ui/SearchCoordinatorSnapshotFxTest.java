@@ -66,7 +66,7 @@ class SearchCoordinatorSnapshotFxTest {
         }
     }
 
-    private static SearchCoordinator coordinator(RecordingHost host, Path root) throws Exception {
+    private static SearchCoordinator coordinator(CoordinatorHostStub host, Path root) throws Exception {
         DocumentWriteSequencer sequencer = new DocumentWriteSequencer();
         SearchCoordinator.Ops ops = SearchCoordinator.ops(
                 new SearchCoordinator.Navigation(
@@ -228,5 +228,124 @@ class SearchCoordinatorSnapshotFxTest {
         assertFalse(snapshot.matches(new SearchQuery("y", true, false, false), "*.{js,ts},src/**", "target"));
         assertFalse(snapshot.matches(same, "*.js", "target"));
         assertFalse(snapshot.matches(same, "*.{js,ts},src/**", ""));
+    }
+
+    // --- round two ------------------------------------------------------------------------------------------
+
+    /** Collects what the coordinator reports through {@code setError}. */
+    private static final class ErrorHost extends CoordinatorHostStub {
+        final List<String> errors = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final List<String> statuses = new java.util.concurrent.CopyOnWriteArrayList<>();
+        final AtomicInteger opened = new AtomicInteger();
+
+        @Override
+        public AutoCloseable startBackgroundTask(String label) {
+            opened.incrementAndGet();
+            return () -> {};
+        }
+
+        @Override
+        public void setStatus(String message) {
+            statuses.add(message);
+        }
+
+        @Override
+        public void setError(String message) {
+            errors.add(message);
+        }
+    }
+
+    /** A12-17: the tool window reported an invalid regex as "No results". */
+    @Test
+    void anInvalidRegexIsReportedInsteadOfSearched(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("a.txt"), "toString(\n");
+        ErrorHost host = new ErrorHost();
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            SearchCoordinator coordinator = coordinator(host, dir);
+            async.onClose(coordinator::shutdown);
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    coordinator,
+                    "runFileSearch",
+                    new Class[] {SearchQuery.class, String.class, String.class},
+                    new SearchQuery("toString(", true, true, false),
+                    "",
+                    ""));
+            async.awaitFx();
+
+            assertEquals(1, host.errors.size(), "the syntax error is shown: " + host.statuses);
+            assertEquals(0, host.opened.get(), "nothing was searched");
+            assertFalse(host.statuses.contains(tr("search.none")));
+            String summary = FxTestSupport.callOnFx(
+                    () -> FxTestSupport.<javafx.scene.control.Label>field(coordinator.panel(), "summary")
+                            .getText());
+            assertEquals(host.errors.get(0), summary, "and in the panel, where the result count would be");
+        }
+    }
+
+    /** A12-16: "$cost" in regex mode made every file answer "nothing replaced", reported as a success. */
+    @Test
+    void anInvalidRegexReplacementIsRefusedBeforeAnyFileIsTouched(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("a.txt"), "cost\n");
+        ErrorHost host = new ErrorHost();
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            SearchCoordinator coordinator = coordinator(host, dir);
+            async.onClose(coordinator::shutdown);
+            SearchCoordinator.ReplaceResult result = FxTestSupport.callOnFx(() -> coordinator
+                    .replaceInFiles(new SearchQuery("cost", true, true, false), "$cost", List.of(file))
+                    .get(10, java.util.concurrent.TimeUnit.SECONDS));
+
+            assertEquals(0, result.count());
+            assertEquals(1, host.errors.size(), "statuses: " + host.statuses);
+            assertTrue(host.errors.get(0).startsWith(tr("find.badReplacement", "")), host.errors.get(0));
+            assertFalse(host.statuses.contains(tr("search.replaced", 0, 0)), "not reported as a clean run");
+            assertEquals("cost\n", Files.readString(file));
+        }
+    }
+
+    /** A12-3: the rewrite renames a temp file over the target, which a read-only target does not stop. */
+    @Test
+    void aReadOnlyClosedFileIsReportedNotRewritten(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("generated.txt"), "old value\nkeep\n");
+        org.junit.jupiter.api.Assumptions.assumeTrue(file.toFile().setWritable(false) && !Files.isWritable(file));
+        try {
+            SearchCoordinator.ClosedReplace result = SearchCoordinator.replaceClosedFile(
+                    file, new SearchQuery("old", true, false, false), "NEW", original -> {});
+            assertTrue(result.failed(), "listed among the files that could not be changed");
+            assertFalse(result.changed());
+            assertEquals("old value\nkeep\n", Files.readString(file));
+
+            SearchCoordinator.ClosedReplace noMatch = SearchCoordinator.replaceClosedFile(
+                    file, new SearchQuery("absent", true, false, false), "NEW", original -> {});
+            assertFalse(noMatch.failed(), "a read-only file with nothing to replace is not a failure");
+        } finally {
+            file.toFile().setWritable(true);
+        }
+    }
+
+    /** A12-23: the first (asynchronous) ripgrep detection told the panel and forgot the popup's badge. */
+    @Test
+    void theFirstRipgrepDetectionIsRecordedForThePopupToo(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                com.editora.search.Ripgrep.detect(List.of("rg")), "ripgrep is not installed");
+        com.editora.config.Settings settings = new com.editora.config.Settings();
+        settings.setRipgrepSearch(true);
+        settings.setRipgrepCommand("");
+        CoordinatorHostStub host = new CoordinatorHostStub() {
+            @Override
+            public com.editora.config.Settings settings() {
+                return settings;
+            }
+        };
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            SearchCoordinator coordinator = coordinator(host, dir);
+            async.onClose(coordinator::shutdown);
+            FxTestSupport.runOnFx(coordinator::applyRipgrepSupport);
+            boolean recorded = false;
+            for (int i = 0; i < 400 && !recorded; i++) {
+                Thread.sleep(25);
+                recorded = FxTestSupport.callOnFx(() -> FxTestSupport.<Boolean>field(coordinator, "backendRipgrep"));
+            }
+            assertTrue(recorded, "the value the popup's badge is set from when it is shown");
+        }
     }
 }

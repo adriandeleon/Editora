@@ -267,7 +267,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
     /** Sets the active file so its group sorts to the top under "group by file". Re-sorts without re-scanning. */
     public void setActiveFile(Path normalizedActive) {
-        if (java.util.Objects.equals(activeFile, normalizedActive)) {
+        if (com.editora.config.PathKeys.samePath(activeFile, normalizedActive)) {
             return;
         }
         activeFile = normalizedActive;

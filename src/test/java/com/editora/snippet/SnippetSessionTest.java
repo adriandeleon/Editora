@@ -126,4 +126,85 @@ class SnippetSessionTest {
         assertEquals(List.of("a", "b", "c"), s.choices());
         assertEquals(true, s.hasChoices());
     }
+
+    // --- normalize: line endings and the buffer's indent unit (A4-3) ---
+
+    @Test
+    void normalizeConvertsLeadingTabsToTheIndentUnitAndShiftsStops() {
+        // "key:\n\t${2:subkey}: v" — the stop sits after the tab.
+        ParsedSnippet p =
+                new ParsedSnippet("key:\n\tsubkey: v", List.of(new TabStop(2, ranges(new int[] {6, 12}), "")));
+        ParsedSnippet out = SnippetSession.normalize(p, "  ");
+        assertEquals("key:\n  subkey: v", out.text());
+        assertArrayEquals(new int[] {7, 13}, out.stops().get(0).ranges().get(0));
+    }
+
+    @Test
+    void normalizeKeepsTabsForATabIndentedBufferAndTabsInsideALine() {
+        ParsedSnippet p = new ParsedSnippet("a:\n\tb\tc", List.of());
+        assertEquals("a:\n\tb\tc", SnippetSession.normalize(p, "\t").text());
+        assertEquals("a:\n\tb\tc", SnippetSession.normalize(p, null).text());
+        assertEquals("a:\n    b\tc", SnippetSession.normalize(p, "    ").text(), "only indentation is converted");
+    }
+
+    @Test
+    void normalizeCollapsesCrLfSoStopsMatchWhatTheAreaStores() {
+        // if (${1:cond}) {\r\n\t${2:body}\r\n}${3:tail}$0
+        String t = "if (cond) {\r\n\tbody\r\n}tail";
+        ParsedSnippet p = new ParsedSnippet(
+                t,
+                List.of(
+                        new TabStop(1, ranges(new int[] {4, 8}), ""),
+                        new TabStop(2, ranges(new int[] {14, 18}), ""),
+                        new TabStop(3, ranges(new int[] {21, 25}), ""),
+                        new TabStop(0, ranges(new int[] {25, 25}), "")));
+        ParsedSnippet out = SnippetSession.normalize(p, null);
+        assertEquals("if (cond) {\n\tbody\n}tail", out.text());
+        assertEquals(
+                "body",
+                out.text()
+                        .substring(
+                                out.stops().get(1).ranges().get(0)[0],
+                                out.stops().get(1).ranges().get(0)[1]));
+        assertEquals(
+                "tail",
+                out.text()
+                        .substring(
+                                out.stops().get(2).ranges().get(0)[0],
+                                out.stops().get(2).ranges().get(0)[1]));
+        assertArrayEquals(new int[] {23, 23}, out.stops().get(3).ranges().get(0));
+        assertEquals(
+                "a\nb\nc",
+                SnippetSession.normalize(new ParsedSnippet("a\rb\r\nc", List.of()), null)
+                        .text());
+    }
+
+    // --- shift with the parser's nesting order in slots 2 and 3 ---
+
+    @Test
+    void identicalOffsetsAreToldApartByTheNestingOrder() {
+        // `${2:${1}foo}`: $1 = [10,10] nested at the start of $2 = [10,13]. Typing in $1 grows $2.
+        List<int[]> nested = ranges(new int[] {10, 10, 1, 2}, new int[] {10, 13, 0, 3});
+        SnippetSession.shift(nested, 0, 10, 0, 1);
+        assertArrayEquals(new int[] {10, 11, 1, 2}, nested.get(0));
+        assertArrayEquals(new int[] {10, 14, 0, 3}, nested.get(1), "the parent keeps its start");
+        // `${1}${2:foo}`: the same offsets, but $2 follows $1 and is pushed.
+        List<int[]> adjacent = ranges(new int[] {10, 10, 0, 1}, new int[] {10, 13, 2, 3});
+        SnippetSession.shift(adjacent, 0, 10, 0, 1);
+        assertArrayEquals(new int[] {11, 14, 2, 3}, adjacent.get(1), "the neighbour moves, same length");
+        // `$1$2` with $2 active: the empty stop in front of it stays in front.
+        List<int[]> before = ranges(new int[] {5, 5, 0, 1}, new int[] {5, 5, 2, 3});
+        SnippetSession.shift(before, 1, 5, 0, 1);
+        assertArrayEquals(new int[] {5, 5, 0, 1}, before.get(0));
+        assertArrayEquals(new int[] {5, 6, 2, 3}, before.get(1));
+    }
+
+    @Test
+    void aStopAroundARewrittenMirrorFollowsItInsteadOfCollapsing() {
+        // `${4:$1}`: the mirror [73,74] is rewritten to 4 characters; $4 has the same extent, around it.
+        List<int[]> rs = ranges(new int[] {73, 74, 5, 6}, new int[] {73, 74, 4, 7});
+        SnippetSession.shift(rs, 0, 73, 1, 4);
+        assertArrayEquals(new int[] {73, 77, 5, 6}, rs.get(0));
+        assertArrayEquals(new int[] {73, 77, 4, 7}, rs.get(1));
+    }
 }

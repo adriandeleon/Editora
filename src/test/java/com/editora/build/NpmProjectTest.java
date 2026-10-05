@@ -46,4 +46,12 @@ class NpmProjectTest {
     void malformedJsonThrows() {
         assertThrows(IllegalArgumentException.class, () -> NpmProject.parse("{ not json"));
     }
+
+    @Test
+    void aByteOrderMarkIsNotMalformedJson() {
+        // npm itself accepts a package.json saved with a BOM (Visual Studio, PowerShell 5).
+        NpmProject p = NpmProject.parse("\uFEFF{ \"name\": \"x\", \"scripts\": { \"hello\": \"echo hi\" } }");
+        assertEquals("x", p.name());
+        assertEquals(List.of("hello"), p.scripts());
+    }
 }

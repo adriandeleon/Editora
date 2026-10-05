@@ -714,13 +714,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void revoke(String root) {
                 config.getTrustStore().revoke(java.nio.file.Path.of(root));
-                config.saveTrust();
+                saveTrustDecision();
             }
 
             @Override
             public void revokeAll() {
                 config.getTrustStore().revokeAll();
-                config.saveTrust();
+                saveTrustDecision();
             }
         });
         this.settingsWindow.setRipgrepProbe(
@@ -1594,8 +1594,9 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     void remapProjectFileLocal(Path old, Path target, boolean oldLspAlreadyClosed) {
         fileWorkflows.invalidatePendingWrite(old);
+        Tab tab = tabForPath(old); // before the cache goes: `old` no longer exists, so it cannot be re-resolved
         com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
-        Tab tab = tabForPath(old);
+        indexCoordinator.onFileRenamed(old, target);
         if (tab != null) {
             EditorBuffer buffer = bufferOf(tab);
             buffer.setPath(target);
@@ -1673,6 +1674,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     void removeProjectFileLocal(Path path) {
         com.editora.config.PathKeys.invalidateCanonicalCache(); // (#680)
+        indexCoordinator.onFileDeleted(path);
         for (EditorBuffer buffer : buffersAtOrUnderLocal(path)) {
             Tab tab = tabFor(buffer);
             if (tab != null) {
@@ -1749,10 +1751,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             projectPanel.revealPathInTree(file);
             return;
         }
-        fileWorkflows.openPath(file);
-        if (line >= 0) {
-            Platform.runLater(() -> navigateToLine(line));
-        }
+        fileWorkflows.openThen(file, () -> navigateToLine(line));
     }
 
     /**
@@ -1838,6 +1837,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupMruTracking() {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
         editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> editing.deactivateMark());
+        editorArea.addSelectionListener((obs, was, now) -> findBar.onActiveBufferChanged());
         editorArea.addSelectionListener((obs, was, now) -> {
             if (now != null) {
                 mru.remove(now);
@@ -2066,6 +2066,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
         projectPanel.setOnExternalChange(() -> {
             com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
+            indexCoordinator.markStale();
             git.refresh();
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();
@@ -2305,6 +2306,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         commitToolWindow = new ToolWindow(
                 "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
         gitLogPanel = new GitLogPanel(gitLogOps = gitWindows.gitLogActions());
+        git.onRepositoryChanged(gitWindows::repositoryChanged);
         gitLogToolWindow = new ToolWindow(
                 "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
         githubPanel = new GitHubPanel(gitWindows.githubActions());
@@ -5303,18 +5305,13 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void restoreFolds(EditorBuffer buffer) {
-            MainController.this.restoreFolds(buffer);
+        public void restorePerFileState(EditorBuffer buffer) {
+            MainController.this.restorePerFileState(buffer);
         }
 
         @Override
         public Tab tabForBuffer(EditorBuffer buffer) {
             return MainController.this.tabForBuffer(buffer);
-        }
-
-        @Override
-        public void restoreReadOnly(EditorBuffer buffer) {
-            MainController.this.restoreReadOnly(buffer);
         }
 
         @Override
@@ -5624,7 +5621,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         public void setCommitWindowAvailable(boolean available) {
             // Also require an open buffer: these act on the active file/tab, so they hide on Welcome
             // (and any non-buffer tab) even inside a repo.
-            toolWindows.setAvailable(commitToolWindow, available && activeBuffer() != null);
+            toolWindows.setAvailable(commitToolWindow, available && GitWindowGate.allows(editorArea.selectedTab()));
             // Git's answer to "are we in a repo" has just landed, and it arrives asynchronously well after
             // the window (and its menu) were built — this is the signal that ungreys the VCS menu.
             refreshMenuEnablement();
@@ -5636,7 +5633,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // writes its command transcripts there. Hooked here because this runs on every applyGitState
             // (tab switch / focus / save / mutation), which is exactly when the repo context can change.
             refreshBuildOutputAvailability();
-            toolWindows.setAvailable(gitLogToolWindow, available && activeBuffer() != null);
+            toolWindows.setAvailable(gitLogToolWindow, available && GitWindowGate.allows(editorArea.selectedTab()));
         }
 
         @Override
@@ -5709,8 +5706,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void openCommitFileDiff(String hash, String repoRel) {
-            diffCoordinator.diffCommitFile(hash, repoRel);
+        public void openCommitFileDiff(String hash, String repoRel, String origRepoRel) {
+            diffCoordinator.diffCommitFile(hash, repoRel, origRepoRel);
         }
 
         @Override
@@ -5808,8 +5805,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void openAt(Path file, int line) {
-                    fileWorkflows.openPath(file);
-                    Platform.runLater(() -> navigateToLine(Math.max(0, line - 1)));
+                    openAndNavigate(file, Math.max(0, line - 1));
                 }
             });
 
@@ -6078,7 +6074,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         @Override
                         public void trust(java.nio.file.Path root) {
                             config.getTrustStore().trust(root);
-                            config.saveTrust(); // durable: a security decision must survive a crash
+                            saveTrustDecision(); // durable: a security decision must survive a crash
                         }
                     },
                     buildOutputPanel));
@@ -6338,44 +6334,47 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void applyTodoLineEdit(
             java.nio.file.Path file, int line, String expectedLine, String newLine, Runnable afterApply) {
-        fileWorkflows.openPath(file);
-        Platform.runLater(() -> {
-            EditorBuffer b = activeBuffer();
-            if (b == null || b.getPath() == null || !canonicalPath(b.getPath()).equals(canonicalPath(file))) {
-                return;
-            }
-            // Say so rather than doing nothing: a TODO in a read-only buffer is common (a .log opens in View
-            // mode, as does anything not writable on disk — i.e. exactly the vendored/generated code a scan
-            // turns up), and a menu click that produced no status, no error and no change looked like a bug.
-            if (!editing.activeEditable()) {
-                setStatus(tr("status.todo.readOnly"));
-                return;
-            }
-            org.fxmisc.richtext.CodeArea area = b.getArea();
-            int idx = line - 1;
-            int paragraphs = area.getParagraphs().size();
-            if (idx < 0 || idx >= paragraphs) {
-                setStatus(tr("status.todo.lineChanged")); // the file shrank under the scan snapshot
-                if (afterApply != null) {
-                    afterApply.run();
-                }
-                return;
-            }
-            String current = area.getParagraph(idx).getText();
-            if (!current.equals(expectedLine)) {
-                setStatus(tr("status.todo.lineChanged"));
-                if (afterApply != null) {
-                    afterApply.run();
-                }
-                return;
-            }
-            int start = area.getAbsolutePosition(idx, 0);
-            area.replaceText(start, start + current.length(), newLine); // undoable; marks the buffer dirty
-            setStatus(tr("status.todo.edited"));
-            if (afterApply != null) {
-                afterApply.run();
-            }
-        });
+        fileWorkflows.openThen(
+                file,
+                () -> { // after the load: the shell is empty and read-only until then
+                    EditorBuffer b = activeBuffer();
+                    if (b == null
+                            || b.getPath() == null
+                            || !canonicalPath(b.getPath()).equals(canonicalPath(file))) {
+                        return;
+                    }
+                    // Say so rather than doing nothing: a TODO in a read-only buffer is common (a .log opens in View
+                    // mode, as does anything not writable on disk — i.e. exactly the vendored/generated code a scan
+                    // turns up), and a menu click that produced no status, no error and no change looked like a bug.
+                    if (!editing.activeEditable()) {
+                        setStatus(tr("status.todo.readOnly"));
+                        return;
+                    }
+                    org.fxmisc.richtext.CodeArea area = b.getArea();
+                    int idx = line - 1;
+                    int paragraphs = area.getParagraphs().size();
+                    if (idx < 0 || idx >= paragraphs) {
+                        setStatus(tr("status.todo.lineChanged")); // the file shrank under the scan snapshot
+                        if (afterApply != null) {
+                            afterApply.run();
+                        }
+                        return;
+                    }
+                    String current = area.getParagraph(idx).getText();
+                    if (!current.equals(expectedLine)) {
+                        setStatus(tr("status.todo.lineChanged"));
+                        if (afterApply != null) {
+                            afterApply.run();
+                        }
+                        return;
+                    }
+                    int start = area.getAbsolutePosition(idx, 0);
+                    area.replaceText(start, start + current.length(), newLine); // undoable; marks the buffer dirty
+                    setStatus(tr("status.todo.edited"));
+                    if (afterApply != null) {
+                        afterApply.run();
+                    }
+                });
     }
 
     /** CSV/TSV grid preview feature; owns the grid panel + parse/refresh (the tool window stays here). */
@@ -6646,7 +6645,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void runTest(BuildTool tool, Path root, List<String> taskArgs, List<String> toggleArgs) {
-                    testNavigation.buildCoordinatorFor(tool).ifPresent(c -> c.runTask(taskArgs, toggleArgs));
+                    testNavigation.buildCoordinatorFor(tool).ifPresent(c -> c.runTaskAt(root, taskArgs, toggleArgs));
                 }
 
                 @Override
@@ -6829,9 +6828,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public Path lspProjectRoot() {
-                    Project active =
-                            (projects != null && config.getSettings().isProjectSupport()) ? projects.active() : null;
-                    return active == null ? null : Path.of(active.root());
+                    return windowProjectRoot(); // this window's project, not the last-focused window's
                 }
 
                 @Override
@@ -7117,6 +7114,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         settingsWindow.showWorkspace(stage);
     }
 
+    /** Persists a trust change and lets every window re-resolve what its project may now override. */
+    private void saveTrustDecision() {
+        config.saveTrust();
+        if (windowManager != null) {
+            windowManager.broadcastTrustChanged();
+        }
+    }
+
+    /** Another window (or this one) changed folder trust: stop honouring overrides that lost it. */
+    void trustChanged() {
+        lspCoordinator.reloadProjectSettings();
+    }
+
     /**
      * Revokes trust for the active window's project root ({@code workspace.revokeTrust}) — the quick undo for
      * a folder trusted by mistake, without hunting for it in the Settings list. Only an <em>explicit</em>
@@ -7130,7 +7140,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             return;
         }
         config.getTrustStore().revoke(root);
-        config.saveTrust();
+        saveTrustDecision();
         settingsWindow.refreshTrustedFolders();
         setStatus(tr(
                 config.getTrustStore().isTrusted(root) ? "status.trust.revokedButInherited" : "status.trust.revoked",
@@ -7343,15 +7353,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void openAndGoto(Path file, int line0, int col0) {
         NavigationHistory.Location origin = navigation.navigating ? null : navigation.captureCurrent();
         fileWorkflows.openPath(file);
-        Platform.runLater(() -> {
-            navigation.suppressNavRecord = true; // let this outer call own the recording, not the nested gotoInFile
-            sessions.gotoInFile(file, line0 + 1, col0 + 1);
-            navigation.suppressNavRecord = false;
-            if (!navigation.navigating) {
-                navigation.recordJump(origin, new NavigationHistory.Location(file, line0, col0));
-            }
-            navigation.navigating = false; // a back/forward jump has landed
-        });
+        Platform.runLater(() -> navigation.landJump(origin, file, line0, col0));
     }
 
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
@@ -7378,11 +7380,20 @@ public class MainController implements com.editora.mcp.McpBridge {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(target);
             fileWorkflows.loadInto(buffer, target);
-            addBuffer(buffer, false); // background: keep the caller's current tab focused
-            return buffer;
+            return attachBackground(buffer);
         } catch (IOException e) {
             return null;
         }
+    }
+
+    /** Adds a loaded {@code buffer} as an unfocused tab with its stored per-file state, like any other open:
+     *  without the marks the next mark change would persist over them, and callers gate on the read-only pin. */
+    private EditorBuffer attachBackground(EditorBuffer buffer) {
+        Tab tab = addBuffer(buffer, false); // background: keep the caller's current tab focused
+        restorePerFileState(buffer);
+        previews.restoreMarkdownMode(buffer);
+        updateTabMeta(tab, buffer);
+        return buffer;
     }
 
     /** Workspace edits may touch unopened files. Decode them on the normal file-load executor and only
@@ -7409,8 +7420,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     EditorBuffer buffer = new EditorBuffer();
                     buffer.setPath(target);
                     fileWorkflows.applyPreparedLoad(buffer, load);
-                    addBuffer(buffer, false);
-                    done.accept(buffer);
+                    done.accept(attachBackground(buffer));
                 });
             } catch (IOException | RuntimeException e) {
                 Platform.runLater(() -> done.accept(null));
@@ -8439,11 +8449,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         String note = fileWorkflows.applyPreparedLoad(buffer, load);
         fileWorkflows.notePerfContentLoaded(buffer);
-        restoreFolds(buffer);
-        bookmarkCoordinator.restoreBookmarks(buffer);
-        debugCoordinator.restoreBreakpoints(buffer);
-        notesCoordinator.restoreNotes(buffer);
-        restoreReadOnly(buffer);
+        restorePerFileState(buffer);
         buffer.setLoading(false);
         previews.restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
@@ -8452,7 +8458,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // mode or the segment can keep saying Read-Only even though the CodeArea is now editable. This is
         // especially visible for `--expert FILE`, where the status bar remains but the tab header is hidden.
         statusBar.refresh();
-        lspCoordinator.syncBuffer(buffer); // the temporary heavy-file shell deliberately suppressed this
+        lspCoordinator.syncBufferWhenShown(buffer); // the temporary heavy-file shell suppressed this
         // Set the default caret before releasing queued navigation. A later runLater(goToStart) would erase
         // a file:line request that waited on this loading shell.
         buffer.goToStart();
@@ -9175,18 +9181,18 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchCoordinator.openToggle();
     }
 
-    /** Shows the Run tool window's stripe button for a runnable file or while a process is still active.
+    /** Shows the Run tool window's stripe button for a runnable file, or once a run has started in this window.
      *
-     * <p>The live-process half is essential even when the active buffer itself is not directly runnable (for
-     * example, a project Java or NPM configuration). Otherwise a normal context refresh can close a console
-     * that {@link RunCoordinator} just reopened when the user pressed Run again.
+     * <p>The second half is essential even when the active buffer itself is not directly runnable (for
+     * example, a project Java or NPM configuration). Otherwise a normal context refresh — including the one
+     * a run's own exit triggers — closes the console on the output the user is about to read.
      */
     private void updateRunButton() {
         EditorBuffer buffer = activeBuffer();
         boolean http = buffer != null && buffer.isHttpFile();
         boolean runnable = buffer != null && buffer.isRunnable() && !http;
         if (runToolWindow != null) {
-            toolWindows.setAvailable(runToolWindow, runnable || runCoordinator.isRunning());
+            toolWindows.setAvailable(runToolWindow, runnable || runCoordinator.consoleInUse());
         }
         if (http && httpClient.isEnabled()) {
             httpClient.refreshEnvironments(buffer); // the response preview's environment picker
@@ -9229,9 +9235,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (pluginCoordinator != null) {
             pluginCoordinator.gateToolWindows(buffer);
         }
-        // Git Commit / Git Log act on the active file's repo — hide on a non-buffer tab (e.g. Welcome).
-        // When a buffer IS open, leave them to the Git coordinator's in-repo gating (don't force-show).
-        if (!buffer) {
+        // Git Commit / Git Log act on the active file's repo — hide on a tab with no Git context (e.g. Welcome;
+        // not the diff tabs they open). Otherwise leave them to the Git coordinator's in-repo gating.
+        if (!GitWindowGate.allows(editorArea.selectedTab())) {
             if (commitToolWindow != null) {
                 toolWindows.setAvailable(commitToolWindow, false);
             }
@@ -9526,6 +9532,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             manualMap.put(file.toString(), manual);
         }
         requestSave();
+    }
+
+    /** The stored state every open of a file re-applies: folds, bookmarks, breakpoints, notes, read-only. */
+    private void restorePerFileState(EditorBuffer buffer) {
+        restoreFolds(buffer);
+        bookmarkCoordinator.restoreBookmarks(buffer);
+        debugCoordinator.restoreBreakpoints(buffer);
+        notesCoordinator.restoreNotes(buffer);
+        restoreReadOnly(buffer);
     }
 
     /** Re-applies a file's saved manual fold ranges + collapsed fold regions after it is opened. */

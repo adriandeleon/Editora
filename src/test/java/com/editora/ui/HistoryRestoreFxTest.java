@@ -17,6 +17,7 @@ import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 import com.editora.config.HistoryRevision;
+import com.editora.config.PathKeys;
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.history.HistoryBlobStore;
@@ -65,6 +66,33 @@ class HistoryRestoreFxTest {
             assertEquals(restored, Files.readString(file));
             assertEquals(List.of(file), harness.ops.opened);
             assertEquals(1, harness.ops.refreshes.get());
+        }
+    }
+
+    /** A9-n8: what a disk restore replaces is recorded first, like delete and replace-in-files do. */
+    @Test
+    void restoringOverAnExistingFileRecordsWhatItReplaces() throws Exception {
+        Path file = Files.writeString(dir.resolve("overwritten.txt"), "edited outside the editor\r\nline two\r\n");
+        ControlledLoader loader = new ControlledLoader();
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Harness harness = async.own(harness(loader, null, path -> true));
+
+            CompletableFuture<HistoryCoordinator.RestoreResult> result =
+                    FxTestSupport.callOnFx(() -> harness.history.restoreRevisionToDisk(revision(file)));
+            async.await(loader.requested, "history revision content request");
+            loader.complete("history body\n");
+            assertEquals(HistoryCoordinator.RestoreResult.RESTORED, async.await(result));
+
+            String key = PathKeys.normalizedKey(file);
+            List<HistoryRevision> recorded = List.of();
+            for (int attempt = 0; attempt < 200 && recorded.isEmpty(); attempt++) {
+                Thread.sleep(20); // the record is written on the history worker, then indexed on FX
+                recorded = FxTestSupport.callOnFx(() -> List.copyOf(harness.ops.history.getOrDefault(key, List.of())));
+            }
+            assertEquals(1, recorded.size(), "the replaced content was recorded");
+            assertEquals(
+                    HistoryBlobStore.sha256("edited outside the editor\nline two\n"),
+                    recorded.get(0).sha256());
         }
     }
 

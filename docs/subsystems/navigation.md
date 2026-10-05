@@ -148,6 +148,14 @@ browsable list rather than a blank box, and no project walk is provoked by merel
 sigil with nothing typed after it is a *scope*, not an empty query — it names what it will search
 and walks nothing.
 
+**Every keystroke is answered at once, whatever state the index is in.** `IndexCoordinator.ensureBuilt`
+always runs its callback exactly once: immediately when the index is built or cannot be (switched off,
+Simple mode, no local project), otherwise when the walk lands — its own or one already in flight,
+superseded or not. While a walk is in flight the popup lists what needs no corpus (the matching
+commands) and parks a single callback, which refilters from the *live* field when the walk lands.
+Dropping the callback on those exits is what once left the empty-query list on screen under a typed
+query, with Enter running its first row.
+
 **A command whose feature is switched off is listed, grayed, with an explanation** naming the
 setting that would enable it, exactly as the command palette does (#532). Hiding it is tidier in a
 mixed list, and that is how it originally shipped, but it means the command can never be discovered

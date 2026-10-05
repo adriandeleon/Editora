@@ -51,7 +51,7 @@ public final class TextNav {
         String[] lines = text.split("\n", -1);
         int[] starts = lineStarts(lines);
         int n = lines.length;
-        int p = paragraphIndex(text, caret) + 1;
+        int p = paragraphIndex(text, caret); // the caret's own line: its block ends at the next blank
         while (p < n && lines[p].isBlank()) {
             p++; // skip blank lines we're sitting on
         }
@@ -65,7 +65,7 @@ public final class TextNav {
     public static int backwardParagraph(String text, int caret) {
         String[] lines = text.split("\n", -1);
         int[] starts = lineStarts(lines);
-        int p = paragraphIndex(text, caret) - 1;
+        int p = paragraphIndex(text, caret); // the caret's own line (see forwardParagraph)
         while (p >= 0 && lines[p].isBlank()) {
             p--;
         }

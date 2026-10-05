@@ -17,8 +17,8 @@ import com.editora.editops.PreserveCase;
  *
  * <p>Query-replace is interactive and edits one match at a time, so each replacement shifts the offsets of
  * everything after it. Rather than precompute a plan that the first edit invalidates, {@link #next} is
- * called afresh against the current text after every action — which is also why it is a single-match
- * function, not a whole-buffer one.
+ * called afresh against the current text after every action; {@link #afterReplace} / {@link #afterSkip}
+ * say where that next call resumes.
  *
  * <p><b>Regex expansion honours surrounding context.</b> The replacement is produced with
  * {@link Matcher#appendReplacement} on the full-text matcher (not by re-matching the matched substring in
@@ -42,79 +42,125 @@ public final class QueryReplace {
     private QueryReplace() {}
 
     /**
-     * The next match at or after {@code from}, with its resolved replacement, or empty when none remains.
+     * The next match at or after {@code from}, with its resolved replacement, or empty when none remains
+     * (including when {@code from} lies past the end of the text, which is how a session leaves a zero-width
+     * match at the very end).
      *
      * @throws RuntimeException if the replacement references a regex group the pattern does not have
      *     ({@link Matcher#appendReplacement}); the caller reports it rather than half-applying an edit
      */
     public static Optional<Match> next(String text, int from, Spec spec) {
-        if (text == null || spec == null || spec.query() == null || spec.query().isEmpty()) {
+        if (unusable(text, from, spec)) {
             return Optional.empty();
         }
-        int start = Math.max(0, Math.min(from, text.length()));
+        int start = Math.max(0, from);
         return spec.regex() ? nextRegex(text, start, spec) : nextLiteral(text, start, spec);
+    }
+
+    private static boolean unusable(String text, int from, Spec spec) {
+        return text == null
+                || spec == null
+                || spec.query() == null
+                || spec.query().isEmpty()
+                || from > text.length();
     }
 
     private static Optional<Match> nextLiteral(String text, int from, Spec spec) {
         for (int[] m : SearchMatcher.matches(text, spec.query(), spec.caseSensitive(), false, spec.wholeWord())) {
             if (m[0] >= from) {
-                String matched = text.substring(m[0], m[1]);
-                String repl =
-                        spec.preserveCase() ? PreserveCase.apply(matched, spec.replacement()) : spec.replacement();
-                return Optional.of(new Match(m[0], m[1], repl));
+                return Optional.of(literalMatch(text, m, spec));
             }
         }
         return Optional.empty();
     }
 
+    private static Match literalMatch(String text, int[] m, Spec spec) {
+        String repl = spec.preserveCase()
+                ? PreserveCase.apply(text.substring(m[0], m[1]), spec.replacement())
+                : spec.replacement();
+        return new Match(m[0], m[1], repl);
+    }
+
     private static Optional<Match> nextRegex(String text, int from, Spec spec) {
-        Pattern p = SearchMatcher.compileRegex(spec.query(), spec.caseSensitive(), spec.wholeWord());
-        if (p == null) {
-            return Optional.empty();
-        }
-        Matcher m = p.matcher(text);
-        if (!m.find(from)) {
-            return Optional.empty();
-        }
-        // A fresh matcher with no prior appendReplacement writes text[0, m.start()) followed by the
-        // expansion, so the expansion begins exactly m.start() characters into the scratch buffer.
-        StringBuffer scratch = new StringBuffer();
-        m.appendReplacement(scratch, spec.replacement());
-        String expanded = scratch.substring(m.start());
-        String repl = spec.preserveCase() ? PreserveCase.apply(m.group(), expanded) : expanded;
-        return Optional.of(new Match(m.start(), m.end(), repl));
+        List<Match> one = regexMatches(text, from, spec, 1);
+        return one.isEmpty() ? Optional.empty() : Optional.of(one.get(0));
     }
 
     /**
-     * Every remaining match from {@code from}, each with its replacement, resolved against the
-     * <em>original</em> text (no edits applied). Backs the {@code !} "replace all the rest" action, which
-     * the caller splices in one edit. A zero-width match advances the scan by one so it cannot loop.
+     * Up to {@code limit} regex matches from {@code from}, in <b>one</b> pass of one matcher. Each expansion
+     * comes from {@link Matcher#appendReplacement}, which writes the text since the previous match followed
+     * by the expansion — so the expansion starts {@code gap} characters into what was just appended, and
+     * only the first match copies a prefix of the document.
+     *
+     * <p>A search that blows the shared backtracking budget, or overflows the stack on a deeply recursive
+     * pattern, yields no matches at all: a partial plan would look like a finished "replace all the rest".
      */
-    public static List<Match> planRemaining(String text, int from, Spec spec) {
-        List<Match> out = new ArrayList<>();
-        if (text == null) {
-            return out;
+    private static List<Match> regexMatches(String text, int from, Spec spec, int limit) {
+        Pattern p = SearchMatcher.compileDocumentRegex(spec.query(), spec.caseSensitive(), spec.wholeWord());
+        if (p == null) {
+            return List.of();
         }
-        int at = Math.max(0, Math.min(from, text.length()));
-        while (at <= text.length()) {
-            Optional<Match> next = next(text, at, spec);
-            if (next.isEmpty()) {
-                break;
+        List<Match> out = new ArrayList<>();
+        Matcher m = p.matcher(SearchMatcher.budgetedSequence(text));
+        StringBuffer scratch = new StringBuffer();
+        int appended = 0; // the matcher's append position: the end of the previous match
+        try {
+            // find() resumes at the previous match's end, one further after a zero-width match.
+            for (boolean found = m.find(from); found; found = m.find()) {
+                int gap = m.start() - appended;
+                scratch.setLength(0);
+                m.appendReplacement(scratch, spec.replacement());
+                appended = m.end();
+                String expanded = scratch.substring(gap);
+                String repl = spec.preserveCase() ? PreserveCase.apply(m.group(), expanded) : expanded;
+                out.add(new Match(m.start(), m.end(), repl));
+                if (out.size() >= limit) {
+                    break;
+                }
             }
-            Match m = next.get();
-            out.add(m);
-            at = m.end() > m.start() ? m.end() : m.end() + 1; // step past a zero-width match
+        } catch (SearchMatcher.MatchBudgetExceededException | StackOverflowError abandoned) {
+            return List.of();
         }
         return out;
     }
 
     /**
-     * The offset to resume scanning from after acting on {@code match}. When the match was replaced pass
-     * the replacement length as {@code consumed}; when skipped pass its own width. Guarantees forward
-     * progress even for a zero-width match, so the session can never loop.
+     * Every remaining match from {@code from}, each with its replacement, resolved against the
+     * <em>original</em> text (no edits applied). Backs the {@code !} "replace all the rest" action, which
+     * the caller splices in one edit. Built in a single pass over the text, so it stays linear however many
+     * matches there are.
      */
-    public static int advance(Match match, int consumed) {
-        int end = match.start() + Math.max(0, consumed);
-        return end > match.start() ? end : end + 1;
+    public static List<Match> planRemaining(String text, int from, Spec spec) {
+        if (unusable(text, from, spec)) {
+            return new ArrayList<>();
+        }
+        int at = Math.max(0, from);
+        if (spec.regex()) {
+            return regexMatches(text, at, spec, Integer.MAX_VALUE);
+        }
+        List<Match> out = new ArrayList<>();
+        for (int[] m : SearchMatcher.matches(text, spec.query(), spec.caseSensitive(), false, spec.wholeWord())) {
+            if (m[0] >= at) {
+                out.add(literalMatch(text, m, spec));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * The offset to resume scanning from once {@code match} has been replaced by its replacement: right
+     * after the inserted text, so a match that begins there (the next of several adjacent ones, when the
+     * replacement is empty) is still offered. After a <em>zero-width</em> match ({@code $}, a lookahead) the
+     * scan resumes one character further, because the assertion that matched still holds at that spot and
+     * would be offered again for ever.
+     */
+    public static int afterReplace(Match match) {
+        int end = match.start() + match.replacement().length();
+        return match.end() > match.start() ? end : end + 1;
+    }
+
+    /** The offset to resume scanning from when {@code match} is skipped: its end, one further if zero-width. */
+    public static int afterSkip(Match match) {
+        return match.end() > match.start() ? match.end() : match.end() + 1;
     }
 }

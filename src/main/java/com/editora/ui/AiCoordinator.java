@@ -361,7 +361,10 @@ final class AiCoordinator {
                                     host.setStatus(tr("status.ai.bufferChanged"));
                                     return;
                                 }
-                                String replacement = AiRequests.stripCodeFence(out.toString());
+                                // The document stores CRLF as one newline: the selection below is measured on the LF
+                                // form.
+                                String replacement =
+                                        com.editora.editor.LineEndings.toLf(AiRequests.stripCodeFence(out.toString()));
                                 area.replaceText(start, end, replacement);
                                 area.selectRange(start, start + replacement.length());
                                 host.setStatus(ChordHint.tr("status.ai.rewritten", "edit.undo"));

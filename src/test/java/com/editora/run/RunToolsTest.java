@@ -120,4 +120,42 @@ class RunToolsTest {
         assertEquals(List.of(), ConsoleUrls.find("file:///tmp/a.txt ftp://example.com"));
         assertEquals(List.of(), ConsoleUrls.find(null));
     }
+
+    // --- console link helpers on hostile output ---------------------------------------------------
+
+    @Test
+    void aLongUnbrokenTokenDoesNotStallTheNodePattern() {
+        String token = "QUJD".repeat(16_000); // 64,000 characters, the pump's line cap
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                java.time.Duration.ofSeconds(2), () -> assertNull(StackTraceLinks.parse(token)));
+        // The anchor must not cost the ordinary frames their links.
+        assertEquals(
+                "/tmp/app/index.js",
+                StackTraceLinks.parse("    at doIt (/tmp/app/index.js:9:15)").file());
+        assertEquals(
+                "C:\\app\\index.js",
+                StackTraceLinks.parse("at C:\\app\\index.js:9:15").file());
+    }
+
+    @Test
+    void anAbsurdLineNumberIsNotALinkAndDoesNotThrow() {
+        assertNull(StackTraceLinks.parse("\tat Foo.bar(Foo.java:99999999999)"));
+        assertNull(StackTraceLinks.parse("app.js:12345678901234"));
+        assertNull(StackTraceLinks.parse("  File \"/tmp/a.py\", line 99999999999"));
+    }
+
+    @Test
+    void aFrameWithThousandsOfSlashesDoesNotOverflowTheStack() {
+        String raw = "at " + "a/".repeat(20_000) + "com.foo.Bar.baz(Bar.java:12)";
+        assertEquals("com/foo/Bar.java", StackTraceLinks.javaSourcePath(new StackTraceLinks.Link("Bar.java", 12, raw)));
+    }
+
+    @Test
+    void urlLookupOnAnEmptyFirstLineReturnsNothing() {
+        String text = "\n> dev\nLocal: http://localhost:5173/\n";
+        assertNull(ConsoleUrls.at(text, 0)); // threw StringIndexOutOfBoundsException: Range [1, 0)
+        assertEquals(
+                "http://localhost:5173/",
+                ConsoleUrls.at(text, text.indexOf("http") + 3).url());
+    }
 }

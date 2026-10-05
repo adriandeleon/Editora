@@ -335,6 +335,29 @@ final class NavigationCoordinator {
         return text.length() <= MAX_LOCATION_SNIPPET ? text : text.substring(0, MAX_LOCATION_SNIPPET) + "…";
     }
 
+    /**
+     * The second half of {@code openAndGoto}, a pulse after its {@code openPath}: moves the caret once the
+     * file's text has landed and records the jump exactly once, from the {@code origin} captured before the
+     * open. Whether to record is decided here, before the wait — a back/forward jump must stay unrecorded
+     * even though {@link #navigating} is released now (a load that fails never runs the continuation, and
+     * must not leave every later jump unrecorded).
+     */
+    void landJump(NavigationHistory.Location origin, Path file, int line0, int col0) {
+        boolean record = !navigating;
+        navigating = false;
+        host.fileWorkflows().whenLoaded(file, () -> {
+            suppressNavRecord = true; // this outer call owns the recording, not the nested gotoInFile
+            try {
+                host.sessions().gotoInFile(file, line0 + 1, col0 + 1);
+            } finally {
+                suppressNavRecord = false;
+            }
+            if (record) {
+                recordJump(origin, new NavigationHistory.Location(file, line0, col0));
+            }
+        });
+    }
+
     /** {@code nav.back}: return to the previous location in the jump list. */
     void navBack() {
         NavigationHistory.Location loc = navHistory.back();
@@ -343,7 +366,7 @@ final class NavigationCoordinator {
             return;
         }
         navigating = true;
-        host.openAndGoto(loc.path(), loc.line(), loc.column()); // clears `navigating` in its runLater
+        host.openAndGoto(loc.path(), loc.line(), loc.column()); // landJump clears `navigating`
     }
 
     /** {@code nav.forward}: go to the next location in the jump list (after going back). */

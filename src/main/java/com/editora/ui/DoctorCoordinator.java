@@ -149,7 +149,7 @@ final class DoctorCoordinator {
 
         // Version control -------------------------------------------------------------------------
         boolean gitOn = ops.gitFeatureEnabled();
-        List<String> gitCmd = GitService.commandFor(s.getGitPath());
+        List<String> gitCmd = GitService.commandTokens(s.getGitPath());
         DoctorCheck git = DoctorCheck.checking("git", "vcs", "Git", String.join(" ", gitCmd))
                 .withSettings("git");
         if (gitOn) {

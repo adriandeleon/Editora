@@ -1,10 +1,7 @@
 package com.editora.process;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -73,7 +70,9 @@ public final class OutputPump {
 
     private static final int MAX_PENDING_OUTPUT_CHARS = 256 * 1024;
     private static final int MAX_PENDING_OUTPUT_EVENTS = 2_048;
+    /** Counted in bytes as read, so a line is never more characters than this either. */
     private static final int MAX_OUTPUT_LINE_CHARS = 64 * 1024;
+
     private static final int MAX_EVENTS_PER_PULSE = 256;
     private static final int MAX_CHARS_PER_PULSE = 64 * 1024;
 
@@ -95,6 +94,8 @@ public final class OutputPump {
         }
     }
 
+    private static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(OutputPump.class.getName());
+
     private final String threadPrefix;
     private final Overflow overflow;
     private final boolean flushPartialLines;
@@ -111,7 +112,8 @@ public final class OutputPump {
      * @param threadPrefix names the reader threads ({@code <prefix>-stdout} / {@code <prefix>-stderr})
      * @param overflow what a full queue does
      * @param flushPartialLines deliver output that stops short of a newline (an interactive prompt) as
-     *     {@link Sink#partial}. Off where every delivered string must be a whole line.
+     *     {@link Sink#partial}. Off where every delivered string must be a whole line; a bare carriage
+     *     return then ends a line as well (a console keeps it, to show progress the way it was written).
      */
     public OutputPump(String threadPrefix, Overflow overflow, boolean flushPartialLines) {
         this.threadPrefix = threadPrefix;
@@ -151,22 +153,48 @@ public final class OutputPump {
         return self[0];
     }
 
-    /** Reads to end of stream without ever materializing more than one bounded line. */
+    /**
+     * Reads to end of stream without ever materializing more than one bounded line.
+     *
+     * <p>The stream is read as <em>bytes</em> and each line decoded on its own ({@link ChildText}): a child in
+     * the user's locale may write UTF-8 or the native encoding, and a line is the unit that can be told apart.
+     * A newline byte is the same in every encoding a console uses.
+     */
     private void read(Feed self, boolean stderr, int gen, Sink sink) {
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(self.stream, StandardCharsets.UTF_8))) {
-            char[] chars = new char[8_192];
-            StringBuilder line = new StringBuilder();
+        try (InputStream in = self.stream) {
+            byte[] chunk = new byte[8_192];
+            byte[] line = new byte[1_024];
+            int length = 0;
             boolean truncated = false;
+            boolean afterCr = false; // whole-line mode: the last line ended at a CR, so a following LF is its pair
             int read;
-            while ((read = reader.read(chars)) != -1) {
+            while ((read = in.read(chunk)) != -1) {
                 for (int i = 0; i < read; i++) {
-                    char ch = chars[i];
-                    if (ch == '\n') {
-                        emitLine(self, line, truncated, stderr, gen, sink);
-                        line.setLength(0);
+                    byte b = chunk[i];
+                    if (b == '\n') {
+                        if (afterCr) {
+                            afterCr = false; // CRLF: the line was already delivered at the CR
+                            continue;
+                        }
+                        emitLine(self, line, length, truncated, stderr, gen, sink);
+                        length = 0;
                         truncated = false;
-                    } else if (line.length() < MAX_OUTPUT_LINE_CHARS) {
-                        line.append(ch);
+                        continue;
+                    }
+                    afterCr = false;
+                    if (b == '\r' && !flushPartialLines) {
+                        // A bare CR ends a line too, as BufferedReader.readLine() has it: Maven's download
+                        // progress is CR-terminated, and held until the next LF it showed nothing during a
+                        // long download and then arrived as one line past the cap.
+                        emitLine(self, line, length, truncated, stderr, gen, sink);
+                        length = 0;
+                        truncated = false;
+                        afterCr = true;
+                    } else if (length < MAX_OUTPUT_LINE_CHARS) {
+                        if (length == line.length) {
+                            line = java.util.Arrays.copyOf(line, Math.min(MAX_OUTPUT_LINE_CHARS, length * 2));
+                        }
+                        line[length++] = b;
                     } else {
                         truncated = true;
                     }
@@ -174,35 +202,41 @@ public final class OutputPump {
                 // A prompt often ends without a newline and then waits for stdin. Wait briefly
                 // before flushing so a long line arriving in several reads stays one bounded
                 // event, while an interactive prompt becomes visible before input is sent.
-                if (flushPartialLines && !line.isEmpty() && !reader.ready()) {
+                if (flushPartialLines && length > 0 && in.available() == 0) {
                     try {
                         Thread.sleep(75);
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         return;
                     }
-                    if (!reader.ready()) {
-                        String text = line + (truncated ? LINE_TRUNCATED : "");
-                        enqueue(self, gen, text.length(), true, () -> sink.partial(text, stderr), sink, stderr);
-                        line.setLength(0);
-                        truncated = false;
+                    if (in.available() == 0) {
+                        int held = ChildText.incompleteUtf8Tail(line, length); // never split a character
+                        if (length > held) {
+                            String text = ChildText.decode(line, 0, length - held) + (truncated ? LINE_TRUNCATED : "");
+                            enqueue(self, gen, text.length(), true, () -> sink.partial(text, stderr), sink, stderr);
+                            System.arraycopy(line, length - held, line, 0, held);
+                            length = held;
+                            truncated = false;
+                        }
                     }
                 }
             }
-            if (!line.isEmpty() || truncated) {
-                emitLine(self, line, truncated, stderr, gen, sink);
+            if (length > 0 || truncated) {
+                emitLine(self, line, length, truncated, stderr, gen, sink);
             }
         } catch (IOException ignored) {
             // Stream closed as the process ended — nothing to report.
         }
     }
 
-    private void emitLine(Feed self, StringBuilder line, boolean truncated, boolean stderr, int gen, Sink sink) {
-        int length = line.length();
-        if (length > 0 && line.charAt(length - 1) == '\r') {
-            line.setLength(length - 1); // match BufferedReader.readLine() for CRLF
+    private void emitLine(Feed self, byte[] line, int length, boolean truncated, boolean stderr, int gen, Sink sink) {
+        if (length > 0 && line[length - 1] == '\r') {
+            length--; // match BufferedReader.readLine() for CRLF
         }
-        String text = line + (truncated ? LINE_TRUNCATED : "");
+        if (truncated) {
+            length -= ChildText.incompleteUtf8Tail(line, length); // the cap may have cut a character in two
+        }
+        String text = ChildText.decode(line, 0, length) + (truncated ? LINE_TRUNCATED : "");
         enqueue(self, gen, text.length(), true, () -> sink.line(text, stderr), sink, stderr);
     }
 
@@ -355,16 +389,30 @@ public final class OutputPump {
             drainScheduled = more;
             lock.notifyAll(); // room for a reader parked under Overflow.BLOCK
         }
-        if (notice != null) {
-            notice.run();
-        }
-        for (PendingFx event : batch) {
-            if (event.generation() == generation) {
-                event.action().run();
+        // A callback that throws must not end the pump: `drainScheduled` is already set for the batch after
+        // this one, so skipping the reschedule below would leave it set forever — no further output for
+        // this run or any later one, and under BLOCK a reader (and so the child) parked on a full queue.
+        try {
+            if (notice != null) {
+                deliver(notice);
+            }
+            for (PendingFx event : batch) {
+                if (event.generation() == generation) {
+                    deliver(event.action());
+                }
+            }
+        } finally {
+            if (more) {
+                Platform.runLater(this::drain);
             }
         }
-        if (more) {
-            Platform.runLater(this::drain);
+    }
+
+    private static void deliver(Runnable action) {
+        try {
+            action.run();
+        } catch (RuntimeException e) {
+            LOG.log(java.util.logging.Level.WARNING, "A process-output callback failed; continuing", e);
         }
     }
 }

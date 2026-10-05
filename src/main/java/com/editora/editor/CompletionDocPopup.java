@@ -46,6 +46,9 @@ final class CompletionDocPopup {
         popup.getContent().add(card);
         popup.setAutoHide(false); // the editor owns its lifecycle (tied to the completion list)
         popup.setAutoFix(false);
+        // Escape belongs to the editor's key filter, which closes the list and this panel together. Left at
+        // the Popup default the panel hid itself and swallowed the key, so the list needed a second Escape.
+        popup.setHideOnEscape(false);
     }
 
     private void addCss(String resource) {

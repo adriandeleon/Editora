@@ -205,6 +205,9 @@ final class SearchCoordinator {
 
     private SearchInFilesPopup popup; // lazily built on first use of the popup command
 
+    /** The popup's own line of searches, so it and the tool window never supersede each other. */
+    private final SearchService.Channel popupChannel = service.newChannel();
+
     private static ExecutorService newReplaceExecutor() {
         return Executors.newSingleThreadExecutor(r -> {
             Thread t = new Thread(r, "replace-in-files");
@@ -308,12 +311,14 @@ final class SearchCoordinator {
                         String excludeGlobs,
                         Consumer<SearchService.Outcome> onResult) {
                     service.search(
+                            popupChannel,
                             query,
                             root,
                             collectOpenBuffers(),
                             Globs.split(includeGlobs),
                             Globs.split(excludeGlobs),
-                            onResult);
+                            onResult,
+                            null);
                 }
 
                 @Override
@@ -343,12 +348,38 @@ final class SearchCoordinator {
         // Scope to THIS window's project root, else the active file's folder ("Current Folder").
         Path root = searchScopeRoot();
         refreshScope(); // keep the toolbar's "searching in" label in step with what we search
+        String badRegex = query.regex() ? com.editora.editor.SearchMatcher.regexError(query.text()) : null;
+        if (badRegex != null) {
+            // Neither backend can run it (ripgrep's hits are re-matched in Java), and "No results" for a
+            // pattern that never ran sends the user looking for a typo in the wrong place.
+            shown = null;
+            panel.showError(badRegex);
+            host.setError(badRegex);
+            return;
+        }
         host.setStatus(tr("search.searching"));
         List<String> include = Globs.split(includeGlobs);
         List<String> exclude = Globs.split(excludeGlobs);
         // Registered so a sweep over a large tree reads as running work rather than going quiet (#770).
         AutoCloseable task = host.startBackgroundTask(tr("search.searching"));
         SearchSnapshot snapshot = new SearchSnapshot(query, include, exclude);
+        try {
+            submitFileSearch(query, root, open, include, exclude, task, snapshot, forStaleReplace);
+        } catch (RuntimeException failed) {
+            closeQuietly(task); // never leave "Searching…" counting for a search that was not started
+            throw failed;
+        }
+    }
+
+    private void submitFileSearch(
+            SearchQuery query,
+            Path root,
+            Map<Path, String> open,
+            List<String> include,
+            List<String> exclude,
+            AutoCloseable task,
+            SearchSnapshot snapshot,
+            boolean forStaleReplace) {
         service.search(
                 query,
                 root,
@@ -491,6 +522,12 @@ final class SearchCoordinator {
     CompletableFuture<ReplaceResult> replaceInFiles(SearchQuery query, String replacement, List<Path> files) {
         if (query == null || query.text() == null || query.text().isEmpty() || files.isEmpty()) {
             return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), false));
+        }
+        String badReplacement = MultiFileSearch.replacementError(query, replacement);
+        if (badReplacement != null) {
+            // Before any file is touched: every file would answer "nothing replaced", which read as success.
+            host.setError(tr("find.badReplacement", badReplacement));
+            return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), true));
         }
         if (!replaceConfirmation.confirm(files.size())) {
             return CompletableFuture.completedFuture(new ReplaceResult(0, 0, List.of(), true));
@@ -769,6 +806,12 @@ final class SearchCoordinator {
             if (result.count() == 0) {
                 return new ClosedReplace(0, false, false);
             }
+            if (!Files.isWritable(file)) {
+                // The rewrite is a rename over the target, which the target's own permission bits do not
+                // stop. A file the editor would open in View mode is reported, as an open one is — not
+                // rewritten because no tab happened to be open.
+                return new ClosedReplace(0, false, true);
+            }
             beforeWrite.accept(original);
             if (!com.editora.io.AtomicFileWrite.replaceIfUnchanged(
                     file,
@@ -806,7 +849,7 @@ final class SearchCoordinator {
                         ripgrepAvailable = ok;
                         boolean effective = s.isRipgrepSearch() && ok;
                         service.setBackend(effective, cmd, s.isSearchRespectGitignore());
-                        panel.setBackendActive(effective);
+                        applyBackendBadge(effective); // records it for the popup too, not just the panel
                         ops.syncRipgrepStatus(ok);
                     });
                 },

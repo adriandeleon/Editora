@@ -24,11 +24,19 @@ public final class MainMethodScanner {
     /** A runnable entry point on {@code line} (0-based) in class {@code fqn} (fully qualified). */
     public record MainMethod(int line, String fqn) {}
 
-    private static final Pattern PACKAGE = Pattern.compile("^\\s*package\\s+([\\w.]+)\\s*;");
-    private static final Pattern TYPE_DECL = Pattern.compile("\\b(?:class|enum|record)\\s+(\\w+)");
+    /**
+     * A Java identifier. Not {@code \w+}, which is ASCII-only in {@code java.util.regex}: it cut
+     * {@code class Café} down to {@code Caf} (so the run launched a class that does not exist) and did not
+     * see {@code class Übung1} at all.
+     */
+    private static final String ID = "[\\p{L}_$][\\p{L}\\p{N}_$]*";
+
+    private static final Pattern PACKAGE = Pattern.compile("^\\s*package\\s+([\\p{L}\\p{N}_$.]+)\\s*;");
+    private static final Pattern TYPE_DECL =
+            Pattern.compile("(?<![\\p{L}\\p{N}_$])(?:class|enum|record)\\s+(" + ID + ")");
     // `… static … void main(String[] / String... / String args[] …)` on one (blanked) line.
     private static final Pattern MAIN = Pattern.compile("\\bstatic\\b[^;{}()]*\\bvoid\\s+main\\s*\\(\\s*"
-            + "(?:final\\s+)?String\\s*(?:\\.\\.\\.|\\[\\s*\\]|\\w+\\s*\\[\\s*\\])[^)]*\\)");
+            + "(?:final\\s+)?String\\s*(?:\\.\\.\\.|\\[\\s*\\]|" + ID + "\\s*\\[\\s*\\])[^)]*\\)");
 
     public static List<MainMethod> scan(String source) {
         if (source == null || source.isBlank()) {

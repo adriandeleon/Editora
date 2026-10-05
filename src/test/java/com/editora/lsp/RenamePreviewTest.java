@@ -81,6 +81,21 @@ class RenamePreviewTest {
         assertEquals(A, kept.edits().get(0).file());
     }
 
+    /** Creates and deletes are the refactoring's scaffolding, not rows: the filter used to drop them. */
+    @Test
+    void filteringKeepsCreatesAndDeletes() {
+        var m = new WorkspaceEditMapper.Mapped(
+                List.of(fileEdit(A, 1)),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(B, false, true)),
+                List.of(new WorkspaceEditMapper.FileDelete(B, false, false)));
+
+        var kept = RenamePreview.filter(m, Set.of(A));
+
+        assertEquals(m.creates(), kept.creates());
+        assertEquals(m.deletes(), kept.deletes());
+    }
+
     /**
      * The important filtering rule: moving a file whose edits were excluded would leave the rename
      * half-applied — a file moved but not updated — which is worse than leaving it alone entirely.

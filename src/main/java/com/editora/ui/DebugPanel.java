@@ -109,6 +109,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private int selectedFrameId = -1;
     /** Guard so programmatically selecting the current thread in the combo doesn't re-fetch its stack. */
     private boolean settingThreads;
+
+    private boolean settingStack; // setCallStack is replacing the stack and reports the top frame itself
     /** Watch expressions (the "Watches" node merged into the variables tree, IntelliJ-style). */
     private final java.util.List<String> watches = new java.util.ArrayList<>();
 
@@ -214,7 +216,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
         });
         stack.getSelectionModel().selectedItemProperty().addListener((o, a, f) -> {
-            if (f != null) {
+            if (f != null && !settingStack) {
                 selectedFrameId = f.id();
                 actions.selectFrame(f);
             }
@@ -407,7 +409,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         runToCursor.setDisable(!suspended);
         stop.setDisable(!active && !preparing);
         restart.setDisable(!active);
-        evalInput.setDisable(!suspended);
+        // Usable while the program runs as well as while it is paused (Enter only evaluates when paused):
+        // disabling the field on every Step/Continue made JavaFX move focus out of the panel, the next stop
+        // then handed focus to the editor, and the expression being typed went into the source file.
+        evalInput.setDisable(!(suspended || running));
         threads.setDisable(!suspended);
         if (!active) {
             sessionFile = "";
@@ -460,11 +465,27 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Shows the suspended thread's call stack and selects the top frame. */
+    /**
+     * Shows the suspended thread's call stack, selects the top frame and reports it through
+     * {@link Actions#selectFrame} — on <em>every</em> call. The report must not ride on the selection
+     * listener: a stop whose top frame {@code equals()} the previous one (debugpy reuses frame ids, so a
+     * re-hit breakpoint is the identical record) leaves the selected item unchanged, the listener silent, and
+     * the variables and execution line on the previous stop's values.
+     */
     public void setCallStack(List<DapModels.StackFrameInfo> frames) {
-        stack.getItems().setAll(frames);
+        settingStack = true;
+        try {
+            stack.getItems().setAll(frames);
+            if (!frames.isEmpty()) {
+                stack.getSelectionModel().clearAndSelect(0);
+            }
+        } finally {
+            settingStack = false;
+        }
         if (!frames.isEmpty()) {
-            stack.getSelectionModel().select(0);
+            DapModels.StackFrameInfo top = frames.get(0);
+            selectedFrameId = top.id();
+            actions.selectFrame(top);
         }
     }
 
@@ -638,7 +659,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         setValuePrompt(); // no-ops unless a settable leaf variable is selected
     }
 
-    /** Focuses the evaluate (REPL) field so the user can type an expression (enabled only while suspended). */
+    /** Focuses the evaluate (REPL) field so the user can type an expression (enabled only during a session). */
     public void focusEvaluate() {
         if (!evalInput.isDisabled()) {
             evalInput.requestFocus();
@@ -671,8 +692,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private void runEval() {
         String expr = evalInput.getText();
-        if (expr == null || expr.isBlank()) {
-            return;
+        if (expr == null || expr.isBlank() || lastState != DapManager.State.SUSPENDED) {
+            return; // nothing to evaluate against while the program runs; the typed text is kept
         }
         appendOutput("> " + expr + "\n", "console");
         evalInput.clear();

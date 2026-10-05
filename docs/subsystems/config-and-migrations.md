@@ -107,6 +107,13 @@ released by the operating system when the holder dies, so a crash never leaves a
 - Local-history blob GC runs only in the primary, and only while no secondary is alive
   (`mayCollectHistoryBlobs`, asked on the history worker right before deleting). GC deletes every blob
   outside *this* process's index, and another process's revisions are not in it.
+- For the same reason GC never runs against an index that is not the one that was written
+  (`HistoryIndexGuard`): when `history/index.json` did not load cleanly (newer schema, unparseable, a
+  skipped value), when it is zero-length or missing while `history/blobs/` still holds bodies, and — in
+  later sessions too — for as long as an `index.json.v<n>.bak` / `index.json.corrupt.bak` sits beside it.
+  The bodies the backup references are kept until the user restores or deletes that backup. A zero-length
+  index beside stored bodies is reported as unreadable (and copied to `.corrupt.bak`) rather than read as
+  "no history yet".
 
 A config that was never claimed (tests, embedders) counts as its own sole user, and a filesystem that
 refuses locks degrades to "primary, alone".
@@ -159,7 +166,7 @@ A getter that *resolves* a blank value (`getAuthorName()` → the OS user, `getP
 
 If a file's stored `schemaVersion` is **newer** than this build supports (the user downgraded the app), `upgrade` throws [`NewerThanSupportedException`](../../src/main/java/com/editora/config/migration/NewerThanSupportedException.java). `readVersioned` then backs the file up to `<name>.v<n>.bak` (`ConfigMigrations.backup`, preserving any existing backup) and returns `defaults`. An older Editora never overwrites — and silently drops fields from — a newer config.
 
-That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`). The same applies to an unparseable file that could not be copied aside. The Local File History index is the one exception — it is reported but still written, because its publication protocol must keep running.
+That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`). The same applies to an unparseable file that could not be copied aside. The Local File History index is the one exception — it is reported but still written, because its publication protocol must keep running; its revision bodies are protected instead by refusing blob GC (see the instance-lock section above).
 
 ### Worked examples
 

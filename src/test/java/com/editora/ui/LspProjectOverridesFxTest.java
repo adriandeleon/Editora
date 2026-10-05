@@ -204,6 +204,29 @@ class LspProjectOverridesFxTest {
                 "the decision is written to the trusted-folders file, where Settings lists it");
     }
 
+    /**
+     * astro-ls loads and runs the TypeScript SDK it is pointed at, so a folder's own SDK is something trust
+     * hands over even when the folder has no {@code .editora/settings.json}: the prompt must list it.
+     */
+    @Test
+    void theTrustPromptListsTheFoldersOwnTypeScriptSdkForAstro() throws Exception {
+        Path sdk = Files.createDirectories(project.resolve("node_modules/typescript/lib"));
+        Files.createFile(sdk.resolve("typescript.js"));
+        applySupport();
+        List<List<String>> asked = new ArrayList<>();
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.trustConfirmer = (folder, requests) -> {
+                asked.add(requests);
+                return true;
+            };
+            coordinator.trustProjectSettings();
+        });
+
+        assertEquals(List.of(List.of("astro: " + sdk.toAbsolutePath().normalize())), asked);
+        assertTrue(config.getTrustStore().isTrusted(project));
+    }
+
     /** An edit to the file takes effect on the running configuration, not only on the labels. */
     @Test
     void reloadingAnEditedProjectFileReconfiguresTheManager() throws Exception {

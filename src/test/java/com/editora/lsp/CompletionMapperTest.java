@@ -211,4 +211,30 @@ class CompletionMapperTest {
         plain.setInsertText("length");
         assertNull(CompletionMapper.map(List.of(plain)).get(0).replaceRange());
     }
+
+    /** With neither textEdit nor insertText the label is the insert text — whole, not cut at a hyphen or dot. */
+    @Test
+    void aLabelOnlyItemInsertsItsWholeLabel() {
+        CompletionItem keywordArgument = new CompletionItem("timeout=");
+        keywordArgument.setFilterText("timeout");
+        CompletionItem detailed = new CompletionItem("ssh-keygen");
+        org.eclipse.lsp4j.CompletionItemLabelDetails details = new org.eclipse.lsp4j.CompletionItemLabelDetails();
+        details.setDetail(" (command)");
+        detailed.setLabelDetails(details);
+
+        List<Completion> out = CompletionMapper.map(List.of(
+                new CompletionItem("docker-compose"),
+                new CompletionItem("python3.12"),
+                new CompletionItem("g++"),
+                keywordArgument,
+                detailed,
+                new CompletionItem("names : List<String>")));
+        assertEquals("docker-compose", out.get(0).insert());
+        assertEquals("python3.12", out.get(1).insert());
+        assertEquals("g++", out.get(2).insert());
+        assertEquals("timeout=", out.get(3).insert());
+        assertEquals("ssh-keygen", out.get(4).insert(), "the labelDetails suffix is display only");
+        assertEquals("ssh-keygen (command)", out.get(4).label());
+        assertEquals("names", out.get(5).insert(), "a decorated label is still reduced to its identifier");
+    }
 }

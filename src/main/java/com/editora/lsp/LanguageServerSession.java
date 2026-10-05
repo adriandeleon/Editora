@@ -182,8 +182,45 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /** Bounds an ordinary server request with the shared {@link #REQUEST_TIMEOUT}. */
-    private static <T> CompletableFuture<T> bounded(CompletableFuture<T> request) {
-        return bounded(request, REQUEST_TIMEOUT);
+    private <T> CompletableFuture<T> bounded(CompletableFuture<T> request) {
+        return track(bounded(request, REQUEST_TIMEOUT));
+    }
+
+    /**
+     * Requests on the wire that the server has not answered. A session that dies or is disposed settles
+     * them at once: left alone, each would wait for its own timer — 30 s for an ordinary request, ten
+     * minutes for a workspace build — and then report a failure against whatever the window was doing by
+     * then, while the timer queue kept the request, its callbacks and the dead session reachable.
+     */
+    private final java.util.Set<CompletableFuture<?>> inFlight = ConcurrentHashMap.newKeySet();
+
+    /** Registers {@code request} so a lost session fails it immediately instead of at its timeout. */
+    private <T> CompletableFuture<T> track(CompletableFuture<T> request) {
+        if (request.isDone()) {
+            return request;
+        }
+        inFlight.add(request);
+        request.whenComplete((result, error) -> inFlight.remove(request));
+        if (disposed || deadReported.get()) {
+            failInFlight(); // lost the race with markDead()/dispose(): nobody else will settle it
+        }
+        return request;
+    }
+
+    /**
+     * Completes every unanswered request exceptionally. Not {@code cancel}: LSP4J's cancel writes a
+     * {@code $/cancelRequest} to a pipe nobody reads any more. Completing the future also drops its timer.
+     */
+    private void failInFlight() {
+        var failure = new IllegalStateException("language server not available");
+        for (CompletableFuture<?> request : List.copyOf(inFlight)) {
+            request.completeExceptionally(failure);
+        }
+    }
+
+    /** Unanswered requests still tracked — package-private for the lost-session test. */
+    int inFlightRequests() {
+        return inFlight.size();
     }
 
     /**
@@ -388,7 +425,7 @@ final class LanguageServerSession implements LanguageClient {
                     capabilities = result.getCapabilities();
                     rememberStaticCapabilities();
                     server.initialized(new InitializedParams());
-                    pushConfiguration(); // proactively enable Pyright auto-imports (also answered via configuration())
+                    pushConfiguration(); // this server's own settings only (also answered via configuration())
                     List<Pending> toRun;
                     synchronized (this) {
                         toRun = new ArrayList<>(pending);
@@ -492,7 +529,9 @@ final class LanguageServerSession implements LanguageClient {
         td.getCompletion()
                 .setCompletionList(new org.eclipse.lsp4j.CompletionListCapabilities(
                         List.of("editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters")));
-        td.setHover(new HoverCapabilities());
+        // contentFormat: without it a conforming server (pyright, rust-analyzer, clangd) answers in
+        // plaintext, which the hover popup then had to guess its way through as Markdown.
+        td.setHover(new HoverCapabilities(List.of("markdown", "plaintext"), true));
         td.setDefinition(new DefinitionCapabilities());
         td.setReferences(new ReferencesCapabilities());
         // Implementation / type definition / declaration (#735, #736) — the three navigation requests
@@ -579,7 +618,12 @@ final class LanguageServerSession implements LanguageClient {
         td.getCodeAction().setDynamicRegistration(true);
         td.getDiagnostic().setDynamicRegistration(true);
         td.getSemanticTokens().setDynamicRegistration(true);
-        td.setDocumentSymbol(new org.eclipse.lsp4j.DocumentSymbolCapabilities(true));
+        // The one-argument constructor is dynamicRegistration. hierarchicalDocumentSymbolSupport is what
+        // makes jdtls, pyright, clangd, lemminx and the JSON/YAML servers answer with a DocumentSymbol tree
+        // instead of the legacy flat SymbolInformation list (every member a top-level outline row).
+        var documentSymbol = new org.eclipse.lsp4j.DocumentSymbolCapabilities(true);
+        documentSymbol.setHierarchicalDocumentSymbolSupport(true);
+        td.setDocumentSymbol(documentSymbol);
         td.setFormatting(new org.eclipse.lsp4j.FormattingCapabilities(true));
         td.setRangeFormatting(new org.eclipse.lsp4j.RangeFormattingCapabilities(true));
         td.setOnTypeFormatting(new org.eclipse.lsp4j.OnTypeFormattingCapabilities(true));
@@ -591,8 +635,8 @@ final class LanguageServerSession implements LanguageClient {
         var window = new org.eclipse.lsp4j.WindowClientCapabilities();
         window.setWorkDoneProgress(true);
         cc.setWindow(window);
-        // Declare we answer workspace/configuration — otherwise Pyright never asks for
-        // python.analysis.autoImportCompletions and keeps its (off) default, so no auto-imports.
+        // Declare we answer workspace/configuration (Pyright reads python.analysis that way). Servers that
+        // ask because of it must get an answer they can live with — see LspServerSettings.
         org.eclipse.lsp4j.WorkspaceClientCapabilities ws = new org.eclipse.lsp4j.WorkspaceClientCapabilities();
         ws.setConfiguration(true);
         ws.setDidChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationCapabilities());
@@ -619,6 +663,13 @@ final class LanguageServerSession implements LanguageClient {
                 org.eclipse.lsp4j.ResourceOperationKind.Rename,
                 org.eclipse.lsp4j.ResourceOperationKind.Delete));
         ws.setWorkspaceEdit(wsEdit);
+        // The four workspace/*/refresh requests are implemented below (refreshSemanticTokens & co.), but a
+        // server only sends one to a client that declares refreshSupport: clangd, rust-analyzer, jdtls and
+        // typescript-language-server all gate on it, so a header edit left dependent tabs on stale tokens.
+        ws.setSemanticTokens(new org.eclipse.lsp4j.SemanticTokensWorkspaceCapabilities(true));
+        ws.setInlayHint(new org.eclipse.lsp4j.InlayHintWorkspaceCapabilities(true));
+        ws.setDiagnostics(new org.eclipse.lsp4j.DiagnosticWorkspaceCapabilities(true));
+        ws.setFoldingRange(new org.eclipse.lsp4j.FoldingRangeWorkspaceCapabilities(true));
         cc.setWorkspace(ws);
         return cc;
     }
@@ -640,50 +691,21 @@ final class LanguageServerSession implements LanguageClient {
         }
     }
 
-    /** Pushes our default settings (e.g. enable Pyright auto-imports) via workspace/didChangeConfiguration. */
+    /**
+     * Pushes this server's own settings via workspace/didChangeConfiguration. A server Editora has no
+     * settings for is sent nothing — see {@link LspServerSettings}.
+     */
     private void pushConfiguration() {
+        java.util.Map<String, Object> settings = LspServerSettings.push(serverId, javaOnTypeFormatting);
+        if (settings == null) {
+            return;
+        }
         try {
             server.getWorkspaceService()
-                    .didChangeConfiguration(
-                            new org.eclipse.lsp4j.DidChangeConfigurationParams(defaultSettings(javaOnTypeFormatting)));
+                    .didChangeConfiguration(new org.eclipse.lsp4j.DidChangeConfigurationParams(settings));
         } catch (RuntimeException e) {
             LOG.log(Level.FINE, "didChangeConfiguration failed", e);
         }
-    }
-
-    /** Pure: the settings object pushed to every server after {@code initialized}. */
-    static java.util.Map<String, Object> defaultSettings(boolean javaOnTypeFormatting) {
-        java.util.Map<String, Object> analysis = new java.util.HashMap<>();
-        analysis.put("autoImportCompletions", true);
-        java.util.Map<String, Object> python = new java.util.HashMap<>();
-        python.put("analysis", analysis);
-        // jdtls ADVERTISES signatureHelpProvider but its handler returns an empty result unless
-        // `java.signatureHelp.enabled` is set — it ships OFF (VS Code's Java extension sets it in its
-        // own defaults, which is why it "just works" there). Verified by driving a real jdtls: same
-        // position, same params — 0 signatures before this flag, both overloads after (#674). Same
-        // class of bug as #468's provideFormatter. Harmless to non-java servers (unknown section).
-        java.util.Map<String, Object> signatureHelp = new java.util.HashMap<>();
-        signatureHelp.put("enabled", true);
-        signatureHelp.put("description", true); // include the javadoc in the signature popup
-        // Same shape of gate for smart-semicolon detection (#746): jdtls advertises
-        // java.edit.smartSemicolonDetection unconditionally, but its handler answers null until this
-        // preference is set — verified against a real jdtls (null for every argument shape before,
-        // the target position after). Editora then gates the *behaviour* on its own setting, so
-        // enabling the server-side capability here costs nothing when the feature is off.
-        java.util.Map<String, Object> smartSemicolon = new java.util.HashMap<>();
-        smartSemicolon.put("enabled", true);
-        java.util.Map<String, Object> edit = new java.util.HashMap<>();
-        edit.put("smartSemicolonDetection", smartSemicolon);
-        java.util.Map<String, Object> java_ = new java.util.HashMap<>();
-        java_.put("signatureHelp", signatureHelp);
-        java_.put("edit", edit);
-        // On-type formatting: jdtls only registers textDocument/onTypeFormatting while this is on (it
-        // merges the pushed keys into its preferences and re-syncs its dynamic registrations).
-        java_.put("format", java.util.Map.of("onType", java.util.Map.of("enabled", javaOnTypeFormatting)));
-        java.util.Map<String, Object> settings = new java.util.HashMap<>();
-        settings.put("python", python);
-        settings.put("java", java_);
-        return settings;
     }
 
     boolean isInitialized() {
@@ -738,6 +760,7 @@ final class LanguageServerSession implements LanguageClient {
         if (deadReported.compareAndSet(false, true)) {
             initialized = false;
             failPending(new IllegalStateException("language server stopped"));
+            failInFlight();
             if (!disposed) {
                 // The server died on its own (crash, OOM-kill, instant startup death) — not a deliberate
                 // dispose(). Stop the status-bar loading bar NOW: for a process that dies before initialize
@@ -783,7 +806,7 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     private void whenReady(String collapseKey, Runnable action, Runnable onUnavailable) {
-        if (disposed) {
+        if (disposed || deadReported.get()) { // a dead session never initializes again: do not queue for it
             onUnavailable.run();
             return;
         }
@@ -829,10 +852,15 @@ final class LanguageServerSession implements LanguageClient {
         });
     }
 
-    void didChange(String uri, String text) {
+    /**
+     * Syncs {@code text}. Returns false only when the server is known to hold exactly this text already, so
+     * nothing was (or will be) sent — and therefore nothing will make it publish diagnostics again.
+     */
+    boolean didChange(String uri, String text) {
         if (changeSyncDisabled()) {
-            return; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
+            return true; // server negotiated TextDocumentSyncKind.None — it doesn't track content changes
         }
+        boolean[] identical = {false};
         // Collapse: a queued didChange for this uri is superseded by this one (only the latest content
         // matters) — otherwise every typing pause before initialize pins another copy of the document.
         // The full-vs-incremental decision happens INSIDE the queued action (#678): capabilities are only
@@ -841,6 +869,7 @@ final class LanguageServerSession implements LanguageClient {
             if (changeSyncDisabled()) return;
             List<TextDocumentContentChangeEvent> events = changeEventsFor(uri, text);
             if (events.isEmpty()) {
+                identical[0] = true;
                 return; // content identical to what the server already holds — nothing to sync
             }
             int version = versions.merge(uri, 1, Integer::sum);
@@ -848,6 +877,7 @@ final class LanguageServerSession implements LanguageClient {
                     .didChange(
                             new DidChangeTextDocumentParams(new VersionedTextDocumentIdentifier(uri, version), events));
         });
+        return !identical[0]; // a send still queued for initialize has compared nothing yet: reported as sent
     }
 
     /**
@@ -1033,7 +1063,7 @@ final class LanguageServerSession implements LanguageClient {
                         return;
                     }
                     try {
-                        bounded(l.getRemoteEndpoint().request(method, params), timeout)
+                        track(bounded(l.getRemoteEndpoint().request(method, params), timeout))
                                 .whenComplete((r, e) -> {
                                     if (e != null) {
                                         out.completeExceptionally(e);
@@ -1584,6 +1614,7 @@ final class LanguageServerSession implements LanguageClient {
         }
         disposed = true;
         failPending(new IllegalStateException("language server disposed"));
+        failInFlight();
         LanguageServer live = server;
         Process p = process;
         boolean handshook = live != null && initialized;
@@ -1945,40 +1976,20 @@ final class LanguageServerSession implements LanguageClient {
     }
 
     /**
-     * Answers {@code workspace/configuration} so servers that read settings this way pick up our defaults
-     * — notably **Pyright**, which only offers auto-import completions when
-     * {@code python.analysis.autoImportCompletions} is on (its own default is off). We enable it however
-     * the server phrases the request (the whole {@code python} object, the {@code python.analysis} object,
-     * or the leaf key); unknown sections return null so the server keeps its own default.
+     * Answers {@code workspace/configuration} per server and section from {@link LspServerSettings}: Pyright's
+     * {@code python} / {@code python.analysis} objects, and an empty object for the CSS and HTML servers'
+     * own sections (they throw on {@code null}). Any other section returns null so the server keeps its
+     * own default.
      */
     @Override
     public CompletableFuture<List<Object>> configuration(org.eclipse.lsp4j.ConfigurationParams params) {
         List<Object> out = new java.util.ArrayList<>();
         if (params != null && params.getItems() != null) {
             for (org.eclipse.lsp4j.ConfigurationItem item : params.getItems()) {
-                out.add(configFor(item.getSection() == null ? "" : item.getSection()));
+                out.add(LspServerSettings.answer(serverId, item.getSection()));
             }
         }
         return CompletableFuture.completedFuture(out);
-    }
-
-    private static Object configFor(String section) {
-        if (section.endsWith("autoImportCompletions")) {
-            return Boolean.TRUE;
-        }
-        if (section.equals("python.analysis") || section.endsWith(".analysis")) {
-            java.util.Map<String, Object> analysis = new java.util.HashMap<>();
-            analysis.put("autoImportCompletions", true);
-            return analysis;
-        }
-        if (section.equals("python")) {
-            java.util.Map<String, Object> analysis = new java.util.HashMap<>();
-            analysis.put("autoImportCompletions", true);
-            java.util.Map<String, Object> python = new java.util.HashMap<>();
-            python.put("analysis", analysis);
-            return python;
-        }
-        return null;
     }
 
     @Override

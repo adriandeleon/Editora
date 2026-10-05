@@ -49,14 +49,12 @@ public final class Filler {
         if (li >= lines.size()) {
             return null;
         }
-        int first = li;
-        while (first > 0 && !isBlank(lineText(text, lines.get(first - 1)))) {
-            first--;
+        int[] span = paragraphAt(text, lines, li, lineComment);
+        if (span == null) {
+            return null; // a comment delimiter or an empty marker line: nothing to fill
         }
-        int last = li;
-        while (last + 1 < lines.size() && !isBlank(lineText(text, lines.get(last + 1)))) {
-            last++;
-        }
+        int first = span[0];
+        int last = span[1];
         int from = lines.get(first)[0];
         int to = lines.get(last)[1];
         String filled = fillBlock(text, lines, first, last, fillColumn, lineComment);
@@ -82,8 +80,8 @@ public final class Filler {
         StringBuilder out = new StringBuilder();
         int i = firstLine;
         while (i <= lastLine) {
-            if (isBlank(lineText(text, lines.get(i)))) {
-                out.append(lineText(text, lines.get(i))); // keep blank/whitespace lines verbatim
+            if (kind(lineText(text, lines.get(i)), lineComment) == null) {
+                out.append(lineText(text, lines.get(i))); // keep blank and delimiter lines verbatim
                 if (i < lastLine) {
                     out.append('\n');
                 }
@@ -91,9 +89,7 @@ public final class Filler {
                 continue;
             }
             int pStart = i;
-            while (i + 1 <= lastLine && !isBlank(lineText(text, lines.get(i + 1)))) {
-                i++;
-            }
+            i = paragraphEnd(text, lines, i, lastLine, lineComment);
             String filled = fillBlock(text, lines, pStart, i, fillColumn, lineComment);
             out.append(filled == null ? "" : filled);
             if (i < lastLine) {
@@ -112,6 +108,8 @@ public final class Filler {
     private static String fillBlock(
             String text, List<int[]> lines, int firstLine, int lastLine, int fillColumn, String lineComment) {
         String prefix = fillPrefix(lineText(text, lines.get(firstLine)), lineComment);
+        // A list item hangs: its wrapped lines are indented under the text, not given a bullet each.
+        String continuation = isBullet(text, lines, firstLine, lineComment) ? hangingIndent(prefix) : prefix;
         List<String> words = new ArrayList<>();
         for (int i = firstLine; i <= lastLine; i++) {
             String content = stripPrefix(lineText(text, lines.get(i)), prefix, lineComment);
@@ -136,11 +134,117 @@ public final class Filler {
                 cur.append(' ').append(w);
             } else {
                 out.add(cur.toString());
-                cur = new StringBuilder(prefix).append(w);
+                cur = new StringBuilder(continuation).append(w);
             }
         }
         out.add(cur.toString());
         return String.join("\n", out);
+    }
+
+    // --- paragraph boundaries --------------------------------------------------------------------
+
+    /**
+     * What kind of line this is for filling: {@code null} for a separator (a blank line, a block-comment
+     * delimiter line such as {@code /**} or {@code *}{@code /}, or a marker with no text after it),
+     * otherwise the fill marker it starts with — the line-comment token, {@code >} or {@code *} — or
+     * {@code ""} for a plain line. A paragraph never mixes kinds, so a comment that touches code is
+     * filled on its own and code is never pulled into it.
+     */
+    static String kind(String line, String lineComment) {
+        String rest = line.strip();
+        if (rest.isEmpty() || rest.startsWith("/*") || rest.startsWith("*/")) {
+            return null;
+        }
+        int ws = leadingWhitespace(line);
+        for (String marker : markers(lineComment)) {
+            int end = markerEnd(line, ws, marker);
+            if (end >= 0) {
+                return line.substring(end).isBlank() ? null : marker;
+            }
+        }
+        return "";
+    }
+
+    /**
+     * End of {@code marker} at {@code at} in {@code line}, or -1 if it is not there. A doc-comment form of
+     * the line-comment token ({@code ///}, {@code //!}, {@code ##}) counts as part of the marker, and a
+     * {@code *} is a marker only when followed by whitespace (so {@code **bold**} is plain text).
+     */
+    private static int markerEnd(String line, int at, String marker) {
+        if (!line.startsWith(marker, at)) {
+            return -1;
+        }
+        int end = at + marker.length();
+        if (marker.equals("*")) {
+            return end == line.length() || line.charAt(end) == ' ' || line.charAt(end) == '\t' ? end : -1;
+        }
+        if (!marker.equals(">")) {
+            char last = marker.charAt(marker.length() - 1);
+            while (end < line.length() && line.charAt(end) == last) {
+                end++;
+            }
+            if (end < line.length() && line.charAt(end) == '!') {
+                end++;
+            }
+        }
+        return end;
+    }
+
+    /**
+     * Whether the {@code *} line at {@code index} is a list item rather than a block-comment
+     * continuation: a comment's {@code *} lines run back to a {@code /*} opener.
+     */
+    private static boolean isBullet(String text, List<int[]> lines, int index, String lineComment) {
+        if (!"*".equals(kind(lineText(text, lines.get(index)), lineComment))) {
+            return false;
+        }
+        int j = index - 1;
+        while (j >= 0) {
+            String above = lineText(text, lines.get(j)).strip();
+            if (!above.startsWith("*") || above.startsWith("*/")) {
+                return !above.startsWith("/*");
+            }
+            j--;
+        }
+        return true;
+    }
+
+    private static String hangingIndent(String prefix) {
+        int ws = leadingWhitespace(prefix);
+        return prefix.substring(0, ws) + " ".repeat(prefix.length() - ws);
+    }
+
+    /** Last line of the paragraph that starts at {@code first}, not past {@code limit}. */
+    private static int paragraphEnd(String text, List<int[]> lines, int first, int limit, String lineComment) {
+        // A list item continues over the plain lines under it; anything else over lines of its own kind.
+        String want =
+                isBullet(text, lines, first, lineComment) ? "" : kind(lineText(text, lines.get(first)), lineComment);
+        int last = first;
+        while (last + 1 <= limit && want.equals(kind(lineText(text, lines.get(last + 1)), lineComment))) {
+            last++;
+        }
+        return last;
+    }
+
+    /** {@code {first, last}} line indices of the paragraph holding line {@code li}; null on a separator. */
+    private static int[] paragraphAt(String text, List<int[]> lines, int li, String lineComment) {
+        String k = kind(lineText(text, lines.get(li)), lineComment);
+        if (k == null) {
+            return null;
+        }
+        int first = li;
+        if (!isBullet(text, lines, li, lineComment)) {
+            while (first > 0 && k.equals(kind(lineText(text, lines.get(first - 1)), lineComment))) {
+                if (isBullet(text, lines, first - 1, lineComment)) {
+                    break; // k is "*" here: the item above is its own paragraph
+                }
+                first--;
+            }
+            if (k.isEmpty() && first > 0 && isBullet(text, lines, first - 1, lineComment)) {
+                first--; // plain lines under a list item belong to it
+            }
+        }
+        return new int[] {first, paragraphEnd(text, lines, first, lines.size() - 1, lineComment)};
     }
 
     /**
@@ -151,10 +255,9 @@ public final class Filler {
     /** The continuation prefix (leading indent, plus a comment/quote marker for a comment line). */
     public static String fillPrefix(String firstLine, String lineComment) {
         int ws = leadingWhitespace(firstLine);
-        String rest = firstLine.substring(ws);
         for (String marker : markers(lineComment)) {
-            if (rest.startsWith(marker)) {
-                int after = ws + marker.length();
+            int after = markerEnd(firstLine, ws, marker);
+            if (after >= 0) {
                 int afterWs = after + leadingWhitespace(firstLine.substring(after));
                 return firstLine.substring(0, afterWs);
             }
@@ -171,8 +274,8 @@ public final class Filler {
         int ws = leadingWhitespace(line);
         String rest = line.substring(ws);
         for (String marker : markers(lineComment)) {
-            if (rest.startsWith(marker)) {
-                int after = ws + marker.length();
+            int after = markerEnd(line, ws, marker);
+            if (after >= 0) {
                 return line.substring(after + leadingWhitespace(line.substring(after)));
             }
         }

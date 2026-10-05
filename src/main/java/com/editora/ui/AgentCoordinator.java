@@ -834,7 +834,9 @@ final class AgentCoordinator implements AcpClient.Host {
                     return false;
                 }
                 // Undoable, review-first: the buffer goes dirty and the user saves (one C-z reverts the edit).
-                open.getArea().replaceText(body);
+                // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in
+                // it.
+                open.replaceWholeDocument(body);
                 host.setStatus(tr("status.agent.editedBuffer", open.getTitle()));
                 return true;
             });

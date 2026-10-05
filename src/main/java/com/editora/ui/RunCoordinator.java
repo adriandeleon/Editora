@@ -111,11 +111,18 @@ final class RunCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final RunService service = new RunService();
-    private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(service);
+    private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(service, true); // the console can answer it
     private final RunPanel panel;
 
-    /** The most recent launch, for {@code run.rerun} and the shared stack-trace link resolver. */
+    /**
+     * The most recent launch, for {@code run.rerun}. Assigned only by {@link #streamRun}, all four together:
+     * the before-launch console once set {@code lastRunDir} on its own, and Rerun then replayed the previous
+     * program in the before-launch step's directory.
+     */
     private Path lastRunDir;
+
+    /** Where the console's current output came from — a run or a before-launch step — for its file links. */
+    private Path consoleDir;
 
     private java.util.Map<String, String> lastRunEnv = java.util.Map.of();
     private String lastRunLabel;
@@ -136,7 +143,7 @@ final class RunCoordinator {
 
     /** Working directory of the most recent run, or {@code null} — used by the shared link resolver. */
     Path lastRunDir() {
-        return lastRunDir;
+        return consoleDir;
     }
 
     void runActiveFile() {
@@ -154,7 +161,7 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.noRerun"));
             return;
         }
-        if (!beginRunRequest()) {
+        if (!beginRunRequest() || !saveActiveBuffer()) {
             return;
         }
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv);
@@ -247,9 +254,27 @@ final class RunCoordinator {
         return service.isRunning() || beforeLaunch.isActive();
     }
 
+    /** Set by the first launch (or before-launch step) that reaches the console; never cleared. */
+    private boolean consoleUsed;
+
+    /**
+     * Whether the Run console has something to show: a live process, or the output of one that ran in this
+     * window. Availability must not fall back to "the active tab is runnable" when a run exits — that closed
+     * the console on the very output it was opened for, and an instant-exit program never appeared at all.
+     */
+    boolean consoleInUse() {
+        return consoleUsed || isRunning();
+    }
+
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
         if (!beginRunRequest()) {
+            return;
+        }
+        // Save first, as Debug and the gutter marker do. The save used to sit inside the Java launch, after
+        // the before-launch build — which therefore compiled the file as it was on disk, and the program ran
+        // without the edit on screen; a script configuration never saved at all.
+        if (!saveActiveBuffer()) {
             return;
         }
         // A before-launch step gates everything after it: if the build fails there is nothing worth running,
@@ -261,6 +286,12 @@ final class RunCoordinator {
                 runJavaConfig(cfg);
             }
         });
+    }
+
+    /** Saves the active buffer if it is a dirty local file; false when that save was refused or failed. */
+    private boolean saveActiveBuffer() {
+        EditorBuffer b = host.activeBuffer();
+        return b == null || b.getPath() == null || !b.isDirty() || !host.isLocalBuffer(b) || ops.saveBuffer(b);
     }
 
     /**
@@ -281,7 +312,8 @@ final class RunCoordinator {
                 new BeforeLaunchStep.Console() {
                     @Override
                     public void started(String commandLine) {
-                        lastRunDir = cwd; // so a compiler error's file link in the build output resolves
+                        consoleDir = cwd; // so a compiler error's file link in the build output resolves
+                        consoleUsed = true;
                         panel.started(commandLine);
                     }
 
@@ -812,9 +844,11 @@ final class RunCoordinator {
     /** As above, plus {@code env} — a saved run configuration's environment variables. */
     private void streamRun(String label, Path workingDir, List<String> command, java.util.Map<String, String> env) {
         lastRunDir = workingDir;
+        consoleDir = workingDir;
         lastRunLabel = label;
         lastRunCommand = command;
         lastRunEnv = env;
+        consoleUsed = true;
         ops.openToolWindow();
         panel.started(label);
         host.setStatus(tr("status.run.started", label));

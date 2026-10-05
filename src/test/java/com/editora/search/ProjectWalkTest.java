@@ -188,4 +188,34 @@ class ProjectWalkTest {
                 root.resolve("nope"), unbounded(GitignoreFilter.NONE), (f, rel, a) -> ProjectWalk.Verdict.ACCEPT);
         assertEquals(new ProjectWalk.Outcome(0, false, false, 0), outcome);
     }
+
+    // --- A12-19: a project root that is itself a symbolic link ---------------------------------------------
+
+    @Test
+    void aSymlinkedRootIsWalkedAndPathsStayUnderTheLink(@TempDir Path dir) throws Exception {
+        Path real = Files.createDirectories(dir.resolve("data/proj"));
+        Files.createDirectories(real.resolve("src"));
+        Files.writeString(real.resolve("src/A.java"), "class A {}");
+        Files.writeString(real.resolve("top.txt"), "x");
+        Path link = dir.resolve("proj");
+        try {
+            Files.createSymbolicLink(link, real);
+        } catch (java.io.IOException | UnsupportedOperationException noLinks) {
+            assumeTrue(false, "symbolic links unavailable");
+        }
+
+        List<Path> files = new ArrayList<>();
+        List<String> rels = new ArrayList<>();
+        ProjectWalk.Outcome outcome =
+                ProjectWalk.walk(link, new ProjectWalk.Options(10, 100, GitignoreFilter.NONE), (file, rel, attrs) -> {
+                    assertTrue(attrs.isRegularFile(), rel);
+                    files.add(file);
+                    rels.add(rel);
+                    return ProjectWalk.Verdict.ACCEPT;
+                });
+
+        assertEquals(2, outcome.accepted());
+        assertEquals(List.of("src/A.java", "top.txt"), rels.stream().sorted().toList());
+        assertTrue(files.stream().allMatch(f -> f.startsWith(link)), "offered under the root as given: " + files);
+    }
 }

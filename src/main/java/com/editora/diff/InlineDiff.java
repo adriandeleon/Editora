@@ -3,7 +3,6 @@ package com.editora.diff;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.DeltaType;
 import com.github.difflib.patch.Patch;
@@ -15,7 +14,7 @@ import com.github.difflib.patch.Patch;
  *
  * <p>Implemented on top of java-diff-utils by tokenizing each line into word/non-word runs and diffing
  * the token lists — word granularity, no second diff library needed. Cheap (one short diff per changed
- * line) and only ever called for paired CHANGE rows.
+ * line, bounded by {@link #MAX_TOKEN_EDITS}) and only ever called for paired CHANGE rows.
  */
 public final class InlineDiff {
 
@@ -23,6 +22,13 @@ public final class InlineDiff {
 
     /** Differing char ranges on the {@code left} and {@code right} line (each {@code [start,end)}). */
     public record Spans(int[][] left, int[][] right) {}
+
+    /**
+     * Above this many token edits the pair is not worth a word diff (and the quadratic search for one long
+     * line — a minified bundle, single-line JSON — stalled every diff in the window): only the part between
+     * the common prefix and suffix is marked.
+     */
+    static final int MAX_TOKEN_EDITS = 1_000;
 
     public static Spans compute(String left, String right) {
         if (left == null) {
@@ -35,7 +41,10 @@ public final class InlineDiff {
         List<String> b = tokenize(right);
         int[] aStarts = offsets(a);
         int[] bStarts = offsets(b);
-        Patch<String> patch = DiffUtils.diff(a, b);
+        Patch<String> patch = BoundedDiff.diff(a, b, MAX_TOKEN_EDITS);
+        if (patch == null) {
+            return changedMiddle(left, right);
+        }
         List<int[]> leftRanges = new ArrayList<>();
         List<int[]> rightRanges = new ArrayList<>();
         for (AbstractDelta<String> d : patch.getDeltas()) {
@@ -56,6 +65,25 @@ public final class InlineDiff {
             }
         }
         return new Spans(merge(leftRanges), merge(rightRanges));
+    }
+
+    /** One span per side covering everything between the two lines' common prefix and common suffix. */
+    private static Spans changedMiddle(String left, String right) {
+        int max = Math.min(left.length(), right.length());
+        int prefix = 0;
+        while (prefix < max && left.charAt(prefix) == right.charAt(prefix)) {
+            prefix++;
+        }
+        int suffix = 0;
+        while (suffix < max - prefix
+                && left.charAt(left.length() - 1 - suffix) == right.charAt(right.length() - 1 - suffix)) {
+            suffix++;
+        }
+        return new Spans(span(prefix, left.length() - suffix), span(prefix, right.length() - suffix));
+    }
+
+    private static int[][] span(int start, int end) {
+        return end > start ? new int[][] {{start, end}} : new int[0][];
     }
 
     /** Tokens are maximal runs of word characters, or a single non-word character each (so whitespace

@@ -85,7 +85,7 @@ public final class Indenter {
                 }
                 String ln = lines[i];
                 if (shift) {
-                    sb.append(removeOneIndent(ln, tabSize));
+                    sb.append(removeOneIndent(ln, dedentWidth(unit, tabSize)));
                 } else {
                     sb.append(ln.isEmpty() ? ln : unit + ln); // don't indent blank lines on Tab
                 }
@@ -97,7 +97,8 @@ public final class Indenter {
         int ls = lineStart(text, caret);
         if (shift) { // dedent the current line
             String leading = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
-            int removed = leading.length() - removeOneIndent(leading, tabSize).length();
+            int removed = leading.length()
+                    - removeOneIndent(leading, dedentWidth(unit, tabSize)).length();
             int newCaret = Math.max(ls, caret - removed);
             return new TabEdit(ls, ls + removed, "", newCaret, newCaret);
         }
@@ -106,7 +107,7 @@ public final class Indenter {
             // In leading whitespace: snap the line up to the indent the surrounding code implies, and put
             // the caret where typing starts.
             String leading = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
-            String suggested = suggestedIndent(text, ls, style, unit);
+            String suggested = suggestedIndent(text, ls, style, unit, isHtml(language));
             if (width(leading, tabSize) >= width(suggested, tabSize)) {
                 // Already at (or past) that level, so the text is left alone — repeated Tab must not keep
                 // piling on indentation (use Shift-Tab to dedent). The caret still moves to the end of the
@@ -126,7 +127,7 @@ public final class Indenter {
 
     /** The indent the line at {@code lineStart} should have from context: the nearest previous non-blank
      *  line's indent, plus one unit if that line opens a block. {@code ""} when there's no line above. */
-    private static String suggestedIndent(String text, int lineStart, Style style, String unit) {
+    private static String suggestedIndent(String text, int lineStart, Style style, String unit, boolean html) {
         int pos = lineStart;
         int scanned = 0;
         while (pos > 0 && scanned < MAX_SCAN) {
@@ -135,11 +136,19 @@ public final class Indenter {
             scanned += pos - prevStart;
             if (!prevLine.isBlank()) {
                 String ind = leadingWhitespace(prevLine);
-                return opensBlock(style, prevLine) ? ind + unit : ind;
+                return opensBlock(style, prevLine, html) ? ind + unit : ind;
             }
             pos = prevStart;
         }
         return "";
+    }
+
+    /**
+     * How many spaces one Shift-Tab removes: the indent unit's own width when it is spaces (EditorConfig's
+     * {@code indent_size} can differ from {@code tab_width}), else the tab width.
+     */
+    private static int dedentWidth(String unit, int tabSize) {
+        return unit.startsWith(" ") ? unit.length() : tabSize;
     }
 
     /** Removes one indent level from {@code line}'s start: a leading tab, else up to {@code tabSize} spaces. */
@@ -217,7 +226,7 @@ public final class Indenter {
             String body = indent + unit;
             return new EnterEdit("\n" + body + "\n" + indent, 1 + body.length());
         }
-        String newIndent = opensBlock(style, before) ? indent + unit : indent;
+        String newIndent = opensBlock(style, before, isHtml(language)) ? indent + unit : indent;
         return new EnterEdit("\n" + newIndent, 1 + newIndent.length());
     }
 
@@ -227,6 +236,10 @@ public final class Indenter {
      * when none. Used for the electric de-indent.
      */
     public static String closerAlignIndent(String text, int caret, int tabSize) {
+        return closerAlignIndent(text, caret, tabSize, null);
+    }
+
+    private static String closerAlignIndent(String text, int caret, int tabSize, Style style) {
         int ls = lineStart(text, caret);
         int curWidth = width(leadingWhitespace(text.substring(ls, lineEnd(text, caret))), tabSize);
         int pos = ls;
@@ -235,7 +248,8 @@ public final class Indenter {
             int prevStart = lineStart(text, pos - 1);
             String prevLine = text.substring(prevStart, pos - 1);
             scanned += pos - prevStart;
-            if (!prevLine.isBlank()) {
+            // A preprocessor line sits at column 0 whatever block it is in; it is not the opener.
+            if (!prevLine.isBlank() && !(style == Style.BRACES && prevLine.startsWith("#"))) {
                 String pind = leadingWhitespace(prevLine);
                 if (width(pind, tabSize) < curWidth) {
                     return pind;
@@ -244,6 +258,35 @@ public final class Indenter {
             pos = prevStart;
         }
         return "";
+    }
+
+    /**
+     * As {@link #closerAlignIndent(String, int, int)}, but idempotent: returns {@code currentIndent} unchanged
+     * when the closer's line no longer sits at body level, so a closer that is already aligned is never
+     * stepped out to the <em>enclosing</em> block. "Shallower than the current indent" finds the opener only
+     * while the closer is still as deep as its body; once aligned, the nearest shallower line belongs to the
+     * block around it. The line is already aligned when the previous non-blank line is deeper (the body), or
+     * is a block opener at the same indent (an empty block).
+     */
+    public static String closerAlignIndent(Style style, String text, int caret, int tabSize, String currentIndent) {
+        int ls = lineStart(text, caret);
+        int curWidth = width(leadingWhitespace(text.substring(ls, lineEnd(text, caret))), tabSize);
+        int pos = ls;
+        int scanned = 0;
+        while (pos > 0 && scanned < MAX_SCAN) {
+            int prevStart = lineStart(text, pos - 1);
+            String prevLine = text.substring(prevStart, pos - 1);
+            scanned += pos - prevStart;
+            if (!prevLine.isBlank() && !(style == Style.BRACES && prevLine.startsWith("#"))) {
+                int prevWidth = width(leadingWhitespace(prevLine), tabSize);
+                if (prevWidth > curWidth || (prevWidth == curWidth && opensBlock(style, prevLine))) {
+                    return currentIndent;
+                }
+                break;
+            }
+            pos = prevStart;
+        }
+        return closerAlignIndent(text, caret, tabSize, style);
     }
 
     /** True when typing {@code c} is a closing bracket that should de-indent for the style. */
@@ -278,6 +321,11 @@ public final class Indenter {
         char last = rest.charAt(rest.length() - 1);
         if (isWordChar(last)) {
             return false; // still inside a word, which may yet turn out longer than the keyword
+        }
+        if (last != '\n' && Character.isISOControl(last)) {
+            // The KEY_TYPED that follows Backspace/Escape/Delete carries a control character and types
+            // nothing: `fix` + Backspace is on its way to `find`, not a finished `fi`.
+            return false;
         }
         if (closers.contains(rest)) {
             return true; // a symbolic closer (;;), complete as typed
@@ -325,8 +373,16 @@ public final class Indenter {
 
     // --- block-open detection ---------------------------------------------------------------------
 
+    private static boolean isHtml(String language) {
+        return "html".equals(language) || "astro".equals(language);
+    }
+
     private static boolean opensBlock(Style style, String before) {
-        String code = stripTrailingComment(before).stripTrailing();
+        return opensBlock(style, before, false);
+    }
+
+    private static boolean opensBlock(Style style, String before, boolean html) {
+        String code = stripTrailingComment(style, before).stripTrailing();
         if (code.isEmpty()) {
             return false;
         }
@@ -334,7 +390,7 @@ public final class Indenter {
         return switch (style) {
             case BRACES -> last == '{' || last == '(' || last == '[';
             case PY -> last == ':' || last == '{' || last == '(' || last == '[';
-            case XML -> endsWithOpenTag(code);
+            case XML -> endsWithOpenTag(code, html);
             case SHELL ->
                 last == '{'
                         || last == '('
@@ -376,7 +432,7 @@ public final class Indenter {
 
     private static boolean rubyOpener(String code) {
         return startsWithWord(code, "def", "class", "module", "if", "unless", "while", "until", "case", "for")
-                && !code.strip().contains(" end");
+                && !code.matches(".*\\bend\\b.*"); // the whole word: `def end_date` still opens
     }
 
     private static boolean startsWithWord(String code, String... words) {
@@ -399,11 +455,24 @@ public final class Indenter {
     }
 
     private static boolean endsWithOpenTag(String code) {
+        return endsWithOpenTag(code, false);
+    }
+
+    private static boolean endsWithOpenTag(String code, boolean html) {
         int lt = code.lastIndexOf('<');
         if (lt < 0 || !code.endsWith(">")) {
             return false;
         }
         String tag = code.substring(lt);
+        if (html) { // <br>, <meta …>: a void element has no content to indent
+            int end = 1;
+            while (end < tag.length() && (Character.isLetterOrDigit(tag.charAt(end)) || tag.charAt(end) == '-')) {
+                end++;
+            }
+            if (TagRename.VOID_ELEMENTS.contains(tag.substring(1, end).toLowerCase(java.util.Locale.ROOT))) {
+                return false;
+            }
+        }
         return !tag.startsWith("</") && !tag.endsWith("/>") && !tag.startsWith("<!") && !tag.startsWith("<?");
     }
 
@@ -430,7 +499,7 @@ public final class Indenter {
 
     /** The indent unit to use: an EditorConfig override when {@code insertSpaces != null} (tab, or
      *  {@code indentSize}/{@code tabSize} spaces), else the document's {@link #detectUnit detected} unit. */
-    static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize) {
+    public static String unitFor(String text, int tabSize, Boolean insertSpaces, Integer indentSize) {
         if (insertSpaces == null) {
             return detectUnit(text, tabSize);
         }
@@ -466,8 +535,18 @@ public final class Indenter {
         return " ".repeat(Math.max(1, tabSize)); // no evidence → spaces (the VSCode/IntelliJ default)
     }
 
-    /** Strips a trailing line comment ({@code //}, {@code #}, {@code --}) that is not inside a string. */
-    private static String stripTrailingComment(String s) {
+    /**
+     * Strips a trailing line comment that is not inside a string, honouring only the tokens the style's
+     * languages use — so a decrement ({@code i--}), a shell {@code $#} or long option, a CSS id selector,
+     * a JS private field, Python's {@code //} and Lua's {@code #t} are code, not comments:
+     * <ul>
+     *   <li>{@code //} — brace languages only;</li>
+     *   <li>{@code #} — shell/Python/Ruby when it starts a word; brace languages (Terraform, PHP) only
+     *       when it stands alone ({@code # note}, not {@code #main});</li>
+     *   <li>{@code --} — Lua anywhere; brace languages (SQL) only when it stands alone.</li>
+     * </ul>
+     */
+    private static String stripTrailingComment(Style style, String s) {
         char quote = 0;
         int limit = Math.min(s.length(), MAX_SCAN);
         for (int i = 0; i < limit; i++) {
@@ -480,15 +559,32 @@ public final class Indenter {
                 }
             } else if (c == '"' || c == '\'') {
                 quote = c;
-            } else if (c == '/' && i + 1 < s.length() && s.charAt(i + 1) == '/') {
-                return s.substring(0, i);
-            } else if (c == '-' && i + 1 < s.length() && s.charAt(i + 1) == '-') {
-                return s.substring(0, i);
-            } else if (c == '#') {
+            } else if (startsComment(style, s, i)) {
                 return s.substring(0, i);
             }
         }
         return s;
+    }
+
+    private static boolean startsComment(Style style, String s, int i) {
+        char c = s.charAt(i);
+        boolean wordStart = i == 0 || Character.isWhitespace(s.charAt(i - 1));
+        if (c == '/') {
+            return style == Style.BRACES && s.startsWith("//", i);
+        }
+        if (c == '#') {
+            boolean alone = i + 1 == s.length() || Character.isWhitespace(s.charAt(i + 1)) || s.charAt(i + 1) == '!';
+            return switch (style) {
+                case SHELL, PY, RUBY -> wordStart;
+                case BRACES -> wordStart && alone;
+                default -> false;
+            };
+        }
+        if (c == '-' && s.startsWith("--", i)) {
+            boolean alone = i + 2 == s.length() || Character.isWhitespace(s.charAt(i + 2));
+            return style == Style.LUA || (style == Style.BRACES && wordStart && alone);
+        }
+        return false;
     }
 
     private static int width(String indent, int tabSize) {

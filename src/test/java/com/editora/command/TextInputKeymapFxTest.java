@@ -106,6 +106,32 @@ class TextInputKeymapFxTest {
         });
     }
 
+    /**
+     * A picker registers its own list-navigation filter before the keymap's, and consumes M-v (page up). The
+     * keymap then never handled that press itself — and used to let its Option glyph through into the query.
+     */
+    @Test
+    void theGlyphOfAChordAnEarlierFilterHandledIsSwallowedToo() throws Exception {
+        onFx(() -> {
+            List<String> reached = new ArrayList<>();
+            TextField field = new TextField("Foo");
+            field.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                if (e.getCode() == KeyCode.V && e.isAltDown()) {
+                    e.consume(); // the picker paged its list
+                }
+            });
+            TextInputKeymap.install(field, emacs(true), true);
+            field.addEventHandler(KeyEvent.KEY_TYPED, e -> reached.add(e.getCharacter()));
+
+            field.fireEvent(press(KeyCode.V, false, true));
+            field.fireEvent(typed("\u221a", false, true, false));
+            assertEquals(List.of(), reached, "the chord's glyph is not text");
+
+            field.fireEvent(typed("@", false, true, false));
+            assertEquals(List.of("@"), reached, "and the swallow is spent");
+        });
+    }
+
     @Test
     void aHandledChordWithNoTypedEventDoesNotEatTheNextCharacter() throws Exception {
         onFx(() -> {

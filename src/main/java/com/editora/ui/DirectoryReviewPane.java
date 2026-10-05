@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.collections.FXCollections;
@@ -79,14 +78,7 @@ final class DirectoryReviewPane implements TabContent {
     private final ListView<Entry> files = new ListView<>();
     private final Label position = new Label();
     private final Button exitDiffUiButton = new Button();
-    private final Map<Entry, DiffViewerPane> cache = new LinkedHashMap<>(16, 0.75f, true) {
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<DirectoryReviewPane.Entry, DiffViewerPane> eldest) {
-            // A cached Result draft is still user-owned even when another file is selected. Keep it until
-            // it is applied/reset so cache pressure cannot silently discard review work.
-            return size() > MAX_CACHED_PANES && !eldest.getValue().hasUnsavedChanges();
-        }
-    };
+    private final LinkedHashMap<Entry, DiffViewerPane> cache = new LinkedHashMap<>(16, 0.75f, true);
     private long loadGeneration;
     private DiffViewerPane activePane;
 
@@ -135,6 +127,25 @@ final class DirectoryReviewPane implements TabContent {
             empty.getStyleClass().add("tool-window-placeholder");
             content.getChildren().setAll(empty);
         }
+    }
+
+    /**
+     * Evicts least-recently-used values until at most {@code max} remain, skipping the {@code pinned} ones,
+     * and returns what it removed. {@code removeEldestEntry} only ever looks at the single eldest entry:
+     * while that one was pinned nothing was evicted, and afterwards one entry went per insertion, so the
+     * cache never came back down to its cap.
+     */
+    static <K, V> List<V> trim(LinkedHashMap<K, V> cache, int max, java.util.function.Predicate<V> pinned) {
+        List<V> evicted = new ArrayList<>();
+        var eldestFirst = cache.entrySet().iterator();
+        while (cache.size() > max && eldestFirst.hasNext()) {
+            V value = eldestFirst.next().getValue();
+            if (!pinned.test(value)) {
+                eldestFirst.remove();
+                evicted.add(value);
+            }
+        }
+        return evicted;
     }
 
     List<DiffViewerPane> panes() {
@@ -193,6 +204,13 @@ final class DirectoryReviewPane implements TabContent {
                 return;
             }
             cache.put(entry, loaded.pane());
+            // A cached Result draft is still user-owned even when another file is selected. Keep it until
+            // it is applied/reset so cache pressure cannot silently discard review work.
+            trim(
+                            cache,
+                            MAX_CACHED_PANES,
+                            pane -> pane == loaded.pane() || pane == activePane || pane.hasUnsavedChanges())
+                    .forEach(DiffViewerPane::dispose);
             entry.setStats(loaded.additions(), loaded.deletions());
             files.refresh();
             if (requested == loadGeneration) {

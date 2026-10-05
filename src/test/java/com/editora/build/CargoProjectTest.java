@@ -58,4 +58,10 @@ class CargoProjectTest {
     void malformedTomlThrows() {
         assertThrows(IllegalArgumentException.class, () -> CargoProject.parse("[package\nname ="));
     }
+
+    @Test
+    void aByteOrderMarkIsNotMalformedToml() {
+        assertEquals(
+                "demo", CargoProject.parse("\uFEFF[package]\nname = \"demo\"\n").packageName());
+    }
 }

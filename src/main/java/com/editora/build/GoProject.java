@@ -17,7 +17,7 @@ public record GoProject(String moduleName) {
         if (goModText == null || goModText.isBlank()) {
             return new GoProject(null);
         }
-        Matcher m = MODULE.matcher(goModText);
+        Matcher m = MODULE.matcher(BuildTool.withoutBom(goModText));
         return new GoProject(m.find() ? m.group(1) : null);
     }
 }

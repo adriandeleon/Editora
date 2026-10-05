@@ -148,6 +148,104 @@ class LineMarksTest {
         assertTrue(out.values().stream().allMatch(b -> out.get(b.line()) == b), "each record's line is its key");
     }
 
+    // --- marks follow their statement, and never land on a line the edit did not touch -------------
+
+    private static NavigableMap<Integer, Bookmark> edit(
+            NavigableMap<Integer, Bookmark> in, String removed, String inserted, int line, int col, String... after) {
+        IntFunction<String> doc = doc(after);
+        return LineMarks.shift(in, KIND, LineMarks.Edit.of(removed, inserted, line, col, doc), after.length, doc);
+    }
+
+    @Test
+    void movingALineDownTakesItsMarkAlong() {
+        // Move Line Down is one ranged replace of two lines by the same two, swapped: the line count is
+        // unchanged, and the mark used to stay on the index — now holding the neighbouring statement.
+        NavigableMap<Integer, Bookmark> out =
+                edit(bookmarks(1), "text1\ntext2", "text2\ntext1", 1, 0, "text0", "text2", "text1", "text3");
+        assertEquals(List.of(2), new ArrayList<>(out.keySet()));
+        assertEquals("note1", out.get(2).note());
+    }
+
+    @Test
+    void swappingTwoMarkedLinesSwapsTheirMarks() {
+        NavigableMap<Integer, Bookmark> out =
+                edit(bookmarks(1, 2), "text1\ntext2", "text2\ntext1", 1, 0, "text0", "text2", "text1", "text3");
+        assertEquals("note2", out.get(1).note());
+        assertEquals("note1", out.get(2).note());
+    }
+
+    @Test
+    void aSameLineCountRewriteThatEditsTheMarkedLineKeepsItInPlace() {
+        // Replace All changed the marked line's own text: nothing in the span reads "text2" any more.
+        NavigableMap<Integer, Bookmark> out =
+                edit(bookmarks(2), "text1\ntext2", "TEXT1\nTEXT2", 1, 0, "text0", "TEXT1", "TEXT2", "text3");
+        assertEquals(List.of(2), new ArrayList<>(out.keySet()));
+    }
+
+    @Test
+    void aSelectionEndingAtALineEndTakesThatLinesMarkWithIt() {
+        // From the end of line 1 to the end of line 2: line 2 is deleted whole. Its mark used to be treated
+        // as the surviving half of a join and reappeared on line 1.
+        NavigableMap<Integer, Bookmark> out = edit(bookmarks(2, 3), "\ntext2", "", 1, 5, "text0", "text1", "text3");
+        assertEquals(List.of(2), new ArrayList<>(out.keySet()));
+        assertEquals("note3", out.get(2).note());
+    }
+
+    @Test
+    void aRealJoinStillCarriesTheJoinedLinesMark() {
+        // Backspace at column 0 of line 2: its text survives on line 1.
+        NavigableMap<Integer, Bookmark> out = edit(bookmarks(2), "\n", "", 1, 5, "text0", "text1text2", "text3");
+        assertEquals(List.of(1), new ArrayList<>(out.keySet()));
+        // …and so does a deletion that leaves part of the last line.
+        out = edit(bookmarks(2), "1\nte", "", 1, 4, "text0", "textxt2", "text3");
+        assertEquals(List.of(1), new ArrayList<>(out.keySet()));
+    }
+
+    @Test
+    void pastingOverWholeLinesNeverPlantsAMarkOnTheLineAfterThem() {
+        // Lines 0..2 replaced by one line: "text3" below was not touched and must not receive a mark.
+        NavigableMap<Integer, Bookmark> out =
+                edit(bookmarks(1, 2), "text0\ntext1\ntext2\n", "replacement\n", 0, 0, "replacement", "text3");
+        assertEquals(List.of(0), new ArrayList<>(out.keySet()), "one line in the span, so one mark is kept");
+        out = edit(bookmarks(1, 3), "text0\ntext1\ntext2\n", "replacement\n", 0, 0, "replacement", "text3");
+        assertEquals("note1", out.get(0).note());
+        assertEquals("note3", out.get(1).note(), "the mark that was on the untouched line stays on it");
+    }
+
+    @Test
+    void aLineLongerThanTheStoredSnapshotStillMatches() {
+        String longLine = "x".repeat(Bookmark.MAX_LINE_TEXT + 48);
+        NavigableMap<Integer, Bookmark> in = new TreeMap<>();
+        in.put(1, new Bookmark(1, "long", longLine)); // stored cut to MAX_LINE_TEXT
+        NavigableMap<Integer, Bookmark> out =
+                LineMarks.shift(in, KIND, 0, true, 2, 4, 5, doc("a", "b", "c", longLine, "d"));
+        assertEquals(List.of(3), new ArrayList<>(out.keySet()));
+    }
+
+    // --- a batch of replacements ---------------------------------------------------------------------
+
+    @Test
+    void aBatchAppliedBottomToTopIsSettledIntoFinalCoordinates() {
+        // Two replacements, applied bottom-to-top: first one at offset 100 (joins two lines: -1 line, -3
+        // chars), then one at offset 10 that adds 8 characters and a line above it.
+        int[] positions = {100, 10};
+        int[] lengthDelta = {-3, 8};
+        int[] lineDelta = {-1, 1};
+        assertEquals(
+                new LineMarkTracker.Settled(108, 1, 1), LineMarkTracker.settle(0, positions, lengthDelta, lineDelta));
+        assertEquals(
+                new LineMarkTracker.Settled(10, 0, 0), LineMarkTracker.settle(1, positions, lengthDelta, lineDelta));
+    }
+
+    @Test
+    void aLaterReplacementBelowDoesNotMoveAnEarlierOne() {
+        int[] positions = {10, 100};
+        int[] lengthDelta = {8, -3};
+        int[] lineDelta = {1, -1};
+        assertEquals(
+                new LineMarkTracker.Settled(10, 0, -1), LineMarkTracker.settle(0, positions, lengthDelta, lineDelta));
+    }
+
     private static final LineMarks.Kind<Bookmark> KIND = new LineMarks.Kind<>() {
         @Override
         public int line(Bookmark mark) {

@@ -119,7 +119,7 @@ class CodeActionPopupFxTest {
         assertNull(
                 FxTestSupport.callOnFx(() -> {
                     CodeArea area = FxTestSupport.field(b, "area");
-                    return area.getProperties().get("editora.ownsKeys");
+                    return area.getProperties().get(com.editora.command.KeyDispatcher.OWNED_CHORDS);
                 }),
                 "the editor chords were handed back to the dispatcher");
 
@@ -138,6 +138,107 @@ class CodeActionPopupFxTest {
         FxTestSupport.runOnFx(() -> press(b, KeyCode.LEFT));
 
         assertFalse(FxTestSupport.callOnFx(b::codeActionsShowing), "moving the caret closed the list");
+        close(b);
+    }
+
+    /**
+     * The list belongs to one caret position in one visible editor, and it does not auto-hide. Anything that
+     * takes the user elsewhere has to dismiss it — it used to float over another tab, and to outlive the
+     * buffer it was opened for, with Enter still bound to "apply".
+     */
+    @Test
+    void leavingTheEditorDismissesTheList() throws Exception {
+        EditorBuffer first = openBuffer();
+        FxTestSupport.runOnFx(() -> first.showCodeActions(ACTIONS, a -> {}));
+        assertTrue(FxTestSupport.callOnFx(first::codeActionsShowing));
+
+        EditorBuffer second = openBuffer(); // a new tab takes the selection and the focus
+        FxTestSupport.drainFx();
+        assertFalse(FxTestSupport.callOnFx(first::codeActionsShowing), "switching tabs closed the list");
+
+        close(second);
+        close(first);
+    }
+
+    @Test
+    void aMousePressInTheTextDismissesTheList() throws Exception {
+        EditorBuffer b = openBuffer();
+        AtomicReference<CodeAction> accepted = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> b.showCodeActions(ACTIONS, accepted::set));
+
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = b.getFocusedArea();
+            area.fireEvent(new javafx.scene.input.MouseEvent(
+                    javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                    5,
+                    5,
+                    5,
+                    5,
+                    javafx.scene.input.MouseButton.PRIMARY,
+                    1,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false,
+                    null));
+        });
+
+        assertFalse(FxTestSupport.callOnFx(b::codeActionsShowing), "a click elsewhere in the text closed it");
+        FxTestSupport.runOnFx(() -> press(b, KeyCode.ENTER));
+        assertNull(accepted.get(), "and Enter is an ordinary Enter again");
+        close(b);
+    }
+
+    @Test
+    void disposingTheBufferDismissesTheList() throws Exception {
+        EditorBuffer shown = openBuffer();
+        FxTestSupport.runOnFx(() -> shown.showCodeActions(ACTIONS, a -> {}));
+        assertTrue(FxTestSupport.callOnFx(shown::codeActionsShowing));
+
+        FxTestSupport.runOnFx(shown::cancelCompletion); // the first thing EditorBuffer.dispose() runs
+        assertFalse(FxTestSupport.callOnFx(shown::codeActionsShowing));
+        close(shown);
+    }
+
+    /** A click on the list's scroll bar or border is not a choice; only a row accepts. */
+    @Test
+    void onlyAClickOnARowAccepts() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            var cell = new javafx.scene.control.ListCell<String>();
+            var inside = new javafx.scene.control.Label("row");
+            cell.setGraphic(inside);
+            assertFalse(com.editora.editor.CodeActionPopup.onRow(new javafx.scene.control.ScrollBar()));
+            assertFalse(com.editora.editor.CodeActionPopup.onRow(cell), "an empty filler row is not an action");
+            assertFalse(com.editora.editor.CodeActionPopup.onRow(null));
+        });
+    }
+
+    /**
+     * A real keyboard sends Control's own key press before the N of C-n. That press is not a keystroke that
+     * moves or edits, so the list has to survive it — otherwise the chords can never reach it.
+     */
+    @Test
+    void aModifierPressedOnItsOwnLeavesTheListOpenForTheChord() throws Exception {
+        EditorBuffer b = openBuffer();
+        AtomicReference<CodeAction> accepted = new AtomicReference<>();
+        FxTestSupport.runOnFx(() -> b.showCodeActions(ACTIONS, accepted::set));
+
+        FxTestSupport.runOnFx(() -> pressCtrl(b, KeyCode.CONTROL)); // the modifier going down, as hardware sends it
+        assertTrue(FxTestSupport.callOnFx(b::codeActionsShowing), "Control alone did not dismiss the list");
+        FxTestSupport.runOnFx(() -> press(b, KeyCode.SHIFT));
+        assertTrue(FxTestSupport.callOnFx(b::codeActionsShowing), "nor did Shift");
+
+        FxTestSupport.runOnFx(() -> pressCtrl(b, KeyCode.CONTROL));
+        FxTestSupport.runOnFx(() -> pressCtrl(b, KeyCode.P)); // B -> A
+        FxTestSupport.runOnFx(() -> press(b, KeyCode.ENTER));
+        assertEquals("A", accepted.get().token(), "C-p, typed as Control then P, moved the selection");
+
         close(b);
     }
 

@@ -56,14 +56,62 @@ class SearchMatcherTest {
     }
 
     @Test
-    void wholeWordLiteralUsesRealWordBoundaries() {
-        // A query with a non-word edge char: there IS a \b between "a" and "+", so "+foo" matches "a+foo" —
-        // matching the regex path's \b(?:…)\b and ripgrep -w (the old test required a non-word char outside).
-        assertRanges(SearchMatcher.matches("a+foo", "+foo", true, false, true), m(1, 5));
-        // Both edges non-word ⇒ no boundary after ")", so it correctly does NOT match (like regex \b(?:…)\b).
-        assertRanges(SearchMatcher.matches("call(foo)", "(foo)", true, false, true));
-        // A word-edge query is unchanged: "cat" is still not a whole word inside "xcat".
+    void wholeWordLooksOnlyAtTheCharactersOutsideTheMatch() {
+        // ripgrep -w's half boundaries: a query whose own edge is punctuation is a whole word wherever it
+        // is not glued to a word character.
+        assertRanges(SearchMatcher.matches("    @Override\n", "@Override", true, false, true), m(4, 13));
+        assertRanges(SearchMatcher.matches("echo $var;", "$var", true, false, true), m(5, 9));
+        assertRanges(SearchMatcher.matches(" run() ", "run()", true, false, true), m(1, 6));
+        assertRanges(SearchMatcher.matches("x --flag y", "--flag", true, false, true), m(2, 8));
+        assertRanges(SearchMatcher.matches("call(foo)", "(foo)", true, false, true)); // glued to "call"
+        assertRanges(SearchMatcher.matches("a+foo", "+foo", true, false, true)); // glued to "a", as rg -w
         assertRanges(SearchMatcher.matches("xcat cat", "cat", true, false, true), m(5, 8));
+    }
+
+    @Test
+    void wholeWordAgreesBetweenLiteralAndRegexMode() {
+        for (String[] c : new String[][] {
+            {"    @Override\n", "@Override"},
+            {"a+foo +foo", "\\+foo"},
+            {"un café noir, cafés", "café"},
+            {"café", "caf"},
+        }) {
+            String literal = c[1].replace("\\", "");
+            assertRanges(
+                    SearchMatcher.matches(c[0], c[1], true, true, true),
+                    SearchMatcher.matches(c[0], literal, true, false, true).toArray(int[][]::new));
+        }
+        // Non-ASCII letters are word characters in regex mode too (\b is ASCII-only on current JDKs).
+        assertRanges(SearchMatcher.matches("un café noir, cafés", "café", true, true, true), m(3, 7));
+        assertRanges(SearchMatcher.matches("café", "caf", true, true, true));
+    }
+
+    @Test
+    void lineOrientedRegexMatchesAnEmptyLine() {
+        // One line at a time, as multi-file search hands them in: an empty line is still a line.
+        for (String blank : new String[] {"^$", "^", "^\\s*$", "$"}) {
+            assertRanges(SearchMatcher.matches("", blank, true, true, false), m(0, 0));
+            assertTrue(
+                    SearchMatcher.compileRegex(blank, true, false).matcher("").find(), blank);
+        }
+        // …while the whole-document pattern still anchors at every line.
+        assertTrue(SearchMatcher.compileDocumentRegex("^b", true, false)
+                .matcher("a\nb")
+                .find());
+        assertTrue(
+                !SearchMatcher.compileRegex("^b", true, false).matcher("a\nb").find());
+    }
+
+    @Test
+    void regexThatOverflowsTheStackIsAbandonedNotThrown() {
+        // java.util.regex recurses once per repetition of an alternation group.
+        String text = "/*" + "x".repeat(400_000) + "*/";
+        SearchMatcher.Result r = SearchMatcher.search(text, "/\\*(.|\\n)*?\\*/", true, true, false);
+        assertTrue(!r.complete(), "the search reports that it was abandoned");
+        assertTrue(SearchMatcher.matches(text, "/\\*(.|\\n)*?\\*/", true, true, false)
+                .isEmpty());
+        assertTrue(SearchMatcher.search("/* x */", "/\\*(.|\\n)*?\\*/", true, true, false)
+                .complete());
     }
 
     @Test

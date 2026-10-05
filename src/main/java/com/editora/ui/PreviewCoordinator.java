@@ -182,7 +182,7 @@ final class PreviewCoordinator {
             host.setStatus(tr("status.markdownLint.fixNone"));
             return;
         }
-        b.getArea().replaceText(fixed); // whole-document replace (undoable)
+        b.replaceWholeDocument(fixed); // computed from getContent(): widens a narrowed buffer first (undoable)
         host.setStatus(tr("status.markdownLint.fixed"));
     }
 
@@ -595,7 +595,7 @@ final class PreviewCoordinator {
             host.setStatus(tr(align ? "status.csv.alignNoChange" : "status.csv.shrinkNoChange"));
             return;
         }
-        b.getArea().replaceText(out); // whole-document replace (undoable)
+        b.replaceWholeDocument(out); // computed from getContent(): widens a narrowed buffer first (undoable)
         host.setStatus(tr(align ? "status.csv.aligned" : "status.csv.shrunk"));
     }
 

@@ -25,6 +25,13 @@ class BuildDebugTest {
     }
 
     @Test
+    void theJdwpAgentListensOnLoopbackOnly() {
+        // JDWP has no authentication: "*:5005" (or a bare host-less address on JDK 8) is every interface.
+        assertTrue(BuildDebug.JDWP_AGENT.endsWith("address=127.0.0.1:5005"), BuildDebug.JDWP_AGENT);
+        assertFalse(BuildDebug.JDWP_AGENT.contains("*"));
+    }
+
+    @Test
     void springBootMavenPomSniff() {
         assertTrue(
                 BuildDebug.isSpringBootMavenPom("<plugin><artifactId>spring-boot-maven-plugin</artifactId></plugin>"));

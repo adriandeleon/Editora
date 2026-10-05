@@ -221,9 +221,9 @@ public final class CompletionEngine {
     /**
      * The number of characters at the end of {@code before} that are also the start of {@code insert} — the
      * overlap the accept should replace so an insert isn't duplicated after the text that triggered it. Used
-     * only when the identifier walk captured nothing (the char before the caret is a non-identifier trigger
-     * such as phpactor's {@code $}): typing {@code $} then accepting {@code $user} must yield {@code $user},
-     * not {@code $$user}. Bounded by the shorter string and stopped at a newline so it never crosses a line.
+     * for an item without a server range, where it wins over the identifier walk when it is the longer of
+     * the two (a non-identifier trigger such as phpactor's {@code $}, a hyphenated shell command): typing
+     * {@code $us} then accepting {@code $user} must yield {@code $user}, not {@code $$user}. Bounded by the shorter string and stopped at a newline so it never crosses a line.
      */
     public static int prefixOverlap(String before, String insert) {
         if (before == null || insert == null || before.isEmpty() || insert.isEmpty()) {

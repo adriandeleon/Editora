@@ -164,6 +164,7 @@ public final class FoldManager {
         // without manual folds, i.e. almost all of them.
         area.plainTextChanges().subscribe(ch -> {
             recomputeGeneration++;
+            noteEditNearFold(ch.getPosition(), ch.getInserted(), ch.getRemoved());
             if (manualRegions.isEmpty()) {
                 return;
             }
@@ -413,6 +414,10 @@ public final class FoldManager {
         changed.addAll(map.keySet());
         changed.removeIf(line -> oldStarts.contains(line) && map.containsKey(line));
         byStart = map;
+        if (orphanCheckPending) {
+            orphanCheckPending = false;
+            expandOrphanRuns();
+        }
         int total = area.getParagraphs().size();
         // Only recreate the gutter graphics for changed fold-start lines that are *currently visible*; the
         // graphic factory reads the (now-updated) byStart when it lazily builds offscreen rows on scroll,
@@ -551,6 +556,169 @@ public final class FoldManager {
     /** The foldable regions detected in the current text, in document order. */
     public List<Region> regions() {
         return regions;
+    }
+
+    // --- keeping a collapsed fold whole through edits ----------------------------------------------
+    //
+    // A fold is nothing but the `collapse` paragraph style on its body, and "collapsed" is inferred from the
+    // paragraph after the header. So an edit that separates the header from its hidden run — a line break
+    // typed at the header's end, the header line deleted or joined, a visible line joined INTO the run —
+    // left text in the document that was not drawn and that no chevron or fold command could reveal.
+    // Two rules keep that from happening: an edit that adds or removes a line break on a collapsed header
+    // or in its hidden run expands that fold, and after the next region detection any hidden run whose
+    // header no longer starts a region is expanded too (the header was edited into something else).
+
+    /** Stands in for a line break inside a collapsed fold in {@link #linesAsUnits}. Never typed; a document
+     *  that contains it is simply not masked. */
+    static final char HIDDEN_BREAK = '\u0000';
+
+    private boolean orphanCheckPending;
+
+    /**
+     * The last paragraph of the hidden run under the collapsed header {@code par}, or {@code par} itself
+     * when nothing is hidden under it — so a line command can take the header together with its body.
+     */
+    public int hiddenRunEnd(int par) {
+        int n = area.getParagraphs().size();
+        int q = par;
+        if (par >= 0 && par < n && !area.isFolded(par)) {
+            while (q + 1 < n && area.isFolded(q + 1)) {
+                q++;
+            }
+        }
+        return q;
+    }
+
+    /**
+     * {@code text} as the pure line commands (kill line, duplicate, move, transpose) should see it: a
+     * collapsed header and its hidden body are ONE line, as they are on screen. The line breaks inside a
+     * fold become {@link #HIDDEN_BREAK}, which keeps every offset unchanged; pass the edit's replacement
+     * through {@link #unmask}. Returns {@code text} itself when no collapsed fold is at, directly above or
+     * directly below the caret's line {@code par} — the only folds such a command can reach.
+     */
+    public String linesAsUnits(String text, int par) {
+        int n = area.getParagraphs().size();
+        boolean near = false;
+        for (int p = Math.max(0, par - 1); p <= par + 2 && p < n && !near; p++) {
+            near = area.isFolded(p);
+        }
+        if (!near || text.indexOf(HIDDEN_BREAK) >= 0) {
+            return text;
+        }
+        char[] chars = text.toCharArray();
+        int line = 0;
+        for (int i = 0; i < chars.length; i++) {
+            if (chars[i] == '\n' && ++line < n && area.isFolded(line)) {
+                chars[i] = HIDDEN_BREAK;
+            }
+        }
+        return new String(chars);
+    }
+
+    /** Undoes {@link #linesAsUnits} on an edit's replacement text. */
+    public static String unmask(String replacement) {
+        return replacement.indexOf(HIDDEN_BREAK) < 0 ? replacement : replacement.replace(HIDDEN_BREAK, '\n');
+    }
+
+    /**
+     * Expands the collapsed fold headed by the paragraph containing {@code offset} (if any) and returns
+     * the end offset of what was its last hidden line; {@code offset} itself when that paragraph heads no
+     * collapsed fold. For a line command that rewrites every line of the unit in place (comment).
+     */
+    public int expandHeaderAt(int offset) {
+        int par = area.offsetToPosition(offset, Bias.Forward).getMajor();
+        int end = hiddenRunEnd(par);
+        if (end == par) {
+            return offset;
+        }
+        unfold(par);
+        return area.getAbsolutePosition(end, area.getParagraphLength(end));
+    }
+
+    /**
+     * The span a whole-line rewrite (comment) should cover for the selection {@code [selStart, selEnd]}:
+     * unchanged, unless the selection ends on a collapsed header — then that fold is expanded and the span
+     * runs from the start of the selection's first line to the end of the fold's last line. A non-empty
+     * selection that ends at the very start of a line does not include that line.
+     */
+    public int[] expandHeaderSpan(int selStart, int selEnd) {
+        var pos = area.offsetToPosition(selEnd, Bias.Forward);
+        int end = selEnd > selStart && pos.getMinor() == 0 ? selEnd : expandHeaderAt(selEnd);
+        if (end == selEnd) {
+            return new int[] {selStart, selEnd};
+        }
+        return new int[] {
+            selStart - area.offsetToPosition(selStart, Bias.Forward).getMinor(), end
+        };
+    }
+
+    /** Per text change (so: per keystroke) — one position lookup and at most three paragraph-style reads. */
+    private void noteEditNearFold(int position, String inserted, String removed) {
+        int n = area.getParagraphs().size();
+        var at = area.offsetToPosition(Math.min(position, area.getLength()), Bias.Forward);
+        int first = at.getMajor();
+        boolean insertedBreak = inserted.indexOf('\n') >= 0;
+        int last = insertedBreak
+                ? area.offsetToPosition(Math.min(position + inserted.length(), area.getLength()), Bias.Forward)
+                        .getMajor()
+                : first;
+        if (!area.isFolded(first) && !area.isFolded(last) && !(last + 1 < n && area.isFolded(last + 1))) {
+            return;
+        }
+        orphanCheckPending = true; // a same-line edit: the header may stop being a region start
+        // Lines inserted in front of a header (at its column 0) push it down whole, body attached.
+        boolean pushedDown = removed.isEmpty() && at.getMinor() == 0 && !area.isFolded(first) && !area.isFolded(last);
+        if ((insertedBreak || removed.indexOf('\n') >= 0) && !pushedDown) {
+            // Deferred: changing paragraph styles from inside the change notification would re-enter the
+            // document (and, during an undo, the undo manager).
+            Platform.runLater(() -> expandRunsAt(first, last, last + 1));
+        }
+    }
+
+    private void expandRunsAt(int... pars) {
+        boolean changed = false;
+        for (int par : pars) {
+            if (par >= 0 && par < area.getParagraphs().size() && area.isFolded(par)) {
+                expandRun(par);
+                changed = true;
+            }
+        }
+        if (changed && !restoring) {
+            onFoldStateChanged.run();
+        }
+    }
+
+    /** Reveals the run of hidden paragraphs containing {@code par}, whether or not anything heads it. */
+    private void expandRun(int par) {
+        int start = par;
+        while (start > 0 && area.isFolded(start - 1)) {
+            start--;
+        }
+        if (start > 0) {
+            area.unfoldParagraphs(start - 1);
+            shadeHeader(start - 1, false);
+            return;
+        }
+        // A run that begins the document has no paragraph above it to unfold from.
+        for (int p = 0; p < area.getParagraphs().size() && area.isFolded(p); p++) {
+            List<String> style = new ArrayList<>(area.getParagraph(p).getParagraphStyle());
+            style.remove("collapse");
+            area.setParagraphStyle(p, style);
+        }
+    }
+
+    /** Expands every hidden run whose header is not (any longer) the start of a region. */
+    private void expandOrphanRuns() {
+        boolean changed = false;
+        for (int p = 0; p < area.getParagraphs().size(); p++) {
+            if (area.isFolded(p) && (p == 0 || (!area.isFolded(p - 1) && !byStart.containsKey(p - 1)))) {
+                expandRun(p);
+                changed = true;
+            }
+        }
+        if (changed && !restoring) {
+            onFoldStateChanged.run();
+        }
     }
 
     /** True if the region whose header is {@code startLine} is currently collapsed. */

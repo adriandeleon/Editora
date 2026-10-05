@@ -229,8 +229,16 @@ A focused component (e.g. a tool window) can opt out of global dispatch by setti
 (`ownsKeys(target)`) and, for such a window, leaves only the **editor-context** chords to it — the
 caret/text chords it repurposes for local navigation, identified by id prefix in `isEditorContext`
 (`nav.*` and `edit.*`). Jump/window/view commands (`M-x`, `M-1`, `M-g`, …) and prefixes (`C-x …`)
-stay global so they work even while a tool window is focused. The completion popup uses the same
-property so its `C-n`/`C-p`/arrows aren't hijacked.
+stay global so they work even while a tool window is focused.
+
+The completion popup and the quick-fix list are different: they float over the *editor*, whose
+caret and editing chords must keep working. Marking the area `ownsKeys` took every `nav.*`/`edit.*`
+chord off the keymap and left it to RichTextFX's built-ins (`C-a` selected the whole document, `M-f`
+typed an `f`). They set `editora.ownsChords` (`KeyDispatcher.OWNED_CHORDS`) instead: a
+`Map` of chord token → the command the list stands in for (`C-n`→`nav.lineDown`, `C-p`→`nav.lineUp`,
+`C-g`/`escape`→`edit.cancel`). A chord is left to the list only while the keymap binds it to exactly
+that command; everything else is dispatched, and the caret move or edit it causes closes or refreshes
+the list.
 
 `ownsKeys` only yields editor-context chords. A component that needs a bare key which a keymap binds
 to a *global* command sets the `editora.claimsKeys` property (`KeyDispatcher.CLAIMED_KEYS`) to the

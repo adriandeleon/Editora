@@ -78,6 +78,9 @@ public final class AutoClose {
         if (Character.isLetterOrDigit(prev) || prev == quote) {
             return false; // e.g. don't, identifier", or closing an existing string
         }
+        if (isCloser(prev) || prev == '.') {
+            return false; // "call(x)" / "Done." — a quote here ends a string, it does not start one
+        }
         return !Character.isLetterOrDigit(next); // not right before a word
     }
 

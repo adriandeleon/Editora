@@ -1,6 +1,7 @@
 package com.editora.diff;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import com.editora.diff.ConflictParser.Conflict;
@@ -106,16 +107,170 @@ public final class ThreeWayMerge {
         return new Result(new ConflictFile(List.copyOf(segments)), autoMerged);
     }
 
+    /**
+     * One side's changes against the base, in a canonical position.
+     *
+     * <p>The raw deltas of a line differ are not unique where lines repeat: a line replaced inside a run of
+     * identical lines comes back as an insertion plus a deletion of the run's <em>last</em> line. Merged as
+     * they are, that detached deletion looked identical to the other side's real deletion of a line of the
+     * run, the two were taken for one change and an edit was dropped (or, with two replacements, a line was
+     * duplicated). The deltas are therefore compacted the way Git's xdiff does before a merge: every run of
+     * changed lines is slid across the equal lines next to it until it joins a neighbouring run or lines up
+     * with the other file's change, so a replaced line is one change at the line it replaced.
+     */
     private static List<Change> changes(List<String> base, List<String> side) {
-        List<Change> changes = new ArrayList<>();
+        // Index i + 1 holds line i; the two extra slots are sentinels that are never "changed".
+        boolean[] baseChanged = new boolean[base.size() + 2];
+        boolean[] sideChanged = new boolean[side.size() + 2];
         for (AbstractDelta<String> delta : DiffUtils.diff(base, side).getDeltas()) {
             int start = delta.getSource().getPosition();
-            int end = start + delta.getSource().size();
+            Arrays.fill(baseChanged, start + 1, start + delta.getSource().size() + 1, true);
             int targetStart = delta.getTarget().getPosition();
-            int targetEnd = targetStart + delta.getTarget().size();
-            changes.add(new Change(start, end, List.copyOf(side.subList(targetStart, targetEnd))));
+            Arrays.fill(
+                    sideChanged,
+                    targetStart + 1,
+                    targetStart + delta.getTarget().size() + 1,
+                    true);
+        }
+        compact(base, baseChanged, sideChanged);
+        compact(side, sideChanged, baseChanged);
+
+        List<Change> changes = new ArrayList<>();
+        int b = 0;
+        int s = 0;
+        while (b < base.size() || s < side.size()) {
+            if (!baseChanged[b + 1] && !sideChanged[s + 1]) {
+                b++;
+                s++;
+                continue;
+            }
+            int start = b;
+            int targetStart = s;
+            while (baseChanged[b + 1]) {
+                b++;
+            }
+            while (sideChanged[s + 1]) {
+                s++;
+            }
+            changes.add(new Change(start, b, List.copyOf(side.subList(targetStart, s))));
         }
         return changes;
+    }
+
+    /** A run of changed lines {@code [start, end)} between two unchanged lines; empty when nothing changed there. */
+    private static final class Group {
+        int start;
+        int end;
+
+        boolean isEmpty() {
+            return start == end;
+        }
+    }
+
+    /**
+     * Slides each run of changed lines of {@code lines} to its canonical position (xdiff's
+     * {@code xdl_change_compact} without the indent heuristic): as far down as it goes, merging with the
+     * runs it meets, unless on the way it can sit opposite a run of the other file, in which case it is
+     * aligned with the last such run. Both files have the same number of unchanged lines, so their runs
+     * pair up and {@code other} is walked in step.
+     */
+    private static void compact(List<String> lines, boolean[] changed, boolean[] other) {
+        int count = lines.size();
+        int otherCount = other.length - 2;
+        Group group = new Group();
+        Group otherGroup = new Group();
+        first(changed, group);
+        first(other, otherGroup);
+        while (true) {
+            if (!group.isEmpty()) {
+                int size;
+                int earliestEnd;
+                int endMatchingOther;
+                do {
+                    size = group.end - group.start;
+                    endMatchingOther = -1;
+                    while (slideUp(lines, changed, group)) {
+                        previous(other, otherGroup);
+                    }
+                    earliestEnd = group.end;
+                    if (!otherGroup.isEmpty()) {
+                        endMatchingOther = group.end;
+                    }
+                    while (slideDown(lines, changed, count, group)) {
+                        next(other, otherCount, otherGroup);
+                        if (!otherGroup.isEmpty()) {
+                            endMatchingOther = group.end;
+                        }
+                    }
+                } while (size != group.end - group.start); // it absorbed a neighbour: slide the merged run again
+                if (group.end != earliestEnd && endMatchingOther != -1) {
+                    while (otherGroup.isEmpty()) {
+                        slideUp(lines, changed, group);
+                        previous(other, otherGroup);
+                    }
+                }
+            }
+            if (!next(changed, count, group)) {
+                return;
+            }
+            next(other, otherCount, otherGroup);
+        }
+    }
+
+    private static void first(boolean[] changed, Group group) {
+        group.start = 0;
+        group.end = 0;
+        while (changed[group.end + 1]) {
+            group.end++;
+        }
+    }
+
+    private static boolean next(boolean[] changed, int count, Group group) {
+        if (group.end == count) {
+            return false;
+        }
+        group.start = group.end + 1;
+        group.end = group.start;
+        while (changed[group.end + 1]) {
+            group.end++;
+        }
+        return true;
+    }
+
+    private static void previous(boolean[] changed, Group group) {
+        group.end = group.start - 1;
+        group.start = group.end;
+        while (changed[group.start]) {
+            group.start--;
+        }
+    }
+
+    private static boolean slideDown(List<String> lines, boolean[] changed, int count, Group group) {
+        if (group.end >= count || !lines.get(group.start).equals(lines.get(group.end))) {
+            return false;
+        }
+        changed[group.start + 1] = false;
+        group.start++;
+        changed[group.end + 1] = true;
+        group.end++;
+        while (changed[group.end + 1]) {
+            group.end++;
+        }
+        return true;
+    }
+
+    private static boolean slideUp(List<String> lines, boolean[] changed, Group group) {
+        if (group.start <= 0 || !lines.get(group.start - 1).equals(lines.get(group.end - 1))) {
+            return false;
+        }
+        group.start--;
+        changed[group.start + 1] = true;
+        group.end--;
+        changed[group.end + 1] = false;
+        while (changed[group.start]) {
+            group.start--;
+        }
+        return true;
     }
 
     /** Adjacent replacements are independent; insertions at a replacement boundary are kept together. */

@@ -24,6 +24,20 @@ public final class SexpNav {
         return c == ' ' || c == '\t' || c == '\n' || c == '\r';
     }
 
+    /** An operator or separator ({@code = + , ; :} …): not part of any expression, so motion skips it. */
+    private static boolean isPunctuation(char c) {
+        return !isSymbol(c) && !isSpace(c) && !isOpen(c) && !isClose(c) && !isQuote(c);
+    }
+
+    private static boolean hasPunctuation(String text, int from, int to) {
+        for (int i = from; i < to; i++) {
+            if (isPunctuation(text.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isOpen(char c) {
         return c == '(' || c == '[' || c == '{';
     }
@@ -39,16 +53,16 @@ public final class SexpNav {
     /**
      * Emacs {@code forward-sexp}: skip leading whitespace, then move over one balanced expression — a
      * bracketed group (to just past its matching close), a quoted string, or a run of symbol chars.
-     * Returns {@code pos} unchanged when there is nothing ahead or the caret is before a closing bracket.
+     * Punctuation on the way (an operator, a separator) is skipped with the whitespace. Returns {@code pos} unchanged when there is nothing ahead or the caret is before a closing bracket.
      */
     public static int forward(String text, int pos) {
         int n = text.length();
         int i = clamp(pos, n);
-        while (i < n && isSpace(text.charAt(i))) {
-            i++;
+        while (i < n && (isSpace(text.charAt(i)) || isPunctuation(text.charAt(i)))) {
+            i++; // like Emacs, an operator or separator is skipped on the way to the next expression
         }
         if (i >= n) {
-            return pos;
+            return hasPunctuation(text, clamp(pos, n), n) ? n : pos;
         }
         char c = text.charAt(i);
         if (isClose(c)) {
@@ -89,11 +103,11 @@ public final class SexpNav {
      */
     public static int backward(String text, int pos) {
         int i = clamp(pos, text.length());
-        while (i > 0 && isSpace(text.charAt(i - 1))) {
+        while (i > 0 && (isSpace(text.charAt(i - 1)) || isPunctuation(text.charAt(i - 1)))) {
             i--;
         }
         if (i <= 0) {
-            return pos;
+            return hasPunctuation(text, 0, clamp(pos, text.length())) ? 0 : pos;
         }
         char c = text.charAt(i - 1);
         if (isOpen(c)) {
@@ -225,7 +239,14 @@ public final class SexpNav {
     public static int[] paragraphBounds(String text, int pos) {
         int n = text.length();
         int p = clamp(pos, n);
-        // Move into a non-blank region if currently on blank lines: search forward.
+        // On a blank line, take the paragraph below (as Emacs does) rather than both neighbours.
+        while (p < n && isBlank(text, lineStartOf(text, p), lineEndOf(text, p))) {
+            p = lineEndOf(text, p) + 1;
+        }
+        p = Math.min(p, n);
+        if (isBlank(text, lineStartOf(text, p), lineEndOf(text, p))) {
+            return new int[] {pos, pos}; // nothing but blank lines from here on
+        }
         // Start: walk up while the previous line is non-blank.
         int start = lineStartOf(text, p);
         while (start > 0) {

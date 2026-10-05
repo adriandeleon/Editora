@@ -55,4 +55,15 @@ class ToolMacrosTest {
         assertEquals("a $", ToolMacros.expand("a $", ctx())); // dangling $ copied verbatim
         assertEquals("", ToolMacros.expand(null, ctx()));
     }
+
+    @Test
+    void aLiteralDollarDoesNotSwallowTheMacroAfterIt() {
+        // A shell variable (or a price) earlier in the argument used to pair with the macro's opening '$'.
+        assertEquals(
+                "echo $USER; wc -l /home/me/proj/src/App.java",
+                ToolMacros.expand("echo $USER; wc -l $FilePath$", ctx()));
+        assertEquals("${HOME}/out/App.txt", ToolMacros.expand("${HOME}/out/$FileNameWithoutExtension$.txt", ctx()));
+        assertEquals("cost: 5$ for App.java", ToolMacros.expand("cost: 5$ for $FileName$", ctx()));
+        assertEquals("a$b App.java c$d /home/me/proj/src", ToolMacros.expand("a$b $FileName$ c$d $FileDir$", ctx()));
+    }
 }

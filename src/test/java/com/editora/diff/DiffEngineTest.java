@@ -165,4 +165,41 @@ class DiffEngineTest {
         assertEquals(RowType.MODIFIED, model.rows().get(1).type());
         assertEquals(RowType.EQUAL, model.rows().get(2).type());
     }
+
+    /** A rewrite further apart than the edit budget must not run the quadratic search (it took 25 s). */
+    @Test
+    void textsBeyondTheEditBudgetFallBackToTheCoarseAlignment() {
+        int n = DiffEngine.MAX_LINE_EDITS; // every line differs: 2n edits
+        StringBuilder left = new StringBuilder("head\n");
+        StringBuilder right = new StringBuilder("head\n");
+        for (int i = 0; i < n; i++) {
+            left.append("left ").append(i).append('\n');
+            right.append("right ").append(i).append('\n');
+        }
+        left.append("tail");
+        right.append("tail\n");
+
+        DiffModel model = DiffEngine.compute(left.toString(), right.toString(), DiffEngine.DiffOptions.DEFAULT);
+
+        assertEquals(DiffModels.Quality.LINE_ONLY, model.quality());
+        assertEquals(n + 2, model.rows().size());
+        assertEquals(RowType.EQUAL, model.rows().get(0).type());
+        assertEquals(RowType.MODIFIED, model.rows().get(1).type());
+        assertEquals(RowType.EQUAL, model.rows().get(n + 1).type());
+        assertEquals(false, model.leftFinalNewline());
+        assertEquals(true, model.rightFinalNewline());
+    }
+
+    @Test
+    void scatteredEditsInALargeFileStillGetTheFullDiff() {
+        StringBuilder left = new StringBuilder();
+        StringBuilder right = new StringBuilder();
+        for (int i = 0; i < 50_000; i++) {
+            left.append("line ").append(i).append('\n');
+            right.append(i % 500 == 0 ? "LINE " : "line ").append(i).append('\n');
+        }
+        DiffModel model = DiffEngine.compute(left.toString(), right.toString(), DiffEngine.DiffOptions.DEFAULT);
+        assertEquals(DiffModels.Quality.FULL, model.quality());
+        assertEquals(100, model.added());
+    }
 }

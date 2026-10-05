@@ -369,4 +369,39 @@ class BeforeLaunchGateFxTest {
             FxTestSupport.runOnFx(coordinator::shutdown);
         }
     }
+
+    /**
+     * A step that reads stdin, on the path with no console input (Debug's): it must see end of input and
+     * finish, as it did when steps ran through {@code ProcessRunner}. Left open, it waited forever and the
+     * debug launch sat in "preparing" until Stop — which cancels the launch.
+     */
+    @Test
+    void aStepThatReadsStdinSeesEndOfInputWhereNobodyCanAnswerIt() throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "")
+                        .toLowerCase(java.util.Locale.ROOT)
+                        .contains("win"),
+                "needs a POSIX sh");
+        RecordingHost host = new RecordingHost();
+        AtomicBoolean launched = new AtomicBoolean();
+        CountDownLatch settled = new CountDownLatch(1);
+        RunService service = new RunService();
+        BeforeLaunchStep step = new BeforeLaunchStep(service); // as DebugCoordinator builds it
+        try {
+            FxTestSupport.runOnFx(() -> step.run(
+                    host,
+                    withCommand("sh -c \"cat > /dev/null; exit 0\""),
+                    Path.of("."),
+                    Map.of(),
+                    new RecordingConsole(),
+                    () -> {
+                        launched.set(true);
+                        settled.countDown();
+                    }));
+            assertTrue(settled.await(15, TimeUnit.SECONDS), "the step ended instead of waiting for input");
+            assertTrue(launched.get());
+        } finally {
+            service.shutdown();
+        }
+    }
 }

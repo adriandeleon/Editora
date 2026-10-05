@@ -434,9 +434,10 @@ final class BookmarkCoordinator {
             host.setStatus(tr("status.bookmarks.noMnemonic", mnemonic.toUpperCase(java.util.Locale.ROOT)));
             return;
         }
-        ops.openPath(Path.of(found.file()));
-        javafx.application.Platform.runLater(
-                () -> ops.navigateToLine(found.bookmark().line()));
+        // In place, through the load-aware open: a bare runLater(navigateToLine) ran against the still-empty
+        // loading shell of a file that had no tab and left the caret on line 1.
+        ops.openInProjectWindow(
+                ops.currentProjectKey(), Path.of(found.file()), found.bookmark().line());
     }
 
     void openJumpPalette() {

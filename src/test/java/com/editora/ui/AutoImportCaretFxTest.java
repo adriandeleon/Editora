@@ -89,20 +89,20 @@ class AutoImportCaretFxTest {
                 FxTestSupport.callOnFx(() -> b.getContent().split("import demo\\.Inventory\\.Item;", -1).length - 1));
     }
 
+    /**
+     * The plain {@code applyLspEdits} path (Format Document, quick fixes, rename) keeps the caret too: it used
+     * to leave it at the end of the inserted line, in the import block. See {@code LspEditsKeepViewFxTest}.
+     */
     @Test
-    void formatDocumentEditsAreUnaffected() throws Exception {
-        // applyLspEdits keeps its old behaviour: only the auto-import path opts into caret preservation, so
-        // this change cannot alter where Format Document leaves the caret.
+    void aPlainServerEditAboveTheCaretAlsoLeavesItInPlace() throws Exception {
         EditorBuffer b = atItem();
+        int before = FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition());
+
         FxTestSupport.runOnFx(() -> b.applyLspEdits(List.of(new LspTextEdit(5, 0, 5, 0, IMPORT_LINE))));
-        // Line 5 is the blank line after the Optional import, so the insert starts there and the caret is
-        // left at its end — dragged off "List<Item", which is precisely the behaviour the auto-import path
-        // now opts out of.
-        String upToLine5 = SOURCE.substring(
-                0, SOURCE.indexOf("import java.util.Optional;\n") + "import java.util.Optional;\n".length());
+
         assertEquals(
-                upToLine5.length() + IMPORT_LINE.length(),
+                before + IMPORT_LINE.length(),
                 FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition()),
-                "unchanged: replaceText still leaves the caret at the end of its insertion");
+                "the caret addresses the same text, shifted by the line inserted above it");
     }
 }

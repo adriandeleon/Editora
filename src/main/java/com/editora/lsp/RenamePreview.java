@@ -89,7 +89,9 @@ public final class RenamePreview {
                 renames.add(rename);
             }
         }
-        return new WorkspaceEditMapper.Mapped(edits, renames);
+        // Creates and deletes are not per-file choices in the preview: they are the scaffolding of the
+        // refactoring (jdtls's package rename creates and removes a placeholder) and travel with it.
+        return new WorkspaceEditMapper.Mapped(edits, renames, mapped.creates(), mapped.deletes());
     }
 
     /**

@@ -95,7 +95,37 @@ public final class Commenter {
         }
         // Multi-line prefers a block/region comment; a single line prefers a line comment.
         boolean useBlock = multi ? style.hasBlock() : !style.hasLine();
-        return useBlock ? toggleBlock(text, selStart, selEnd, style) : toggleLines(text, selStart, effEnd, style);
+        Edit edit = useBlock ? toggleBlock(text, selStart, selEnd, style) : toggleLines(text, selStart, effEnd, style);
+        if (edit == null || selStart != selEnd) {
+            return edit;
+        }
+        // A bare caret stays a bare caret, on the text it was on: leaving the toggled line selected meant
+        // the next typed character (or Enter) replaced it.
+        int caret = caretAfter(text.substring(edit.from(), edit.to()), edit.replacement(), selStart - edit.from());
+        return new Edit(edit.from(), edit.to(), edit.replacement(), edit.from() + caret, edit.from() + caret);
+    }
+
+    /**
+     * Where a caret at {@code rel} in {@code before} lands once it has become {@code after}: anchored to the
+     * unchanged text after it when there is some (so it rides along with the code as a marker is inserted
+     * or removed in front), else to the unchanged text before it.
+     */
+    static int caretAfter(String before, String after, int rel) {
+        int max = Math.min(before.length(), after.length());
+        int prefix = 0;
+        while (prefix < max && before.charAt(prefix) == after.charAt(prefix)) {
+            prefix++;
+        }
+        int suffix = 0;
+        while (suffix < max - prefix
+                && before.charAt(before.length() - 1 - suffix) == after.charAt(after.length() - 1 - suffix)) {
+            suffix++;
+        }
+        int fromEnd = before.length() - rel;
+        if (fromEnd <= suffix) {
+            return after.length() - fromEnd;
+        }
+        return rel <= prefix ? rel : Math.min(after.length(), prefix);
     }
 
     // --- line comments ----------------------------------------------------------------------------
@@ -111,7 +141,7 @@ public final class Commenter {
         for (String line : lines) {
             if (!line.isBlank()) {
                 anyContent = true;
-                if (!line.strip().startsWith(token)) {
+                if (!startsWithToken(line.strip(), token)) {
                     allCommented = false;
                     break;
                 }
@@ -130,6 +160,20 @@ public final class Commenter {
         return new Edit(from, to, replacement, from, from + replacement.length());
     }
 
+    /**
+     * Whether {@code s} begins with the line-comment {@code token}. A token that is a word (batch
+     * {@code REM}) matches in any case and only as a whole word, so {@code rem x} is a comment and
+     * {@code REMOTE_HOST=1} is not.
+     */
+    static boolean startsWithToken(String s, String token) {
+        if (!Character.isLetter(token.charAt(token.length() - 1))) {
+            return s.startsWith(token);
+        }
+        return s.regionMatches(true, 0, token, 0, token.length())
+                && (s.length() == token.length()
+                        || !Character.isLetterOrDigit(s.charAt(token.length())) && s.charAt(token.length()) != '_');
+    }
+
     private static String addLineComment(String line, String token) {
         int i = firstNonWs(line);
         if (i == line.length()) {
@@ -140,7 +184,7 @@ public final class Commenter {
 
     private static String removeLineComment(String line, String token) {
         int i = firstNonWs(line);
-        if (!line.substring(i).startsWith(token)) {
+        if (!startsWithToken(line.substring(i), token)) {
             return line;
         }
         int after = i + token.length();
@@ -174,7 +218,13 @@ public final class Commenter {
         String be = style.blockEnd();
 
         String replacement;
-        if (core.startsWith(bs) && core.endsWith(be) && core.length() >= bs.length() + be.length()) {
+        // One comment only: a selection that merely starts with one comment and ends with another
+        // ("/* a */ code /* b */") is not "already commented".
+        boolean wrapped = core.startsWith(bs)
+                && core.endsWith(be)
+                && core.length() >= bs.length() + be.length()
+                && core.indexOf(be, bs.length()) == core.length() - be.length();
+        if (wrapped) {
             String inner = stripOneSpaceEachSide(core.substring(bs.length(), core.length() - be.length()));
             replacement = lead + inner + trail;
         } else {

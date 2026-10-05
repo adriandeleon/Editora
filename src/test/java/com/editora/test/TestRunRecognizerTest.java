@@ -116,4 +116,16 @@ class TestRunRecognizerTest {
         assertFalse(TestRunRecognizer.showsExistingReports(BuildTool.GRADLE, 1, false), "a failed build ran nothing");
         assertFalse(TestRunRecognizer.showsExistingReports(BuildTool.MAVEN, 0, false));
     }
+
+    @Test
+    void aNestedMavenTestIsSelectedByItsNestedClass() {
+        assertEquals(
+                "-Dtest=OuterTest$Inner#inner",
+                TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.OuterTest$Inner", "inner")
+                        .get(1));
+        assertEquals(
+                "-Dtest=FooTest#testMethod+testMethod[*]",
+                TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", "testMethod[0]")
+                        .get(1));
+    }
 }
