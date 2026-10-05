@@ -10,7 +10,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -52,16 +51,26 @@ public final class DapManager implements DapClient.Host {
     }
 
     /** A candidate main class returned by jdtls's {@code vscode.java.resolveMainClass}. */
-    public record MainClassOption(String mainClass, String projectName, String filePath) {}
+    public record MainClassOption(String mainClass, String projectName, String filePath) {
+        /**
+         * The plain fully-qualified class name. For a class of a named module jdtls answers {@code
+         * <module>/<class>} in {@link #mainClass} (what the launch needs); a saved configuration and the
+         * gutter name the class alone, so that is what a main class is matched by.
+         */
+        public String className() {
+            return JavaLaunchSupport.className(mainClass);
+        }
+    }
 
     /**
      * The resolved launch inputs for a main class (from jdtls {@code resolveClasspath}/{@code
      * resolveJavaExecutable}): the java executable and the module/class paths, or an {@code error} message
      * when resolution failed. Reused by the non-debug Run path (which turns it into a {@code java} argv).
      */
-    public record ResolvedLaunch(String javaExec, List<String> modulePaths, List<String> classPaths, String error) {
+    public record ResolvedLaunch(
+            String javaExec, List<String> modulePaths, List<String> classPaths, String error, boolean enablePreview) {
         static ResolvedLaunch failed(String error) {
-            return new ResolvedLaunch(null, List.of(), List.of(), error);
+            return new ResolvedLaunch(null, List.of(), List.of(), error, false);
         }
 
         public boolean ok() {
@@ -380,8 +389,18 @@ public final class DapManager implements DapClient.Host {
 
     /** As above, with an explicit Java executable for Maven-project toolchain selection. */
     public void startLaunch(Path file, String language, MainClassPicker picker, String javaExecOverride) {
+        startLaunch(file, language, picker, javaExecOverride, null);
+    }
+
+    /**
+     * As above, with the Maven/Gradle project {@code file} belongs to ({@code null} for a loose file). A
+     * project's main class runs in the project root, like Run and the gutter; a loose file runs in its own
+     * folder and is compiled here when jdtls has no class file for it.
+     */
+    public void startLaunch(
+            Path file, String language, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
         if ("java".equals(language)) {
-            startLaunch(file, picker, javaExecOverride);
+            startLaunch(file, picker, javaExecOverride, projectRoot);
         } else if (DapServerRegistry.isDebuggable(language)) {
             startProgram(file, language);
         } else {
@@ -425,10 +444,15 @@ public final class DapManager implements DapClient.Host {
 
     /** Java launch with an optional selected-JDK executable overriding jdtls's resolved executable. */
     public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride) {
+        startLaunch(file, picker, javaExecOverride, null);
+    }
+
+    /** Java launch for a file of the build project at {@code projectRoot} ({@code null}: a loose file). */
+    public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
         if (!ready(file)) {
             return;
         }
-        restartAction = () -> startLaunch(file, picker, javaExecOverride);
+        restartAction = () -> startLaunch(file, picker, javaExecOverride, projectRoot);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
@@ -454,17 +478,27 @@ public final class DapManager implements DapClient.Host {
                 return;
             }
             MainClassOption match = options.stream()
-                    .filter(o -> sameFile(o.filePath(), file))
+                    .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file))
                     .findFirst()
                     .orElse(null);
-            if (match != null) {
-                resolveAndLaunch(file, match, javaExecOverride, epoch);
+            // A project's main class runs in the project root — what Run, the gutter and a saved
+            // configuration use — and only a loose file in its own folder.
+            Path dir = projectRoot != null ? projectRoot : file.getParent();
+            String cwd = dir == null ? null : dir.toString();
+            if (match != null && projectRoot == null) {
+                // The file's own main class, in no build project: jdtls lists it from an "invisible
+                // project" whose output folder nothing ever compiles into (autobuild is off), so the
+                // resolved classpath holds no class file to run. Compile the file ourselves then.
+                Runnable compile = () -> compileAndLaunch(file, match.className(), javaExecOverride, epoch, null);
+                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch, compile);
+            } else if (match != null) {
+                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch);
             } else if (options.size() == 1) {
-                resolveAndLaunch(file, options.get(0), javaExecOverride, epoch);
+                resolveAndLaunch(file, options.get(0), cwd, javaExecOverride, epoch);
             } else {
                 picker.pick(options, chosen -> {
                     if (chosen != null) {
-                        resolveAndLaunch(file, chosen, javaExecOverride, epoch);
+                        resolveAndLaunch(file, chosen, cwd, javaExecOverride, epoch);
                     } else {
                         if (isCurrent(epoch)) {
                             setState(State.INACTIVE);
@@ -514,7 +548,37 @@ public final class DapManager implements DapClient.Host {
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
-        startDebugSessionAndConnect(file, LaunchConfig.attach(host, port), true, epoch);
+        // java-debug compiles conditions, logpoints and evaluated expressions against a JDT project and an
+        // attach names no main class to infer one from: without the name every evaluation fails, and a
+        // condition that cannot be evaluated counts as a hit.
+        projectNameOf(file, project -> {
+            if (isCurrent(epoch)) {
+                startDebugSessionAndConnect(file, LaunchConfig.attach(host, port, project), true, epoch);
+            }
+        });
+    }
+
+    /**
+     * Names the jdtls project {@code file} belongs to (null when jdtls cannot say), on the FX thread. Asks
+     * for the file's main method first — the only form that covers a compact source, which declares no type
+     * — then for the element at its first type declaration, which covers a class with no {@code main} (a
+     * test class, the anchor of Debug Test).
+     */
+    private void projectNameOf(Path file, Consumer<String> cb) {
+        String uri = file.toUri().toString();
+        lsp.executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
+            String name = err == null ? JavaLaunchSupport.projectName(res) : null;
+            int[] at = name == null ? JavaLaunchSupport.typeNamePosition(file) : null;
+            if (at == null) {
+                cb.accept(name);
+                return;
+            }
+            lsp.executeCommand(
+                    file,
+                    "vscode.java.resolveElementAtSelection",
+                    List.of(uri, at[0], at[1]),
+                    (el, e2) -> cb.accept(e2 == null ? JavaLaunchSupport.projectName(el) : null));
+        });
     }
 
     private boolean ready(Path file) {
@@ -535,21 +599,28 @@ public final class DapManager implements DapClient.Host {
         return true;
     }
 
-    private void resolveAndLaunch(Path file, MainClassOption opt, String javaExecOverride, long epoch) {
-        resolveAndLaunch(
-                file, opt, file.getParent() == null ? null : file.getParent().toString(), javaExecOverride, epoch);
+    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch) {
+        resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, null);
     }
 
     /**
      * Resolves {@code opt}'s classpath + java executable via jdtls, then launches the debug session with the
      * given working directory. {@code file} routes the jdtls {@code executeCommand}s (must be an open,
      * LSP-managed document in the same project); {@code cwd} is the debuggee's working directory (the project
-     * root for a project main class, else the file's own folder).
+     * root for a project main class, else the file's own folder). {@code ifNoClassFile}, when given, runs
+     * instead of the launch if jdtls's classpath does not hold the main class's class file.
      */
-    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch) {
+    private void resolveAndLaunch(
+            Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch, Runnable ifNoClassFile) {
         String proj = opt.projectName() == null ? "" : opt.projectName();
         resolveLaunch(file, opt, r -> {
             if (!isCurrent(epoch)) {
+                return;
+            }
+            if (ifNoClassFile != null
+                    && !(JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
+                            || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))) {
+                ifNoClassFile.run();
                 return;
             }
             if (!r.ok()) {
@@ -566,7 +637,7 @@ public final class DapManager implements DapClient.Host {
                             javaExecOverride == null || javaExecOverride.isBlank() ? r.javaExec() : javaExecOverride,
                             cwd,
                             programArgs,
-                            vmArgs,
+                            JavaLaunchSupport.withPreview(vmArgs, r.enablePreview()),
                             env,
                             false),
                     false,
@@ -619,7 +690,18 @@ public final class DapManager implements DapClient.Host {
                     routingFile,
                     "vscode.java.resolveJavaExecutable",
                     List.of(opt.mainClass(), proj),
-                    (jx, e2) -> cb.accept(new ResolvedLaunch(asString(jx), modulepaths, classpaths, null)));
+                    (jx, e2) -> lsp.executeCommand(
+                            routingFile,
+                            "vscode.java.checkProjectSettings",
+                            List.of(JavaLaunchSupport.previewSettingsQuery(opt.mainClass(), proj)),
+                            // A project compiled with --enable-preview needs the flag to load its classes;
+                            // a failed check (an older java-debug) leaves the launch as it was.
+                            (preview, e3) -> cb.accept(new ResolvedLaunch(
+                                    asString(jx),
+                                    modulepaths,
+                                    classpaths,
+                                    null,
+                                    e3 == null && JavaLaunchSupport.isTrue(preview)))));
         });
     }
 
@@ -711,21 +793,26 @@ public final class DapManager implements DapClient.Host {
                 }
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
                 Path classes = out;
-                Platform.runLater(() -> startDebugSessionAndConnect(
+                // The classes come from a temp dir, so java-debug cannot infer the project it compiles
+                // conditions, logpoints and evaluated expressions against: name the one jdtls keeps the
+                // source in (its invisible project for a loose file).
+                Platform.runLater(() -> projectNameOf(
                         file,
-                        LaunchConfig.launch(
-                                fqn,
-                                null,
-                                List.of(classes.toString()),
-                                List.of(),
-                                javaExec,
-                                cwd,
-                                programArgs,
-                                vmArgs,
-                                launchEnvironment,
-                                false),
-                        false,
-                        epoch));
+                        project -> startDebugSessionAndConnect(
+                                file,
+                                LaunchConfig.launch(
+                                        fqn,
+                                        project,
+                                        List.of(classes.toString()),
+                                        List.of(),
+                                        javaExec,
+                                        cwd,
+                                        programArgs,
+                                        vmArgs,
+                                        launchEnvironment,
+                                        false),
+                                false,
+                                epoch)));
             } catch (Exception e) {
                 fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
             } finally {
@@ -1802,18 +1889,6 @@ public final class DapManager implements DapClient.Host {
             t = t.getCause();
         }
         return t == null ? "" : (t.getMessage() == null ? t.toString() : t.getMessage());
-    }
-
-    private static boolean sameFile(String a, Path b) {
-        if (a == null || b == null) {
-            return false;
-        }
-        try {
-            return Objects.equals(
-                    Path.of(a).toAbsolutePath().normalize(), b.toAbsolutePath().normalize());
-        } catch (RuntimeException e) {
-            return false;
-        }
     }
 
     // --- gson result parsing (jdtls executeCommand returns untyped JsonElements) -----------------

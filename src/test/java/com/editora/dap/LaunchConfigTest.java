@@ -149,4 +149,33 @@ class LaunchConfigTest {
         assertFalse(m.containsKey("python"));
         assertFalse(m.containsKey("runtimeExecutable"));
     }
+
+    /** An attach names no main class, so the project is the only way java-debug can evaluate anything. */
+    @Test
+    void attachCarriesTheProjectNameWhenKnown() {
+        assertEquals("myproj", LaunchConfig.attach("localhost", 5005, "myproj").get("projectName"));
+        assertFalse(LaunchConfig.attach("localhost", 5005, " ").containsKey("projectName"));
+        assertFalse(LaunchConfig.attach("localhost", 5005, null).containsKey("projectName"));
+        assertFalse(LaunchConfig.attach("localhost", 5005).containsKey("projectName"));
+    }
+
+    /** The usual launch fits on a command line: nothing is sent and java-debug keeps its default. */
+    @Test
+    void anOrdinaryLaunchDoesNotShortenTheCommandLine() {
+        Map<String, Object> m = LaunchConfig.launch(
+                "com.app.Main", "p", List.of("/a.jar", "/classes"), List.of(), "", "/proj", List.of(), "", false);
+        assertFalse(m.containsKey("shortenCommandLine"));
+    }
+
+    /** A class path too long for one argument (any OS) is moved into an argfile instead of failing to start. */
+    @Test
+    void aClassPathLongerThanTheArgumentLimitIsShortened() {
+        List<String> jars = new java.util.ArrayList<>();
+        for (int i = 0; i < 2000; i++) {
+            jars.add("/home/user/.m2/repository/org/example/some-library/1.0." + i + "/some-library-1.0." + i + ".jar");
+        }
+        Map<String, Object> m =
+                LaunchConfig.launch("com.app.Main", "p", jars, List.of(), "", "/proj", List.of(), "", false);
+        assertEquals("argfile", m.get("shortenCommandLine"));
+    }
 }

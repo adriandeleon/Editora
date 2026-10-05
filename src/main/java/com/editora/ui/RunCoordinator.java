@@ -403,7 +403,7 @@ final class RunCoordinator {
             // project jdtls cannot enumerate still gets its previous behaviour rather than nothing.
             ops.resolveJavaMainClasses(routing, options -> {
                 JavaMainClass mc = options.stream()
-                        .filter(o -> cfg.mainClass().equals(o.fqn()))
+                        .filter(o -> cfg.mainClass().equals(o.className()))
                         .findFirst()
                         .orElseGet(() -> new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString()));
                 ops.resolveJavaLaunch(routing, mc, info -> {
@@ -419,7 +419,7 @@ final class RunCoordinator {
                                     info.modulePaths(),
                                     info.classPaths(),
                                     cfg.mainClass(),
-                                    vm,
+                                    info.vmArgs(vm),
                                     args),
                             launchEnv);
                 });
@@ -539,7 +539,7 @@ final class RunCoordinator {
             }
             if (targetFqn != null) {
                 JavaMainClass match = list.stream()
-                        .filter(mc -> targetFqn.equals(mc.fqn()))
+                        .filter(mc -> targetFqn.equals(mc.className()))
                         .findFirst()
                         .orElse(null);
                 if (match == null) {
@@ -627,10 +627,10 @@ final class RunCoordinator {
                     info.modulePaths(),
                     info.classPaths(),
                     mc.fqn(),
-                    List.of(),
+                    info.vmArgs(List.of()),
                     args);
             String jdkHome = effectiveMavenJdk(root, null);
-            streamRun(shortName(mc.fqn()), root, command, JdkToolchain.environment(jdkHome, processPath()));
+            streamRun(shortName(mc.className()), root, command, JdkToolchain.environment(jdkHome, processPath()));
         });
     }
 

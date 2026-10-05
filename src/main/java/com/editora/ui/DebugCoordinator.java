@@ -182,6 +182,9 @@ final class DebugCoordinator {
     /** Repeats the last coordinator-level start (save, before-launch build, closed-file breakpoints, launch). */
     private Runnable relaunch;
 
+    /** {@link #relaunch} of a session attached to a JVM a build or test run started: it cannot be redone. */
+    private static final Runnable ONE_SHOT_ATTACH = () -> {};
+
     DebugCoordinator(CoordinatorHost host, DapManager dapManager, LspManager lspManager, LspCoordinator lsp, Ops ops) {
         this.host = host;
         this.dapManager = dapManager;
@@ -257,10 +260,16 @@ final class DebugCoordinator {
      * Debug ▸ Restart: stops the session and starts it again <em>the way it was started</em> — saving the
      * edited file, running the configuration's before-launch build, re-anchoring closed-file breakpoints.
      * Re-running only the adapter launch debugged the previous code against the edited buffer's breakpoint
-     * lines. An attach has nothing to redo and is simply re-attached.
+     * lines. An attach has nothing to redo and is simply re-attached — except one a build or test run
+     * opened ({@link #attachToPort}): that JVM stops listening once it is resumed, so re-attaching would
+     * only let it run to its end and leave a session with no debuggee showing "Running".
      */
     void restart() {
         Runnable again = relaunch;
+        if (again == ONE_SHOT_ATTACH) {
+            host.setStatus(tr("status.debug.cannotRestartAttached"));
+            return;
+        }
         if (again == null) {
             dapManager.restart();
             return;
@@ -1053,7 +1062,7 @@ final class DebugCoordinator {
             } else if (compactSource && b.getPath().getFileName().toString().endsWith(".java")) {
                 dapManager.startCompactSource(b.getPath(), javaExec);
             } else {
-                dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec);
+                dapManager.startLaunch(b.getPath(), language, this::pickMainClass, javaExec, projectRoot);
             }
         });
     }
@@ -1157,7 +1166,7 @@ final class DebugCoordinator {
                     lsp.ensureManaged(routing);
                     dapManager.resolveMainClasses(routing, options -> {
                         DapManager.MainClassOption match = options.stream()
-                                .filter(o -> cfg.mainClass().equals(o.mainClass()))
+                                .filter(o -> cfg.mainClass().equals(o.className()))
                                 .findFirst()
                                 .orElse(null);
                         if (match == null) {
@@ -1211,13 +1220,13 @@ final class DebugCoordinator {
                 dapManager.setVmArgs(""); // the gutter/command debug carries no VM args/env
                 dapManager.setEnv(configuredJdkEnvironment(root, null));
                 lsp.ensureManaged(routing); // see above
-                relaunch = () -> relaunchFor(routing, again -> startMainClassDebug(again, opt.mainClass()));
+                relaunch = () -> relaunchFor(routing, again -> startMainClassDebug(again, opt.className()));
                 String javaExec = configuredJavaExecutable(root, null);
                 withClosedBreakpoints(() -> dapManager.startLaunchMainClass(routing, opt, root, javaExec));
             };
             if (targetFqn != null) {
                 DapManager.MainClassOption match = options.stream()
-                        .filter(o -> targetFqn.equals(o.mainClass()))
+                        .filter(o -> targetFqn.equals(o.className()))
                         .findFirst()
                         .orElse(null);
                 if (match == null) {
@@ -1325,7 +1334,7 @@ final class DebugCoordinator {
         // document it has open: a test class found on disk (Debug Test with no tab for it) has no session.
         Path routing = attachRouting(anchorFile);
         lsp.ensureManaged(routing); // an open tab whose server start was deferred
-        relaunch = null; // an attach is re-attached as it was
+        relaunch = ONE_SHOT_ATTACH; // the run that owns this JVM has to be started again instead
         withClosedBreakpoints(() -> dapManager.startAttach(routing, attachHost, port));
     }
 

@@ -475,14 +475,38 @@ threads are stopped (`stopped.allThreadsStopped`, `continue`'s `allThreadsContin
 events): java-debug suspends and resumes per thread, so after Continue on one of several stopped threads
 the next still-stopped thread is brought forward instead of reporting a running session. Restart goes
 through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
-build, closed-file breakpoints) rather than only the adapter launch. Launch paths:
+build, closed-file breakpoints) rather than only the adapter launch. A session `attachToPort` opened on a
+JVM that a test or build run started is the exception: that JVM stops listening once resumed, so Restart
+leaves the session alone and reports that the run has to be started again. Launch paths:
 
 - **java** → resolve main class (`vscode.java.resolveMainClass`) → `resolveClasspath` →
-  `resolveJavaExecutable` → `startDebugSession` → connect the socket → `launch`. A loose file with
-  no project falls back to `javac -g` compilation. A compact `.java` file takes that compile path
+  `resolveJavaExecutable` → `checkProjectSettings` → `startDebugSession` → connect the socket → `launch`.
+  A loose file with no build project falls back to `javac -g` compilation — both when jdtls lists no
+  main class and when it lists the file's own from an *invisible project*, whose output folder holds no
+  class file (jdtls runs with autobuild off). A compact `.java` file takes that compile path
   directly: its implicit class is named for the file, even if the file declares nested types. The
   compiler, launcher, and debuggee environment all use the selected JDK; compilation runs from the
   file's directory so neighboring source files can resolve.
+
+The pure decisions of that path live in `dap/JavaLaunchSupport`:
+
+- **Main-class names.** For a class in a named module jdtls answers `<module>/<class>`. The launch keeps
+  that form; anything compared with what the user typed or clicked uses `MainClassOption.className()` /
+  `JavaMainClass.className()`, and a classpath Run passes the class part.
+- **Project name.** java-debug compiles breakpoint conditions, logpoints and evaluated expressions against
+  a JDT project, and treats a condition it cannot evaluate as met. An `attach` and a compile-fallback
+  launch give it nothing to infer the project from, so `DapManager.projectNameOf` asks jdtls
+  (`resolveMainMethod`, then `resolveElementAtSelection` at the file's first type declaration) and sends
+  it as `projectName`.
+- **Working directory.** A project's main class runs in the project root on every path (Debug, gutter,
+  saved configuration, Run); only a loose file runs in its own folder.
+- **Preview features.** `checkProjectSettings` (its argument is one JSON *string*) says whether the
+  project compiles with `--enable-preview`; the flag is then added to the VM arguments of Debug and Run.
+- **Long class paths.** `shortenCommandLine` is sent only when the command could not be started
+  (Windows: 32,767 characters in all; elsewhere 128 KiB per argument) — `argfile`, or `jarmanifest` for
+  a launcher older than JDK 9.
+- **Same file.** jdtls reports real paths, so its `filePath` is compared by real path (a project opened
+  through a symlink).
 
 An extensionless Java shebang (`java --source 25+`) cannot be passed directly to `javac` as a source
 filename. Debug writes a temporary `.java` copy with the shebang line blanked, preserving line numbers,
