@@ -501,8 +501,7 @@ final class DebugCoordinator {
             if (status.failed() && reportedRejections.add(file + ":" + status.line() + ":" + status.message())) {
                 host.setStatus(tr(
                         "status.debug.breakpointInvalid",
-                        file.getFileName(),
-                        status.line() + 1,
+                        file.getFileName() + ":" + (status.line() + 1),
                         status.message().isEmpty() ? tr("debug.breakpoint.rejected") : status.message()));
             }
             // The adapter bound it to another line (the next one with code): the breakpoint follows, so the

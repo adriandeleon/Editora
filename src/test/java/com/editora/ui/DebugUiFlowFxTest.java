@@ -1092,7 +1092,7 @@ class DebugUiFlowFxTest {
             awaitLive(b, 4, LiveState.REJECTED);
             assertEquals("Breakpoint added to invalid line.", live(b, 4).tooltip());
             assertEquals(
-                    tr("status.debug.breakpointInvalid", "util.py", 5, "Breakpoint added to invalid line."), status());
+                    tr("status.debug.breakpointInvalid", "util.py:5", "Breakpoint added to invalid line."), status());
             assertEquals(
                     List.of("breakpoint-conditional", "breakpoint-rejected breakpoint-unverified"), gutterGlyphs(b));
 
