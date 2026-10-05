@@ -663,9 +663,11 @@ final class FileWorkflowCoordinator {
         buffer.setDetectedCharset(load.charset(), load.charsetAssumed());
         buffer.setLargeFile(load.large() || load.longLine());
         buffer.setHeavyFile(load.heavy());
+        buffer.setWrapSuppressed(load.longLine());
         if (load.longLine()) {
             // Wrapping a giant RichTextFX paragraph multiplies layout work. The user can explicitly turn it
-            // back on after loading, but the first rendered frame must use the safe profile.
+            // back on after loading (Toggle Word Wrap on this buffer), but the first rendered frame must use the
+            // safe profile — and so must every later settings re-apply, hence the flag above.
             buffer.setWordWrap(false);
         }
         if (load.truncated()) {

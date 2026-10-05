@@ -11,6 +11,7 @@ import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
 import com.editora.config.ConfigManager;
 import com.editora.config.Project;
+import com.editora.config.Settings;
 import com.editora.editops.KillRing;
 import com.editora.editops.Rectangle;
 import com.editora.editor.EditorBuffer;
@@ -438,8 +439,8 @@ final class WindowCommandRegistrar {
                                 .promptIntSetting(
                                         "appearance.setFontSize",
                                         () -> host.config().getSettings().getFontSize(),
-                                        6,
-                                        72,
+                                        Settings.MIN_FONT_SIZE,
+                                        Settings.MAX_FONT_SIZE,
                                         v -> host.config().getSettings().setFontSize(v),
                                         () -> host.editorSettings()
                                                 .applyViewSettingsToAllBuffers(
@@ -591,8 +592,8 @@ final class WindowCommandRegistrar {
                                         "file.setAutoSaveDelay",
                                         () -> Math.max(1, (int) Math.round(
                                                 host.config().getSettings().getAutoSaveDelayMillis() / 1000.0)),
-                                        1,
-                                        3600,
+                                        Settings.MIN_AUTO_SAVE_DELAY_SECONDS,
+                                        Settings.MAX_AUTO_SAVE_DELAY_SECONDS,
                                         v -> host.config().getSettings().setAutoSaveDelayMillis(v * 1000),
                                         host::applyAutoSave)));
         host.registry()
@@ -612,7 +613,7 @@ final class WindowCommandRegistrar {
                                         "history.setMaxPerFile",
                                         () -> host.config().getSettings().getHistoryMaxPerFile(),
                                         1,
-                                        1000,
+                                        Settings.MAX_HISTORY_PER_FILE,
                                         v -> host.config().getSettings().setHistoryMaxPerFile(v),
                                         host.historyCoordinator()::applySupport)));
         host.registry()
@@ -622,8 +623,8 @@ final class WindowCommandRegistrar {
                                 .promptIntSetting(
                                         "history.setMaxAgeDays",
                                         () -> host.config().getSettings().getHistoryMaxAgeDays(),
-                                        1,
-                                        3650,
+                                        0, // 0 = keep revisions whatever their age, as the Settings spinner allows
+                                        Settings.MAX_HISTORY_AGE_DAYS,
                                         v -> host.config().getSettings().setHistoryMaxAgeDays(v),
                                         host.historyCoordinator()::applySupport)));
         host.registry()
@@ -634,7 +635,7 @@ final class WindowCommandRegistrar {
                                         "history.setMaxTotalMb",
                                         () -> host.config().getSettings().getHistoryMaxTotalMb(),
                                         1,
-                                        10000,
+                                        Settings.MAX_HISTORY_TOTAL_MB,
                                         v -> host.config().getSettings().setHistoryMaxTotalMb(v),
                                         host.historyCoordinator()::applySupport)));
         host.registry()
@@ -645,7 +646,7 @@ final class WindowCommandRegistrar {
                                         "editor.setLargeFileThreshold",
                                         () -> host.config().getSettings().getLargeFileThreshold(),
                                         0,
-                                        10_000_000,
+                                        Settings.MAX_LARGE_FILE_THRESHOLD,
                                         v -> host.config().getSettings().setLargeFileThreshold(v),
                                         null))); // applies to newly opened files
         host.registry().register(Command.of("view.toggleLargeFileMode", host.editorSettings()::toggleLargeFileMode));

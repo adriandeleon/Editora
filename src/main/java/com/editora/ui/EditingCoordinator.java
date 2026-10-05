@@ -1977,7 +1977,10 @@ final class EditingCoordinator {
                         }
                         host.config().getSettings().setFillColumn(col);
                         host.config().save();
-                        host.setStatus(tr("status.fillColumn.set", col));
+                        if (host.settingsWindow() != null) {
+                            host.settingsWindow().syncAll(); // an open Settings window shows the new column
+                        }
+                        host.setStatus(tr("status.fillColumn.set", fillColumn()));
                     } catch (NumberFormatException e) {
                         host.setStatus(tr("status.fillColumn.invalid"));
                     }

@@ -514,6 +514,10 @@ public class SettingsWindow {
 
     private boolean built;
     private boolean loading;
+    /** Re-read each Tool Windows row from the tool-window manager; run by {@link #load} under the flag below. */
+    private final List<Runnable> toolWindowRowSyncs = new ArrayList<>();
+
+    private boolean syncingToolWindowRows;
 
     public SettingsWindow(
             ConfigManager config,
@@ -936,7 +940,7 @@ public class SettingsWindow {
             if (loading || now == null) {
                 return;
             }
-            config.getSettings().setKeymap(now);
+            KeymapLayers.switchKeymap(config.getSettings(), now);
             config.save();
             if (onKeymapChanged != null) {
                 onKeymapChanged.run(); // reload the shared keymap live across all windows
@@ -946,17 +950,22 @@ public class SettingsWindow {
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
         fontFamily.setPrefWidth(220);
-        fontFamily.valueProperty().addListener((obs, old, now) -> apply());
-
-        fontSize = new Spinner<>(8, 48, 14);
-        fontSize.setEditable(true);
-        fontSize.setPrefWidth(90);
-        fontSize.valueProperty().addListener((obs, old, now) -> apply());
-        fontSize.getEditor().setOnAction(e -> commitFontSize());
-        fontSize.getEditor().focusedProperty().addListener((obs, was, focused) -> {
-            if (!focused) {
-                commitFontSize();
+        fontFamily.valueProperty().addListener((obs, old, now) -> {
+            if (loading || now == null) {
+                return;
             }
+            config.getSettings().setFontFamily(now);
+            apply();
+        });
+
+        fontSize = IntSpinners.editable(Settings.MIN_FONT_SIZE, Settings.MAX_FONT_SIZE, 14, 1);
+        fontSize.setPrefWidth(90);
+        fontSize.valueProperty().addListener((obs, old, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setFontSize(now);
+            apply();
         });
 
         themeCombo = new ComboBox<>();
@@ -993,8 +1002,7 @@ public class SettingsWindow {
             apply();
         });
 
-        tabSizeSpinner = new Spinner<>(1, 16, 4);
-        tabSizeSpinner.setEditable(true);
+        tabSizeSpinner = IntSpinners.editable(Settings.MIN_TAB_SIZE, Settings.MAX_TAB_SIZE, 4, 1);
         tabSizeSpinner.setPrefWidth(90);
         tabSizeSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1004,8 +1012,8 @@ public class SettingsWindow {
             apply();
         });
 
-        fillColumnSpinner = new Spinner<>(20, 200, com.editora.editops.Filler.DEFAULT_FILL_COLUMN);
-        fillColumnSpinner.setEditable(true);
+        fillColumnSpinner = IntSpinners.editable(
+                Settings.MIN_FILL_COLUMN, Settings.MAX_FILL_COLUMN, com.editora.editops.Filler.DEFAULT_FILL_COLUMN, 1);
         fillColumnSpinner.setPrefWidth(90);
         fillColumnSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1016,8 +1024,7 @@ public class SettingsWindow {
         });
 
         // Line count above which the minimap + LSP auto-disable (highlighting + editing stay); 0 = never.
-        largeFileThresholdSpinner = new Spinner<>(0, 10_000_000, 10_000, 1000);
-        largeFileThresholdSpinner.setEditable(true);
+        largeFileThresholdSpinner = IntSpinners.editable(0, Settings.MAX_LARGE_FILE_THRESHOLD, 10_000, 1000);
         largeFileThresholdSpinner.setPrefWidth(120);
         largeFileThresholdSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1258,9 +1265,9 @@ public class SettingsWindow {
         updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
 
         localHistoryCheck = new CheckBox(tr("settings.enableLocalHistory"));
-        historyMaxPerFileSpinner = historySpinner(1, 1000, 50, Settings::setHistoryMaxPerFile);
-        historyMaxAgeSpinner = historySpinner(0, 3650, 30, Settings::setHistoryMaxAgeDays);
-        historyMaxTotalSpinner = historySpinner(1, 5000, 50, Settings::setHistoryMaxTotalMb);
+        historyMaxPerFileSpinner = historySpinner(1, Settings.MAX_HISTORY_PER_FILE, 50, Settings::setHistoryMaxPerFile);
+        historyMaxAgeSpinner = historySpinner(0, Settings.MAX_HISTORY_AGE_DAYS, 30, Settings::setHistoryMaxAgeDays);
+        historyMaxTotalSpinner = historySpinner(1, Settings.MAX_HISTORY_TOTAL_MB, 50, Settings::setHistoryMaxTotalMb);
         localHistoryCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setLocalHistory(now);
             updateHistoryRowsEnabled();
@@ -1442,7 +1449,7 @@ public class SettingsWindow {
         for (AgentClientUi a : agentClientUis()) {
             TextField field = new TextField();
             field.setPromptText(a.defaultCommand());
-            field.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(field, a.getCommand(), now -> {
                 a.setCommand().accept(now);
                 apply();
                 if (agentCoordinator != null) {
@@ -1572,7 +1579,7 @@ public class SettingsWindow {
             }
             TextField field = new TextField();
             field.setPromptText(dbg.commandPrompt());
-            field.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(field, dbg.getCommand(), now -> {
                 dbg.setCommand().accept(now);
                 apply();
                 refreshDebugStatus();
@@ -1596,7 +1603,7 @@ public class SettingsWindow {
             });
             TextField field = new TextField();
             field.setPromptText(srv.defaultCommand());
-            field.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(field, srv.getCommand(), now -> {
                 srv.setCommand().accept(now);
                 apply();
                 refreshLspStatus();
@@ -1612,6 +1619,7 @@ public class SettingsWindow {
             }
             onToggleZen.accept(now);
             syncViewChecks();
+            syncFocusModeChecks();
         });
 
         expertCheck = new CheckBox(tr("settings.expert"));
@@ -1621,6 +1629,7 @@ public class SettingsWindow {
             }
             onToggleExpert.accept(now);
             syncViewChecks();
+            syncFocusModeChecks();
         });
 
         autoSaveCombo = new ComboBox<>();
@@ -1651,8 +1660,8 @@ public class SettingsWindow {
             apply();
         });
 
-        autoSaveDelaySpinner = new Spinner<>(1, 300, 1, 1);
-        autoSaveDelaySpinner.setEditable(true);
+        autoSaveDelaySpinner =
+                IntSpinners.editable(Settings.MIN_AUTO_SAVE_DELAY_SECONDS, Settings.MAX_AUTO_SAVE_DELAY_SECONDS, 1, 1);
         autoSaveDelaySpinner.setPrefWidth(90);
         autoSaveDelaySpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1667,8 +1676,7 @@ public class SettingsWindow {
     /** A small editable int spinner that writes {@code setter} + re-applies (skipping the loading phase). */
     private Spinner<Integer> historySpinner(
             int min, int max, int def, java.util.function.BiConsumer<Settings, Integer> setter) {
-        Spinner<Integer> s = new Spinner<>(min, max, def);
-        s.setEditable(true);
+        Spinner<Integer> s = IntSpinners.editable(min, max, def, 1);
         s.setPrefWidth(100);
         s.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -2818,14 +2826,25 @@ public class SettingsWindow {
     /** Re-syncs the "Enable personal dictionary" checkbox after a palette toggle. */
     public void syncPersonalDictionaryCheck() {
         if (dictEnableCheck != null) {
-            dictEnableCheck.setSelected(config.getSettings().isPersonalDictionary());
+            quietly(() -> dictEnableCheck.setSelected(config.getSettings().isPersonalDictionary()));
         }
     }
 
     /** Re-syncs the "Enable technical dictionary" checkbox after a palette toggle. */
     public void syncTechnicalDictionaryCheck() {
         if (techDictEnableCheck != null) {
-            techDictEnableCheck.setSelected(config.getSettings().isTechnicalDictionary());
+            quietly(() -> techDictEnableCheck.setSelected(config.getSettings().isTechnicalDictionary()));
+        }
+    }
+
+    /** Runs a control re-sync without its listeners treating it as a user edit (no write, no save, no apply). */
+    private void quietly(Runnable sync) {
+        boolean prev = loading;
+        loading = true;
+        try {
+            sync.run();
+        } finally {
+            loading = prev;
         }
     }
 
@@ -3109,11 +3128,13 @@ public class SettingsWindow {
     /** Re-reads the five TODO part-color pickers from settings (after a palette color change). */
     public void syncTodoPartColors() {
         Settings s = config.getSettings();
-        setPicker(todoTagColorPicker, s.getTodoTagColor());
-        setPicker(todoCriticalColorPicker, s.getTodoPriorityCriticalColor());
-        setPicker(todoHighColorPicker, s.getTodoPriorityHighColor());
-        setPicker(todoMediumColorPicker, s.getTodoPriorityMediumColor());
-        setPicker(todoLowColorPicker, s.getTodoPriorityLowColor());
+        quietly(() -> {
+            setPicker(todoTagColorPicker, s.getTodoTagColor());
+            setPicker(todoCriticalColorPicker, s.getTodoPriorityCriticalColor());
+            setPicker(todoHighColorPicker, s.getTodoPriorityHighColor());
+            setPicker(todoMediumColorPicker, s.getTodoPriorityMediumColor());
+            setPicker(todoLowColorPicker, s.getTodoPriorityLowColor());
+        });
     }
 
     private static void setPicker(javafx.scene.control.ColorPicker picker, String web) {
@@ -5718,6 +5739,38 @@ public class SettingsWindow {
     }
 
     /** The Browse… half of {@link #exePathRow}, for card rows whose title already names the field. */
+    private static final Object COMMIT_KEY = new Object();
+
+    /**
+     * Wires a command field to take effect on Enter or when focus leaves it, and only if the text differs from
+     * the stored command. Applying per keystroke reconfigured the language servers / debug adapters with every
+     * half-typed prefix: the running server was shut down on the first key, and a prefix that happened to
+     * resolve was launched and killed by the next.
+     */
+    private void commitOnEnterOrBlur(
+            TextField field, java.util.function.Supplier<String> stored, Consumer<String> commit) {
+        Runnable run = () -> {
+            String text = field.getText() == null ? "" : field.getText();
+            if (!loading && !text.equals(stored.get())) {
+                commit.accept(text);
+            }
+        };
+        field.setOnAction(e -> run.run());
+        field.focusedProperty().addListener((obs, was, focused) -> {
+            if (!focused) {
+                run.run();
+            }
+        });
+        field.getProperties().put(COMMIT_KEY, run);
+    }
+
+    /** Commits a {@link #commitOnEnterOrBlur} field whose text was just set for the user (Browse…). */
+    private static void commitNow(TextField field) {
+        if (field.getProperties().get(COMMIT_KEY) instanceof Runnable run) {
+            run.run();
+        }
+    }
+
     private Button browseButton(String title, TextField field) {
         Button browse = new Button(tr("settings.mermaid.browse"));
         browse.setOnAction(e -> {
@@ -5726,6 +5779,7 @@ public class SettingsWindow {
             java.io.File f = fc.showOpenDialog(stage);
             if (f != null) {
                 field.setText(f.getAbsolutePath());
+                commitNow(field);
             }
         });
         return browse;
@@ -5739,6 +5793,7 @@ public class SettingsWindow {
             java.io.File f = fc.showOpenDialog(stage);
             if (f != null) {
                 field.setText(f.getAbsolutePath());
+                commitNow(field);
             }
         });
         HBox.setHgrow(field, Priority.ALWAYS);
@@ -5982,6 +6037,13 @@ public class SettingsWindow {
                 moveDown.setDisable(!shown || !toolWindows.canMove(tw, 1));
             };
             moveRefreshers.add(refreshThisRow);
+            // The row is built once, but the window can be moved or hidden from the main window meanwhile.
+            toolWindowRowSyncs.add(() -> {
+                showCheck.setSelected(toolWindows.isVisible(tw));
+                sideCombo.setValue(toolWindows.currentSide(tw));
+                sideCombo.setDisable(!showCheck.isSelected());
+                refreshThisRow.run();
+            });
             moveUp.setOnAction(e -> {
                 toolWindows.move(tw, -1);
                 refreshMoves.run();
@@ -5992,12 +6054,15 @@ public class SettingsWindow {
             });
 
             showCheck.selectedProperty().addListener((obs, was, visible) -> {
+                if (syncingToolWindowRows) {
+                    return;
+                }
                 toolWindows.setVisible(tw, visible);
                 sideCombo.setDisable(!visible);
                 refreshMoves.run();
             });
             sideCombo.valueProperty().addListener((obs, old, now) -> {
-                if (now != null) {
+                if (now != null && !syncingToolWindowRows) {
                     toolWindows.setSide(tw, now);
                     refreshMoves.run();
                 }
@@ -6906,6 +6971,12 @@ public class SettingsWindow {
             copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
             copyWithHighlightingCheck.setSelected(settings.isCopyWithSyntaxHighlighting());
             projectsCheck.setSelected(settings.isProjectSupport());
+            syncingToolWindowRows = true;
+            try {
+                toolWindowRowSyncs.forEach(Runnable::run);
+            } finally {
+                syncingToolWindowRows = false;
+            }
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
@@ -7490,6 +7561,17 @@ public class SettingsWindow {
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
     }
 
+    /** Re-reads the Zen and Expert switches: entering one leaves the other, and both have palette commands. */
+    void syncFocusModeChecks() {
+        if (!built) {
+            return;
+        }
+        quietly(() -> {
+            zenCheck.setSelected(config.getWorkspaceState().isZenMode());
+            expertCheck.setSelected(config.getWorkspaceState().isExpertMode());
+        });
+    }
+
     void syncViewChecks() {
         if (!built) {
             return;
@@ -7592,28 +7674,14 @@ public class SettingsWindow {
         return choices;
     }
 
-    private void commitFontSize() {
-        try {
-            int value = Math.max(
-                    8,
-                    Math.min(48, Integer.parseInt(fontSize.getEditor().getText().trim())));
-            fontSize.getValueFactory().setValue(value);
-            fontSize.getEditor().setText(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            fontSize.getEditor().setText(String.valueOf(fontSize.getValue()));
-        }
-    }
-
     private void apply() {
         if (loading) {
             return;
         }
-        if (fontFamily.getValue() == null || fontSize.getValue() == null) {
-            return;
-        }
+        // Each control writes its own setting before calling this. Copying the font controls in here made every
+        // unrelated change write back whatever they happened to show — a stale value in a window that had not
+        // been re-synced, or nothing at all (no save) once the size field had been emptied.
         Settings settings = config.getSettings();
-        settings.setFontFamily(fontFamily.getValue());
-        settings.setFontSize(fontSize.getValue());
         config.save();
         onApply.accept(settings);
         updatePreviewFont();

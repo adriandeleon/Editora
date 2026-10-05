@@ -1216,7 +1216,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void onSettingsApplied(Settings settings) {
         if (windowManager != null) {
-            windowManager.broadcastSettingsApplied(); // re-applies to every window, including this one
+            windowManager.broadcastSettingsApplied(this); // re-applies to every window, including this one
             windowManager.broadcastExternalToolsChanged(); // re-sync externalTool.run.* after a Settings edit
         } else {
             editorSettings.applyViewSettingsToAllBuffers(settings);
@@ -9469,6 +9469,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         chrome.applyChromeVisibility();
         editorSettings.applyViewSettingsToAllBuffers(config.getSettings());
+        settingsWindow.syncFocusModeChecks();
         requestSave();
         // When entering Zen the status bar is hidden, so this is mostly seen on exit.
         setStatus(tr("status.toggle.zen", tr(on ? "common.on" : "common.off")));
@@ -9500,6 +9501,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         chrome.applyChromeVisibility();
         editorSettings.applyViewSettingsToAllBuffers(config.getSettings());
+        settingsWindow.syncFocusModeChecks();
         requestSave();
         setStatus(tr("status.toggle.expert", tr(on ? "common.on" : "common.off")));
     }

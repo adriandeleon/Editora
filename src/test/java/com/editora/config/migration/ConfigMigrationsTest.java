@@ -379,6 +379,24 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v105→106: overrides became per-keymap; an existing file's stay in place, under the keymap it names. */
+    @Test
+    void perKeymapOverridesStepKeepsExistingKeybindingsWhereTheyAre() throws Exception {
+        JsonNode stored = mapper.readTree(
+                "{\"schemaVersion\":105,\"keymap\":\"cua\","
+                        + "\"keybindings\":{\"C-f\":\"\",\"<f7>\":\"find.show\"},\"keybindingsMac\":{\"Cmd-k\":\"file.save\"}}");
+
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
+
+        assertEquals(106, out.get("schemaVersion").asInt());
+        assertEquals("cua", out.get("keymap").asText());
+        assertEquals(stored.get("keybindings"), out.get("keybindings"));
+        assertEquals(stored.get("keybindingsMac"), out.get("keybindingsMac"));
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertEquals("find.show", loaded.keybindingsFor(false).get("<f7>"));
+        assertTrue(loaded.getKeymapKeybindings().isEmpty(), "nothing is parked for the other keymaps yet");
+    }
+
     @Test
     void aFileWithoutAMarkerResumesAfterTheNewestStepItsKeysProve() throws Exception {
         // bracketColors first appeared in v90, so the v88→89 "turn Projects on" step has already run for

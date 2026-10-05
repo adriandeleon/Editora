@@ -7299,6 +7299,17 @@ public class EditorBuffer implements TabContent {
         return visible && !largeFile && !heavyFile && mode != MarkdownViewMode.PREVIEW;
     }
 
+    /** A load found a line too long to wrap cheaply: the word-wrap preference is held off for this buffer. */
+    private boolean wrapSuppressed;
+
+    public boolean isWrapSuppressed() {
+        return wrapSuppressed;
+    }
+
+    public void setWrapSuppressed(boolean wrapSuppressed) {
+        this.wrapSuppressed = wrapSuppressed;
+    }
+
     /** Toggles soft word wrap on the editor surface (and the split view); the 80-column ruler stays visible. */
     public void setWordWrap(boolean wrap) {
         boolean changed = wrap != area.isWrapText();
