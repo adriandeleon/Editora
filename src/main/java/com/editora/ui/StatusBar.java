@@ -635,6 +635,9 @@ public final class StatusBar extends HBox {
         remote.setTooltip(isRemote ? new Tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
         position.setVisible(hasBuffer);
         position.setManaged(hasBuffer);
+        // Narrowing is a property of the buffer, not of the window: re-derive the chip on every tab switch, or
+        // it stays lit on tabs that are not narrowed (and after the narrowed tab is closed).
+        setNarrowed(hasBuffer && buffer.isNarrowed());
         // Ln/Col and the file size follow buffer presence even in Simple mode (kept visible there).
         size.setVisible(hasBuffer);
         size.setManaged(hasBuffer);

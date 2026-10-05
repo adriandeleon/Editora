@@ -1709,7 +1709,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.getFoldManager().unfoldContaining(line);
         area.moveTo(line, 0);
         if (!navigation.navigating && buffer.getPath() != null) {
-            navigation.recordJump(origin, new NavigationHistory.Location(buffer.getPath(), line, 0));
+            navigation.recordJumpToLine(origin, buffer, line);
         }
         Platform.runLater(() -> {
             try {
@@ -1751,7 +1751,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             projectPanel.revealPathInTree(file);
             return;
         }
-        fileWorkflows.openThen(file, () -> navigateToLine(line));
+        fileWorkflows.openThen(file, () -> navigateToLine(navigation.areaLine(activeBuffer(), line)));
     }
 
     /**
@@ -9924,7 +9924,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else if (findBar.isShown()) {
             findBar.hideBar();
         } else {
-            editing.markActive = false;
+            editing.deactivateMark();
             CodeArea area = activeArea();
             if (area != null) {
                 area.deselect();
@@ -9935,7 +9935,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The selection policy for caret-movement commands: extend from the mark when it's active. */
     private SelectionPolicy selPolicy() {
-        return editing.markActive ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
+        return editing.markActive() ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
     }
 
     private static Path pathOf(java.io.File file) {

@@ -358,6 +358,9 @@ final class WindowCommandRegistrar {
     }
 
     void registerCommands() {
+        // Every invocation path (chord, palette, menu, toolbar, macro) runs through the registry, so this is
+        // the one place an editing command's caret is scrolled back into view.
+        host.registry().setRunScope(id -> host.editing().revealCaretAfterEdit());
         host.registry().register(Command.of("file.new", host::onNew));
         host.registry().register(Command.of("window.new", () -> {
             if (host.windowManager() != null) {
@@ -2234,7 +2237,9 @@ final class WindowCommandRegistrar {
         // C-a: smart line start — first press to the beginning of the line's text (first non-whitespace),
         // a second press toggles to the true line start (column 0).
         host.registry().register(Command.of("nav.lineStart", () -> {
-            if (host.editing().multiCaretMove(b -> b.multiMoveLineBoundary(false, host.editing().markActive))) {
+            if (host.editing()
+                    .multiCaretMove(
+                            b -> b.multiMoveLineBoundary(false, host.editing().markActive()))) {
                 return;
             }
             host.editing()
@@ -2242,7 +2247,9 @@ final class WindowCommandRegistrar {
                             a -> a.moveTo(TextNav.smartLineStart(a.getText(), a.getCaretPosition()), host.selPolicy()));
         }));
         host.registry().register(Command.of("nav.lineEnd", () -> {
-            if (host.editing().multiCaretMove(b -> b.multiMoveLineBoundary(true, host.editing().markActive))) {
+            if (host.editing()
+                    .multiCaretMove(
+                            b -> b.multiMoveLineBoundary(true, host.editing().markActive()))) {
                 return;
             }
             host.editing().moveAndFollow(a -> a.lineEnd(host.selPolicy()));
@@ -2253,14 +2260,18 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("nav.docEnd", () -> host.editing().moveAndFollow(a -> a.end(host.selPolicy()))));
         host.registry().register(Command.of("nav.charForward", () -> {
-            if (host.editing().multiCaretMove(b -> b.multiMoveHorizontal(1, false, host.editing().markActive))) {
+            if (host.editing()
+                    .multiCaretMove(
+                            b -> b.multiMoveHorizontal(1, false, host.editing().markActive()))) {
                 return;
             }
             host.editing()
                     .moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1), host.selPolicy()));
         }));
         host.registry().register(Command.of("nav.charBackward", () -> {
-            if (host.editing().multiCaretMove(b -> b.multiMoveHorizontal(-1, false, host.editing().markActive))) {
+            if (host.editing()
+                    .multiCaretMove(
+                            b -> b.multiMoveHorizontal(-1, false, host.editing().markActive()))) {
                 return;
             }
             host.editing().moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1), host.selPolicy()));
@@ -2268,7 +2279,9 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("nav.lineDown", () -> host.editing().moveLine(1)));
         host.registry().register(Command.of("nav.lineUp", () -> host.editing().moveLine(-1)));
         host.registry().register(Command.of("nav.wordForward", () -> {
-            if (host.editing().multiCaretMove(b -> b.multiMoveHorizontal(1, true, host.editing().markActive))) {
+            if (host.editing()
+                    .multiCaretMove(
+                            b -> b.multiMoveHorizontal(1, true, host.editing().markActive()))) {
                 return;
             }
             host.editing()
@@ -2276,7 +2289,9 @@ final class WindowCommandRegistrar {
                             host.editing().nextWordBoundary(a.getText(), a.getCaretPosition()), host.selPolicy()));
         }));
         host.registry().register(Command.of("nav.wordBackward", () -> {
-            if (host.editing().multiCaretMove(b -> b.multiMoveHorizontal(-1, true, host.editing().markActive))) {
+            if (host.editing()
+                    .multiCaretMove(
+                            b -> b.multiMoveHorizontal(-1, true, host.editing().markActive()))) {
                 return;
             }
             host.editing()
