@@ -318,11 +318,10 @@ final class BookmarkCoordinator {
                 && map.remove(oldKey) != null) {
             ops.saveBookmarks();
         }
-        if (now != null && !now.equals(oldPath)) {
+        boolean any = !buffer.getBookmarkManager().snapshot().isEmpty();
+        if (now != null && !now.equals(oldPath) && (any || map.containsKey(now.toString()))) {
             pendingPersist.remove(buffer);
             persistBookmarks(buffer); // also when it has none: bookmarks of a file it overwrote are gone
-        } else {
-            refreshViews();
         }
     }
 

@@ -454,11 +454,10 @@ final class NotesCoordinator {
                 && map.remove(oldKey) != null) {
             ops.saveNotes();
         }
-        if (now != null && !now.equals(oldPath)) {
+        boolean any = !buffer.getNoteManager().snapshot().isEmpty();
+        if (now != null && !now.equals(oldPath) && (any || map.containsKey(ops.noteKey(buffer)))) {
             pendingPersist.remove(buffer);
             persistNotes(buffer);
-        } else {
-            refreshViews();
         }
     }
 

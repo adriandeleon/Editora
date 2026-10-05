@@ -2136,6 +2136,7 @@ public class EditorBuffer implements TabContent {
         contextMenu.getStyleClass().setAll("context-menu", "editor-context-menu");
         a.setOnContextMenuRequested(e -> {
             menuView = a;
+            a.requestFocus(); // "at the caret" items read the focused view
             List<MenuItem> items = new java.util.ArrayList<>();
             // A JUnit test file runs/debugs the method at the caret (or the class from its declaration)
             // rather than offering generic "Run File"; anything else runnable keeps that generic action.

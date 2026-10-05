@@ -147,6 +147,7 @@ class EditCommandRevealsCaretFxTest {
                 int caret = area.getCaretPosition();
                 area.replaceText(0, area.getLength(), area.getText().replace("   \n", "\n"));
                 area.moveTo(Math.min(caret, area.getLength()));
+                area.showParagraphAtTop(300); // as such commands do: replacing everything resets the viewport
             }));
             // And one that edits far from the caret (what a save that trims trailing whitespace does).
             registry.register(com.editora.command.Command.of("edit.testEditElsewhere", "Elsewhere", () -> {
