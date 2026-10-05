@@ -2135,9 +2135,12 @@ public class EditorBuffer implements TabContent {
         contextMenu.getStyleClass().add("editor-context-menu");
         area.setOnContextMenuRequested(e -> {
             List<MenuItem> items = new java.util.ArrayList<>();
-            // A JUnit test file runs/debugs the method at the caret (or the class from its declaration)
+            // First, and for every item below: one position the menu is about (and the caret moved to a
+            // right-click outside the selection), so Paste, Run Test, the LSP items and Add Bookmark agree.
+            ContextMenuTarget at = ContextMenuTarget.resolve(area, e, this::collapseCarets);
+            // A JUnit test file runs/debugs the method there (or the class from its declaration)
             // rather than offering generic "Run File"; anything else runnable keeps that generic action.
-            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAtCaret(false);
+            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAt(at.line(), false);
             if (testTarget != null) {
                 boolean method = testTarget.methodName() != null;
                 MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
@@ -2157,7 +2160,7 @@ public class EditorBuffer implements TabContent {
                 items.add(new SeparatorMenuItem());
             } else {
                 // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
-                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAtCaret();
+                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAt(at.line());
                 if (mainTarget != null) {
                     String simple = com.editora.test.TestSourceLocator.simpleName(mainTarget.fqn());
                     MenuItem runMain = new MenuItem(tr("editmenu.runMainClass", simple));
@@ -2171,11 +2174,9 @@ public class EditorBuffer implements TabContent {
                     items.add(new SeparatorMenuItem());
                 }
             }
-            // LSP navigation (only when this buffer is served by a language server). Move the caret to the
-            // right-clicked position first so go-to-definition/references/hover target that symbol.
+            // LSP navigation (only when this buffer is served by a language server), for the symbol there.
             if (lspActive) {
-                int clickOffset = clickOffsetAt(e.getX(), e.getY());
-                items.add(lspMenu(clickOffset));
+                items.add(lspMenu(at.offset()));
                 items.add(new SeparatorMenuItem());
             }
             // Beside the LSP submenu, not with the plugin-contributed items at the foot of the menu: both
@@ -2195,7 +2196,7 @@ public class EditorBuffer implements TabContent {
                 items.add(aiActionsMenu());
                 items.add(new SeparatorMenuItem());
             }
-            SpellHit hit = spellHitAt(e.getX(), e.getY());
+            SpellHit hit = spellHitAt(at.offset());
             if (hit != null) {
                 items.addAll(spellMenuItems(hit));
                 items.add(new SeparatorMenuItem());
@@ -2227,10 +2228,9 @@ public class EditorBuffer implements TabContent {
                 }
             }
             // Bookmarks: the gutter marker is display-only, so add/remove lives here (and in the palette).
-            // Acts on the right-clicked line, not the caret line, matching the LSP items above.
             if (path != null) {
                 items.add(new SeparatorMenuItem());
-                int clickedLine = clickLineAt(e.getX(), e.getY());
+                int clickedLine = at.line();
                 boolean marked = bookmarks.isBookmarked(clickedLine);
                 MenuItem bookmark = new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark"));
                 bookmark.setGraphic(MenuIcons.bookmark());
@@ -2246,7 +2246,7 @@ public class EditorBuffer implements TabContent {
                 items.add(addNote);
             }
             contextMenu.getItems().setAll(items);
-            contextMenu.show(area, e.getScreenX(), e.getScreenY());
+            contextMenu.show(area, at.screenX(), at.screenY());
             e.consume();
         });
 
@@ -2268,25 +2268,6 @@ public class EditorBuffer implements TabContent {
     /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */
     public void setBuildMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
         this.buildMenuContributor = contributor;
-    }
-
-    /** The document offset under a context-menu click (for caret-positioning LSP nav); caret if it misses. */
-    private int clickOffsetAt(double x, double y) {
-        try {
-            return area.hit(x, y).getInsertionIndex();
-        } catch (RuntimeException ex) {
-            return area.getCaretPosition();
-        }
-    }
-
-    /** The 0-based paragraph under a context-menu click (for the bookmark item); caret line if it misses. */
-    private int clickLineAt(double x, double y) {
-        try {
-            return area.offsetToPosition(clickOffsetAt(x, y), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
-                    .getMajor();
-        } catch (RuntimeException ex) {
-            return area.getCurrentParagraph();
-        }
     }
 
     /**
@@ -2589,18 +2570,9 @@ public class EditorBuffer implements TabContent {
         return items;
     }
 
-    /** The misspelled word at editor coordinates {@code (x, y)}, or {@code null}. */
-    private SpellHit spellHitAt(double x, double y) {
+    /** The misspelled word at document {@code offset}, or {@code null}. */
+    private SpellHit spellHitAt(int offset) {
         if (!spellCheckOn || spellChecker == null || !spellChecker.ready() || largeFile) {
-            return null;
-        }
-        int offset;
-        try {
-            offset = area.hit(x, y).getInsertionIndex();
-        } catch (RuntimeException ex) {
-            return null;
-        }
-        if (offset < 0 || offset > area.getLength()) {
             return null;
         }
         var pos = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
@@ -3613,6 +3585,7 @@ public class EditorBuffer implements TabContent {
                 java.util.List<java.io.File> images =
                         db.getFiles().stream().filter(EditorBuffer::isImageFile).toList();
                 if (!images.isEmpty()) {
+                    caretToDrop(a, e);
                     imageDropHandler.accept(images);
                     e.setDropCompleted(true);
                     e.consume();
@@ -3623,12 +3596,20 @@ public class EditorBuffer implements TabContent {
                 String url = webImageUrl(db);
                 javafx.scene.image.Image img = db.hasImage() ? db.getImage() : null;
                 if (url != null || img != null) {
+                    caretToDrop(a, e);
                     webImageDropHandler.accept(img, url);
                     e.setDropCompleted(true);
                     e.consume();
                 }
             }
         });
+    }
+
+    /** A drop lands under the pointer, in the view it was dropped on — a window dragged into has no focus yet. */
+    private void caretToDrop(CodeArea a, javafx.scene.input.DragEvent e) {
+        focusedArea = a;
+        focusedView.set(a);
+        EditorMouse.moveCaretToDrop(a, e.getX(), e.getY());
     }
 
     private static boolean hasImageFile(java.util.List<java.io.File> files) {
@@ -3889,10 +3870,13 @@ public class EditorBuffer implements TabContent {
     /** The project {@code main} entry point at (or nearest above) the caret, else the file's first main, else
      *  {@code null} — backs the editor right-click Run/Debug Main Class items. */
     public com.editora.run.MainMethodScanner.MainMethod mainTargetAtCaret() {
+        return mainTargetAt(focusedArea.getCurrentParagraph());
+    }
+
+    private com.editora.run.MainMethodScanner.MainMethod mainTargetAt(int caret) {
         if (mainLines.isEmpty()) {
             return null;
         }
-        int caret = focusedArea.getCurrentParagraph();
         com.editora.run.MainMethodScanner.MainMethod best = null;
         for (var e : mainLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
@@ -3921,7 +3905,10 @@ public class EditorBuffer implements TabContent {
      * a test class.
      */
     public com.editora.test.JavaTestScanner.TestTarget testTargetAtCaret(boolean classLevel) {
-        int caret = focusedArea.getCurrentParagraph();
+        return testTargetAt(focusedArea.getCurrentParagraph(), classLevel);
+    }
+
+    private com.editora.test.JavaTestScanner.TestTarget testTargetAt(int caret, boolean classLevel) {
         com.editora.test.JavaTestScanner.TestTarget best = null;
         for (var e : testLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
