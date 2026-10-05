@@ -167,7 +167,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
      */
     static void joinLastEdit(CodeArea first, CodeArea second, Runnable action) {
         Runnable run = action;
-        for (CodeArea area : second == null ? List.of(first) : List.of(first, second)) {
+        for (CodeArea area : views(first, second)) {
             if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) {
                 Runnable inner = run;
                 run = () -> manager.joinLast(inner);
@@ -176,9 +176,16 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         run.run();
     }
 
+    /** The views whose managers to drive: a split's second view shares the first one's, which counts once. */
+    private static List<CodeArea> views(CodeArea first, CodeArea second) {
+        return second == null || second.getUndoManager() == first.getUndoManager()
+                ? List.of(first)
+                : List.of(first, second);
+    }
+
     static Runnable begin(CodeArea first, CodeArea second) {
         var ends = new ArrayList<Runnable>();
-        for (CodeArea area : second == null ? List.of(first) : List.of(first, second)) {
+        for (CodeArea area : views(first, second)) {
             if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) ends.add(manager.beginCompletion());
         }
         return () -> ends.forEach(Runnable::run);
@@ -186,7 +193,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
 
     static Consumer<Runnable> captureAdditionalEdits(CodeArea first, CodeArea second) {
         Consumer<Runnable> apply = Runnable::run;
-        for (CodeArea area : second == null ? List.of(first) : List.of(first, second)) {
+        for (CodeArea area : views(first, second)) {
             if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) {
                 Consumer<Runnable> previous = apply;
                 Consumer<Runnable> append = manager.captureAppend();
@@ -294,6 +301,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
 
     @Override
     public void close() {
+        if (closed) return; // shared by a split's two views, each of which closes it
         closed = true;
         end();
         groups.clear();
