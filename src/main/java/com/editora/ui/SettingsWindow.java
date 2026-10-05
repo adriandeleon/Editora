@@ -202,6 +202,9 @@ public class SettingsWindow {
     private VBox shortcutListBox; // rebuilt from shortcutActions.rows() on each change/filter
     private String recordingCommandId; // command id whose row is currently capturing a chord, or null
     private String selectedShortcutId; // command id of the selected row (shows its Record/Reset), or null
+    private ScrollPane shortcutScroll;
+    private final Map<String, HBox> shortcutRowsById = new HashMap<>(); // the rows currently in the list
+    private HBox shortcutTabStop; // the one row Tab lands on; the arrow keys move between rows
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
@@ -773,6 +776,9 @@ public class SettingsWindow {
             built = true;
         }
         load();
+        // The keymap may have changed while the window was closed (or, the first time, the chips were
+        // created after the backend was injected and are still empty).
+        refreshShortcuts();
         if (stage.isShowing()) {
             stage.toFront();
         } else {
@@ -798,6 +804,7 @@ public class SettingsWindow {
 
         searchField = new TextField();
         searchField.setPromptText(tr("settings.search.prompt"));
+        searchField.setAccessibleText(tr("settings.search.prompt"));
         searchField.getStyleClass().add("settings-search");
         searchField.textProperty().addListener((o, a, b) -> filter(b));
 
@@ -807,6 +814,31 @@ public class SettingsWindow {
         sidebar.setPrefWidth(216);
         sidebar.setMinWidth(216);
         sidebar.setCellFactory(v -> new CategoryCell());
+        // The arrow, Home/End and Page keys only ever land on a category that can be opened: never on a
+        // group header, and never on one the running search has disabled.
+        sidebar.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                return;
+            }
+            List<Object> items = sidebar.getItems();
+            int from = sidebar.getSelectionModel().getSelectedIndex();
+            int page = (int) Math.max(1, sidebar.getHeight() / 34 - 1);
+            int target = SettingsSidebarNav.target(
+                    items.size(),
+                    from,
+                    e.getCode(),
+                    page,
+                    i -> items.get(i) instanceof Category c && !searchHiddenCats.contains(c));
+            if (target == SettingsSidebarNav.NOT_A_NAVIGATION_KEY) {
+                return;
+            }
+            e.consume();
+            if (target >= 0 && target != from) {
+                sidebar.getSelectionModel().clearAndSelect(target);
+                sidebar.getFocusModel().focus(target);
+                revealSidebarRow(target);
+            }
+        });
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
             if (b instanceof Category) { // group headers aren't pages
                 showContent();
@@ -866,6 +898,23 @@ public class SettingsWindow {
                         SettingsWindow.class
                                 .getResource("/com/editora/styles/syntax.css")
                                 .toExternalForm());
+        // Escape leaves: first a running search, then the window. A filter, because a ListView (the
+        // sidebar, where the focus usually is) swallows Escape — so what really uses the key is exempted
+        // by name in escapeIsTaken. An open combo popup or context menu takes the key before the scene.
+        scene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() != javafx.scene.input.KeyCode.ESCAPE
+                    || e.isShortcutDown()
+                    || e.isAltDown()
+                    || escapeIsTaken(e.getTarget())) {
+                return;
+            }
+            e.consume();
+            if (!searchField.getText().isEmpty()) {
+                searchField.clear();
+            } else {
+                stage.close();
+            }
+        });
         stage.setScene(scene);
         // The content scroll pane is fit-to-width (no horizontal scrollbar), so a too-narrow window would
         // clip the wider rows (label + spinner + unit) with no way to read them. Floor the window size.
@@ -873,6 +922,37 @@ public class SettingsWindow {
         stage.setMinHeight(480);
 
         sidebar.getSelectionModel().select(Category.APPEARANCE);
+    }
+
+    /**
+     * Whether Escape pressed on {@code target} is that control's own: the shortcut recorder (cancels the
+     * recording), a snippet/template body (a text editor — not a request to close the window), a cell
+     * being edited, or a combo whose popup is open.
+     */
+    private static boolean escapeIsTaken(Object target) {
+        for (Node n = target instanceof Node node ? node : null; n != null; n = n.getParent()) {
+            if (n instanceof CodeArea
+                    || n.getStyleClass().contains("shortcut-capture")
+                    || (n instanceof javafx.scene.control.Cell<?> cell && cell.isEditing())
+                    || (n instanceof javafx.scene.control.ComboBoxBase<?> combo && combo.isShowing())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Scrolls the sidebar just far enough to show row {@code index} (the keyboard moved the selection). */
+    private void revealSidebarRow(int index) {
+        if (sidebar.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
+            javafx.scene.control.IndexedCell<?> first = flow.getFirstVisibleCell();
+            javafx.scene.control.IndexedCell<?> last = flow.getLastVisibleCell();
+            if (first != null && last != null && index > first.getIndex() && index < last.getIndex()) {
+                return; // fully in view already
+            }
+        }
+        // Going up, show the group header above the category too rather than cutting it off.
+        boolean up = index > 0 && sidebar.getItems().get(index - 1) instanceof Group;
+        sidebar.scrollTo(up ? index - 1 : index);
     }
 
     /**
@@ -941,6 +1021,7 @@ public class SettingsWindow {
             if (onKeymapChanged != null) {
                 onKeymapChanged.run(); // reload the shared keymap live across all windows
             }
+            refreshShortcuts(); // the list below and the chord chips show the keymap that is now live
         });
 
         fontFamily = new ComboBox<>();
@@ -1804,13 +1885,14 @@ public class SettingsWindow {
         shortcutListBox = new VBox(2);
         shortcutListBox.getStyleClass().add("shortcut-list");
         ScrollPane scroll = new ScrollPane(shortcutListBox);
+        shortcutScroll = scroll;
         scroll.setFitToWidth(true);
         scroll.setPrefHeight(320);
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = note(tr("settings.shortcuts.note"));
         Button resetAll = new Button(tr("settings.shortcuts.resetAll"));
         resetAll.setOnAction(e -> {
-            if (shortcutActions != null) {
+            if (shortcutActions != null && confirmResetAllShortcuts()) {
                 shortcutActions.resetAll();
                 refreshShortcuts();
             }
@@ -1825,12 +1907,38 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Rebuilds the shortcut list from the backend, honoring the filter. No-op until the backend is set. */
+    /**
+     * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
+     * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
+     */
+    private boolean confirmResetAllShortcuts() {
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("dialog.shortcut.resetAll.body"), ButtonType.OK, ButtonType.CANCEL));
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().setMinWidth(460);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /**
+     * Rebuilds the shortcut list from the backend, honoring the filter, and refills the chord chips on the
+     * other pages (both show the live keymap, so they go stale together). The list part is a no-op until the
+     * backend is set and the page is built.
+     */
     private void refreshShortcuts() {
+        refreshShortcuts(null);
+    }
+
+    /** {@link #refreshShortcuts()}, then moves keyboard focus to {@code focusId}'s row (rebuilding drops it). */
+    private void refreshShortcuts(String focusId) {
+        refreshChordChips();
         if (shortcutListBox == null || shortcutActions == null) {
             return;
         }
         shortcutListBox.getChildren().clear();
+        shortcutRowsById.clear();
+        shortcutTabStop = null;
         String q = shortcutFilter == null ? "" : shortcutFilter.getText().trim().toLowerCase(Locale.ROOT);
         for (Shortcut s : shortcutActions.rows()) {
             boolean match = q.isEmpty()
@@ -1838,8 +1946,24 @@ public class SettingsWindow {
                     || s.id().toLowerCase(Locale.ROOT).contains(q)
                     || (s.chord() != null && s.chord().toLowerCase(Locale.ROOT).contains(q));
             if (match) {
-                shortcutListBox.getChildren().add(shortcutRow(s));
+                HBox row = shortcutRow(s);
+                shortcutRowsById.put(s.id(), row);
+                shortcutListBox.getChildren().add(row);
             }
+        }
+        // One Tab stop for the whole list (the selected row, else the first); the arrow keys move within it.
+        // ~450 separate Tab stops would put "Reset all shortcuts" and the footer out of reach instead.
+        HBox stop = shortcutRowsById.get(selectedShortcutId);
+        if (stop == null && !shortcutListBox.getChildren().isEmpty()) {
+            stop = (HBox) shortcutListBox.getChildren().get(0);
+        }
+        if (stop != null && !stop.getStyleClass().contains("shortcut-row-recording")) {
+            stop.setFocusTraversable(true);
+            shortcutTabStop = stop;
+        }
+        HBox focus = focusId == null ? null : shortcutRowsById.get(focusId);
+        if (focus != null) {
+            javafx.application.Platform.runLater(focus::requestFocus);
         }
     }
 
@@ -1853,56 +1977,85 @@ public class SettingsWindow {
         HBox.setHgrow(title, Priority.ALWAYS);
 
         if (s.id().equals(recordingCommandId)) {
-            TextField capture = new TextField();
-            capture.setEditable(false);
-            capture.setPromptText(tr("settings.shortcuts.recording"));
-            capture.setPrefWidth(180);
-            StringBuilder seq = new StringBuilder();
-            capture.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-                e.consume();
-                if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
-                    recordingCommandId = null;
-                    refreshShortcuts();
-                    return;
-                }
-                String token = com.editora.command.KeyDispatcher.chord(e);
-                if (token == null) {
-                    return; // modifier-only press
-                }
-                if (seq.length() > 0) {
-                    seq.append(' ');
-                }
-                seq.append(token);
-                capture.setText(seq.toString());
+            row.getStyleClass().add("shortcut-row-recording");
+            // Enter saves and Escape cancels from inside the field: it records Tab like any other key, so
+            // the Save button beside it cannot be reached from the keyboard.
+            TextField capture = ShortcutCapture.field(seq -> commitRecording(s.id(), seq), () -> {
+                recordingCommandId = null;
+                refreshShortcuts(s.id());
             });
             Button save = new Button(tr("settings.shortcuts.save"));
             save.getStyleClass().add("success");
             save.setDefaultButton(false);
-            save.setOnAction(e -> commitRecording(s.id(), seq.toString()));
+            save.setOnAction(e -> commitRecording(s.id(), capture.getText()));
             Button cancel = new Button(tr("settings.shortcuts.cancel"));
             cancel.setOnAction(e -> {
                 recordingCommandId = null;
-                refreshShortcuts();
+                refreshShortcuts(s.id());
             });
             row.getChildren().addAll(title, capture, save, cancel);
             javafx.application.Platform.runLater(capture::requestFocus);
         } else {
-            Label chord = new Label(s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord());
+            String chordText = s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord();
+            Label chord = new Label(chordText);
             chord.getStyleClass().add(s.chord() == null ? "shortcut-unbound" : "shortcut-chord");
             chord.setMinWidth(150);
             row.getChildren().addAll(title, chord);
-            // Record/Reset are shown only for the selected row (click a row to reveal them), keeping the
-            // list uncluttered. Clicking the row selects it; the buttons then act on that command.
+            // Record/Reset are shown only for the selected row, keeping the list uncluttered. A click
+            // selects a row; from the keyboard the arrow keys walk the rows and Enter/Space selects.
             row.getStyleClass().add("shortcut-row-clickable");
+            row.setAccessibleRole(javafx.scene.AccessibleRole.LIST_ITEM);
+            row.setAccessibleText(s.title() + ", " + chordText);
+            Button record = new Button(tr("settings.shortcuts.record"));
+            Runnable select = () -> {
+                if (s.id().equals(selectedShortcutId)) {
+                    record.fire(); // a second Enter on the selected row starts recording
+                } else {
+                    selectedShortcutId = s.id();
+                    refreshShortcuts(s.id());
+                }
+            };
             row.setOnMouseClicked(e -> {
                 if (!s.id().equals(selectedShortcutId)) {
-                    selectedShortcutId = s.id();
-                    refreshShortcuts();
+                    select.run();
+                }
+            });
+            row.focusedProperty().addListener((o, was, now) -> {
+                if (now) {
+                    if (shortcutTabStop != null && shortcutTabStop != row) {
+                        shortcutTabStop.setFocusTraversable(false);
+                    }
+                    row.setFocusTraversable(true);
+                    shortcutTabStop = row;
+                    scrollShortcutIntoView(row);
+                }
+            });
+            row.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                if (e.getTarget() != row || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                    return; // a key pressed on the row's own Record/Reset button is the button's
+                }
+                List<Node> all = shortcutListBox.getChildren();
+                int target =
+                        switch (e.getCode()) {
+                            case UP -> all.indexOf(row) - 1;
+                            case DOWN -> all.indexOf(row) + 1;
+                            case HOME -> 0;
+                            case END -> all.size() - 1;
+                            default -> -1;
+                        };
+                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
+                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                    select.run();
+                    e.consume();
+                } else if (target >= 0) {
+                    if (target < all.size()) {
+                        all.get(target).requestFocus();
+                    }
+                    e.consume(); // also at either end: Down on the last row must not jump out of the list
                 }
             });
             if (s.id().equals(selectedShortcutId)) {
                 row.getStyleClass().add("shortcut-row-selected");
-                Button record = new Button(tr("settings.shortcuts.record"));
                 record.setOnAction(e -> {
                     recordingCommandId = s.id();
                     refreshShortcuts();
@@ -1910,7 +2063,7 @@ public class SettingsWindow {
                 Button reset = new Button(tr("settings.shortcuts.reset"));
                 reset.setOnAction(e -> {
                     shortcutActions.reset(s.id());
-                    refreshShortcuts();
+                    refreshShortcuts(s.id());
                 });
                 row.getChildren().addAll(record, reset);
             }
@@ -1918,11 +2071,33 @@ public class SettingsWindow {
         return row;
     }
 
+    /** Scrolls the shortcut list just far enough to show {@code row} (focus moved to it from the keyboard). */
+    private void scrollShortcutIntoView(Node row) {
+        if (shortcutScroll == null) {
+            return;
+        }
+        shortcutListBox.applyCss();
+        shortcutListBox.layout();
+        double contentHeight = shortcutListBox.getHeight();
+        double viewHeight = shortcutScroll.getViewportBounds().getHeight();
+        if (contentHeight <= viewHeight) {
+            return;
+        }
+        double range = contentHeight - viewHeight;
+        double top = shortcutScroll.getVvalue() * range;
+        javafx.geometry.Bounds b = row.getBoundsInParent();
+        if (b.getMinY() < top) {
+            shortcutScroll.setVvalue(b.getMinY() / range);
+        } else if (b.getMaxY() > top + viewHeight) {
+            shortcutScroll.setVvalue((b.getMaxY() - viewHeight) / range);
+        }
+    }
+
     /** Commits a recorded chord sequence to a command, warning first if it steals another command's chord. */
     private void commitRecording(String commandId, String sequence) {
         recordingCommandId = null;
         rebindWithConflictCheck(commandId, sequence);
-        refreshShortcuts();
+        refreshShortcuts(commandId);
     }
 
     /** Rebinds {@code commandId} to {@code sequence}, warning on a conflict; returns whether it bound. Shared
@@ -2120,6 +2295,7 @@ public class SettingsWindow {
                     shortcutActions.reset(cmdId);
                 }
                 rebuildKeybindingFor(keybinding, m, steps);
+                refreshShortcuts();
             });
             record.setOnAction(e -> startMacroCapture(keybinding, cmdId, m, steps));
             keybinding.getChildren().addAll(chordLbl, record, clear);
@@ -2180,35 +2356,20 @@ public class SettingsWindow {
     private void startMacroCapture(
             HBox keybinding, String commandId, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
         keybinding.getChildren().clear();
-        TextField capture = new TextField();
-        capture.setEditable(false);
-        capture.setPromptText(tr("settings.shortcuts.recording"));
-        capture.setPrefWidth(180);
-        StringBuilder seq = new StringBuilder();
-        capture.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            e.consume();
-            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
-                rebuildKeybindingFor(keybinding, m, steps);
-                return;
-            }
-            String token = com.editora.command.KeyDispatcher.chord(e);
-            if (token == null) {
-                return; // modifier-only press
-            }
-            if (seq.length() > 0) {
-                seq.append(' ');
-            }
-            seq.append(token);
-            capture.setText(seq.toString());
-        });
+        Runnable done = () -> {
+            rebuildKeybindingFor(keybinding, m, steps);
+            refreshShortcuts(); // the Keymaps list and the chord chips show this binding too
+        };
+        java.util.function.Consumer<String> commit = seq -> {
+            rebindWithConflictCheck(commandId, seq);
+            done.run();
+        };
+        TextField capture = ShortcutCapture.field(commit, done);
         Button save = new Button(tr("settings.shortcuts.save"));
         save.getStyleClass().add("success");
-        save.setOnAction(e -> {
-            rebindWithConflictCheck(commandId, seq.toString());
-            rebuildKeybindingFor(keybinding, m, steps);
-        });
+        save.setOnAction(e -> commit.accept(capture.getText()));
         Button cancel = new Button(tr("settings.shortcuts.cancel"));
-        cancel.setOnAction(e -> rebuildKeybindingFor(keybinding, m, steps));
+        cancel.setOnAction(e -> done.run());
         keybinding.getChildren().addAll(capture, save, cancel);
         javafx.application.Platform.runLater(capture::requestFocus);
     }
@@ -4639,6 +4800,7 @@ public class SettingsWindow {
      *  Uses absolute-offset {@code moveTo}/{@code deleteText} (robust across RichTextFX versions); each action is
      *  guarded so the key is always consumed (no fall-through to the default behaviour) even at a boundary. */
     private static void installEmacsKeys(CodeArea area) {
+        installFocusEscape(area);
         area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
             boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
@@ -4687,6 +4849,31 @@ public class SettingsWindow {
                 }
             }
         });
+    }
+
+    /**
+     * Lets the keyboard leave a body editor. Tab types a tab there (a snippet body needs it), which made
+     * the editor a trap: nothing moved focus on, so the Save button after it was out of reach. As in a
+     * JavaFX {@code TextArea}: Shift+Tab goes back, Ctrl+Tab goes on (Ctrl+Shift+Tab back).
+     */
+    private static void installFocusEscape(CodeArea area) {
+        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            javafx.scene.TraversalDirection direction =
+                    focusEscape(e.getCode(), e.isShiftDown(), e.isControlDown(), e.isAltDown() || e.isMetaDown());
+            if (direction != null) {
+                e.consume();
+                area.requestFocusTraversal(direction);
+            }
+        });
+    }
+
+    /** Where a key takes the focus out of a body editor, or {@code null} when the editor keeps the key. Pure. */
+    static javafx.scene.TraversalDirection focusEscape(
+            javafx.scene.input.KeyCode code, boolean shift, boolean ctrl, boolean otherModifier) {
+        if (code != javafx.scene.input.KeyCode.TAB || otherModifier || (!shift && !ctrl)) {
+            return null;
+        }
+        return shift ? javafx.scene.TraversalDirection.PREVIOUS : javafx.scene.TraversalDirection.NEXT;
     }
 
     private static void consume(javafx.scene.input.KeyEvent e, Runnable action) {
@@ -6571,7 +6758,9 @@ public class SettingsWindow {
                             && row.card().getChildren().get(0) instanceof Label title
                     ? title
                     : null;
-            return searchText(row.keywords(), row.node(), cardTitle, row.section());
+            // ... and by the name of its page: typing "Keymaps" or "Build Tools" used to say that no
+            // setting matches, because no row on those pages happens to repeat the sidebar's name.
+            return searchText(row.keywords(), row.node(), cardTitle, row.section()) + ' ' + row.category().display;
         });
     }
 
@@ -6648,14 +6837,38 @@ public class SettingsWindow {
         showContent();
         Object selObj = sidebar.getSelectionModel().getSelectedItem();
         Category sel = (selObj instanceof Category c) ? c : null;
-        if (!matched.isEmpty() && (sel == null || !matched.contains(sel))) {
-            for (Category c : Category.values()) {
-                if (matched.contains(c)) {
-                    sidebar.getSelectionModel().select(c);
-                    break;
+        Category best = bestMatch(query, matched);
+        // A page named by the query wins even over a matching current page: "tool windows" typed on the
+        // Interface page (which mentions them) means the Tool Windows page.
+        boolean named = best != null && namesPage(query, best.display);
+        if (best != null && (sel == null || !matched.contains(sel) || (named && !namesPage(query, sel.display)))) {
+            sidebar.getSelectionModel().select(best);
+        }
+    }
+
+    /**
+     * Whether {@code query} is (the start of) a page's sidebar name. Three characters at least: a page is
+     * not "named" by the first letter of a word that merely happens to begin like it. Pure.
+     */
+    static boolean namesPage(String query, String pageName) {
+        String q = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+        return q.length() >= 3
+                && pageName != null
+                && pageName.toLowerCase(Locale.ROOT).startsWith(q);
+    }
+
+    /** The page a search opens: the first matching one named by the query, else the first with a hit. */
+    private static Category bestMatch(String query, Set<Category> matched) {
+        Category first = null;
+        for (Category c : Category.values()) {
+            if (matched.contains(c)) {
+                if (namesPage(query, c.display)) {
+                    return c;
                 }
+                first = first == null ? c : first;
             }
         }
+        return first;
     }
 
     private static void setShown(Node node, boolean shown) {
@@ -6774,6 +6987,7 @@ public class SettingsWindow {
         if (onKeymapChanged != null) {
             onKeymapChanged.run();
         }
+        refreshShortcuts();
     }
 
     // --- load + sync (unchanged behavior) --------------------------------------------------------
@@ -7232,10 +7446,7 @@ public class SettingsWindow {
     /** Injects the keybinding-editor backend (→ MainController); enables the shortcuts list. */
     public void setShortcutActions(ShortcutActions actions) {
         this.shortcutActions = actions;
-        refreshChordChips();
-        if (built) {
-            refreshShortcuts();
-        }
+        refreshShortcuts();
     }
 
     /** Re-selects the keymap combo to match the current setting (after the {@code keymap.select} command). */
@@ -7250,6 +7461,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
+        refreshShortcuts();
     }
 
     /** Re-reads the inline-blame checkbox from settings (used after the {@code git.toggleBlame} command). */
