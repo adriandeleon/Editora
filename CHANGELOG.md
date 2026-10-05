@@ -7,6 +7,226 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Settings, Java debugging and editing review fixes (Settings persistence, window behaviour and UI; the Java
+  debug adapter layer and Debug panel; core editing, edit operations, file I/O, view and split view). Lines
+  marked 'Changed' are behaviour you will notice as different rather than fixed:
+  - Settings storage:
+    - Changed: key-binding overrides are now kept per keymap (settings schema 106). Switching keymap no longer
+      unbinds unrelated keys, and switching back restores the rebinds made there; existing overrides stay with
+      the keymap in use. Reset to Defaults leaves them with the keymap it leaves instead of applying them to
+      the default keymap.
+    - Changed: Export Configuration no longer includes downloaded language servers, debug adapters, jdtls
+      workspaces, the instance lock, the MCP endpoint file with its live token, the session log and other
+      runtime files (local history, `.bak` backups and installed plugins are still exported). It runs in the
+      background and no longer leaves a truncated zip behind when it fails.
+    - A `settings.json` (or any other config file) kept as a symlink into a dotfiles repository is written
+      through the link instead of being replaced by a regular file.
+    - A config file saved with a UTF-8 byte-order mark, or containing a byte that is not valid UTF-8, no
+      longer resets every setting in it to the default.
+    - An unreadable or newer `projects.json` or session file is reported in the status bar like other config
+      files, and is not overwritten when no backup of it could be made.
+    - A full disk or read-only config folder no longer stops Editora from starting, and no longer throws out
+      of toggling a bookmark or breakpoint, editing a note, saving a macro, trusting a folder or opening a
+      project window; the failed save is reported in the status bar.
+    - A config store that stays unreadable is backed up once, not on every launch (after 20 launches it used
+      to become silently unsaveable).
+    - A fresh `settings.json` no longer freezes the default plugin registry URL; the built-in URL is stored as
+      blank so it follows future defaults.
+    - Add to Dictionary no longer glues the new word onto the last line of a `dictionary.txt` that lacks a
+      final newline.
+    - Importing shared run configurations tolerates extra keys and null entries in
+      `.editora/run-configurations.json`.
+  - Settings window (behaviour):
+    - Clearing the Font size field no longer stops every later Settings change from being saved and applied.
+    - Changing an unrelated setting no longer rewrites the editor font (a size above 48 or below 8 was reset;
+      a second or previously closed Settings window reverted the font).
+    - Number fields no longer throw on letters, an empty field or an over-long number, and accept the same
+      range as their palette commands (fill column 1-1000, auto-save delay 1-3600 s, ...).
+    - Palette and key-binding toggles (ruler, line highlight, line numbers, minimap, whitespace, spell check,
+      Zen, Expert) move the switches of an open Settings window.
+    - With Settings open in two windows, a change in one is shown in the other instead of being reverted by
+      it.
+    - The Tool Windows page shows each window's current side and visibility when Settings is reopened.
+    - Language-server, debug-adapter and agent command fields apply on Enter or focus loss instead of
+      restarting servers on every keystroke.
+    - A file opened with word wrap held off for a very long line stays unwrapped when settings are re-applied;
+      Toggle Word Wrap on that buffer turns it on.
+    - Keymaps: the shortcut list and the chord chips follow keymap changes, rebinds and resets; 'Reset all
+      shortcuts' asks first.
+    - Abbreviations, Remote and External Tools no longer delete entries added elsewhere (Define Abbreviation,
+      Connect, another window) the next time anything on the page is edited.
+    - Abbreviations added, changed or removed in Settings take effect in files that are already open.
+    - Templates: clicking through a bundled template's fields no longer turns it into a user override; an id
+      that another template already uses, or that is not a valid file name, is refused.
+    - Snippets: a snippet is no longer lost when two share a name, when Add is pressed twice or when the name
+      is cleared; bundled snippets with multi-line descriptions stay bundled until edited.
+    - External Tools: renaming or removing a tool carries or clears its key binding instead of leaving a dead
+      chord; adding two tools in a row gives each its own command.
+    - TODO: a malformed pattern is flagged and not saved instead of silently disabling the keyword.
+    - The Git command field stays editable when Git is off, so a wrong path can be corrected.
+  - Settings window (keyboard, search, layout):
+    - Changed: Escape clears a running search, otherwise closes the Settings window (not while recording a
+      shortcut, in a snippet or template body, in an editing cell or with a combo open).
+    - Changed: the minimum Settings window width is 900 px (was 720). Row titles wrap, list-and-form pages no
+      longer collapse, combos and path fields fit their content, the Appearance combos line up and the
+      Advanced hints wrap.
+    - Keymaps: the shortcut list can be used from the keyboard alone (arrows, Home/End, Enter to select and to
+      record); focus returns to the row afterwards.
+    - Shortcut recorder (Keymaps and Macros): Enter saves once a chord is recorded and Escape cancels; the
+      prompt says so.
+    - Shift+Tab and Ctrl+Tab leave the Snippets and Templates body editors; Tab still types a tab there.
+    - Sidebar arrow, Home/End and Page keys skip group headers and pages filtered out by a search, which are
+      now dimmed.
+    - Search finds a row by its page's name, opens a page whose name the query starts (3 or more characters),
+      and shows its prompt while focused.
+    - 'Delay (seconds)' and the tool-window sides are translated; build-tool hints point to the override
+      'below'; the AI Actions status names the switch that is off.
+    - Accessible names for the reorder arrows, TODO and Markdown-lint controls and the search field; the
+      Macros step editor and the Remove buttons are disabled when there is nothing to act on; 'Require signed
+      plugins' is a switch row.
+    - French: Settings is called 'Paramètres' throughout, and command titles are capitalised consistently.
+  - Java debugging:
+    - Conditional breakpoints no longer stop on every hit, logpoints print, and Evaluate, watches and hover
+      values work in attached Java sessions (including Debug Test) and when debugging a compact source file;
+      the debugger was never told which project to evaluate against.
+    - Debugging a single `.java` file outside any Maven/Gradle project no longer fails with
+      `ClassNotFoundException` when it has a classic `public static void main`; it is compiled and debugged.
+    - In a project with a `module-info.java`, gutter Run/Debug and saved run configurations no longer report
+      'No main class was found'.
+    - Debug on a project's file runs the program in the project root, like Run, instead of the source package
+      folder.
+    - Projects compiled with `--enable-preview` can be run and debugged; the flag is added automatically.
+    - Debug no longer shows the main-class picker for a file's own `main` when the project was opened through
+      a symlink.
+    - A Java debug session with a very long class path no longer fails to start ('Argument list too long' /
+      Windows error 206); such launches use an argument file.
+    - Restart on a debugger attached to a test or build run no longer leaves a dead session showing 'Running';
+      it says the run has to be started again.
+  - Debug panel:
+    - Changed: the Debug console is cleared at each launch (and kept after a session ends); it has a Clear
+      Console menu item and no longer shows ANSI colour codes.
+    - Changed: an open Debug window no longer closes on switching to a tab that cannot be debugged, nor while
+      a session starts or ends on another tab.
+    - Changed: call stack, variables and console sit side by side when the panel is wide enough (stacked when
+      narrow), with compact frame rows and the thread selector in the header; the call stack no longer has
+      zero rows at the default height.
+    - Expanding a large array or collection in Variables no longer freezes the window or overloads the
+      debuggee; elements are fetched and shown 100 at a time ('Show more').
+    - A stop inside JDK or library code no longer flashes a tab and reports 'Failed to open'; the nearest
+      frame with source is shown and the status bar says so. Frames without source stay selectable and show
+      their variables.
+    - A rejected Set Value is reported instead of being displayed as applied; adapter errors no longer start
+      with a Java exception class name.
+    - Breakpoints follow a file that is renamed, moved or saved under a new name; line shifts in several files
+      are all saved; Undo restores the breakpoint of a deleted line; cancelling Edit Breakpoint on a bare line
+      creates nothing; files without a debugger get no invisible breakpoints.
+    - Expanded variables and the selection survive a step; watches are visible when idle; Stop and Restart are
+      available in the menu and palette while a session is starting.
+    - Picking a running thread stays on the stopped one and says why; a stale frame clicked while the program
+      runs paints no execution line; reopening the stopped file shows the execution line again.
+    - Inline values are shown only in the function the program is stopped in, and not for names inside
+      comments or strings.
+    - stderr is drawn in its own colour in the Debug, Run and External Tool consoles.
+    - Pressing Enter in the Debug console while the program is running shows a hint instead of being ignored;
+      a stop on an exception reads 'Suspended on an exception'.
+    - Stepping no longer writes 'Already open: <file>' to the status bar.
+  - Editing commands:
+    - With multiple carets, typing after Undo/Redo, a command that edits at the primary caret, a
+      language-server edit or a reload no longer deletes text that was never selected.
+    - Multi-caret Backspace, Delete and arrow keys no longer split emoji and other supplementary characters.
+    - Add Caret Above/Below adds a caret on each further line instead of stopping at the second.
+    - Select All, Cancel (C-g) and document start/end collapse multiple carets; the multi-caret Cut/Copy
+      commands with nothing selected respect 'copy/cut the line when nothing is selected'.
+    - C-f / C-b no longer stop inside an emoji (editor, consoles, text fields); word commands keep a combining
+      accent with its letter.
+    - Tab over a selection in Markdown, plain text, TOML and other unstyled files indents the lines instead of
+      replacing them with a tab, and Shift-Tab dedents. A bare Tab there follows the indent style; Makefiles
+      and CSV/TSV always get a real tab.
+    - A command's edit (paste, Duplicate Line, kill, case change, ...) is its own undo step instead of merging
+      with adjacent typing; a command repeated with C-u undoes one run at a time.
+    - Paste, undo, redo, Duplicate Line, Move Line and other edit and macro commands scroll to the caret when
+      their change is outside the window, as typing does.
+    - The Emacs mark is per buffer and any edit deactivates it: C-SPC, typing, then C-n no longer selects text
+      that the next key replaces, and a mark set in one tab no longer makes motion select in the next.
+    - C-e goes to the end of the whole line with word wrap on, matching C-a and C-k.
+    - Auto-rename-tag keeps both tags in step when a tag name is cleared and retyped.
+    - Abbreviations expand before Enter on an indented line and before an auto-closed bracket.
+    - Cutting the last line and pasting it back no longer joins it onto the previous line.
+    - Converting line endings and back no longer leaves the buffer marked modified.
+    - Markdown: Enter no longer continues a list inside a fenced code block or after a `- - -` rule.
+    - Bracket auto-close and closer re-alignment work for characters typed with Option / AltGr.
+  - Edit operations (indent, comment, fill, s-expressions, case):
+    - Changed: in code languages Fill Paragraph and Fill Region fill comments only (line comments and block
+      comments that start a line); they no longer join code statements.
+    - Changed: Move Line Up/Down and Duplicate Line act on every line of a selection.
+    - Changed: indentation detection uses a file's own indent width (a 2-space file gets 2-space Tab, Enter
+      and Shift-Tab whatever the tab size), and no longer mistakes a ` * ` comment header for space
+      indentation.
+    - Fill no longer joins Markdown list items, headings, tables, rules or fenced code; `-`, `+` and numbered
+      items are list paragraphs; Fill Region no longer takes the line a selection merely ends at; the fill
+      width counts tabs and wide characters; Javadoc `@tags` stay separate paragraphs; batch `REMOTE=` lines
+      are not treated as `REM`.
+    - Auto Fill wraps a list item under its text instead of starting a new item.
+    - A closing bracket or keyword after a wrapped statement aligns to its opener; Tab on a `}` / `else` /
+      `fi` / `</tag>` line no longer indents it to body level; Enter indents after `{ /* comment */`; Ruby
+      endless methods and shell lines ending in 'do'/'then' are no longer taken for block openers.
+    - Toggle Comment uncomments a selection of line-commented lines, adds no stray whitespace on blank lines
+      and keeps a bare caret out of the comment opener. Text that contains a block comment is line-commented
+      instead of wrapped in another, or refused with a message where the language has only block comments.
+    - Kill Sexp and Mark Sexp no longer run to the end of the buffer when a comment contains an apostrophe or
+      the code has a Rust lifetime; an unbalanced bracket is left alone.
+    - Expand Selection grows to the enclosing definition rather than the previous one.
+    - Case conversion keeps leading and trailing underscores (`__init__`), round-trips `I18N`, and no longer
+      swallows the minus in `count-1`.
+    - Auto-close tag no longer fires on comparisons or inside `<script>`, `<style>`, `<textarea>` and
+      `<title>` content; Tabify leaves the rest of a line alone from its first quote.
+  - Files on disk (encodings, saving, .editorconfig):
+    - Changed: a file opened through a stand-in encoding (unknown legacy encodings such as Shift-JIS or GBK)
+      refuses a save that would re-encode it. Typing a character outside the stand-in charset no longer
+      rewrites the file as mojibake: the status bar names the character and its line, and the file can be
+      saved again once it is removed.
+    - Changed: saving a hard-linked file, or a file owned by another user, now writes in place, so every name
+      of the file gets the new content and ownership is kept; saving used to break the link or take the file
+      over.
+    - Changed: a file that is read-only on disk is no longer replaced silently: Save asks first (once per
+      file), and auto-save reports that it cannot write instead of writing.
+    - Saving a writable file in a folder you cannot write to, or a file that cannot be renamed over, now
+      works: the file is overwritten in place after a temporary backup of its previous content, and the status
+      bar says so. Files with very long names can be saved.
+    - Under a declared charset such as `charset = latin1`, a save that has to fall back to UTF-8 writes a BOM
+      so the file reads back correctly, keeps its warning visible and updates the status bar.
+    - Changes to `.editorconfig` reach files that are already open; a `.editorconfig` with a UTF-8 BOM or
+      non-UTF-8 bytes is no longer ignored.
+    - BOM-less UTF-16 files declared by `.editorconfig` open as text and are saved without an added BOM.
+    - Save As onto a file open in another tab of the window is refused instead of leaving two tabs on one
+      path.
+    - 'Keep' on an externally changed file leaves the tab marked unsaved; a file whose bytes did not change
+      (touch, identical rewrite) no longer prompts.
+    - A line-ending conversion chosen while a save is running is no longer dropped.
+    - Reloading a file that is no longer huge makes it editable again.
+    - `editora path/to/new-file` opens a new buffer at that path instead of failing.
+    - Case-only renames work on case-insensitive volumes.
+    - Large-file and long-line mode say that undo is off, and Undo/Redo explain themselves there; a file with
+      mixed line endings says what a save will write.
+  - View, scrolling and split view:
+    - Changed: tabs are now drawn at the configured tab size (setting or `.editorconfig`) instead of always 8
+      columns; with the default setting a tab is 4 columns wide.
+    - Reload from disk keeps your place: the scroll position, the caret's line and column and the collapsed
+      folds survive, instead of the view jumping to the top with every fold open. Session restore lands on the
+      right line too.
+    - The column ruler is on the right column: it no longer sits several columns (or a late-laid-out gutter's
+      width) too far left on a freshly opened file or too far right when the visible lines are short, and no
+      longer disappears for tab-indented or CJK text.
+    - Opening a narrowed file at a line (search hit, go-to, `file:line`, link) goes to that line; the buffer
+      is widened when the target is outside the region, and Back/Forward stay correct across narrow and widen.
+      The 'Narrowed' status chip no longer stays lit on other tabs.
+    - Split view: the status bar (line/column, selection, CSV field) shows the pane you are in.
+    - Split view: fold, bookmark, note, breakpoint, run-to-cursor and run-test-at-caret commands act on the
+      focused pane's caret; folding no longer leaves the other pane's caret inside hidden text.
+    - Split view: closing the split from the second pane keeps keyboard focus in the editor instead of moving
+      it to the toolbar.
+    - Split view: the second pane honours word wrap, the line-numbers setting, whitespace markers and the
+      current-line highlight.
 - Second round of coding-feature fixes (173 further issues from the same review):
   - Editing, folding, highlighting and outline:
     - Fixed multi-caret editing throwing and then dropping every key when an edit shortened the document with
