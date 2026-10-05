@@ -34,6 +34,8 @@ final class WhitespaceOverlay extends Region {
     private boolean active;
     private boolean redrawPending;
     private Font font = Font.font("monospace", 14);
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private WhitespaceOverlay follower;
 
     WhitespaceOverlay(CodeArea area) {
         this.area = area;
@@ -54,8 +56,28 @@ final class WhitespaceOverlay extends Region {
         });
     }
 
+    /**
+     * The same markers for a split's second {@code view}: an overlay to put in that view's pane, which lies
+     * over {@code text} (the view's scroll pane, wherever a minimap leaves it) and from then on is switched
+     * and re-fonted together with this one.
+     */
+    WhitespaceOverlay follower(CodeArea view, Region text) {
+        var second = new WhitespaceOverlay(view);
+        second.setManaged(false);
+        text.boundsInParentProperty()
+                .addListener(
+                        (obs, old, b) -> second.resizeRelocate(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight()));
+        second.font = font;
+        second.setActive(active);
+        follower = second;
+        return second;
+    }
+
     /** Turns the markers on or off. */
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -75,6 +97,9 @@ final class WhitespaceOverlay extends Region {
     void setFont(String family, int size) {
         this.font = Font.font(family, size);
         scheduleRedraw();
+        if (follower != null) {
+            follower.setFont(family, size);
+        }
     }
 
     @Override

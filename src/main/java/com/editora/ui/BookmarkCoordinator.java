@@ -330,7 +330,7 @@ final class BookmarkCoordinator {
     void toggleAtCaret() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.getPath() != null) {
-            b.toggleBookmark(b.getArea().getCurrentParagraph());
+            b.toggleBookmark(b.getFocusedArea().getCurrentParagraph());
         } else if (b != null) {
             host.setStatus(tr("status.saveBeforeBookmark"));
         }
@@ -342,7 +342,7 @@ final class BookmarkCoordinator {
         if (b == null || b.getPath() == null) {
             return;
         }
-        int line = b.getArea().getCurrentParagraph();
+        int line = b.getFocusedArea().getCurrentParagraph();
         var mgr = b.getBookmarkManager();
         String current = "";
         for (Bookmark bm : mgr.snapshot()) {
@@ -367,7 +367,7 @@ final class BookmarkCoordinator {
         if (b == null) {
             return;
         }
-        int from = b.getArea().getCurrentParagraph();
+        int from = b.getFocusedArea().getCurrentParagraph();
         Integer target = forward
                 ? b.getBookmarkManager().next(from)
                 : b.getBookmarkManager().previous(from);
@@ -400,7 +400,7 @@ final class BookmarkCoordinator {
             host.setStatus(tr("status.bookmarks.noFile"));
             return;
         }
-        int line = b.getArea().getCurrentParagraph();
+        int line = b.getFocusedArea().getCurrentParagraph();
         Path file = b.getPath();
         ops.promptText(tr("dialog.bookmarkMnemonic.title"), tr("dialog.bookmarkMnemonic.content"), "", typed -> {
             String m = BookmarkMnemonics.normalize(typed);

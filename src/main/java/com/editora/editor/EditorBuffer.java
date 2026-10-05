@@ -466,6 +466,9 @@ public class EditorBuffer implements TabContent {
     private boolean loading;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
+    /** {@link #focusedArea} as a value to observe, for what shows the caret of the view the user is in. */
+    private final javafx.beans.property.ReadOnlyObjectWrapper<CodeArea> focusedView =
+            new javafx.beans.property.ReadOnlyObjectWrapper<>(area);
     /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
     private MarkdownFormatBar formatBar;
 
@@ -927,6 +930,7 @@ public class EditorBuffer implements TabContent {
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked);
+        folds.setSplitViews(() -> focusedArea, () -> area2);
         // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot).
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
@@ -1069,6 +1073,7 @@ public class EditorBuffer implements TabContent {
         area.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area;
+                focusedView.set(area);
             }
         });
         installContextMenu();
@@ -2658,6 +2663,10 @@ public class EditorBuffer implements TabContent {
         return focusedArea;
     }
 
+    public javafx.beans.property.ReadOnlyObjectProperty<CodeArea> focusedAreaProperty() {
+        return focusedView.getReadOnlyProperty();
+    }
+
     // --- Lazily-attached feature overlays --------------------------------------------------------------
     // These overlays are inert for most buffers (LSP off, not a diagram, not a log, never searched/ace-jumped),
     // so they are built + wired only on first activation rather than per buffer. Each is inserted just below a
@@ -2971,9 +2980,7 @@ public class EditorBuffer implements TabContent {
     /** Shows or hides a second, synced view of this document beside ({@code SIDE_BY_SIDE}) or below it. */
     public void setSplit(Split orientation) {
         this.split = orientation;
-        if (orientation == Split.NONE) {
-            focusedArea = area;
-        } else {
+        if (orientation != Split.NONE) {
             this.markdownViewMode = MarkdownViewMode.EDITOR; // a code split supersedes the Markdown preview
             ensureSecondaryView();
         }
@@ -3885,7 +3892,7 @@ public class EditorBuffer implements TabContent {
         if (mainLines.isEmpty()) {
             return null;
         }
-        int caret = area.getCurrentParagraph();
+        int caret = focusedArea.getCurrentParagraph();
         com.editora.run.MainMethodScanner.MainMethod best = null;
         for (var e : mainLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
@@ -3914,7 +3921,7 @@ public class EditorBuffer implements TabContent {
      * a test class.
      */
     public com.editora.test.JavaTestScanner.TestTarget testTargetAtCaret(boolean classLevel) {
-        int caret = area.getCurrentParagraph();
+        int caret = focusedArea.getCurrentParagraph();
         com.editora.test.JavaTestScanner.TestTarget best = null;
         for (var e : testLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
@@ -4515,7 +4522,7 @@ public class EditorBuffer implements TabContent {
 
     /** The commit hash that last touched the caret line (for "show this commit"), or null. */
     public String blameHashAtCaret() {
-        return blameHashAt(area.getCurrentParagraph());
+        return blameHashAt(focusedArea.getCurrentParagraph());
     }
 
     /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
@@ -5972,7 +5979,15 @@ public class EditorBuffer implements TabContent {
             attachControlToCodePane();
             content = root;
         }
+        boolean hadFocus = area2 != null && area2.isFocused(); // leaving a split takes that view off the scene
         viewHost.getChildren().setAll(content);
+        if (area2 != null && (split == Split.NONE || markdownViewMode != MarkdownViewMode.EDITOR)) {
+            focusedArea = area;
+            focusedView.set(area);
+            if (hadFocus) {
+                area.requestFocus(); // or JavaFX hands the keyboard to the first control in the window
+            }
+        }
     }
 
     /**
@@ -6547,7 +6562,8 @@ public class EditorBuffer implements TabContent {
         }
         area2 = tagRename.newArea(area.getContent()); // shares the EditableStyledDocument
         area2.getStyleClass().add("editor-area");
-        area2.setWrapText(false);
+        area2.wrapTextProperty().bind(area.wrapTextProperty()); // one Word Wrap setting, two views
+        area2.setLineHighlighterOn(area.isLineHighlighterOn());
         area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
         area2.setEditable(area.isEditable());
         addViewModePaging(area2); // same pager keys in the secondary split view
@@ -6563,7 +6579,7 @@ public class EditorBuffer implements TabContent {
             multiCaret2 = MultiCaretController.install(area2); // same multi-caret add-on in the split view
         }
         area2.setLineHighlighterFill(lineHighlightColor);
-        area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
+        refreshGutter();
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
         area2.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
@@ -6572,6 +6588,7 @@ public class EditorBuffer implements TabContent {
         area2.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area2;
+                focusedView.set(area2);
             }
         });
         installFormatBarListeners(area2);
@@ -6580,13 +6597,7 @@ public class EditorBuffer implements TabContent {
         minimap2 = new Minimap(area2);
         minimap2.setTabSize(tabSize);
         minimap2.setColors(minimapText, minimapViewport);
-        root2 = new AnchorPane(scrollPane2, minimap2);
-        AnchorPane.setTopAnchor(scrollPane2, 0d);
-        AnchorPane.setBottomAnchor(scrollPane2, 0d);
-        AnchorPane.setLeftAnchor(scrollPane2, 0d);
-        AnchorPane.setTopAnchor(minimap2, 0d);
-        AnchorPane.setBottomAnchor(minimap2, 0d);
-        AnchorPane.setRightAnchor(minimap2, 0d);
+        root2 = SecondaryPane.assemble(scrollPane2, whitespace.follower(area2, scrollPane2), minimap2);
         applyMinimap(scrollPane2, minimap2, minimapVisible && !largeFile && !heavyFile);
     }
 
@@ -6700,6 +6711,9 @@ public class EditorBuffer implements TabContent {
     /** Toggle the highlight on the line containing the caret. */
     public void setLineHighlightOn(boolean on) {
         area.setLineHighlighterOn(on);
+        if (area2 != null) {
+            area2.setLineHighlighterOn(on);
+        }
     }
 
     /** Sets the current-line highlight color (varies per editor theme; not stylable via CSS). */
@@ -6802,18 +6816,18 @@ public class EditorBuffer implements TabContent {
         noteOverlay.refresh();
         area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
         applyNoGutterStyle(area);
-        if (area2 != null) {
-            area2.setParagraphGraphicFactory(gutterVisible ? LineNumberFactory.get(area2) : null);
+        if (area2 != null) { // its gutter is line numbers only: with those off it has none
+            area2.setParagraphGraphicFactory(gutterVisible && lineNumbersVisible ? LineNumberFactory.get(area2) : null);
             applyNoGutterStyle(area2);
         }
     }
 
-    /** With no gutter (Simple UI mode) the text would sit flush against the editor's left edge; the
-     *  {@code .no-gutter} class adds a small left padding so it doesn't. The gutter itself supplies that
-     *  inset when present, so the class is removed then. */
+    /** With no gutter (Simple UI mode; a second view without line numbers) the text would sit flush against
+     *  the editor's left edge; the {@code .no-gutter} class adds a small left padding so it doesn't. The
+     *  gutter itself supplies that inset when present, so the class is removed then. */
     private void applyNoGutterStyle(CodeArea a) {
         a.getStyleClass().remove("no-gutter");
-        if (!gutterVisible) {
+        if (a.getParagraphGraphicFactory() == null) {
             a.getStyleClass().add("no-gutter");
         }
     }
@@ -7035,23 +7049,24 @@ public class EditorBuffer implements TabContent {
      */
     public NoteDraft captureNoteDraft() {
         org.fxmisc.richtext.model.TwoDimensional.Bias fwd = org.fxmisc.richtext.model.TwoDimensional.Bias.Forward;
-        String doc = area.getText();
-        var sel = area.getSelection();
+        CodeArea a = focusedArea; // the view the user is in
+        String doc = a.getText();
+        var sel = a.getSelection();
         if (sel.getLength() > 0) {
             int start = sel.getStart();
             int end = sel.getEnd();
-            var sp = area.offsetToPosition(start, fwd);
-            var ep = area.offsetToPosition(end, fwd);
+            var sp = a.offsetToPosition(start, fwd);
+            var ep = a.offsetToPosition(end, fwd);
             com.editora.config.NoteScope scope = sp.getMajor() == ep.getMajor()
                     ? com.editora.config.NoteScope.WORD
                     : com.editora.config.NoteScope.RANGE;
             String prefix = doc.substring(Math.max(0, start - CONTEXT_CHARS), start);
             String suffix = doc.substring(end, Math.min(doc.length(), end + CONTEXT_CHARS));
             var anchor = new com.editora.config.TextAnchor(
-                    sp.getMajor(), sp.getMinor(), ep.getMajor(), ep.getMinor(), area.getSelectedText(), prefix, suffix);
+                    sp.getMajor(), sp.getMinor(), ep.getMajor(), ep.getMinor(), a.getSelectedText(), prefix, suffix);
             return new NoteDraft(scope, anchor);
         }
-        return captureLineNoteDraft(area.getCurrentParagraph());
+        return captureLineNoteDraft(a.getCurrentParagraph());
     }
 
     /** Captures a LINE note anchor for a specific line, independent of the current selection/caret. */
@@ -7317,10 +7332,7 @@ public class EditorBuffer implements TabContent {
         if (changed) {
             markRulerInputsDirty(); // wrapping changes how the advance is derived (see columnRulerX)
         }
-        area.setWrapText(wrap);
-        if (area2 != null) {
-            area2.setWrapText(wrap);
-        }
+        area.setWrapText(wrap); // the split's second view is bound to this
         if (!changed) {
             return;
         }

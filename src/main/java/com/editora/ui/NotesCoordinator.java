@@ -528,9 +528,10 @@ final class NotesCoordinator {
         if (buffer == null) {
             return;
         }
-        PersonalNote note = buffer.getNoteManager().noteAt(buffer.getArea().getCaretPosition());
+        PersonalNote note =
+                buffer.getNoteManager().noteAt(buffer.getFocusedArea().getCaretPosition());
         if (note == null) {
-            var ns = buffer.getNoteManager().notesOnLine(buffer.getArea().getCurrentParagraph());
+            var ns = buffer.getNoteManager().notesOnLine(buffer.getFocusedArea().getCurrentParagraph());
             if (!ns.isEmpty()) {
                 note = ns.get(0);
             }
@@ -560,9 +561,10 @@ final class NotesCoordinator {
         if (buffer == null) {
             return;
         }
-        PersonalNote note = buffer.getNoteManager().noteAt(buffer.getArea().getCaretPosition());
+        PersonalNote note =
+                buffer.getNoteManager().noteAt(buffer.getFocusedArea().getCaretPosition());
         if (note == null) {
-            var ns = buffer.getNoteManager().notesOnLine(buffer.getArea().getCurrentParagraph());
+            var ns = buffer.getNoteManager().notesOnLine(buffer.getFocusedArea().getCurrentParagraph());
             if (!ns.isEmpty()) {
                 note = ns.get(0);
             }
@@ -582,7 +584,7 @@ final class NotesCoordinator {
         if (b == null) {
             return;
         }
-        var ns = b.getNoteManager().notesOnLine(b.getArea().getCurrentParagraph());
+        var ns = b.getNoteManager().notesOnLine(b.getFocusedArea().getCurrentParagraph());
         if (ns.isEmpty()) {
             host.setStatus(tr("status.noNotesInFile"));
             return;
@@ -596,7 +598,7 @@ final class NotesCoordinator {
         if (b == null) {
             return;
         }
-        int from = b.getArea().getCurrentParagraph();
+        int from = b.getFocusedArea().getCurrentParagraph();
         Integer target =
                 forward ? b.getNoteManager().next(from) : b.getNoteManager().previous(from);
         if (target != null) {

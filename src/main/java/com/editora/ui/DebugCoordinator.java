@@ -1305,7 +1305,8 @@ final class DebugCoordinator {
 
     /** The caret's line in the whole file (a narrowed buffer's paragraphs are region-relative). */
     private static int fileLineAtCaret(EditorBuffer b) {
-        return b.getArea().getCurrentParagraph() + b.getBreakpointManager().regionFirstLine();
+        return b.getFocusedArea().getCurrentParagraph()
+                + b.getBreakpointManager().regionFirstLine();
     }
 
     /**
@@ -1416,7 +1417,7 @@ final class DebugCoordinator {
     void toggleBreakpointAtCaret() {
         EditorBuffer b = breakpointBuffer();
         if (b != null) {
-            b.toggleBreakpoint(b.getArea().getCurrentParagraph());
+            b.toggleBreakpoint(b.getFocusedArea().getCurrentParagraph());
         }
     }
 
@@ -1451,7 +1452,7 @@ final class DebugCoordinator {
         if (b == null) {
             return;
         }
-        int line = b.getArea().getCurrentParagraph();
+        int line = b.getFocusedArea().getCurrentParagraph();
         var mgr = b.getBreakpointManager();
         // A line without a breakpoint gets one only when the form is accepted: creating it up front left it
         // behind — saved, and sent to a live session — when the form was cancelled.
