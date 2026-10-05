@@ -27,6 +27,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -274,5 +276,66 @@ class DebugJavaLaunchFxTest {
         assertEquals(DapManager.State.RUNNING, FxTestSupport.callOnFx(dap::state), "the session is untouched");
         assertEquals(1, adapter.sessionCount(), "no second attach was made");
         assertEquals(1, session.disconnected.getCount(), "and the first was not disconnected");
+    }
+
+    /**
+     * … and the control no longer invites the attempt: the panel's Restart button is disabled for such a
+     * session, with the reason on hover (on the button's holder — a disabled button gets no mouse events), and
+     * the palette grays the command with the same sentence. Pressing R in the panel still says why.
+     */
+    @Test
+    void restartIsDisabledWithItsReasonWhileAttachedToATestRun() throws Exception {
+        Path file = open("src/test/java/demo/LoopTest.java", "package demo;\npublic class LoopTest {\n}\n");
+        DebugPanel panel = debug.panel();
+        javafx.scene.control.Button restart = FxTestSupport.field(panel, "restart");
+        javafx.scene.Node holder = FxTestSupport.field(panel, "restartHolder");
+
+        FxTestSupport.runOnFx(() -> debug.attachToPort(file, "localhost", 5005));
+        adapter.awaitSession().awaitRequest("attach");
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (FxTestSupport.callOnFx(dap::state) != DapManager.State.RUNNING) {
+            assertTrue(System.nanoTime() < deadline, "the attach never reached RUNNING");
+            Thread.sleep(10);
+        }
+        FxTestSupport.drainFx();
+
+        assertTrue(FxTestSupport.callOnFx(restart::isDisabled), "Restart cannot do anything for this session");
+        javafx.scene.control.Tooltip why = FxTestSupport.callOnFx(
+                () -> (javafx.scene.control.Tooltip) holder.getProperties().get("javafx.scene.control.Tooltip"));
+        assertEquals(tr("status.debug.cannotRestartAttached"), why == null ? null : why.getText());
+        assertFalse(FxTestSupport.callOnFx(debug::restartAvailable));
+        javafx.scene.control.Button stop = FxTestSupport.field(panel, "stop");
+        assertFalse(FxTestSupport.callOnFx(stop::isDisabled), "the session can still be stopped");
+
+        statuses.clear();
+        FxTestSupport.runOnFx(() -> panel.fireEvent(new javafx.scene.input.KeyEvent(
+                javafx.scene.input.KeyEvent.KEY_PRESSED,
+                "",
+                "",
+                javafx.scene.input.KeyCode.R,
+                false,
+                false,
+                false,
+                false)));
+        FxTestSupport.drainFx();
+        assertEquals(List.of(tr("status.debug.cannotRestartAttached")), statuses, "the key path still explains");
+
+        // The session that follows, started the ordinary way, can be restarted again.
+        FxTestSupport.runOnFx(dap::stop);
+        FxTestSupport.drainFx();
+        Path main = open("src/main/java/demo/Args.java", "package demo;\npublic class Args {\n}\n");
+        classpath();
+        replies.put(
+                "vscode.java.resolveMainClass",
+                List.of(Map.of("mainClass", "demo.Args", "projectName", "proj", "filePath", main.toString())));
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        adapter.awaitSession().awaitRequest("launch");
+        deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (FxTestSupport.callOnFx(restart::isDisabled)) {
+            assertTrue(System.nanoTime() < deadline, "Restart stayed disabled for a launched session");
+            Thread.sleep(10);
+        }
+        assertTrue(FxTestSupport.callOnFx(debug::restartAvailable));
+        assertNull(FxTestSupport.callOnFx(() -> holder.getProperties().get("javafx.scene.control.Tooltip")));
     }
 }

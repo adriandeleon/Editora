@@ -27,6 +27,8 @@ import com.editora.dap.DapClient;
 import com.editora.dap.DapManager;
 import com.editora.dap.DapModels;
 import com.editora.dap.FakeDebugAdapter;
+import com.editora.editor.BreakpointManager;
+import com.editora.editor.BreakpointManager.LiveState;
 import com.editora.editor.EditorBuffer;
 import org.eclipse.lsp4j.debug.VariablesArguments;
 import org.eclipse.lsp4j.debug.VariablesArgumentsFilter;
@@ -959,6 +961,254 @@ class DebugUiFlowFxTest {
             idle.setStopReason(null);
             idle.setState(DapManager.State.SUSPENDED);
             assertEquals(tr("debugpanel.state.suspended"), state.getText());
+        });
+    }
+
+    // --- D3-16: what the adapter says about a breakpoint -------------------------------------------------------
+
+    private static List<org.eclipse.lsp4j.debug.Breakpoint> answer(
+            org.eclipse.lsp4j.debug.SetBreakpointsArguments args,
+            java.util.function.IntFunction<org.eclipse.lsp4j.debug.Breakpoint> forLine1) {
+        List<org.eclipse.lsp4j.debug.Breakpoint> out = new ArrayList<>();
+        for (org.eclipse.lsp4j.debug.SourceBreakpoint sb : args.getBreakpoints()) {
+            out.add(forLine1.apply(sb.getLine()));
+        }
+        return out;
+    }
+
+    private BreakpointManager.Live live(EditorBuffer b, int line) throws Exception {
+        return FxTestSupport.callOnFx(() -> b.getBreakpointManager().live(line));
+    }
+
+    private void awaitLive(EditorBuffer b, int line, LiveState state) throws Exception {
+        await("line " + line + " never became " + state, () -> {
+            var now = b.getBreakpointManager().live(line);
+            return now != null && now.state() == state;
+        });
+    }
+
+    /** The style classes of the breakpoint glyphs the gutter is actually drawing, top to bottom. */
+    private List<String> gutterGlyphs(EditorBuffer b) throws Exception {
+        FxTestSupport.drainFx();
+        return FxTestSupport.callOnFx(() -> {
+            b.getNode().applyCss();
+            List<Node> marks = new ArrayList<>(b.getNode().lookupAll(".breakpoint-marker"));
+            marks.sort(java.util.Comparator.comparingDouble(
+                    n -> n.localToScene(n.getBoundsInLocal()).getMinY()));
+            return marks.stream()
+                    .map(n -> n.getStyleClass().stream()
+                            .filter(c -> c.startsWith("breakpoint-") && !c.equals("breakpoint-marker"))
+                            .sorted()
+                            .collect(java.util.stream.Collectors.joining(" ")))
+                    .toList();
+        });
+    }
+
+    /**
+     * A breakpoint on a line the debugger cannot stop at looked like any other: the answer to
+     * {@code setBreakpoints} was dropped. While a session is live the gutter now shows what the adapter said —
+     * a hollow dot until it binds the breakpoint, with its words on hover — and an unverified first answer is
+     * a wait, not a refusal: the {@code breakpoint} event that follows fills the dot. When the session ends,
+     * the breakpoints look like themselves again.
+     */
+    @Test
+    void aBreakpointShowsWhatTheLiveSessionSaysAboutItAndForgetsItAfterwards() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            // Line 2 binds at once; line 3 only later (java-debug: when its class loads); line 5 is blank.
+            session.breakpointAnswer = args -> answer(args, line1 -> switch (line1) {
+                case 2 -> FakeDebugAdapter.Session.breakpoint(12, true, 2, null);
+                case 3 -> FakeDebugAdapter.Session.breakpoint(13, false, 3, "");
+                default ->
+                    FakeDebugAdapter.Session.breakpoint(
+                            10 + line1, false, line1, "Waiting for code to be loaded to verify breakpoint.");
+            });
+            assertNull(live(b, 1), "no breakpoint, nothing to say");
+
+            FxTestSupport.runOnFx(() -> {
+                b.toggleBreakpoint(1);
+                b.toggleBreakpoint(2);
+                b.toggleBreakpoint(4);
+            });
+            awaitLive(b, 1, LiveState.VERIFIED);
+            // Each toggle is its own request; wait for the answer to the last, which covers all three.
+            await("the last answer never arrived", () -> {
+                var last = b.getBreakpointManager().live(4);
+                return last != null && !last.tooltip().equals(tr("debug.breakpoint.pending"));
+            });
+
+            assertEquals(LiveState.PENDING, live(b, 2).state());
+            assertEquals(tr("debug.breakpoint.pending"), live(b, 2).tooltip());
+            assertEquals(LiveState.PENDING, live(b, 4).state());
+            assertEquals(
+                    "Waiting for code to be loaded to verify breakpoint.",
+                    live(b, 4).tooltip(),
+                    "the adapter's own words are what the hover shows");
+            assertEquals(List.of("", "breakpoint-unverified", "breakpoint-unverified"), gutterGlyphs(b));
+            assertFalse(
+                    statusLog().toString().contains(tr("debug.breakpoint.rejected")),
+                    "waiting for a class to load is not reported as a refusal");
+
+            session.breakpointChanged(FakeDebugAdapter.Session.breakpoint(13, true, 3, ""));
+            awaitLive(b, 2, LiveState.VERIFIED);
+            assertEquals(List.of("", "", "breakpoint-unverified"), gutterGlyphs(b));
+
+            FxTestSupport.runOnFx(manager::stop);
+            await("the session never ended", () -> manager.state() == DapManager.State.INACTIVE);
+            assertNull(live(b, 4), "with no session a breakpoint is not 'unverified'");
+            assertEquals(List.of("", "", ""), gutterGlyphs(b));
+        }
+    }
+
+    /**
+     * The other half of D3-16: a condition that does not compile stops on every hit and nothing said why.
+     * java-debug reports it in a {@code usernotification} at the first hit; it is now shown in the console and
+     * the status bar, and the breakpoint carrying that condition is flagged until the condition is edited.
+     * An adapter that refuses a breakpoint outright ({@code reason: failed}) is reported the same way.
+     */
+    @Test
+    void aRefusedBreakpointOrConditionIsFlaggedAndReported() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            session.breakpointAnswer = args -> answer(args, line1 -> {
+                org.eclipse.lsp4j.debug.Breakpoint bp =
+                        FakeDebugAdapter.Session.breakpoint(10 + line1, line1 != 5, line1, null);
+                if (line1 == 5) {
+                    bp.setMessage("Breakpoint added to invalid line.");
+                    bp.setReason(org.eclipse.lsp4j.debug.BreakpointNotVerifiedReason.FAILED);
+                }
+                return bp;
+            });
+            FxTestSupport.runOnFx(() -> {
+                b.toggleBreakpoint(1);
+                b.getBreakpointManager().setCondition(1, "nosuch > 1");
+                b.toggleBreakpoint(4);
+            });
+            awaitLive(b, 1, LiveState.VERIFIED);
+            awaitLive(b, 4, LiveState.REJECTED);
+            assertEquals("Breakpoint added to invalid line.", live(b, 4).tooltip());
+            assertEquals(
+                    tr("status.debug.breakpointInvalid", "util.py", 5, "Breakpoint added to invalid line."), status());
+            assertEquals(
+                    List.of("breakpoint-conditional", "breakpoint-rejected breakpoint-unverified"), gutterGlyphs(b));
+
+            String notice = "Breakpoint condition 'nosuch > 1' error: nosuch cannot be resolved to a variable.";
+            session.userNotification("ERROR", notice);
+            awaitLive(b, 1, LiveState.REJECTED);
+            assertEquals(notice, live(b, 1).tooltip());
+            assertEquals(tr("status.debug.error", notice), status());
+            assertTrue(console().contains(notice), console());
+
+            // Correcting the condition is a new breakpoint as far as that complaint goes.
+            FxTestSupport.runOnFx(() -> b.getBreakpointManager().setCondition(1, "n > 1"));
+            awaitLive(b, 1, LiveState.VERIFIED);
+        }
+    }
+
+    /** debugpy binds a breakpoint on a blank or comment line to the next line with code and says which. */
+    @Test
+    void aBreakpointFollowsTheLineTheAdapterBoundItTo() throws Exception {
+        Path util = file("util.py", UTIL);
+        EditorBuffer b = open(util);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            session.breakpointAnswer = args -> answer(
+                    args, line1 -> FakeDebugAdapter.Session.breakpoint(line1, true, line1 == 5 ? 7 : line1, null));
+
+            FxTestSupport.runOnFx(() -> b.toggleBreakpoint(4)); // the blank line 5 → "def go():" on line 7
+
+            await("the breakpoint never moved", () -> b.getBreakpointManager().isBreakpoint(6));
+            assertFalse(FxTestSupport.callOnFx(() -> b.getBreakpointManager().isBreakpoint(4)));
+            awaitLive(b, 6, LiveState.VERIFIED);
+            assertEquals(List.of(6), storedLines(util), "the moved breakpoint is what is stored");
+            assertEquals(tr("status.debug.breakpointMoved", 5, 7), status());
+            await("the adapter was not told the new line", () -> {
+                var last = session.breakpoints.get(session.breakpoints.size() - 1);
+                return last.getBreakpoints().length == 1 && last.getBreakpoints()[0].getLine() == 7;
+            });
+        }
+    }
+
+    // --- D3-11: which exception --------------------------------------------------------------------------------
+
+    /** An exception stop said "Suspended on an exception" and nothing about which. */
+    @Test
+    void anExceptionStopNamesTheException() throws Exception {
+        Path util = file("util.py", UTIL);
+        open(util);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            org.eclipse.lsp4j.debug.ExceptionInfoResponse info = new org.eclipse.lsp4j.debug.ExceptionInfoResponse();
+            info.setExceptionId("java.lang.IllegalStateException");
+            info.setDescription("\"java.lang.IllegalStateException: boom\""); // as java-debug 0.53 sends it
+            adapter.exceptionInfo = info;
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            Label state = FxTestSupport.field(panel, "status");
+            session.framePath = util.toString();
+            session.frameLine = 2;
+
+            session.stop(7, "exception");
+            awaitState(DapManager.State.SUSPENDED);
+            await("the exception was never named", () -> state.getText().contains("IllegalStateException"));
+
+            assertTrue(
+                    FxTestSupport.callOnFx(state::getText)
+                            .startsWith(tr("debugpanel.state.exceptionNamed", "IllegalStateException: boom")),
+                    FxTestSupport.callOnFx(state::getText));
+            assertEquals(tr("status.debug.stoppedOnException", "java.lang.IllegalStateException: boom"), status());
+
+            // The next stop is an ordinary one: the exception of the last must not linger.
+            FxTestSupport.runOnFx(manager::resume);
+            session.awaitRequest("continue");
+            session.stop(7, "breakpoint");
+            await("the stale exception stayed", () -> state.getText().startsWith(tr("debugpanel.state.suspended")));
+            assertFalse(FxTestSupport.callOnFx(state::getText).contains("IllegalStateException"));
+        }
+    }
+
+    // --- D2-15: a watch that does not evaluate -----------------------------------------------------------------
+
+    /** The adapter's message sat where the value goes, coloured like one. */
+    @Test
+    void aWatchThatDoesNotEvaluateIsDrawnAsAnError() throws Exception {
+        Path util = file("util.py", UTIL);
+        open(util);
+        List<String> before = FxTestSupport.callOnFx(panel::getWatches);
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(false)) {
+            FakeDebugAdapter.Session session = connect(adapter, util);
+            FxTestSupport.runOnFx(() -> panel.setWatches(List.of("bad_expr", "n")));
+            stopAt(session, util, 2);
+            await("the watches never evaluated", () -> {
+                var bad = row(tr("debugpanel.watches"), "bad_expr");
+                var good = row(tr("debugpanel.watches"), "n");
+                return bad != null
+                        && bad.getValue().value().contains("Cannot evaluate")
+                        && good != null
+                        && good.getValue().value().startsWith("val(");
+            });
+
+            DebugPanel.VarRow bad = FxTestSupport.callOnFx(
+                    () -> row(tr("debugpanel.watches"), "bad_expr").getValue());
+            DebugPanel.VarRow good = FxTestSupport.callOnFx(
+                    () -> row(tr("debugpanel.watches"), "n").getValue());
+            assertTrue(bad.failed());
+            assertFalse(good.failed());
+            assertEquals(List.of("debug-val-error"), valueClasses(bad));
+            assertFalse(valueClasses(good).contains("debug-val-error"));
+        } finally {
+            FxTestSupport.runOnFx(() -> panel.setWatches(before));
+        }
+    }
+
+    /** The style classes of the value part of a rendered variables row. */
+    private List<String> valueClasses(DebugPanel.VarRow row) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            javafx.scene.text.TextFlow flow = (javafx.scene.text.TextFlow)
+                    FxTestSupport.call(panel, "renderRow", new Class[] {DebugPanel.VarRow.class}, row);
+            return List.copyOf(flow.getChildren().get(2).getStyleClass());
         });
     }
 

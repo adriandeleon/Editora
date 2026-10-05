@@ -1024,7 +1024,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Chrome.PaletteContext paletteContext() {
         EditorBuffer b = activeBuffer();
         boolean debugActive = debugCoordinator != null && debugCoordinator.sessionLive(); // incl. starting/building
-        boolean suspended = dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED;
         return new Chrome.PaletteContext(
                 b != null,
                 git.repoRoot() != null,
@@ -1034,7 +1033,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b != null && b.isTypst(),
                 b != null && b.hasPreview(),
                 debugActive,
-                suspended);
+                dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED,
+                debugCoordinator == null || debugCoordinator.restartAvailable());
     }
 
     private void setupRecentFiles() {

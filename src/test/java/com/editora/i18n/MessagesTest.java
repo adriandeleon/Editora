@@ -353,6 +353,8 @@ class MessagesTest {
     private static final Map<String, int[]> IDENTIFIER_ARGUMENTS = Map.ofEntries(
             Map.entry("status.gotoResult", new int[] {0, 1}),
             Map.entry("status.testrunner.debugAttaching", new int[] {0}),
+            Map.entry("status.debug.breakpointInvalid", new int[] {1}),
+            Map.entry("status.debug.breakpointMoved", new int[] {0, 1}),
             Map.entry("agent.context.header", new int[] {1}),
             Map.entry("agent.exited", new int[] {0}),
             Map.entry("csvgrid.column", new int[] {0}),

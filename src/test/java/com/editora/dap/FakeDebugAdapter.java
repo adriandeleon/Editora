@@ -61,6 +61,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
     private final List<Session> sessions = new CopyOnWriteArrayList<>();
     private volatile boolean closed;
 
+    /**
+     * When set (before the client connects), sessions advertise {@code supportsExceptionInfoRequest} and
+     * answer {@code exceptionInfo} with it.
+     */
+    public volatile org.eclipse.lsp4j.debug.ExceptionInfoResponse exceptionInfo;
+
     public FakeDebugAdapter(boolean multiSession) throws IOException {
         this(multiSession, InetAddress.getLoopbackAddress());
     }
@@ -150,10 +156,68 @@ public final class FakeDebugAdapter implements AutoCloseable {
             this.first = first;
         }
 
+        private volatile org.eclipse.lsp4j.jsonrpc.RemoteEndpoint remote;
+
         private void start() throws IOException {
             var launcher = DSPLauncher.createServerLauncher(this, socket.getInputStream(), socket.getOutputStream());
             client = launcher.getRemoteProxy();
+            remote = launcher.getRemoteEndpoint();
             launcher.startListening();
+        }
+
+        /**
+         * Answers {@code setBreakpoints}: one breakpoint per requested one, in order. Null answers an empty
+         * response, as an adapter that says nothing about them.
+         */
+        public volatile java.util.function.Function<SetBreakpointsArguments, List<org.eclipse.lsp4j.debug.Breakpoint>>
+                breakpointAnswer;
+
+        /** When set, every {@code setBreakpoints} is refused with this message. */
+        public volatile String breakpointFailure;
+
+        /** An adapter breakpoint as a {@code setBreakpoints} answer or a {@code breakpoint} event carries it. */
+        public static org.eclipse.lsp4j.debug.Breakpoint breakpoint(
+                Integer id, boolean verified, Integer line, String message) {
+            org.eclipse.lsp4j.debug.Breakpoint b = new org.eclipse.lsp4j.debug.Breakpoint();
+            b.setId(id);
+            b.setVerified(verified);
+            b.setLine(line);
+            b.setMessage(message);
+            return b;
+        }
+
+        /** The {@code breakpoint} event: the adapter changed its mind about one it already answered for. */
+        public void breakpointChanged(org.eclipse.lsp4j.debug.Breakpoint breakpoint) {
+            org.eclipse.lsp4j.debug.BreakpointEventArguments event =
+                    new org.eclipse.lsp4j.debug.BreakpointEventArguments();
+            event.setReason(org.eclipse.lsp4j.debug.BreakpointEventArgumentsReason.CHANGED);
+            event.setBreakpoint(breakpoint);
+            client.breakpoint(event);
+        }
+
+        /** java-debug's non-standard {@code usernotification} event. */
+        public void userNotification(String type, String message) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("notificationType", type);
+            body.put("message", message);
+            remote.notify("usernotification", body);
+        }
+
+        /** A stop event carrying the adapter's own description of it. */
+        public void stop(int threadId, String reason, String description, String text) {
+            StoppedEventArguments stopped = new StoppedEventArguments();
+            stopped.setThreadId(threadId);
+            stopped.setReason(reason);
+            stopped.setDescription(description);
+            stopped.setText(text);
+            client.stopped(stopped);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.ExceptionInfoResponse> exceptionInfo(
+                org.eclipse.lsp4j.debug.ExceptionInfoArguments args) {
+            record("exceptionInfo");
+            return CompletableFuture.completedFuture(exceptionInfo);
         }
 
         private void record(String request) {
@@ -235,7 +299,11 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public CompletableFuture<Capabilities> initialize(InitializeRequestArguments args) {
             initializeArgs = args;
             record("initialize");
-            CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(new Capabilities());
+            Capabilities capabilities = new Capabilities();
+            if (exceptionInfo != null) {
+                capabilities.setSupportsExceptionInfoRequest(true);
+            }
+            CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
             // The event follows the response, as the protocol orders them.
             CompletableFuture.runAsync(() -> client.initialized());
             return reply;
@@ -280,7 +348,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public CompletableFuture<SetBreakpointsResponse> setBreakpoints(SetBreakpointsArguments args) {
             breakpoints.add(args);
             record("setBreakpoints");
-            return CompletableFuture.completedFuture(new SetBreakpointsResponse());
+            if (breakpointFailure != null) {
+                return refused(breakpointFailure);
+            }
+            SetBreakpointsResponse response = new SetBreakpointsResponse();
+            var answer = breakpointAnswer;
+            if (answer != null) {
+                response.setBreakpoints(answer.apply(args).toArray(new org.eclipse.lsp4j.debug.Breakpoint[0]));
+            }
+            return CompletableFuture.completedFuture(response);
         }
 
         @Override
