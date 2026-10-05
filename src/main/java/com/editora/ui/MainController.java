@@ -329,8 +329,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final LinkedList<Tab> mru = new LinkedList<>();
     /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
     private final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** Guards programmatic tab reordering so the MRU list listener doesn't drop the moved tab. */
-    private boolean reordering;
     /** The tab currently being dragged to reorder the strip, or null. */
     private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
@@ -1920,7 +1918,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // A pin reorder removes+re-adds the same tab, and so does moving one between editor groups
                 // (EditorArea.isRelocating) — in both cases the tab is not closing, so skip the cleanup or
                 // the buffer would be disposed and its language server shut down out from under a live tab.
-                if (c.wasRemoved() && !reordering && !editorArea.isRelocating()) {
+                if (c.wasRemoved() && !editorArea.isRelocating()) {
                     mru.removeAll(c.getRemoved());
                     pinned.removeAll(c.getRemoved());
                     // Tear down each closed buffer. dispose() bumps the generation guards so any
@@ -8230,8 +8228,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             boolean done = false;
             if (draggedTab != null && draggedTab != tab) {
                 // Drop on the right half of the target inserts after it, left half before it.
-                reorderTab(draggedTab, tab, e.getX() > header.getBoundsInLocal().getWidth() / 2);
-                done = true;
+                done = editorArea.moveBeside(
+                        draggedTab, tab, e.getX() > header.getBoundsInLocal().getWidth() / 2, pinned::contains);
             }
             e.setDropCompleted(done);
             e.consume();
@@ -8252,28 +8250,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (on) {
             node.getStyleClass().add(styleClass);
         }
-    }
-
-    /**
-     * Moves {@code dragged} next to {@code target} (after it when {@code after} is true, else before),
-     * keeping pinned tabs grouped at the front: a drop is clamped to the dragged tab's own group.
-     */
-    private void reorderTab(Tab dragged, Tab target, boolean after) {
-        boolean draggedPinned = pinned.contains(dragged);
-        reordering = true;
-        try {
-            editorArea.remove(dragged);
-            // Every index below is read *after* the removal, so it already accounts for the gap it left.
-            int idx = editorArea.indexOf(target) + (after ? 1 : 0);
-            int pinnedInStrip =
-                    (int) editorArea.tabs().stream().filter(pinned::contains).count();
-            int lo = draggedPinned ? 0 : pinnedInStrip;
-            int hi = draggedPinned ? pinnedInStrip : editorArea.size();
-            editorArea.add(Math.max(lo, Math.min(idx, hi)), dragged);
-        } finally {
-            reordering = false;
-        }
-        editorArea.select(dragged);
     }
 
     private static void toggleClass(Tab tab, String styleClass, boolean on) {
@@ -8766,33 +8742,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (tab == null) {
             return;
         }
-        if (pinned.remove(tab)) {
-            // Unpinned: move just past the remaining pinned group.
-            moveTab(tab, pinned.size());
-        } else {
+        if (!pinned.remove(tab)) {
             pinned.add(tab);
-            // Pinned: park at the end of the pinned group so multiple pins stay grouped.
-            moveTab(tab, pinned.size() - 1);
         }
+        // Either way the tab belongs at the end of its strip's pinned group: last of them once pinned, first
+        // after them once unpinned.
+        editorArea.moveToPinBoundary(tab, pinned::contains);
         updateTabMeta(tab, bufferOf(tab));
         setStatus(tr(pinned.contains(tab) ? "status.pinned" : "status.unpinned"));
-    }
-
-    /** Moves {@code tab} to {@code target} without corrupting the MRU (see the reordering guard). */
-    private void moveTab(Tab tab, int target) {
-        int from = editorArea.indexOf(tab);
-        if (from < 0) {
-            return;
-        }
-        reordering = true;
-        try {
-            editorArea.remove(tab);
-            int clamped = Math.max(0, Math.min(target, editorArea.size()));
-            editorArea.add(clamped, tab);
-        } finally {
-            reordering = false;
-        }
-        editorArea.select(tab);
     }
 
     /** Prompts for a new name for the buffer's file; see {@link #renameFileTo}. */

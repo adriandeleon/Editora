@@ -385,9 +385,69 @@ final class EditorArea {
         this.restoreTargetGroup = index;
     }
 
-    /** Inserts {@code tab} at {@code index} of the focused group (used by pin/drag reordering). */
-    void add(int index, Tab tab) {
-        focused.getTabs().add(index, tab);
+    /**
+     * Moves {@code dragged} next to {@code target} — after it when {@code after}, else before — <b>in the
+     * target's group</b>, which need not be the group the dragged tab came from: a tab header accepts a drop
+     * from any group. Pinned tabs stay grouped at the front of a strip, so the landing index is clamped to
+     * the dragged tab's own side of the target strip's pin boundary.
+     *
+     * @return whether the tab now sits in the target's group ({@code false}: either tab is not open)
+     */
+    boolean moveBeside(Tab dragged, Tab target, boolean after, Predicate<Tab> pinned) {
+        TabPane dest = ownerOf(target);
+        if (dragged == target || dest == null || ownerOf(dragged) == null) {
+            return false;
+        }
+        // Indices are those of the target strip *without* the dragged tab, which is what it will be inserted
+        // into; reading them from the live list would be off by one whenever the tab moves rightwards.
+        List<Tab> others = new ArrayList<>(dest.getTabs());
+        others.remove(dragged);
+        int boundary = (int) others.stream().filter(pinned).count();
+        int index = others.indexOf(target) + (after ? 1 : 0);
+        boolean isPinned = pinned.test(dragged);
+        place(dragged, dest, Math.max(isPinned ? 0 : boundary, Math.min(index, isPinned ? boundary : others.size())));
+        return true;
+    }
+
+    /**
+     * Parks {@code tab} at its own group's pin boundary — just after the other pinned tabs — which is where
+     * both a newly pinned and a newly unpinned tab belong. The boundary is counted per group: each strip
+     * keeps its own pinned tabs at its front.
+     */
+    void moveToPinBoundary(Tab tab, Predicate<Tab> pinned) {
+        TabPane owner = ownerOf(tab);
+        if (owner != null) {
+            place(tab, owner, (int) owner.getTabs().stream()
+                    .filter(t -> t != tab && pinned.test(t))
+                    .count());
+        }
+    }
+
+    /**
+     * Puts the open {@code tab} at {@code index} of {@code dest}, where {@code index} counts that strip
+     * without the tab. The tab is never left out of every group: if the insert fails it goes back where it
+     * was, because a tab that is in no group has no close prompt and no way to reach its unsaved text.
+     */
+    private void place(Tab tab, TabPane dest, int index) {
+        TabPane source = ownerOf(tab);
+        int from = source.getTabs().indexOf(tab);
+        if (source != dest || from != index) {
+            relocating = true; // a move, not a close: the controller's tab-removed cleanup must sit it out
+            try {
+                detach(tab, source);
+                dest.getTabs().add(index, tab);
+            } finally {
+                if (ownerOf(tab) == null) {
+                    source.getTabs().add(Math.min(from, source.getTabs().size()), tab);
+                }
+                relocating = false;
+            }
+            // Collapse an emptied source only after the move, so the tab is never briefly homeless.
+            if (source != dest && source.getTabs().isEmpty() && groupCount() > 1) {
+                discard(source);
+            }
+        }
+        select(tab);
     }
 
     /**
