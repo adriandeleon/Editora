@@ -787,11 +787,23 @@ public class WindowManager {
 
     /** Re-applies view settings + the editor theme to every open window (after a Settings change). */
     public void broadcastSettingsApplied() {
+        broadcastSettingsApplied(null);
+    }
+
+    /**
+     * As {@link #broadcastSettingsApplied()}, for a change made in {@code origin}'s Settings window: every
+     * other window's Settings window, if open, re-reads its controls too. Left showing the old values, its
+     * next edit of any stale control would write that value back over this change.
+     */
+    public void broadcastSettingsApplied(MainController origin) {
         settingsRebroadcast.stop(); // every window is about to apply everything, pending changes included
         settingsChangePending = false;
         Settings settings = shared.getSettings();
         for (Holder h : new ArrayList<>(windows)) {
             h.controller.reapplyAfterSharedSettingsChange(settings);
+            if (origin != null && h.controller != origin) {
+                h.controller.syncSettingsWindow();
+            }
         }
         shared.markSettingsApplied();
     }

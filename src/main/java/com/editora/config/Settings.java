@@ -18,7 +18,9 @@ public class Settings {
      * every window holds, so it must be mutated, not replaced. Backs Settings → Advanced → "Reset to
      * Defaults". Deliberately preserves the two things that page doesn't own: {@link #getFontZoom() fontZoom}
      * (the editor's Ctrl-+/- text zoom) and {@link #getKeybindings() keybindings} (the Keymaps page's own
-     * "Reset all").
+     * "Reset all"). The reset does put the keymap back to the default, and key-binding overrides belong to the
+     * keymap they were made in — so the preserved overrides are parked under the old keymap, not applied to
+     * the default one.
      *
      * <p>Driven off the serialized form rather than a hand-written list of setters. The list version had gone
      * stale: it restored <b>23 of 181</b> fields, so "Reset to Defaults" silently left ~87% of preferences
@@ -28,8 +30,11 @@ public class Settings {
      */
     public static void resetToDefaults(Settings live) {
         double fontZoom = live.getFontZoom();
+        String keymap = live.getKeymap();
         Map<String, String> keybindings = live.getKeybindings();
         Map<String, String> keybindingsMac = live.getKeybindingsMac();
+        Map<String, Map<String, String>> parked = live.getKeymapKeybindings();
+        Map<String, Map<String, String>> parkedMac = live.getKeymapKeybindingsMac();
         ObjectMapper mapper = new ObjectMapper();
         try {
             mapper.readerForUpdating(live).readValue(mapper.writeValueAsBytes(new Settings()));
@@ -37,12 +42,17 @@ public class Settings {
             throw new IllegalStateException("Could not reset settings to their defaults", e);
         }
         live.setFontZoom(fontZoom);
+        String defaultKeymap = live.getKeymap();
+        live.setKeymap(keymap);
         live.setKeybindings(keybindings);
         live.setKeybindingsMac(keybindingsMac);
+        live.setKeymapKeybindings(parked);
+        live.setKeymapKeybindingsMac(parkedMac);
+        live.switchKeymap(defaultKeymap);
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 105;
+    public static final int SCHEMA_VERSION = 106;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -62,6 +72,17 @@ public class Settings {
     public static final double MAX_FONT_ZOOM = 3.0;
     public static final int MIN_TAB_SIZE = 1;
     public static final int MAX_TAB_SIZE = 16;
+
+    // One range per numeric preference, shared by its Settings spinner and its palette prompt: a control with
+    // a narrower range than the command shows a value that is not the one in force.
+    public static final int MIN_FILL_COLUMN = 1;
+    public static final int MAX_FILL_COLUMN = 1000;
+    public static final int MIN_AUTO_SAVE_DELAY_SECONDS = 1;
+    public static final int MAX_AUTO_SAVE_DELAY_SECONDS = 3600;
+    public static final int MAX_HISTORY_PER_FILE = 1000;
+    public static final int MAX_HISTORY_AGE_DAYS = 3650;
+    public static final int MAX_HISTORY_TOTAL_MB = 10_000;
+    public static final int MAX_LARGE_FILE_THRESHOLD = 10_000_000;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
     private String authorName = "";
@@ -542,10 +563,22 @@ public class Settings {
      * live alongside the new chord). {@link #keybindings} holds the Ctrl-based (Windows/Linux) overrides;
      * {@link #keybindingsMac} the Cmd-based (macOS) ones. Read the running platform's via {@link #keybindingsFor}
      * (#439).
+     *
+     * <p>Both maps are the overrides of the <b>active</b> {@link #keymap} only. A rebind also stores a blank
+     * suppressor for each chord the keymap bound to that command by default, and the same chord means something
+     * else in another keymap (CUA's {@code C-f} is Find, Emacs' is forward-char) — so overrides carried across a
+     * keymap switch unbound unrelated keys. {@link #switchKeymap} parks them in {@link #keymapKeybindings} /
+     * {@link #keymapKeybindingsMac} (keymap id -&gt; overrides) and brings back the ones made in the keymap
+     * being switched to.
      */
     private Map<String, String> keybindings = new LinkedHashMap<>();
 
     private Map<String, String> keybindingsMac = new LinkedHashMap<>();
+
+    /** Overrides parked for the keymaps that are not active (see {@link #keybindings}); never the active one. */
+    private Map<String, Map<String, String>> keymapKeybindings = new LinkedHashMap<>();
+
+    private Map<String, Map<String, String>> keymapKeybindingsMac = new LinkedHashMap<>();
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -633,7 +666,7 @@ public class Settings {
     }
 
     public void setFillColumn(int fillColumn) {
-        this.fillColumn = fillColumn;
+        this.fillColumn = Math.min(fillColumn, MAX_FILL_COLUMN); // below 1 still reads back as the default
     }
 
     public String getKeymap() {
@@ -2375,6 +2408,47 @@ public class Settings {
 
     public void setKeybindingsMac(Map<String, String> keybindingsMac) {
         this.keybindingsMac = keybindingsMac;
+    }
+
+    public Map<String, Map<String, String>> getKeymapKeybindings() {
+        return keymapKeybindings;
+    }
+
+    public void setKeymapKeybindings(Map<String, Map<String, String>> keymapKeybindings) {
+        this.keymapKeybindings = keymapKeybindings == null ? new LinkedHashMap<>() : keymapKeybindings;
+    }
+
+    public Map<String, Map<String, String>> getKeymapKeybindingsMac() {
+        return keymapKeybindingsMac;
+    }
+
+    public void setKeymapKeybindingsMac(Map<String, Map<String, String>> keymapKeybindingsMac) {
+        this.keymapKeybindingsMac = keymapKeybindingsMac == null ? new LinkedHashMap<>() : keymapKeybindingsMac;
+    }
+
+    /**
+     * Changes the keymap, taking the key-binding overrides with it: the current ones (both platforms) are
+     * parked under the keymap being left, and those made earlier in {@code next} become the active ones.
+     * {@link #setKeymap} is the plain property setter (it is what loading a file calls) and moves nothing.
+     */
+    public void switchKeymap(String next) {
+        if (java.util.Objects.equals(next, keymap)) {
+            return;
+        }
+        keybindings = swapOverrides(keymapKeybindings, keymap, keybindings, next);
+        keybindingsMac = swapOverrides(keymapKeybindingsMac, keymap, keybindingsMac, next);
+        keymap = next;
+    }
+
+    private static Map<String, String> swapOverrides(
+            Map<String, Map<String, String>> parked, String from, Map<String, String> active, String to) {
+        if (active != null && !active.isEmpty()) {
+            parked.put(String.valueOf(from), active);
+        } else {
+            parked.remove(String.valueOf(from));
+        }
+        Map<String, String> restored = parked.remove(String.valueOf(to));
+        return restored == null ? new LinkedHashMap<>() : new LinkedHashMap<>(restored);
     }
 
     /** The keybinding overrides for the running platform (Cmd map on macOS, Ctrl map elsewhere); never null. */

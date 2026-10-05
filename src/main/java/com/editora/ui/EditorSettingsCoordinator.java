@@ -139,11 +139,19 @@ final class EditorSettingsCoordinator {
         this.host = host;
     }
 
+    /** Moves an open Settings window's view switches to the values a toggle command just wrote. */
+    private void syncSettingsViewChecks() {
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncViewChecks();
+        }
+    }
+
     void toggleColumnRuler() {
         Settings s = host.config().getSettings();
         s.setShowColumnRuler(!s.isShowColumnRuler());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.ruler", tr(s.isShowColumnRuler() ? "common.on" : "common.off")));
     }
 
@@ -152,6 +160,7 @@ final class EditorSettingsCoordinator {
         s.setHighlightCurrentLine(!s.isHighlightCurrentLine());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.lineHighlight", tr(s.isHighlightCurrentLine() ? "common.on" : "common.off")));
     }
 
@@ -160,6 +169,7 @@ final class EditorSettingsCoordinator {
         s.setShowLineNumbers(!s.isShowLineNumbers());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.lineNumbers", tr(s.isShowLineNumbers() ? "common.on" : "common.off")));
     }
 
@@ -168,17 +178,27 @@ final class EditorSettingsCoordinator {
         s.setShowMinimap(!s.isShowMinimap());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.minimap", tr(s.isShowMinimap() ? "common.on" : "common.off")));
     }
 
     void toggleWordWrap() {
         Settings s = host.config().getSettings();
+        EditorBuffer active = host.activeBuffer();
+        if (active != null && active.isWrapSuppressed()) {
+            // Wrap was held off for this long-line file. Asking for it here is the explicit opt-in: if the
+            // preference is already on, wrap this buffer rather than turning wrap off everywhere else.
+            active.setWrapSuppressed(false);
+            if (s.isWordWrap()) {
+                active.setWordWrap(true);
+                host.setStatus(tr("status.toggle.wordWrap", tr("common.on")));
+                return;
+            }
+        }
         s.setWordWrap(!s.isWordWrap());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
-        if (host.settingsWindow() != null) {
-            host.settingsWindow().syncViewChecks();
-        }
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.wordWrap", tr(s.isWordWrap() ? "common.on" : "common.off")));
     }
 
@@ -187,6 +207,7 @@ final class EditorSettingsCoordinator {
         s.setShowWhitespace(!s.isShowWhitespace());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.whitespace", tr(s.isShowWhitespace() ? "common.on" : "common.off")));
     }
 
@@ -195,6 +216,7 @@ final class EditorSettingsCoordinator {
         s.setSpellCheck(!s.isSpellCheck());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.spellCheck", tr(s.isSpellCheck() ? "common.on" : "common.off")));
     }
 
@@ -311,7 +333,7 @@ final class EditorSettingsCoordinator {
         if (id == null) {
             return;
         }
-        host.config().getSettings().setKeymap(id);
+        KeymapLayers.switchKeymap(host.config().getSettings(), id);
         host.config().save();
         reloadKeymap();
         host.settingsWindow().syncKeymapCombo(); // keep the Settings window combo in step if it's open
@@ -790,7 +812,7 @@ final class EditorSettingsCoordinator {
         buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
         buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
-        buffer.setWordWrap(s.isWordWrap());
+        buffer.setWordWrap(s.isWordWrap() && !buffer.isWrapSuppressed());
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
