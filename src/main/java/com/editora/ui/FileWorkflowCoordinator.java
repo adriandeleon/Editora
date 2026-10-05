@@ -157,6 +157,12 @@ final class FileWorkflowCoordinator {
 
         Tab tabForPath(Path file);
 
+        /** Whether a tab of <em>another</em> window shows {@code file}. */
+        boolean openInAnotherWindow(Path file);
+
+        /** A {@code .editorconfig} was saved: every window re-resolves the rules of the files it has open. */
+        void editorConfigSaved();
+
         Path tabPath(Tab tab);
 
         void requestSave();
@@ -1373,13 +1379,17 @@ final class FileWorkflowCoordinator {
     }
 
     /**
-     * Refuses a Save As whose target is open in another tab. Re-pointing this buffer there left two tabs on
-     * one path: the other one kept its stale text (and any unsaved edits), path lookups found whichever came
-     * first, and its next save or "Keep Mine" silently replaced what had just been written.
+     * Refuses a Save As whose target is open in another tab — of this window or of any other. Re-pointing this
+     * buffer there left two tabs on one path: the other one kept its stale text (and any unsaved edits), path
+     * lookups found whichever came first, and its next save or "Keep Mine" silently replaced what had just
+     * been written.
      */
     private boolean refuseTargetOpenElsewhere(EditorBuffer buffer, Path target) {
-        Tab other = target == null ? null : host.tabForPath(target);
-        if (other == null || other == host.tabForBuffer(buffer)) {
+        if (target == null) {
+            return false;
+        }
+        Tab other = host.tabForPath(target);
+        if ((other == null || other == host.tabForBuffer(buffer)) && !host.openInAnotherWindow(target)) {
             return false;
         }
         host.setStatus(tr("status.saveAs.cannotReplaceOpenFile", target.getFileName()));
@@ -1877,7 +1887,7 @@ final class FileWorkflowCoordinator {
             host.editorSettings().charsetFellBackToUtf8(request.buffer());
         }
         if (".editorconfig".equals(String.valueOf(request.target().getFileName()))) {
-            host.editorSettings().applyEditorConfigSupport(); // its rules reach the files already open
+            host.editorConfigSaved(); // its rules reach the files already open, in every window
         }
         if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(savedStatus(request, disk, autoSave));
@@ -1980,12 +1990,10 @@ final class FileWorkflowCoordinator {
                 || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), committed.target())) {
             return;
         }
-        buffer.acknowledgeSavedContent(committed.content());
-        if (!committed.lineEnding().equals(buffer.getLineEnding())) {
-            // A line-ending conversion chosen while this write was in flight is not on disk: the text is
-            // the same, so the acknowledgement alone would call the buffer clean and drop the conversion.
-            buffer.markUnsaved();
-        }
+        // With the ending that was written: a line-ending conversion chosen while this write was in flight is
+        // not on disk (the text is the same, so the text alone would call the buffer clean), and converting
+        // back afterwards matches the disk again.
+        buffer.acknowledgeSavedContent(committed.content(), committed.lineEnding());
         buffer.setDiskSnapshot(
                 committed.disk().modifiedMillis(), committed.disk().size(), fingerprint(committed.bytes()));
     }

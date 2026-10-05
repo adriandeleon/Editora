@@ -528,6 +528,24 @@ public class WindowManager {
         return List.copyOf(out);
     }
 
+    /** Whether a window other than {@code asking} has {@code file} open in a tab. */
+    boolean openInAnotherWindow(MainController asking, Path file) {
+        for (Holder holder : windows) {
+            if (holder.controller() != asking
+                    && !holder.controller().buffersAtOrUnderLocal(file).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A saved {@code .editorconfig} governs files in every window, not only the one it was saved from. */
+    void editorConfigSavedAcrossWindows() {
+        for (Holder holder : List.copyOf(windows)) {
+            holder.controller().applyEditorConfigLocal();
+        }
+    }
+
     void fileRenamedAcrossWindows(MainController initiator, Path from, Path to, boolean initiatorAlreadyClosed) {
         for (Holder holder : List.copyOf(windows)) {
             holder.controller()

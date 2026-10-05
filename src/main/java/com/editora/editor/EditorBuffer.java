@@ -9669,11 +9669,15 @@ public class EditorBuffer implements TabContent {
         dirty.set(true);
     }
 
-    /** Acknowledges exactly the content written by an asynchronous save, preserving later edits as dirty. */
-    public void acknowledgeSavedContent(String savedContent) {
+    /**
+     * Acknowledges exactly what an asynchronous save wrote — its text and its line ending — so an edit or a
+     * line-ending conversion made while the write was in flight is still unsaved, and undoing either is clean.
+     */
+    public void acknowledgeSavedContent(String savedContent, String savedLineEnding) {
         cleanText = savedContent == null ? "" : savedContent;
-        cleanLineEnding = lineEnding;
-        forcedDirty = false;
+        boolean current = savedLineEnding == null || savedLineEnding.equals(getLineEnding());
+        cleanLineEnding = current ? lineEnding : savedLineEnding;
+        forcedDirty = !current && eolOverride != null; // a rule that arrived mid-save: no converting back to it
         dirty.set(differsFromSaved());
     }
 
