@@ -293,7 +293,46 @@ final class NavigationCoordinator {
         CodeArea a = b.getArea();
         return a == null
                 ? null
-                : new NavigationHistory.Location(b.getPath(), a.getCurrentParagraph(), a.getCaretColumn());
+                : new NavigationHistory.Location(
+                        b.getPath(), documentLine(b, a.getCurrentParagraph()), a.getCaretColumn());
+    }
+
+    /**
+     * The 0-based <b>document</b> line for a line of {@code buffer}'s text area. They differ only while the
+     * buffer is narrowed: the area then holds just the region, so its line numbers are region-relative.
+     * Everything that names a place in the file — the jump history, a search hit, a Problems entry — is in
+     * document lines, and crosses into area lines through {@link #areaLine} at the moment of the jump.
+     */
+    int documentLine(EditorBuffer buffer, int areaLine) {
+        return buffer.isNarrowed()
+                ? areaLine + com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart())
+                : areaLine;
+    }
+
+    /**
+     * The text-area line to move to for 0-based {@code documentLine} of {@code buffer}. A narrowed buffer is
+     * rebased by its region's first line; when the target lies outside the region the buffer is <b>widened
+     * first</b> (what Emacs does for a jump from outside, {@code widen-automatically}) — the alternative was
+     * landing on whatever region line happened to carry that number, or silently not moving at all.
+     */
+    int areaLine(EditorBuffer buffer, int documentLine) {
+        if (buffer == null || !buffer.isNarrowed()) {
+            return documentLine;
+        }
+        int first = com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart());
+        int local = com.editora.editor.NarrowLines.toRegionLine(
+                first, buffer.getArea().getParagraphs().size(), documentLine);
+        if (local >= 0) {
+            return local;
+        }
+        buffer.widen(); // the narrow-changed hook reconciles the status chip, title, LSP and git
+        host.setStatus(tr("status.narrow.widened"));
+        return documentLine;
+    }
+
+    /** Records a jump to the start of {@code areaLine} of {@code buffer} (a file-backed buffer's area line). */
+    void recordJumpToLine(NavigationHistory.Location origin, EditorBuffer buffer, int areaLine) {
+        recordJump(origin, new NavigationHistory.Location(buffer.getPath(), documentLine(buffer, areaLine), 0));
     }
 
     /** Records a jump into the back/forward history: the {@code origin} we left, then the {@code dest}. */
@@ -328,6 +367,9 @@ final class NavigationCoordinator {
         Tab tab = host.tabForPath(path);
         EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
         CodeArea area = buffer == null ? null : buffer.getArea();
+        if (area != null && buffer.isNarrowed()) { // a recorded line is a document line; the area is the region
+            line -= documentLine(buffer, 0);
+        }
         if (area == null || line < 0 || line >= area.getParagraphs().size()) {
             return "";
         }

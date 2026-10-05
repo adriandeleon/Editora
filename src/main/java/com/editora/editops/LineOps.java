@@ -5,14 +5,63 @@ package com.editora.editops;
  * down</b> — computing a minimal {@link Edit} (a replacement span + the resulting caret) from the current
  * text + caret, or {@code null} for a no-op. No toolkit dependency; the controller applies the
  * {@code Edit} to the active {@code CodeArea} (mirrors {@link Transposer}). All operate on the caret's
- * own line and preserve the caret column, following the line as it moves/duplicates.
+ * own line and preserve the caret column, following the line as it moves/duplicates. With a selection the
+ * {@code …Lines} variants act on every line it touches as one block and keep it selected.
  */
 public final class LineOps {
 
     /** Replace {@code [from, to)} with {@code replacement}, then place the caret at {@code caret}. */
     public record Edit(int from, int to, String replacement, int caret) {}
 
+    /** Replace {@code [from, to)} with {@code replacement}, then select {@code [selStart, selEnd)}. */
+    public record BlockEdit(int from, int to, String replacement, int selStart, int selEnd) {}
+
     private LineOps() {}
+
+    /** {@code {start, end}} of the whole lines the selection touches (end excludes the last newline). A
+     *  selection ending exactly at a line start doesn't include that trailing line. */
+    private static int[] blockBounds(String text, int selStart, int selEnd) {
+        int a = Math.clamp(Math.min(selStart, selEnd), 0, text.length());
+        int b = Math.clamp(Math.max(selStart, selEnd), 0, text.length());
+        int effEnd = b > a && text.charAt(b - 1) == '\n' ? b - 1 : b;
+        return new int[] {lineStart(text, a), lineEnd(text, effEnd)};
+    }
+
+    /** Duplicate the selection's lines below themselves; the selection follows onto the copy. */
+    public static BlockEdit duplicateLines(String text, int selStart, int selEnd) {
+        int[] block = blockBounds(text, selStart, selEnd);
+        String lines = text.substring(block[0], block[1]);
+        int shift = lines.length() + 1;
+        return new BlockEdit(block[1], block[1], "\n" + lines, selStart + shift, selEnd + shift);
+    }
+
+    /** Move the selection's lines above the line before them, still selected. No-op at the top. */
+    public static BlockEdit moveLinesUp(String text, int selStart, int selEnd) {
+        int[] block = blockBounds(text, selStart, selEnd);
+        if (block[0] == 0) {
+            return null;
+        }
+        int prevStart = lineStart(text, block[0] - 1);
+        String prevLine = text.substring(prevStart, block[0] - 1);
+        String repl = text.substring(block[0], block[1]) + "\n" + prevLine;
+        int shift = prevLine.length() + 1;
+        return new BlockEdit(prevStart, block[1], repl, selStart - shift, selEnd - shift);
+    }
+
+    /** Move the selection's lines below the line after them, still selected. No-op at the bottom. */
+    public static BlockEdit moveLinesDown(String text, int selStart, int selEnd) {
+        int[] block = blockBounds(text, selStart, selEnd);
+        if (block[1] >= text.length()) {
+            return null;
+        }
+        int nextEnd = lineEnd(text, block[1] + 1);
+        String nextLine = text.substring(block[1] + 1, nextEnd);
+        String repl = nextLine + "\n" + text.substring(block[0], block[1]);
+        int shift = nextLine.length() + 1;
+        // A selection that took the block's trailing newline has none to take once the block is last.
+        return new BlockEdit(
+                block[0], nextEnd, repl, Math.min(selStart + shift, nextEnd), Math.min(selEnd + shift, nextEnd));
+    }
 
     /** Start of the line containing {@code pos} (index just after the previous newline, or 0). */
     private static int lineStart(String text, int pos) {

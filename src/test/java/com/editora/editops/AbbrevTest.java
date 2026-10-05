@@ -6,7 +6,9 @@ import com.editora.editops.Abbrev.Edit;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure abbreviation expander (no toolkit). */
 class AbbrevTest {
@@ -105,5 +107,31 @@ class AbbrevTest {
     private static String expandAt(String text, int point) {
         Edit e = Abbrev.expand(text, point, TABLE);
         return e == null ? null : text.substring(0, e.from()) + e.replacement() + text.substring(e.to());
+    }
+
+    @Test
+    void aTypedTerminatorEndsAWord() {
+        assertTrue(Abbrev.terminates(" "));
+        assertTrue(Abbrev.terminates("."));
+        assertTrue(Abbrev.terminates("\n"));
+        assertFalse(Abbrev.terminates("a"), "still inside the word");
+        assertFalse(Abbrev.terminates(""));
+        assertFalse(Abbrev.terminates(null));
+    }
+
+    @Test
+    void whatTheTypingAssistsInsertForOneKeyEndsAWordToo() {
+        assertTrue(Abbrev.terminates("\n    "), "Enter with auto-indent");
+        assertTrue(Abbrev.terminates("\n\t"));
+        assertTrue(Abbrev.terminates("()"), "an auto-closed pair");
+        assertTrue(Abbrev.terminates("\"\""));
+    }
+
+    @Test
+    void aPasteNeverEndsAWord() {
+        assertFalse(Abbrev.terminates(", and more"));
+        assertFalse(Abbrev.terminates("\nnext line"));
+        assertFalse(Abbrev.terminates("(x"));
+        assertFalse(Abbrev.terminates(")("), "two characters that are not a pair");
     }
 }

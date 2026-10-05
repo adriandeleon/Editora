@@ -243,6 +243,20 @@ public final class ConfigWriter {
         });
     }
 
+    /**
+     * Logs and surfaces a write that failed <em>outside</em> the queue — a store written synchronously on the
+     * caller's thread — through the same handler as a queued one, so every lost config write is reported the
+     * same way. Never throws.
+     */
+    void reportWriteError(Path file, IOException failure) {
+        LOG.log(Level.SEVERE, "Failed to write config file " + file, failure);
+        try {
+            onWriteError.accept(file, failure);
+        } catch (RuntimeException handlerFailure) {
+            LOG.log(Level.WARNING, "Config write failure handler failed", handlerFailure);
+        }
+    }
+
     private static void complete(PendingWrite write, WriteOutcome outcome) {
         if (write == null) {
             return;
@@ -298,6 +312,10 @@ public final class ConfigWriter {
         // Remove the fixed-name temporary file used by older Editora versions. New writes use a unique
         // owner-only file below, so independent atomic writers cannot truncate or move each other's temp.
         files.deleteIfExists(file.resolveSibling(file.getFileName() + ".tmp"));
+        // A config file kept as a symlink into a dotfiles repository (stow, chezmoi) is written through the
+        // link: a rename onto the link would replace the link itself and silently detach the repository copy.
+        // The temp file is staged beside the real file so the move stays on one filesystem (atomic).
+        file = resolveLink(file);
         Path tmp = createOwnerOnlyTemp(file, files);
         boolean replaced = false;
         try {
@@ -312,6 +330,15 @@ public final class ConfigWriter {
             if (!replaced) {
                 files.deleteIfExists(tmp);
             }
+        }
+    }
+
+    /** The real file behind a symlinked {@code file}; a broken link or a failed lookup yields the path as given. */
+    private static Path resolveLink(Path file) {
+        try {
+            return Files.isSymbolicLink(file) ? file.toRealPath() : file;
+        } catch (IOException brokenLink) {
+            return file;
         }
     }
 

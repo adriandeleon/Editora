@@ -301,17 +301,35 @@ public final class FakeDebugAdapter implements AutoCloseable {
         @Override
         public CompletableFuture<ThreadsResponse> threads() {
             record("threads");
-            org.eclipse.lsp4j.debug.Thread thread = new org.eclipse.lsp4j.debug.Thread();
-            thread.setId(7);
-            thread.setName("main");
+            List<org.eclipse.lsp4j.debug.Thread> all = new java.util.ArrayList<>();
+            all.add(thread(7, "main"));
+            for (int id : runningThreads) {
+                all.add(thread(id, "worker-" + id));
+            }
             ThreadsResponse response = new ThreadsResponse();
-            response.setThreads(new org.eclipse.lsp4j.debug.Thread[] {thread});
+            response.setThreads(all.toArray(new org.eclipse.lsp4j.debug.Thread[0]));
             return CompletableFuture.completedFuture(response);
+        }
+
+        private static org.eclipse.lsp4j.debug.Thread thread(int id, String name) {
+            org.eclipse.lsp4j.debug.Thread thread = new org.eclipse.lsp4j.debug.Thread();
+            thread.setId(id);
+            thread.setName(name);
+            return thread;
         }
 
         @Override
         public CompletableFuture<StackTraceResponse> stackTrace(StackTraceArguments args) {
             record("stackTrace");
+            if (runningThreads.contains(args.getThreadId())) {
+                return refused("Thread " + args.getThreadId() + " is not suspended");
+            }
+            StackTraceResponse response = new StackTraceResponse();
+            List<StackFrame> scripted = frames;
+            if (scripted != null) {
+                response.setStackFrames(scripted.toArray(new StackFrame[0]));
+                return CompletableFuture.completedFuture(response);
+            }
             StackFrame frame = new StackFrame();
             frame.setId(1);
             frame.setName(first && multiSession ? "root" : "debuggee");
@@ -321,7 +339,6 @@ public final class FakeDebugAdapter implements AutoCloseable {
                 source.setPath(framePath);
                 frame.setSource(source);
             }
-            StackTraceResponse response = new StackTraceResponse();
             response.setStackFrames(new StackFrame[] {frame});
             return CompletableFuture.completedFuture(response);
         }
@@ -368,6 +385,127 @@ public final class FakeDebugAdapter implements AutoCloseable {
             record("disconnect");
             disconnected.countDown();
             return CompletableFuture.completedFuture(null);
+        }
+        // --- scripted inspection: scopes, variables, evaluate, setVariable -----------------------------
+
+        /** The reference of the one "Locals" scope every {@code scopes} request answers with. */
+        public static final int LOCALS = 1000;
+
+        /** Container reference → its children, as the test scripted them (see {@link #variable}). */
+        public final Map<Integer, List<org.eclipse.lsp4j.debug.Variable>> variables =
+                new java.util.concurrent.ConcurrentHashMap<>();
+        /** Container reference → the length of an int array whose {@code [i]} children are generated. */
+        public final Map<Integer, Integer> arrays = new java.util.concurrent.ConcurrentHashMap<>();
+        /** Whether a {@code start}/{@code count} request for an array is honoured (else: every element). */
+        public volatile boolean pagingHonoured = true;
+        /** Every {@code variables} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.VariablesArguments> variableRequests = new CopyOnWriteArrayList<>();
+        /** When set, every {@code setVariable} is refused with this message. */
+        public volatile String setVariableFailure;
+        /** When set, {@code stackTrace} answers these frames instead of the single default one. */
+        public volatile List<StackFrame> frames;
+        /** Extra threads that are listed but not suspended: their {@code stackTrace} is refused. */
+        public final List<Integer> runningThreads = new CopyOnWriteArrayList<>();
+
+        /** A child for {@link #variables}; {@code reference > 0} makes it expandable. */
+        public static org.eclipse.lsp4j.debug.Variable variable(String name, String value, int reference) {
+            org.eclipse.lsp4j.debug.Variable v = new org.eclipse.lsp4j.debug.Variable();
+            v.setName(name);
+            v.setValue(value);
+            v.setVariablesReference(reference);
+            return v;
+        }
+
+        /** An expandable array child for {@link #variables} that reports its length, as a paging adapter does. */
+        public org.eclipse.lsp4j.debug.Variable array(String name, int reference, int length) {
+            arrays.put(reference, length);
+            org.eclipse.lsp4j.debug.Variable v = variable(name, "int[" + length + "]", reference);
+            v.setIndexedVariables(length);
+            return v;
+        }
+
+        /** A frame for {@link #frames}; {@code path} may be null (or not a file at all). */
+        public static StackFrame frame(int id, String name, String path, int line) {
+            StackFrame frame = new StackFrame();
+            frame.setId(id);
+            frame.setName(name);
+            frame.setLine(line);
+            if (path != null) {
+                org.eclipse.lsp4j.debug.Source source = new org.eclipse.lsp4j.debug.Source();
+                source.setPath(path);
+                frame.setSource(source);
+            }
+            return frame;
+        }
+
+        private static <T> CompletableFuture<T> refused(String message) {
+            return CompletableFuture.failedFuture(new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                    new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.RequestFailed, message, null)));
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.ScopesResponse> scopes(
+                org.eclipse.lsp4j.debug.ScopesArguments args) {
+            record("scopes");
+            org.eclipse.lsp4j.debug.Scope scope = new org.eclipse.lsp4j.debug.Scope();
+            scope.setName("Locals");
+            scope.setVariablesReference(LOCALS);
+            scope.setExpensive(false);
+            org.eclipse.lsp4j.debug.ScopesResponse response = new org.eclipse.lsp4j.debug.ScopesResponse();
+            response.setScopes(new org.eclipse.lsp4j.debug.Scope[] {scope});
+            return CompletableFuture.completedFuture(response);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.VariablesResponse> variables(
+                org.eclipse.lsp4j.debug.VariablesArguments args) {
+            variableRequests.add(args);
+            record("variables");
+            List<org.eclipse.lsp4j.debug.Variable> out = new java.util.ArrayList<>();
+            Integer length = arrays.get(args.getVariablesReference());
+            if (length != null) {
+                int from = 0;
+                int to = length;
+                if (pagingHonoured && args.getCount() != null && args.getCount() > 0) {
+                    from = Math.min(length, args.getStart() == null ? 0 : args.getStart());
+                    to = Math.min(length, from + args.getCount());
+                }
+                for (int i = from; i < to; i++) {
+                    out.add(variable("[" + i + "]", Integer.toString(i), 0));
+                }
+            } else {
+                out.addAll(variables.getOrDefault(args.getVariablesReference(), List.of()));
+            }
+            org.eclipse.lsp4j.debug.VariablesResponse response = new org.eclipse.lsp4j.debug.VariablesResponse();
+            response.setVariables(out.toArray(new org.eclipse.lsp4j.debug.Variable[0]));
+            return CompletableFuture.completedFuture(response);
+        }
+
+        /** Evaluates to {@code val(<expression>)}; an expression starting with {@code bad} is refused. */
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.EvaluateResponse> evaluate(
+                org.eclipse.lsp4j.debug.EvaluateArguments args) {
+            record("evaluate");
+            if (args.getExpression().startsWith("bad")) {
+                return refused("Cannot evaluate: " + args.getExpression());
+            }
+            org.eclipse.lsp4j.debug.EvaluateResponse response = new org.eclipse.lsp4j.debug.EvaluateResponse();
+            response.setResult("val(" + args.getExpression() + ")");
+            return CompletableFuture.completedFuture(response);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.SetVariableResponse> setVariable(
+                org.eclipse.lsp4j.debug.SetVariableArguments args) {
+            record("setVariable");
+            String failure = setVariableFailure;
+            if (failure != null) {
+                return refused(failure);
+            }
+            org.eclipse.lsp4j.debug.SetVariableResponse response = new org.eclipse.lsp4j.debug.SetVariableResponse();
+            response.setValue(args.getValue());
+            return CompletableFuture.completedFuture(response);
         }
     }
 }

@@ -330,7 +330,7 @@ lets the user rebind, reset, or reset-all. The mutation logic is the pure, toolk
   — the defaults to rebind/reset against.
 - `rebindShortcut`/`resetShortcut`/`resetAllShortcuts` call the `KeybindingEdits` helpers, persist
   the result to `Settings.keybindings`, and call `reloadKeymap()` so the change is live across all
-  windows (overrides are global and layer on the active keymap).
+  windows (overrides are shared by every window and belong to the active keymap).
 
 The **recorder** turns a row into a live capture field that calls `KeyDispatcher.chord(e)`
 (space-joining a multi-key sequence; Esc cancels) — it runs in the Settings window's own scene, so
@@ -340,7 +340,12 @@ there's no global dispatcher to interfere. The **conflict check** lives in
 warns before stealing it. The same path serves the inline Macros keybinding row.
 
 User overrides persist in `Settings.keybindings` (a `Map<String,String>` of chord → id, with blank
-values meaning UNBIND), serialized with the rest of `settings.json`.
+values meaning UNBIND), serialized with the rest of `settings.json`. That map is the **active keymap's**
+overrides: a rebind stores UNBIND suppressors for the keymap's default chords, and the same chord is a
+different command in another keymap, so overrides must not follow a keymap switch. Change the keymap through
+`KeymapLayers.switchKeymap` → `Settings.switchKeymap`, which parks the current overrides in
+`Settings.keymapKeybindings` (keymap id → overrides; `…Mac` for the Cmd-based map) and restores the ones made
+earlier in the keymap being switched to. `Settings.setKeymap` is the bare property setter and moves nothing.
 
 ## Pickers, input cards and row menus
 

@@ -44,7 +44,12 @@ public final class StringCase {
             }
             if (Character.isUpperCase(c) && !cur.isEmpty()) {
                 char prev = cur.charAt(cur.length() - 1);
-                boolean humpAfterLower = Character.isLowerCase(prev) || Character.isDigit(prev);
+                // A digit ends a word only when a new one starts after it: `base64Url` is two words, but the
+                // N of `I18N` belongs to the all-caps token, or SCREAMING_SNAKE would not convert back.
+                boolean capsToken = Character.isDigit(prev)
+                        && !hasLowerLetter(cur)
+                        && !(i + 1 < n && Character.isLowerCase(token.charAt(i + 1)));
+                boolean humpAfterLower = Character.isLowerCase(prev) || (Character.isDigit(prev) && !capsToken);
                 // Acronym end: "HTTPServer" — split before the upper that starts the next word.
                 boolean acronymEnd =
                         Character.isUpperCase(prev) && i + 1 < n && Character.isLowerCase(token.charAt(i + 1));
@@ -67,6 +72,20 @@ public final class StringCase {
 
     /** Converts {@code token} to the given {@code style}; an empty/word-less token is returned as-is. */
     public static String to(Style style, String token) {
+        // Leading/trailing underscores are part of the name, not separators: `_private`, `__init__`.
+        int lead = 0;
+        while (lead < token.length() && token.charAt(lead) == '_') {
+            lead++;
+        }
+        int trail = token.length();
+        while (trail > lead && token.charAt(trail - 1) == '_') {
+            trail--;
+        }
+        if (lead > 0 || trail < token.length()) {
+            return lead == trail
+                    ? token
+                    : token.substring(0, lead) + to(style, token.substring(lead, trail)) + token.substring(trail);
+        }
         List<String> words = words(token);
         if (words.isEmpty()) {
             return token;
@@ -118,7 +137,7 @@ public final class StringCase {
      * matching separator; a separator-less token is {@code PASCAL} or {@code CAMEL}.
      */
     public static Style detect(String token) {
-        if (token.indexOf('_') >= 0) {
+        if (token.replaceAll("^_+|_+$", "").indexOf('_') >= 0) {
             return hasLowerLetter(token) ? Style.SNAKE : Style.SCREAMING_SNAKE;
         }
         if (token.indexOf('-') >= 0) {
@@ -136,7 +155,7 @@ public final class StringCase {
         return Style.CAMEL;
     }
 
-    private static boolean hasLowerLetter(String s) {
+    private static boolean hasLowerLetter(CharSequence s) {
         for (int i = 0; i < s.length(); i++) {
             if (Character.isLowerCase(s.charAt(i))) {
                 return true;
@@ -193,19 +212,56 @@ public final class StringCase {
      * {@code null} when the caret touches no such character.
      */
     public static int[] tokenAt(String text, int caret) {
+        return tokenAt(text, caret, true);
+    }
+
+    /**
+     * As {@link #tokenAt(String, int)}, with {@code dashes} saying whether {@code -} can be part of a name
+     * here. Where it is an operator ({@link #dashIsOperator}), {@code count-1} is a subtraction — taking it
+     * as one kebab token made the case commands delete the minus ({@code Count1}).
+     */
+    public static int[] tokenAt(String text, int caret, boolean dashes) {
         int n = text.length();
         int start = Math.clamp(caret, 0, n);
         int end = start;
-        while (start > 0 && isTokenChar(text.charAt(start - 1))) {
+        while (start > 0 && isTokenChar(text.charAt(start - 1), dashes)) {
             start--;
         }
-        while (end < n && isTokenChar(text.charAt(end))) {
+        while (end < n && isTokenChar(text.charAt(end), dashes)) {
             end++;
         }
         return start == end ? null : new int[] {start, end};
     }
 
-    private static boolean isTokenChar(char c) {
-        return Character.isLetterOrDigit(c) || c == '_' || c == '-';
+    private static boolean isTokenChar(char c, boolean dashes) {
+        return Character.isLetterOrDigit(c) || c == '_' || (dashes && c == '-');
+    }
+
+    private static final java.util.Set<String> DASH_OPERATOR_LANGUAGES = java.util.Set.of(
+            "java",
+            "c",
+            "cpp",
+            "csharp",
+            "rust",
+            "go",
+            "kotlin",
+            "groovy",
+            "php",
+            "javascript",
+            "typescript",
+            "javascriptreact",
+            "typescriptreact",
+            "python",
+            "ruby",
+            "lua",
+            "sql",
+            "proto");
+
+    /**
+     * Whether {@code -} between two names is an operator in {@code language} rather than part of an
+     * identifier (as it is in CSS, HTML, shell, Lisp-like and prose buffers, where kebab-case names live).
+     */
+    public static boolean dashIsOperator(String language) {
+        return language != null && DASH_OPERATOR_LANGUAGES.contains(language);
     }
 }

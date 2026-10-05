@@ -174,7 +174,11 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v103→104: Codex + LM Studio providers; preserve choices
                     // v104→105: authorName/pluginRegistryUrl persist their raw (blank = follow the default)
                     // value; drop the accidental authorNameRaw key and the never-read ijhttpCommand.
-                    Map.entry(104, (Migration) ConfigMigrations::retireUnusedSettingsKeys)),
+                    Map.entry(104, (Migration) ConfigMigrations::retireUnusedSettingsKeys),
+                    // v105→106: key-binding overrides belong to a keymap. keybindings/keybindingsMac stay where
+                    // they are and now mean "the active keymap's" — which is the keymap every existing user's
+                    // overrides were in force under — and the maps for the other keymaps start empty.
+                    Map.entry(105, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

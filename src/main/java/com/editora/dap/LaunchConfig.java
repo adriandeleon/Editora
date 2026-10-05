@@ -81,6 +81,10 @@ public final class LaunchConfig {
             // tokenizer splits it back into the argv ProgramArgs.tokenize produced (what Run passes).
             m.put("args", javaArgs(args, isWindows()));
         }
+        String shorten = JavaLaunchSupport.shortenCommandLine(m, isWindows(), JavaLaunchSupport::supportsArgFiles);
+        if (shorten != null) {
+            m.put("shortenCommandLine", shorten);
+        }
         m.put("console", "internalConsole");
         m.put("stopOnEntry", stopOnEntry);
         return m;
@@ -182,12 +186,24 @@ public final class LaunchConfig {
 
     /** An {@code attach} request body for a running JVM (JDWP). Blank host defaults to {@code localhost}. */
     public static Map<String, Object> attach(String host, int port) {
+        return attach(host, port, null);
+    }
+
+    /**
+     * As above, naming the jdtls project the debugged code belongs to (omitted when blank). An attach has no
+     * main class java-debug could infer the project from, and without one it can evaluate nothing — not an
+     * expression, not a logpoint, and not a breakpoint condition, which it then treats as met.
+     */
+    public static Map<String, Object> attach(String host, int port, String projectName) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("type", "java");
         m.put("name", "Editora (Attach)");
         m.put("request", "attach");
         m.put("hostName", notBlank(host) ? host : "localhost");
         m.put("port", port);
+        if (notBlank(projectName)) {
+            m.put("projectName", projectName);
+        }
         return m;
     }
 

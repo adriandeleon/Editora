@@ -66,8 +66,65 @@ final class EditingCoordinator {
         this.host = host;
     }
 
-    /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
-    boolean markActive;
+    /**
+     * Emacs mark: while active (C-SPC), caret movement extends the selection from the mark. The state is
+     * <b>per buffer</b>, as in Emacs, and is stamped with the document version it was activated at: any
+     * modification of that buffer — typing, Backspace, undo, a paste, an external reload — moves the version
+     * and so deactivates the mark without every editing path having to remember to. One window-wide flag
+     * instead made {@code C-SPC}, type, {@code C-n} select text the next key then replaced, and carried the
+     * mark into whichever tab was selected next.
+     */
+    private final java.util.Map<EditorBuffer, Long> activeMarks = new java.util.WeakHashMap<>();
+
+    /** Whether the active buffer's mark is active (set there, and the buffer not modified since). */
+    boolean markActive() {
+        EditorBuffer buffer = host.activeBuffer();
+        Long version = buffer == null ? null : activeMarks.get(buffer);
+        if (version == null) {
+            return false;
+        }
+        if (version != buffer.docVersion()) {
+            activeMarks.remove(buffer); // modified since: the mark is gone until it is set again
+            return false;
+        }
+        return true;
+    }
+
+    /** Activates the active buffer's mark; a later modification of that buffer deactivates it. */
+    void activateMark() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null) {
+            activeMarks.put(buffer, buffer.docVersion());
+        }
+    }
+
+    /**
+     * The follow-up for one command run (see {@link CommandRegistry#setRunScope}): when an editing command
+     * changed the active buffer's text, scroll its caret into view. A chord is consumed by the key dispatcher
+     * before the text area sees it, so the area's own "follow the caret after a key" never runs, and a
+     * programmatic edit does not scroll by itself — paste/yank, undo, redo, duplicate line and move line all
+     * left the caret (or the change) off-screen. Keyed on the document version, so a command that only
+     * scrolls, selects or navigates is left alone, as is one that switched tabs.
+     *
+     * <p>Only the editor-context commands ({@code edit.*}, and a macro replaying them) — the ones that stand
+     * in for typing. A command that edits as a side effect (a save that trims trailing whitespace) must not
+     * pull a deliberately scrolled view back to the caret.
+     */
+    Runnable revealCaretAfterEdit(String commandId) {
+        if (!commandId.startsWith("edit.") && !commandId.startsWith("macro.")) {
+            return null;
+        }
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return null;
+        }
+        long version = buffer.docVersion();
+        return () -> {
+            if (host.activeBuffer() == buffer && buffer.docVersion() != version) {
+                buffer.getFocusedArea().requestFollowCaret();
+            }
+        };
+    }
 
     /** Expand/shrink-selection history (the pure stack); see {@link #expandSelection}/{@link #shrinkSelection}. */
     final com.editora.editops.SmartSelectStack smartSelect = new com.editora.editops.SmartSelectStack();
@@ -119,11 +176,74 @@ final class EditingCoordinator {
     }
 
     void onUndo() {
-        withArea(CodeArea::undo);
+        if (!undoIsOff()) {
+            undoOrRedo(false);
+        }
     }
 
     void onRedo() {
-        withArea(CodeArea::redo);
+        if (!undoIsOff()) {
+            undoOrRedo(true);
+        }
+    }
+
+    /** Through the buffer, which keeps multiple carets in place and usable across the replayed edit. */
+    private void undoOrRedo(boolean redo) {
+        EditorBuffer b = host.activeBuffer();
+        withArea(a -> {
+            if (b != null) {
+                b.undoOrRedo(a, redo);
+            } else if (redo) {
+                a.redo();
+            } else {
+                a.undo();
+            }
+        });
+    }
+
+    /**
+     * Ends the active buffer's undo group. Run on both sides of every command (see
+     * {@code CommandRegistry#setBoundaryHook}) so a command's edit never merges into adjacent typing or
+     * into the same command repeated.
+     */
+    void undoBoundary() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null) {
+            b.preventUndoMerge();
+        }
+    }
+
+    /** Collapses the active buffer's extra carets, if any (C-g, Select All, document start/end). */
+    void collapseCarets() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null) {
+            b.collapseCarets();
+        }
+    }
+
+    /**
+     * Large-file mode keeps no undo history, by design (a very large file, or one very long line). Undo was
+     * then a silent no-op on a fully editable document; say why nothing happened.
+     */
+    private boolean undoIsOff() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null || !buffer.isLargeFile()) {
+            return false;
+        }
+        host.setStatus(tr("status.undoOffLargeFile"));
+        return true;
+    }
+
+    /**
+     * Multiple carets with nothing selected at any of them, while "copy/cut the line when nothing is
+     * selected" is off: Cut and Copy then have nothing to act on, exactly as with one caret. The fork's
+     * multi-caret cut/copy fall back to whole lines unconditionally.
+     */
+    private boolean nothingSelectedAtAnyCaret(EditorBuffer b) {
+        return b != null
+                && b.hasMultipleCarets()
+                && !host.config().getSettings().isCopyLineWhenNoSelection()
+                && !b.anyCaretSelection();
     }
 
     void onCut() {
@@ -131,6 +251,10 @@ final class EditingCoordinator {
             return;
         }
         EditorBuffer b = host.activeBuffer();
+        if (nothingSelectedAtAnyCaret(b)) {
+            host.setStatus(tr("status.nothingToCut"));
+            return;
+        }
         if (b != null && b.multiCaretCut()) { // every caret's selection, one undoable step
             adoptClipboardAsKill();
             deactivateMark();
@@ -162,6 +286,10 @@ final class EditingCoordinator {
 
     void onCopy() {
         EditorBuffer b = host.activeBuffer();
+        if (nothingSelectedAtAnyCaret(b)) {
+            host.setStatus(tr("status.nothingToCopy"));
+            return;
+        }
         if (b != null && b.multiCaretCopy()) { // every caret's selection (VS Code one-line-per-caret)
             adoptClipboardAsKill();
             deactivateMark();
@@ -530,6 +658,7 @@ final class EditingCoordinator {
         CodeArea area = host.activeArea();
         if (area != null) {
             area.insertText(area.getCaretPosition(), String.valueOf(ch).repeat(count));
+            area.requestFollowCaret(); // the key was consumed, so the area's own follow never runs
         }
     }
 
@@ -545,7 +674,7 @@ final class EditingCoordinator {
         }
         int caret = area.getCaretPosition();
         area.selectRange(caret, caret); // anchor = caret; ADJUST moves then extend from here
-        markActive = true;
+        activateMark();
         buffer.pushMark(caret); // record on the mark ring so pop-mark can return here later
         host.setStatus(tr("status.markSet"));
     }
@@ -579,13 +708,16 @@ final class EditingCoordinator {
             return;
         }
         area.selectRange(area.getCaretPosition(), area.getAnchor());
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
     /** Clears the Emacs mark (e.g. after a clipboard action or a mouse click). */
     void deactivateMark() {
-        markActive = false;
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null) {
+            activeMarks.remove(buffer);
+        }
     }
 
     void withArea(java.util.function.Consumer<CodeArea> action) {
@@ -640,7 +772,8 @@ final class EditingCoordinator {
         }
         // The comment logic lives on the buffer (so the editor right-click menu can invoke it too).
         if (!buffer.toggleComment()) {
-            host.setStatus(tr("status.noCommentSyntax"));
+            // With comment syntax available the only refusal left is a block comment that would nest.
+            host.setStatus(tr(buffer.supportsComments() ? "status.commentCannotNest" : "status.noCommentSyntax"));
         }
     }
 
@@ -674,6 +807,26 @@ final class EditingCoordinator {
 
     /** Applies a pure {@link com.editora.editops.LineOps} edit to the active area (duplicate / move line). */
     void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op) {
+        lineOp(op, null);
+    }
+
+    private static int paragraphOf(CodeArea area, int offset) {
+        return area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+    }
+
+    /** A block form of a {@link com.editora.editops.LineOps} command: {@code (text, selStart, selEnd)}. */
+    interface LineBlockOp {
+        com.editora.editops.LineOps.BlockEdit apply(String text, int selStart, int selEnd);
+    }
+
+    /**
+     * {@link #lineOp(java.util.function.BiFunction)}, acting on every line of a selection as one block
+     * (which stays selected) when there is one — a selection used to collapse and only the caret's line
+     * moved.
+     */
+    void lineOp(
+            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
         if (!activeEditable()) {
             return;
         }
@@ -682,6 +835,28 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
+        if (blockOp != null && area.getSelection().getLength() > 0) {
+            int start = area.getSelection().getStart();
+            int end = area.getSelection().getEnd();
+            // Folds next to either end of the block move (or are moved over) as units.
+            String text = area.getText();
+            String units = buffer.getFoldManager().linesAsUnits(text, paragraphOf(area, start));
+            if (units.equals(text)) {
+                units = buffer.getFoldManager().linesAsUnits(text, paragraphOf(area, end));
+            }
+            com.editora.editops.LineOps.BlockEdit edit = blockOp.apply(units, start, end);
+            if (edit == null) {
+                return;
+            }
+            boolean caretFirst = area.getCaretPosition() == start;
+            buffer.getFoldManager().expandHeaderAt(start);
+            buffer.getFoldManager().expandHeaderAt(end);
+            area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+            area.selectRange(
+                    caretFirst ? edit.selEnd() : edit.selStart(), caretFirst ? edit.selStart() : edit.selEnd());
+            area.requestFocus();
+            return;
+        }
         com.editora.editops.LineOps.Edit edit = op.apply(linesAsUnits(buffer, area), area.getCaretPosition());
         if (edit == null) {
             return;
@@ -1432,7 +1607,7 @@ final class EditingCoordinator {
             return;
         }
         area.selectRange(span[0], span[1]);
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
@@ -1443,12 +1618,12 @@ final class EditingCoordinator {
             return;
         }
         int caret = area.getCaretPosition();
-        int end = com.editora.editops.SexpNav.forward(area.getText(), caret);
+        int end = com.editora.editops.SexpNav.forwardBalanced(area.getText(), caret);
         if (end <= caret) {
             return;
         }
         area.selectRange(caret, end);
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
@@ -1463,7 +1638,7 @@ final class EditingCoordinator {
             return;
         }
         area.selectRange(bounds[0], bounds[1]);
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
@@ -1500,7 +1675,7 @@ final class EditingCoordinator {
         }
         area.selectRange(next[0], next[1]);
         area.requestFollowCaret();
-        markActive = true;
+        activateMark();
     }
 
     /** Semantic shrink-selection (VS Code {@code Shift+Alt+Left}): pop back to the previous expand range. */
@@ -1516,14 +1691,18 @@ final class EditingCoordinator {
         }
         area.selectRange(prev[0], prev[1]);
         area.requestFollowCaret();
-        markActive = prev[0] != prev[1];
+        if (prev[0] != prev[1]) {
+            activateMark();
+        } else {
+            deactivateMark();
+        }
     }
 
     /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
     void killSexp() {
         emacsKill(
                 (text, caret) -> {
-                    int end = com.editora.editops.SexpNav.forward(text, caret);
+                    int end = com.editora.editops.SexpNav.forwardBalanced(text, caret);
                     return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
                 },
                 KillRing.Direction.FORWARD);
@@ -1639,7 +1818,12 @@ final class EditingCoordinator {
     /** Emacs {@code fill-paragraph} (`M-q`): re-wrap the paragraph at the caret to the fill column. */
     void fillParagraph() {
         applyFill((text, b) -> com.editora.editops.Filler.fillParagraph(
-                text, b.getFocusedArea().getCaretPosition(), fillColumn(), lineCommentFor(b)));
+                text,
+                b.getFocusedArea().getCaretPosition(),
+                fillColumn(),
+                lineCommentFor(b),
+                com.editora.editops.Filler.Mode.forLanguage(b.getLanguage()),
+                b.getTabSize()));
     }
 
     /** Emacs {@code fill-region}: re-wrap every paragraph in the selection (caret line if no selection). */
@@ -1648,7 +1832,14 @@ final class EditingCoordinator {
             CodeArea a = b.getFocusedArea();
             int start = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
             int end = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : a.getCaretPosition();
-            return com.editora.editops.Filler.fillRegion(text, start, end, fillColumn(), lineCommentFor(b));
+            return com.editora.editops.Filler.fillRegion(
+                    text,
+                    start,
+                    end,
+                    fillColumn(),
+                    lineCommentFor(b),
+                    com.editora.editops.Filler.Mode.forLanguage(b.getLanguage()),
+                    b.getTabSize());
         });
     }
 
@@ -1724,7 +1915,10 @@ final class EditingCoordinator {
             from = sel.getStart();
             to = sel.getEnd();
         } else {
-            int[] token = com.editora.editops.StringCase.tokenAt(area.getText(), area.getCaretPosition());
+            int[] token = com.editora.editops.StringCase.tokenAt(
+                    area.getText(),
+                    area.getCaretPosition(),
+                    !com.editora.editops.StringCase.dashIsOperator(buffer.getLanguage()));
             if (token == null) {
                 host.setStatus(tr("status.stringops.noTarget"));
                 return;
@@ -1977,7 +2171,10 @@ final class EditingCoordinator {
                         }
                         host.config().getSettings().setFillColumn(col);
                         host.config().save();
-                        host.setStatus(tr("status.fillColumn.set", col));
+                        if (host.settingsWindow() != null) {
+                            host.settingsWindow().syncAll(); // an open Settings window shows the new column
+                        }
+                        host.setStatus(tr("status.fillColumn.set", fillColumn()));
                     } catch (NumberFormatException e) {
                         host.setStatus(tr("status.fillColumn.invalid"));
                     }
@@ -1988,6 +2185,7 @@ final class EditingCoordinator {
     void selectAll() {
         CodeArea area = host.activeArea();
         if (area != null) {
+            collapseCarets(); // a leftover extra caret would type alongside the replaced selection
             area.selectAll();
             area.requestFocus();
         }
@@ -1995,7 +2193,7 @@ final class EditingCoordinator {
 
     /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
     void moveLine(int delta) {
-        if (multiCaretMove(b -> b.multiMoveVertical(delta > 0, markActive))) {
+        if (multiCaretMove(b -> b.multiMoveVertical(delta > 0, markActive()))) {
             return;
         }
         EditorBuffer buffer = host.activeBuffer();
@@ -2080,10 +2278,10 @@ final class EditingCoordinator {
     /** Position of the next word boundary at or after {@code from}: skip non-word chars, then word chars. */
     static int nextWordBoundary(String text, int from) {
         int i = from;
-        while (i < text.length() && !Character.isLetterOrDigit(text.charAt(i))) {
+        while (i < text.length() && !com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i))) {
             i++;
         }
-        while (i < text.length() && Character.isLetterOrDigit(text.charAt(i))) {
+        while (i < text.length() && com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i))) {
             i++;
         }
         return i;
@@ -2092,10 +2290,10 @@ final class EditingCoordinator {
     /** Position of the previous word boundary at or before {@code from}. */
     static int prevWordBoundary(String text, int from) {
         int i = from;
-        while (i > 0 && !Character.isLetterOrDigit(text.charAt(i - 1))) {
+        while (i > 0 && !com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i - 1))) {
             i--;
         }
-        while (i > 0 && Character.isLetterOrDigit(text.charAt(i - 1))) {
+        while (i > 0 && com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i - 1))) {
             i--;
         }
         return i;

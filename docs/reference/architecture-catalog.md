@@ -307,8 +307,9 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   global `Settings.indentStyle` (`detect`/`space`/`tab`, default `detect`; Settings → Editor "Indent style"
   combo + the `editor.setIndentStyle` palette picker via `chooseSetting`; schema 30→31 additive-identity) >
   per-file `Indenter.detectUnit`** (so the global preference applies even when EditorConfig is off / a file
-  is remote / has no path — it runs in the early-return branch too; `detectUnit` reads the first indented
-  line and **falls back to spaces** when the file has no indentation, matching VSCode/IntelliJ's
+  is remote / has no path — it runs in the early-return branch too; `detectUnit` reads the first *really*
+  indented line — not a one-space line or a ` * ` comment continuation — takes the file's own space step
+  (2–8) as the width, and **falls back to spaces** when the file has no indentation, matching VSCode/IntelliJ's
   "spaces unless detected as tabs" default), tab width (`setTabSize`), EOL
   (`setEolOverride` — set and *cleared* from `end_of_line` on every apply; `getLineEnding()` returns it,
   else the buffer's own `lineEnding`: the RichTextFX document never holds `\r`, so

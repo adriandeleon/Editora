@@ -621,6 +621,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
         registry.setExecutionListener(macroCoordinator::onCommand);
+        registry.setBoundaryHook(editing::undoBoundary); // a command's edit is its own undo step
         this.snippets = new com.editora.snippet.SnippetManager(config);
         templateActions.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
@@ -1022,7 +1023,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private Chrome.PaletteContext paletteContext() {
         EditorBuffer b = activeBuffer();
-        boolean debugActive = dapManager.isActive();
+        boolean debugActive = debugCoordinator != null && debugCoordinator.sessionLive(); // incl. starting/building
         boolean suspended = dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED;
         return new Chrome.PaletteContext(
                 b != null,
@@ -1216,7 +1217,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private void onSettingsApplied(Settings settings) {
         if (windowManager != null) {
-            windowManager.broadcastSettingsApplied(); // re-applies to every window, including this one
+            windowManager.broadcastSettingsApplied(this); // re-applies to every window, including this one
             windowManager.broadcastExternalToolsChanged(); // re-sync externalTool.run.* after a Settings edit
         } else {
             editorSettings.applyViewSettingsToAllBuffers(settings);
@@ -1602,6 +1603,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setPath(target);
             editorSettings.applyEditorConfig(buffer);
             lspCoordinator.documentPathChanged(buffer, old, oldLspAlreadyClosed);
+            debugCoordinator.bufferPathChanged(buffer, old);
             updateTabMeta(tab, buffer);
             if (buffer == activeBuffer()) {
                 breadcrumb.setActiveFile(target);
@@ -1624,6 +1626,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     b.setPath(moved);
                     editorSettings.applyEditorConfig(b);
                     lspCoordinator.documentPathChanged(b, p, oldLspAlreadyClosed);
+                    debugCoordinator.bufferPathChanged(b, p);
                     updateTabMeta(t, b);
                     migrateFileState(p, moved);
                     if (b == activeBuffer()) {
@@ -1709,7 +1712,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.getFoldManager().unfoldContaining(line);
         area.moveTo(line, 0);
         if (!navigation.navigating && buffer.getPath() != null) {
-            navigation.recordJump(origin, new NavigationHistory.Location(buffer.getPath(), line, 0));
+            navigation.recordJumpToLine(origin, buffer, line);
         }
         Platform.runLater(() -> {
             try {
@@ -1751,7 +1754,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             projectPanel.revealPathInTree(file);
             return;
         }
-        fileWorkflows.openThen(file, () -> navigateToLine(line));
+        fileWorkflows.openThen(file, () -> navigateToLine(navigation.areaLine(activeBuffer(), line)));
     }
 
     /**
@@ -2430,7 +2433,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void openPath(Path file) {
-                        fileWorkflows.openPath(file);
+                        fileWorkflows.openPath(file, true); // no "Already open" echo on every stop and step
+                    }
+
+                    @Override
+                    public boolean isToolWindowOpen() {
+                        return toolWindows.isOpen(debugToolWindow);
                     }
 
                     @Override
@@ -5058,6 +5066,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
                     lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
+                    debugCoordinator.bufferPathChanged(buffer, oldPath);
                 }
 
                 @Override
@@ -6545,7 +6554,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     routingFile,
                     new com.editora.dap.DapManager.MainClassOption(mc.fqn(), mc.projectName(), mc.filePath()),
                     r -> cb.accept(new com.editora.run.JavaLaunchInfo(
-                            r.javaExec(), r.modulePaths(), r.classPaths(), r.error())));
+                            r.javaExec(), r.modulePaths(), r.classPaths(), r.error(), r.enablePreview())));
         }
 
         @Override
@@ -8808,7 +8817,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (target.equals(old)) {
             return;
         }
-        if (Files.exists(target)) {
+        boolean caseOnly = com.editora.io.CaseOnlyRename.isAlias(old, target); // README.md on a case-blind volume
+        if (!caseOnly && Files.exists(target)) {
             setStatus(tr("status.renameFailedExists", target.getFileName()));
             return;
         }
@@ -8818,7 +8828,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         String oldNoteKey = noteKey(buffer);
         fileWorkflows.invalidatePendingWrite(old);
         try {
-            Files.move(old, target);
+            if (caseOnly) {
+                com.editora.io.CaseOnlyRename.move(old, target);
+            } else {
+                Files.move(old, target);
+            }
         } catch (IOException e) {
             setStatus(tr("status.renameFailed", e.getMessage()));
             return;
@@ -9469,6 +9483,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         chrome.applyChromeVisibility();
         editorSettings.applyViewSettingsToAllBuffers(config.getSettings());
+        settingsWindow.syncFocusModeChecks();
         requestSave();
         // When entering Zen the status bar is hidden, so this is mostly seen on exit.
         setStatus(tr("status.toggle.zen", tr(on ? "common.on" : "common.off")));
@@ -9500,6 +9515,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         chrome.applyChromeVisibility();
         editorSettings.applyViewSettingsToAllBuffers(config.getSettings());
+        settingsWindow.syncFocusModeChecks();
         requestSave();
         setStatus(tr("status.toggle.expert", tr(on ? "common.on" : "common.off")));
     }
@@ -9844,25 +9860,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void exportConfig() {
-        try {
-            java.nio.file.Path zip = config.exportConfig();
-            setStatus(tr("status.config.exported", zip.toString()));
-            Alert ok = new Alert(Alert.AlertType.INFORMATION);
-            ok.initOwner(stage);
-            ok.setTitle(tr("dialog.exportConfig.title"));
-            ok.setHeaderText(tr("dialog.exportConfig.done"));
-            ok.setContentText(zip.toString());
-            ok.showAndWait();
-        } catch (Exception e) {
-            String msg = String.valueOf(e.getMessage());
-            setStatus(tr("status.config.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(stage);
-            err.setTitle(tr("dialog.exportConfig.title"));
-            err.setHeaderText(tr("dialog.exportConfig.failed"));
-            err.setContentText(msg);
-            err.showAndWait();
-        }
+        BackgroundTasks.Handle task = backgroundTasks.start(tr("dialog.exportConfig.title"));
+        // Off the FX thread: the export waits for pending writes and compresses the whole config directory.
+        config.shared()
+                .exportConfigAsync()
+                .whenComplete((zip, failure) -> Platform.runLater(() -> {
+                    task.done();
+                    String detail = failure == null ? zip.toString() : String.valueOf(failure.getMessage());
+                    setStatus(tr(failure == null ? "status.config.exported" : "status.config.exportFailed", detail));
+                    Alert alert = new Alert(failure == null ? Alert.AlertType.INFORMATION : Alert.AlertType.ERROR);
+                    alert.initOwner(stage);
+                    alert.setTitle(tr("dialog.exportConfig.title"));
+                    alert.setHeaderText(
+                            tr(failure == null ? "dialog.exportConfig.done" : "dialog.exportConfig.failed"));
+                    alert.setContentText(detail);
+                    alert.showAndWait();
+                }));
     }
 
     /** Re-runs the spell pass over every open buffer in this window (after the user dictionary changed). */
@@ -9924,7 +9937,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         } else if (findBar.isShown()) {
             findBar.hideBar();
         } else {
-            editing.markActive = false;
+            editing.deactivateMark();
+            editing.collapseCarets(); // C-g leaves one caret, as Escape does
             CodeArea area = activeArea();
             if (area != null) {
                 area.deselect();
@@ -9935,7 +9949,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The selection policy for caret-movement commands: extend from the mark when it's active. */
     private SelectionPolicy selPolicy() {
-        return editing.markActive ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
+        return editing.markActive() ? SelectionPolicy.ADJUST : SelectionPolicy.CLEAR;
     }
 
     private static Path pathOf(java.io.File file) {

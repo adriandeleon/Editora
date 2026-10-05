@@ -17,6 +17,9 @@ public final class Indenter {
     /** Bounds line/back-scans so Enter stays cheap on huge files. */
     private static final int MAX_SCAN = 8000;
 
+    /** How many lines one wrapped statement is followed over. */
+    private static final int MAX_STATEMENT_LINES = 40;
+
     private Indenter() {}
 
     public enum Style {
@@ -107,7 +110,7 @@ public final class Indenter {
             // In leading whitespace: snap the line up to the indent the surrounding code implies, and put
             // the caret where typing starts.
             String leading = leadingWhitespace(text.substring(ls, lineEnd(text, caret)));
-            String suggested = suggestedIndent(text, ls, style, unit, isHtml(language));
+            String suggested = suggestedIndent(text, ls, style, unit, isHtml(language), tabSize);
             if (width(leading, tabSize) >= width(suggested, tabSize)) {
                 // Already at (or past) that level, so the text is left alone — repeated Tab must not keep
                 // piling on indentation (use Shift-Tab to dedent). The caret still moves to the end of the
@@ -125,9 +128,22 @@ public final class Indenter {
         return new TabEdit(caret, caret, unit, newCaret, newCaret);
     }
 
-    /** The indent the line at {@code lineStart} should have from context: the nearest previous non-blank
-     *  line's indent, plus one unit if that line opens a block. {@code ""} when there's no line above. */
-    private static String suggestedIndent(String text, int lineStart, Style style, String unit, boolean html) {
+    /**
+     * The indent the line at {@code lineStart} should have from context: the nearest previous non-blank
+     * line's indent, plus one unit if that line opens a block. A line that itself begins with a closer
+     * ({@code }}, {@code else}, {@code fi}, {@code </tag>} …) belongs one level out: at its bracket's opener,
+     * else one unit less than a body line would get. {@code ""} when there's no line above.
+     */
+    private static String suggestedIndent(
+            String text, int lineStart, Style style, String unit, boolean html, int tabSize) {
+        String content = text.substring(lineStart, lineEnd(text, lineStart)).stripLeading();
+        boolean closer = startsWithCloser(style, content);
+        if (closer && style != Style.XML && isBracketCloser(content.charAt(0))) {
+            String opener = openerLineIndent(style, text, lineStart, content.charAt(0));
+            if (opener != null) {
+                return opener;
+            }
+        }
         int pos = lineStart;
         int scanned = 0;
         while (pos > 0 && scanned < MAX_SCAN) {
@@ -136,11 +152,47 @@ public final class Indenter {
             scanned += pos - prevStart;
             if (!prevLine.isBlank()) {
                 String ind = leadingWhitespace(prevLine);
-                return opensBlock(style, prevLine, html) ? ind + unit : ind;
+                boolean opens = opensBlock(style, prevLine, html);
+                if (closer) {
+                    return opens ? ind : removeOneIndent(ind, dedentWidth(unit, tabSize));
+                }
+                return opens ? ind + unit : ind;
             }
             pos = prevStart;
         }
         return "";
+    }
+
+    private static boolean isBracketCloser(char c) {
+        return c == '}' || c == ')' || c == ']';
+    }
+
+    /** Whether a line's content begins with a token that closes (or continues, like {@code else}) a block. */
+    private static boolean startsWithCloser(Style style, String content) {
+        if (content.isEmpty() || style == Style.PLAIN) {
+            return false;
+        }
+        if (style == Style.XML) {
+            return content.startsWith("</");
+        }
+        if (isBracketCloser(content.charAt(0))) {
+            return true;
+        }
+        if (style == Style.SHELL && content.startsWith(";;")) {
+            return true;
+        }
+        int end = 0;
+        while (end < content.length() && isWordChar(content.charAt(end))) {
+            end++;
+        }
+        String word = content.substring(0, end);
+        return switch (style) {
+            case SHELL -> SHELL_CLOSERS.contains(word);
+            case RUBY -> RUBY_CLOSERS.contains(word);
+            case LUA -> LUA_CLOSERS.contains(word);
+            case PY -> PY_CLOSERS.contains(word) && content.stripTrailing().endsWith(":");
+            default -> false;
+        };
     }
 
     /**
@@ -166,6 +218,7 @@ public final class Indenter {
     private static final Set<String> SHELL_CLOSERS = Set.of("fi", "done", "esac", "else", "elif", ";;");
     private static final Set<String> RUBY_CLOSERS = Set.of("end", "else", "elsif", "when", "rescue", "ensure");
     private static final Set<String> LUA_CLOSERS = Set.of("end", "else", "elseif", "until");
+    private static final Set<String> PY_CLOSERS = Set.of("else", "elif", "except", "finally");
 
     public static Style styleFor(String language) {
         return switch (language == null ? "" : language) {
@@ -251,7 +304,9 @@ public final class Indenter {
             // A preprocessor line sits at column 0 whatever block it is in; it is not the opener.
             if (!prevLine.isBlank() && !(style == Style.BRACES && prevLine.startsWith("#"))) {
                 String pind = leadingWhitespace(prevLine);
-                if (width(pind, tabSize) < curWidth) {
+                // Nor is the first line of a wrapped statement (`foo \` / `bar`): it is shallower than its
+                // own continuation lines, but it is body, not the block's opener.
+                if (width(pind, tabSize) < curWidth && !isWrappedBodyLine(style, text, prevStart, ls)) {
                     return pind;
                 }
             }
@@ -278,7 +333,10 @@ public final class Indenter {
             String prevLine = text.substring(prevStart, pos - 1);
             scanned += pos - prevStart;
             if (!prevLine.isBlank() && !(style == Style.BRACES && prevLine.startsWith("#"))) {
-                int prevWidth = width(leadingWhitespace(prevLine), tabSize);
+                // A continuation line is deeper than the body it belongs to: measure its statement's
+                // first line, or a closer left at body level after `foo(a,` / `b)` would count as aligned.
+                int headStart = statementHead(style, text, prevStart);
+                int prevWidth = width(leadingWhitespace(text.substring(headStart, lineEnd(text, headStart))), tabSize);
                 if (prevWidth > curWidth || (prevWidth == curWidth && opensBlock(style, prevLine))) {
                     return currentIndent;
                 }
@@ -287,6 +345,151 @@ public final class Indenter {
             pos = prevStart;
         }
         return closerAlignIndent(text, caret, tabSize, style);
+    }
+
+    /**
+     * As {@link #closerAlignIndent(Style, String, int, int, String)}, knowing the closer being typed. A
+     * bracket typed alone on its line is aligned by <em>matching</em> it — the indent of the line where the
+     * statement holding its opener starts — rather than by guessing from indentation, which mistakes a
+     * wrapped statement's first line for the opener ({@code return foo(a,} / {@code b);} / {@code }}). Falls
+     * back to the indentation rule when no opener is found in range.
+     */
+    public static String closerAlignIndent(
+            Style style, String text, int caret, int tabSize, String currentIndent, char typed) {
+        int ls = lineStart(text, caret);
+        if (isBracketCloser(typed) && text.substring(ls, caret).isBlank()) {
+            String opener = openerLineIndent(style, text, ls, typed);
+            if (opener != null) {
+                return opener;
+            }
+        }
+        return closerAlignIndent(style, text, caret, tabSize, currentIndent);
+    }
+
+    /**
+     * The indent of the line that starts the statement holding the unmatched opener of {@code close}, looking
+     * back from {@code ls} (a line start); {@code null} when there is none within the scan bound. Only
+     * brackets of the typed kind are matched, so an unfinished {@code foo(} in the body does not capture a
+     * {@code }}; once the opener is found, closers before it on its line ({@code int b) {}, {@code } else {})
+     * are followed back to their own openers, so a multi-line header aligns to its first line.
+     */
+    private static String openerLineIndent(Style style, String text, int ls, char close) {
+        char open = close == '}' ? '{' : close == ')' ? '(' : '[';
+        StringBuilder brackets = new StringBuilder();
+        int depth = 0;
+        boolean found = false;
+        int pending = 0;
+        int pos = ls;
+        int scanned = 0;
+        while (pos > 0 && scanned < MAX_SCAN) {
+            int prevStart = lineStart(text, pos - 1);
+            String line = text.substring(prevStart, pos - 1);
+            scanned += pos - prevStart;
+            pos = prevStart;
+            brackets.setLength(0);
+            scanCode(style, line, brackets);
+            for (int k = brackets.length() - 1; k >= 0; k--) {
+                char b = brackets.charAt(k);
+                if (found) {
+                    if (isBracketCloser(b)) {
+                        pending++;
+                    } else if (pending > 0) {
+                        pending--;
+                    }
+                } else if (b == close) {
+                    depth++;
+                } else if (b == open) {
+                    if (depth == 0) {
+                        found = true;
+                    } else {
+                        depth--;
+                    }
+                }
+            }
+            if (found && pending == 0) {
+                return leadingWhitespace(line);
+            }
+        }
+        return null;
+    }
+
+    /** Whether {@code line} is left unfinished: a trailing {@code \} or {@code ,}, or an unclosed {@code (}/{@code [}. */
+    private static boolean continuesStatement(Style style, String line) {
+        StringBuilder brackets = new StringBuilder();
+        String code = scanCode(style, line, brackets).stripTrailing();
+        if (code.isEmpty()) {
+            return false;
+        }
+        char last = code.charAt(code.length() - 1);
+        if (last == '\\' || last == ',') {
+            return true;
+        }
+        int open = 0;
+        for (int k = 0; k < brackets.length(); k++) {
+            char b = brackets.charAt(k);
+            if (b == '(' || b == '[') {
+                open++;
+            } else if ((b == ')' || b == ']') && open > 0) {
+                open--;
+            }
+        }
+        return open > 0;
+    }
+
+    /**
+     * Whether the line at {@code start} is the first line of a statement that wraps onto the lines below it
+     * (up to {@code limit}) <em>without</em> opening a block — {@code foo \} / {@code bar}, {@code foo(a,} /
+     * {@code b)}. A wrapped header ({@code if a \} / {@code && b; then}) does open one, so it is judged on the
+     * joined statement.
+     */
+    private static boolean isWrappedBodyLine(Style style, String text, int start, int limit) {
+        if (style == null) {
+            return false;
+        }
+        int end = lineEnd(text, start);
+        String line = text.substring(start, end);
+        if (opensBlock(style, line) || !continuesStatement(style, line)) {
+            return false; // `foo(function()` opens a block itself, whatever follows it
+        }
+        StringBuilder joined = new StringBuilder(line.stripTrailing());
+        if (joined.charAt(joined.length() - 1) == '\\') {
+            joined.setLength(joined.length() - 1);
+        }
+        int lines = 0;
+        while (end + 1 < limit && lines++ < MAX_STATEMENT_LINES) {
+            int nextStart = end + 1;
+            end = lineEnd(text, nextStart);
+            String next = text.substring(nextStart, end);
+            joined.append(' ').append(next.strip());
+            if (!continuesStatement(style, next)) {
+                break;
+            }
+            if (joined.charAt(joined.length() - 1) == '\\') {
+                joined.setLength(joined.length() - 1);
+            }
+        }
+        return !opensBlock(style, joined.toString());
+    }
+
+    /** Start of the line that begins the statement the line at {@code start} belongs to (itself when not wrapped). */
+    private static int statementHead(Style style, String text, int start) {
+        int head = start;
+        for (int lines = 0; head > 0 && lines < MAX_STATEMENT_LINES; lines++) {
+            int prevStart = lineStart(text, head - 1);
+            String prevLine = text.substring(prevStart, head - 1);
+            boolean chained = text.startsWith(
+                    ".",
+                    head
+                            + leadingWhitespace(text.substring(head, lineEnd(text, head)))
+                                    .length());
+            if (prevLine.isBlank()
+                    || opensBlock(style, prevLine)
+                    || !(chained || continuesStatement(style, prevLine))) {
+                break;
+            }
+            head = prevStart;
+        }
+        return head;
     }
 
     /** True when typing {@code c} is a closing bracket that should de-indent for the style. */
@@ -391,11 +594,7 @@ public final class Indenter {
             case BRACES -> last == '{' || last == '(' || last == '[';
             case PY -> last == ':' || last == '{' || last == '(' || last == '[';
             case XML -> endsWithOpenTag(code, html);
-            case SHELL ->
-                last == '{'
-                        || last == '('
-                        || endsWithWord(code, "do", "then", "in")
-                        || startsWithWord(code, "else", "elif");
+            case SHELL -> last == '{' || last == '(' || shellOpener(code) || startsWithWord(code, "else", "elif");
             case RUBY ->
                 last == '{'
                         || endsWithDoBlock(code)
@@ -432,7 +631,36 @@ public final class Indenter {
 
     private static boolean rubyOpener(String code) {
         return startsWithWord(code, "def", "class", "module", "if", "unless", "while", "until", "case", "for")
-                && !code.matches(".*\\bend\\b.*"); // the whole word: `def end_date` still opens
+                && !code.matches(".*\\bend\\b.*") // the whole word: `def end_date` still opens
+                // an endless method (`def foo = 42`, `def sq(x) = x * x`) has no body; `def foo=(v)` is a setter
+                && !code.strip().matches("def\\s+[\\w.]+[?!]?\\s*(\\([^)]*\\))?\\s+=\\s.*");
+    }
+
+    /**
+     * A shell line that opens a block: a bare {@code do}/{@code then}, one that follows a {@code ;}
+     * ({@code …; do}, {@code …;then}), or one that ends the compound command the line starts with
+     * ({@code while read x do}, {@code case $x in}). A command that merely ends in such a word
+     * ({@code echo what to do}) does not.
+     */
+    private static boolean shellOpener(String code) {
+        String t = code.strip();
+        for (String w : new String[] {"do", "then"}) {
+            if (t.equals(w)) {
+                return true;
+            }
+            if (t.endsWith(w)) {
+                String head = t.substring(0, t.length() - w.length());
+                if (head.endsWith(";")) {
+                    return true;
+                }
+                if (Character.isWhitespace(head.charAt(head.length() - 1))
+                        && (head.stripTrailing().endsWith(";")
+                                || startsWithWord(t, "if", "elif", "while", "until", "for", "select"))) {
+                    return true;
+                }
+            }
+        }
+        return startsWithWord(t, "case", "for", "select") && endsWithWord(t, "in");
     }
 
     private static boolean startsWithWord(String code, String... words) {
@@ -510,29 +738,64 @@ public final class Indenter {
         return "\t";
     }
 
-    /** The document's indent unit, inferred from the first indented line: a tab if it starts with a tab,
-     *  else {@code tabSize} spaces. When the file has no indentation at all (empty/flat), it falls back to
-     *  <b>spaces</b> — matching VSCode/IntelliJ's "spaces unless the file is detected to use tabs" default. */
+    /**
+     * The document's indent unit, inferred from its indented lines. Tabs or spaces is decided by the first
+     * line that is really indented: a line whose only indentation is one space, or that continues a block
+     * comment ({@code " * License"}), says nothing — it used to make a tab-indented file with a comment
+     * header count as space-indented. For spaces the width is the file's own step (the most common increase
+     * in indent between consecutive lines, 2–8), so a 2-space file is not given {@code tabSize} spaces;
+     * without such evidence it is {@code tabSize}. When the file has no indentation at all (empty/flat), it
+     * falls back to <b>spaces</b> — matching VSCode/IntelliJ's "spaces unless the file is detected to use
+     * tabs" default.
+     */
     public static String detectUnit(String text, int tabSize) {
         int limit = Math.min(text.length(), MAX_SCAN);
+        int[] votes = null;
+        boolean spaces = false;
+        int prev = -1; // the previous code line's space indent
         int i = 0;
         while (i < limit) {
-            char c = text.charAt(i);
+            int j = i;
+            while (j < limit && text.charAt(j) == ' ') {
+                j++;
+            }
+            char c = j < limit ? text.charAt(j) : '\n';
+            int n = j - i;
             if (c == '\t') {
-                return "\t";
+                if (!spaces) {
+                    return "\t";
+                }
+                prev = -1;
+            } else if (c != '\n' && c != '\r' && !(n > 0 && c == '*') && n != 1) {
+                if (n >= 2) {
+                    spaces = true;
+                }
+                int step = prev < 0 ? 0 : n - prev;
+                if (step >= 2 && step <= 8) {
+                    if (votes == null) {
+                        votes = new int[9];
+                    }
+                    votes[step]++;
+                }
+                prev = n;
             }
-            if (c == ' ') {
-                // count the run; a leading space run means space indentation
-                return " ".repeat(Math.max(1, tabSize));
-            }
-            // skip to next line
-            int nl = text.indexOf('\n', i);
+            int nl = text.indexOf('\n', j);
             if (nl < 0) {
                 break;
             }
             i = nl + 1;
         }
-        return " ".repeat(Math.max(1, tabSize)); // no evidence → spaces (the VSCode/IntelliJ default)
+        int size = Math.max(1, tabSize);
+        if (votes != null) {
+            int best = 0;
+            for (int step = 2; step <= 8; step++) {
+                if (votes[step] > votes[best] || (votes[step] == votes[best] && votes[step] > 0 && step == size)) {
+                    best = step;
+                }
+            }
+            size = best;
+        }
+        return " ".repeat(size); // no tab evidence → spaces (the VSCode/IntelliJ default)
     }
 
     /**
@@ -547,23 +810,51 @@ public final class Indenter {
      * </ul>
      */
     private static String stripTrailingComment(Style style, String s) {
-        char quote = 0;
+        return scanCode(style, s, null);
+    }
+
+    /**
+     * {@link #stripTrailingComment}'s scan: returns {@code s} without its trailing comment — a line comment,
+     * or in brace languages a {@code /* … *}{@code /} that only whitespace follows (or that is still open at
+     * the end of the line) — and, when {@code brackets} is given, appends every bracket found outside strings
+     * and comments to it, in order. A quote that opens no string (see {@link Quotes}) is ordinary text, so a
+     * lone apostrophe or a Rust lifetime no longer hides the comment after it.
+     */
+    private static String scanCode(Style style, String s, StringBuilder brackets) {
         int limit = Math.min(s.length(), MAX_SCAN);
+        int cut = -1; // start of a block comment that no code follows
         for (int i = 0; i < limit; i++) {
             char c = s.charAt(i);
-            if (quote != 0) {
-                if (c == '\\') {
-                    i++;
-                } else if (c == quote) {
-                    quote = 0;
+            if (c == '"' || c == '\'') {
+                int close = Quotes.closing(s, i, limit);
+                if (close > i) {
+                    i = close;
+                    cut = -1;
+                    continue;
                 }
-            } else if (c == '"' || c == '\'') {
-                quote = c;
-            } else if (startsComment(style, s, i)) {
-                return s.substring(0, i);
+            }
+            if (startsComment(style, s, i)) {
+                return s.substring(0, cut >= 0 ? cut : i);
+            }
+            if (style == Style.BRACES && c == '/' && s.startsWith("/*", i)) {
+                if (cut < 0) {
+                    cut = i;
+                }
+                int close = s.indexOf("*/", i + 2);
+                if (close < 0 || close >= limit) {
+                    return s.substring(0, cut);
+                }
+                i = close + 1;
+                continue;
+            }
+            if (!Character.isWhitespace(c)) {
+                cut = -1;
+            }
+            if (brackets != null && (c == '(' || c == '[' || c == '{' || isBracketCloser(c))) {
+                brackets.append(c);
             }
         }
-        return s;
+        return cut >= 0 ? s.substring(0, cut) : s;
     }
 
     private static boolean startsComment(Style style, String s, int i) {

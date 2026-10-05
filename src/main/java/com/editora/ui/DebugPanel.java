@@ -80,6 +80,20 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         /** Lazily fetch the children of a variables reference (scope or expandable variable). */
         void loadChildren(int variablesReference, Consumer<List<DapModels.VariableInfo>> cb);
 
+        /**
+         * Fetch {@code count} indexed children of a container from {@code start} (DAP variable paging), or
+         * every named child when {@code indexed} is false. Only asked of a container whose child counts the
+         * adapter reported. The default has no paging to offer and fetches everything.
+         */
+        default void loadChildrenPage(
+                int variablesReference,
+                boolean indexed,
+                int start,
+                int count,
+                Consumer<List<DapModels.VariableInfo>> cb) {
+            loadChildren(variablesReference, cb);
+        }
+
         /** Evaluate {@code expression} in the selected frame ({@code frameId}) and deliver the result. */
         void evaluate(String expression, int frameId, Consumer<String> cb);
 
@@ -111,6 +125,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private boolean settingThreads;
 
     private boolean settingStack; // setCallStack is replacing the stack and reports the top frame itself
+
+    /** The three areas; side by side in a wide (bottom-docked) window, stacked in a narrow (side-docked) one. */
+    private final SplitPane areas = new SplitPane();
+
+    /**
+     * Name paths of the variables that were expanded, and the selected one, when the tree was last replaced
+     * (a step, another frame). Rows of the new tree that match are re-expanded / re-selected as they load, so
+     * inspecting {@code obj.inner} across several steps does not mean re-opening it after each one.
+     */
+    private java.util.Set<List<String>> expandWanted = java.util.Set.of();
+
+    private List<String> selectWanted;
     /** Watch expressions (the "Watches" node merged into the variables tree, IntelliJ-style). */
     private final java.util.List<String> watches = new java.util.ArrayList<>();
 
@@ -128,6 +154,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private DapManager.State lastState = DapManager.State.INACTIVE;
 
+    private boolean stoppedOnException;
+
+    /** The "evaluates only while paused" console hint was shown since the program last resumed. */
+    private boolean evalHintShown;
+
     /** A before-launch build is in flight — see {@link #setPreparing}. */
     private boolean preparing;
 
@@ -136,12 +167,30 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         SCOPE,
         VARIABLE,
         WATCH,
-        ADD_WATCH
+        ADD_WATCH,
+        /** "Show N more…" under a container with more children than one page. */
+        MORE
     }
 
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
-     *  reference (for set-variable), and {@code kind} drives rendering + context actions. */
-    record VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {}
+     *  reference (for set-variable), and {@code kind} drives rendering + context actions. {@code named} /
+     *  {@code indexed} are the child counts the adapter reported (0 = unknown). */
+    record VarRow(String name, String value, String type, int ref, int parentRef, Kind kind, int named, int indexed) {
+        VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {
+            this(name, value, type, ref, parentRef, kind, 0, 0);
+        }
+    }
+
+    /** The "show more" row of a container: activating it loads the next page of that container's children. */
+    private static final class MoreItem extends TreeItem<VarRow> {
+        private final Runnable load;
+        private boolean requested; // a second double-click must not fetch the same page twice
+
+        MoreItem(String label, Runnable load) {
+            super(new VarRow(label, "", "", 0, 0, Kind.MORE));
+            this.load = load;
+        }
+    }
 
     public DebugPanel(Actions actions) {
         this.actions = actions;
@@ -208,7 +257,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 name.getStyleClass().add("debug-frame-name");
                 TextFlow flow = new TextFlow(name);
                 if (f.file() != null) {
-                    Text loc = new Text(":" + (f.line() + 1) + ", " + f.file().getFileName());
+                    // A native frame has no line (-1): show where it is without inventing a ":0".
+                    Text loc = new Text(
+                            (f.line() >= 0 ? ":" + (f.line() + 1) : "") + ", " + DebugValues.sourceName(f.file()));
                     loc.getStyleClass().add("debug-frame-loc");
                     flow.getChildren().add(loc);
                 }
@@ -217,15 +268,26 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         });
         stack.getSelectionModel().selectedItemProperty().addListener((o, a, f) -> {
             if (f != null && !settingStack) {
-                selectedFrameId = f.id();
-                actions.selectFrame(f);
+                reportFrame(f);
+            }
+        });
+        // A click on the frame that is already selected changes no selection, so the listener stays silent;
+        // it is still how the user asks to be taken back to that frame's line (after closing its tab, say).
+        DapModels.StackFrameInfo[] pressedOn = {null};
+        stack.addEventFilter(
+                javafx.scene.input.MouseEvent.MOUSE_PRESSED,
+                e -> pressedOn[0] = stack.getSelectionModel().getSelectedItem());
+        stack.setOnMouseClicked(e -> {
+            DapModels.StackFrameInfo f = stack.getSelectionModel().getSelectedItem();
+            if (f != null && f == pressedOn[0] && e.getButton() == javafx.scene.input.MouseButton.PRIMARY) {
+                reportFrame(f);
             }
         });
 
         // Variables: rich cells — name, muted " = ", type-colored value, muted type suffix.
         variables.getStyleClass().add("debug-vars"); // dense, borderless (Structure/Git panel idiom)
         variables.setShowRoot(false);
-        variables.setRoot(new TreeItem<>());
+        variables.setRoot(idleRoot());
         variables.setCellFactory(v -> new TreeCell<>() {
             @Override
             protected void updateItem(VarRow row, boolean empty) {
@@ -246,6 +308,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
             if (row.kind() == Kind.ADD_WATCH) {
                 addWatchPrompt();
+            } else if (row.kind() == Kind.MORE) {
+                showMore(variables.getSelectionModel().getSelectedItem());
             } else if (row.kind() == Kind.WATCH) {
                 editWatchPrompt(row.name());
             } else if (row.kind() == Kind.VARIABLE && row.ref() <= 0 && row.parentRef() > 0) {
@@ -253,7 +317,11 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             }
         });
         variables.setOnKeyPressed(e -> {
-            if (e.getCode() == javafx.scene.input.KeyCode.F2) {
+            if (e.getCode() == javafx.scene.input.KeyCode.ENTER
+                    && variables.getSelectionModel().getSelectedItem() instanceof MoreItem more) {
+                showMore(more);
+                e.consume();
+            } else if (e.getCode() == javafx.scene.input.KeyCode.F2) {
                 VarRow row = selectedRow();
                 if (row != null && row.kind() == Kind.VARIABLE && row.parentRef() > 0) {
                     setValuePrompt();
@@ -274,26 +342,63 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
         evalInput.setOnAction(e -> runEval());
 
-        Label stackHeader = sectionLabel("debugpanel.callStack");
-        VBox stackBox = new VBox(2, stackHeader, threads, stack);
+        // The thread selector shares the header's row: on its own row it took a third of the default strip.
+        HBox stackHeader = new HBox(6, sectionLabel("debugpanel.callStack"), threads);
+        stackHeader.setAlignment(Pos.CENTER_LEFT);
+        HBox.setHgrow(threads, Priority.ALWAYS);
+        VBox stackBox = new VBox(2, stackHeader, stack);
         VBox.setVgrow(stack, Priority.ALWAYS);
         Label varsHeader = sectionLabel("debugpanel.variables");
         VBox varsBox = new VBox(2, varsHeader, variables);
         VBox.setVgrow(variables, Priority.ALWAYS);
-        SplitPane top = new SplitPane(stackBox, varsBox);
-        top.setOrientation(Orientation.HORIZONTAL);
-        top.setDividerPositions(0.42);
 
         VirtualizedScrollPane<CodeArea> consoleScroll = new VirtualizedScrollPane<>(console);
         VBox consoleBox = new VBox(2, sectionLabel("debugpanel.console"), consoleScroll, evalInput);
         VBox.setVgrow(consoleScroll, Priority.ALWAYS);
-        SplitPane main = new SplitPane(top, consoleBox);
-        main.setOrientation(Orientation.VERTICAL);
-        main.setDividerPositions(0.6);
+        javafx.scene.control.ContextMenu consoleMenu = new javafx.scene.control.ContextMenu();
+        javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));
+        clear.setGraphic(Icons.remove());
+        clear.setOnAction(e -> clearConsole());
+        consoleMenu.getItems().add(clear);
+        console.setContextMenu(consoleMenu);
+
+        // Call stack | variables | console. Stacked on top of each other they shared the height of the
+        // bottom strip three ways: at the default tool-window height the call stack had no rows at all.
+        areas.getItems().addAll(stackBox, varsBox, consoleBox);
+        SplitPane main = areas;
         VBox.setVgrow(main, Priority.ALWAYS);
+        arrange(true);
+        widthProperty().addListener((o, a, w) -> {
+            if (w.doubleValue() > 0) { // 0 = not laid out / hidden: says nothing about where it is docked
+                arrange(w.doubleValue() >= SIDE_BY_SIDE_MIN_WIDTH);
+            }
+        });
 
         getChildren().addAll(toolbar, main);
         setState(DapManager.State.INACTIVE);
+    }
+
+    /** Narrower than this (docked at a side), the three areas are stacked instead of laid side by side. */
+    static final double SIDE_BY_SIDE_MIN_WIDTH = 640;
+
+    private Orientation arranged;
+
+    private void arrange(boolean sideBySide) {
+        Orientation wanted = sideBySide ? Orientation.HORIZONTAL : Orientation.VERTICAL;
+        if (arranged == wanted) {
+            return; // keep the dividers where the user dragged them
+        }
+        arranged = wanted;
+        areas.setOrientation(wanted);
+        areas.setDividerPositions(sideBySide ? new double[] {0.26, 0.58} : new double[] {0.3, 0.62});
+    }
+
+    private void reportFrame(DapModels.StackFrameInfo frame) {
+        if (lastState != DapManager.State.SUSPENDED) {
+            return; // the frames of the previous stop: the program has moved on, there is nothing to show
+        }
+        selectedFrameId = frame.id();
+        actions.selectFrame(frame);
     }
 
     /** Builds the styled TextFlow for one variables-tree row. */
@@ -305,7 +410,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 name.getStyleClass().add("debug-scope-row");
                 flow.getChildren().add(name);
             }
-            case ADD_WATCH -> {
+            case ADD_WATCH, MORE -> {
                 Text add = new Text(row.name());
                 add.getStyleClass().add("debug-add-watch");
                 flow.getChildren().add(add);
@@ -398,6 +503,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     public void setState(DapManager.State state) {
         lastState = state;
         boolean suspended = state == DapManager.State.SUSPENDED;
+        if (suspended || state == DapManager.State.INACTIVE) {
+            evalHintShown = false;
+        }
         boolean running = state == DapManager.State.RUNNING;
         boolean active = state != DapManager.State.INACTIVE;
         // Green play = Start when idle, Continue when paused; Pause is its complement while running.
@@ -417,7 +525,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (!active) {
             sessionFile = "";
             stack.getItems().clear();
-            variables.setRoot(new TreeItem<>());
+            variables.setRoot(idleRoot());
             setThreads(List.of(), -1);
             selectedFrameId = -1;
         }
@@ -442,7 +550,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     }
 
     private void refreshStatus() {
-        String state = tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
+        String state = stoppedOnException && lastState == DapManager.State.SUSPENDED
+                ? tr("debugpanel.state.exception")
+                : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
         status.setText(sessionFile.isEmpty() ? state : state + " — " + sessionFile);
     }
 
@@ -473,33 +583,147 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * the variables and execution line on the previous stop's values.
      */
     public void setCallStack(List<DapModels.StackFrameInfo> frames) {
+        setCallStack(frames, 0);
+    }
+
+    /** As {@link #setCallStack(List)}, selecting frame {@code selected} — the topmost one that has source. */
+    public void setCallStack(List<DapModels.StackFrameInfo> frames, int selected) {
+        int index = Math.max(0, Math.min(selected, frames.size() - 1));
         settingStack = true;
         try {
             stack.getItems().setAll(frames);
             if (!frames.isEmpty()) {
-                stack.getSelectionModel().clearAndSelect(0);
+                stack.getSelectionModel().clearAndSelect(index);
+                if (index > 0) {
+                    stack.scrollTo(index - 1); // the selected frame in view, with the one it was called from
+                }
             }
         } finally {
             settingStack = false;
         }
         if (!frames.isEmpty()) {
-            DapModels.StackFrameInfo top = frames.get(0);
-            selectedFrameId = top.id();
-            actions.selectFrame(top);
+            reportFrame(frames.get(index));
         }
+    }
+
+    /**
+     * Why the program is suspended, as the adapter's stop event named it ({@code null} when it is not). Only an
+     * exception stop is called out: it otherwise looks exactly like a breakpoint hit on the same line.
+     */
+    public void setStopReason(String reason) {
+        boolean exception = "exception".equals(reason);
+        if (exception != stoppedOnException) {
+            stoppedOnException = exception;
+            refreshStatus();
+        }
+    }
+
+    /** The thread shown in the dropdown, or -1. */
+    int selectedThreadId() {
+        DapModels.ThreadInfo t = threads.getValue();
+        return t == null ? -1 : t.id();
+    }
+
+    /** Shows {@code threadId} in the dropdown without reporting a selection (the caller loads its stack). */
+    void showThread(int threadId) {
+        setThreads(List.copyOf(threads.getItems()), threadId);
     }
 
     /** Replaces the variables tree with the Watches node + the selected frame's scopes (each lazily
      *  expandable); watches re-evaluate against the newly selected frame. */
     public void setScopes(List<DapModels.ScopeInfo> scopes) {
+        rememberTreeState();
+        TreeItem<VarRow> old = variables.getRoot();
         TreeItem<VarRow> root = new TreeItem<>();
         root.getChildren().add(buildWatchesNode());
         for (DapModels.ScopeInfo s : scopes) {
             TreeItem<VarRow> item = lazyItem(new VarRow(s.name(), "", "", s.variablesReference(), 0, Kind.SCOPE));
-            item.setExpanded(!s.expensive());
             root.getChildren().add(item);
         }
         variables.setRoot(root);
+        // Expanded only once the scope is in the tree: its children load on expansion and restore the
+        // remembered rows by their path from the root.
+        for (int i = 0; i < scopes.size(); i++) {
+            TreeItem<VarRow> item = root.getChildren().get(i + 1);
+            Boolean was = scopeExpanded(old, scopes.get(i).name());
+            item.setExpanded(was != null ? was : !scopes.get(i).expensive());
+            restoreSelection(item);
+        }
+    }
+
+    /** Whether the scope called {@code name} was expanded in the tree being replaced, or null if not there. */
+    private static Boolean scopeExpanded(TreeItem<VarRow> oldRoot, String name) {
+        if (oldRoot != null) {
+            for (int i = 1; i < oldRoot.getChildren().size(); i++) { // 0 is the Watches node
+                TreeItem<VarRow> scope = oldRoot.getChildren().get(i);
+                if (scope.getValue() != null && scope.getValue().name().equals(name)) {
+                    return scope.isExpanded();
+                }
+            }
+        }
+        return null;
+    }
+
+    /** The variables tree with only the Watches node: what is shown while nothing is suspended. */
+    private TreeItem<VarRow> idleRoot() {
+        TreeItem<VarRow> root = new TreeItem<>();
+        root.getChildren().add(buildWatchesNode());
+        return root;
+    }
+
+    // --- expansion + selection carried across a tree replacement -----------------------------------
+
+    /** The row names from the top-level node down to {@code item}. */
+    private static List<String> pathOf(TreeItem<VarRow> item) {
+        java.util.LinkedList<String> path = new java.util.LinkedList<>();
+        for (TreeItem<VarRow> i = item; i != null && i.getValue() != null; i = i.getParent()) {
+            path.addFirst(i.getValue().name());
+        }
+        return List.copyOf(path);
+    }
+
+    private void rememberTreeState() {
+        java.util.Set<List<String>> expanded = new java.util.HashSet<>();
+        TreeItem<VarRow> root = variables.getRoot();
+        if (root != null) {
+            for (TreeItem<VarRow> top : root.getChildren()) {
+                collectExpanded(top, expanded);
+            }
+        }
+        TreeItem<VarRow> selected = variables.getSelectionModel().getSelectedItem();
+        // An empty tree (a new session's first stop) has nothing to say: keep what the last one remembered.
+        if (!expanded.isEmpty() || selected != null) {
+            expandWanted = expanded;
+            selectWanted = selected == null ? null : pathOf(selected);
+        }
+    }
+
+    private static void collectExpanded(TreeItem<VarRow> item, java.util.Set<List<String>> out) {
+        VarRow row = item.getValue();
+        if (row == null || !item.isExpanded() || item.isLeaf()) {
+            return;
+        }
+        if (row.kind() == Kind.VARIABLE || row.kind() == Kind.WATCH) {
+            out.add(pathOf(item));
+        }
+        for (TreeItem<VarRow> child : item.getChildren()) {
+            collectExpanded(child, out);
+        }
+    }
+
+    /** Re-expands / re-selects {@code item} if it is one of the rows remembered from the replaced tree. */
+    private void restoreState(TreeItem<VarRow> item) {
+        if (!item.isLeaf() && !expandWanted.isEmpty() && expandWanted.contains(pathOf(item))) {
+            item.setExpanded(true); // loads its children, which restores the level below in turn
+        }
+        restoreSelection(item);
+    }
+
+    private void restoreSelection(TreeItem<VarRow> item) {
+        if (selectWanted != null && selectWanted.equals(pathOf(item))) {
+            selectWanted = null;
+            variables.getSelectionModel().select(item);
+        }
     }
 
     // --- Watches ---------------------------------------------------------------------------------
@@ -540,16 +764,21 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 actions.evaluateWatch(expr, selectedFrameId, r -> {
                     int idx = node.getChildren().indexOf(item);
                     if (idx >= 0) {
-                        node.getChildren()
-                                .set(
-                                        idx,
-                                        lazyItem(new VarRow(
-                                                expr,
-                                                r.result(),
-                                                r.type() == null ? "" : r.type(),
-                                                r.variablesReference(),
-                                                0,
-                                                Kind.WATCH)));
+                        boolean wasSelected = variables.getSelectionModel().getSelectedItem() == item;
+                        TreeItem<VarRow> evaluated = lazyItem(new VarRow(
+                                expr,
+                                r.result(),
+                                r.type() == null ? "" : r.type(),
+                                r.variablesReference(),
+                                0,
+                                Kind.WATCH,
+                                r.namedVariables(),
+                                r.indexedVariables()));
+                        node.getChildren().set(idx, evaluated);
+                        if (wasSelected) {
+                            variables.getSelectionModel().select(evaluated);
+                        }
+                        restoreState(evaluated);
                     }
                 });
             }
@@ -562,7 +791,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private void refreshWatchesNode() {
         TreeItem<VarRow> root = variables.getRoot();
         if (root == null || root.getChildren().isEmpty()) {
-            return; // no session showing — the next setScopes builds it fresh
+            variables.setRoot(idleRoot());
+            return;
         }
         root.getChildren().set(0, buildWatchesNode());
     }
@@ -644,7 +874,15 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 return;
             }
             actions.setVariable(row.parentRef(), row.name(), value, newValue -> {
-                item.setValue(new VarRow(row.name(), newValue, row.type(), row.ref(), row.parentRef(), Kind.VARIABLE));
+                item.setValue(new VarRow(
+                        row.name(),
+                        newValue,
+                        row.type(),
+                        row.ref(),
+                        row.parentRef(),
+                        Kind.VARIABLE,
+                        row.named(),
+                        row.indexed()));
                 refreshWatchesNode();
             });
         });
@@ -677,6 +915,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (text == null) {
             return;
         }
+        text = DebugValues.stripAnsi(text); // colour codes of a logger / Node script are not text to read
         int start = console.getLength();
         int caretBefore = console.getCaretPosition();
         boolean follow = caretBefore >= start; // scrolled back? stay put
@@ -692,8 +931,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private void runEval() {
         String expr = evalInput.getText();
-        if (expr == null || expr.isBlank() || lastState != DapManager.State.SUSPENDED) {
-            return; // nothing to evaluate against while the program runs; the typed text is kept
+        if (expr == null || expr.isBlank()) {
+            return;
+        }
+        if (lastState != DapManager.State.SUSPENDED) {
+            // Nothing to evaluate against while the program runs; the typed text is kept. Say so — once per
+            // run, not per Enter: the field is the only input in sight, and a program waiting on its standard
+            // input looked as if it had swallowed the line.
+            if (!evalHintShown) {
+                evalHintShown = true;
+                appendOutput(tr("debugpanel.evalNeedsPause") + "\n", "console");
+            }
+            return;
         }
         appendOutput("> " + expr + "\n", "console");
         evalInput.clear();
@@ -712,25 +961,118 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         if (row.ref() > 0) {
             boolean[] loaded = {false};
             item.expandedProperty().addListener((o, was, now) -> {
-                if (now && !loaded[0]) {
+                // Only while suspended: a row left over from the previous stop names a reference the adapter
+                // has already dropped, and asking for it would leave the row empty for good.
+                if (now && !loaded[0] && lastState == DapManager.State.SUSPENDED) {
                     loaded[0] = true;
-                    actions.loadChildren(row.ref(), vars -> {
-                        item.getChildren().clear();
-                        for (DapModels.VariableInfo v : vars) {
-                            item.getChildren()
-                                    .add(lazyItem(new VarRow(
-                                            v.name(),
-                                            v.value(),
-                                            v.type() == null ? "" : v.type(),
-                                            v.variablesReference(),
-                                            row.ref(),
-                                            Kind.VARIABLE)));
-                        }
-                    });
+                    loadChildren(item, row);
                 }
             });
         }
         return item;
+    }
+
+    /**
+     * Loads the children of an expanded container, never more than {@link DebugValues#PAGE_SIZE} rows at a
+     * time. When the adapter reported the element count, only that page is <em>requested</em> (DAP {@code
+     * start}/{@code count}); otherwise everything is fetched in one response — off the FX thread — and the
+     * tree pages through what came back. Either way the rows reach the tree in one {@code addAll}: adding
+     * tens of thousands of children one at a time to an expanded, showing item froze the window for seconds.
+     */
+    private void loadChildren(TreeItem<VarRow> item, VarRow row) {
+        if (!DebugValues.fetchedByPage(row.indexed())) {
+            actions.loadChildren(row.ref(), all -> showPage(item, row, all, 0));
+            return;
+        }
+        if (row.named() > 0) {
+            actions.loadChildrenPage(row.ref(), false, 0, 0, named -> {
+                append(item, rows(row, named), false);
+                requestPage(item, row, 0);
+            });
+        } else {
+            requestPage(item, row, 0);
+        }
+    }
+
+    /** Asks the adapter for the indexed children {@code start…} of {@code row} and appends them. */
+    private void requestPage(TreeItem<VarRow> item, VarRow row, int start) {
+        int count = DebugValues.nextPage(start, row.indexed());
+        actions.loadChildrenPage(row.ref(), true, start, count, page -> {
+            if (page.size() > count) {
+                // The adapter ignored start/count and sent the whole remainder: page through that instead.
+                showPage(item, row, page, 0);
+                return;
+            }
+            append(item, rows(row, page), dropMoreRow(item));
+            int shown = start + page.size();
+            int next = DebugValues.nextPage(shown, row.indexed());
+            if (next > 0 && !page.isEmpty()) {
+                item.getChildren().add(moreRow(next, row.indexed() - shown, () -> requestPage(item, row, shown)));
+            }
+        });
+    }
+
+    /** Appends the next page of {@code all} — children already fetched — from {@code start}. */
+    private void showPage(TreeItem<VarRow> item, VarRow row, List<DapModels.VariableInfo> all, int start) {
+        int end = start + DebugValues.nextPage(start, all.size());
+        append(item, rows(row, all.subList(start, end)), dropMoreRow(item));
+        int next = DebugValues.nextPage(end, all.size());
+        if (next > 0) {
+            item.getChildren().add(moreRow(next, all.size() - end, () -> showPage(item, row, all, end)));
+        }
+    }
+
+    /** Adds one page of rows; {@code select} keeps the selection where the "show more" row just was. */
+    private void append(TreeItem<VarRow> item, List<TreeItem<VarRow>> children, boolean select) {
+        item.getChildren().addAll(children); // one change event, however many rows
+        children.forEach(this::restoreState);
+        if (select && !children.isEmpty()) {
+            variables.getSelectionModel().select(children.get(0));
+        }
+    }
+
+    private List<TreeItem<VarRow>> rows(VarRow parent, List<DapModels.VariableInfo> vars) {
+        List<TreeItem<VarRow>> out = new java.util.ArrayList<>(vars.size());
+        for (DapModels.VariableInfo v : vars) {
+            out.add(lazyItem(new VarRow(
+                    v.name(),
+                    v.value(),
+                    v.type() == null ? "" : v.type(),
+                    v.variablesReference(),
+                    parent.ref(),
+                    Kind.VARIABLE,
+                    v.namedVariables(),
+                    v.indexedVariables())));
+        }
+        return out;
+    }
+
+    private static MoreItem moreRow(int next, int remaining, Runnable load) {
+        return new MoreItem(tr("debugpanel.showMore", next, remaining), load);
+    }
+
+    /** Removes the trailing "show more" row, if any; returns whether it was the selected row. */
+    private boolean dropMoreRow(TreeItem<VarRow> item) {
+        var children = item.getChildren();
+        if (children.isEmpty() || !(children.get(children.size() - 1) instanceof MoreItem more)) {
+            return false;
+        }
+        boolean selected = variables.getSelectionModel().getSelectedItem() == more;
+        children.remove(children.size() - 1);
+        return selected;
+    }
+
+    /** Activates a "show more" row (double-click / Enter): loads the next page of its container. */
+    private void showMore(TreeItem<VarRow> selected) {
+        if (selected instanceof MoreItem more && !more.requested && lastState == DapManager.State.SUSPENDED) {
+            more.requested = true;
+            more.load.run();
+        }
+    }
+
+    /** Empties the console (its context menu, and each new launch — see {@code DebugCoordinator}). */
+    public void clearConsole() {
+        console.clear();
     }
 
     @Override

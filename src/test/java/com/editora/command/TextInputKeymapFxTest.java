@@ -159,4 +159,17 @@ class TextInputKeymapFxTest {
             assertEquals(List.of("€"), elsewhere, "an AltGr-composed character is left to the field");
         });
     }
+
+    /** C-f / C-b stepped one UTF-16 unit, parking the caret between the two halves of an emoji. */
+    @Test
+    void charForwardAndBackwardStepOverAWholeEmoji() throws Exception {
+        onFx(() -> {
+            TextField field = field("a\uD83D\uDE00b", false, new ArrayList<>());
+            field.positionCaret(1);
+            field.fireEvent(press(KeyCode.F, true, false)); // C-f
+            assertEquals(3, field.getCaretPosition(), "past both halves of the surrogate pair");
+            field.fireEvent(press(KeyCode.B, true, false)); // C-b
+            assertEquals(1, field.getCaretPosition());
+        });
+    }
 }

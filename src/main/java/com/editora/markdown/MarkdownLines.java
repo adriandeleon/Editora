@@ -40,6 +40,54 @@ public final class MarkdownLines {
         return 0;
     }
 
+    /** A thematic break written with spaces ({@code - - -}, {@code * * *}): a rule, not a list item. */
+    private static final Pattern SPACED_RULE = Pattern.compile("^ {0,3}([-*_])(?:[ \\t]*\\1){2,}[ \\t]*$");
+
+    private static final Pattern FENCE = Pattern.compile("^ {0,3}(`{3,}|~{3,})(.*)$");
+
+    /**
+     * {@link #markerLength} for the Enter key: 0 when {@code line} — which starts at {@code lineStart} in
+     * {@code text} — only looks like a list item. Inside a fenced code block a leading {@code -} is YAML,
+     * a diff or program output, and {@code - - -} is a thematic break; continuing either as a list put a
+     * marker on the next line that had to be deleted every time.
+     */
+    public static int listMarkerLength(String text, int lineStart, String line) {
+        int marker = markerLength(line);
+        if (marker == 0 || SPACED_RULE.matcher(line).matches() || insideFence(text, lineStart)) {
+            return 0;
+        }
+        return marker;
+    }
+
+    /** Whether the line starting at {@code lineStart} lies inside a fenced code block that is still open. */
+    static boolean insideFence(String text, int lineStart) {
+        String open = null; // the fence run that opened the current block, null outside one
+        int end = Math.min(lineStart, text.length());
+        int at = 0;
+        while (at < end) {
+            int eol = text.indexOf('\n', at);
+            if (eol < 0 || eol > end) {
+                eol = end;
+            }
+            Matcher m = FENCE.matcher(text.substring(at, eol));
+            if (m.matches()) {
+                String run = m.group(1);
+                if (open == null) {
+                    // A backtick fence's info string cannot itself contain a backtick (that is inline code).
+                    if (run.charAt(0) != '`' || m.group(2).indexOf('`') < 0) {
+                        open = run;
+                    }
+                } else if (run.charAt(0) == open.charAt(0)
+                        && run.length() >= open.length()
+                        && m.group(2).isBlank()) {
+                    open = null;
+                }
+            }
+            at = eol + 1;
+        }
+        return open != null;
+    }
+
     /**
      * Toggles a {@code "- "} bullet on every line the selection covers: removes it when <em>all</em>
      * non-blank lines are already bullets, otherwise adds it. Returns a {@link MarkdownEdit} spanning the
