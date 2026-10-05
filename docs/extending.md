@@ -45,7 +45,10 @@ A setting is a `Settings` field **plus** a Settings-window control **plus** a pa
    add an additive-identity step in `ConfigSchema` (see
    [conventions.md](conventions.md#config-and-schema)).
 2. **Settings UI** — a control on the relevant page in `SettingsWindow`, wired through the
-   live-apply path (each control writes the field then `apply()`).
+   live-apply path (each control writes the field then `apply()`). A text field goes through
+   `commitOnEnterOrBlur` (Enter, focus loss or closing the window), never a `textProperty` listener: a
+   save, a re-apply in every window and a probe per keystroke act on half-typed values. An on/off
+   setting is a `checkRow` (a switch row), not a bare `CheckBox`.
 3. **Palette command** — a `view.toggle*` (for a flag) or a prompt/picker (for a value) that
    flips the same field, `requestSave()`s, re-applies the feature, and calls
    `SettingsWindow.syncAll()`. Reuse `toggleSetting`/`promptIntSetting`/`chooseSetting`.

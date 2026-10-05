@@ -109,4 +109,67 @@ class SettingsResolvedDefaultsTest {
         settings.setPluginRegistryUrl("https://example.com/index.json");
         assertEquals("https://example.com/index.json", settings.getPluginRegistryUrlRaw(), "a custom URL is kept");
     }
+
+    // --- the Maven archetype catalog URL: the same shape as the plugin registry ----------------------
+
+    @Test
+    void aFreshSettingsFileDoesNotFreezeTheDefaultMavenArchetypeCatalog(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+        config.save();
+
+        JsonNode saved = JSON.readTree(dir.resolve("settings.json").toFile());
+        assertEquals("", saved.get("mavenArchetypeCatalogUrl").asText(), "blank = follow the built-in catalog");
+        assertFalse(saved.has("mavenArchetypeCatalogUrlRaw"));
+        assertEquals(
+                Settings.DEFAULT_MAVEN_ARCHETYPE_CATALOG, config.getSettings().getMavenArchetypeCatalogUrl());
+    }
+
+    @Test
+    void aBlankMavenArchetypeCatalogMeansTheBuiltInOneNotNoCatalog() {
+        Settings settings = new Settings();
+        settings.setMavenArchetypeCatalogUrl("  ");
+        assertEquals(Settings.DEFAULT_MAVEN_ARCHETYPE_CATALOG, settings.getMavenArchetypeCatalogUrl());
+        settings.setMavenArchetypeCatalogUrl(null);
+        assertEquals(Settings.DEFAULT_MAVEN_ARCHETYPE_CATALOG, settings.getMavenArchetypeCatalogUrl());
+        assertEquals("", settings.getMavenArchetypeCatalogUrlRaw());
+    }
+
+    @Test
+    void theMavenArchetypeCatalogKeepsACustomUrlAndStoresTheBuiltInOneAsBlank(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+        config.getSettings().setMavenArchetypeCatalogUrl("https://nexus.example/archetype-catalog.xml");
+        config.save();
+        Settings reloaded = new ConfigManager(dir).load();
+        assertEquals("https://nexus.example/archetype-catalog.xml", reloaded.getMavenArchetypeCatalogUrlRaw());
+        assertEquals("https://nexus.example/archetype-catalog.xml", reloaded.getMavenArchetypeCatalogUrl());
+
+        // The Settings field shows the URL in force and hands it back when it is left alone.
+        reloaded.setMavenArchetypeCatalogUrl(Settings.DEFAULT_MAVEN_ARCHETYPE_CATALOG);
+        assertEquals("", reloaded.getMavenArchetypeCatalogUrlRaw());
+
+        Settings live = new Settings();
+        live.setMavenArchetypeCatalogUrl("https://nexus.example/archetype-catalog.xml");
+        Settings.resetToDefaults(live);
+        assertEquals("", live.getMavenArchetypeCatalogUrlRaw());
+    }
+
+    @Test
+    void aFileFromAnOlderBuildStopsCarryingTheBuiltInUrlsItFroze(@TempDir Path dir) throws Exception {
+        // Schema 104: before either URL was stored raw. Both literals are what that build's first save wrote.
+        java.nio.file.Files.writeString(
+                dir.resolve("settings.json"),
+                "{\"schemaVersion\": 104, \"fontSize\": 17,"
+                        + " \"pluginRegistryUrl\": \"https://raw.githubusercontent.com/adriandeleon/editora-plugins/main/index.json\","
+                        + " \"mavenArchetypeCatalogUrl\": \"https://repo.maven.apache.org/maven2/archetype-catalog.xml\"}");
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+        config.save();
+
+        JsonNode saved = JSON.readTree(dir.resolve("settings.json").toFile());
+        assertEquals(17, saved.get("fontSize").asInt());
+        assertEquals("", saved.get("pluginRegistryUrl").asText());
+        assertEquals("", saved.get("mavenArchetypeCatalogUrl").asText());
+    }
 }

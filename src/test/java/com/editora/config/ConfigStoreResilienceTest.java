@@ -181,6 +181,7 @@ class ConfigStoreResilienceTest {
 
         assertEquals(
                 List.of(
+                        dir.resolve("bookmarks.json"), // the write that failed while loading, before any handler
                         dir.resolve("bookmarks.json"),
                         dir.resolve("breakpoints.json"),
                         dir.resolve("notes.json"),
@@ -192,6 +193,21 @@ class ConfigStoreResilienceTest {
                         dir.resolve("projects.json")),
                 failed,
                 "each lost write reaches the handler that shows 'Could not save …'");
+    }
+
+    @Test
+    void aWriteThatFailedBeforeAnyoneWasListeningIsHandedToTheFirstHandler(@TempDir Path tmp) throws IOException {
+        Path dir = unwritableConfigDir(tmp);
+        ConfigManager config = new ConfigManager(dir);
+        config.load(); // creates bookmarks.json — and fails, long before a window installs its handler
+
+        List<Path> failed = new ArrayList<>();
+        config.shared().setOnWriteError((file, error) -> failed.add(file));
+        assertEquals(List.of(dir.resolve("bookmarks.json")), failed, "told now, not only in the log");
+
+        List<Path> later = new ArrayList<>();
+        config.shared().setOnWriteError((file, error) -> later.add(file));
+        assertEquals(List.of(), later, "and told once");
     }
 
     @Test

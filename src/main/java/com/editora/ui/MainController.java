@@ -1774,9 +1774,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         searchCoordinator.refreshHistory();
     }
 
-    /** Brings this window's Settings window (if showing) in line with preferences changed in another window. */
-    void syncSettingsWindow() {
-        settingsWindow.syncAll();
+    /** This window's Settings window, for {@link WindowManager} to bring in line with a change made elsewhere. */
+    SettingsWindow settingsWindow() {
+        return settingsWindow;
     }
 
     private void rebuildRecentMenu() {
