@@ -328,6 +328,217 @@ class AtomicFileWriteTest {
         assertEquals("precious", Files.readString(original));
     }
 
+    // --- writeDocument: the editor's save, with a backed-up in-place write where no replacement is possible
+
+    @TempDir
+    Path backups;
+
+    private Path fileInAReadOnlyDirectory(String name, String content) throws IOException {
+        Assumptions.assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("posix"));
+        Path locked = Files.createDirectory(dir.resolve("locked-" + name));
+        Path file = Files.writeString(locked.resolve(name), content);
+        Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("r-xr-xr-x"));
+        Assumptions.assumeFalse(Files.isWritable(locked), "running as a user the mode does not bind (root)");
+        return file;
+    }
+
+    private static void unlock(Path file) throws IOException {
+        Files.setPosixFilePermissions(file.getParent(), PosixFilePermissions.fromString("rwxr-xr-x"));
+    }
+
+    @Test
+    void aWritableFileInADirectoryThatCannotBeWrittenIsSavedInPlace() throws IOException {
+        Path file = fileInAReadOnlyDirectory("w.txt", "one\n");
+        try {
+            assertThrows(
+                    IOException.class,
+                    () -> AtomicFileWrite.writeIf(file, bytes("strict\n"), () -> true),
+                    "the strict write still refuses: only the editor's save may overwrite in place");
+            assertEquals("one\n", Files.readString(file));
+
+            assertEquals(
+                    AtomicFileWrite.Outcome.IN_PLACE,
+                    AtomicFileWrite.writeDocument(file, bytes("two\n"), () -> true, backups));
+
+            assertEquals("two\n", Files.readString(file));
+            try (var kept = Files.list(backups)) {
+                assertEquals(0, kept.count(), "the backup of the previous bytes is removed after a good write");
+            }
+        } finally {
+            unlock(file);
+        }
+    }
+
+    @Test
+    void anObsoleteInPlaceWriteLeavesTheFileAlone() throws IOException {
+        Path file = fileInAReadOnlyDirectory("obsolete.txt", "one\n");
+        try {
+            assertEquals(
+                    AtomicFileWrite.Outcome.SKIPPED,
+                    AtomicFileWrite.writeDocument(file, bytes("two\n"), () -> false, backups));
+            assertEquals("one\n", Files.readString(file));
+        } finally {
+            unlock(file);
+        }
+    }
+
+    @Test
+    void aFailedInPlaceWritePutsThePreviousBytesBack() throws IOException {
+        Path file = fileInAReadOnlyDirectory("torn.txt", "precious\n");
+        AtomicInteger overwrites = new AtomicInteger();
+        AtomicFileWrite.FileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void overwrite(Path path, byte[] content) throws IOException {
+                if (overwrites.incrementAndGet() == 1) {
+                    Files.write(path, Arrays.copyOf(content, 2)); // the torn write: truncated, two bytes in
+                    throw new IOException("simulated full disk");
+                }
+                super.overwrite(path, content);
+            }
+        };
+        try {
+            IOException failure = assertThrows(
+                    IOException.class,
+                    () -> AtomicFileWrite.writeDocument(file, bytes("replacement\n"), () -> true, backups, files));
+
+            assertTrue(failure.getMessage().contains("restored"), failure.getMessage());
+            assertEquals("precious\n", Files.readString(file));
+        } finally {
+            unlock(file);
+        }
+    }
+
+    @Test
+    void anInPlaceWriteThatCannotBeUndoneKeepsAndNamesTheBackup() throws IOException {
+        Path file = fileInAReadOnlyDirectory("lost.txt", "precious\n");
+        AtomicFileWrite.FileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void overwrite(Path path, byte[] content) throws IOException {
+                Files.write(path, new byte[0]);
+                throw new IOException("simulated device error");
+            }
+        };
+        try {
+            IOException failure = assertThrows(
+                    IOException.class,
+                    () -> AtomicFileWrite.writeDocument(file, bytes("replacement\n"), () -> true, backups, files));
+
+            Path backup;
+            try (var kept = Files.list(backups)) {
+                backup = kept.findFirst().orElseThrow();
+            }
+            assertEquals("precious\n", Files.readString(backup), "the previous bytes survive the torn write");
+            assertTrue(failure.getMessage().contains(backup.toString()), failure.getMessage());
+        } finally {
+            unlock(file);
+        }
+    }
+
+    @Test
+    void aFileThatCannotBeBackedUpIsNotOverwritten() throws IOException {
+        Path file = fileInAReadOnlyDirectory("nobackup.txt", "precious\n");
+        AtomicFileWrite.FileOperations files = new DelegatingFileOperations() {
+            @Override
+            public Path createTempFile(Path directory, String prefix, String suffix, FileAttribute<?>... attributes)
+                    throws IOException {
+                throw new IOException("no room here");
+            }
+
+            @Override
+            public Path createTempFile(String prefix, String suffix, FileAttribute<?>... attributes)
+                    throws IOException {
+                throw new IOException("no room there either");
+            }
+        };
+        try {
+            assertThrows(
+                    IOException.class,
+                    () -> AtomicFileWrite.writeDocument(file, bytes("replacement\n"), () -> true, backups, files));
+            assertEquals("precious\n", Files.readString(file));
+        } finally {
+            unlock(file);
+        }
+    }
+
+    @Test
+    void aFileThatCannotBeRenamedOverIsSavedInPlace() throws IOException {
+        // EBUSY on a bind-mounted file, EPERM in a sticky directory: staging works, neither move does.
+        Path file = Files.writeString(dir.resolve("busy.txt"), "one\n");
+        AtomicFileWrite.FileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void move(Path source, Path target, CopyOption... options) throws IOException {
+                throw new java.nio.file.FileSystemException(target.toString(), null, "Device or resource busy");
+            }
+        };
+
+        assertEquals(
+                AtomicFileWrite.Outcome.IN_PLACE,
+                AtomicFileWrite.writeDocument(file, bytes("two\n"), () -> true, backups, files));
+
+        assertEquals("two\n", Files.readString(file));
+        assertEquals(1, entryCount(), "the unused staging file is removed");
+    }
+
+    @Test
+    void savingAHardLinkedFileKeepsItsOtherNameOnTheSameContent() throws IOException {
+        Path file = Files.writeString(dir.resolve("a.txt"), "one\n");
+        Path other;
+        try {
+            other = Files.createLink(dir.resolve("hard.txt"), file);
+        } catch (UnsupportedOperationException | IOException noHardLinks) {
+            Assumptions.abort("hard links are unavailable here");
+            return;
+        }
+        Assumptions.assumeTrue(dir.getFileSystem().supportedFileAttributeViews().contains("unix"));
+
+        assertEquals(
+                AtomicFileWrite.Outcome.IN_PLACE,
+                AtomicFileWrite.writeDocument(file, bytes("two\n"), () -> true, backups));
+
+        assertEquals("two\n", Files.readString(other));
+        assertTrue(Files.isSameFile(file, other), "the two names are still one file");
+    }
+
+    @Test
+    void anOrdinaryDocumentIsStillReplacedNotOverwritten() throws IOException {
+        Path file = Files.writeString(dir.resolve("plain.txt"), "one\n");
+        AtomicFileWrite.FileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void overwrite(Path path, byte[] content) {
+                throw new AssertionError("an ordinary save must never truncate the file in place");
+            }
+        };
+
+        assertEquals(
+                AtomicFileWrite.Outcome.REPLACED,
+                AtomicFileWrite.writeDocument(file, bytes("two\n"), () -> true, backups, files));
+        assertEquals("two\n", Files.readString(file));
+    }
+
+    @Test
+    void aFileWithAVeryLongNameCanBeSaved() throws IOException {
+        Path file;
+        try {
+            file = Files.writeString(dir.resolve("n".repeat(240) + ".txt"), "one\n");
+        } catch (IOException nameTooLongHere) {
+            Assumptions.abort("this filesystem does not allow a 244-byte name");
+            return;
+        }
+
+        assertTrue(AtomicFileWrite.writeIf(file, bytes("two\n"), () -> true));
+
+        assertEquals("two\n", Files.readString(file));
+        assertEquals(1, entryCount());
+    }
+
+    @Test
+    void aStagingNameNeverSplitsACharacter() {
+        String name = AtomicFileWrite.boundedName(Path.of("\uD83D\uDE00".repeat(80) + ".txt"));
+
+        assertEquals("\uD83D\uDE00".repeat(24), name, "96 bytes of four-byte characters, whole");
+        assertEquals("short.txt", AtomicFileWrite.boundedName(Path.of("dir", "short.txt")));
+    }
+
     private long entryCount() throws IOException {
         try (var entries = Files.list(dir)) {
             return entries.count();
