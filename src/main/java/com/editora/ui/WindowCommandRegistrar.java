@@ -2249,21 +2249,30 @@ final class WindowCommandRegistrar {
         }));
         host.registry()
                 .register(Command.of(
-                        "nav.docStart", () -> host.editing().moveAndFollow(a -> a.start(host.selPolicy()))));
+                        "nav.docStart",
+                        () -> host.editing().moveAndFollow(a -> {
+                            host.editing().collapseCarets(); // one place in the document: one caret
+                            a.start(host.selPolicy());
+                        })));
         host.registry()
-                .register(Command.of("nav.docEnd", () -> host.editing().moveAndFollow(a -> a.end(host.selPolicy()))));
+                .register(Command.of(
+                        "nav.docEnd",
+                        () -> host.editing().moveAndFollow(a -> {
+                            host.editing().collapseCarets();
+                            a.end(host.selPolicy());
+                        })));
         host.registry().register(Command.of("nav.charForward", () -> {
             if (host.editing().multiCaretMove(b -> b.multiMoveHorizontal(1, false, host.editing().markActive))) {
                 return;
             }
-            host.editing()
-                    .moveAndFollow(a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1), host.selPolicy()));
+            // The area's own motion steps a whole code point; caret + 1 stopped inside a surrogate pair.
+            host.editing().moveAndFollow(a -> a.nextChar(host.selPolicy()));
         }));
         host.registry().register(Command.of("nav.charBackward", () -> {
             if (host.editing().multiCaretMove(b -> b.multiMoveHorizontal(-1, false, host.editing().markActive))) {
                 return;
             }
-            host.editing().moveAndFollow(a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1), host.selPolicy()));
+            host.editing().moveAndFollow(a -> a.previousChar(host.selPolicy()));
         }));
         host.registry().register(Command.of("nav.lineDown", () -> host.editing().moveLine(1)));
         host.registry().register(Command.of("nav.lineUp", () -> host.editing().moveLine(-1)));

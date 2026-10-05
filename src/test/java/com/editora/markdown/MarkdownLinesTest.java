@@ -100,4 +100,39 @@ class MarkdownLinesTest {
         assertEquals(0, MarkdownLines.emptyMarkerDeleteLength("- ", 1)); // caret not at end
         assertEquals(0, MarkdownLines.emptyMarkerDeleteLength("text", 4)); // not a marker
     }
+
+    @Test
+    void aListLineInsideAnOpenFenceHasNoMarkerForEnter() {
+        String text = "```yaml\n- name: x";
+        assertEquals(0, MarkdownLines.listMarkerLength(text, 8, "- name: x"));
+        String tilde = "~~~\n1. step";
+        assertEquals(0, MarkdownLines.listMarkerLength(tilde, 4, "1. step"));
+    }
+
+    @Test
+    void aListLineAfterTheFenceClosesKeepsItsMarker() {
+        String text = "```\ncode\n```\n- item";
+        assertEquals(2, MarkdownLines.listMarkerLength(text, 13, "- item"));
+        assertEquals(2, MarkdownLines.listMarkerLength("- item", 0, "- item"), "no fence at all");
+    }
+
+    @Test
+    void aFenceIsClosedOnlyByItsOwnKindAndLength() {
+        // ~~~ does not close ```, and a shorter run does not close a longer one.
+        assertTrue(MarkdownLines.insideFence("```\n~~~\n", 8));
+        assertTrue(MarkdownLines.insideFence("````\n```\n", 9));
+        assertFalse(MarkdownLines.insideFence("```\n````\n", 9), "a longer run does close it");
+        assertTrue(MarkdownLines.insideFence("```\n``` not a closer\n", 22), "a closer carries no text");
+        assertFalse(MarkdownLines.insideFence("`code` and ``` inline ```\n", 26), "an inline run opens nothing");
+        assertFalse(MarkdownLines.insideFence("    ```\n", 8), "four spaces of indent is a code block, not a fence");
+    }
+
+    @Test
+    void aSpacedThematicBreakIsNotAListItem() {
+        assertEquals(0, MarkdownLines.listMarkerLength("- - -", 0, "- - -"));
+        assertEquals(0, MarkdownLines.listMarkerLength("* * *", 0, "* * *"));
+        assertEquals(0, MarkdownLines.listMarkerLength(" -  -  - -", 0, " -  -  - -"));
+        assertEquals(2, MarkdownLines.listMarkerLength("- - x", 0, "- - x"), "a nested item, not a rule");
+        assertEquals(2, MarkdownLines.listMarkerLength("- -", 0, "- -"), "two marks are not a rule");
+    }
 }

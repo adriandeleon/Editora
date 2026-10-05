@@ -14,6 +14,9 @@ public class CommandRegistry {
     /** Notified with each command id that actually ran (after the command executes). Null = no listener. */
     private Consumer<String> executionListener;
 
+    /** Run before and after each outermost command; see {@link #setBoundaryHook}. Null = none. */
+    private Runnable boundaryHook;
+
     /** Reentrancy depth of {@link #run}: the listener fires only for the outermost call, so a command that
      *  synchronously delegates to another records what the user invoked, not the internal decomposition. */
     private int runDepth;
@@ -41,16 +44,33 @@ public class CommandRegistry {
         this.executionListener = listener;
     }
 
+    /**
+     * Installs a hook run immediately before and immediately after every outermost command. The window
+     * uses it to close the editor's undo group on both sides, so a command's edit is its own undo step:
+     * within the undo manager's merge window a paste used to be undone together with the word typed just
+     * before it, and a held Duplicate Line as one step.
+     */
+    public void setBoundaryHook(Runnable hook) {
+        this.boundaryHook = hook;
+    }
+
     public boolean run(String id) {
         Command command = commands.get(id);
         if (command == null) {
             return false;
+        }
+        boolean outermost = runDepth == 0;
+        if (outermost && boundaryHook != null) {
+            boundaryHook.run();
         }
         runDepth++;
         try {
             command.run();
         } finally {
             runDepth--;
+            if (outermost && boundaryHook != null) {
+                boundaryHook.run();
+            }
         }
         // Fire the execution/macro listener only for the OUTERMOST run. If a command synchronously delegates
         // to another (`registry.run(...)` from its body), firing per-run would record the inner command first

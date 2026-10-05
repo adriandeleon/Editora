@@ -119,11 +119,57 @@ final class EditingCoordinator {
     }
 
     void onUndo() {
-        withArea(CodeArea::undo);
+        undoOrRedo(false);
     }
 
     void onRedo() {
-        withArea(CodeArea::redo);
+        undoOrRedo(true);
+    }
+
+    /** Through the buffer, which keeps multiple carets in place and usable across the replayed edit. */
+    private void undoOrRedo(boolean redo) {
+        EditorBuffer b = host.activeBuffer();
+        withArea(a -> {
+            if (b != null) {
+                b.undoOrRedo(a, redo);
+            } else if (redo) {
+                a.redo();
+            } else {
+                a.undo();
+            }
+        });
+    }
+
+    /**
+     * Ends the active buffer's undo group. Run on both sides of every command (see
+     * {@code CommandRegistry#setBoundaryHook}) so a command's edit never merges into adjacent typing or
+     * into the same command repeated.
+     */
+    void undoBoundary() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null) {
+            b.preventUndoMerge();
+        }
+    }
+
+    /** Collapses the active buffer's extra carets, if any (C-g, Select All, document start/end). */
+    void collapseCarets() {
+        EditorBuffer b = host.activeBuffer();
+        if (b != null) {
+            b.collapseCarets();
+        }
+    }
+
+    /**
+     * Multiple carets with nothing selected at any of them, while "copy/cut the line when nothing is
+     * selected" is off: Cut and Copy then have nothing to act on, exactly as with one caret. The fork's
+     * multi-caret cut/copy fall back to whole lines unconditionally.
+     */
+    private boolean nothingSelectedAtAnyCaret(EditorBuffer b) {
+        return b != null
+                && b.hasMultipleCarets()
+                && !host.config().getSettings().isCopyLineWhenNoSelection()
+                && !b.anyCaretSelection();
     }
 
     void onCut() {
@@ -131,6 +177,10 @@ final class EditingCoordinator {
             return;
         }
         EditorBuffer b = host.activeBuffer();
+        if (nothingSelectedAtAnyCaret(b)) {
+            host.setStatus(tr("status.nothingToCut"));
+            return;
+        }
         if (b != null && b.multiCaretCut()) { // every caret's selection, one undoable step
             adoptClipboardAsKill();
             deactivateMark();
@@ -162,6 +212,10 @@ final class EditingCoordinator {
 
     void onCopy() {
         EditorBuffer b = host.activeBuffer();
+        if (nothingSelectedAtAnyCaret(b)) {
+            host.setStatus(tr("status.nothingToCopy"));
+            return;
+        }
         if (b != null && b.multiCaretCopy()) { // every caret's selection (VS Code one-line-per-caret)
             adoptClipboardAsKill();
             deactivateMark();
@@ -1988,6 +2042,7 @@ final class EditingCoordinator {
     void selectAll() {
         CodeArea area = host.activeArea();
         if (area != null) {
+            collapseCarets(); // a leftover extra caret would type alongside the replaced selection
             area.selectAll();
             area.requestFocus();
         }
@@ -2080,10 +2135,10 @@ final class EditingCoordinator {
     /** Position of the next word boundary at or after {@code from}: skip non-word chars, then word chars. */
     static int nextWordBoundary(String text, int from) {
         int i = from;
-        while (i < text.length() && !Character.isLetterOrDigit(text.charAt(i))) {
+        while (i < text.length() && !com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i))) {
             i++;
         }
-        while (i < text.length() && Character.isLetterOrDigit(text.charAt(i))) {
+        while (i < text.length() && com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i))) {
             i++;
         }
         return i;
@@ -2092,10 +2147,10 @@ final class EditingCoordinator {
     /** Position of the previous word boundary at or before {@code from}. */
     static int prevWordBoundary(String text, int from) {
         int i = from;
-        while (i > 0 && !Character.isLetterOrDigit(text.charAt(i - 1))) {
+        while (i > 0 && !com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i - 1))) {
             i--;
         }
-        while (i > 0 && Character.isLetterOrDigit(text.charAt(i - 1))) {
+        while (i > 0 && com.editora.editops.WordChars.isLetterDigitOrMark(text.charAt(i - 1))) {
             i--;
         }
         return i;
