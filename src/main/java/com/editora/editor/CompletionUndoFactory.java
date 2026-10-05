@@ -4,6 +4,9 @@ import java.time.Duration;
 import java.util.*;
 import java.util.function.*;
 
+import org.fxmisc.richtext.CodeArea;
+import org.fxmisc.richtext.model.TextChange;
+import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.fxmisc.undo.UndoManagerFactory;
 import org.fxmisc.undo.impl.ChangeQueue;
@@ -17,6 +20,36 @@ final class CompletionUndoFactory implements UndoManagerFactory {
 
     CompletionUndoFactory(int capacity) {
         this.capacity = capacity;
+    }
+
+    /**
+     * The one undo history of {@code view}'s document. A split's second view shares the document, and its
+     * change stream is the document's, so a manager per view would each record the other's undo as a fresh
+     * edit and "undo" it back in. Both views are given this one instead; it replays a change through
+     * {@code target} — the view the user is in — so that view's caret is the one taken to the change.
+     *
+     * <p>{@code pause} is UndoFX's preventMergeDelay: edits further apart than that start a new undo group
+     * (the idle break of {@link UndoMerge}).
+     */
+    static UndoManager<?> forDocument(CodeArea view, Supplier<CodeArea> target, int capacity, Duration pause) {
+        var factory = new CompletionUndoFactory(capacity);
+        return view.isPreserveStyle()
+                ? factory.createMultiChangeUM(
+                        view.multiRichChanges(),
+                        TextChange::invert,
+                        changes ->
+                                UndoUtils.applyMultiRichTextChange(target.get()).accept(changes),
+                        TextChange::mergeWith,
+                        TextChange::isIdentity,
+                        pause)
+                : factory.createMultiChangeUM(
+                        view.multiPlainChanges(),
+                        TextChange::invert,
+                        changes -> UndoUtils.applyMultiPlainTextChange(target.get())
+                                .accept(changes),
+                        TextChange::mergeWith,
+                        TextChange::isIdentity,
+                        pause);
     }
 
     @Override

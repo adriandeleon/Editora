@@ -459,10 +459,14 @@ class JavaTypingCompletionFxTest {
         String accepted = FxTestSupport.callOnFx(buffer::text);
         FxTestSupport.runOnFx(() -> {
             org.fxmisc.richtext.CodeArea second = FxTestSupport.field(buffer, "area2");
-            second.undo(); // the passive view records this typing burst as one existing undo step
+            // The views share one history, so this one undoes what the other would: the word, then the space.
+            second.undo();
+            assertEquals("import java.util.ArrayList;\nclass A { ArrayList ", buffer.text());
+            second.undo();
             assertEquals("import java.util.ArrayList;\nclass A { ArrayList", buffer.text());
             second.undo();
             assertEquals("class A { Arr", buffer.text());
+            second.redo();
             second.redo();
             second.redo();
             assertEquals(accepted, buffer.text());

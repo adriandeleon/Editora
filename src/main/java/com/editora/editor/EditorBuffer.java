@@ -74,7 +74,6 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
 import org.fxmisc.richtext.model.StyledSegment;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
-import org.fxmisc.undo.UndoManagerFactory;
 import org.reactfx.Subscription;
 
 import static com.editora.i18n.Messages.tr;
@@ -978,7 +977,7 @@ public class EditorBuffer implements TabContent {
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
-        area.setUndoManager(boundedUndoManager(area));
+        area.setUndoManager(boundedUndoManager());
         // Word/line-level undo: end the current undo group after an edit that finishes a word or line, so
         // one C-z undoes a word/line rather than the whole typing burst (the idle break is built into the
         // manager via UndoMerge.PAUSE). Subscribe AFTER setUndoManager so the manager records the change
@@ -4791,9 +4790,7 @@ public class EditorBuffer implements TabContent {
         if (!c.getRemoved().isEmpty() || !com.editora.editops.Abbrev.terminates(c.getInserted())) {
             return; // not a typed terminator (still inside a word, or a paste)
         }
-        if (hasActiveSnippet()
-                || area.getUndoManager().isPerformingAction()
-                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
+        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
             return;
         }
         CodeArea a = getFocusedArea();
@@ -4842,9 +4839,7 @@ public class EditorBuffer implements TabContent {
                 || c.getInserted().charAt(0) == '\n') {
             return;
         }
-        if (hasActiveSnippet()
-                || area.getUndoManager().isPerformingAction()
-                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
+        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
             return;
         }
         CodeArea a = getFocusedArea();
@@ -6506,7 +6501,7 @@ public class EditorBuffer implements TabContent {
         area2.getStyleClass().add("editor-area");
         area2.wrapTextProperty().bind(area.wrapTextProperty()); // one Word Wrap setting, two views
         area2.setLineHighlighterOn(area.isLineHighlighterOn());
-        area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
+        area2.setUndoManager(area.getUndoManager()); // one history for the shared document
         area2.setEditable(area.isEditable());
         addViewModePaging(area2); // same pager keys in the secondary split view
         completionActions.addCompletionKeys(area2);
@@ -6593,24 +6588,15 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** A fixed-size undo manager so undo history can't grow without bound. */
-    private static UndoManager<?> boundedUndoManager(CodeArea a) {
-        UndoManagerFactory factory = new CompletionUndoFactory(UNDO_HISTORY);
-        // Pass UndoMerge.PAUSE as the preventMergeDelay: edits more than that apart start a new undo
-        // group (idle break), giving word/line-level undo together with the token break below.
-        return a.isPreserveStyle()
-                ? UndoUtils.richTextUndoManager(a, factory, UndoMerge.PAUSE)
-                : UndoUtils.plainTextUndoManager(a, factory, UndoMerge.PAUSE);
+    /** The document's fixed-size undo history (bounded, so it can't grow without limit), shared by both views. */
+    private UndoManager<?> boundedUndoManager() {
+        return CompletionUndoFactory.forDocument(area, () -> focusedArea, UNDO_HISTORY, UndoMerge.PAUSE);
     }
 
     /** Ends the current undo group at a word/line boundary (see {@link UndoMerge}); no-op for huge files. */
     private void breakUndoGroupIfBoundary(String inserted, String removed) {
-        if (largeFile || !UndoMerge.breakAfter(inserted, removed)) {
-            return;
-        }
-        area.getUndoManager().preventMerge();
-        if (area2 != null) {
-            area2.getUndoManager().preventMerge(); // the split views share the document + each record it
+        if (!largeFile && UndoMerge.breakAfter(inserted, removed)) {
+            area.getUndoManager().preventMerge();
         }
     }
 
@@ -9318,9 +9304,9 @@ public class EditorBuffer implements TabContent {
 
     /** Picks the undo manager for the current mode: none for large/huge files, bounded otherwise. */
     private void applyUndoMode() {
-        area.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area));
+        area.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager());
         if (area2 != null) {
-            area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
+            area2.setUndoManager(area.getUndoManager());
         }
     }
 
@@ -9551,12 +9537,9 @@ public class EditorBuffer implements TabContent {
         area.requestFollowCaret();
     }
 
-    /** Both views' undo stacks and the Undo History checkpoints: none may be replayed across the boundary. */
+    /** The undo stack and the Undo History checkpoints: neither may be replayed across the boundary. */
     private void forgetHistoryAtNarrowBoundary() {
         area.getUndoManager().forgetHistory();
-        if (area2 != null) {
-            area2.getUndoManager().forgetHistory();
-        }
         undoHistory.clear();
         if (onUndoHistoryChanged != null) {
             onUndoHistoryChanged.run();
@@ -9578,14 +9561,11 @@ public class EditorBuffer implements TabContent {
         refilter.run();
     }
 
-    /** Keeps a programmatic mutation (or a command's edit) separate from adjacent typing in both views. */
+    /** Keeps a programmatic mutation (or a command's edit) separate from adjacent typing (both views share
+     *  one undo history). */
     public void preventUndoMerge() {
-        if (largeFile) {
-            return;
-        }
-        area.getUndoManager().preventMerge();
-        if (area2 != null) {
-            area2.getUndoManager().preventMerge();
+        if (!largeFile) {
+            area.getUndoManager().preventMerge();
         }
     }
 

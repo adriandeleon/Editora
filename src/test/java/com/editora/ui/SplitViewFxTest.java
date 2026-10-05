@@ -25,9 +25,9 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * A split shows one buffer in two views. They share the document, so they must share its view settings,
- * and everything that says "at the caret" must mean the caret of the view the user is in — driven here
- * through the real commands against a wired window.
+ * A split shows one buffer in two views. They share the document, so they must share what belongs to the
+ * document (its undo history, its view settings), and everything that says "at the caret" must mean the
+ * caret of the view the user is in — driven here through the real commands against a wired window.
  */
 @Tag("fx")
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -110,12 +110,82 @@ class SplitViewFxTest {
                 "headless window could not focus the editor view");
     }
 
+    private static String text(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> b.getArea().getText());
+    }
+
     private static String lines(int n) {
         StringBuilder sb = new StringBuilder();
         for (int i = 1; i <= n; i++) {
             sb.append("line ").append(i).append(" lorem ipsum\n");
         }
         return sb.toString();
+    }
+
+    // --- E4-3: one undo history for the shared document ------------------------------------------
+
+    @Test
+    void undoInTheOtherPaneContinuesTheSameHistory() throws Exception {
+        EditorBuffer b = open("undo.txt", "line 1\n");
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        FxTestSupport.runOnFx(() -> {
+            first.insertText(0, "AAA ");
+            first.getUndoManager().preventMerge();
+            first.insertText(4, "BBB ");
+            first.getUndoManager().preventMerge();
+        });
+        assertEquals("AAA BBB line 1\n", text(b));
+
+        FxTestSupport.runOnFx(first::undo);
+        assertEquals("AAA line 1\n", text(b), "pane 1 undoes the last edit");
+        FxTestSupport.runOnFx(second::undo);
+        assertEquals("line 1\n", text(b), "pane 2 undoes the edit before it, not pane 1's undo");
+        assertFalse(FxTestSupport.callOnFx(second::isUndoAvailable), "nothing is left to undo, in either pane");
+        assertFalse(FxTestSupport.callOnFx(first::isUndoAvailable));
+
+        FxTestSupport.runOnFx(second::redo);
+        assertEquals("AAA line 1\n", text(b));
+        FxTestSupport.runOnFx(first::redo);
+        assertEquals("AAA BBB line 1\n", text(b), "and redo walks the same history forward again");
+    }
+
+    @Test
+    void anEditMadeInOnePaneIsUndoneOnceFromTheOther() throws Exception {
+        EditorBuffer b = open("undo2.txt", "line 1\n");
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        FxTestSupport.runOnFx(() -> {
+            second.insertText(0, "two ");
+            second.getUndoManager().preventMerge();
+            first.insertText(0, "one ");
+        });
+        assertEquals("one two line 1\n", text(b));
+        FxTestSupport.runOnFx(second::undo);
+        assertEquals("two line 1\n", text(b));
+        FxTestSupport.runOnFx(first::undo);
+        assertEquals("line 1\n", text(b));
+        FxTestSupport.runOnFx(first::undo); // nothing left: must not resurrect anything
+        assertEquals("line 1\n", text(b));
+    }
+
+    @Test
+    void undoTakesTheCaretOfThePaneItWasIssuedIn() throws Exception {
+        EditorBuffer b = open("undo3.txt", lines(30));
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        int far = FxTestSupport.callOnFx(() -> first.getAbsolutePosition(20, 0));
+        FxTestSupport.runOnFx(() -> {
+            first.insertText(far, "XYZ");
+            first.getUndoManager().preventMerge();
+            first.moveTo(0);
+            second.moveTo(0);
+        });
+        focus(b, second);
+        run("edit.undo");
+        assertEquals(lines(30), text(b));
+        assertEquals(far, (int) FxTestSupport.callOnFx(second::getCaretPosition), "the caret of the pane in use");
+        assertEquals(0, (int) FxTestSupport.callOnFx(first::getCaretPosition), "the other pane's stays put");
     }
 
     // --- E4-9: the status bar shows the focused pane's caret --------------------------------------
