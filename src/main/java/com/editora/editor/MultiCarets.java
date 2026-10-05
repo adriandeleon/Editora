@@ -59,6 +59,8 @@ final class MultiCarets {
     private final EventHandler<KeyEvent> onPressed = this::keyPressed;
     private final EventHandler<KeyEvent> onTyped = this::keyTyped;
     private final MultiTab.Edits tabEdits;
+    /** Alt+drag over wrapped paragraphs, which the fork's box selection treats as one line each. */
+    private final WrapBoxSelection wrapBox;
 
     /** Non-zero while the manager itself is editing: that edit leaves every anchor right. */
     private int managerEdit;
@@ -89,6 +91,7 @@ final class MultiCarets {
         this.changes = area.multiPlainChanges().subscribe(c -> textChanged());
         area.addEventFilter(KeyEvent.KEY_PRESSED, onPressed);
         area.addEventFilter(KeyEvent.KEY_TYPED, onTyped);
+        this.wrapBox = WrapBoxSelection.install(area, manager);
     }
 
     /** {@code tabEdits} is the buffer's own Tab for one caret, applied here at every caret. */
@@ -98,6 +101,7 @@ final class MultiCarets {
 
     void dispose() {
         changes.unsubscribe();
+        wrapBox.dispose();
         area.removeEventFilter(KeyEvent.KEY_PRESSED, onPressed);
         area.removeEventFilter(KeyEvent.KEY_TYPED, onTyped);
         area.setEventDispatcher(stockDispatcher);
