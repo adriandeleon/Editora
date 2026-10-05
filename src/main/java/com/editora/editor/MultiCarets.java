@@ -11,6 +11,7 @@ import javafx.geometry.Bounds;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 
+import com.editora.editops.MultiTab;
 import org.fxmisc.richtext.CaretNode;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.Selection;
@@ -57,6 +58,7 @@ final class MultiCarets {
     private final Subscription changes;
     private final EventHandler<KeyEvent> onPressed = this::keyPressed;
     private final EventHandler<KeyEvent> onTyped = this::keyTyped;
+    private final MultiTab.Edits tabEdits;
 
     /** Non-zero while the manager itself is editing: that edit leaves every anchor right. */
     private int managerEdit;
@@ -64,8 +66,9 @@ final class MultiCarets {
     private boolean anchorsStale;
     private boolean syncQueued;
 
-    private MultiCarets(CodeArea area) {
+    private MultiCarets(CodeArea area, MultiTab.Edits tabEdits) {
         this.area = area;
+        this.tabEdits = tabEdits;
         this.controller = MultiCaretController.install(area);
         this.manager = controller.getManager();
         this.stockDispatcher = area.getEventDispatcher();
@@ -88,8 +91,9 @@ final class MultiCarets {
         area.addEventFilter(KeyEvent.KEY_TYPED, onTyped);
     }
 
-    static MultiCarets install(CodeArea area) {
-        return new MultiCarets(area);
+    /** {@code tabEdits} is the buffer's own Tab for one caret, applied here at every caret. */
+    static MultiCarets install(CodeArea area, MultiTab.Edits tabEdits) {
+        return new MultiCarets(area, tabEdits);
     }
 
     void dispose() {
@@ -432,11 +436,56 @@ final class MultiCarets {
                 }
                 deleteChar(code == KeyCode.DELETE);
             }
+            case TAB -> {
+                if (!tab(e.isShiftDown())) {
+                    return; // read-only or a huge file: the key stays whatever it was
+                }
+            }
             default -> {
                 return;
             }
         }
         e.consume();
+    }
+
+    // --- Tab ---------------------------------------------------------------------------------------
+
+    /**
+     * Tab ({@code shift == false}) or Shift-Tab at every caret: the buffer's own Tab — indent the selected
+     * lines, indent or dedent the caret's line, insert one indent unit — as one undoable edit. The fork types
+     * a literal tab character at every caret and ignores Shift-Tab. Returns false when Tab does not apply.
+     */
+    boolean tab(boolean shift) {
+        if (tabEdits == null || !manager.hasExtras() || !area.isEditable()) {
+            return false;
+        }
+        syncAnchors();
+        List<Extra> extras = extras();
+        List<int[]> carets = new ArrayList<>(extras.size() + 1);
+        carets.add(new int[] {area.getAnchor(), area.getCaretPosition()});
+        for (Extra x : extras) {
+            carets.add(new int[] {x.anchor(), x.caret()});
+        }
+        MultiTab.Plan plan = MultiTab.plan(area.getText(), carets, shift, tabEdits);
+        if (plan == null) {
+            return false;
+        }
+        if (!plan.changes().isEmpty()) {
+            var change = area.createMultiChange(plan.changes().size());
+            for (MultiTab.Change c : plan.changes()) {
+                change.replaceText(c.from(), c.to(), c.replacement()); // relative: old-text offsets, ascending
+            }
+            edit(change::commit);
+        }
+        MultiTab.Range primary = plan.ranges().get(0);
+        area.selectRange(primary.anchor(), primary.caret());
+        List<Extra> moved = new ArrayList<>(extras.size());
+        for (int i = 0; i < extras.size(); i++) {
+            MultiTab.Range r = plan.ranges().get(i + 1);
+            moved.add(new Extra(extras.get(i).id(), r.anchor(), r.caret()));
+        }
+        rebuild(moved);
+        return true;
     }
 
     // --- Add caret above / below ---------------------------------------------------------------------

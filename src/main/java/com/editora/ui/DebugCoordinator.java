@@ -486,6 +486,18 @@ final class DebugCoordinator {
         }
     }
 
+    /**
+     * Breakpoints stored for files that are not open — a closed file renamed from the Project tree, the
+     * files below a renamed folder — follow the rename too. Open buffers moved theirs in
+     * {@link #bufferPathChanged}, so there is nothing left under the old path for those.
+     */
+    void pathRenamed(Path old, Path target) {
+        String sep = old.getFileSystem().getSeparator();
+        if (RenamedFileState.rekey(ops.breakpointMap(), old.toString(), target.toString(), sep)) {
+            ops.saveBreakpoints();
+        }
+    }
+
     private void persistBreakpoints(EditorBuffer buffer) {
         if (buffer.isNarrowed()) {
             return; // region-relative line numbers while narrowed — see BookmarkCoordinator.persistBookmarks

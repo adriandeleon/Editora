@@ -21,7 +21,6 @@ import org.junit.jupiter.api.TestInstance;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -221,7 +220,10 @@ class SplitViewFxTest {
             Parent pane2 = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "root2"));
             assertTrue(FxTestSupport.callOnFx(second::isWrapText), "wraps like pane 1 from the start");
             assertEquals(highlight, FxTestSupport.callOnFx(second::isLineHighlighterOn));
-            assertNull(FxTestSupport.callOnFx(second::getParagraphGraphicFactory), "line numbers are off");
+            // Line numbers are off in both panes. Pane 2 used to have no gutter at all then (its gutter was line
+            // numbers only); it now has the same gutter as pane 1 — markers and fold chevrons, no numbers.
+            assertEquals(0, gutterNodes(second, ".lineno"), "line numbers are off");
+            assertEquals(0, gutterNodes(first, ".lineno"));
             Node markers = FxTestSupport.callOnFx(() -> whitespaceOverlay(pane2));
             assertNotNull(markers, "pane 2 has its own whitespace markers");
             assertTrue(FxTestSupport.callOnFx(markers::isVisible));
@@ -239,6 +241,8 @@ class SplitViewFxTest {
             assertFalse(FxTestSupport.callOnFx(second::isWrapText), "and follows every later change");
             assertFalse(FxTestSupport.callOnFx(markers::isVisible));
             assertNotNull(FxTestSupport.callOnFx(second::getParagraphGraphicFactory));
+            settle();
+            assertTrue(gutterNodes(second, ".lineno") > 0, "and line numbers come back in pane 2 as well");
             assertEquals(!highlight, FxTestSupport.callOnFx(second::isLineHighlighterOn));
         } finally {
             if (FxTestSupport.callOnFx(first::isWrapText)) {
@@ -250,5 +254,238 @@ class SplitViewFxTest {
                 run("view.toggleLineHighlight");
             }
         }
+    }
+
+    // --- E4-12 (rest): pane 2 shows the same marks ------------------------------------------------
+
+    /** How many nodes matching {@code selector} the gutter rows currently on screen in {@code view} hold. */
+    private int gutterNodes(CodeArea view, String selector) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            view.applyCss();
+            view.layout();
+            return (int) view.lookupAll(selector).stream()
+                    .filter(n -> n.getScene() != null
+                            && !(n instanceof Label l && l.getText().isBlank()))
+                    .count();
+        });
+    }
+
+    /** A screenshot for a human to look at; written only with {@code -Deditora.test.shots=<dir>}. */
+    private void shot(String name) throws Exception {
+        String dir = System.getProperty("editora.test.shots");
+        if (dir == null) {
+            return;
+        }
+        settle();
+        javafx.scene.image.WritableImage img = FxTestSupport.callOnFx(() ->
+                ((Stage) FxTestSupport.field(fx.controller, "stage")).getScene().snapshot(null));
+        javax.imageio.ImageIO.write(
+                javafx.embed.swing.SwingFXUtils.fromFXImage(img, null),
+                "png",
+                Path.of(dir, name + ".png").toFile());
+    }
+
+    @Test
+    void theSecondPaneShowsBookmarkBreakpointAndFoldMarksAndKeepsThemInStep() throws Exception {
+        StringBuilder src = new StringBuilder("class Marks {\n");
+        for (int m = 0; m < 2; m++) {
+            src.append("    void m").append(m).append("() {\n        call();\n        call();\n    }\n");
+        }
+        src.append("}\n");
+        EditorBuffer b = open("Marks.java", src.toString());
+        FxTestSupport.runOnFx(() -> {
+            fx.shared.getSettings().setDebugSupport(true);
+            b.setBreakpointsEnabled(true);
+            b.getFoldManager().recompute();
+            b.toggleBookmark(2);
+        });
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        settle();
+
+        assertEquals(1, gutterNodes(first, ".bookmark-marker"), "precondition: pane 1 shows the bookmark");
+        assertEquals(1, gutterNodes(second, ".bookmark-marker"), "pane 2 shows it from the start");
+        int chevrons = gutterNodes(first, ".fold-chevron");
+        assertTrue(chevrons >= 3, "the class and both methods can be folded: " + chevrons);
+        assertEquals(chevrons, gutterNodes(second, ".fold-chevron"), "pane 2 has the fold chevrons");
+
+        // Marks added while the split is open appear in both panes; removed ones go from both.
+        FxTestSupport.runOnFx(() -> {
+            b.toggleBookmark(6);
+            b.toggleBreakpoint(3);
+        });
+        settle();
+        assertEquals(2, gutterNodes(second, ".bookmark-marker"));
+        assertEquals(1, gutterNodes(second, ".breakpoint-marker"));
+        assertEquals(1, gutterNodes(first, ".breakpoint-marker"));
+        FxTestSupport.runOnFx(() -> {
+            b.toggleBookmark(2);
+            b.toggleBreakpoint(3);
+        });
+        settle();
+        assertEquals(1, gutterNodes(second, ".bookmark-marker"));
+        assertEquals(0, gutterNodes(second, ".breakpoint-marker"));
+        FxTestSupport.runOnFx(() -> b.toggleBreakpoint(7));
+
+        shot("split-marks");
+
+        // A chevron in pane 2 folds the region, and both panes then show it collapsed.
+        Label chevron = FxTestSupport.callOnFx(() -> second.lookupAll(".fold-chevron").stream()
+                .map(n -> (Label) n)
+                .filter(l -> !l.getText().isBlank() && l.getScene() != null)
+                .skip(1) // the first belongs to the class; take the first method
+                .findFirst()
+                .orElseThrow());
+        FxTestSupport.runOnFx(() -> javafx.event.Event.fireEvent(
+                chevron,
+                new javafx.scene.input.MouseEvent(
+                        javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                        1,
+                        1,
+                        1,
+                        1,
+                        javafx.scene.input.MouseButton.PRIMARY,
+                        1,
+                        false,
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        false,
+                        true,
+                        false,
+                        true,
+                        null)));
+        settle();
+        assertTrue(FxTestSupport.callOnFx(() -> b.getFoldManager().isCollapsed(1)), "folded from pane 2's gutter");
+        assertTrue(FxTestSupport.callOnFx(() -> second.isFolded(2)), "its body is hidden in pane 2");
+    }
+
+    @Test
+    void theSecondPaneHasTheEditorContextMenuAndItActsOnThatPane() throws Exception {
+        EditorBuffer b = open("menu.txt", lines(30));
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        FxTestSupport.runOnFx(() -> first.selectRange(2, 0, 2, 4));
+        focus(b, second);
+        FxTestSupport.runOnFx(() -> second.selectRange(10, 5, 10, 7));
+        assertNotNull(FxTestSupport.callOnFx(second::getOnContextMenuRequested), "pane 2 answers a right-click");
+
+        javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu");
+        FxTestSupport.runOnFx(() -> {
+            javafx.geometry.Point2D at = second.localToScreen(40, 40);
+            second.getOnContextMenuRequested()
+                    .handle(new javafx.scene.input.ContextMenuEvent(
+                            javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED,
+                            40,
+                            40,
+                            at.getX(),
+                            at.getY(),
+                            false,
+                            null));
+        });
+        settle();
+        try {
+            assertTrue(FxTestSupport.callOnFx(menu::isShowing));
+            assertSame(second, FxTestSupport.callOnFx(menu::getOwnerNode), "shown on the pane that was clicked");
+            javafx.scene.control.MenuItem copy = FxTestSupport.callOnFx(() -> menu.getItems().stream()
+                    .filter(i -> com.editora.i18n.Messages.tr("editmenu.copy").equals(i.getText()))
+                    .findFirst()
+                    .orElseThrow());
+            assertFalse(FxTestSupport.callOnFx(copy::isDisable), "pane 2 has a selection");
+            FxTestSupport.runOnFx(copy::fire);
+            assertEquals(
+                    "11",
+                    FxTestSupport.callOnFx(() ->
+                            javafx.scene.input.Clipboard.getSystemClipboard().getString()),
+                    "pane 2's selection (\"11\" of \"line 11\"), not pane 1's (\"line\")");
+        } finally {
+            FxTestSupport.runOnFx(menu::hide);
+        }
+    }
+
+    @Test
+    void theSecondPaneDrawsSpellAndNoteOverlays() throws Exception {
+        EditorBuffer b = open("overlays.txt", lines(10));
+        split(b);
+        Parent pane2 = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "root2"));
+        Node spell = overlay(pane2, "spellcheck-overlay");
+        Node notes = overlay(pane2, "note-highlight-overlay");
+        assertNotNull(spell, "pane 2 has its own spell-check overlay");
+        assertNotNull(notes, "and its own note overlay");
+        Node primarySpell = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "spellOverlay"));
+        Node primaryNotes = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "noteOverlay"));
+        assertEquals(FxTestSupport.callOnFx(primarySpell::isVisible), FxTestSupport.callOnFx(spell::isVisible));
+        assertEquals(FxTestSupport.callOnFx(primaryNotes::isVisible), FxTestSupport.callOnFx(notes::isVisible));
+
+        // Switched together with pane 1's, in both directions.
+        boolean on = FxTestSupport.callOnFx(primarySpell::isVisible);
+        FxTestSupport.runOnFx(() -> b.setSpellCheckEnabled(!on));
+        assertEquals(!on, FxTestSupport.callOnFx(spell::isVisible), "spell check toggles in pane 2 as well");
+        FxTestSupport.runOnFx(() -> b.setSpellCheckEnabled(on));
+        assertEquals(on, FxTestSupport.callOnFx(spell::isVisible));
+
+        // Laid over pane 2's text, not left at 0x0.
+        settle();
+        CodeArea second = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "area2"));
+        double textWidth = FxTestSupport.callOnFx(
+                () -> second.getParent().getBoundsInParent().getWidth());
+        assertEquals(
+                textWidth,
+                FxTestSupport.callOnFx(() -> notes.getBoundsInParent().getWidth()),
+                0.5);
+        assertEquals(
+                textWidth,
+                FxTestSupport.callOnFx(() -> spell.getBoundsInParent().getWidth()),
+                0.5);
+    }
+
+    private static Node overlay(Parent pane, String styleClass) throws Exception {
+        return FxTestSupport.callOnFx(() -> pane.getChildrenUnmodifiable().stream()
+                .filter(n -> n.getStyleClass().contains(styleClass))
+                .findFirst()
+                .orElse(null));
+    }
+
+    // --- E4-11 (rest): the remaining pane takes over where the user was ---------------------------
+
+    @Test
+    void closingTheSplitFromTheSecondPaneCarriesItsCaretAndScrollPositionOver() throws Exception {
+        EditorBuffer b = open("carry.txt", lines(400));
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        FxTestSupport.runOnFx(() -> first.moveTo(3, 2));
+        focus(b, second);
+        FxTestSupport.runOnFx(() -> {
+            second.selectRange(300, 1, 300, 6);
+            second.showParagraphAtTop(290);
+        });
+        settle();
+        int top = FxTestSupport.callOnFx(second::firstVisibleParToAllParIndex);
+        assertTrue(top >= 280, "precondition: pane 2 is scrolled far down: " + top);
+
+        run("view.splitVertical"); // closes the split from pane 2
+        settle();
+        settle();
+
+        assertEquals(300, (int) FxTestSupport.callOnFx(first::getCurrentParagraph), "pane 2's caret line");
+        assertEquals(6, (int) FxTestSupport.callOnFx(first::getCaretColumn));
+        assertEquals("ine 3", FxTestSupport.callOnFx(first::getSelectedText), "and its selection");
+        assertEquals(
+                top, (int) FxTestSupport.callOnFx(first::firstVisibleParToAllParIndex), "and where it was scrolled to");
+    }
+
+    @Test
+    void closingTheSplitFromTheFirstPaneLeavesItWhereItWas() throws Exception {
+        EditorBuffer b = open("stay.txt", lines(400));
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        FxTestSupport.runOnFx(() -> second.moveTo(300, 0));
+        focus(b, first);
+        FxTestSupport.runOnFx(() -> first.moveTo(3, 2));
+        run("view.splitVertical");
+        settle();
+        assertEquals(3, (int) FxTestSupport.callOnFx(first::getCurrentParagraph));
     }
 }

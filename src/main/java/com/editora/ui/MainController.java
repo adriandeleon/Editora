@@ -1641,29 +1641,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.renamedTo", target.getFileName()));
     }
 
-    /** Re-keys every path-keyed session map (folds, markdown mode, spell language, read-only) on rename. */
+    /** Everything stored under the renamed path (a file, or a folder and the files below it) follows it. */
     private void migrateFileState(Path old, Path target) {
-        WorkspaceState ws = config.getWorkspaceState();
-        String oldKey = old.toString();
-        String newKey = target.toString();
-        rekey(ws.getFoldedRegions(), oldKey, newKey);
-        rekey(ws.getMarkdownViewModes(), oldKey, newKey);
-        rekey(ws.getSpellLanguages(), oldKey, newKey);
-        if (ws.getReadOnlyFiles().remove(oldKey)) {
-            ws.getReadOnlyFiles().add(newKey);
-        }
+        RenamedFileState.rekeyWorkspace(config.getWorkspaceState(), old, target);
         if (recentFiles != null) {
             recentFiles.remove(old);
         }
-        // Bookmarks (re-anchored by lineText) and notes (re-keyed by content hash) self-heal on reopen.
-    }
-
-    /** Moves a value from {@code oldKey} to {@code newKey} if present, preserving it across a rename. */
-    private static <V> void rekey(Map<String, V> map, String oldKey, String newKey) {
-        V value = map.remove(oldKey);
-        if (value != null) {
-            map.put(newKey, value);
-        }
+        bookmarkCoordinator.pathRenamed(old, target);
+        notesCoordinator.pathRenamed(old, target);
+        debugCoordinator.pathRenamed(old, target);
     }
 
     /** Syncs editor/session state after the Project tree deletes a file on disk. */
@@ -5067,6 +5053,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
                     lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
                     debugCoordinator.bufferPathChanged(buffer, oldPath);
+                    bookmarkCoordinator.bufferPathChanged(buffer, oldPath); // Save As: its marks go with it
+                    notesCoordinator.bufferPathChanged(buffer, oldPath);
+                    RenamedFileState.copyWorkspace(config.getWorkspaceState(), oldPath, buffer.getPath());
                 }
 
                 @Override
@@ -5107,6 +5096,20 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public Tab tabForPath(Path file) {
                     return MainController.this.tabForPath(file);
+                }
+
+                @Override
+                public boolean openInAnotherWindow(Path file) {
+                    return windowManager != null && windowManager.openInAnotherWindow(MainController.this, file);
+                }
+
+                @Override
+                public void editorConfigSaved() {
+                    if (windowManager == null) {
+                        applyEditorConfigLocal();
+                    } else {
+                        windowManager.editorConfigSavedAcrossWindows();
+                    }
                 }
 
                 @Override
@@ -6360,7 +6363,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         return;
                     }
                     org.fxmisc.richtext.CodeArea area = b.getArea();
-                    int idx = line - 1;
+                    int idx = navigation.areaLine(b, line - 1); // a narrowed area numbers its lines from the region
                     int paragraphs = area.getParagraphs().size();
                     if (idx < 0 || idx >= paragraphs) {
                         setStatus(tr("status.todo.lineChanged")); // the file shrank under the scan snapshot
@@ -7377,6 +7380,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Open buffers in this window whose path is exactly {@code target} or a descendant of it. */
+    void applyEditorConfigLocal() {
+        editorSettings.applyEditorConfigSupport();
+    }
+
     List<EditorBuffer> buffersAtOrUnderLocal(Path target) {
         return OpenBufferLifecycle.atOrUnder(editorArea, MainController::bufferOf, target);
     }
@@ -8822,10 +8829,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             setStatus(tr("status.renameFailedExists", target.getFileName()));
             return;
         }
-        // Capture the per-file storage keys while the old file still exists (the note key is the
-        // canonical/real path, which can't be recomputed once the file has moved away).
-        String oldBookmarkKey = old.toString();
-        String oldNoteKey = noteKey(buffer);
         fileWorkflows.invalidatePendingWrite(old);
         try {
             if (caseOnly) {
@@ -8844,9 +8847,6 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (recentFiles != null) {
             recentFiles.add(target);
         }
-        // Carry bookmarks + personal notes over to the new path so an in-app rename never strands them.
-        bookmarkCoordinator.migrateKey(oldBookmarkKey, target.toString());
-        notesCoordinator.migrateKey(oldNoteKey, noteKey(buffer));
         statusBar.refresh();
     }
 

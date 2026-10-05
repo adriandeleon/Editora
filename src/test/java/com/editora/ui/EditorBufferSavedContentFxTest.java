@@ -22,7 +22,7 @@ class EditorBufferSavedContentFxTest {
             EditorBuffer b = new EditorBuffer();
             b.setContent("saved before request");
             b.replaceWholeDocument("edited while save ran");
-            b.acknowledgeSavedContent("saved before request");
+            b.acknowledgeSavedContent("saved before request", b.getLineEnding());
             return b;
         });
 

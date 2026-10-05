@@ -456,18 +456,10 @@ public final class FoldManager {
         // untouched (this runs on every 250 ms settle), and at startup the recompute that setLanguage
         // triggers runs against a still-empty document, measured at ~10 ms of pure forced layout.
         if (!changed.isEmpty()) {
-            int first = 0;
-            int last = -1;
-            try {
-                first = Math.max(0, area.firstVisibleParToAllParIndex());
-                last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            } catch (RuntimeException notLaidOutYet) {
-                last = -1; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
-            }
-            for (int line : changed) {
-                if (line >= first && line <= last) {
-                    area.recreateParagraphGraphic(line);
-                }
+            recreateVisibleGutter(area, changed, total);
+            CodeArea second = secondView.get();
+            if (second != null && second.getScene() != null) { // a split's second view shows the same chevrons
+                recreateVisibleGutter(second, changed, total);
             }
         }
         // The line-number gutter pads to the digit width of the line count (see formatLineNo). Since the
@@ -482,16 +474,35 @@ public final class FoldManager {
         onRegionsChanged.run();
     }
 
+    /** Recreates the gutter graphics of those of {@code lines} (null = all) that {@code view} is showing. */
+    private static void recreateVisibleGutter(CodeArea view, java.util.Collection<Integer> lines, int total) {
+        int first;
+        int last;
+        try {
+            first = Math.max(0, view.firstVisibleParToAllParIndex());
+            last = Math.min(total - 1, view.lastVisibleParToAllParIndex());
+        } catch (RuntimeException notLaidOutYet) {
+            return; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
+        }
+        if (lines == null) {
+            for (int i = first; i <= last; i++) {
+                view.recreateParagraphGraphic(i);
+            }
+            return;
+        }
+        for (int line : lines) {
+            if (line >= first && line <= last) {
+                view.recreateParagraphGraphic(line);
+            }
+        }
+    }
+
     /** Recreates the visible rows' gutter graphics so their line numbers re-pad to a new digit width. */
     private void repadVisibleLineNumbers(int total) {
-        try {
-            int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            for (int i = first; i <= last; i++) {
-                area.recreateParagraphGraphic(i);
-            }
-        } catch (RuntimeException ignored) {
-            // viewport mid-layout — the next build picks up the new width anyway
+        recreateVisibleGutter(area, null, total);
+        CodeArea second = secondView.get();
+        if (second != null && second.getScene() != null) {
+            recreateVisibleGutter(second, null, total);
         }
     }
 
