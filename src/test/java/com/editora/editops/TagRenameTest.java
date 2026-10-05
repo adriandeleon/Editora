@@ -222,4 +222,61 @@ class TagRenameTest {
     void changeInTagNameFalseInAttributeValue() {
         assertFalse(TagRename.changeInTagName("<div id=x>", 8, 9));
     }
+
+    // --- a name that passes through empty: clear it, then retype ---
+
+    @Test
+    void clearingTheLastLetterOfAnOpenTagNameEmptiesTheCloserToo() {
+        // <d|>x</d> + Backspace: the closer used to be abandoned as </d>.
+        assertEquals("<>x</>", type("<|d>x</d>", "", 1, true));
+    }
+
+    @Test
+    void deletingAWholeSelectedNameEmptiesThePair() {
+        assertEquals("<>x</>", type("<|div>x</div>", "", 3, true));
+        assertEquals("<>x</>", type("<div>x</|div>", "", 3, true), "and from the closing tag");
+    }
+
+    @Test
+    void typingIntoAnEmptiedNameRenamesItsEmptyPartner() {
+        assertEquals("<s>x</s>", typeHtml("<|>x</>", "s"));
+        assertEquals("<s>x</s>", typeHtml("<>x</|>", "s"), "and from the closing tag");
+    }
+
+    @Test
+    void clearAndRetypeEndsWithBothTagsRenamed() {
+        // The whole gesture from the report: Backspace x3 over "div", then "span".
+        String text = "<div>x</div>";
+        int caret = 4;
+        for (int i = 0; i < 3; i++) {
+            String removed = text.substring(caret - 1, caret);
+            text = text.substring(0, caret - 1) + text.substring(caret);
+            caret--;
+            text = applyMirror(text, TagRename.mirror(text, caret, removed, "", true));
+        }
+        assertEquals("<>x</>", text);
+        for (char c : "span".toCharArray()) {
+            text = text.substring(0, caret) + c + text.substring(caret);
+            text = applyMirror(text, TagRename.mirror(text, caret, "", String.valueOf(c), true));
+            caret++;
+        }
+        assertEquals("<span>x</span>", text);
+    }
+
+    private static String applyMirror(String text, Mirror m) {
+        return m == null ? text : text.substring(0, m.from()) + m.name() + text.substring(m.to());
+    }
+
+    @Test
+    void anEmptiedNamePairsOnlyWithItsOwnDepth() {
+        // The inner pair is the one being retyped; the outer nameless pair is someone else's.
+        assertEquals("<><b>x</b></>", typeHtml("<><|>x</></>", "b"));
+    }
+
+    @Test
+    void aBrandNewTagStillHasNoPairToRename() {
+        // No nameless closer is waiting, so the first letter of a new tag mirrors nothing.
+        assertNull(typeHtml("<div><|>a</div>", "b"));
+        assertNull(typeHtml("<p>a</p><|", "b"), "nor does a tag still being typed");
+    }
 }
