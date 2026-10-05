@@ -282,7 +282,12 @@ public final class AtomicFileWrite {
     }
 
     private static Outcome write(
-            Path file, byte[] bytes, BooleanSupplier commit, FileOperations files, boolean inPlaceAllowed, Path backupDir)
+            Path file,
+            byte[] bytes,
+            BooleanSupplier commit,
+            FileOperations files,
+            boolean inPlaceAllowed,
+            Path backupDir)
             throws IOException {
         Path target = resolveLink(file);
         Path dir = target.getParent();
