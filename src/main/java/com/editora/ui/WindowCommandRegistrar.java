@@ -2132,13 +2132,25 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("edit.selectAll", host.editing()::selectAll));
         host.registry()
                 .register(Command.of(
-                        "edit.duplicateLine", () -> host.editing().lineOp(com.editora.editops.LineOps::duplicateLine)));
+                        "edit.duplicateLine",
+                        () -> host.editing()
+                                .lineOp(
+                                        com.editora.editops.LineOps::duplicateLine,
+                                        com.editora.editops.LineOps::duplicateLines)));
         host.registry()
                 .register(Command.of(
-                        "edit.moveLineUp", () -> host.editing().lineOp(com.editora.editops.LineOps::moveLineUp)));
+                        "edit.moveLineUp",
+                        () -> host.editing()
+                                .lineOp(
+                                        com.editora.editops.LineOps::moveLineUp,
+                                        com.editora.editops.LineOps::moveLinesUp)));
         host.registry()
                 .register(Command.of(
-                        "edit.moveLineDown", () -> host.editing().lineOp(com.editora.editops.LineOps::moveLineDown)));
+                        "edit.moveLineDown",
+                        () -> host.editing()
+                                .lineOp(
+                                        com.editora.editops.LineOps::moveLineDown,
+                                        com.editora.editops.LineOps::moveLinesDown)));
         // Emacs fill commands: re-wrap paragraphs to the fill column (M-q / fill-region / set-fill-column).
         host.registry().register(Command.of("edit.fillParagraph", host.editing()::fillParagraph));
         host.registry().register(Command.of("edit.fillRegion", host.editing()::fillRegion));

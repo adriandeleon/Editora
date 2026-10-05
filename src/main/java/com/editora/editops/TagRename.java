@@ -34,7 +34,7 @@ public final class TagRename {
             "wbr");
 
     /** HTML raw-text elements — their content is skipped to the matching close tag. */
-    private static final Set<String> RAW_TEXT_ELEMENTS = Set.of("script", "style", "textarea", "title");
+    static final Set<String> RAW_TEXT_ELEMENTS = Set.of("script", "style", "textarea", "title");
 
     private TagRename() {}
 

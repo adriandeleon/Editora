@@ -657,7 +657,8 @@ final class EditingCoordinator {
         }
         // The comment logic lives on the buffer (so the editor right-click menu can invoke it too).
         if (!buffer.toggleComment()) {
-            host.setStatus(tr("status.noCommentSyntax"));
+            // With comment syntax available the only refusal left is a block comment that would nest.
+            host.setStatus(tr(buffer.supportsComments() ? "status.commentCannotNest" : "status.noCommentSyntax"));
         }
     }
 
@@ -691,6 +692,26 @@ final class EditingCoordinator {
 
     /** Applies a pure {@link com.editora.editops.LineOps} edit to the active area (duplicate / move line). */
     void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op) {
+        lineOp(op, null);
+    }
+
+    private static int paragraphOf(CodeArea area, int offset) {
+        return area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+    }
+
+    /** A block form of a {@link com.editora.editops.LineOps} command: {@code (text, selStart, selEnd)}. */
+    interface LineBlockOp {
+        com.editora.editops.LineOps.BlockEdit apply(String text, int selStart, int selEnd);
+    }
+
+    /**
+     * {@link #lineOp(java.util.function.BiFunction)}, acting on every line of a selection as one block
+     * (which stays selected) when there is one — a selection used to collapse and only the caret's line
+     * moved.
+     */
+    void lineOp(
+            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
         if (!activeEditable()) {
             return;
         }
@@ -699,6 +720,28 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
+        if (blockOp != null && area.getSelection().getLength() > 0) {
+            int start = area.getSelection().getStart();
+            int end = area.getSelection().getEnd();
+            // Folds next to either end of the block move (or are moved over) as units.
+            String text = area.getText();
+            String units = buffer.getFoldManager().linesAsUnits(text, paragraphOf(area, start));
+            if (units.equals(text)) {
+                units = buffer.getFoldManager().linesAsUnits(text, paragraphOf(area, end));
+            }
+            com.editora.editops.LineOps.BlockEdit edit = blockOp.apply(units, start, end);
+            if (edit == null) {
+                return;
+            }
+            boolean caretFirst = area.getCaretPosition() == start;
+            buffer.getFoldManager().expandHeaderAt(start);
+            buffer.getFoldManager().expandHeaderAt(end);
+            area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+            area.selectRange(
+                    caretFirst ? edit.selEnd() : edit.selStart(), caretFirst ? edit.selStart() : edit.selEnd());
+            area.requestFocus();
+            return;
+        }
         com.editora.editops.LineOps.Edit edit = op.apply(linesAsUnits(buffer, area), area.getCaretPosition());
         if (edit == null) {
             return;
@@ -1460,7 +1503,7 @@ final class EditingCoordinator {
             return;
         }
         int caret = area.getCaretPosition();
-        int end = com.editora.editops.SexpNav.forward(area.getText(), caret);
+        int end = com.editora.editops.SexpNav.forwardBalanced(area.getText(), caret);
         if (end <= caret) {
             return;
         }
@@ -1540,7 +1583,7 @@ final class EditingCoordinator {
     void killSexp() {
         emacsKill(
                 (text, caret) -> {
-                    int end = com.editora.editops.SexpNav.forward(text, caret);
+                    int end = com.editora.editops.SexpNav.forwardBalanced(text, caret);
                     return end > caret ? new com.editora.editops.EmacsEdits.Edit(caret, end, "", caret) : null;
                 },
                 KillRing.Direction.FORWARD);
@@ -1656,7 +1699,12 @@ final class EditingCoordinator {
     /** Emacs {@code fill-paragraph} (`M-q`): re-wrap the paragraph at the caret to the fill column. */
     void fillParagraph() {
         applyFill((text, b) -> com.editora.editops.Filler.fillParagraph(
-                text, b.getFocusedArea().getCaretPosition(), fillColumn(), lineCommentFor(b)));
+                text,
+                b.getFocusedArea().getCaretPosition(),
+                fillColumn(),
+                lineCommentFor(b),
+                com.editora.editops.Filler.Mode.forLanguage(b.getLanguage()),
+                b.getTabSize()));
     }
 
     /** Emacs {@code fill-region}: re-wrap every paragraph in the selection (caret line if no selection). */
@@ -1665,7 +1713,14 @@ final class EditingCoordinator {
             CodeArea a = b.getFocusedArea();
             int start = a.getSelection().getLength() > 0 ? a.getSelection().getStart() : a.getCaretPosition();
             int end = a.getSelection().getLength() > 0 ? a.getSelection().getEnd() : a.getCaretPosition();
-            return com.editora.editops.Filler.fillRegion(text, start, end, fillColumn(), lineCommentFor(b));
+            return com.editora.editops.Filler.fillRegion(
+                    text,
+                    start,
+                    end,
+                    fillColumn(),
+                    lineCommentFor(b),
+                    com.editora.editops.Filler.Mode.forLanguage(b.getLanguage()),
+                    b.getTabSize());
         });
     }
 
@@ -1741,7 +1796,10 @@ final class EditingCoordinator {
             from = sel.getStart();
             to = sel.getEnd();
         } else {
-            int[] token = com.editora.editops.StringCase.tokenAt(area.getText(), area.getCaretPosition());
+            int[] token = com.editora.editops.StringCase.tokenAt(
+                    area.getText(),
+                    area.getCaretPosition(),
+                    !com.editora.editops.StringCase.dashIsOperator(buffer.getLanguage()));
             if (token == null) {
                 host.setStatus(tr("status.stringops.noTarget"));
                 return;
