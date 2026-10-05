@@ -91,6 +91,24 @@ public final class TemplateRegistry {
     }
 
     /**
+     * True when {@code id} can be a template's file stem: non-blank and free of path separators and of the
+     * characters a file name cannot hold on every platform, so {@code <id>.json} always stays inside
+     * {@link #userDir()}.
+     */
+    public static boolean isValidId(String id) {
+        if (id == null || id.isBlank()) {
+            return false;
+        }
+        for (int i = 0; i < id.length(); i++) {
+            char c = id.charAt(i);
+            if (c < 0x20 || "/\\:*?\"<>|".indexOf(c) >= 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Writes {@code t} as the user template {@code <configDir>/templates/<id>.json} (creating the dir),
      * then drops the cache so it's live. Single-file templates write {@code fileName}/{@code body};
      * multi-file ones write a {@code files} array.
@@ -98,6 +116,9 @@ public final class TemplateRegistry {
     public synchronized void saveUserTemplate(Template t) throws IOException {
         if (t == null || t.id() == null || t.id().isBlank()) {
             return;
+        }
+        if (!isValidId(t.id())) {
+            throw new IOException("Invalid template id: " + t.id());
         }
         Files.createDirectories(userDir());
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
