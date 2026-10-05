@@ -99,14 +99,21 @@ final class EditingCoordinator {
     }
 
     /**
-     * The follow-up for one command run (see {@link CommandRegistry#setRunScope}): when the command changed
-     * the active buffer's text, scroll its caret into view. A chord is consumed by the key dispatcher before
-     * the text area sees it, so the area's own "follow the caret after a key" never runs, and a programmatic
-     * edit does not scroll by itself — paste/yank, undo, redo, duplicate line and move line all left the
-     * caret (or the change) off-screen. Keyed on the document version, so a command that only scrolls,
-     * selects or navigates is left alone, as is one that switched tabs.
+     * The follow-up for one command run (see {@link CommandRegistry#setRunScope}): when an editing command
+     * changed the active buffer's text, scroll its caret into view. A chord is consumed by the key dispatcher
+     * before the text area sees it, so the area's own "follow the caret after a key" never runs, and a
+     * programmatic edit does not scroll by itself — paste/yank, undo, redo, duplicate line and move line all
+     * left the caret (or the change) off-screen. Keyed on the document version, so a command that only
+     * scrolls, selects or navigates is left alone, as is one that switched tabs.
+     *
+     * <p>Only the editor-context commands ({@code edit.*}, and a macro replaying them) — the ones that stand
+     * in for typing. A command that edits as a side effect (a save that trims trailing whitespace) must not
+     * pull a deliberately scrolled view back to the caret.
      */
-    Runnable revealCaretAfterEdit() {
+    Runnable revealCaretAfterEdit(String commandId) {
+        if (!commandId.startsWith("edit.") && !commandId.startsWith("macro.")) {
+            return null;
+        }
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             return null;

@@ -360,7 +360,7 @@ final class WindowCommandRegistrar {
     void registerCommands() {
         // Every invocation path (chord, palette, menu, toolbar, macro) runs through the registry, so this is
         // the one place an editing command's caret is scrolled back into view.
-        host.registry().setRunScope(id -> host.editing().revealCaretAfterEdit());
+        host.registry().setRunScope(host.editing()::revealCaretAfterEdit);
         host.registry().register(Command.of("file.new", host::onNew));
         host.registry().register(Command.of("window.new", () -> {
             if (host.windowManager() != null) {
@@ -2252,7 +2252,10 @@ final class WindowCommandRegistrar {
                             b -> b.multiMoveLineBoundary(true, host.editing().markActive()))) {
                 return;
             }
-            host.editing().moveAndFollow(a -> a.lineEnd(host.selPolicy()));
+            // The end of the logical line, like C-a and C-k (and Emacs' own default): RichTextFX's lineEnd is
+            // the end of the visual row, so with word wrap on C-e stopped mid-paragraph and a following C-k
+            // killed the rest of it. The two are the same position when the line is not wrapped.
+            host.editing().moveAndFollow(a -> a.paragraphEnd(host.selPolicy()));
         }));
         host.registry()
                 .register(Command.of(
