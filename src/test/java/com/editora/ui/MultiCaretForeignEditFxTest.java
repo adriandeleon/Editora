@@ -275,6 +275,67 @@ class MultiCaretForeignEditFxTest {
         }
     }
 
+    /** The editor's right-click menu for {@code b}, as a right-click at its top-left corner builds it. */
+    private javafx.scene.control.ContextMenu contextMenu(EditorBuffer b) throws Exception {
+        javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu");
+        FxTestSupport.runOnFx(() -> b.getArea()
+                .getOnContextMenuRequested()
+                .handle(new javafx.scene.input.ContextMenuEvent(
+                        javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null)));
+        return menu;
+    }
+
+    private static javafx.scene.control.MenuItem item(javafx.scene.control.ContextMenu menu, String key) {
+        return menu.getItems().stream()
+                .filter(i -> com.editora.i18n.Messages.tr(key).equals(i.getText()))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    /** The right-click Cut/Copy called the fork directly, which takes whole lines when nothing is selected. */
+    @Test
+    void theContextMenuDoesNotCutOrCopyWholeLinesWhenNoCaretHasASelection() throws Exception {
+        boolean before = FxTestSupport.callOnFx(() -> fx.shared.getSettings().isCopyLineWhenNoSelection());
+        EditorBuffer b = carets("menu.txt", "aaa\nbbb\nccc\nddd", 1, 5);
+        javafx.scene.control.ContextMenu menu = contextMenu(b);
+        try {
+            FxTestSupport.runOnFx(() -> {
+                fx.shared.getSettings().setCopyLineWhenNoSelection(false);
+                ClipboardContent c = new ClipboardContent();
+                c.putString("untouched");
+                Clipboard.getSystemClipboard().setContent(c);
+            });
+            assertEquals(
+                    true,
+                    FxTestSupport.callOnFx(() -> item(menu, "editmenu.cut").isDisable()));
+            assertEquals(
+                    true,
+                    FxTestSupport.callOnFx(() -> item(menu, "editmenu.copy").isDisable()));
+            assertEquals("aaa\nbbb\nccc\nddd", text(b));
+
+            // With a selection at one of the carets there is something to copy, and that is what is copied.
+            FxTestSupport.runOnFx(() -> {
+                menu.hide();
+                b.collapseCarets();
+                b.getArea().selectRange(0, 2);
+                FxTestSupport.call(manager(b), "addCaretWithSelection", new Class[] {int.class, int.class}, 4, 6);
+            });
+            javafx.scene.control.ContextMenu again = contextMenu(b);
+            assertFalse(
+                    FxTestSupport.callOnFx(() -> item(again, "editmenu.copy").isDisable()));
+            FxTestSupport.runOnFx(() -> item(again, "editmenu.copy").fire());
+            assertEquals(
+                    "aa\nbb",
+                    FxTestSupport.callOnFx(() -> Clipboard.getSystemClipboard().getString())
+                            .strip());
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                menu.hide();
+                fx.shared.getSettings().setCopyLineWhenNoSelection(before);
+            });
+        }
+    }
+
     // --- Tab with several carets is the buffer's Tab, not a tab character -------------------------
 
     private void pressTab(EditorBuffer b, boolean shift) throws Exception {

@@ -34,8 +34,8 @@ final class ReloadViewState {
         ReloadViewState state = new ReloadViewState(buffer);
         int base = buffer.isNarrowed() ? NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart()) : 0;
         state.add(buffer.getArea(), base);
-        if (buffer.getFocusedArea() != buffer.getArea()) {
-            state.add(buffer.getFocusedArea(), base); // the split's second pane, when it is the focused one
+        if (buffer.getSplitView() != null) {
+            state.add(buffer.getSplitView(), base); // the split's second pane, focused or not
         }
         for (int line : buffer.getFoldManager().collapsedStartLines()) {
             state.collapsed.add(line + base);

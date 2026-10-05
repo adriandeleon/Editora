@@ -5055,9 +5055,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     debugCoordinator.bufferPathChanged(buffer, oldPath);
                     bookmarkCoordinator.bufferPathChanged(buffer, oldPath); // Save As: its marks go with it
                     notesCoordinator.bufferPathChanged(buffer, oldPath);
-                    if (oldPath != null && buffer.getPath() != null) {
-                        RenamedFileState.copyWorkspace(config.getWorkspaceState(), oldPath, buffer.getPath());
-                    }
+                    RenamedFileState.copyWorkspace(config.getWorkspaceState(), oldPath, buffer.getPath());
                 }
 
                 @Override

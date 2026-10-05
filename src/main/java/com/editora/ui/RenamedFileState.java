@@ -119,6 +119,9 @@ final class RenamedFileState {
      * the read-only pin, which belongs to the file that was pinned.
      */
     static void copyWorkspace(WorkspaceState ws, Path old, Path target) {
+        if (old == null || target == null) {
+            return; // an untitled buffer had nothing stored; a rolled-back Save As has nowhere to copy to
+        }
         String oldKey = old.toString();
         String newKey = target.toString();
         copy(ws.getMarkdownViewModes(), oldKey, newKey);
