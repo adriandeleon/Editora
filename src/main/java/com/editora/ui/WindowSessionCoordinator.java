@@ -440,7 +440,10 @@ final class WindowSessionCoordinator {
         }
         if (targets != null) {
             for (OpenTarget t : targets) {
-                host.fileWorkflows().openPath(t.file().toAbsolutePath().normalize(), true);
+                Path file = t.file().toAbsolutePath().normalize();
+                if (!host.fileWorkflows().openNewFileAt(file)) {
+                    host.fileWorkflows().openPath(file, true);
+                }
             }
             if (targets.stream().anyMatch(t -> t.line() > 0)) {
                 // Defer once more so it runs after openPath's own goToStart for any newly-opened file.

@@ -865,6 +865,44 @@ final class EditorSettingsCoordinator {
         applyResolvedEditorConfig(buffer, p);
     }
 
+    /**
+     * Re-resolves {@code buffer}'s {@code .editorconfig} rules and applies them when they changed since they
+     * were last applied. The rules used to be resolved once, when the file was opened: editing
+     * {@code .editorconfig} (or pulling a commit that does) had no effect on an open file until its tab was
+     * closed and reopened, so it kept being saved with the old charset, line ending and trim rules.
+     * {@code resolveFor} is cached by modified time, so an unchanged tree costs a few {@code stat} calls.
+     *
+     * @return true when the rules changed
+     */
+    boolean refreshEditorConfig(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        com.editora.editorconfig.EditorConfigProperties now =
+                !editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)
+                        ? com.editora.editorconfig.EditorConfigProperties.EMPTY
+                        : com.editora.editorconfig.EditorConfig.resolveFor(path);
+        if (now.equals(buffer.getEditorConfigProps())) {
+            return false;
+        }
+        applyResolvedEditorConfig(buffer, now);
+        if (buffer == host.activeBuffer() && host.statusBar() != null) {
+            host.statusBar().refresh();
+        }
+        return true;
+    }
+
+    /**
+     * A save had to leave the declared charset for UTF-8 (see {@link SaveEncoding}): the file now starts with
+     * a UTF-8 byte-order mark, and the buffer must say so — the status bar kept showing the old charset, and
+     * the next open decodes by that BOM.
+     */
+    void charsetFellBackToUtf8(EditorBuffer buffer) {
+        buffer.setCharsetOverride(null);
+        buffer.setDetectedCharset(com.editora.editorconfig.EditorConfigCharset.UTF_8_BOM);
+        if (buffer == host.activeBuffer() && host.statusBar() != null) {
+            host.statusBar().refresh();
+        }
+    }
+
     /** Applies an already-resolved EditorConfig result without touching the filesystem. */
     void applyResolvedEditorConfig(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties properties) {
         com.editora.editorconfig.EditorConfigProperties p =
