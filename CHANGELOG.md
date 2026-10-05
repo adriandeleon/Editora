@@ -154,7 +154,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Cutting the last line and pasting it back no longer joins it onto the previous line.
     - Converting line endings and back no longer leaves the buffer marked modified.
     - Markdown: Enter no longer continues a list inside a fenced code block or after a `- - -` rule.
-    - Bracket auto-close and closer re-alignment work for characters typed with Option / AltGr.
+    - Bracket auto-close and closer re-alignment should now work for characters typed with Option / AltGr
+      (not yet confirmed on a German or Spanish layout).
   - Edit operations (indent, comment, fill, s-expressions, case):
     - Changed: in code languages Fill Paragraph and Fill Region fill comments only (line comments and block
       comments that start a line); they no longer join code statements.
@@ -205,7 +206,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - A line-ending conversion chosen while a save is running is no longer dropped.
     - Reloading a file that is no longer huge makes it editable again.
     - `editora path/to/new-file` opens a new buffer at that path instead of failing.
-    - Case-only renames work on case-insensitive volumes.
+    - Case-only renames should now work on case-insensitive volumes (not yet confirmed on macOS or Windows).
     - Large-file and long-line mode say that undo is off, and Undo/Redo explain themselves there; a file with
       mixed line endings says what a save will write.
   - View, scrolling and split view:
