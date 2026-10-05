@@ -80,6 +80,17 @@ public class SettingsWindow {
     /** Fraction of the screen's usable area the window may occupy before the preferred size is clamped. */
     private static final double MAX_SCREEN_FRACTION = 0.92;
 
+    /** Wide enough to read a path or a command in; SettingRowPane puts the field under its title when the row is narrow. */
+    private static final double PATH_FIELD_WIDTH = 320;
+
+    /**
+     * The narrowest the window may be made. The pages that put a list beside a form (Snippets, Templates,
+     * Macros, Toolbar, Remote) need about this much; below it they scroll sideways rather than collapse.
+     */
+    private static final double MIN_WIDTH = 900;
+
+    private static final double MIN_HEIGHT = 480;
+
     /** Sidebar group headers; every {@link Category} belongs to exactly one, shown in declaration order. */
     private enum Group {
         GENERAL(tr("settings.group.general")),
@@ -916,10 +927,9 @@ public class SettingsWindow {
             }
         });
         stage.setScene(scene);
-        // The content scroll pane is fit-to-width (no horizontal scrollbar), so a too-narrow window would
-        // clip the wider rows (label + spinner + unit) with no way to read them. Floor the window size.
-        stage.setMinWidth(720);
-        stage.setMinHeight(480);
+        // Floor the window size: the rows wrap, but the list-beside-form pages need MIN_WIDTH.
+        stage.setMinWidth(Math.min(MIN_WIDTH, size.getWidth())); // never wider than a small screen allows
+        stage.setMinHeight(Math.min(MIN_HEIGHT, size.getHeight()));
 
         sidebar.getSelectionModel().select(Category.APPEARANCE);
     }
@@ -1142,7 +1152,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        inlayHintModeCombo.setPrefWidth(170);
+        inlayHintModeCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         inlayHintModeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1175,7 +1185,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        indentStyleCombo.setPrefWidth(170);
+        indentStyleCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         indentStyleCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1197,7 +1207,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        pdfPageSizeCombo.setPrefWidth(170);
+        pdfPageSizeCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         pdfPageSizeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1722,7 +1732,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        autoSaveCombo.setPrefWidth(170);
+        autoSaveCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         autoSaveCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1824,23 +1834,21 @@ public class SettingsWindow {
     private VBox appearancePage() {
         VBox p = page(tr("settings.cat.appearance"));
         Card mainCard = card(p, null);
-        Label langNote = note(tr("settings.uiLanguage.note"));
-        VBox langBox = new VBox(4, languageCombo, langNote);
+        // The hints are row descriptions, not labels boxed with the combo: such a box is as wide as its
+        // (translated) hint and left-aligns the combo inside, so the four combos sat at four x positions.
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
                 tr("settings.uiLanguage"),
-                null,
-                langBox,
+                tr("settings.uiLanguage.note"),
+                languageCombo,
                 "language interface ui locale translation");
-        Label fontNote = note(tr("settings.fontNote"));
-        VBox fontBox = new VBox(4, fontFamily, fontNote);
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
                 tr("settings.fontFamily"),
-                null,
-                fontBox,
+                tr("settings.fontNote"),
+                fontFamily,
                 "font family typeface monospace");
         controlRow(mainCard, Category.APPEARANCE, tr("settings.fontSize"), null, fontSize, "font size text");
         controlRow(
@@ -1850,14 +1858,12 @@ public class SettingsWindow {
                 null,
                 themeCombo,
                 "theme appearance dark light app chrome");
-        Label etNote = note(tr("settings.editorThemeNote"));
-        VBox etBox = new VBox(4, editorThemeCombo, etNote);
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
                 tr("settings.editorTheme"),
-                null,
-                etBox,
+                tr("settings.editorThemeNote"),
+                editorThemeCombo,
                 "editor theme syntax colors highlighting");
         Card previewSection = card(p, tr("settings.livePreview"));
         cardRow(previewSection, Category.APPEARANCE, preview, "preview sample code");
@@ -1867,14 +1873,12 @@ public class SettingsWindow {
     private VBox keymapsPage() {
         VBox p = page(tr("settings.cat.keymaps"));
         Card mainCard = card(p, null);
-        Label kmNote = note(tr("settings.keymap.note"));
-        VBox kmBox = new VBox(4, keymapCombo, kmNote);
         controlRow(
                 mainCard,
                 Category.KEYMAPS,
                 tr("settings.keymap"),
-                null,
-                kmBox,
+                tr("settings.keymap.note"),
+                keymapCombo,
                 "keymap keybindings shortcuts emacs vim cua sublime vscode intellij");
 
         // --- Customize shortcuts: searchable list of every command + its current chord ---
@@ -1890,6 +1894,7 @@ public class SettingsWindow {
         scroll.setPrefHeight(320);
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = note(tr("settings.shortcuts.note"));
+        note.setWrapText(true);
         Button resetAll = new Button(tr("settings.shortcuts.resetAll"));
         resetAll.setOnAction(e -> {
             if (shortcutActions != null && confirmResetAllShortcuts()) {
@@ -1974,6 +1979,7 @@ public class SettingsWindow {
         row.getStyleClass().add("shortcut-row");
         Label title = new Label(s.title());
         title.setMaxWidth(Double.MAX_VALUE);
+        title.setWrapText(true);
         HBox.setHgrow(title, Priority.ALWAYS);
 
         if (s.id().equals(recordingCommandId)) {
@@ -2181,7 +2187,11 @@ public class SettingsWindow {
 
         ListView<com.editora.macro.Macro> list = new ListView<>(macroItems);
         list.setPrefSize(220, 420);
-        list.setPlaceholder(note(tr("settings.macro.empty")));
+        Label noMacros = note(tr("settings.macro.empty"));
+        noMacros.setWrapText(true);
+        noMacros.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        noMacros.setMaxWidth(190);
+        list.setPlaceholder(noMacros);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.macro.Macro m, boolean empty) {
@@ -2238,6 +2248,7 @@ public class SettingsWindow {
 
         Button stepUp = new Button("▲");
         Button stepDown = new Button("▼");
+        nameReorderButtons(stepUp, stepDown);
         stepUp.getStyleClass().addAll("flat", "reorder-button");
         stepDown.getStyleClass().addAll("flat", "reorder-button");
         stepUp.setOnAction(e -> moveStep(steps, -1));
@@ -2261,8 +2272,8 @@ public class SettingsWindow {
             steps.getSelectionModel().selectLast();
             stepValue.requestFocus();
         });
-        HBox stepButtons = new HBox(6, addCmd, addText, spacer(), stepUp, stepDown, stepRemove);
-        stepButtons.setAlignment(Pos.CENTER_LEFT);
+        // Wraps: the five German buttons are wider than the form at the window's minimum width.
+        WrapRow stepButtons = new WrapRow(6, 6, addCmd, addText, new HBox(6, stepUp, stepDown), stepRemove);
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         form.setHgap(8);
@@ -2274,6 +2285,8 @@ public class SettingsWindow {
         VBox stepEditor = new VBox(6, stepsLabel, steps, new HBox(8, stepKind, stepValue), stepButtons);
         VBox.setVgrow(steps, Priority.ALWAYS);
         form.setDisable(true);
+        // No macro selected, no steps to edit: Add Command used to add a step that belonged to nothing.
+        stepEditor.disableProperty().bind(form.disabledProperty());
         HBox.setHgrow(form, Priority.ALWAYS);
 
         // Repopulates the inline keybinding row for the selected macro's command id.
@@ -2330,6 +2343,7 @@ public class SettingsWindow {
         VBox.setVgrow(stepEditor, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
         VBox left = new VBox(6, list);
+        keepWidth(left);
         VBox.setVgrow(list, Priority.ALWAYS);
 
         if (!macroItems.isEmpty()) {
@@ -2646,7 +2660,8 @@ public class SettingsWindow {
                 null,
                 "maven pom xml preview dependencies plugins properties versions summary");
         Card saving = card(p, tr("settings.section.saving"));
-        Label delayLabel = note("delay (seconds)");
+        Label delayLabel = note(tr("settings.autoSave.delay"));
+        delayLabel.setLabelFor(autoSaveDelaySpinner);
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
         controlRow(
@@ -2739,6 +2754,7 @@ public class SettingsWindow {
 
             CheckBox cb = new CheckBox();
             cb.setGraphic(label);
+            cb.setAccessibleText(code + " " + desc.getText()); // its visible name is a graphic, not text
             cb.setSelected(!disabled.contains(code));
             cb.selectedProperty().addListener((o, was, on) -> {
                 java.util.List<String> list =
@@ -2796,6 +2812,7 @@ public class SettingsWindow {
         CheckBox enabled = new CheckBox();
         enabled.setSelected(p.isEnabled());
         enabled.setTooltip(new Tooltip(tr("settings.todo.enabledTip")));
+        enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + p.getName());
         TextField name = new TextField(p.getName());
         name.setPromptText(tr("settings.todo.namePrompt"));
         name.setPrefWidth(110);
@@ -2809,6 +2826,7 @@ public class SettingsWindow {
         caseSensitive.setSelected(p.isCaseSensitive());
         Button remove = new Button("✕");
         remove.setTooltip(new Tooltip(tr("settings.todo.removeTip")));
+        remove.setAccessibleText(tr("settings.todo.removeTip") + " — " + p.getName());
 
         Runnable commit = () -> {
             java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
@@ -3320,7 +3338,7 @@ public class SettingsWindow {
                 settingRow(tr("settings.enableGit"), tr("settings.git.hint"), switchFor(gitCheck)),
                 "git version control vcs enable");
         Button gitBrowse = browseButton(tr("settings.git.command"), gitPathField);
-        gitPathField.setPrefWidth(180);
+        gitPathField.setPrefWidth(PATH_FIELD_WIDTH);
         cardRow(
                 c,
                 Category.GIT,
@@ -3358,7 +3376,7 @@ public class SettingsWindow {
         githubStatusLabel.setMaxWidth(340);
         checkRow(c, Category.GITHUB, githubCheck, tr("settings.github.hint"), "github gh pull request pr enable");
         Button ghBrowse = browseButton(tr("settings.github.ghPath"), ghPathField);
-        ghPathField.setPrefWidth(180);
+        ghPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.GITHUB,
@@ -3386,7 +3404,7 @@ public class SettingsWindow {
         ripgrepStatusLabel.setMaxWidth(340);
         checkRow(c, Category.SEARCH, ripgrepCheck, tr("settings.search.hint"), "search ripgrep rg find in files fast");
         Button rgBrowse = browseButton(tr("settings.search.ripgrepPath"), ripgrepCommandField);
-        ripgrepCommandField.setPrefWidth(180);
+        ripgrepCommandField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.SEARCH,
@@ -3424,7 +3442,7 @@ public class SettingsWindow {
                 mermaidCheck,
                 tr("settings.mermaid.hint"),
                 "mermaid diagram enable mmdc render mmd");
-        mmdcPathField.setPrefWidth(180);
+        mmdcPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.MERMAID,
@@ -3432,7 +3450,7 @@ public class SettingsWindow {
                 null,
                 new HBox(6, mmdcPathField, browseButton(tr("settings.mermaid.mmdcPath"), mmdcPathField)),
                 "mermaid mmdc path executable render");
-        maidPathField.setPrefWidth(180);
+        maidPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.MERMAID,
@@ -3464,7 +3482,7 @@ public class SettingsWindow {
                 diagramCheck,
                 tr("settings.diagram.hint"),
                 "diagram dot graphviz plantuml enable render preview puml gv");
-        dotPathField.setPrefWidth(180);
+        dotPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.DIAGRAMS,
@@ -3472,7 +3490,7 @@ public class SettingsWindow {
                 null,
                 new HBox(6, dotPathField, browseButton(tr("settings.diagram.dotPath"), dotPathField)),
                 "diagram dot graphviz path executable render");
-        plantumlPathField.setPrefWidth(180);
+        plantumlPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.DIAGRAMS,
@@ -3523,7 +3541,7 @@ public class SettingsWindow {
                 typstCheck,
                 tr("settings.typst.hint"),
                 "typst document enable render preview typ pdf");
-        typstPathField.setPrefWidth(180);
+        typstPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.TYPST,
@@ -3576,7 +3594,7 @@ public class SettingsWindow {
             String kw = bt.id() + " build tool project detected enable command override toolbar";
             checkRow(c, Category.BUILD_TOOLS, buildToolChecks.get(bt), tr("settings." + bt.id() + ".hint"), kw);
             TextField field = buildToolCommandFields.get(bt);
-            field.setPrefWidth(180);
+            field.setPrefWidth(PATH_FIELD_WIDTH);
             controlRow(
                     c,
                     Category.BUILD_TOOLS,
@@ -3685,6 +3703,7 @@ public class SettingsWindow {
                 if (!snippetUserNames.contains(s.name())) { // a read-only bundled snippet (until edited)
                     Label tag = new Label(tr("settings.snippet.bundledTag"));
                     tag.getStyleClass().add("snippet-bundled-tag");
+                    tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
                     cell.getChildren().add(tag);
                 }
                 setText(null);
@@ -3841,7 +3860,15 @@ public class SettingsWindow {
             loadLang.run(); // re-derive: a removed override reverts to its bundled snippet
         });
         HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, labeled(tr("settings.snippet.language"), language), list, buttons);
+        // The picker shares the list's width: boxed with a 130px label column it was squeezed to an arrow.
+        Label languageLabel = new Label(tr("settings.snippet.language"));
+        languageLabel.setLabelFor(language);
+        language.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(language, Priority.ALWAYS);
+        HBox languageRow = new HBox(10, languageLabel, language);
+        languageRow.setAlignment(Pos.CENTER_LEFT);
+        VBox left = new VBox(6, languageRow, list, buttons);
+        keepWidth(languageLabel, add, remove, left);
         VBox.setVgrow(left, Priority.ALWAYS);
 
         // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
@@ -3933,7 +3960,7 @@ public class SettingsWindow {
     /** Master-detail editor: the templates (bundled + user) on the left, a form for the selected one. */
     private javafx.scene.Node templatesEditor() {
         ListView<com.editora.template.Template> list = new ListView<>(templateItems);
-        list.setPrefSize(220, 420);
+        list.setPrefSize(250, 420); // "Java Compact Source" + the bundled tag
         VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
         list.setCellFactory(lv -> new ListCell<>() {
             {
@@ -3961,6 +3988,7 @@ public class SettingsWindow {
                 if (!templateUserIds.contains(t.id())) {
                     Label tag = new Label(tr("settings.template.bundledTag"));
                     tag.getStyleClass().add("snippet-bundled-tag");
+                    tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
                     cell.getChildren().add(tag);
                 }
                 setText(null);
@@ -4148,6 +4176,7 @@ public class SettingsWindow {
         });
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, list, buttons);
+        keepWidth(add, remove, left);
         VBox.setVgrow(left, Priority.ALWAYS);
 
         // Explicit Save (edits also auto-save on Enter / focus-loss); disabled for a read-only row.
@@ -4350,6 +4379,8 @@ public class SettingsWindow {
             list.getSelectionModel().select(c);
         });
         Button remove = new Button(tr("settings.remote.remove"));
+        remove.disableProperty()
+                .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
@@ -4359,6 +4390,7 @@ public class SettingsWindow {
         });
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, list, buttons);
+        keepWidth(add, remove, left, keyBrowse);
 
         // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
         Button save = new Button(tr("settings.save"));
@@ -4532,6 +4564,8 @@ public class SettingsWindow {
             list.getSelectionModel().select(t);
         });
         Button remove = new Button(tr("settings.externalTool.remove"));
+        remove.disableProperty()
+                .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
@@ -4664,6 +4698,8 @@ public class SettingsWindow {
             abbrev.requestFocus();
         });
         Button remove = new Button(tr("settings.abbrev.remove"));
+        remove.disableProperty()
+                .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
@@ -4764,7 +4800,7 @@ public class SettingsWindow {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof javafx.scene.layout.Region r) {
-            r.setMinWidth(220);
+            r.setMinWidth(180);
         }
         // A tall multi-line body would otherwise centre its label; align it to the top of the field instead.
         if (field instanceof CodeArea) {
@@ -4987,7 +5023,7 @@ public class SettingsWindow {
             status.setMaxWidth(340);
             agentStatusLabels.put(a.id(), status);
             TextField field = agentCommandFields.get(a.id());
-            field.setPrefWidth(180);
+            field.setPrefWidth(PATH_FIELD_WIDTH);
             controlRow(
                     c,
                     Category.AGENT,
@@ -5324,11 +5360,12 @@ public class SettingsWindow {
                 null,
                 regBox,
                 "plugins registry url index marketplace github browse");
-        Label sigNote = note(tr("settings.plugins.requireSignatureNote"));
-        sigNote.setWrapText(true);
-        sigNote.setMaxWidth(440);
-        VBox sigBox = new VBox(2, pluginRequireSigCheck, sigNote);
-        cardRow(market, Category.PLUGINS, sigBox, "plugins signature signed verify registry security trust");
+        checkRow(
+                market,
+                Category.PLUGINS,
+                pluginRequireSigCheck,
+                tr("settings.plugins.requireSignatureNote"),
+                "plugins signature signed verify registry security trust");
         Button browse = new Button(tr("settings.plugins.browse"));
         browse.setOnAction(e -> {
             if (onBrowsePlugins != null) {
@@ -5479,7 +5516,7 @@ public class SettingsWindow {
             status.setMaxWidth(340);
             debugStatusLabels.put(dbg.id(), status);
             TextField field = debugCommandFields.get(dbg.id());
-            field.setPrefWidth(180);
+            field.setPrefWidth(PATH_FIELD_WIDTH);
             controlRow(
                     c,
                     Category.DEBUG,
@@ -5915,7 +5952,26 @@ public class SettingsWindow {
                 field.setText(f.getAbsolutePath());
             }
         });
+        keepWidth(browse);
         return browse;
+    }
+
+    /**
+     * Pins each control's minimum width to its preferred one, so a narrow window cannot squeeze it: a
+     * Labeled's own minimum is the width of an ellipsis, which is how buttons ended up reading "…".
+     */
+    /** Names a ▲/▼ pair for a screen reader (and a tooltip): on their own they announce as the glyphs. */
+    private static void nameReorderButtons(Button up, Button down) {
+        up.setAccessibleText(tr("bookmarks.moveUp"));
+        up.setTooltip(new Tooltip(tr("bookmarks.moveUp")));
+        down.setAccessibleText(tr("bookmarks.moveDown"));
+        down.setTooltip(new Tooltip(tr("bookmarks.moveDown")));
+    }
+
+    private static void keepWidth(Region... controls) {
+        for (Region control : controls) {
+            control.setMinWidth(Region.USE_PREF_SIZE);
+        }
     }
 
     private HBox exePathRow(String label, TextField field) {
@@ -5929,7 +5985,10 @@ public class SettingsWindow {
             }
         });
         HBox.setHgrow(field, Priority.ALWAYS);
-        HBox box = new HBox(6, new Label(label), field, browse);
+        Label name = new Label(label);
+        name.setLabelFor(field);
+        keepWidth(name, browse); // the field gives way, not the label or the button
+        HBox box = new HBox(6, name, field, browse);
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
     }
@@ -6124,6 +6183,18 @@ public class SettingsWindow {
         });
     }
 
+    /** A stripe side in the UI language (it used to be the enum constant's name, English in every locale). */
+    static String sideName(ToolWindow.Side side) {
+        if (side == null) {
+            return "";
+        }
+        return switch (side) {
+            case LEFT -> tr("settings.toolWindows.side.left");
+            case RIGHT -> tr("settings.toolWindows.side.right");
+            case BOTTOM -> tr("settings.toolWindows.side.bottom");
+        };
+    }
+
     /** The tool-window placement page: one row per registered tool window (Show / Side / ▲▼ reorder). */
     private VBox toolWindowsPage() {
         // The page hint reads as the subtitle, like the other pages.
@@ -6142,14 +6213,17 @@ public class SettingsWindow {
             sideCombo.setConverter(new StringConverter<>() {
                 @Override
                 public String toString(ToolWindow.Side side) {
-                    return side == null
-                            ? ""
-                            : side.name().charAt(0) + side.name().substring(1).toLowerCase();
+                    return sideName(side);
                 }
 
                 @Override
                 public ToolWindow.Side fromString(String s) {
-                    return ToolWindow.Side.valueOf(s.toUpperCase());
+                    for (ToolWindow.Side side : ToolWindow.Side.values()) {
+                        if (sideName(side).equals(s)) {
+                            return side;
+                        }
+                    }
+                    return null; // the combo is not editable: nothing types a name into it
                 }
             });
             sideCombo.setValue(toolWindows.currentSide(tw));
@@ -6289,7 +6363,10 @@ public class SettingsWindow {
                 onOpenFile.accept(config.getSettingsFile());
             }
         });
-        HBox fileRow = new HBox(6, new Label(tr("settings.path")), link);
+        Label pathLabel = new Label(tr("settings.path"));
+        Label sessionLabel = new Label(tr("settings.sessionLog"));
+        keepWidth(pathLabel, sessionLabel); // a long path gives way, not its label
+        HBox fileRow = new HBox(6, pathLabel, link);
         fileRow.setAlignment(Pos.CENTER_LEFT);
         cardRow(fileSection, Category.ADVANCED, fileRow, "settings file path toml config location");
 
@@ -6301,7 +6378,7 @@ public class SettingsWindow {
                 onOpenFile.accept(sessionLog);
             }
         });
-        HBox sessionRow = new HBox(6, new Label(tr("settings.sessionLog")), sessionLink);
+        HBox sessionRow = new HBox(6, sessionLabel, sessionLink);
         sessionRow.setAlignment(Pos.CENTER_LEFT);
         cardRow(
                 fileSection,
@@ -6322,6 +6399,7 @@ public class SettingsWindow {
             }
         });
         Label exportHint = note(tr("settings.exportConfig.hint"));
+        exportHint.setWrapText(true);
         VBox exportBox = new VBox(4, exportConfig, exportHint);
         cardRow(ioSection, Category.ADVANCED, exportBox, "import export backup settings config zip archive");
 
@@ -6333,6 +6411,7 @@ public class SettingsWindow {
             }
         });
         Label debugHint = note(tr("settings.debugLog.hint"));
+        debugHint.setWrapText(true);
         VBox debugBox = new VBox(4, debugLog, debugHint);
         cardRow(
                 debugSection,
@@ -6377,6 +6456,7 @@ public class SettingsWindow {
         Button remove = new Button(tr("settings.toolbar.remove"));
         Button up = new Button("▲");
         Button down = new Button("▼");
+        nameReorderButtons(up, down);
         up.getStyleClass().addAll("flat", "reorder-button");
         down.getStyleClass().addAll("flat", "reorder-button");
         add.setMaxWidth(Double.MAX_VALUE);
@@ -6385,7 +6465,8 @@ public class SettingsWindow {
         javafx.scene.layout.VBox.setVgrow(midGap, Priority.ALWAYS);
         VBox mid = new VBox(6, add, remove, midGap, up, down);
         mid.setAlignment(Pos.CENTER);
-        mid.setMinWidth(104);
+        mid.setMinWidth(Region.USE_PREF_SIZE); // as wide as its (translated) buttons, never "Hinzufüg…"
+        keepWidth(availLabel, curLabel);
 
         HBox lists = new HBox(10, availBox, mid, curBox);
         HBox.setHgrow(availBox, Priority.ALWAYS);
@@ -6610,6 +6691,7 @@ public class SettingsWindow {
     static Node settingRow(String title, String description, Node control) {
         Label t = new Label(title);
         t.getStyleClass().add("settings-row-title");
+        t.setWrapText(true); // a long (translated) title beside a switch wraps; it used to end in "…"
         VBox main = new VBox(2, t);
         if (description != null && !description.isBlank()) {
             Label d = new Label(description);
@@ -6660,6 +6742,7 @@ public class SettingsWindow {
         // longer translation. (Previously a fixed prefWidth(130) clamped + truncated the longer ones.)
         l.setMinWidth(130);
         l.setMaxWidth(Region.USE_PREF_SIZE);
+        l.setLabelFor(control);
         HBox h = new HBox(10, l, control);
         h.setAlignment(Pos.CENTER_LEFT);
         return h;
