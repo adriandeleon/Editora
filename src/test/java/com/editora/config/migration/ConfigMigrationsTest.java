@@ -379,6 +379,35 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v106→107: a built-in URL frozen into the file goes back to blank; a URL the user chose is kept. */
+    @Test
+    void frozenDefaultUrlsAreBlankedButChosenOnesAreKept() throws Exception {
+        JsonNode frozen = mapper.readTree("{\"schemaVersion\":106,"
+                + "\"pluginRegistryUrl\":\" " + ConfigMigrations.FROZEN_PLUGIN_REGISTRY + "\","
+                + "\"mavenArchetypeCatalogUrl\":\"" + ConfigMigrations.FROZEN_MAVEN_ARCHETYPE_CATALOG + "\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, frozen, mapper);
+        assertEquals(107, out.get("schemaVersion").asInt());
+        assertEquals("", out.get("pluginRegistryUrl").asText());
+        assertEquals("", out.get("mavenArchetypeCatalogUrl").asText());
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":106,"
+                + "\"pluginRegistryUrl\":\"https://plugins.example/index.json\","
+                + "\"mavenArchetypeCatalogUrl\":\"https://nexus.example/archetype-catalog.xml\"}");
+        ObjectNode kept = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, chosen.deepCopy(), mapper);
+        assertEquals(
+                "https://plugins.example/index.json",
+                kept.get("pluginRegistryUrl").asText());
+        assertEquals(
+                "https://nexus.example/archetype-catalog.xml",
+                kept.get("mavenArchetypeCatalogUrl").asText());
+
+        // Neither key present (a hand-trimmed file), or not a string: left exactly as it is.
+        JsonNode bare = mapper.readTree("{\"schemaVersion\":106,\"pluginRegistryUrl\":7}");
+        ObjectNode same = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, bare.deepCopy(), mapper);
+        assertEquals(7, same.get("pluginRegistryUrl").asInt());
+        assertFalse(same.has("mavenArchetypeCatalogUrl"));
+    }
+
     /** v105→106: overrides became per-keymap; an existing file's stay in place, under the keymap it names. */
     @Test
     void perKeymapOverridesStepKeepsExistingKeybindingsWhereTheyAre() throws Exception {
@@ -388,7 +417,8 @@ class ConfigMigrationsTest {
 
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
 
-        assertEquals(106, out.get("schemaVersion").asInt());
+        assertEquals(
+                ConfigSchema.SETTINGS.currentVersion(), out.get("schemaVersion").asInt());
         assertEquals("cua", out.get("keymap").asText());
         assertEquals(stored.get("keybindings"), out.get("keybindings"));
         assertEquals(stored.get("keybindingsMac"), out.get("keybindingsMac"));

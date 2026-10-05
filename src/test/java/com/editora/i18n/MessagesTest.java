@@ -190,7 +190,7 @@ class MessagesTest {
     void trFallsBackOverlayThenBaseThenKey() {
         Messages.init("es");
         // A key present in the overlay returns the Spanish value ("Ver: " is the view.* family prefix).
-        assertEquals("Ver: Configuración", Messages.tr("command.view.settings"));
+        assertEquals("Ver: Ajustes", Messages.tr("command.view.settings"));
         // A wholly unknown key returns the key itself (never an exception).
         assertEquals("no.such.key.exists", Messages.tr("no.such.key.exists"));
         Messages.init("en");

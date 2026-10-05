@@ -135,6 +135,7 @@ public class WindowManager {
         // Preferences are one object shared by every window, but each window applies them to its own buffers
         // and services. A save that carries a change no other window has applied yet re-applies it there.
         shared.setOnSettingsChanged(this::onSharedSettingsChanged);
+        shared.setOnStoreChanged(this::onSharedStoreChanged);
         settingsRebroadcast.setOnFinished(e -> flushPendingSettingsBroadcast());
         // The recent-files and search-history lists are single shared instances; a change made through any
         // window refreshes what every window shows. Registered once here (not per window) so a closed window
@@ -163,7 +164,7 @@ public class WindowManager {
      */
     private void reportConfigLoadProblems(MainController controller) {
         List<com.editora.config.migration.ConfigLoadProblem> problems = shared.takeLoadProblems();
-        if (problems.isEmpty()) {
+        if (problems.isEmpty() && unshownWriteErrors.isEmpty()) {
             return;
         }
         // Deferred past startup's own status messages, so the report is the line left showing.
@@ -171,8 +172,21 @@ public class WindowManager {
             for (com.editora.config.migration.ConfigLoadProblem problem : problems) {
                 controller.setError(ConfigLoadMessages.describe(problem, shared.isWriteProtected(problem.file())));
             }
+            List<Path> failed = new ArrayList<>(unshownWriteErrors);
+            unshownWriteErrors.clear();
+            for (Path file : failed) {
+                controller.setError(com.editora.i18n.Messages.tr(
+                        "status.config.saveFailed", file.getFileName().toString()));
+            }
         });
     }
+
+    /**
+     * Config files whose write failed before any window existed to say so (FX thread only). A read-only or
+     * full config folder fails its first write while the config is still loading; the first window reports
+     * these with the load problems.
+     */
+    private final java.util.Set<Path> unshownWriteErrors = new java.util.LinkedHashSet<>();
 
     /** Shows a config-write failure in the focused window's status bar (best-effort; logged regardless). */
     private void notifyConfigWriteError(Path file) {
@@ -183,6 +197,22 @@ public class WindowManager {
             h.controller()
                     .setError(com.editora.i18n.Messages.tr(
                             "status.config.saveFailed", file.getFileName().toString()));
+        } else {
+            unshownWriteErrors.add(file); // no window yet: the first one reports it
+        }
+    }
+
+    /**
+     * The abbreviations or the saved SFTP sites changed: every open Settings window re-reads them now. Each
+     * edits them as a whole list, so one left showing the old list would write it back over the change.
+     */
+    private void onSharedStoreChanged() {
+        if (!javafx.application.Platform.isFxApplicationThread()) {
+            javafx.application.Platform.runLater(this::onSharedStoreChanged);
+            return;
+        }
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncStoreBackedEditors();
         }
     }
 
@@ -802,7 +832,7 @@ public class WindowManager {
         for (Holder h : new ArrayList<>(windows)) {
             h.controller.reapplyAfterSharedSettingsChange(settings);
             if (origin != null && h.controller != origin) {
-                h.controller.syncSettingsWindow();
+                h.controller.settingsWindow().syncAll();
             }
         }
         shared.markSettingsApplied();
@@ -844,7 +874,7 @@ public class WindowManager {
         for (Holder h : new ArrayList<>(windows)) {
             if (h.config() != skip && h.stage().isShowing()) { // a window closed while this was pending is left alone
                 h.controller().reapplyAfterSharedSettingsChange(settings);
-                h.controller().syncSettingsWindow();
+                h.controller().settingsWindow().syncAll();
             }
         }
     }
@@ -927,6 +957,11 @@ public class WindowManager {
                 pluginKeymaps,
                 settings.keybindingsFor(com.editora.command.KeymapManager.isMac()));
         broadcastSettingsApplied();
+        // Every open Settings window shows the keymap: its combo, the shortcut list, the chord chips and the
+        // Macros key-binding row. The window that made the change refreshes itself; the others are told here.
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncKeymap();
+        }
         Holder focused = focusedHolder();
         reportUnknownKeymap(focused != null ? focused.controller() : null);
     }

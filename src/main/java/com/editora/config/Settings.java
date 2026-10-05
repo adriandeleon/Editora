@@ -52,13 +52,17 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 106;
+    public static final int SCHEMA_VERSION = 107;
 
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Default plugin-registry index URL (a curated {@code index.json} on GitHub); user-overridable. */
     public static final String DEFAULT_PLUGIN_REGISTRY =
             "https://raw.githubusercontent.com/adriandeleon/editora-plugins/main/index.json";
+
+    /** Default Maven archetype catalog (Maven Central's); user-overridable. */
+    public static final String DEFAULT_MAVEN_ARCHETYPE_CATALOG =
+            "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
 
     /**
      * Bounds applied by the numeric setters, so a hand-edited {@code settings.json} cannot load a value the
@@ -314,8 +318,9 @@ public class Settings {
     /** JDK home used by Maven project runs/debugs and Maven invocations; blank = system/default Java. */
     private String mavenJdkHome = "";
 
-    /** Where "Load full catalog…" in the New Maven Project wizard fetches archetypes from. */
-    private String mavenArchetypeCatalogUrl = "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
+    /** Where "Load full catalog…" in the New Maven Project wizard fetches archetypes from; blank =
+     *  {@link #DEFAULT_MAVEN_ARCHETYPE_CATALOG}. */
+    private String mavenArchetypeCatalogUrl = "";
     /** npm support (a toolbar icon + actions popup of package.json scripts, streaming runs to a console): on
      *  by default — self-gates on detection, so the toolbar button stays hidden until a package.json is
      *  actually found for the current project/file. */
@@ -1825,12 +1830,30 @@ public class Settings {
         this.mavenJdkHome = mavenJdkHome == null ? "" : mavenJdkHome;
     }
 
+    /** The catalog URL in force: the configured one, or {@link #DEFAULT_MAVEN_ARCHETYPE_CATALOG} when blank. */
+    @JsonIgnore
     public String getMavenArchetypeCatalogUrl() {
+        return mavenArchetypeCatalogUrl == null || mavenArchetypeCatalogUrl.isBlank()
+                ? DEFAULT_MAVEN_ARCHETYPE_CATALOG
+                : mavenArchetypeCatalogUrl;
+    }
+
+    /** The persisted form: the URL as configured, blank meaning "use the built-in catalog". */
+    @JsonProperty("mavenArchetypeCatalogUrl")
+    public String getMavenArchetypeCatalogUrlRaw() {
         return mavenArchetypeCatalogUrl == null ? "" : mavenArchetypeCatalogUrl;
     }
 
+    /**
+     * Sets the catalog URL. The built-in URL is stored as blank ("follow the default"), as for
+     * {@link #setPluginRegistryUrl}: the Settings field shows the URL in force and hands it back.
+     */
+    @JsonProperty("mavenArchetypeCatalogUrl")
     public void setMavenArchetypeCatalogUrl(String mavenArchetypeCatalogUrl) {
-        this.mavenArchetypeCatalogUrl = mavenArchetypeCatalogUrl == null ? "" : mavenArchetypeCatalogUrl;
+        this.mavenArchetypeCatalogUrl = mavenArchetypeCatalogUrl == null
+                        || DEFAULT_MAVEN_ARCHETYPE_CATALOG.equals(mavenArchetypeCatalogUrl.strip())
+                ? ""
+                : mavenArchetypeCatalogUrl;
     }
 
     public boolean isNpmSupport() {
