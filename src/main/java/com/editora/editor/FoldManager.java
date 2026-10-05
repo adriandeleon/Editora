@@ -53,6 +53,8 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
 public final class FoldManager {
 
     private final CodeArea area;
+    private java.util.function.IntSupplier caretLine;
+    private Supplier<CodeArea> secondView = () -> null;
     /** Full-text source; EditorBuffer supplies its per-version shared snapshot. */
     private final Supplier<String> textSnapshot;
 
@@ -146,12 +148,36 @@ public final class FoldManager {
     /** Current preview foreground, also exposed as a looked-up color to plain styled-text runs. */
     private Color previewForeground = Color.web("#24292f");
 
+    /**
+     * A split shows the document in two views, each with its own caret. The "at caret" commands then mean the
+     * caret of the view the user is in ({@code focused}); left alone it is the primary view's. A fold is made
+     * through the primary view, so RichTextFX moves only that view's caret off a line it hides: the
+     * {@code second} view's (null while there is none) is put on the fold's header here.
+     */
+    void setSplitViews(Supplier<CodeArea> focused, Supplier<CodeArea> second) {
+        this.caretLine = () -> focused.get().getCurrentParagraph();
+        this.secondView = second;
+    }
+
+    private void foldStateChanged() {
+        CodeArea view = secondView.get();
+        int line = view == null ? -1 : view.getCurrentParagraph();
+        if (line > 0 && view.isFolded(line)) {
+            while (line > 0 && view.isFolded(line)) {
+                line--;
+            }
+            view.moveTo(line, view.getParagraphLength(line));
+        }
+        onFoldStateChanged.run();
+    }
+
     public FoldManager(CodeArea area) {
         this(area, area::getText);
     }
 
     FoldManager(CodeArea area, Supplier<String> textSnapshot) {
         this.area = area;
+        this.caretLine = area::getCurrentParagraph;
         this.textSnapshot = textSnapshot;
         area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
             if (heuristicEnabled) {
@@ -684,7 +710,7 @@ public final class FoldManager {
             }
         }
         if (changed && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -717,7 +743,7 @@ public final class FoldManager {
             }
         }
         if (changed && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -744,7 +770,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -755,7 +781,7 @@ public final class FoldManager {
         shadeHeader(startLine, false);
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -782,7 +808,7 @@ public final class FoldManager {
             changed = true;
         }
         if (changed && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -796,7 +822,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -816,7 +842,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -863,7 +889,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -893,18 +919,18 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (changed && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
     /** {@link #foldAllExcept(int)} at the caret's line. */
     public void foldAllExceptCaret() {
-        foldAllExcept(area.getCurrentParagraph());
+        foldAllExcept(caretLine.getAsInt());
     }
 
     /** {@link #unfoldAllExcept(int)} at the caret's line. */
     public void unfoldAllExceptCaret() {
-        unfoldAllExcept(area.getCurrentParagraph());
+        unfoldAllExcept(caretLine.getAsInt());
     }
 
     /** Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}). Returns the count. */
@@ -932,7 +958,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (n > 0 && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
         return n;
     }
@@ -950,14 +976,14 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (n > 0 && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
         return n;
     }
 
     /** Collapses the innermost expanded foldable region around the caret; no-op if none applies. */
     public void foldAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         Region target = null; // innermost (largest startLine) containing, expanded region
         for (Region r : regions) {
             if (r.startLine() <= line
@@ -974,7 +1000,7 @@ public final class FoldManager {
 
     /** Expands the collapsed region at the caret (its header line, or the innermost containing it). */
     public void unfoldAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         Region atHeader = byStart.get(line);
         if (atHeader != null && isCollapsed(atHeader.startLine())) {
             unfold(atHeader.startLine());
@@ -996,7 +1022,7 @@ public final class FoldManager {
 
     /** Toggles the region at the caret: expands it if collapsed, otherwise collapses it. */
     public void toggleFoldAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         boolean collapsedHere = false;
         for (Region r : regions) {
             if (r.startLine() <= line && line <= r.endLine() && isCollapsed(r.startLine())) {
@@ -1025,13 +1051,13 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
     /** Collapses the innermost region around the caret <b>and</b> every region nested inside it. */
     public void foldRecursivelyAtCaret() {
-        Region target = FoldTree.innermostContaining(regions, area.getCurrentParagraph());
+        Region target = FoldTree.innermostContaining(regions, caretLine.getAsInt());
         if (target == null) {
             return;
         }
@@ -1049,13 +1075,13 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
     /** Expands the collapsed region around the caret <b>and</b> every region nested inside it. */
     public void unfoldRecursivelyAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         Region target = byStart.get(line);
         if (target == null || !isCollapsed(target.startLine())) {
             target = null;
@@ -1086,7 +1112,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 

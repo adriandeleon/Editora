@@ -174,15 +174,23 @@ class ColumnRulerFxTest {
         });
     }
 
+    /**
+     * Waits real frames, not just FX round-trips: a ruler measure is deferred to a later pulse (and confirmed
+     * two frames after a gutter/font change), so a burst of runLater hops alone can return before it has run
+     * and leave it to land inside the next counted window.
+     */
     private static void settle(int pulses) throws Exception {
         for (int i = 0; i < pulses; i++) {
             FxTestSupport.runOnFx(() -> {});
+            Thread.sleep(10);
         }
     }
 
     private static void settleUnchecked(int pulses) {
-        for (int i = 0; i < pulses; i++) {
-            FxTestSupport.runOnFxUnchecked(() -> {});
+        try {
+            settle(pulses);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

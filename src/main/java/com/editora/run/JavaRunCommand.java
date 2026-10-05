@@ -40,7 +40,9 @@ public final class JavaRunCommand {
             argv.add("-cp");
             argv.add(String.join(File.pathSeparator, cp));
         }
-        argv.add(mainClass);
+        // jdtls names a class of a named module `<module>/<class>`; off the class path only the class part
+        // is a main class (`java -cp … mod/pkg.Main` fails with "Could not find or load main class").
+        argv.add(JavaMainClass.classPart(mainClass));
         if (programArgs != null) {
             argv.addAll(programArgs);
         }

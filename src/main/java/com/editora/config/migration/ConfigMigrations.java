@@ -1,6 +1,7 @@
 package com.editora.config.migration;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -106,7 +107,7 @@ public final class ConfigMigrations {
         }
         JsonNode tree;
         try {
-            tree = mapper.readTree(Files.readString(file));
+            tree = mapper.readTree(readText(file));
         } catch (IOException e) {
             // Unreadable, or not even valid JSON/TOML. Returning defaults means the next save writes an EMPTY
             // store straight over it — so preserve what's there first (see keepCorrupt).
@@ -162,6 +163,36 @@ public final class ConfigMigrations {
         return merged;
     }
 
+    /**
+     * The text of a config file, decoded so that an encoding detail does not cost the whole file: a leading
+     * UTF-8 byte-order mark (Windows Notepad's "UTF-8 with BOM", older PowerShell) is dropped, and a byte that
+     * is not valid UTF-8 (a file saved as Windows-1252 with one accented name) becomes U+FFFD in that one value.
+     *
+     * <p>{@code Files.readString} throws on the stray byte, and a parser handed a {@code String} rejects the
+     * BOM as an unexpected character. Either way the file used to read as unparseable, so every value in it
+     * fell back to its default and the next save wrote those defaults over it.
+     */
+    public static String readText(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        String text = new String(bytes, StandardCharsets.UTF_8);
+        if (text.indexOf('\uFFFD') >= 0 && !isValidUtf8(bytes)) {
+            LOG.log(
+                    java.util.logging.Level.WARNING,
+                    "Config file {0} is not valid UTF-8; the undecodable bytes were replaced",
+                    file);
+        }
+        return !text.isEmpty() && text.charAt(0) == '\uFEFF' ? text.substring(1) : text;
+    }
+
+    private static boolean isValidUtf8(byte[] bytes) {
+        try {
+            StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes));
+            return true;
+        } catch (java.nio.charset.CharacterCodingException malformed) {
+            return false;
+        }
+    }
+
     private static void reportUnreadable(Path file, Consumer<ConfigLoadProblem> problems) {
         try {
             if (!Files.exists(file) || Files.size(file) == 0) {
@@ -206,6 +237,10 @@ public final class ConfigMigrations {
      */
     private static Path keepCorrupt(Path file) {
         try {
+            Path existing = identicalBackup(file, ".corrupt.bak");
+            if (existing != null) {
+                return existing; // the same damage as last launch: one copy of it is enough
+            }
             Path kept = freeName(file, ".corrupt.bak");
             Files.copy(file, kept);
             LOG.log(
@@ -219,6 +254,28 @@ public final class ConfigMigrations {
             });
             return null;
         }
+    }
+
+    /**
+     * An existing {@code file + suffix[.n]} backup whose content equals {@code file}, or {@code null}.
+     *
+     * <p>A store that is only rewritten when the user changes it (connections, macros, plugins, trusted
+     * folders, abbreviations) stays damaged from one launch to the next. Copying it again each time filled all
+     * {@link #MAX_BACKUPS} names with the same bytes; the next launch could then make no copy, and the file
+     * became write-protected — so saving a connection silently did nothing.
+     */
+    private static Path identicalBackup(Path file, String suffix) throws IOException {
+        Path candidate = file.resolveSibling(file.getFileName() + suffix);
+        for (int i = 2; Files.exists(candidate); i++) {
+            if (Files.isRegularFile(candidate) && Files.mismatch(file, candidate) == -1) {
+                return candidate;
+            }
+            if (i > MAX_BACKUPS) {
+                break;
+            }
+            candidate = file.resolveSibling(file.getFileName() + suffix + "." + i);
+        }
+        return null;
     }
 
     /**

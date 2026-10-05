@@ -175,6 +175,35 @@ public final class EditorConfigCharset {
                 .toString();
     }
 
+    /**
+     * True when {@code bytes} are BOM-less UTF-16 text in the {@code declared} byte order: {@code declared}
+     * is {@code utf-16le}/{@code utf-16be}, there is no BOM, and the bytes decode strictly with no NUL
+     * character. Such a file is half NUL <em>bytes</em>, so a binary sniff sends it to the hex viewer although
+     * {@code .editorconfig} says exactly what it is.
+     */
+    public static boolean isBomlessUtf16(byte[] bytes, String declared) {
+        if (!(UTF_16LE.equals(declared) || UTF_16BE.equals(declared))
+                || bytes == null
+                || bytes.length == 0
+                || bytes.length % 2 != 0
+                || detectByBom(bytes) != null) {
+            return false;
+        }
+        try {
+            return decodeStrict(bytes, declared).indexOf('\0') < 0;
+        } catch (CharacterCodingException notUtf16) {
+            return false;
+        }
+    }
+
+    /**
+     * Encodes {@code text} as {@code name}; {@code bom} false leaves the byte-order mark off even for a BOM
+     * charset, for a file that was read without one — a save must not add bytes the file never had.
+     */
+    public static byte[] encode(String text, String name, boolean bom) {
+        return bom ? encode(text, name) : text.getBytes(charsetFor(name));
+    }
+
     /** Encodes {@code text} as {@code name}, prepending the BOM for BOM charsets. */
     public static byte[] encode(String text, String name) {
         byte[] body = text.getBytes(charsetFor(name));

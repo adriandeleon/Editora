@@ -66,4 +66,16 @@ class LineEndingsTest {
         assertEquals("\r", LineEndings.separator("CR"));
         assertEquals("\n", LineEndings.separator("LF"));
     }
+
+    @Test
+    void mixedMeansMoreThanOneKindOfLineEnding() {
+        assertTrue(LineEndings.mixed("a\r\nb\nc\n"));
+        assertTrue(LineEndings.mixed("a\rb\nc\n"), "a lone CR inside an LF file");
+        assertTrue(LineEndings.mixed("a \r\r\n b"), "CR then CRLF");
+        assertFalse(LineEndings.mixed("a\r\nb\r\n"));
+        assertFalse(LineEndings.mixed("a\rb\r"));
+        assertFalse(LineEndings.mixed("a\nb\n"));
+        assertFalse(LineEndings.mixed("no line ending"));
+        assertFalse(LineEndings.mixed(null));
+    }
 }

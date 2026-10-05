@@ -86,6 +86,23 @@ final class AiCoordinator {
         return host.settings().isAiEnabled() && host.settings().isAiSupport() && !host.simpleModeActive();
     }
 
+    /** Why {@link #isEnabled()} is false, naming the switch that is actually off. */
+    private String disabledReason() {
+        return disabledReason(host.settings().isAiEnabled(), host.settings().isAiSupport());
+    }
+
+    /**
+     * The message for disabled AI actions. With the master "Enable AI" switch off, the Settings page used
+     * to say "enable them in Settings → AI Actions" right under an AI Actions checkbox that the master
+     * switch had greyed out. With both switches on, what is left is Simple UI mode.
+     */
+    static String disabledReason(boolean masterOn, boolean actionsOn) {
+        if (!masterOn) {
+            return tr("status.ai.masterDisabled");
+        }
+        return actionsOn ? tr("status.ai.simpleMode") : tr("status.ai.disabled");
+    }
+
     /** The effective gate for the floating selection Explain/Rewrite bar: enabled + last-known reachable. */
     boolean isActionsAvailable() {
         return isEnabled() && connected;
@@ -402,7 +419,7 @@ final class AiCoordinator {
 
     private void ifReady(Runnable action) {
         if (!isEnabled()) {
-            host.setStatus(tr("status.ai.disabled"));
+            host.setStatus(disabledReason());
             return;
         }
         if (provider().requiresApiKey() && apiKey().isEmpty()) {
@@ -482,7 +499,7 @@ final class AiCoordinator {
      */
     void checkConnection(java.util.function.BiConsumer<Boolean, String> onResult) {
         if (!isEnabled()) {
-            onResult.accept(false, tr("status.ai.disabled"));
+            onResult.accept(false, disabledReason());
             return;
         }
         if (provider().requiresApiKey() && apiKey().isEmpty()) {

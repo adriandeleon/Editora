@@ -27,6 +27,24 @@ public final class AutoFill {
      * leading indentation — a break there would only produce an empty first line.
      */
     public static Break compute(String lineText, int fillColumn, String fillPrefix) {
+        return compute(lineText, fillColumn, fillPrefix, fillPrefix);
+    }
+
+    /**
+     * {@link #compute(String, int, String)} for a prose buffer: a list item ({@code * item}, {@code - item},
+     * {@code 1. item}) wraps <em>under its text</em> — repeating the marker would turn the wrapped tail into
+     * a second item.
+     */
+    public static Break computeProse(String lineText, int fillColumn, String lineComment) {
+        if (lineText == null) {
+            return null;
+        }
+        String[] prefixes = Filler.proseBreakPrefixes(lineText, lineComment);
+        return compute(lineText, fillColumn, prefixes[0], prefixes[1]);
+    }
+
+    /** As {@link #compute(String, int, String)}, starting the wrapped tail with {@code continuation}. */
+    static Break compute(String lineText, int fillColumn, String fillPrefix, String continuation) {
         if (lineText == null || fillColumn < 1 || lineText.length() <= fillColumn) {
             return null;
         }
@@ -62,6 +80,6 @@ public final class AutoFill {
         if (lineText.substring(0, start).isBlank()) {
             return null; // only whitespace before the break — nothing to keep on the first line
         }
-        return new Break(start, end - start, "\n" + (fillPrefix == null ? "" : fillPrefix));
+        return new Break(start, end - start, "\n" + (continuation == null ? "" : continuation));
     }
 }

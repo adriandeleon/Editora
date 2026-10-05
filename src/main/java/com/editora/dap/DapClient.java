@@ -335,6 +335,8 @@ public final class DapClient implements IDebugProtocolClient {
         a.setLinesStartAt1(true);
         a.setColumnsStartAt1(true);
         a.setSupportsRunInTerminalRequest(false);
+        // Lets the adapter report indexedVariables/namedVariables, so a huge array is fetched page by page.
+        a.setSupportsVariablePaging(true);
         return a;
     }
 
@@ -730,22 +732,51 @@ public final class DapClient implements IDebugProtocolClient {
     }
 
     public CompletableFuture<List<DapModels.VariableInfo>> variables(int variablesReference) {
+        return variables(variablesReference, null, 0, 0);
+    }
+
+    /**
+     * One page of a container's children: {@code filter} is {@code "indexed"}, {@code "named"} or {@code null}
+     * (both), and {@code count > 0} asks for {@code count} children from {@code start} — the DAP paging
+     * contract, usable for a container whose {@code indexedVariables} / {@code namedVariables} the adapter
+     * reported. {@code count <= 0} asks for everything, as {@link #variables(int)} does.
+     */
+    public CompletableFuture<List<DapModels.VariableInfo>> variables(
+            int variablesReference, String filter, int start, int count) {
         DapClient session = target();
         if (session != this) {
-            return session.variables(variablesReference);
+            return session.variables(variablesReference, filter, start, count);
         }
         VariablesArguments a = new VariablesArguments();
         a.setVariablesReference(variablesReference);
+        if ("indexed".equals(filter)) {
+            a.setFilter(org.eclipse.lsp4j.debug.VariablesArgumentsFilter.INDEXED);
+        } else if ("named".equals(filter)) {
+            a.setFilter(org.eclipse.lsp4j.debug.VariablesArgumentsFilter.NAMED);
+        }
+        if (count > 0) {
+            a.setStart(Math.max(0, start));
+            a.setCount(count);
+        }
         return timed(server.variables(a)).thenApply(r -> {
             List<DapModels.VariableInfo> out = new ArrayList<>();
             if (r != null && r.getVariables() != null) {
                 for (Variable v : r.getVariables()) {
                     out.add(new DapModels.VariableInfo(
-                            v.getName(), v.getValue(), v.getType(), v.getVariablesReference()));
+                            v.getName(),
+                            v.getValue(),
+                            v.getType(),
+                            v.getVariablesReference(),
+                            count(v.getNamedVariables()),
+                            count(v.getIndexedVariables())));
                 }
             }
             return out;
         });
+    }
+
+    private static int count(Integer reported) {
+        return reported == null ? 0 : Math.max(0, reported);
     }
 
     /** Evaluates {@code expression} in {@code frameId}'s context ({@code "repl"} or {@code "watch"}). */
@@ -775,7 +806,12 @@ public final class DapClient implements IDebugProtocolClient {
         return timed(server.evaluate(a))
                 .thenApply(r -> r == null
                         ? null
-                        : new DapModels.EvalResult(r.getResult(), r.getVariablesReference(), r.getType()));
+                        : new DapModels.EvalResult(
+                                r.getResult(),
+                                r.getVariablesReference(),
+                                r.getType(),
+                                count(r.getNamedVariables()),
+                                count(r.getIndexedVariables())));
     }
 
     public CompletableFuture<String> setVariable(int variablesReference, String name, String value) {

@@ -67,8 +67,14 @@ class CrossWindowSettingsFxTest {
     private void runInWindowA(String commandId) throws Exception {
         CommandRegistry registry = FxTestSupport.field(a, "registry");
         assertTrue(FxTestSupport.callOnFx(() -> registry.run(commandId)), commandId + " is registered");
-        FxTestSupport.drainFx(); // the save requested by the command (one per pulse) — where the change is seen
-        FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
+        // The save requested by the command runs on a later pulse, and that save is where the other windows
+        // learn of the change. One drain is not guaranteed to span that pulse on a slow machine, so give it a
+        // few frames: flushing with nothing pending is a no-op.
+        for (int i = 0; i < 10; i++) {
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(fx.windowManager::flushPendingSettingsBroadcast);
+            Thread.sleep(20);
+        }
     }
 
     private static boolean lineNumbers(EditorBuffer buffer) throws Exception {

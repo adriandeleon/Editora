@@ -4,6 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import com.editora.command.KeymapManager;
+import com.editora.config.Settings;
 
 /**
  * The order the shared keymap's layers are applied in: base keymap → the user's overrides → plugin keymaps →
@@ -30,6 +31,16 @@ final class KeymapLayers {
             keymap.applyOverrides(plugin);
         }
         keymap.applyOverrides(userBindings(userOverrides));
+    }
+
+    /**
+     * Makes {@code id} the keymap in {@code settings}, parking the current key-binding overrides under the
+     * keymap that was <em>in force</em>: a configured name that is not a bundled keymap was running as the
+     * default one, so that is the keymap its overrides were made against.
+     */
+    static void switchKeymap(Settings settings, String id) {
+        settings.setKeymap(KeymapManager.resolveName(settings.getKeymap()));
+        settings.switchKeymap(id);
     }
 
     /** The overrides that bind a chord to a command — everything except the blank-valued "unbind" entries. */

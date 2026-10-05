@@ -23,12 +23,30 @@ public final class EditorConfigParser {
 
     public record Parsed(boolean root, List<Section> sections) {}
 
+    /**
+     * Parses a file's raw bytes. The spec asks for UTF-8, but a {@code .editorconfig} with one Latin-1 byte
+     * in a comment used to be ignored whole (and silently): anything that is not valid UTF-8 is read as
+     * ISO-8859-1 instead, which keeps every ASCII key, value and glob intact.
+     */
+    public static Parsed parse(byte[] bytes) {
+        try {
+            return parse(EditorConfigCharset.decodeStrict(bytes, EditorConfigCharset.UTF_8));
+        } catch (java.nio.charset.CharacterCodingException notUtf8) {
+            return parse(new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1));
+        }
+    }
+
     public static Parsed parse(String text) {
         boolean root = false;
         List<Section> sections = new ArrayList<>();
         Map<String, String> current = null;
         if (text == null) {
             return new Parsed(false, sections);
+        }
+        if (text.startsWith("\uFEFF")) {
+            // A byte-order mark (Visual Studio and other Windows tools write one). strip() does not treat
+            // it as whitespace, so the first line was neither `[section]` nor `root` and was dropped.
+            text = text.substring(1);
         }
         for (String raw : text.split("\n", -1)) {
             String line = stripInlineComment(raw).strip();

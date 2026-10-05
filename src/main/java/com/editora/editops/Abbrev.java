@@ -19,6 +19,30 @@ public final class Abbrev {
 
     private Abbrev() {}
 
+    /**
+     * Whether inserting {@code inserted} ends the word before it the way one typed terminator does. Besides
+     * a single non-word character that is what the editor's own typing assists insert for one keystroke:
+     * Enter with auto-indent (a newline followed by indentation) and an auto-closed pair ({@code ()},
+     * {@code ""}). Requiring exactly one character missed both, so an abbreviation stayed unexpanded before
+     * Enter on any indented line and before every bracket or quote. A paste is neither, and still never
+     * expands.
+     */
+    public static boolean terminates(String inserted) {
+        if (inserted == null || inserted.isEmpty() || isWordChar(inserted.charAt(0))) {
+            return false;
+        }
+        if (inserted.length() == 1) {
+            return true;
+        }
+        if (inserted.charAt(0) == '\n') {
+            return inserted.chars().skip(1).allMatch(c -> c == ' ' || c == '\t');
+        }
+        return inserted.length() == 2 && PAIRS.contains(inserted);
+    }
+
+    /** The opener + closer pairs auto-close inserts as one change. */
+    private static final java.util.Set<String> PAIRS = java.util.Set.of("()", "[]", "{}", "<>", "\"\"", "''", "``");
+
     private static boolean isWordChar(char c) {
         return Character.isLetterOrDigit(c);
     }

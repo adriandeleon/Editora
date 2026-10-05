@@ -14,7 +14,7 @@ public final class Transposer {
     private Transposer() {}
 
     private static boolean isWord(char c) {
-        return Character.isLetterOrDigit(c) || c == '_';
+        return WordChars.isLetterDigitOrMark(c) || c == '_';
     }
 
     /** Start of the line containing {@code pos} (index just after the previous newline, or 0). */
