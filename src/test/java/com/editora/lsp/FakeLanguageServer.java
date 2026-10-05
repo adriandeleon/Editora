@@ -110,6 +110,8 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public List<TextEdit> formattingResponse = List.of();
     /** The value {@code workspace/executeCommand} answers with (null unless a test sets it). */
     public Object executeCommandResponse;
+    /** When set, answers {@code workspace/executeCommand} per request instead of the canned value above. */
+    public volatile java.util.function.Function<ExecuteCommandParams, Object> executeCommandHandler;
 
     public List<TextEdit> onTypeFormattingResponse = List.of();
     public List<Location> definitionResponse = List.of();
@@ -367,6 +369,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
         executedCommands.add(params);
+        var handler = executeCommandHandler;
+        if (handler != null && !failEverything) {
+            return CompletableFuture.completedFuture(handler.apply(params));
+        }
         return failEverything ? failed() : CompletableFuture.completedFuture(executeCommandResponse);
     }
 }

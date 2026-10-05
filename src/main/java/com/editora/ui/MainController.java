@@ -6545,7 +6545,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     routingFile,
                     new com.editora.dap.DapManager.MainClassOption(mc.fqn(), mc.projectName(), mc.filePath()),
                     r -> cb.accept(new com.editora.run.JavaLaunchInfo(
-                            r.javaExec(), r.modulePaths(), r.classPaths(), r.error())));
+                            r.javaExec(), r.modulePaths(), r.classPaths(), r.error(), r.enablePreview())));
         }
 
         @Override
