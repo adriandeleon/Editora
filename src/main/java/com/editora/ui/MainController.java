@@ -8808,7 +8808,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (target.equals(old)) {
             return;
         }
-        if (Files.exists(target)) {
+        boolean caseOnly = com.editora.io.CaseOnlyRename.isAlias(old, target); // README.md on a case-blind volume
+        if (!caseOnly && Files.exists(target)) {
             setStatus(tr("status.renameFailedExists", target.getFileName()));
             return;
         }
@@ -8818,7 +8819,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         String oldNoteKey = noteKey(buffer);
         fileWorkflows.invalidatePendingWrite(old);
         try {
-            Files.move(old, target);
+            if (caseOnly) {
+                com.editora.io.CaseOnlyRename.move(old, target);
+            } else {
+                Files.move(old, target);
+            }
         } catch (IOException e) {
             setStatus(tr("status.renameFailed", e.getMessage()));
             return;

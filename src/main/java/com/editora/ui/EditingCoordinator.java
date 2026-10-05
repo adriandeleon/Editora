@@ -119,11 +119,28 @@ final class EditingCoordinator {
     }
 
     void onUndo() {
-        withArea(CodeArea::undo);
+        if (!undoIsOff()) {
+            withArea(CodeArea::undo);
+        }
     }
 
     void onRedo() {
-        withArea(CodeArea::redo);
+        if (!undoIsOff()) {
+            withArea(CodeArea::redo);
+        }
+    }
+
+    /**
+     * Large-file mode keeps no undo history, by design (a very large file, or one very long line). Undo was
+     * then a silent no-op on a fully editable document; say why nothing happened.
+     */
+    private boolean undoIsOff() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null || !buffer.isLargeFile()) {
+            return false;
+        }
+        host.setStatus(tr("status.undoOffLargeFile"));
+        return true;
     }
 
     void onCut() {

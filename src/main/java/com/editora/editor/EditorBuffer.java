@@ -7824,6 +7824,11 @@ public class EditorBuffer implements TabContent {
         this.charsetOverride = charset;
     }
 
+    /** True when the text was decoded with a stand-in charset: it is the file's bytes, not its real text. */
+    public boolean isCharsetAssumed() {
+        return charsetAssumed;
+    }
+
     /**
      * The charset to write: the EditorConfig override if set, else the charset detected on open. An assumed
      * charset wins over the override — re-encoding text that was decoded with a stand-in would rewrite bytes
