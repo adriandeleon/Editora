@@ -20,6 +20,22 @@ public final class TodoPatterns {
 
     private TodoPatterns() {}
 
+    /**
+     * Why {@code regex} cannot be compiled (the first line of the engine's description), or {@code null}
+     * when it is valid. A blank expression is valid here: {@link #compile} skips it as "no pattern".
+     */
+    public static String syntaxProblem(String regex) {
+        if (regex == null || regex.isBlank()) {
+            return null;
+        }
+        try {
+            Pattern.compile(regex);
+            return null;
+        } catch (PatternSyntaxException e) {
+            return e.getDescription() == null || e.getDescription().isBlank() ? e.getMessage() : e.getDescription();
+        }
+    }
+
     /** Compiles the enabled, valid patterns; skips disabled/blank/invalid entries (never throws). */
     public static List<Compiled> compile(List<TodoPattern> patterns) {
         List<Compiled> out = new ArrayList<>();

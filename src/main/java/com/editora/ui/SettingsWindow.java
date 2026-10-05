@@ -309,6 +309,13 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
+    /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
+    private ListView<com.editora.vfs.RemoteConnection> remoteList;
+
+    /** Re-read the Snippets / Templates lists from disk, keeping the selected row (set when the page is built). */
+    private Runnable reloadSnippets;
+
+    private Runnable reloadTemplates;
 
     /** Working copies for the Macros master-detail page. */
     private final javafx.collections.ObservableList<com.editora.macro.Macro> macroItems =
@@ -773,6 +780,7 @@ public class SettingsWindow {
             built = true;
         }
         load();
+        reloadFileBackedEditors();
         if (stage.isShowing()) {
             stage.toFront();
         } else {
@@ -789,6 +797,12 @@ public class SettingsWindow {
 
     private void build(Window owner) {
         stage.setTitle(tr("settings.window.title"));
+        // The window is non-modal: a store can change while it is open but in the background.
+        stage.focusedProperty().addListener((o, was, now) -> {
+            if (now && !loading) {
+                reloadStoreBackedEditors();
+            }
+        });
         stage.initOwner(owner);
         stage.initModality(Modality.NONE);
 
@@ -1223,7 +1237,6 @@ public class SettingsWindow {
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
             blameCheck.setDisable(!now); // inline blame only matters when Git is on
-            gitPathField.setDisable(!now);
         });
 
         blameCheck = new CheckBox(tr("settings.git.blameInline"));
@@ -2657,7 +2670,14 @@ public class SettingsWindow {
             com.editora.todo.TodoPattern up = cur.get(index);
             up.setEnabled(enabled.isSelected());
             up.setName(name.getText());
-            up.setPattern(regex.getText());
+            // A malformed expression is skipped by TodoPatterns.compile, so saving it silently switched the
+            // keyword off. Flag the field and keep the stored pattern until the expression is valid.
+            String problem = com.editora.todo.TodoPatterns.syntaxProblem(regex.getText());
+            regex.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problem != null);
+            regex.setTooltip(problem == null ? null : new Tooltip(tr("settings.todo.regexInvalid", problem)));
+            if (problem == null) {
+                up.setPattern(regex.getText());
+            }
             up.setColor(toHex(color.getValue()));
             up.setCaseSensitive(caseSensitive.isSelected());
             config.getSettings().setTodoPatterns(cur);
@@ -3559,19 +3579,55 @@ public class SettingsWindow {
         problem.setVisible(false);
         problem.setManaged(false);
 
+        // The form's texts now, and as they were when the selected row was loaded (or last committed).
+        java.util.function.Supplier<java.util.List<String>> snippetFormText =
+                () -> java.util.Arrays.asList(name.getText(), prefix.getText(), description.getText(), body.getText());
+        java.util.concurrent.atomic.AtomicReference<java.util.List<String>> snippetFormLoaded =
+                new java.util.concurrent.atomic.AtomicReference<>(snippetFormText.get());
         Runnable commit = () -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i < 0 || loadingSnippet || snippetFileProblem != null) {
                 return;
             }
+            // "Nothing was edited" is judged against what the form was loaded with, not against the model:
+            // a single-line field drops the line breaks of a bundled multi-line description, so a rebuilt
+            // snippet never equalled the original and a mere focus loss wrote a user override.
+            if (snippetFormText.get().equals(snippetFormLoaded.get())) {
+                return; // a field merely lost focus — never rewrite the file for that
+            }
+            com.editora.snippet.Snippet cur = snippetItems.get(i);
+            String newName = name.getText().trim();
+            if (newName.isEmpty()) {
+                // The file is keyed by name and the save skips a blank one: committing it deleted the
+                // snippet. Keep the name it has; the other fields still save.
+                newName = cur.name();
+                name.setText(newName);
+                if (newName == null || newName.isBlank()) {
+                    return;
+                }
+            }
+            if (!newName.equals(cur.name())) {
+                for (com.editora.snippet.Snippet other : snippetItems) {
+                    if (other != cur && newName.equals(other.name())) {
+                        // Two rows with one name collapse to a single entry on disk — refuse, as the
+                        // External Tools page does for a colliding command id.
+                        name.setText(cur.name());
+                        macroWarn(tr("settings.snippet.nameExists", newName));
+                        return;
+                    }
+                }
+            }
+            boolean descriptionEdited =
+                    !description.getText().equals(snippetFormLoaded.get().get(2));
             com.editora.snippet.Snippet updated = new com.editora.snippet.Snippet(
-                    name.getText().trim(),
+                    newName,
                     prefix.getText().trim(),
                     body.getText(),
-                    description.getText().trim(),
+                    descriptionEdited ? description.getText().trim() : cur.description(),
                     currentSnippetLang);
-            if (updated.equals(snippetItems.get(i))) {
-                return; // nothing was edited (a field merely lost focus) — never rewrite the file for that
+            snippetFormLoaded.set(snippetFormText.get());
+            if (updated.equals(cur)) {
+                return; // only whitespace the commit trims away
             }
             snippetUserNames.add(updated.name()); // editing a bundled snippet makes it a user override
             loadingSnippet = true; // replacing at the same index keeps selection; don't reload the fields
@@ -3612,6 +3668,7 @@ public class SettingsWindow {
                 prefix.setText(s == null ? "" : s.prefix());
                 description.setText(s == null ? "" : s.description());
                 body.replaceText(s == null ? "" : s.body()); // CodeArea has no setText
+                snippetFormLoaded.set(snippetFormText.get());
             } finally {
                 loadingSnippet = false;
             }
@@ -3644,14 +3701,32 @@ public class SettingsWindow {
             }
         };
         language.valueProperty().addListener((o, a, b) -> loadLang.run());
+        reloadSnippets = () -> { // another window's Settings may have rewritten this language's file
+            com.editora.snippet.Snippet sel = list.getSelectionModel().getSelectedItem();
+            loadLang.run();
+            for (int k = 0; sel != null && k < snippetItems.size(); k++) {
+                if (java.util.Objects.equals(sel.name(), snippetItems.get(k).name())) {
+                    list.getSelectionModel().select(k);
+                    break;
+                }
+            }
+        };
 
         Button add = new Button(tr("settings.snippet.add"));
         add.setOnAction(e -> {
             if (snippetFileProblem != null) {
                 return;
             }
-            com.editora.snippet.Snippet s =
-                    new com.editora.snippet.Snippet(tr("settings.snippet.newName"), "", "", "", currentSnippetLang);
+            // The file is keyed by name: a second "New Snippet" would replace the first on disk.
+            java.util.Set<String> taken = new java.util.HashSet<>();
+            for (com.editora.snippet.Snippet other : snippetItems) {
+                taken.add(other.name());
+            }
+            String newName = tr("settings.snippet.newName");
+            for (int n = 2; taken.contains(newName); n++) {
+                newName = tr("settings.snippet.newName") + " " + n;
+            }
+            com.editora.snippet.Snippet s = new com.editora.snippet.Snippet(newName, "", "", "", currentSnippetLang);
             snippetUserNames.add(s.name());
             snippetItems.add(s);
             saveSnippets();
@@ -3845,6 +3920,16 @@ public class SettingsWindow {
         VBox right = new VBox(6, form, multiFileNote);
         HBox.setHgrow(right, Priority.ALWAYS);
 
+        // The form's texts now, and as they were when the selected row was loaded (or last committed).
+        java.util.function.Supplier<java.util.List<String>> templateFormText = () -> java.util.Arrays.asList(
+                id.getText(),
+                name.getText(),
+                description.getText(),
+                language.getText(),
+                fileName.getText(),
+                body.getText());
+        java.util.concurrent.atomic.AtomicReference<java.util.List<String>> templateFormLoaded =
+                new java.util.concurrent.atomic.AtomicReference<>(templateFormText.get());
         Runnable commit = () -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i < 0 || loadingTemplate) {
@@ -3854,7 +3939,31 @@ public class SettingsWindow {
             if (cur.isMultiFile() || id.getText().trim().isEmpty()) {
                 return; // multi-file templates are read-only here; an id is required
             }
+            if (templateFormText.get().equals(templateFormLoaded.get())) {
+                return; // a field merely lost focus — a bundled template must not become a user override for that
+            }
             String newId = id.getText().trim();
+            if (!newId.equals(cur.id())) {
+                // The id is the file stem: one that is not a plain file name would write outside the
+                // templates folder, and one another row uses would overwrite that template's file.
+                String problem = null;
+                if (!com.editora.template.TemplateRegistry.isValidId(newId)) {
+                    problem = tr("settings.template.idInvalid", newId);
+                } else {
+                    for (com.editora.template.Template other : templateItems) {
+                        if (other != cur && newId.equals(other.id())) {
+                            problem = tr("settings.template.idExists", newId);
+                            break;
+                        }
+                    }
+                }
+                if (problem != null) {
+                    id.setText(cur.id()); // put the field back
+                    macroWarn(problem);
+                    return;
+                }
+            }
+            templateFormLoaded.set(templateFormText.get());
             com.editora.template.Template updated = new com.editora.template.Template(
                     newId,
                     name.getText().trim(),
@@ -3916,6 +4025,7 @@ public class SettingsWindow {
                 body.replaceText(t == null || multi ? "" : t.body()); // CodeArea has no setText
                 multiFileNote.setVisible(multi);
                 multiFileNote.setManaged(multi);
+                templateFormLoaded.set(templateFormText.get());
             } finally {
                 loadingTemplate = false;
             }
@@ -3933,6 +4043,17 @@ public class SettingsWindow {
                 list.getSelectionModel().select(0);
             } else {
                 form.setDisable(true);
+            }
+        };
+
+        reloadTemplates = () -> { // another window's Settings may have added or removed a template
+            com.editora.template.Template sel = list.getSelectionModel().getSelectedItem();
+            loadTemplates.run();
+            for (int k = 0; sel != null && k < templateItems.size(); k++) {
+                if (java.util.Objects.equals(sel.id(), templateItems.get(k).id())) {
+                    list.getSelectionModel().select(k);
+                    break;
+                }
             }
         };
 
@@ -4066,6 +4187,7 @@ public class SettingsWindow {
         remoteItems.setAll(config.getConnections());
 
         ListView<com.editora.vfs.RemoteConnection> list = new ListView<>(remoteItems);
+        remoteList = list;
         list.setPrefSize(210, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -4223,6 +4345,25 @@ public class SettingsWindow {
         apply();
     }
 
+    /** Re-reads the saved sites (Connect remembers one; the Remote Sites panel removes one), keeping the selection. */
+    private void reloadRemote() {
+        if (remoteItems.equals(config.getConnections())) {
+            return;
+        }
+        var selected =
+                remoteList == null ? null : remoteList.getSelectionModel().getSelectedItem();
+        String selectedId = selected == null ? null : selected.id();
+        remoteItems.setAll(config.getConnections());
+        if (remoteList != null && selectedId != null) {
+            for (var c : remoteItems) {
+                if (selectedId.equals(c.id())) {
+                    remoteList.getSelectionModel().select(c);
+                    break;
+                }
+            }
+        }
+    }
+
     private static String nullToEmpty(String s) {
         return s == null ? "" : s;
     }
@@ -4231,7 +4372,6 @@ public class SettingsWindow {
     public void showRemote(Window owner) {
         show(owner);
         sidebar.getSelectionModel().select(Category.REMOTE);
-        remoteItems.setAll(config.getConnections());
     }
 
     private VBox externalToolsPage() {
@@ -4309,6 +4449,11 @@ public class SettingsWindow {
                 name.setText(t.getName()); // put the field back
                 return;
             }
+            // The command id is derived from the name, so a rename is a new command: carry the key binding
+            // across (as saveMacro does) instead of leaving a chord bound to an id nothing registers.
+            String oldId = com.editora.externaltool.ExternalTool.commandIdFor(t.getName());
+            String newId = com.editora.externaltool.ExternalTool.commandIdFor(name.getText());
+            String oldChord = newId.equals(oldId) ? null : currentChordFor(oldId);
             t.setName(name.getText());
             t.setCommand(command.getText());
             t.setArguments(arguments.getText());
@@ -4321,7 +4466,13 @@ public class SettingsWindow {
             }
             t.setEnabled(enabled.isSelected());
             list.refresh();
-            persistExternalTools();
+            persistExternalTools(); // re-registers externalTool.run.* (incl. the renamed id)
+            if (!newId.equals(oldId) && shortcutActions != null) {
+                shortcutActions.reset(oldId); // drop the old id's override BEFORE binding the new one
+                if (oldChord != null && !oldChord.isBlank()) {
+                    shortcutActions.rebind(newId, oldChord);
+                }
+            }
         };
         // Combos + checkbox apply immediately; text fields commit on Enter / focus-loss (the todoRow idiom).
         stdin.valueProperty().addListener((o, a, b) -> commit.run());
@@ -4358,8 +4509,14 @@ public class SettingsWindow {
 
         Button add = new Button(tr("settings.externalTool.add"));
         add.setOnAction(e -> {
+            // Two tools named "New Tool" share one externalTool.run.<slug> command: only one would run, and
+            // commit then refuses every edit to the other until it is renamed.
+            String newName = tr("settings.externalTool.newName");
+            for (int n = 2; slugTaken(null, newName); n++) {
+                newName = tr("settings.externalTool.newName") + " " + n;
+            }
             com.editora.externaltool.ExternalTool t = new com.editora.externaltool.ExternalTool(
-                    tr("settings.externalTool.newName"),
+                    newName,
                     "",
                     "",
                     "",
@@ -4374,8 +4531,13 @@ public class SettingsWindow {
         remove.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
+                String id = com.editora.externaltool.ExternalTool.commandIdFor(
+                        externalToolItems.get(i).getName());
                 externalToolItems.remove(i);
                 persistExternalTools();
+                if (shortcutActions != null) {
+                    shortcutActions.reset(id); // drop its key binding, as deleting a macro does
+                }
             }
         });
         // Explicit Save (edits also auto-save on Enter / focus-loss + combo/checkbox change).
@@ -4534,9 +4696,13 @@ public class SettingsWindow {
     private void persistAbbrevs() {
         config.setAbbreviations(new java.util.ArrayList<>(abbrevItems));
         config.saveAbbreviations();
+        apply(); // buffers hold a copy of the table: push the new one to every window's open buffers
     }
 
     private void reloadAbbrevs() {
+        if (sameAbbrevs(abbrevItems, config.getAbbreviations())) {
+            return;
+        }
         var selected =
                 abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
         String selectedKey = selected == null ? null : selected.getAbbreviation();
@@ -6784,6 +6950,9 @@ public class SettingsWindow {
      * added a tool — and this window's next save wrote its snapshot back, deleting the other's tool.
      */
     private void reloadExternalTools() {
+        if (sameTools(externalToolItems, config.getSettings().getExternalTools())) {
+            return; // nothing changed behind the page: keep the rows (and the form's caret) as they are
+        }
         var selected = externalToolList == null
                 ? null
                 : externalToolList.getSelectionModel().getSelectedItem();
@@ -6799,10 +6968,73 @@ public class SettingsWindow {
         }
     }
 
+    /**
+     * Re-reads every list editor whose working copy is written back whole (External Tools, Abbreviations,
+     * Remote sites). Each is a snapshot of a shared store that a command, a tool window or another window's
+     * Settings can change; saving a stale snapshot deleted whatever had been added since. Runs whenever the
+     * window is (re)loaded and whenever it regains focus — the two moments an edit can follow a change made
+     * elsewhere. Field edits commit on focus loss, so nothing typed is pending when it runs.
+     */
+    private void reloadStoreBackedEditors() {
+        reloadExternalTools();
+        reloadAbbrevs();
+        reloadRemote();
+    }
+
+    /** The Snippets and Templates pages read files; refreshed when Settings is opened, not on every load. */
+    private void reloadFileBackedEditors() {
+        if (reloadSnippets != null) {
+            reloadSnippets.run();
+        }
+        if (reloadTemplates != null) {
+            reloadTemplates.run();
+        }
+    }
+
+    private static boolean sameTools(
+            java.util.List<com.editora.externaltool.ExternalTool> a,
+            java.util.List<com.editora.externaltool.ExternalTool> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            com.editora.externaltool.ExternalTool x = a.get(i);
+            com.editora.externaltool.ExternalTool y = b.get(i);
+            if (x != y
+                    && !(java.util.Objects.equals(x.getName(), y.getName())
+                            && java.util.Objects.equals(x.getCommand(), y.getCommand())
+                            && java.util.Objects.equals(x.getArguments(), y.getArguments())
+                            && java.util.Objects.equals(x.getWorkingDir(), y.getWorkingDir())
+                            && x.getStdin() == y.getStdin()
+                            && x.getOutput() == y.getOutput()
+                            && x.isEnabled() == y.isEnabled())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean sameAbbrevs(
+            java.util.List<com.editora.config.Abbreviation> a, java.util.List<com.editora.config.Abbreviation> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            com.editora.config.Abbreviation x = a.get(i);
+            com.editora.config.Abbreviation y = b.get(i);
+            if (x != y
+                    && !(java.util.Objects.equals(x.getAbbreviation(), y.getAbbreviation())
+                            && java.util.Objects.equals(x.getExpansion(), y.getExpansion()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void load() {
         loading = true;
         try {
-            reloadExternalTools(); // another window may have added/removed a tool since this page was built
+            reloadStoreBackedEditors(); // a command or another window may have changed a store since the build
             refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
             if (refreshToolbarLists != null) {
                 refreshToolbarLists.run(); // reflect any on-bar drag customization since the page was built
@@ -6911,7 +7143,6 @@ public class SettingsWindow {
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
             gitPathField.setText(settings.getGitPath());
-            gitPathField.setDisable(!settings.isGitSupport());
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());

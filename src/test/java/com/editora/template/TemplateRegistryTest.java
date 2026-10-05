@@ -136,4 +136,19 @@ class TemplateRegistryTest {
         assertNotNull(byId(r, "java-class")); // bundled reappears
         assertFalse(byId(r, "java-class").body().equals("// mine"));
     }
+
+    @Test
+    void anIdThatIsNotAPlainFileNameIsRefusedInsteadOfWrittenOutsideTheTemplatesFolder(@TempDir Path dir) {
+        assertTrue(TemplateRegistry.isValidId("java-class"));
+        assertTrue(TemplateRegistry.isValidId(".gitignore"));
+        assertTrue(TemplateRegistry.isValidId("My Template 2"));
+        for (String bad : new String[] {"", " ", "a/b", "../escaped", "a\\b", "c:x", "what?"}) {
+            org.junit.jupiter.api.Assertions.assertFalse(TemplateRegistry.isValidId(bad), bad);
+        }
+        TemplateRegistry r = registry(dir);
+        org.junit.jupiter.api.Assertions.assertThrows(
+                java.io.IOException.class,
+                () -> r.saveUserTemplate(new Template("../escaped", "x", "", "", "x.txt", "body", null)));
+        org.junit.jupiter.api.Assertions.assertFalse(java.nio.file.Files.exists(dir.resolve("escaped.json")));
+    }
 }

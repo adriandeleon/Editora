@@ -41,4 +41,13 @@ class TodoPatternsTest {
     void nullListIsSafe() {
         assertTrue(TodoPatterns.compile(null).isEmpty());
     }
+
+    @Test
+    void syntaxProblemNamesAMalformedExpressionAndAcceptsValidOrBlankOnes() {
+        assertEquals(null, TodoPatterns.syntaxProblem("\\bTODO\\b"));
+        assertEquals(null, TodoPatterns.syntaxProblem("  "), "blank means no pattern, not a bad one");
+        assertEquals(null, TodoPatterns.syntaxProblem(null));
+        String problem = TodoPatterns.syntaxProblem("[TODO");
+        assertTrue(problem != null && !problem.isBlank(), "an unclosed class is reported");
+    }
 }
