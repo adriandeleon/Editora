@@ -7,6 +7,127 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Follow-ups to the Settings, Java debugging and editing review, plus a review of mouse editing, tab dragging
+  and remote (SFTP) saves. Lines marked 'Changed' are behaviour you will notice as different rather than
+  fixed:
+  - Settings:
+    - Changed: settings schema 107. A plugin registry URL or Maven archetype catalog URL in `settings.json`
+      that equals the built-in address is blanked by the migration, so it follows future defaults again; this
+      includes one typed by hand that happens to equal it. Any other URL is kept.
+    - Changed: the remaining Settings text fields (Git, gh, diagram and Typst tool paths, build-tool commands,
+      ripgrep, Maven catalog, plugin registry, AI endpoint, models and API key, template author name) apply on
+      Enter, on leaving the field or on closing the window instead of on every keystroke; their 'detected'
+      status lines update at the same moment.
+    - Changed: Spanish: the Settings window is called 'Ajustes' throughout; 'Configuración' is kept where it
+      means configuration (config folder, export, run configurations).
+    - A fresh `settings.json` no longer freezes the Maven archetype catalog URL; a blank value means the
+      built-in catalog (it used to be refused as not HTTPS).
+    - A config file that is not valid UTF-8 is reported in the status bar when it is loaded and its original
+      bytes are kept as `<name>.corrupt.bak` (no copy is made of the Local History index), instead of the
+      replaced characters being saved back silently.
+    - A read-only or full config folder is reported as soon as the window opens, not only at the next save.
+    - Switching the AI provider keeps what was typed for the provider being left instead of dropping it or
+      writing it to the other one.
+    - The Remote and Abbreviations pages show a site or abbreviation added elsewhere at once, even while the
+      Settings window has the focus.
+    - Templates: a whitespace-only change no longer turns a bundled template into a user override, and editing
+      another field of a bundled template keeps its multi-line description.
+    - The Macros page's key binding, and a Settings window open in another window, follow keymap switches,
+      rebinds and resets.
+    - French and Portuguese: the Settings search prompt is no longer cut off. Remote: the key-file field keeps
+      a usable width, with Browse moving below it when the row is narrow.
+    - 'Enable AI actions' and 'Expand abbreviations as you type' are switch rows like the rest of Settings.
+  - Java debugging:
+    - Changed: while a debug session runs, a breakpoint the debugger has not verified (its code is not loaded
+      yet, or the line has no code) is drawn as a hollow ring, with the debugger's explanation on hover. Every
+      breakpoint is hollow from the start of the session until the debugger answers, and the markers return to
+      normal when the session ends. In Java a breakpoint on a line with no code stays hollow for the whole
+      session.
+    - Changed: Restart is disabled for a debugger attached to a test or build run, with the reason as its
+      tooltip and in the command palette; the key still reports it in the status bar. A session started with
+      Debug > Attach can still be restarted.
+    - A breakpoint the debugger refuses is flagged in the gutter and reported in the status bar, once per
+      session.
+    - Java: a breakpoint condition or logpoint message that cannot be evaluated is reported in the Debug
+      console and the status bar and its breakpoint is flagged; the program used to stop on every hit without
+      saying why.
+    - A breakpoint the debugger binds to a different line (Python: a blank or comment line) moves to that line
+      and the status bar says so.
+    - A stop on an exception names it: 'Suspended on IllegalStateException: boom' in the Debug panel, the full
+      type and message in the status bar.
+    - A watch that cannot be evaluated is drawn as an error instead of as a value.
+  - Editing and split view:
+    - Changed: the editor's right-click Cut and Copy are disabled when there are several carets and nothing is
+      selected at any of them, whatever 'copy/cut the line when nothing is selected' says; they used to take
+      whole lines.
+    - Changed: a command that rewrites the whole document, and undoing it, no longer scrolls to the caret
+      (unless the whole document was selected).
+    - Markdown, Typst and other commands that edit at the caret scroll to it when the change is outside the
+      window.
+    - Renaming or moving a file or folder from the Project tree keeps its bookmarks, personal notes,
+      breakpoints, fold state, Markdown mode, spell-check language, program arguments and read-only pin, also
+      for files that are not open. Save As copies the marks and per-file view settings to the new file and the
+      original keeps its own.
+    - Save As onto a file that is open in another window is refused; a saved `.editorconfig` reaches the open
+      files of every window.
+    - Tab with multiple carets indents by the file's indent style (and indents selected lines) at every caret
+      instead of typing a tab character, as one undo step; Shift-Tab dedents at every caret instead of doing
+      nothing.
+    - Converting line endings back to what a save that was still running wrote no longer leaves the buffer
+      marked modified.
+    - Editing a TODO from the TODO window works in a narrowed buffer: a line inside the region is edited in
+      place, one outside it widens the buffer first.
+    - Split view: the second pane shows fold chevrons, bookmark, breakpoint, run and blame marks and change
+      bars in its gutter, draws spelling squiggles and note highlights, and has the editor context menu, whose
+      items act on the pane that was right-clicked.
+    - Split view: closing the split from the second pane keeps that pane's caret, selection and scroll
+      position.
+    - Split view: Reload from disk keeps the second pane's place when that pane is not the focused one.
+  - Mouse and context menu:
+    - Changed: a right-click outside the selection moves the caret to the click and drops extra carets, so
+      Paste, Run/Debug Test, Run/Debug Main, the language-server items, spelling suggestions and Add Bookmark
+      all act on the place that was clicked. A right-click inside a selection (a column selection included)
+      leaves it alone.
+    - Changed: a dragged selection released outside its editor, or over the other split pane, is cancelled:
+      nothing moves and the selection stays.
+    - Changed: Fold and Unfold, by click or by command, keep the selection when it is outside the folded text
+      instead of collapsing it to a caret.
+    - The context menu opened with the Menu key or Shift+F10 opens at the caret and acts on it.
+    - Clicking a fold chevron, the breakpoint strip, a run glyph or a blame cell no longer moves the caret or
+      drops the selection and extra carets.
+    - Double-click selects `don't` (plain text and Markdown) and `3.14` as one word, and `margin-top` in CSS.
+    - An image dropped on a Markdown or Typst file is inserted where it is dropped, in the pane it was dropped
+      on, not at the old caret.
+    - Alt+drag column selection with word wrap on covers every wrapped row the rectangle crosses.
+  - Tabs and editor groups:
+    - Dragging a tab onto a tab header in another editor group moves it there; the tab could disappear with
+      its unsaved changes, or stay in its own group.
+    - Pinning or unpinning a tab keeps it in its own group, at that group's pinned boundary; pinning a group's
+      only tab used to move it to another group.
+  - Remote (SFTP) files and saving:
+    - Changed: Save As on a remote tab is no longer refused: it writes a local copy and the tab becomes that
+      local file. This also works after the connection is gone.
+    - Changed: Remote: Disconnect asks first when remote tabs have unsaved changes, naming them, and closes
+      every connection of the window, not only the mounted one.
+    - Changed: a remote file with no write bit on the server opens in View mode and is no longer replaced
+      silently: Save asks first and auto-save does not write it.
+    - Saving a remote file opened through a symlink writes the link's target instead of replacing the link
+      with a regular file.
+    - A writable remote file in a folder that allows no new entries can be saved: it is overwritten in place,
+      with its previous content held in a local backup until the write is done. This is done only when the
+      server refuses the temporary file for permissions.
+    - Saving a remote file with other hard links keeps them on servers that speak SFTP protocol 3 (OpenSSH);
+      on newer protocol versions the links cannot be detected and are still broken. A file owned by another
+      user should now be written in place instead of taken over (not yet confirmed against a second account).
+    - A temporary file left on the server by a dropped connection is removed by the next save to that server
+      in the same run of Editora, and a failed cleanup no longer hides the real error.
+    - Saving after the connection has closed says so and how to recover (reconnect, or Save As for a local
+      copy).
+    - A slow or stalled remote save no longer holds up saving local files.
+    - Connecting to a second SFTP host, or reconnecting to the same one, no longer fails in the Project map;
+      the earlier connection is closed unless open tabs still use it.
+    - With 'save as administrator' on, saving your own read-only file in a folder you can write to asks to
+      overwrite it instead of asking for elevated rights.
 - Settings, Java debugging and editing review fixes (Settings persistence, window behaviour and UI; the Java
   debug adapter layer and Debug panel; core editing, edit operations, file I/O, view and split view). Lines
   marked 'Changed' are behaviour you will notice as different rather than fixed:
