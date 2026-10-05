@@ -34,6 +34,32 @@ class EditorConfigResolveTest {
     }
 
     @Test
+    void aByteOrderMarkDoesNotHideTheFirstSection() throws IOException {
+        // Visual Studio writes EF BB BF first; the first line was then neither a section nor `root`.
+        write(root, "\uFEFF[*]\nend_of_line = crlf\ntrim_trailing_whitespace = true\n");
+        EditorConfigProperties p = EditorConfig.resolveFor(root.resolve("a.txt"));
+        assertEquals("crlf", p.endOfLine());
+        assertEquals(Boolean.TRUE, p.trimTrailingWhitespace());
+    }
+
+    @Test
+    void aByteOrderMarkDoesNotHideRoot() throws IOException {
+        write(root, "[*]\nindent_size = 8\n");
+        write(root.resolve("project"), "\uFEFFroot = true\n[*]\nend_of_line = lf\n");
+        EditorConfigProperties p = EditorConfig.resolveFor(root.resolve("project/a.txt"));
+        assertEquals("lf", p.endOfLine());
+        assertNull(p.indentSize(), "root = true stops the walk: the parent directory's rules must not leak in");
+    }
+
+    @Test
+    void aFileThatIsNotUtf8IsStillRead() throws IOException {
+        Files.write(
+                root.resolve(".editorconfig"),
+                "# caf\u00e9\n[*]\nend_of_line = crlf\n".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+        assertEquals("crlf", EditorConfig.resolveFor(root.resolve("a.txt")).endOfLine());
+    }
+
+    @Test
     void matchesSectionForFile() throws IOException {
         write(root, "root = true\n[*]\nindent_style = space\nindent_size = 2\n");
         EditorConfigProperties p = EditorConfig.resolveFor(root.resolve("a.py"));

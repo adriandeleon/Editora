@@ -103,7 +103,7 @@ public final class EditorConfig {
             if (hit != null && hit.mtime() == mtime) {
                 return hit.parsed();
             }
-            EditorConfigParser.Parsed parsed = EditorConfigParser.parse(Files.readString(ecFile));
+            EditorConfigParser.Parsed parsed = EditorConfigParser.parse(Files.readAllBytes(ecFile));
             CACHE.put(ecFile, new Cached(mtime, parsed));
             return parsed;
         } catch (IOException | RuntimeException e) {

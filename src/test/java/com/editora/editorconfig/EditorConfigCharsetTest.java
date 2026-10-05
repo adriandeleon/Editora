@@ -240,4 +240,35 @@ class EditorConfigCharsetTest {
                 java.nio.charset.CharacterCodingException.class,
                 () -> EditorConfigCharset.decodeStrict(hex("61f16f"), "utf-8"));
     }
+
+    @Test
+    void bomlessUtf16IsRecognisedOnlyWhenDeclaredAndWellFormed() {
+        byte[] hi = {'h', 0, 'i', 0, '\n', 0};
+        assertTrue(EditorConfigCharset.isBomlessUtf16(hi, EditorConfigCharset.UTF_16LE));
+        assertFalse(EditorConfigCharset.isBomlessUtf16(hi, EditorConfigCharset.UTF_8), "not declared UTF-16");
+        assertFalse(EditorConfigCharset.isBomlessUtf16(hi, null));
+        assertFalse(
+                EditorConfigCharset.isBomlessUtf16(new byte[] {'h', 0, 'i'}, EditorConfigCharset.UTF_16LE),
+                "an odd length is not UTF-16");
+        assertFalse(
+                EditorConfigCharset.isBomlessUtf16(new byte[] {'h', 0, 0, 0}, EditorConfigCharset.UTF_16LE),
+                "a NUL character is binary data in any charset");
+        assertFalse(
+                EditorConfigCharset.isBomlessUtf16(new byte[] {0, (byte) 0xD8, 'h', 0}, EditorConfigCharset.UTF_16LE),
+                "an unpaired surrogate is not text");
+        assertFalse(
+                EditorConfigCharset.isBomlessUtf16(
+                        new byte[] {(byte) 0xFF, (byte) 0xFE, 'h', 0}, EditorConfigCharset.UTF_16LE),
+                "a file with a BOM is not BOM-less");
+    }
+
+    @Test
+    void aBomlessFileIsEncodedBackWithoutABom() {
+        byte[] hi = {'h', 0, 'i', 0, '\n', 0};
+        String text = EditorConfigCharset.decode(hi, EditorConfigCharset.UTF_16LE);
+        assertArrayEquals(hi, EditorConfigCharset.encode(text, EditorConfigCharset.UTF_16LE, false));
+        assertArrayEquals(
+                new byte[] {(byte) 0xFF, (byte) 0xFE, 'h', 0, 'i', 0, '\n', 0},
+                EditorConfigCharset.encode(text, EditorConfigCharset.UTF_16LE, true));
+    }
 }
