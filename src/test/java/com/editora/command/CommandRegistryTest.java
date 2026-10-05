@@ -69,4 +69,35 @@ class CommandRegistryTest {
         }
         assertTrue(recorded.isEmpty(), "a command that throws is not recorded");
     }
+
+    @Test
+    void theRunScopeBracketsOnlyTheOutermostRun() {
+        CommandRegistry registry = new CommandRegistry();
+        java.util.List<String> events = new java.util.ArrayList<>();
+        registry.setRunScope(id -> {
+            events.add("before " + id);
+            return () -> events.add("after " + id);
+        });
+        registry.register(Command.of("inner", "Inner", () -> events.add("run inner")));
+        registry.register(Command.of("outer", "Outer", () -> registry.run("inner")));
+
+        registry.run("outer");
+
+        assertEquals(java.util.List.of("before outer", "run inner", "after outer"), events);
+    }
+
+    @Test
+    void aRunScopeMayDeclineAndAnUnknownCommandIsNotBracketed() {
+        CommandRegistry registry = new CommandRegistry();
+        AtomicInteger asked = new AtomicInteger();
+        registry.setRunScope(id -> {
+            asked.incrementAndGet();
+            return null; // nothing to do afterwards
+        });
+        registry.register(Command.of("known", "Known", () -> {}));
+
+        assertTrue(registry.run("known"));
+        assertFalse(registry.run("missing"));
+        assertEquals(1, asked.get(), "only a command that exists is bracketed");
+    }
 }

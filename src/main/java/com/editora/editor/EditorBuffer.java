@@ -853,6 +853,8 @@ public class EditorBuffer implements TabContent {
      *  horizontal scroll — the gutter, the font, wrap, the ruler column. Cleared by the measure. */
     private boolean rulerInputsDirty = true;
 
+    private final ColumnAdvance columnAdvance = new ColumnAdvance();
+
     /** Max undo entries kept per view; caps undo memory (RichTextFX defaults to unlimited). */
     private static final int UNDO_HISTORY = 300;
 
@@ -927,6 +929,7 @@ public class EditorBuffer implements TabContent {
 
     public EditorBuffer() {
         refreshGutter();
+        TabStops.apply(viewHost, tabSize); // JavaFX's own tab stop is 8 columns; ours starts at the default 4
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked);
@@ -7330,7 +7333,7 @@ public class EditorBuffer implements TabContent {
     public void setWordWrap(boolean wrap) {
         boolean changed = wrap != area.isWrapText();
         if (changed) {
-            markRulerInputsDirty(); // wrapping changes how the advance is derived (see columnRulerX)
+            markRulerInputsDirty(); // wrapping re-flows the text and removes the horizontal scroll
         }
         area.setWrapText(wrap); // the split's second view is bound to this
         if (!changed) {
@@ -7451,8 +7454,8 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Positions the ruler at the 80-column boundary, drawn whether or not any text reaches column 80.
-     * The boundary is found by extrapolating the (monospace) glyph advance from caret positions, so it
-     * is exact regardless of which glyphs are present. The ruler is hidden when column 80 falls outside
+     * The boundary is column 0's on-screen x plus 80 advances of the editor font (see {@link #columnRulerX}),
+     * so it is exact regardless of which glyphs are present. The ruler is hidden when column 80 falls outside
      * the visible text width (e.g. the window is too narrow, or the text is scrolled past it).
      */
     /**
@@ -7493,55 +7496,25 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Root-local x of column 80, extrapolated from the live layout: the caret x at the start of the
-     * longest visible line and at its end give the exact per-column advance (querying caret positions,
-     * a {@code from == to} character-bounds call, avoids any dependence on glyph ink widths). Returns
-     * {@code null} if no visible line has any text to measure from.
+     * Root-local x of column 80: where column 0 starts on screen (the left edge of the first character of any
+     * visible line — a property of the gutter and the horizontal scroll, not of the text) plus 80 columns of
+     * the editor font's own advance (see {@link ColumnAdvance}; never derived from the visible text, which a
+     * short line, a tab or a wide glyph skewed). Returns {@code null} when no visible line has a character.
      */
     private Double columnRulerX() {
         int col = rulerColumnOverride != null && rulerColumnOverride > 0 ? rulerColumnOverride : 80;
         try {
-            int total = area.getParagraphs().size();
-            if (total == 0) {
-                return null;
-            }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            int refPar = -1;
-            int refLen = 0;
+            int last = Math.min(area.getParagraphs().size() - 1, area.lastVisibleParToAllParIndex());
             for (int p = first; p <= last; p++) {
-                if (area.isFolded(p)) {
-                    continue; // collapsed line: its caret bounds would skew the advance measurement
+                if (area.isFolded(p) || area.getParagraphLength(p) == 0) {
+                    continue; // collapsed or empty: no character to take column 0 from
                 }
-                int len = area.getParagraphLength(p);
-                if (len > refLen) {
-                    refLen = len;
-                    refPar = p;
+                Bounds start = caretBounds(p, 0);
+                if (start != null) {
+                    return start.getMinX() + col * columnAdvance.of(fontFamily, fontSize);
                 }
             }
-            if (refPar < 0) {
-                return null; // all visible lines empty; nothing to measure the advance from
-            }
-            Bounds start = caretBounds(refPar, 0);
-            Bounds end = caretBounds(refPar, refLen);
-            if (start == null || end == null) {
-                return null;
-            }
-            // When word wrap is on, a long line spans several visual rows, so column 0 and column refLen
-            // sit on *different* rows and their x-distance is no longer refLen glyph advances (it collapses,
-            // which dropped the ruler near the left edge). Average over the whole line only while it stays on
-            // one row; otherwise fall back to a single adjacent-column advance measured on the first row.
-            double advance;
-            if (Math.abs(end.getMinY() - start.getMinY()) < 1.0) {
-                advance = (end.getMinX() - start.getMinX()) / refLen; // unwrapped: precise, rounding averaged out
-            } else {
-                Bounds next = caretBounds(refPar, 1); // refLen >= 1, so column 1 is on the first visual row
-                if (next == null) {
-                    return null;
-                }
-                advance = next.getMinX() - start.getMinX();
-            }
-            return start.getMinX() + col * advance;
         } catch (RuntimeException ignored) {
             // Viewport mid-layout; a later event will re-measure.
         }
@@ -7787,9 +7760,10 @@ public class EditorBuffer implements TabContent {
         return eolOverride != null;
     }
 
-    /** Sets the visual tab width used by the minimap (and tracked for future use). */
+    /** Sets the visual tab width: how wide a tab is drawn in both panes, and the minimap's. */
     public void setTabSize(int tabSize) {
         this.tabSize = tabSize;
+        TabStops.apply(viewHost, tabSize);
         minimap.setTabSize(tabSize);
         if (minimap2 != null) {
             minimap2.setTabSize(tabSize);
@@ -9763,13 +9737,18 @@ public class EditorBuffer implements TabContent {
      * a couple of pulses after the file had already painted at its saved caret. That is what showed as a
      * restored file jumping to line 1 on open. Restoring the scroll only when it actually collapsed to the
      * top keeps this inert for every normal re-highlight (typing, scrolling), where the flow doesn't reset.
+     *
+     * <p>What is put back is the first visible <em>line</em>, not the pixel offset: right after a whole-document
+     * replace (a reload from disk) the offset is an estimate over unmeasured cells, and re-applying it once the
+     * heights are known landed a hundred lines away from where the view had been.
      */
     private void setStyleSpansPreservingScroll(int from, StyleSpans<Collection<String>> spans) {
         Double before = area.estimatedScrollYProperty().getValue();
+        int top = before != null && before > 1 ? ScrollAnchor.firstVisibleLine(area) : -1;
         area.setStyleSpans(from, spans);
         Double after = area.estimatedScrollYProperty().getValue();
         if (before != null && before > 1 && (after == null || after <= 1)) {
-            area.estimatedScrollYProperty().setValue(before);
+            ScrollAnchor.restore(area, top, before);
         }
     }
 

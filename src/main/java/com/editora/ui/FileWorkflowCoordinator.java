@@ -33,7 +33,6 @@ import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
 import com.editora.io.AtomicFileWrite;
 import com.editora.io.DocumentWriteSequencer;
-import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -979,14 +978,15 @@ final class FileWorkflowCoordinator {
 
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
     private void applyPreparedReload(Tab tab, EditorBuffer buffer, PreparedLoad load) {
-        CodeArea area = buffer.getArea();
-        int caret = area.getCaretPosition();
+        // The whole document is about to be replaced, which resets the viewport and clears the folds: keep
+        // the user's place (caret line/column, scroll position, collapsed folds) rather than the caret alone.
+        ReloadViewState view = ReloadViewState.capture(buffer);
         host.historyCoordinator()
                 .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
         String note = applyPreparedLoad(buffer, load);
         notePerfContentLoaded(buffer);
         buffer.markClean();
-        area.moveTo(Math.min(caret, area.getLength()));
+        view.restore();
         host.updateTabMeta(tab, buffer);
         host.lspCoordinator().watchedFilesReloaded(java.util.List.of(load.file()));
         host.setStatus(note.isEmpty() ? tr("status.reloaded", load.file().getFileName()) : note);

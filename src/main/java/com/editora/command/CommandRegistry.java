@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /** Central registry of all commands, keyed by id. Insertion order is preserved for the palette. */
 public class CommandRegistry {
@@ -17,6 +18,9 @@ public class CommandRegistry {
     /** Reentrancy depth of {@link #run}: the listener fires only for the outermost call, so a command that
      *  synchronously delegates to another records what the user invoked, not the internal decomposition. */
     private int runDepth;
+
+    /** Brackets each outermost run; see {@link #setRunScope}. Null = none. */
+    private Function<String, Runnable> runScope;
 
     public void register(Command command) {
         commands.put(command.id(), command);
@@ -41,16 +45,31 @@ public class CommandRegistry {
         this.executionListener = listener;
     }
 
+    /**
+     * Installs a bracket around every <em>outermost</em> run: it is called with the command id before the
+     * command executes and returns what to do once it has (or null for nothing). This is the one point every
+     * invocation path shares — a key chord, the palette, a menu item, a toolbar button, a macro replay — so
+     * it is where "an edit command reveals the caret" lives, rather than in each handler. The follow-up does
+     * not run when the command throws.
+     */
+    public void setRunScope(Function<String, Runnable> scope) {
+        this.runScope = scope;
+    }
+
     public boolean run(String id) {
         Command command = commands.get(id);
         if (command == null) {
             return false;
         }
+        Runnable after = runDepth == 0 && runScope != null ? runScope.apply(id) : null;
         runDepth++;
         try {
             command.run();
         } finally {
             runDepth--;
+        }
+        if (after != null) {
+            after.run();
         }
         // Fire the execution/macro listener only for the OUTERMOST run. If a command synchronously delegates
         // to another (`registry.run(...)` from its body), firing per-run would record the inner command first

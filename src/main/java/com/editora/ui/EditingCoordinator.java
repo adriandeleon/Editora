@@ -66,8 +66,65 @@ final class EditingCoordinator {
         this.host = host;
     }
 
-    /** Emacs mark: when set (C-SPC), caret movement extends the selection from the mark. */
-    boolean markActive;
+    /**
+     * Emacs mark: while active (C-SPC), caret movement extends the selection from the mark. The state is
+     * <b>per buffer</b>, as in Emacs, and is stamped with the document version it was activated at: any
+     * modification of that buffer — typing, Backspace, undo, a paste, an external reload — moves the version
+     * and so deactivates the mark without every editing path having to remember to. One window-wide flag
+     * instead made {@code C-SPC}, type, {@code C-n} select text the next key then replaced, and carried the
+     * mark into whichever tab was selected next.
+     */
+    private final java.util.Map<EditorBuffer, Long> activeMarks = new java.util.WeakHashMap<>();
+
+    /** Whether the active buffer's mark is active (set there, and the buffer not modified since). */
+    boolean markActive() {
+        EditorBuffer buffer = host.activeBuffer();
+        Long version = buffer == null ? null : activeMarks.get(buffer);
+        if (version == null) {
+            return false;
+        }
+        if (version != buffer.docVersion()) {
+            activeMarks.remove(buffer); // modified since: the mark is gone until it is set again
+            return false;
+        }
+        return true;
+    }
+
+    /** Activates the active buffer's mark; a later modification of that buffer deactivates it. */
+    void activateMark() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null) {
+            activeMarks.put(buffer, buffer.docVersion());
+        }
+    }
+
+    /**
+     * The follow-up for one command run (see {@link CommandRegistry#setRunScope}): when an editing command
+     * changed the active buffer's text, scroll its caret into view. A chord is consumed by the key dispatcher
+     * before the text area sees it, so the area's own "follow the caret after a key" never runs, and a
+     * programmatic edit does not scroll by itself — paste/yank, undo, redo, duplicate line and move line all
+     * left the caret (or the change) off-screen. Keyed on the document version, so a command that only
+     * scrolls, selects or navigates is left alone, as is one that switched tabs.
+     *
+     * <p>Only the editor-context commands ({@code edit.*}, and a macro replaying them) — the ones that stand
+     * in for typing. A command that edits as a side effect (a save that trims trailing whitespace) must not
+     * pull a deliberately scrolled view back to the caret.
+     */
+    Runnable revealCaretAfterEdit(String commandId) {
+        if (!commandId.startsWith("edit.") && !commandId.startsWith("macro.")) {
+            return null;
+        }
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer == null) {
+            return null;
+        }
+        long version = buffer.docVersion();
+        return () -> {
+            if (host.activeBuffer() == buffer && buffer.docVersion() != version) {
+                buffer.getFocusedArea().requestFollowCaret();
+            }
+        };
+    }
 
     /** Expand/shrink-selection history (the pure stack); see {@link #expandSelection}/{@link #shrinkSelection}. */
     final com.editora.editops.SmartSelectStack smartSelect = new com.editora.editops.SmartSelectStack();
@@ -547,6 +604,7 @@ final class EditingCoordinator {
         CodeArea area = host.activeArea();
         if (area != null) {
             area.insertText(area.getCaretPosition(), String.valueOf(ch).repeat(count));
+            area.requestFollowCaret(); // the key was consumed, so the area's own follow never runs
         }
     }
 
@@ -562,7 +620,7 @@ final class EditingCoordinator {
         }
         int caret = area.getCaretPosition();
         area.selectRange(caret, caret); // anchor = caret; ADJUST moves then extend from here
-        markActive = true;
+        activateMark();
         buffer.pushMark(caret); // record on the mark ring so pop-mark can return here later
         host.setStatus(tr("status.markSet"));
     }
@@ -596,13 +654,16 @@ final class EditingCoordinator {
             return;
         }
         area.selectRange(area.getCaretPosition(), area.getAnchor());
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
     /** Clears the Emacs mark (e.g. after a clipboard action or a mouse click). */
     void deactivateMark() {
-        markActive = false;
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null) {
+            activeMarks.remove(buffer);
+        }
     }
 
     void withArea(java.util.function.Consumer<CodeArea> action) {
@@ -1492,7 +1553,7 @@ final class EditingCoordinator {
             return;
         }
         area.selectRange(span[0], span[1]);
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
@@ -1508,7 +1569,7 @@ final class EditingCoordinator {
             return;
         }
         area.selectRange(caret, end);
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
@@ -1523,7 +1584,7 @@ final class EditingCoordinator {
             return;
         }
         area.selectRange(bounds[0], bounds[1]);
-        markActive = true;
+        activateMark();
         area.requestFollowCaret();
     }
 
@@ -1560,7 +1621,7 @@ final class EditingCoordinator {
         }
         area.selectRange(next[0], next[1]);
         area.requestFollowCaret();
-        markActive = true;
+        activateMark();
     }
 
     /** Semantic shrink-selection (VS Code {@code Shift+Alt+Left}): pop back to the previous expand range. */
@@ -1576,7 +1637,11 @@ final class EditingCoordinator {
         }
         area.selectRange(prev[0], prev[1]);
         area.requestFollowCaret();
-        markActive = prev[0] != prev[1];
+        if (prev[0] != prev[1]) {
+            activateMark();
+        } else {
+            deactivateMark();
+        }
     }
 
     /** Emacs {@code kill-sexp} (`C-M-k`): delete the balanced expression after the caret. */
@@ -2073,7 +2138,7 @@ final class EditingCoordinator {
 
     /** Emacs-style vertical caret move (C-n/C-p) preserving the goal column; see {@link EditorBuffer#moveLine}. */
     void moveLine(int delta) {
-        if (multiCaretMove(b -> b.multiMoveVertical(delta > 0, markActive))) {
+        if (multiCaretMove(b -> b.multiMoveVertical(delta > 0, markActive()))) {
             return;
         }
         EditorBuffer buffer = host.activeBuffer();

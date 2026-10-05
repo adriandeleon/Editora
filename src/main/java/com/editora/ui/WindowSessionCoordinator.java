@@ -588,8 +588,11 @@ final class WindowSessionCoordinator {
             return;
         }
         CodeArea area = buffer.getArea();
+        // The caller names a line of the file. In a narrowed buffer the area holds only the region, so rebase
+        // (or widen, when the target is outside it) before clamping against the area's own line count.
+        int areaLine1 = host.navigation().areaLine(buffer, line1 - 1) + 1;
         int total = area.getParagraphs().size();
-        int line = Math.max(1, Math.min(total, line1)) - 1;
+        int line = Math.max(1, Math.min(total, areaLine1)) - 1;
         int col = 0;
         if (col1 > 0) {
             int lineLen = area.getParagraphLength(line);
@@ -600,7 +603,11 @@ final class WindowSessionCoordinator {
         int targetCol = col;
         area.moveTo(targetLine, targetCol);
         if (record) {
-            host.navigation().recordJump(origin, new NavigationHistory.Location(file, targetLine, targetCol));
+            host.navigation()
+                    .recordJump(
+                            origin,
+                            new NavigationHistory.Location(
+                                    file, host.navigation().documentLine(buffer, targetLine), targetCol));
         }
         area.requestFollowCaret();
         Platform.runLater(() -> {
