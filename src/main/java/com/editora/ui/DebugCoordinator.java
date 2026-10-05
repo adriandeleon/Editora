@@ -460,6 +460,9 @@ final class DebugCoordinator {
         if (newPath == null || newPath.equals(oldPath)) {
             return;
         }
+        if (com.editora.vfs.Vfs.isRemote(oldPath)) {
+            oldPath = null; // never debuggable, so nothing to carry over — and asking a closed connection throws
+        }
         var map = ops.breakpointMap();
         List<Breakpoint> stored = null;
         if (oldPath != null && !Files.exists(oldPath)) {
