@@ -9655,7 +9655,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Log files open in View mode by default — the log viewer is for reading, and follow-tail still
         // appends programmatically while read-only — but the "Enable Editing" banner lets the user opt in.
         boolean logDefault = logViewer.isEnabled() && buffer.isLog();
-        if (shouldOpenReadOnly(persisted, Files.isWritable(file)) || logDefault) {
+        if (shouldOpenReadOnly(persisted, com.editora.vfs.Vfs.isWritableOnDisk(file)) || logDefault) {
             buffer.setViewMode(true);
         }
     }

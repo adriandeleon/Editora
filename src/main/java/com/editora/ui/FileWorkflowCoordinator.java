@@ -238,6 +238,28 @@ final class FileWorkflowCoordinator {
         return t;
     });
 
+    /**
+     * One writer per remote connection. A save to a slow or stalled server used to hold the single writer
+     * thread, and with it every other save — local files, auto-save, the synchronous save before Run or
+     * close. Order per file is the {@link DocumentWriteSequencer}'s business, not this thread's.
+     */
+    private final Map<String, ExecutorService> remoteSaveExecutors = new ConcurrentHashMap<>();
+
+    /** The thread {@code target} is written on: the local writer, or its connection's own. */
+    ExecutorService saveExecutor(Path target) {
+        String authority = shutdown ? null : com.editora.vfs.Vfs.authorityOf(target);
+        if (authority == null) {
+            return autoSaveExecutor;
+        }
+        return remoteSaveExecutors.computeIfAbsent(
+                authority,
+                ignored -> Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "editora-remote-save");
+                    t.setDaemon(true);
+                    return t;
+                }));
+    }
+
     /** Disk reads/charset decoding for file opens. Virtual threads also keep remote-provider waits cheap. */
     final ExecutorService fileLoadExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
@@ -1037,13 +1059,29 @@ final class FileWorkflowCoordinator {
         return adminSaveEnabled() && adminToolAvailable;
     }
 
-    /** True when a plain save of {@code p} would fail for permissions but an elevated save could succeed. */
+    /**
+     * True when a plain save of {@code p} would fail for permissions but an elevated save could succeed. A
+     * read-only file of the user's own, in a folder they can write, is not such a file: an ordinary save
+     * replaces it once the user agrees ({@link #mayReplaceReadOnly}), and asking for root there is wrong.
+     */
     boolean adminSaveApplicable(Path p) {
         return elevationAvailable()
                 && p != null
                 && com.editora.vfs.Vfs.isLocal(p)
                 && Files.exists(p)
-                && !Files.isWritable(p);
+                && !Files.isWritable(p)
+                && !replaceableWithoutElevation(p);
+    }
+
+    private static boolean replaceableWithoutElevation(Path p) {
+        try {
+            Path parent = p.toAbsolutePath().getParent();
+            return parent != null
+                    && Files.isWritable(parent)
+                    && Files.getOwner(p).getName().equals(System.getProperty("user.name"));
+        } catch (IOException | RuntimeException unknownOwner) {
+            return false;
+        }
     }
 
     /**
@@ -1285,16 +1323,14 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return false;
         }
-        if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
-            // A remote buffer always opens with a path, so plain Save writes it back over SFTP; choosing a
-            // new remote destination (an async prompt) isn't supported yet.
-            host.setStatus(tr("status.remote.saveAsUnsupported"));
-            return false;
-        }
+        // A remote buffer may be saved as a LOCAL file (the chooser only offers those): with its connection
+        // gone that is the one way left to keep the text. A new remote destination is still not offered.
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.saveAs.title"));
         if (buffer.getDisplayName() != null) {
             chooser.setInitialFileName(buffer.getDisplayName()); // suggested name from --new-file=NAME
+        } else if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
+            chooser.setInitialFileName(String.valueOf(buffer.getPath().getFileName()));
         }
         Path file = host.pathOf(chooser.showSaveDialog(host.stage()));
         if (file == null) {
@@ -1348,11 +1384,7 @@ final class FileWorkflowCoordinator {
         if (buffer == null || refuseUnsavable(buffer)) {
             return;
         }
-        if (buffer.getPath() != null && com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
-            host.setStatus(tr("status.remote.saveAsUnsupported"));
-            return;
-        }
-        Path base = saveAsBaseDir(buffer);
+        Path base = saveAsBaseDir(buffer); // a local folder, also for a remote buffer: its copy is saved locally
         host.promptText(tr("dialog.saveAs.title"), tr("dialog.saveAs.prompt"), saveAsInitial(buffer, base), value -> {
             Path target = com.editora.config.PathKeys.resolveUserInput(value, base, System.getProperty("user.home"));
             if (target == null) {
@@ -1405,7 +1437,9 @@ final class FileWorkflowCoordinator {
         if (p != null && com.editora.vfs.Vfs.isLocal(p)) {
             return p.toString();
         }
-        String name = buffer.getDisplayName() != null ? buffer.getDisplayName() : "untitled.txt";
+        String name = buffer.getDisplayName() != null
+                ? buffer.getDisplayName()
+                : p != null && p.getFileName() != null ? p.getFileName().toString() : "untitled.txt";
         return base.resolve(name).toString();
     }
 
@@ -1471,7 +1505,7 @@ final class FileWorkflowCoordinator {
             return false;
         }
         try {
-            autoSaveExecutor.submit(() -> writeAsync(request, false));
+            saveExecutor(file).submit(() -> writeAsync(request, false));
             return true;
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
             finishRequest(request);
@@ -1490,7 +1524,7 @@ final class FileWorkflowCoordinator {
         }
         CompletableFuture<Boolean> completed = new CompletableFuture<>();
         try {
-            autoSaveExecutor.submit(() -> writeAsync(request, false, completed));
+            saveExecutor(file).submit(() -> writeAsync(request, false, completed));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
             finishRequest(request);
             return false;
@@ -1534,7 +1568,7 @@ final class FileWorkflowCoordinator {
             return;
         }
         try {
-            autoSaveExecutor.submit(() -> writeAsync(request, true));
+            saveExecutor(file).submit(() -> writeAsync(request, true));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
             finishRequest(request);
         }
@@ -1715,7 +1749,7 @@ final class FileWorkflowCoordinator {
      */
     private boolean mayReplaceReadOnly(SaveRequest request, boolean autoSave) throws IOException {
         Path target = request.target();
-        if (!com.editora.vfs.Vfs.isLocal(target) || Files.isWritable(target)) {
+        if (com.editora.vfs.Vfs.isWritableOnDisk(target)) {
             return true;
         }
         CompletableFuture<Boolean> answer = new CompletableFuture<>();
@@ -1789,6 +1823,9 @@ final class FileWorkflowCoordinator {
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
                 Path target = request.target();
+                if (com.editora.vfs.RemoteFileSystems.isDisconnected(target)) {
+                    throw new IOException(connectionLost(target)); // before a request that can only fail oddly
+                }
                 for (int attempt = 0; request.ticket().isCurrent(); attempt++) {
                     SaveTarget state = SaveTarget.of(Files.exists(target), Files.notExists(target));
                     if (state == SaveTarget.INDETERMINATE) {
@@ -1846,7 +1883,11 @@ final class FileWorkflowCoordinator {
             Platform.runLater(() -> {
                 try {
                     if (request.ticket().isCurrent()) {
-                        host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", e.getMessage()));
+                        // A connection that dropped mid-save surfaces as whatever its last request threw.
+                        String why = com.editora.vfs.RemoteFileSystems.isDisconnected(request.target())
+                                ? connectionLost(request.target())
+                                : e.getMessage();
+                        host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", why));
                     }
                     rollbackFailedSaveAs(request);
                     completeFuture(completed, false);
@@ -1855,6 +1896,15 @@ final class FileWorkflowCoordinator {
                 }
             });
         }
+    }
+
+    /** Why a save to a closed connection failed, and the two ways to keep the text. */
+    private static String connectionLost(Path target) {
+        return tr(
+                "status.remote.connectionLost",
+                com.editora.vfs.Vfs.authorityOf(target),
+                tr("command.remote.connect"),
+                tr("command.file.saveAs"));
     }
 
     private void completeSave(SaveRequest request, DiskWrite disk, boolean autoSave, boolean showFeedback) {
@@ -1998,6 +2048,7 @@ final class FileWorkflowCoordinator {
         shutdown = true;
         autoSaveIdleTimer.stop();
         autoSaveExecutor.shutdownNow();
+        remoteSaveExecutors.values().forEach(ExecutorService::shutdownNow);
         fileLoadExecutor.shutdownNow();
         List.copyOf(activeSaveRequests).forEach(this::finishRequest);
         committedSaves.clear();

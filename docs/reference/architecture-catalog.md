@@ -131,7 +131,10 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   picker; on success **mounts the remote folder as the Project tree root** via `projectPanel.setRoot` +
   opens the Project tool window, and `config.putConnection`s it), `remote.manageConnections` (a `QuickOpen`
   over saved connections → re-opens the form pre-filled), `remote.openFile` (an `sftp://` URI →
-  `Vfs.parseStorable` → `openPath`), `remote.disconnect` (restores the local project root). **Saved sites get
+  `Vfs.parseStorable` → `openPath`), `remote.disconnect` (closes **every** connection of the window — the
+  mounted one and any earlier host kept open for its tabs — after asking when a remote tab has unsaved
+  changes, then restores the local project root; mounting a second host closes the first unless tabs still
+  use it). **Saved sites get
   three visible surfaces** (all over the same `connections.json` most-recent-first list — no schema/secret
   change): a **Remote Sites tool window** (`ui/RemoteConnectionsPanel`, id `remote`, `Side.RIGHT`, `Icons::remote`,
   `tool.remote`/`M-g r`, *not* buffer-gated, **registered default-hidden** via `toolWindows.register(tw, false)` —
@@ -145,8 +148,16 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   Sites" quick-connect list** (`WelcomePane.remoteList`, shown only when non-empty, each row → `connectRemote(c)`).
   All three open the **prefilled connect form** on pick (so the secret is still prompted), never a silent
   reconnect. A remote buffer
-  opens with a remote `Path`, so plain Save → `writeBuffer` → `Files.writeString` writes back over SFTP, no
-  dialog; `saveAs` is guarded for remote. Recent files round-trip the `sftp://` URI (`Vfs.toStorableString`;
+  opens with a remote `Path`, so plain Save → `writeBuffer` → `AtomicFileWrite.writeDocument` writes back over
+  SFTP on **that connection's own writer thread** (`FileWorkflowCoordinator.saveExecutor`; local files keep the
+  shared one, so a stalled server never holds up a local save). `io/SftpFiles` answers what NIO does not over
+  SFTP: links are followed by `readSymbolicLink` (an `SftpPath.toRealPath()` does not), "read-only" is read off
+  the mode bits (`Vfs.isWritableOnDisk`; `Files.isWritable` says yes to 0444), a link count comes from the
+  protocol-3 `ls -l` long name, and a staging file a dropped connection left behind is removed by the next
+  save to that server. A staging refusal *for permissions* falls back to the backed-up in-place write (the
+  backup is local); any other staging failure still fails the save. Save As from a remote buffer writes a
+  **local** copy (no remote destination picker); a save on a closed connection says so
+  (`status.remote.connectionLost`). Recent files round-trip the `sftp://` URI (`Vfs.toStorableString`;
   a remote entry resolves only once its connection is open). **Host-key verification (do not weaken):** the client uses a `KnownHostsServerKeyVerifier` over **`~/.ssh/known_hosts`** — shared with OpenSSH on purpose. Unknown host → the injected `RemoteFileSystems.HostKeyPrompt` (trust-on-first-use; `RemoteCoordinator` marshals it to FX and blocks the SSH I/O thread, bounded + fail-closed), written to the file only on acceptance; **changed key → refused without asking** (that's the MITM — a prompt there just gets clicked through); no prompt → refuse. It shipped as `AcceptAllServerKeyVerifier`, which made every SFTP session unauthenticated and handed a password-auth MITM the password (GHSA-p4qf-p7q6-2mrw). **The host-key dialog's think-time is excluded from the handshake deadline (#486):** the trust-on-first-use prompt blocks the key exchange that gates auth, so it lands inside the auth wait — a careful "compare this fingerprint" answer would otherwise time out at `AUTH_TIMEOUT` (20s). The verifier times how long the dialog is open (`promptStartNanos` while up + `promptAccumulatedNanos` once closed; `livePromptElapsedNanos()` also counts an in-progress dialog, since the deadline is checked *while* it's up), and `authenticate` polls the `AuthFuture` in `POLL_MILLIS` steps discounting that time via the pure/unit-tested `handshakeExpired(elapsed, promptNanos, timeout)`. A genuinely stuck host still fails at `AUTH_TIMEOUT` (prompt time stays 0 when nobody is asked). The connect phase keeps a plain `verify(CONNECT_TIMEOUT)` — MINA fulfils the connect future at the transport level, before KEX, so no prompt overlaps it. `CONNECT_TIMEOUT`/`AUTH_TIMEOUT` are ctor-injectable so the FX test exercises the deadline in ~2s. Tested against a real in-process `SshServer` **and a real impostor on the same port** (`HostKeyVerificationTest` + `RemoteFileSystemsHostKeyFxTest`); the known_hosts path is ctor-injectable so tests never touch the real one. **Dependency:** Apache **MINA SSHD**
   (`org.apache.sshd:sshd-osgi` + `sshd-sftp`) — the combined **sshd-osgi** bundle (module
   `org.apache.sshd.osgi`) is used instead of sshd-common+sshd-core, which **split** the
