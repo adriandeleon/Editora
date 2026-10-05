@@ -68,6 +68,9 @@ public final class BreakpointManager implements LineMarks.Carrier {
     }
 
     /** Notified after any change (toggle/edit-driven shift) for persistence + live re-send to a session. */
+    /** See {@link #setLive}. */
+    private java.util.Map<Integer, Live> live;
+
     public void setOnChanged(Runnable onChanged) {
         this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
@@ -79,6 +82,90 @@ public final class BreakpointManager implements LineMarks.Carrier {
 
     public boolean isBreakpoint(int line) {
         return byLine.containsKey(line);
+    }
+
+    /** How a live debug session regards a breakpoint — the gutter draws anything but {@link #VERIFIED} hollow. */
+    public enum LiveState {
+        /** The adapter bound it: it will stop here. */
+        VERIFIED,
+        /** Not bound (yet): its code is not loaded, or the adapter has not answered. */
+        PENDING,
+        /** The adapter refused it, or could not evaluate its condition. */
+        REJECTED
+    }
+
+    /** A breakpoint's {@link LiveState} with the text to show on hover (may be empty). */
+    public record Live(LiveState state, String tooltip) {}
+
+    /**
+     * What the live debug session says about this buffer's breakpoints, by <em>whole-document</em> line
+     * (as {@link #documentSnapshot()} numbers them); {@code null} when no session is live, which is when a
+     * breakpoint simply looks like itself. An enabled breakpoint with no entry is {@link LiveState#PENDING}.
+     */
+    public void setLive(java.util.Map<Integer, Live> byDocumentLine) {
+        java.util.Map<Integer, Live> next = byDocumentLine == null ? null : java.util.Map.copyOf(byDocumentLine);
+        if (!java.util.Objects.equals(live, next)) {
+            live = next;
+            onLinesRepaint.accept(new ArrayList<>(byLine.keySet()));
+        }
+    }
+
+    /** The live-session state of the breakpoint on (view) {@code line}; null with no session or none to tell. */
+    public Live live(int line) {
+        Breakpoint bp = byLine.get(line);
+        if (live == null || bp == null || !bp.enabled()) {
+            return null; // a disabled breakpoint is never sent to the adapter
+        }
+        Live known = live.get(line + regionFirstLine());
+        return known == null ? UNANSWERED : known;
+    }
+
+    private static final Live UNANSWERED = new Live(LiveState.PENDING, "");
+
+    /**
+     * The gutter glyph's extra CSS classes for the breakpoint on {@code line}, space-separated and without
+     * the {@code breakpoint-} prefix: its kind (disabled / logpoint / conditional) and, while a session is
+     * live, {@code unverified} or {@code unverified rejected}. Null for a plain breakpoint.
+     */
+    public String styleClasses(int line) {
+        Breakpoint bp = byLine.get(line);
+        if (bp == null) {
+            return null;
+        }
+        String kind =
+                !bp.enabled() ? "disabled" : bp.isLogpoint() ? "logpoint" : bp.isConditional() ? "conditional" : null;
+        Live state = live(line);
+        if (state == null || state.state() == LiveState.VERIFIED) {
+            return kind;
+        }
+        String unverified = state.state() == LiveState.REJECTED ? "unverified rejected" : "unverified";
+        return kind == null ? unverified : kind + " " + unverified;
+    }
+
+    /** The hover text of the breakpoint on {@code line}: what the debug session says about it, else null. */
+    public String tooltip(int line) {
+        Live state = live(line);
+        return state == null || state.tooltip() == null || state.tooltip().isBlank() ? null : state.tooltip();
+    }
+
+    /**
+     * Moves the breakpoint on document line {@code from} to {@code to} — the line the debug adapter actually
+     * bound it to. Returns false (and changes nothing) when there is none to move, {@code to} already has
+     * one, or either line is outside the narrowed region.
+     */
+    public boolean moveDocumentLine(int from, int to) {
+        int first = regionFirstLine();
+        int viewFrom = from - first;
+        int viewTo = to - first;
+        Breakpoint bp = byLine.get(viewFrom);
+        if (bp == null || viewTo < 0 || viewTo >= area.getParagraphs().size() || byLine.containsKey(viewTo)) {
+            return false;
+        }
+        byLine.remove(viewFrom);
+        byLine.put(viewTo, bp.withLine(viewTo).withLineText(captureLineText(viewTo)));
+        onLinesRepaint.accept(List.of(viewFrom, viewTo));
+        fireChanged();
+        return true;
     }
 
     public Breakpoint get(int line) {

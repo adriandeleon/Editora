@@ -118,6 +118,8 @@ public final class FoldManager {
     /** Extra CSS class for a line's breakpoint glyph (e.g. {@code conditional}/{@code logpoint}/disabled),
      *  or {@code null} for a plain breakpoint. */
     private IntFunction<String> breakpointClass = i -> null;
+    /** Hover text for a line's breakpoint glyph (what a live debug session says about it), or {@code null}. */
+    private IntFunction<String> breakpointTooltip = i -> null;
     /** Invoked when the user clicks the breakpoint strip on a line (toggles the breakpoint). */
     private IntConsumer onBreakpointToggle = i -> {};
 
@@ -558,6 +560,11 @@ public final class FoldManager {
         this.isBreakpoint = isBreakpoint == null ? i -> false : isBreakpoint;
         this.breakpointClass = classFor == null ? i -> null : classFor;
         this.onBreakpointToggle = onToggle == null ? i -> {} : onToggle;
+    }
+
+    /** Supplies the hover text of a line's breakpoint glyph ({@code null} = none). */
+    public void setBreakpointTooltip(IntFunction<String> tooltipFor) {
+        this.breakpointTooltip = tooltipFor == null ? i -> null : tooltipFor;
     }
 
     /**
@@ -1290,6 +1297,10 @@ public final class FoldManager {
             bpSlot.setCursor(Cursor.HAND);
             if (isBreakpoint.test(idx)) {
                 bpSlot.getChildren().add(breakpointMarker(breakpointClass.apply(idx)));
+                String bpTip = breakpointTooltip.apply(idx);
+                if (bpTip != null && !bpTip.isEmpty()) {
+                    Tooltip.install(bpSlot, new Tooltip(bpTip));
+                }
             }
             bpSlot.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY) {
@@ -1485,13 +1496,16 @@ public final class FoldManager {
     }
 
     /** A small filled red dot for the gutter breakpoint marker; colored via {@code .breakpoint-marker}.
-     *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}) tweaks the look. */
+     *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}, space-separated when
+     *  there are several) tweaks the look. */
     private Node breakpointMarker(String extraClass) {
         SVGPath svg = new SVGPath();
         svg.setContent(BREAKPOINT_GLYPH_PATH);
         svg.getStyleClass().add("breakpoint-marker");
         if (extraClass != null && !extraClass.isEmpty()) {
-            svg.getStyleClass().add("breakpoint-" + extraClass);
+            for (String one : extraClass.split(" ")) { // a kind and/or the live-session state
+                svg.getStyleClass().add("breakpoint-" + one);
+            }
         }
         svg.setScaleX(0.5);
         svg.setScaleY(0.5);

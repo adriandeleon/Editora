@@ -273,7 +273,32 @@ final class Chrome {
             boolean typstFile,
             boolean hasPreview,
             boolean debugActive,
-            boolean debugSuspended) {
+            boolean debugSuspended,
+            boolean debugRestartable) {
+
+        /** A context whose debug session, if any, can be restarted — every session but a one-shot attach. */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    true);
+        }
 
         /** Everything available — the neutral value for tests and for callers with no window context. */
         static PaletteContext all() {
@@ -338,7 +363,14 @@ final class Chrome {
             return c.debugSuspended() ? null : new DisabledReason("palette.disabled.needsSuspended", null);
         }
         if (DEBUG_NEEDS_SESSION.contains(id)) {
-            return c.debugActive() ? null : new DisabledReason("palette.disabled.needsDebugSession", null);
+            if (!c.debugActive()) {
+                return new DisabledReason("palette.disabled.needsDebugSession", null);
+            }
+            // A session attached to a build or test run cannot be restarted from here; the same sentence the
+            // command itself reports when it is reached by its key chord.
+            return id.equals("debug.restart") && !c.debugRestartable()
+                    ? new DisabledReason("status.debug.cannotRestartAttached", null)
+                    : null;
         }
         // Whole-family buffer requirements: these do nothing on the Welcome page or an image/hex/PDF tab.
         if (id.startsWith("edit.") || id.startsWith("nav.") || id.startsWith("markwhen.")) {

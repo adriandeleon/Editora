@@ -954,8 +954,9 @@ public class EditorBuffer implements TabContent {
         folds.setBreakpointHooks(
                 () -> debugEnabled,
                 breakpoints::isBreakpoint,
-                this::breakpointStyleClass,
+                breakpoints::styleClasses,
                 line -> gutterBreakpointClick.accept(this, line));
+        folds.setBreakpointTooltip(breakpoints::tooltip);
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
         // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
         folds.setBlameHooks(
@@ -6946,24 +6947,6 @@ public class EditorBuffer implements TabContent {
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
         executionLine.clear(area);
-    }
-
-    /** The extra glyph CSS-class suffix for the breakpoint on {@code line} (disabled/logpoint/conditional). */
-    private String breakpointStyleClass(int line) {
-        com.editora.config.Breakpoint bp = breakpoints.get(line);
-        if (bp == null) {
-            return null;
-        }
-        if (!bp.enabled()) {
-            return "disabled";
-        }
-        if (bp.isLogpoint()) {
-            return "logpoint";
-        }
-        if (bp.isConditional()) {
-            return "conditional";
-        }
-        return null;
     }
 
     // ---- Personal Notes ----
