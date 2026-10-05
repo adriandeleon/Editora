@@ -83,8 +83,8 @@ public final class ConsoleNav {
         m.put("nav.docEnd", a -> a.end(SelectionPolicy.CLEAR));
         m.put("nav.lineStart", a -> a.lineStart(SelectionPolicy.CLEAR));
         m.put("nav.lineEnd", a -> a.lineEnd(SelectionPolicy.CLEAR));
-        m.put("nav.charForward", a -> a.moveTo(Math.min(a.getLength(), a.getCaretPosition() + 1)));
-        m.put("nav.charBackward", a -> a.moveTo(Math.max(0, a.getCaretPosition() - 1)));
+        m.put("nav.charForward", a -> a.nextChar(SelectionPolicy.CLEAR)); // a whole code point, not a UTF-16 unit
+        m.put("nav.charBackward", a -> a.previousChar(SelectionPolicy.CLEAR));
         m.put("edit.copy", CodeArea::copy);
         m.put("edit.selectAll", CodeArea::selectAll);
         m.put("edit.cancel", a -> a.deselect());

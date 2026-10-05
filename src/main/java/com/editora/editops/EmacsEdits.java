@@ -22,7 +22,7 @@ public final class EmacsEdits {
     private EmacsEdits() {}
 
     private static boolean isWord(char c) {
-        return Character.isLetterOrDigit(c) || c == '_';
+        return WordChars.isLetterDigitOrMark(c) || c == '_';
     }
 
     private static boolean isHorizWs(char c) {

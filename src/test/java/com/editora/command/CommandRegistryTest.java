@@ -100,4 +100,34 @@ class CommandRegistryTest {
         assertFalse(registry.run("missing"));
         assertEquals(1, asked.get(), "only a command that exists is bracketed");
     }
+
+    @Test
+    void theBoundaryHookRunsOnBothSidesOfTheOutermostCommandOnly() {
+        CommandRegistry registry = new CommandRegistry();
+        java.util.List<String> events = new java.util.ArrayList<>();
+        registry.setBoundaryHook(() -> events.add("boundary"));
+        registry.register(Command.of("inner", "Inner", () -> events.add("inner")));
+        registry.register(Command.of("outer", "Outer", () -> {
+            events.add("outer");
+            registry.run("inner");
+        }));
+        registry.run("outer");
+        assertEquals(java.util.List.of("boundary", "outer", "inner", "boundary"), events);
+    }
+
+    @Test
+    void theBoundaryHookStillClosesAfterAThrowingCommand() {
+        CommandRegistry registry = new CommandRegistry();
+        java.util.List<String> events = new java.util.ArrayList<>();
+        registry.setBoundaryHook(() -> events.add("boundary"));
+        registry.register(Command.of("boom", "Boom", () -> {
+            throw new RuntimeException("x");
+        }));
+        try {
+            registry.run("boom");
+        } catch (RuntimeException ignored) {
+            // expected — propagates
+        }
+        assertEquals(java.util.List.of("boundary", "boundary"), events);
+    }
 }

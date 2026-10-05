@@ -621,6 +621,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
         registry.setExecutionListener(macroCoordinator::onCommand);
+        registry.setBoundaryHook(editing::undoBoundary); // a command's edit is its own undo step
         this.snippets = new com.editora.snippet.SnippetManager(config);
         templateActions.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
@@ -9937,6 +9938,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             findBar.hideBar();
         } else {
             editing.deactivateMark();
+            editing.collapseCarets(); // C-g leaves one caret, as Escape does
             CodeArea area = activeArea();
             if (area != null) {
                 area.deselect();

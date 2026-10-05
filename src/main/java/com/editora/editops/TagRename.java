@@ -41,9 +41,15 @@ public final class TagRename {
     /**
      * Computes the paired-tag rename for the change {@code (changePos, removed, inserted)} already
      * applied to {@code text}, or {@code null} when there is nothing to mirror: the change isn't
-     * fully inside a tag-name region, the name is empty/unchanged, the old name is empty (a
-     * brand-new tag — it has no pre-existing pair), or the tag has no same-name pair (an unclosed
-     * opener / a stray closer).
+     * fully inside a tag-name region, the name is unchanged, or the tag has no same-name pair (an
+     * unclosed opener / a stray closer).
+     *
+     * <p>A name passing through <em>empty</em> is mirrored like any other: clearing {@code div} leaves the
+     * pair as {@code <>…</>}, and the next character typed into either renames the other, because the two
+     * still pair by their (empty) name. Refusing both steps — as this once did, taking an empty old name
+     * for a brand-new tag — abandoned the closing tag half-renamed: Backspace ×3 then {@code span} over
+     * {@code <div>x</div>} gave {@code <span>x</d>}. A genuinely new tag still has no pair to find: there is
+     * no nameless partner waiting for it.
      */
     public static Mirror mirror(String text, int changePos, String removed, String inserted, boolean html) {
         if (text.length() > MAX_DOC) {
@@ -57,12 +63,9 @@ public final class TagRename {
         int nameStart = region[0];
         int nameEnd = region[1];
         String newName = text.substring(nameStart, nameEnd);
-        if (newName.isEmpty()) {
-            return null;
-        }
         // Revert the change inside the region to get the name the tag had before the edit.
         String oldName = text.substring(nameStart, changePos) + removed + text.substring(changeEnd, nameEnd);
-        if (oldName.isEmpty() || oldName.equals(newName) || !isName(oldName)) {
+        if (oldName.equals(newName) || !isName(oldName)) {
             return null;
         }
         boolean closing = text.charAt(nameStart - 1) == '/';
@@ -165,7 +168,12 @@ public final class TagRename {
                     events.add(new Ev(false, nameStart, nameEnd));
                 }
                 i = skipTag(text, nameEnd)[0];
-            } else if (i + 1 < n && isNameChar(text.charAt(i + 1))) {
+            } else if (i + 1 < n
+                    && (isNameChar(text.charAt(i + 1))
+                            // A nameless opener: the edited tag while its name is cleared, or — when the
+                            // name being replaced is the empty one — its {@code <>} partner.
+                            || (!targetIsClose && i + 1 == targetNameStart)
+                            || (oldName.isEmpty() && text.charAt(i + 1) == '>'))) {
                 int nameStart = i + 1;
                 int nameEnd = nameEnd(text, nameStart);
                 String name = text.substring(nameStart, nameEnd);

@@ -106,8 +106,9 @@ public final class TextInputKeymap {
 
     private static Map<String, Consumer<TextInputControl>> actions() {
         Map<String, Consumer<TextInputControl>> m = new HashMap<>();
-        m.put("nav.charForward", c -> c.positionCaret(Math.min(c.getLength(), c.getCaretPosition() + 1)));
-        m.put("nav.charBackward", c -> c.positionCaret(Math.max(0, c.getCaretPosition() - 1)));
+        // The control's own motion steps a whole character; caret + 1 stopped inside a surrogate pair.
+        m.put("nav.charForward", TextInputControl::forward);
+        m.put("nav.charBackward", TextInputControl::backward);
         m.put("nav.lineStart", c -> c.positionCaret(lineStart(c.getText(), c.getCaretPosition())));
         m.put("nav.lineEnd", c -> c.positionCaret(lineEnd(c.getText(), c.getCaretPosition())));
         m.put("nav.lineDown", c -> c.positionCaret(lineDown(c.getText(), c.getCaretPosition())));
