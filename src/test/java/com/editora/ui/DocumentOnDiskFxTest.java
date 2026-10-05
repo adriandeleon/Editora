@@ -237,6 +237,29 @@ class DocumentOnDiskFxTest {
         }
     }
 
+    @Test
+    void savingAnEditorConfigReachesTheFilesOpenInAnotherWindow(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            MainController otherWindow = newWindow(fx);
+            Path config = Files.writeString(dir.resolve(".editorconfig"), "root = true\n");
+            Path file = Files.writeString(dir.resolve("f.txt"), "x\n");
+            EditorBuffer elsewhere = load(otherWindow, file);
+            EditorBuffer rules = load(fx, config);
+            assertNull(FxTestSupport.callOnFx(
+                    () -> elsewhere.getEditorConfigProps().endOfLine()));
+
+            FxTestSupport.runOnFx(() -> rules.getArea().appendText("[*]\nend_of_line = crlf\n"));
+            save(async, fx); // saved from the first window; the file it governs is open in the second
+
+            assertEquals(
+                    "crlf",
+                    FxTestSupport.callOnFx(
+                            () -> elsewhere.getEditorConfigProps().endOfLine()));
+            assertEquals("CRLF", FxTestSupport.callOnFx(elsewhere::getLineEnding));
+        }
+    }
+
     // --- large-file mode --------------------------------------------------------------------------------
 
     @Test
@@ -337,6 +360,37 @@ class DocumentOnDiskFxTest {
         }
     }
 
+    @Test
+    void saveAsOntoAFileOpenInAnotherWindowIsRefused(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            MainController otherWindow = newWindow(fx);
+            Path a = Files.writeString(dir.resolve("a.txt"), "AAA");
+            Path b = Files.writeString(dir.resolve("b.txt"), "BBB");
+            EditorBuffer other = load(otherWindow, b);
+            FxTestSupport.runOnFx(() -> other.getArea().appendText("|unsaved-b"));
+            EditorBuffer buffer = load(fx, a);
+            FileWorkflowCoordinator workflows = workflows(fx);
+
+            assertFalse(FxTestSupport.callOnFx(() -> workflows.applySaveAsTarget(buffer, b)));
+            settle(async, workflows);
+
+            assertEquals(a, FxTestSupport.callOnFx(buffer::getPath), "the buffer was not re-pointed");
+            assertEquals("BBB", Files.readString(b), "and the other window's file was not replaced");
+            assertEquals(tr("status.saveAs.cannotReplaceOpenFile", "b.txt"), echo(fx));
+            assertEquals("BBB|unsaved-b", FxTestSupport.callOnFx(other::getContent));
+
+            // The other window may still save its own file, and this one may save onto a path nobody has open.
+            FileWorkflowCoordinator otherWorkflows = FxTestSupport.field(otherWindow, "fileWorkflows");
+            FxTestSupport.runOnFx(() -> otherWorkflows.save(other));
+            settle(async, otherWorkflows);
+            assertEquals("BBB|unsaved-b", Files.readString(b));
+            assertTrue(FxTestSupport.callOnFx(() -> workflows.applySaveAsTarget(buffer, dir.resolve("c.txt"))));
+            settle(async, workflows);
+            assertEquals("AAA", Files.readString(dir.resolve("c.txt")));
+        }
+    }
+
     // --- line endings -----------------------------------------------------------------------------------
 
     @Test
@@ -389,6 +443,50 @@ class DocumentOnDiskFxTest {
             save(async, fx);
             assertEquals("6f6e650d0a74776f0d0a78", hex(Files.readAllBytes(file)));
             assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+        }
+    }
+
+    @Test
+    void convertingBackAfterASaveThatWroteTheOldLineEndingIsCleanAgain(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            Path file = Files.writeString(dir.resolve("slow.txt"), "one\ntwo\n");
+            EditorBuffer buffer = load(fx, file);
+            FileWorkflowCoordinator workflows = workflows(fx);
+            CountDownLatch writing = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            async.onClose(release::countDown);
+            workflows.beforeDocumentWriteForTest = () -> {
+                writing.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            };
+
+            FxTestSupport.runOnFx(() -> {
+                buffer.getArea().appendText("x");
+                workflows.save(buffer);
+            });
+            async.await(writing, "the write to start");
+            FxTestSupport.runOnFx(() -> buffer.convertLineEndings(true)); // LF -> CRLF while LF is being written
+            workflows.beforeDocumentWriteForTest = null;
+            release.countDown();
+            settle(async, workflows);
+            assertTrue(FxTestSupport.callOnFx(buffer::isDirty), "CRLF is not what the disk holds");
+
+            // The save recorded the ending it wrote (LF), so going back to it matches the disk again. The
+            // buffer used to be forced "unsaved" instead and stayed so whatever the user did next.
+            FxTestSupport.runOnFx(() -> buffer.convertLineEndings(false));
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty), "LF is exactly what was written");
+            assertEquals("6f6e650a74776f0a78", hex(Files.readAllBytes(file)));
+
+            // And an edit made during a later save is still unsaved after it, in the ending that was written.
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("y"));
+            save(async, fx);
+            assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+            assertEquals("6f6e650a74776f0a7879", hex(Files.readAllBytes(file)));
         }
     }
 
@@ -488,6 +586,27 @@ class DocumentOnDiskFxTest {
     private static void addBuffer(FxWindowFixture fx, EditorBuffer buffer) {
         FxTestSupport.call(
                 fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
+    }
+
+    /** A second window of the same application, as "New Window" opens it. */
+    private static MainController newWindow(FxWindowFixture fx) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            fx.windowManager.newWindow();
+            List<?> holders = FxTestSupport.field(fx.windowManager, "windows");
+            Object holder = holders.get(holders.size() - 1);
+            return (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
+        });
+    }
+
+    private static EditorBuffer load(MainController window, Path file) throws Exception {
+        FileWorkflowCoordinator workflows = FxTestSupport.field(window, "fileWorkflows");
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(file);
+            workflows.loadInto(buffer, file);
+            FxTestSupport.call(window, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
+            return buffer;
+        });
     }
 
     private static EditorBuffer load(FxWindowFixture fx, Path file) throws Exception {

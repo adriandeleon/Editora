@@ -93,9 +93,50 @@ public final class ConfigWriter {
         this.io = io;
     }
 
-    /** Sets the write-failure handler (see {@link #onWriteError}); {@code null} restores the no-op. */
+    /**
+     * Sets the write-failure handler (see {@link #onWriteError}) and hands it the failures that happened
+     * before it was installed; {@code null} removes it.
+     */
     public void setOnWriteError(java.util.function.BiConsumer<Path, IOException> handler) {
-        this.onWriteError = handler == null ? (f, e) -> {} : handler;
+        Map<Path, IOException> earlier;
+        synchronized (unreported) {
+            this.onWriteError = handler;
+            earlier = new LinkedHashMap<>(unreported);
+            if (handler != null) {
+                unreported.clear();
+            }
+        }
+        if (handler != null) {
+            earlier.forEach((file, failure) -> notifyWriteError(handler, file, failure));
+        }
+    }
+
+    /**
+     * Hands a failed write to the handler — or, while none is installed, keeps it for the one that will be.
+     * The config is loaded (and a store may be written) before any window exists to install a handler, so a
+     * read-only config folder at startup used to be logged and never shown.
+     */
+    private void surfaceWriteError(Path file, IOException failure) {
+        java.util.function.BiConsumer<Path, IOException> handler;
+        synchronized (unreported) {
+            handler = onWriteError;
+            if (handler == null) {
+                if (unreported.size() < MAX_UNREPORTED || unreported.containsKey(file)) {
+                    unreported.put(file, failure);
+                }
+                return;
+            }
+        }
+        notifyWriteError(handler, file, failure);
+    }
+
+    private static void notifyWriteError(
+            java.util.function.BiConsumer<Path, IOException> handler, Path file, IOException failure) {
+        try {
+            handler.accept(file, failure);
+        } catch (RuntimeException handlerFailure) {
+            LOG.log(Level.WARNING, "Config write failure handler failed", handlerFailure);
+        }
     }
 
     private final Object lock = new Object();
@@ -105,9 +146,15 @@ public final class ConfigWriter {
      * Notified (on the writer thread) when an atomic config-file write fails. Lets a durable save on quit /
      * Settings-apply <em>surface</em> the failure instead of it being silently swallowed — a full disk or a
      * read-only {@code ~/.editora} otherwise loses the setting/session with no sign (#418). The handler must
-     * marshal to the FX thread itself. Default no-op (writes just log at SEVERE, as before).
+     * marshal to the FX thread itself. {@code null} until one is installed: failures are then kept in
+     * {@link #unreported} and replayed to the first handler.
      */
-    private volatile java.util.function.BiConsumer<Path, IOException> onWriteError = (f, e) -> {};
+    private volatile java.util.function.BiConsumer<Path, IOException> onWriteError;
+
+    /** How many distinct files' failures are kept while no handler is installed. */
+    private static final int MAX_UNREPORTED = 16;
+    /** Failed writes (latest per file) nobody could be told about yet; guarded by itself. */
+    private final Map<Path, IOException> unreported = new LinkedHashMap<>();
 
     /** Files whose write is revoked: dropped from {@code pending} AND suppressed if a drain already claimed
      *  the bytes but hasn't written them yet. Cleared for a file by a fresh {@link #enqueue}. */
@@ -234,11 +281,7 @@ public final class ConfigWriter {
                 LOG.log(Level.SEVERE, "Failed to write config file " + file, failure);
                 failureSinceFlush.set(true);
                 complete(write, WriteOutcome.FAILED);
-                try {
-                    onWriteError.accept(file, failure); // surface it (#418) — no longer a silent swallow
-                } catch (RuntimeException handlerFailure) {
-                    LOG.log(Level.WARNING, "Config write failure handler failed", handlerFailure);
-                }
+                surfaceWriteError(file, failure); // surface it (#418) — no longer a silent swallow
             }
         });
     }
@@ -250,11 +293,7 @@ public final class ConfigWriter {
      */
     void reportWriteError(Path file, IOException failure) {
         LOG.log(Level.SEVERE, "Failed to write config file " + file, failure);
-        try {
-            onWriteError.accept(file, failure);
-        } catch (RuntimeException handlerFailure) {
-            LOG.log(Level.WARNING, "Config write failure handler failed", handlerFailure);
-        }
+        surfaceWriteError(file, failure);
     }
 
     private static void complete(PendingWrite write, WriteOutcome outcome) {

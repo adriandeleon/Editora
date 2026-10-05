@@ -287,17 +287,41 @@ final class BookmarkCoordinator {
         }
     }
 
-    /** Moves a file's bookmarks from {@code oldKey} to {@code newKey} (used by in-app rename). */
-    void migrateKey(String oldKey, String newKey) {
-        if (oldKey == null || oldKey.equals(newKey)) {
-            return;
-        }
-        var map = ops.bookmarks();
-        List<Bookmark> moved = map.remove(oldKey);
-        if (moved != null) {
-            map.put(newKey, moved);
+    /**
+     * A rename or move ({@code old → target}, a file or a folder): the bookmarks stored for it, and for every
+     * file below it, move to the new path. Only the tab menu's Rename used to do this, for its one file.
+     */
+    void pathRenamed(Path old, Path target) {
+        String sep = old.getFileSystem().getSeparator();
+        if (RenamedFileState.rekey(ops.bookmarks(), old.toString(), target.toString(), sep)) {
             ops.saveBookmarks();
             refreshViews();
+        }
+    }
+
+    /**
+     * Save As re-pointed {@code buffer} from {@code oldPath}: its bookmarks are stored under the new path as
+     * well. The file it left keeps its own while it is still on disk; an entry for a path that is not (a
+     * Save As rolled back after a failed write) is dropped.
+     */
+    void bufferPathChanged(EditorBuffer buffer, Path oldPath) {
+        Path now = buffer.getPath();
+        var map = ops.bookmarks();
+        String oldKey = oldPath == null ? null : oldPath.toString();
+        if (oldKey != null && now != null && buffer.isNarrowed() && map.get(oldKey) != null) {
+            map.put(now.toString(), new ArrayList<>(map.get(oldKey))); // region-relative lines can't be snapshotted
+            ops.saveBookmarks();
+        }
+        if (oldKey != null
+                && com.editora.vfs.Vfs.isLocal(oldPath)
+                && !java.nio.file.Files.exists(oldPath)
+                && map.remove(oldKey) != null) {
+            ops.saveBookmarks();
+        }
+        boolean any = !buffer.getBookmarkManager().snapshot().isEmpty();
+        if (now != null && !now.equals(oldPath) && (any || map.containsKey(now.toString()))) {
+            pendingPersist.remove(buffer);
+            persistBookmarks(buffer); // also when it has none: bookmarks of a file it overwrote are gone
         }
     }
 

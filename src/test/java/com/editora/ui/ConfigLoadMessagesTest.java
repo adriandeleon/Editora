@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** The one-time report of what the config could not read: what was reset and where the original went. */
@@ -35,6 +36,23 @@ class ConfigLoadMessagesTest {
         ConfigLoadProblem one =
                 new ConfigLoadProblem(FILE, ConfigLoadProblem.Kind.VALUES_SKIPPED, List.of("showMinimap"), BACKUP);
         assertTrue(ConfigLoadMessages.describe(one, false).startsWith("Could not read 1 value in settings.json;"));
+    }
+
+    @Test
+    void aFileReadWithReplacedBytesSaysSoAndPointsToTheOriginal() {
+        ConfigLoadProblem kept = new ConfigLoadProblem(FILE, ConfigLoadProblem.Kind.NOT_UTF8, List.of(), BACKUP);
+        assertEquals(
+                "settings.json is not valid UTF-8; the characters that could not be read were replaced with \uFFFD"
+                        + " — backup at settings.json.corrupt.bak",
+                ConfigLoadMessages.describe(kept, false));
+
+        // The Local History index gets no backup, and is never write-protected for it.
+        ConfigLoadProblem index = new ConfigLoadProblem(
+                Path.of("history", "index.json"), ConfigLoadProblem.Kind.NOT_UTF8, List.of(), null);
+        assertFalse(index.mustNotOverwrite());
+        assertEquals(
+                "index.json is not valid UTF-8; the characters that could not be read were replaced with \uFFFD",
+                ConfigLoadMessages.describe(index, false));
     }
 
     @Test

@@ -113,4 +113,36 @@ class ReloadKeepsViewFxTest {
                         () -> area.getParagraph(area.getCurrentParagraph()).getText()));
         assertTrue(e.caretVisible(area), "and it is on screen: " + e.viewport(area));
     }
+
+    /** Both panes of a split are views of the reloaded text: the one without focus keeps its place as well. */
+    @Test
+    void reloadKeepsTheSecondPanesPlaceWhenThatPaneIsNotTheFocusedOne() throws Exception {
+        String text = EditingFx.lines("line", 400);
+        EditorBuffer b = e.open("split-reload.txt", text);
+        CodeArea first = b.getArea();
+        e.run("view.splitVertical");
+        CodeArea second = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "area2"));
+        FxTestSupport.runOnFx(() -> {
+            second.moveTo(300, 3);
+            second.showParagraphAtTop(290);
+            first.requestFocus();
+            first.moveTo(20, 1);
+        });
+        assertTrue(e.await(() -> second.firstVisibleParToAllParIndex() == 290), "scrolled: " + e.viewport(second));
+        assertTrue(FxTestSupport.callOnFx(() -> b.getFocusedArea() == first), "pane 1 is the focused one");
+
+        Files.writeString(b.getPath(), text + "appended\n");
+        reload(b);
+        assertTrue(e.await(() -> first.getText().contains("appended")), "the copy on disk was loaded");
+        e.pulses(20);
+
+        assertEquals(20, (int) FxTestSupport.callOnFx(first::getCurrentParagraph), "pane 1's caret line");
+        assertEquals(300, (int) FxTestSupport.callOnFx(second::getCurrentParagraph), "pane 2's caret line");
+        assertEquals(3, (int) FxTestSupport.callOnFx(second::getCaretColumn));
+        assertEquals(
+                290,
+                (int) FxTestSupport.callOnFx(second::firstVisibleParToAllParIndex),
+                "pane 2 is where the user left it: " + e.viewport(second));
+        e.run("view.splitVertical"); // leave the shared window unsplit for the next test
+    }
 }

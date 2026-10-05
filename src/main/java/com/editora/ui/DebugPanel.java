@@ -156,6 +156,17 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private boolean stoppedOnException;
 
+    /** Which exception the program is stopped on ("IllegalStateException: boom"); empty until it is known. */
+    private String stoppedException = "";
+
+    /** Why Restart cannot be used for the session there is, else null — see {@link #setRestartBlocked}. */
+    private String restartBlocked;
+
+    /** Holds the Restart button: a disabled button gets no mouse events, so its reason is shown from here. */
+    private final javafx.scene.layout.StackPane restartHolder = new javafx.scene.layout.StackPane();
+
+    private Tooltip restartBlockedTip;
+
     /** The "evaluates only while paused" console hint was shown since the program last resumed. */
     private boolean evalHintShown;
 
@@ -174,10 +185,24 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** A variables-tree row; {@code ref > 0} means expandable, {@code parentRef} is the DAP container
      *  reference (for set-variable), and {@code kind} drives rendering + context actions. {@code named} /
-     *  {@code indexed} are the child counts the adapter reported (0 = unknown). */
-    record VarRow(String name, String value, String type, int ref, int parentRef, Kind kind, int named, int indexed) {
+     *  {@code indexed} are the child counts the adapter reported (0 = unknown). {@code failed} marks a watch
+     *  the adapter could not evaluate: its {@code value} is the adapter's message, drawn as an error. */
+    record VarRow(
+            String name,
+            String value,
+            String type,
+            int ref,
+            int parentRef,
+            Kind kind,
+            int named,
+            int indexed,
+            boolean failed) {
         VarRow(String name, String value, String type, int ref, int parentRef, Kind kind) {
-            this(name, value, type, ref, parentRef, kind, 0, 0);
+            this(name, value, type, ref, parentRef, kind, 0, 0, false);
+        }
+
+        VarRow(String name, String value, String type, int ref, int parentRef, Kind kind, int named, int indexed) {
+            this(name, value, type, ref, parentRef, kind, named, indexed, false);
         }
     }
 
@@ -200,13 +225,14 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         setPadding(new Insets(4));
 
         status.getStyleClass().add("debug-status");
+        restartHolder.getChildren().add(btn(restart, "debug.restart", "R", actions::restart, Icons.refresh()));
         // IntelliJ-style grouped, icon-only toolbar; the session state + file sit at the right edge.
         HBox toolbar = new HBox(
                 2,
                 btn(start, "debug.start", "C", actions::start, Icons.run()),
                 btn(pause, "debug.pause", "P", actions::pause, Icons.debugPause()),
                 btn(stop, "debug.stop", "K", actions::stop, Icons.debugStop()),
-                btn(restart, "debug.restart", "R", actions::restart, Icons.refresh()),
+                restartHolder,
                 groupSeparator(),
                 btn(stepOver, "debug.stepOver", "N", actions::stepOver, Icons.debugStepOver()),
                 btn(stepInto, "debug.stepInto", "S", actions::stepInto, Icons.debugStepInto()),
@@ -421,7 +447,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                 Text eq = new Text(" = ");
                 eq.getStyleClass().add("debug-var-eq");
                 Text value = new Text(row.value());
-                value.getStyleClass().add(DebugValues.cssClass(DebugValues.kind(row.value())));
+                // A watch that did not evaluate shows the adapter's message where its value would be: it
+                // must not be coloured as one ("Cannot evaluate…" is not a string or a number).
+                value.getStyleClass()
+                        .add(row.failed() ? "debug-val-error" : DebugValues.cssClass(DebugValues.kind(row.value())));
                 flow.getChildren().addAll(name, eq, value);
                 if (row.type() != null && !row.type().isBlank()) {
                     Text type = new Text("  " + row.type());
@@ -481,6 +510,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         }
         if (!target.isDisabled()) {
             target.fire();
+        } else if (target == restart && restartBlocked != null && lastState != DapManager.State.INACTIVE) {
+            actions.restart(); // from the keyboard there is no tooltip to hover: the action says why not
         }
         e.consume(); // reserve these letters in the panel even when the action is currently disabled
     }
@@ -516,7 +547,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         stepOut.setDisable(!suspended);
         runToCursor.setDisable(!suspended);
         stop.setDisable(!active && !preparing);
-        restart.setDisable(!active);
+        restart.setDisable(!active || restartBlocked != null);
         // Usable while the program runs as well as while it is paused (Enter only evaluates when paused):
         // disabling the field on every Step/Continue made JavaFX move focus out of the panel, the next stop
         // then handed focus to the editor, and the expression being typed went into the source file.
@@ -551,9 +582,39 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     private void refreshStatus() {
         String state = stoppedOnException && lastState == DapManager.State.SUSPENDED
-                ? tr("debugpanel.state.exception")
+                ? (stoppedException.isEmpty()
+                        ? tr("debugpanel.state.exception")
+                        : tr("debugpanel.state.exceptionNamed", stoppedException))
                 : tr("debugpanel.state." + lastState.name().toLowerCase(java.util.Locale.ROOT));
         status.setText(sessionFile.isEmpty() ? state : state + " — " + sessionFile);
+    }
+
+    /**
+     * Restart cannot repeat the session there is (it is attached to a build or test run): the button is
+     * disabled and {@code reason} explains it on hover. {@code null} makes Restart follow the session state.
+     */
+    public void setRestartBlocked(String reason) {
+        String blocked = reason == null || reason.isBlank() ? null : reason;
+        if (java.util.Objects.equals(blocked, restartBlocked)) {
+            return;
+        }
+        restartBlocked = blocked;
+        if (restartBlockedTip != null) {
+            Tooltip.uninstall(restartHolder, restartBlockedTip);
+            restartBlockedTip = null;
+        }
+        if (blocked != null) {
+            restartBlockedTip = new Tooltip(blocked);
+            Tooltip.install(restartHolder, restartBlockedTip);
+        }
+        restart.setAccessibleHelp(blocked);
+        restart.setDisable(lastState == DapManager.State.INACTIVE || blocked != null);
+    }
+
+    /** Names the exception of the current exception stop ("IllegalStateException: boom") in the state line. */
+    public void setStoppedException(String summary) {
+        stoppedException = summary == null ? "" : summary;
+        refreshStatus();
     }
 
     /** Fills the thread dropdown and selects {@code currentThreadId} without re-fetching its stack. */
@@ -612,7 +673,9 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      */
     public void setStopReason(String reason) {
         boolean exception = "exception".equals(reason);
-        if (exception != stoppedOnException) {
+        boolean named = !stoppedException.isEmpty();
+        stoppedException = ""; // a new stop (or none): the exception of the previous one is not this one's
+        if (exception != stoppedOnException || named) {
             stoppedOnException = exception;
             refreshStatus();
         }
@@ -773,7 +836,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
                                 0,
                                 Kind.WATCH,
                                 r.namedVariables(),
-                                r.indexedVariables()));
+                                r.indexedVariables(),
+                                r.failed()));
                         node.getChildren().set(idx, evaluated);
                         if (wasSelected) {
                             variables.getSelectionModel().select(evaluated);

@@ -102,4 +102,15 @@ class VfsTest {
         assertNull(Vfs.parseStorable("   "));
         assertNull(Vfs.parseStorable(null));
     }
+
+    @Test
+    void aLocalFileIsAskedDirectlyWhetherItCanBeWritten(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Path file = java.nio.file.Files.writeString(dir.resolve("f.txt"), "x");
+        assertTrue(Vfs.isWritableOnDisk(file));
+        assertNull(Vfs.authorityOf(file), "a local path belongs to no connection");
+        assertNull(Vfs.authorityOf(null));
+        org.junit.jupiter.api.Assumptions.assumeTrue(file.toFile().setWritable(false));
+        org.junit.jupiter.api.Assumptions.assumeFalse(java.nio.file.Files.isWritable(file), "running as root");
+        assertFalse(Vfs.isWritableOnDisk(file));
+    }
 }

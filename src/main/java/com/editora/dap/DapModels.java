@@ -39,13 +39,31 @@ public final class DapModels {
     /** Where execution is currently suspended (top frame), used to highlight + jump the editor. */
     public record StopLocation(int threadId, String reason, Path file, int line) {}
 
-    /** A full {@code evaluate} response: the rendered result, an expandable children reference (0 = leaf),
-     *  and the value's type when the adapter reports one. Used by watches and the hover value popup. */
+    /**
+     * A full {@code evaluate} response: the rendered result, an expandable children reference (0 = leaf),
+     * and the value's type when the adapter reports one. Used by watches and the hover value popup.
+     * {@code failed} marks a request the adapter refused; {@code result} is then its message, not a value.
+     */
     public record EvalResult(
-            String result, int variablesReference, String type, int namedVariables, int indexedVariables) {
+            String result,
+            int variablesReference,
+            String type,
+            int namedVariables,
+            int indexedVariables,
+            boolean failed) {
 
         public EvalResult(String result, int variablesReference, String type) {
-            this(result, variablesReference, type, 0, 0);
+            this(result, variablesReference, type, 0, 0, false);
+        }
+
+        public EvalResult(
+                String result, int variablesReference, String type, int namedVariables, int indexedVariables) {
+            this(result, variablesReference, type, namedVariables, indexedVariables, false);
+        }
+
+        /** An evaluation the adapter refused, carrying its message. */
+        public static EvalResult failure(String message) {
+            return new EvalResult(message == null ? "" : message, 0, null, 0, 0, true);
         }
     }
 
@@ -54,4 +72,40 @@ public final class DapModels {
 
     /** All breakpoints for one source file. */
     public record FileBreakpoints(Path file, List<LineBreakpoint> breakpoints) {}
+
+    /**
+     * What the adapter says about one breakpoint it was sent, from a {@code setBreakpoints} response or a
+     * later {@code breakpoint} event. {@code line} is the 0-based line that was <em>requested</em>;
+     * {@code actualLine} the 0-based line the adapter bound it to (-1 when it named none).
+     *
+     * <p>{@code verified == false} alone means "not bound yet": java-debug binds a breakpoint only when its
+     * class is loaded, and js-debug and debugpy say the same with a {@code message} ("Unbound breakpoint",
+     * "Waiting for code to be loaded…"). So a message does not make a breakpoint a rejected one — only
+     * {@code failed} does: the adapter's own {@code reason: "failed"}, an error answer to the whole request,
+     * or (see {@link DapManager.Listener#onNotice}) a condition it could not evaluate.
+     */
+    public record BreakpointStatus(int line, boolean verified, boolean failed, String message, int actualLine) {
+
+        public BreakpointStatus {
+            message = message == null ? "" : message.strip();
+        }
+
+        /** Unverified and not known to have failed: the adapter may still bind it. */
+        public boolean pending() {
+            return !verified && !failed;
+        }
+    }
+
+    /** The exception a thread is stopped on: its type name and message (either may be empty). */
+    public record ExceptionInfo(String type, String message) {
+
+        public ExceptionInfo {
+            type = type == null ? "" : type.strip();
+            message = message == null ? "" : message.strip();
+        }
+
+        public boolean isEmpty() {
+            return type.isEmpty() && message.isEmpty();
+        }
+    }
 }

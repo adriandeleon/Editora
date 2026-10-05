@@ -4,14 +4,18 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import com.editora.config.migration.ConfigLoadProblem;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -150,6 +154,67 @@ class ConfigFileEncodingAndLinksTest {
         assertEquals(21, settings.getFontSize(), "a value before the stray byte");
         assertEquals("light", settings.getTheme(), "a value after it");
         assertEquals("Ren�", settings.getAuthorNameRaw(), "only the undecodable character is replaced");
+    }
+
+    @Test
+    void aFileThatIsNotUtf8IsReportedAndItsOriginalBytesAreKept(@TempDir Path dir) throws IOException {
+        byte[] original = settingsJson("\"authorName\": \"René\"").getBytes(StandardCharsets.ISO_8859_1);
+        Path file = dir.resolve("settings.json");
+        Files.write(file, original);
+
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+
+        // The next save writes U+FFFD where the "é" was: without a report and a copy, the name is gone
+        // and nothing ever said so.
+        List<ConfigLoadProblem> problems = config.shared().takeLoadProblems();
+        assertEquals(1, problems.size(), problems.toString());
+        ConfigLoadProblem problem = problems.get(0);
+        assertEquals(ConfigLoadProblem.Kind.NOT_UTF8, problem.kind());
+        assertEquals(file, problem.file());
+        assertEquals(dir.resolve("settings.json.corrupt.bak"), problem.backup());
+        assertArrayEquals(original, Files.readAllBytes(problem.backup()), "the bytes as they were written");
+        assertFalse(config.shared().isWriteProtected(file), "everything else in the file was read: it stays saveable");
+
+        config.getSettings().setFontSize(19);
+        config.save();
+        assertEquals(19, JSON.readTree(file.toFile()).get("fontSize").asInt());
+    }
+
+    @Test
+    void aValidFileThatContainsTheReplacementCharacterIsNotReported(@TempDir Path dir) throws IOException {
+        // What the file above looks like after one save: valid UTF-8 that happens to hold U+FFFD.
+        Files.writeString(dir.resolve("settings.json"), settingsJson("\"authorName\": \"Ren\uFFFD\""));
+
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+
         assertTrue(config.shared().takeLoadProblems().isEmpty());
+        assertFalse(Files.exists(dir.resolve("settings.json.corrupt.bak")));
+    }
+
+    @Test
+    void aLocalHistoryIndexThatIsNotUtf8IsReportedWithoutABackup(@TempDir Path dir) throws IOException {
+        // Any backup beside the index stops revision bodies from being collected for as long as it exists
+        // (HistoryIndexGuard) — and this index was read, so there is nothing a backup would protect.
+        Path index = dir.resolve("history").resolve("index.json");
+        Files.createDirectories(index.getParent());
+        String json = "{\"schemaVersion\": " + HistoryStore.SCHEMA_VERSION + ", \"byProject\": {\"café\": {}}}";
+        Files.write(index, json.getBytes(StandardCharsets.ISO_8859_1));
+
+        ConfigManager config = new ConfigManager(dir);
+        config.load();
+
+        List<ConfigLoadProblem> problems = config.shared().takeLoadProblems();
+        assertEquals(1, problems.size(), problems.toString());
+        assertEquals(ConfigLoadProblem.Kind.NOT_UTF8, problems.get(0).kind());
+        assertEquals(index, problems.get(0).file());
+        assertNull(problems.get(0).backup());
+        try (var files = Files.list(index.getParent())) {
+            assertEquals(
+                    List.of("index.json"),
+                    files.map(p -> p.getFileName().toString()).toList());
+        }
+        assertTrue(config.shared().mayCollectHistoryBlobs(), "the index lists every revision: collection goes on");
     }
 }

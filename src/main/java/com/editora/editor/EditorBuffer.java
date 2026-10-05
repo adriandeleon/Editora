@@ -67,7 +67,6 @@ import com.editora.typst.TypstMarkup;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.fxmisc.richtext.model.ReadOnlyStyledDocumentBuilder;
 import org.fxmisc.richtext.model.StyleSpans;
@@ -955,8 +954,9 @@ public class EditorBuffer implements TabContent {
         folds.setBreakpointHooks(
                 () -> debugEnabled,
                 breakpoints::isBreakpoint,
-                this::breakpointStyleClass,
+                breakpoints::styleClasses,
                 line -> gutterBreakpointClick.accept(this, line));
+        folds.setBreakpointTooltip(breakpoints::tooltip);
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
         // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
         folds.setBlameHooks(
@@ -1076,7 +1076,7 @@ public class EditorBuffer implements TabContent {
                 focusedView.set(area);
             }
         });
-        installContextMenu();
+        installContextMenu(area);
         installFormatBarListeners(area);
         installSplitScrollSync();
         installOverlays();
@@ -2126,18 +2126,25 @@ public class EditorBuffer implements TabContent {
     private record SpellHit(String word, int start, int end) {}
 
     private final ContextMenu contextMenu = new ContextMenu();
+    /** The view the context menu was last asked for: its items act where the user clicked, in either pane. */
+    private CodeArea menuView = area;
     /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
     private java.util.function.Supplier<List<MenuItem>> menuContributor;
     /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
     private java.util.function.Supplier<List<MenuItem>> buildMenuContributor;
 
-    private void installContextMenu() {
-        contextMenu.getStyleClass().add("editor-context-menu");
-        area.setOnContextMenuRequested(e -> {
+    private void installContextMenu(CodeArea a) {
+        contextMenu.getStyleClass().setAll("context-menu", "editor-context-menu");
+        a.setOnContextMenuRequested(e -> {
+            menuView = a;
+            a.requestFocus(); // "at the caret" items read the focused view
             List<MenuItem> items = new java.util.ArrayList<>();
-            // A JUnit test file runs/debugs the method at the caret (or the class from its declaration)
+            // First, and for every item below: one position the menu is about (and the caret moved to a
+            // right-click outside the selection), so Paste, Run Test, the LSP items and Add Bookmark agree.
+            ContextMenuTarget at = ContextMenuTarget.resolve(a, e, this::collapseCarets);
+            // A JUnit test file runs/debugs the method there (or the class from its declaration)
             // rather than offering generic "Run File"; anything else runnable keeps that generic action.
-            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAtCaret(false);
+            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAt(at.line(), false);
             if (testTarget != null) {
                 boolean method = testTarget.methodName() != null;
                 MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
@@ -2157,7 +2164,7 @@ public class EditorBuffer implements TabContent {
                 items.add(new SeparatorMenuItem());
             } else {
                 // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
-                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAtCaret();
+                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAt(at.line());
                 if (mainTarget != null) {
                     String simple = com.editora.test.TestSourceLocator.simpleName(mainTarget.fqn());
                     MenuItem runMain = new MenuItem(tr("editmenu.runMainClass", simple));
@@ -2171,11 +2178,9 @@ public class EditorBuffer implements TabContent {
                     items.add(new SeparatorMenuItem());
                 }
             }
-            // LSP navigation (only when this buffer is served by a language server). Move the caret to the
-            // right-clicked position first so go-to-definition/references/hover target that symbol.
+            // LSP navigation (only when this buffer is served by a language server), for the symbol there.
             if (lspActive) {
-                int clickOffset = clickOffsetAt(e.getX(), e.getY());
-                items.add(lspMenu(clickOffset));
+                items.add(lspMenu(at.offset()));
                 items.add(new SeparatorMenuItem());
             }
             // Beside the LSP submenu, not with the plugin-contributed items at the foot of the menu: both
@@ -2195,7 +2200,7 @@ public class EditorBuffer implements TabContent {
                 items.add(aiActionsMenu());
                 items.add(new SeparatorMenuItem());
             }
-            SpellHit hit = spellHitAt(e.getX(), e.getY());
+            SpellHit hit = spellHitAt(at.offset());
             if (hit != null) {
                 items.addAll(spellMenuItems(hit));
                 items.add(new SeparatorMenuItem());
@@ -2227,10 +2232,9 @@ public class EditorBuffer implements TabContent {
                 }
             }
             // Bookmarks: the gutter marker is display-only, so add/remove lives here (and in the palette).
-            // Acts on the right-clicked line, not the caret line, matching the LSP items above.
             if (path != null) {
                 items.add(new SeparatorMenuItem());
-                int clickedLine = clickLineAt(e.getX(), e.getY());
+                int clickedLine = at.line();
                 boolean marked = bookmarks.isBookmarked(clickedLine);
                 MenuItem bookmark = new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark"));
                 bookmark.setGraphic(MenuIcons.bookmark());
@@ -2239,21 +2243,21 @@ public class EditorBuffer implements TabContent {
             }
             if (path != null && notesEnabled) {
                 items.add(new SeparatorMenuItem());
-                boolean hasSelection = area.getSelection().getLength() > 0;
+                boolean hasSelection = a.getSelection().getLength() > 0;
                 MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
                 addNote.setGraphic(MenuIcons.note());
                 addNote.setOnAction(ev -> addNoteHandler.accept(this));
                 items.add(addNote);
             }
             contextMenu.getItems().setAll(items);
-            contextMenu.show(area, e.getScreenX(), e.getScreenY());
+            contextMenu.show(a, at.screenX(), at.screenY());
             e.consume();
         });
 
         // A left-click in the editor dismisses an open context menu. RichTextFX consumes the
         // mouse press before the popup's auto-hide fires, so close it explicitly. The event is
         // not consumed, so the click still positions the caret as usual.
-        area.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+        a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
             if (contextMenu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
                 contextMenu.hide();
             }
@@ -2268,25 +2272,6 @@ public class EditorBuffer implements TabContent {
     /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */
     public void setBuildMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
         this.buildMenuContributor = contributor;
-    }
-
-    /** The document offset under a context-menu click (for caret-positioning LSP nav); caret if it misses. */
-    private int clickOffsetAt(double x, double y) {
-        try {
-            return area.hit(x, y).getInsertionIndex();
-        } catch (RuntimeException ex) {
-            return area.getCaretPosition();
-        }
-    }
-
-    /** The 0-based paragraph under a context-menu click (for the bookmark item); caret line if it misses. */
-    private int clickLineAt(double x, double y) {
-        try {
-            return area.offsetToPosition(clickOffsetAt(x, y), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
-                    .getMajor();
-        } catch (RuntimeException ex) {
-            return area.getCurrentParagraph();
-        }
     }
 
     /**
@@ -2313,7 +2298,7 @@ public class EditorBuffer implements TabContent {
 
     /** AI selection actions, grouped under one row while the effective enabled-and-connected gate is on. */
     private Menu aiActionsMenu() {
-        boolean hasSelection = area.getSelection().getLength() > 0;
+        boolean hasSelection = menuView.getSelection().getLength() > 0;
         MenuItem explain = new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain());
         explain.setDisable(!hasSelection);
         explain.setOnAction(e -> requestExplainSelection());
@@ -2334,62 +2319,29 @@ public class EditorBuffer implements TabContent {
     /** Go to Definition / Find References / Show Documentation — each moves the caret to {@code offset}
      *  first so it targets the right-clicked symbol, then runs the controller-supplied action. */
     private List<MenuItem> lspMenuItems(int offset) {
-        MenuItem def = new MenuItem(tr("command.lsp.gotoDefinition"));
-        def.setGraphic(MenuIcons.gotoDefinition());
-        def.setOnAction(e -> {
-            area.moveTo(offset);
-            lspGotoDefinitionAction.run();
-        });
-        MenuItem refs = new MenuItem(tr("command.lsp.findReferences"));
-        refs.setGraphic(MenuIcons.find());
-        refs.setOnAction(e -> {
-            area.moveTo(offset);
-            lspFindReferencesAction.run();
-        });
-        MenuItem hover = new MenuItem(tr("command.lsp.hover"));
-        hover.setGraphic(MenuIcons.about());
-        hover.setOnAction(e -> {
-            area.moveTo(offset);
-            lspHoverAction.run();
-        });
-        List<MenuItem> items = new java.util.ArrayList<>(List.of(def));
+        List<MenuItem> items = new java.util.ArrayList<>();
+        items.add(lspItem("command.lsp.gotoDefinition", MenuIcons.gotoDefinition(), offset, lspGotoDefinitionAction));
         if (lspImplementationAvailable) {
-            MenuItem impl = new MenuItem(tr("command.lsp.gotoImplementation"));
-            impl.setGraphic(MenuIcons.gotoImplementation());
-            impl.setOnAction(e -> {
-                area.moveTo(offset);
-                lspGotoImplementationAction.run();
-            });
-            items.add(impl);
+            items.add(lspItem(
+                    "command.lsp.gotoImplementation",
+                    MenuIcons.gotoImplementation(),
+                    offset,
+                    lspGotoImplementationAction));
         }
         if (lspTypeDefinitionAvailable) {
-            MenuItem typeDef = new MenuItem(tr("command.lsp.gotoTypeDefinition"));
-            typeDef.setGraphic(MenuIcons.gotoTypeDefinition());
-            typeDef.setOnAction(e -> {
-                area.moveTo(offset);
-                lspGotoTypeDefinitionAction.run();
-            });
-            items.add(typeDef);
+            items.add(lspItem(
+                    "command.lsp.gotoTypeDefinition",
+                    MenuIcons.gotoTypeDefinition(),
+                    offset,
+                    lspGotoTypeDefinitionAction));
         }
-        items.add(refs);
-        items.add(hover);
-        if (lspCodeActionsAvailable) {
-            MenuItem actions = new MenuItem(tr("command.lsp.codeActions"));
-            actions.setGraphic(MenuIcons.codeAction());
-            actions.setOnAction(e -> {
-                area.moveTo(offset); // quick fixes target the right-clicked spot
-                lspCodeActionsAction.run();
-            });
-            items.add(actions);
+        items.add(lspItem("command.lsp.findReferences", MenuIcons.find(), offset, lspFindReferencesAction));
+        items.add(lspItem("command.lsp.hover", MenuIcons.about(), offset, lspHoverAction));
+        if (lspCodeActionsAvailable) { // quick fixes target the right-clicked spot
+            items.add(lspItem("command.lsp.codeActions", MenuIcons.codeAction(), offset, lspCodeActionsAction));
         }
-        if (lspRenameAvailable) {
-            MenuItem rename = new MenuItem(tr("command.lsp.rename"));
-            rename.setGraphic(MenuIcons.rename());
-            rename.setOnAction(e -> {
-                area.moveTo(offset); // rename the right-clicked symbol
-                lspRenameAction.run();
-            });
-            items.add(rename);
+        if (lspRenameAvailable) { // rename the right-clicked symbol
+            items.add(lspItem("command.lsp.rename", MenuIcons.rename(), offset, lspRenameAction));
         }
         if (lspFormatAvailable) {
             MenuItem format = new MenuItem(tr("command.lsp.formatDocument"));
@@ -2398,6 +2350,16 @@ public class EditorBuffer implements TabContent {
             items.add(format);
         }
         return items;
+    }
+
+    private MenuItem lspItem(String titleKey, Node icon, int offset, Runnable action) {
+        MenuItem item = new MenuItem(tr(titleKey));
+        item.setGraphic(icon);
+        item.setOnAction(e -> {
+            menuView.moveTo(offset); // in the view that was right-clicked
+            action.run();
+        });
+        return item;
     }
 
     /** Markdown inline-format actions for the right-click menu (markdown buffers only). */
@@ -2508,47 +2470,39 @@ public class EditorBuffer implements TabContent {
     private List<MenuItem> standardMenuItems() {
         // Cut/Copy/Paste route through the multi-caret-aware path first (falling back to the native single-
         // caret op), so a box/column selection copies *every* caret's selection — matching the edit.cut/
-        // copy/paste commands. Without this, area.copy() only grabs the primary caret's row. A box selection
-        // makes copy/cut available even when the primary selection is empty (extra carets carry the rest).
-        boolean hasMulti = hasMultipleCarets();
-        boolean canCopy = area.getSelection().getLength() > 0 || hasMulti;
+        // copy/paste commands. Without this, copy() only grabs the primary caret's row. Like one caret,
+        // several carets with nothing selected at any of them have nothing to cut or copy here: the fork's
+        // multi-caret cut/copy would otherwise take their whole lines, whatever the "copy the line when
+        // nothing is selected" setting says (this menu never did that for a single caret either).
+        CodeArea view = menuView;
+        MultiCarets carets = view == area2 ? multiCaret2 : multiCaret;
+        boolean canCopy =
+                carets != null ? carets.anySelection() : view.getSelection().getLength() > 0;
         boolean editable = isEditable();
         boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
-        MenuItem cut = new MenuItem(tr("editmenu.cut"));
-        cut.setGraphic(MenuIcons.cut());
-        cut.setOnAction(e -> {
+        MenuItem cut = tableItem("editmenu.cut", MenuIcons.cut(), () -> {
             if (!multiCaretCut()) {
-                area.cut();
+                view.cut();
             }
         });
         cut.setDisable(!canCopy || !editable);
-        MenuItem copy = new MenuItem(tr("editmenu.copy"));
-        copy.setGraphic(MenuIcons.copy());
-        copy.setOnAction(e -> {
+        MenuItem copy = tableItem("editmenu.copy", MenuIcons.copy(), () -> {
             if (!multiCaretCopy()) {
-                area.copy();
+                view.copy();
             }
         });
         copy.setDisable(!canCopy);
-        MenuItem paste = new MenuItem(tr("editmenu.paste"));
-        paste.setGraphic(MenuIcons.paste());
-        paste.setOnAction(e -> {
+        MenuItem paste = tableItem("editmenu.paste", MenuIcons.paste(), () -> {
             if (!multiCaretPaste()) {
-                area.paste();
+                view.paste();
             }
         });
         paste.setDisable(!hasClipboardText || !editable);
-        MenuItem undo = new MenuItem(tr("editmenu.undo"));
-        undo.setGraphic(MenuIcons.undo());
-        undo.setOnAction(e -> undoOrRedo(area, false));
-        undo.setDisable(!area.isUndoAvailable());
-        MenuItem redo = new MenuItem(tr("editmenu.redo"));
-        redo.setGraphic(MenuIcons.redo());
-        redo.setOnAction(e -> undoOrRedo(area, true));
-        redo.setDisable(!area.isRedoAvailable());
-        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
-        selectAll.setGraphic(MenuIcons.selectAll());
-        selectAll.setOnAction(e -> area.selectAll());
+        MenuItem undo = tableItem("editmenu.undo", MenuIcons.undo(), () -> undoOrRedo(view, false));
+        undo.setDisable(!view.isUndoAvailable());
+        MenuItem redo = tableItem("editmenu.redo", MenuIcons.redo(), () -> undoOrRedo(view, true));
+        redo.setDisable(!view.isRedoAvailable());
+        MenuItem selectAll = tableItem("editmenu.selectAll", MenuIcons.selectAll(), view::selectAll);
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
     }
 
@@ -2589,18 +2543,9 @@ public class EditorBuffer implements TabContent {
         return items;
     }
 
-    /** The misspelled word at editor coordinates {@code (x, y)}, or {@code null}. */
-    private SpellHit spellHitAt(double x, double y) {
+    /** The misspelled word at document {@code offset}, or {@code null}. */
+    private SpellHit spellHitAt(int offset) {
         if (!spellCheckOn || spellChecker == null || !spellChecker.ready() || largeFile) {
-            return null;
-        }
-        int offset;
-        try {
-            offset = area.hit(x, y).getInsertionIndex();
-        } catch (RuntimeException ex) {
-            return null;
-        }
-        if (offset < 0 || offset > area.getLength()) {
             return null;
         }
         var pos = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
@@ -2661,6 +2606,11 @@ public class EditorBuffer implements TabContent {
     /** The view that currently has focus (primary or the split's secondary); for caret/edit commands. */
     public CodeArea getFocusedArea() {
         return focusedArea;
+    }
+
+    /** The split's second view while the split is shown, else null. */
+    public CodeArea getSplitView() {
+        return split == Split.NONE ? null : area2;
     }
 
     public javafx.beans.property.ReadOnlyObjectProperty<CodeArea> focusedAreaProperty() {
@@ -3613,6 +3563,7 @@ public class EditorBuffer implements TabContent {
                 java.util.List<java.io.File> images =
                         db.getFiles().stream().filter(EditorBuffer::isImageFile).toList();
                 if (!images.isEmpty()) {
+                    caretToDrop(a, e);
                     imageDropHandler.accept(images);
                     e.setDropCompleted(true);
                     e.consume();
@@ -3623,12 +3574,20 @@ public class EditorBuffer implements TabContent {
                 String url = webImageUrl(db);
                 javafx.scene.image.Image img = db.hasImage() ? db.getImage() : null;
                 if (url != null || img != null) {
+                    caretToDrop(a, e);
                     webImageDropHandler.accept(img, url);
                     e.setDropCompleted(true);
                     e.consume();
                 }
             }
         });
+    }
+
+    /** A drop lands under the pointer, in the view it was dropped on — a window dragged into has no focus yet. */
+    private void caretToDrop(CodeArea a, javafx.scene.input.DragEvent e) {
+        focusedArea = a;
+        focusedView.set(a);
+        EditorMouse.moveCaretToDrop(a, e.getX(), e.getY());
     }
 
     private static boolean hasImageFile(java.util.List<java.io.File> files) {
@@ -3889,10 +3848,13 @@ public class EditorBuffer implements TabContent {
     /** The project {@code main} entry point at (or nearest above) the caret, else the file's first main, else
      *  {@code null} — backs the editor right-click Run/Debug Main Class items. */
     public com.editora.run.MainMethodScanner.MainMethod mainTargetAtCaret() {
+        return mainTargetAt(focusedArea.getCurrentParagraph());
+    }
+
+    private com.editora.run.MainMethodScanner.MainMethod mainTargetAt(int caret) {
         if (mainLines.isEmpty()) {
             return null;
         }
-        int caret = focusedArea.getCurrentParagraph();
         com.editora.run.MainMethodScanner.MainMethod best = null;
         for (var e : mainLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
@@ -3921,7 +3883,10 @@ public class EditorBuffer implements TabContent {
      * a test class.
      */
     public com.editora.test.JavaTestScanner.TestTarget testTargetAtCaret(boolean classLevel) {
-        int caret = focusedArea.getCurrentParagraph();
+        return testTargetAt(focusedArea.getCurrentParagraph(), classLevel);
+    }
+
+    private com.editora.test.JavaTestScanner.TestTarget testTargetAt(int caret, boolean classLevel) {
         com.editora.test.JavaTestScanner.TestTarget best = null;
         for (var e : testLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
@@ -5360,10 +5325,10 @@ public class EditorBuffer implements TabContent {
         this.multiCaretEnabled = enabled;
         if (enabled && !hugeFile) {
             if (multiCaret == null) {
-                multiCaret = MultiCarets.install(area);
+                multiCaret = MultiCarets.install(area, this::tabEdit);
             }
             if (area2 != null && multiCaret2 == null) {
-                multiCaret2 = MultiCarets.install(area2);
+                multiCaret2 = MultiCarets.install(area2, this::tabEdit);
             }
         } else {
             disposeMultiCaret();
@@ -5951,12 +5916,17 @@ public class EditorBuffer implements TabContent {
             content = root;
         }
         boolean hadFocus = area2 != null && area2.isFocused(); // leaving a split takes that view off the scene
+        int top2 = hadFocus ? ScrollAnchor.firstVisibleLine(area2) : -1;
         viewHost.getChildren().setAll(content);
         if (area2 != null && (split == Split.NONE || markdownViewMode != MarkdownViewMode.EDITOR)) {
             focusedArea = area;
             focusedView.set(area);
             if (hadFocus) {
-                area.requestFocus(); // or JavaFX hands the keyboard to the first control in the window
+                // The user was looking at the second view: the one that stays takes over its caret, its
+                // selection and its place in the file, and the keyboard (or JavaFX hands that to the first
+                // control in the window).
+                ScrollAnchor.adopt(area, area2, top2);
+                area.requestFocus();
             }
         }
     }
@@ -6529,6 +6499,7 @@ public class EditorBuffer implements TabContent {
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
     private void ensureSecondaryView() {
         if (area2 != null) {
+            refreshGutter(); // marks and folds changed while it was off screen
             return;
         }
         area2 = tagRename.newArea(area.getContent()); // shares the EditableStyledDocument
@@ -6547,7 +6518,7 @@ public class EditorBuffer implements TabContent {
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installImageDrop(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
-            multiCaret2 = MultiCarets.install(area2); // same multi-caret add-on in the split view
+            multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
         }
         area2.setLineHighlighterFill(lineHighlightColor);
         refreshGutter();
@@ -6563,12 +6534,18 @@ public class EditorBuffer implements TabContent {
             }
         });
         installFormatBarListeners(area2);
+        installContextMenu(area2);
         scrollPane2 = new VirtualizedScrollPane<>(area2);
         // Give the secondary view its own minimap (tracks this pane's viewport), docked like the primary.
         minimap2 = new Minimap(area2);
         minimap2.setTabSize(tabSize);
         minimap2.setColors(minimapText, minimapViewport);
-        root2 = SecondaryPane.assemble(scrollPane2, whitespace.follower(area2, scrollPane2), minimap2);
+        root2 = SecondaryPane.assemble(
+                scrollPane2,
+                minimap2,
+                SecondaryPane.over(scrollPane2, noteOverlay.follower(area2)), // the same stack as pane 1
+                whitespace.follower(area2, scrollPane2),
+                SecondaryPane.over(scrollPane2, spellOverlay.follower(area2)));
         applyMinimap(scrollPane2, minimap2, minimapVisible && !largeFile && !heavyFile);
     }
 
@@ -6787,8 +6764,8 @@ public class EditorBuffer implements TabContent {
         noteOverlay.refresh();
         area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
         applyNoGutterStyle(area);
-        if (area2 != null) { // its gutter is line numbers only: with those off it has none
-            area2.setParagraphGraphicFactory(gutterVisible && lineNumbersVisible ? LineNumberFactory.get(area2) : null);
+        if (area2 != null) { // the same gutter: fold chevrons, bookmark, breakpoint and run markers
+            area2.setParagraphGraphicFactory(area.getParagraphGraphicFactory());
             applyNoGutterStyle(area2);
         }
     }
@@ -6867,6 +6844,9 @@ public class EditorBuffer implements TabContent {
     public void refreshGutterLine(int line) {
         if (line >= 0 && line < area.getParagraphs().size()) {
             area.recreateParagraphGraphic(line);
+            if (area2 != null && split != Split.NONE) {
+                area2.recreateParagraphGraphic(line); // the split's second view shows the same markers
+            }
         }
     }
 
@@ -6954,24 +6934,6 @@ public class EditorBuffer implements TabContent {
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
         executionLine.clear(area);
-    }
-
-    /** The extra glyph CSS-class suffix for the breakpoint on {@code line} (disabled/logpoint/conditional). */
-    private String breakpointStyleClass(int line) {
-        com.editora.config.Breakpoint bp = breakpoints.get(line);
-        if (bp == null) {
-            return null;
-        }
-        if (!bp.enabled()) {
-            return "disabled";
-        }
-        if (bp.isLogpoint()) {
-            return "logpoint";
-        }
-        if (bp.isConditional()) {
-            return "conditional";
-        }
-        return null;
     }
 
     // ---- Personal Notes ----
@@ -8331,34 +8293,37 @@ public class EditorBuffer implements TabContent {
      * read-only/large-file mode.
      */
     private boolean applySmartTab(CodeArea a, boolean shift) {
-        if (!isEditable() || hugeFile) {
+        Indenter.TabEdit edit = tabEdit(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), shift);
+        if (edit == null) {
             return false;
-        }
-        Indenter.TabEdit edit = Indenter.smartTab(
-                a.getText(),
-                a.getSelection().getStart(),
-                a.getSelection().getEnd(),
-                language,
-                tabSize,
-                shift,
-                indentInsertSpacesOverride,
-                indentSizeOverride);
-        if (edit == null) { // PLAIN (prose/plaintext): no context re-indent, but still the file's indent unit
-            edit = com.editora.editops.PlainTab.edit(
-                    a.getText(),
-                    a.getSelection().getStart(),
-                    a.getSelection().getEnd(),
-                    language,
-                    tabSize,
-                    shift,
-                    indentInsertSpacesOverride,
-                    indentSizeOverride);
         }
         if (edit.from() != edit.to() || !edit.replacement().isEmpty()) {
             a.replaceText(edit.from(), edit.to(), edit.replacement());
         }
         a.selectRange(edit.selStart(), edit.selEnd());
         return true;
+    }
+
+    /** The Tab edit for one selection of {@code text} (every caret's, with several); null = leave the key. */
+    private Indenter.TabEdit tabEdit(String text, int selStart, int selEnd, boolean shift) {
+        if (!isEditable() || hugeFile) {
+            return null;
+        }
+        Indenter.TabEdit edit = Indenter.smartTab(
+                text, selStart, selEnd, language, tabSize, shift, indentInsertSpacesOverride, indentSizeOverride);
+        // PLAIN (prose/plaintext): no context re-indent, but still the file's indent unit.
+        return edit != null
+                ? edit
+                : com.editora.editops.PlainTab.edit(
+                        text,
+                        selStart,
+                        selEnd,
+                        language,
+                        tabSize,
+                        shift,
+                        indentInsertSpacesOverride,
+                        indentSizeOverride);
     }
 
     /**
@@ -9669,11 +9634,15 @@ public class EditorBuffer implements TabContent {
         dirty.set(true);
     }
 
-    /** Acknowledges exactly the content written by an asynchronous save, preserving later edits as dirty. */
-    public void acknowledgeSavedContent(String savedContent) {
+    /**
+     * Acknowledges exactly what an asynchronous save wrote — its text and its line ending — so an edit or a
+     * line-ending conversion made while the write was in flight is still unsaved, and undoing either is clean.
+     */
+    public void acknowledgeSavedContent(String savedContent, String savedLineEnding) {
         cleanText = savedContent == null ? "" : savedContent;
-        cleanLineEnding = lineEnding;
-        forcedDirty = false;
+        boolean current = savedLineEnding == null || savedLineEnding.equals(getLineEnding());
+        cleanLineEnding = current ? lineEnding : savedLineEnding;
+        forcedDirty = !current && eolOverride != null; // a rule that arrived mid-save: no converting back to it
         dirty.set(differsFromSaved());
     }
 

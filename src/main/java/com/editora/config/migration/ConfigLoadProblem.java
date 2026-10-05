@@ -20,7 +20,13 @@ public record ConfigLoadProblem(Path file, Kind kind, List<String> skipped, Path
         /** The file could not be parsed or migrated at all; defaults were loaded. */
         UNREADABLE,
         /** The file was written by a newer build; it was moved aside and defaults were loaded. */
-        NEWER_VERSION
+        NEWER_VERSION,
+        /**
+         * The file holds bytes that are not UTF-8 (it was saved in another encoding). It was read, with each
+         * such byte replaced by U+FFFD, so the values holding them are not what was written — and the next
+         * save writes the replacements back.
+         */
+        NOT_UTF8
     }
 
     public ConfigLoadProblem {
@@ -30,8 +36,11 @@ public record ConfigLoadProblem(Path file, Kind kind, List<String> skipped, Path
     /**
      * True when the file on disk is the only copy of content this build did not load: writing the in-memory
      * defaults over it would destroy that content, so the owner must not save the file this session.
+     *
+     * <p>Never for a file that was read, even imperfectly ({@link Kind#VALUES_SKIPPED}, {@link Kind#NOT_UTF8}):
+     * refusing to save it would cost every later change in order to protect one value.
      */
     public boolean mustNotOverwrite() {
-        return backup == null && kind != Kind.VALUES_SKIPPED;
+        return backup == null && (kind == Kind.UNREADABLE || kind == Kind.NEWER_VERSION);
     }
 }

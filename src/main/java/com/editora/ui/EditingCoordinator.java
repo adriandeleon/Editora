@@ -99,32 +99,62 @@ final class EditingCoordinator {
     }
 
     /**
-     * The follow-up for one command run (see {@link CommandRegistry#setRunScope}): when an editing command
-     * changed the active buffer's text, scroll its caret into view. A chord is consumed by the key dispatcher
-     * before the text area sees it, so the area's own "follow the caret after a key" never runs, and a
-     * programmatic edit does not scroll by itself — paste/yank, undo, redo, duplicate line and move line all
-     * left the caret (or the change) off-screen. Keyed on the document version, so a command that only
-     * scrolls, selects or navigates is left alone, as is one that switched tabs.
+     * The follow-up for one command run (see {@link CommandRegistry#setRunScope}): when the command edited
+     * the active buffer <em>at the caret</em>, scroll the caret into view. A chord is consumed by the key
+     * dispatcher before the text area sees it, so the area's own "follow the caret after a key" never runs,
+     * and a programmatic edit does not scroll by itself — paste/yank, undo, redo, duplicate line, move line
+     * and the Markdown/Typst formatting commands all left the caret (or the change) off-screen.
      *
-     * <p>Only the editor-context commands ({@code edit.*}, and a macro replaying them) — the ones that stand
-     * in for typing. A command that edits as a side effect (a save that trims trailing whitespace) must not
-     * pull a deliberately scrolled view back to the caret.
+     * <p>Decided by what the command did, not by its name ({@link com.editora.editops.CaretEditTracker}): a
+     * command that only scrolls, selects or navigates is left alone, as is one that switched tabs, one that
+     * changed text somewhere else, and one that rewrote the whole file — none of those may pull a
+     * deliberately scrolled view back to the caret. Work a command starts and finishes later (a save, a
+     * language-server format) is outside the run and never follows either.
      */
     Runnable revealCaretAfterEdit(String commandId) {
-        if (!commandId.startsWith("edit.") && !commandId.startsWith("macro.")) {
-            return null;
+        if (runChanges != null) {
+            runChanges.unsubscribe(); // left behind by a command that threw: its follow-up never ran
+            runChanges = null;
         }
         EditorBuffer buffer = host.activeBuffer();
         if (buffer == null) {
             return null;
         }
-        long version = buffer.docVersion();
+        CodeArea view = buffer.getFocusedArea();
+        var selection = view.getSelection();
+        var bias = org.fxmisc.richtext.model.TwoDimensional.Bias.Forward;
+        int firstLine = view.offsetToPosition(selection.getStart(), bias).getMajor();
+        int lastLine = view.offsetToPosition(selection.getEnd(), bias).getMajor();
+        var tracker = new com.editora.editops.CaretEditTracker(
+                view.getAbsolutePosition(firstLine, 0),
+                view.getAbsolutePosition(lastLine, view.getParagraphLength(lastLine)),
+                selection.getStart(),
+                selection.getEnd(),
+                view.getLength());
+        // The document's own change stream: an edit made through either split view arrives here.
+        org.reactfx.Subscription changes = view.multiPlainChanges().subscribe(list -> {
+            for (var c : list) {
+                tracker.change(
+                        c.getPosition(),
+                        c.getRemoved().length(),
+                        c.getInserted().length());
+            }
+        });
+        runChanges = changes;
         return () -> {
-            if (host.activeBuffer() == buffer && buffer.docVersion() != version) {
-                buffer.getFocusedArea().requestFollowCaret();
+            changes.unsubscribe();
+            runChanges = null;
+            if (host.activeBuffer() == buffer && tracker.changed()) {
+                CodeArea now = buffer.getFocusedArea();
+                if (tracker.editedAtCaret(now.getCaretPosition())) {
+                    now.requestFollowCaret();
+                }
             }
         };
     }
+
+    /** The change subscription of the command run in progress (see {@link #revealCaretAfterEdit}). */
+    private org.reactfx.Subscription runChanges;
 
     /** Expand/shrink-selection history (the pure stack); see {@link #expandSelection}/{@link #shrinkSelection}. */
     final com.editora.editops.SmartSelectStack smartSelect = new com.editora.editops.SmartSelectStack();

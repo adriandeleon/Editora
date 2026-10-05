@@ -5,6 +5,7 @@ import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
+import com.editora.editops.DoubleClickWord;
 import com.editora.editops.TagRename;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.EditableStyledDocument;
@@ -67,6 +68,8 @@ final class TagRenameMirror {
     CodeArea newArea(EditableStyledDocument<Collection<String>, String, Collection<String>> document) {
         Area area = document == null ? new Area() : new Area(document);
         area.onCommitted = this::committed;
+        area.language = language;
+        EditorMouse.installSelectionDrop(area);
         if (document == null) {
             primary = area;
         } else {
@@ -131,6 +134,7 @@ final class TagRenameMirror {
     static final class Area extends CodeArea {
 
         private BiConsumer<CodeArea, PlainTextChange> onCommitted = (area, change) -> {};
+        private Supplier<String> language = () -> null;
         private PlainTextChange inFlight;
         private int depth;
         private boolean nested;
@@ -162,6 +166,18 @@ final class TagRenameMirror {
          * re-asserted its carets, and every later key in the buffer failed. The carets correct themselves
          * as soon as their own change handlers run, so clamping the transient lookup is all that is needed.
          */
+        /** Double-click: the word under the caret by {@link DoubleClickWord}'s rules for this language. */
+        @Override
+        public void selectWord() {
+            String lang = language.get();
+            boolean prose = LanguageRegistry.plaintext().equals(lang) || "markdown".equals(lang);
+            int paragraph = getCurrentParagraph();
+            int[] word = DoubleClickWord.at(getText(paragraph), getCaretColumn(), prose, "css".equals(lang));
+            if (word != null) {
+                selectRange(paragraph, word[0], paragraph, word[1]);
+            }
+        }
+
         @Override
         public TwoDimensional.Position offsetToPosition(int offset, TwoDimensional.Bias bias) {
             return super.offsetToPosition(Math.min(offset, getLength()), bias);

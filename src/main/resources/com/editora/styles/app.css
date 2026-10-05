@@ -3198,6 +3198,8 @@
 .debug-panel .debug-val-bool { -fx-fill: -state-amber; }
 .debug-panel .debug-val-null { -fx-fill: -color-fg-muted; }
 .debug-panel .debug-val-other { -fx-fill: -color-fg-default; }
+/* A watch the adapter could not evaluate: its message, not a value. */
+.debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
 /* Hover value tooltip in the editor while suspended (IntelliJ's value popup). */
 .debug-value-tooltip {
     -fx-font-size: 12px;
@@ -3286,6 +3288,11 @@
 .breakpoint-marker.breakpoint-conditional { -fx-fill: #d29922; }
 .breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }
 .breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.5; }
+/* While a debug session is live: a breakpoint the adapter has not bound (its class is not loaded yet, or
+   the line has no code) is a hollow ring; one it refused, or whose condition it cannot evaluate, an amber one.
+   The glyph is drawn at half scale, so the stroke is twice the width it shows. */
+.breakpoint-marker.breakpoint-unverified { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 3.5; }
+.breakpoint-marker.breakpoint-unverified.breakpoint-rejected { -fx-stroke: -state-amber; }
 .fold-gutter .breakpoint-slot:hover { -fx-background-color: rgba(229, 20, 0, 0.12); }
 
 /* Current execution line while the debugger is suspended (a RichTextFX paragraph style). A translucent

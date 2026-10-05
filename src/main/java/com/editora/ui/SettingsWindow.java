@@ -824,6 +824,7 @@ public class SettingsWindow {
                 reloadStoreBackedEditors();
             }
         });
+        stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_HIDING, e -> commitPendingFields());
         stage.initOwner(owner);
         stage.initModality(Modality.NONE);
 
@@ -1345,7 +1346,7 @@ public class SettingsWindow {
 
         gitPathField = new TextField();
         gitPathField.setPromptText("git");
-        gitPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(gitPathField, () -> config.getSettings().getGitPath(), now -> {
             config.getSettings().setGitPath(now);
             apply(); // applySupport pushes the command into GitService
             probeGit();
@@ -1360,7 +1361,7 @@ public class SettingsWindow {
         });
         ghPathField = new TextField();
         ghPathField.setPromptText("gh");
-        ghPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(ghPathField, () -> config.getSettings().getGhPath(), now -> {
             config.getSettings().setGhPath(now);
             apply();
             refreshGithubStatus();
@@ -1386,14 +1387,14 @@ public class SettingsWindow {
         });
         mmdcPathField = new TextField();
         mmdcPathField.setPromptText("mmdc");
-        mmdcPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(mmdcPathField, () -> config.getSettings().getMmdcPath(), now -> {
             config.getSettings().setMmdcPath(now);
             apply();
             refreshMermaidStatus();
         });
         maidPathField = new TextField();
         maidPathField.setPromptText(com.editora.mermaid.MermaidService.DEFAULT_MAID);
-        maidPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(maidPathField, () -> config.getSettings().getMaidPath(), now -> {
             config.getSettings().setMaidPath(now);
             apply();
             refreshMermaidStatus();
@@ -1407,14 +1408,14 @@ public class SettingsWindow {
         });
         dotPathField = new TextField();
         dotPathField.setPromptText("dot");
-        dotPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(dotPathField, () -> config.getSettings().getDotPath(), now -> {
             config.getSettings().setDotPath(now);
             apply();
             refreshDiagramStatus();
         });
         plantumlPathField = new TextField();
         plantumlPathField.setPromptText("plantuml");
-        plantumlPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(plantumlPathField, () -> config.getSettings().getPlantumlPath(), now -> {
             config.getSettings().setPlantumlPath(now);
             apply();
             refreshDiagramStatus();
@@ -1428,7 +1429,7 @@ public class SettingsWindow {
         });
         typstPathField = new TextField();
         typstPathField.setPromptText("typst");
-        typstPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(typstPathField, () -> config.getSettings().getTypstPath(), now -> {
             config.getSettings().setTypstPath(now);
             apply();
             refreshTypstStatus();
@@ -1444,7 +1445,7 @@ public class SettingsWindow {
             buildToolChecks.put(bt, check);
             TextField commandField = new TextField();
             commandField.setPromptText(bt.commandExample());
-            commandField.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(commandField, () -> bt.commandIn(config.getSettings()), now -> {
                 bt.setCommandIn(config.getSettings(), now);
                 apply();
             });
@@ -1458,10 +1459,17 @@ public class SettingsWindow {
                         apply();
                     }
                 });
-                mavenArchetypeCatalogField.textProperty().addListener((obs, was, now) -> {
-                    config.getSettings().setMavenArchetypeCatalogUrl(now);
-                    apply();
-                });
+                mavenArchetypeCatalogField.setPromptText(Settings.DEFAULT_MAVEN_ARCHETYPE_CATALOG);
+                commitOnEnterOrBlur(
+                        mavenArchetypeCatalogField,
+                        () -> shownOrBlank(
+                                mavenArchetypeCatalogField,
+                                config.getSettings().getMavenArchetypeCatalogUrl(),
+                                config.getSettings().getMavenArchetypeCatalogUrlRaw()),
+                        now -> {
+                            config.getSettings().setMavenArchetypeCatalogUrl(now);
+                            apply();
+                        });
             }
             Label status = new Label(tr("settings.buildTools.notFound", bt.displayName()));
             status.getStyleClass().add("settings-git-status");
@@ -1483,7 +1491,7 @@ public class SettingsWindow {
         });
         ripgrepCommandField = new TextField();
         ripgrepCommandField.setPromptText(com.editora.search.Ripgrep.DEFAULT_COMMAND);
-        ripgrepCommandField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(ripgrepCommandField, () -> config.getSettings().getRipgrepCommand(), now -> {
             config.getSettings().setRipgrepCommand(now);
             apply();
             refreshRipgrepStatus();
@@ -1590,6 +1598,11 @@ public class SettingsWindow {
         });
         aiProviderCombo.valueProperty().addListener((obs, was, now) -> {
             if (!loading && now != null) {
+                if (was != null) {
+                    // Text typed but not yet committed belongs to the provider it was typed for; the fields
+                    // are about to be refilled with the new provider's values.
+                    commitAiFieldsFor(com.editora.ai.AiProvider.from(was));
+                }
                 config.getSettings().setAiProvider(now);
                 // Keys are per-provider: show the newly-selected provider's key (never carry one provider's
                 // credential over to the other, which would send it to that provider's endpoint).
@@ -1601,32 +1614,23 @@ public class SettingsWindow {
         aiStatusDebounce.setOnFinished(e -> refreshAiStatus());
         aiEndpointField = new TextField();
         aiEndpointField.setPromptText(tr("settings.ai.endpointPrompt"));
-        aiEndpointField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
+        commitOnEnterOrBlur(aiEndpointField, () -> config.getSettings().getAiEndpointFor(selectedAiProvider()), now -> {
             config.getSettings().setAiEndpointFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
         aiModelField = new TextField();
         aiModelField.setPromptText("claude-opus-4-8");
-        aiModelField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
+        commitOnEnterOrBlur(aiModelField, () -> config.getSettings().getAiModelFor(selectedAiProvider()), now -> {
             config.getSettings().setAiModelFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
         aiApiKeyField = new javafx.scene.control.PasswordField();
         aiApiKeyField.setPromptText(tr("settings.ai.apiKeyPrompt"));
-        aiApiKeyField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return; // programmatic reload on provider-switch / load — don't write it back
-            }
+        commitOnEnterOrBlur(aiApiKeyField, () -> config.getSettings().getApiKeyFor(selectedAiProvider()), now -> {
             // Store under the currently-selected provider so each provider keeps its own key.
-            config.getSettings().setApiKeyFor(com.editora.ai.AiProvider.from(aiProviderCombo.getValue()), now);
+            config.getSettings().setApiKeyFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
@@ -1637,13 +1641,13 @@ public class SettingsWindow {
         });
         aiCompletionModelField = new TextField();
         aiCompletionModelField.setPromptText("claude-haiku-4-5");
-        aiCompletionModelField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
-            config.getSettings().setAiCompletionModelFor(selectedAiProvider(), now);
-            apply();
-        });
+        commitOnEnterOrBlur(
+                aiCompletionModelField,
+                () -> config.getSettings().getAiCompletionModelFor(selectedAiProvider()),
+                now -> {
+                    config.getSettings().setAiCompletionModelFor(selectedAiProvider(), now);
+                    apply();
+                });
 
         pluginCheck = new CheckBox(tr("settings.enablePlugins"));
         pluginCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -1658,7 +1662,7 @@ public class SettingsWindow {
 
         templateAuthorField = new TextField();
         templateAuthorField.setPromptText(System.getProperty("user.name", ""));
-        templateAuthorField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(templateAuthorField, () -> config.getSettings().getAuthorNameRaw(), now -> {
             config.getSettings().setAuthorName(now);
             apply();
         });
@@ -1959,6 +1963,9 @@ public class SettingsWindow {
     /** {@link #refreshShortcuts()}, then moves keyboard focus to {@code focusId}'s row (rebuilding drops it). */
     private void refreshShortcuts(String focusId) {
         refreshChordChips();
+        if (refreshMacroKeybinding != null) {
+            refreshMacroKeybinding.run();
+        }
         if (shortcutListBox == null || shortcutActions == null) {
             return;
         }
@@ -2335,6 +2342,15 @@ public class SettingsWindow {
             keybinding.getChildren().addAll(chordLbl, record, clear);
         };
         macroKeybindingRebuilders.put(keybinding, rebuildKeybinding);
+        // The row shows a chord of the live keymap, like the Keymaps list: a keymap switch or a rebind made
+        // elsewhere changes it. Left alone while the user is recording a chord in it.
+        refreshMacroKeybinding = () -> {
+            boolean recording = !keybinding.getChildren().isEmpty()
+                    && keybinding.getChildren().get(0) instanceof TextField;
+            if (!recording) {
+                rebuildKeybinding.accept(list.getSelectionModel().getSelectedItem());
+            }
+        };
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             loadingMacro = true;
@@ -2374,6 +2390,9 @@ public class SettingsWindow {
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
+
+    /** Re-reads the Macros page's key-binding row from the live keymap (set once that page is built). */
+    private Runnable refreshMacroKeybinding;
 
     /** Maps a keybinding HBox to its rebuilder so {@code reset}/capture can repopulate it. */
     private final java.util.Map<HBox, java.util.function.Consumer<com.editora.macro.Macro>> macroKeybindingRebuilders =
@@ -4173,15 +4192,27 @@ public class SettingsWindow {
                     return;
                 }
             }
-            templateFormLoaded.set(templateFormText.get());
+            // A field the user did not touch keeps the template's own value: the single-line description field
+            // shows a multi-line bundled description flattened, and saving that back would flatten the file.
+            java.util.List<String> loaded = templateFormLoaded.get();
+            java.util.List<String> typed = templateFormText.get();
+            java.util.function.BiFunction<Integer, String, String> value =
+                    (k, original) -> typed.get(k).equals(loaded.get(k)) && original != null
+                            ? original
+                            : typed.get(k).trim();
+            templateFormLoaded.set(typed);
             com.editora.template.Template updated = new com.editora.template.Template(
                     newId,
-                    name.getText().trim(),
-                    description.getText().trim(),
-                    language.getText().trim(),
-                    fileName.getText().trim(),
+                    value.apply(1, cur.name()),
+                    value.apply(2, cur.description()),
+                    value.apply(3, cur.language()),
+                    value.apply(4, cur.fileName()),
                     body.getText(),
                     null);
+            if (updated.equals(new com.editora.template.Template(
+                    cur.id(), cur.name(), cur.description(), cur.language(), cur.fileName(), cur.body(), null))) {
+                return; // only whitespace the commit trims away: not an edit, so not a user override either
+            }
             String oldId = cur.id();
             if (!oldId.equals(newId) && templateUserIds.contains(oldId)) {
                 try {
@@ -4423,7 +4454,7 @@ public class SettingsWindow {
         }));
         TextField keyPath = new TextField();
         keyPath.setPromptText(tr("remote.keyPrompt"));
-        HBox.setHgrow(keyPath, Priority.ALWAYS);
+        keyPath.setMinWidth(160);
         Button keyBrowse = new Button(tr("dialog.clone.browse"));
         keyBrowse.setOnAction(e -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
@@ -4433,7 +4464,9 @@ public class SettingsWindow {
                 keyPath.setText(f.getAbsolutePath());
             }
         });
-        HBox keyRow = new HBox(6, keyPath, keyBrowse);
+        // Wraps: beside a wide (German) Browse button the field was left about 60px in a narrow window. The
+        // button now moves below the field instead, which then has the row to itself.
+        WrapRow keyRow = new WrapRow(6, 6, WrapRow.setGrow(keyPath), keyBrowse);
         // The key-file row only applies to "Private key file" auth.
         auth.valueProperty()
                 .addListener((o, a, b) -> keyRow.setDisable(b != com.editora.vfs.RemoteConnection.AuthMethod.KEY));
@@ -4798,6 +4831,14 @@ public class SettingsWindow {
     private VBox abbreviationsPage() {
         VBox p = page(tr("settings.cat.abbreviations"));
         Card mainCard = card(p, null);
+        abbrevModeCheck = viewCheck(tr("settings.abbrevMode"), Settings::setAbbrevMode);
+        abbrevModeCheck.setSelected(config.getSettings().isAbbrevMode());
+        checkRow(
+                mainCard,
+                Category.ABBREVIATIONS,
+                abbrevModeCheck,
+                tr("settings.abbrev.note"),
+                "abbrev abbreviation expand as you type automatic mode");
         cardRow(
                 mainCard,
                 Category.ABBREVIATIONS,
@@ -4806,15 +4847,9 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Master-detail editor for the user abbreviation dictionary (abbrev → expansion), plus the auto-expand toggle. */
+    /** Master-detail editor for the user abbreviation dictionary (abbrev → expansion). */
     private javafx.scene.Node abbreviationsEditor() {
         reloadAbbrevs();
-
-        abbrevModeCheck = viewCheck(tr("settings.abbrevMode"), Settings::setAbbrevMode);
-        abbrevModeCheck.setSelected(config.getSettings().isAbbrevMode());
-        Label note = new Label(tr("settings.abbrev.note"));
-        note.getStyleClass().add("settings-note");
-        note.setWrapText(true);
 
         ListView<com.editora.config.Abbreviation> list = new ListView<>(abbrevItems);
         abbrevList = list;
@@ -4908,7 +4943,7 @@ public class SettingsWindow {
         VBox.setVgrow(top, Priority.ALWAYS);
         HBox buttons = new HBox(6, add, remove, spacer(), save);
         buttons.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, abbrevModeCheck, note, top, buttons);
+        return new VBox(8, top, buttons);
     }
 
     private void persistAbbrevs() {
@@ -5376,6 +5411,17 @@ public class SettingsWindow {
     }
 
     /** Reload together: switching providers must not write the previous provider's fields back. */
+    /** Stores what the four per-provider fields show under {@code provider} (the caller saves and applies). */
+    private void commitAiFieldsFor(com.editora.ai.AiProvider provider) {
+        Settings settings = config.getSettings();
+        if (provider != com.editora.ai.AiProvider.CODEX) { // disabled for Codex, which owns its own login
+            settings.setAiEndpointFor(provider, aiEndpointField.getText());
+            settings.setApiKeyFor(provider, aiApiKeyField.getText());
+            settings.setAiCompletionModelFor(provider, aiCompletionModelField.getText());
+        }
+        settings.setAiModelFor(provider, aiModelField.getText());
+    }
+
     private void syncAiProviderFields() {
         boolean previous = loading;
         loading = true;
@@ -5419,12 +5465,13 @@ public class SettingsWindow {
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
         Card mainCard = card(p, null);
-        HBox aiEnableRow = new HBox(6, aiCheck, infoIcon(tr("settings.ai.actionsTooltip")));
-        aiEnableRow.setAlignment(Pos.CENTER_LEFT);
+        // A switch row like every other page's enable toggle; what it turns on stays in the (i) tooltip.
+        HBox aiEnable = new HBox(8, infoIcon(tr("settings.ai.actionsTooltip")), switchFor(aiCheck));
+        aiEnable.setAlignment(Pos.CENTER_RIGHT);
         cardRow(
                 mainCard,
                 Category.AI,
-                aiEnableRow,
+                settingRow(aiCheck.getText(), null, aiEnable),
                 "ai actions anthropic claude commit message explain rewrite enable");
         aiStatusLabel = new Label(tr("settings.ai.statusUnknown"));
         aiStatusLabel.getStyleClass().add("settings-git-status");
@@ -5531,11 +5578,17 @@ public class SettingsWindow {
         pluginRegistryWarn.getStyleClass().add("settings-git-missing"); // amber/red "caution" styling
         pluginRegistryWarn.setWrapText(true);
         pluginRegistryWarn.setMaxWidth(440);
-        pluginRegistryField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPluginRegistryUrl(now);
-            apply();
-            updateRegistryWarn();
-        });
+        commitOnEnterOrBlur(
+                pluginRegistryField,
+                () -> shownOrBlank(
+                        pluginRegistryField,
+                        config.getSettings().getPluginRegistryUrl(),
+                        config.getSettings().getPluginRegistryUrlRaw()),
+                now -> {
+                    config.getSettings().setPluginRegistryUrl(now);
+                    apply();
+                    updateRegistryWarn();
+                });
         Label regNote = note(tr("settings.plugins.registryNote"));
         regNote.setWrapText(true);
         regNote.setMaxWidth(440);
@@ -6132,19 +6185,22 @@ public class SettingsWindow {
     private static final Object COMMIT_KEY = new Object();
 
     /**
-     * Wires a command field to take effect on Enter or when focus leaves it, and only if the text differs from
-     * the stored command. Applying per keystroke reconfigured the language servers / debug adapters with every
-     * half-typed prefix: the running server was shut down on the first key, and a prefix that happened to
-     * resolve was launched and killed by the next.
+     * Wires a text field to take effect on Enter or when focus leaves it (or the window closes), and only if
+     * the text differs from the stored value. Applying per keystroke reconfigured the language servers / debug
+     * adapters with every half-typed prefix: the running server was shut down on the first key, and a prefix
+     * that happened to resolve was launched and killed by the next. For the other fields it saved the settings
+     * file, re-applied every window and probed a half-typed executable or URL on each key.
      */
     private void commitOnEnterOrBlur(
             TextField field, java.util.function.Supplier<String> stored, Consumer<String> commit) {
         Runnable run = () -> {
             String text = field.getText() == null ? "" : field.getText();
-            if (!loading && !text.equals(stored.get())) {
+            String current = stored.get();
+            if (!loading && !text.equals(current == null ? "" : current)) {
                 commit.accept(text);
             }
         };
+        commitFields.add(field);
         field.setOnAction(e -> run.run());
         field.focusedProperty().addListener((obs, was, focused) -> {
             if (!focused) {
@@ -6152,6 +6208,27 @@ public class SettingsWindow {
             }
         });
         field.getProperties().put(COMMIT_KEY, run);
+    }
+
+    /** Every {@link #commitOnEnterOrBlur} field, so closing the window can commit the one being typed in. */
+    private final List<TextField> commitFields = new ArrayList<>();
+
+    /**
+     * Commits whatever is typed but not yet committed. A field commits when focus leaves it, and closing the
+     * window (Esc, the title bar, the owner closing) is not a focus change the toolkit reliably reports first.
+     */
+    private void commitPendingFields() {
+        List.copyOf(commitFields).forEach(SettingsWindow::commitNow);
+    }
+
+    /**
+     * The stored value to compare a URL field against. Such a field shows the URL in force, so an untouched
+     * field equals {@code resolved}; once the user empties it to go back to the built-in URL it must be
+     * compared with what is stored ({@code raw}), or every later focus loss would save and apply again.
+     */
+    private static String shownOrBlank(TextField field, String resolved, String raw) {
+        String text = field.getText();
+        return text == null || text.isBlank() ? raw : resolved;
     }
 
     /** Commits a {@link #commitOnEnterOrBlur} field whose text was just set for the user (Browse…). */
@@ -7832,6 +7909,28 @@ public class SettingsWindow {
     public void setShortcutActions(ShortcutActions actions) {
         this.shortcutActions = actions;
         refreshShortcuts();
+    }
+
+    /**
+     * Brings an open Settings window in line with the shared keymap after it was reloaded — by this window or
+     * by another one, whose keymap switch or rebind this window's combo, shortcut list, chord chips and Macros
+     * key-binding row would otherwise keep showing the old state of.
+     */
+    public void syncKeymap() {
+        if (built && stage.isShowing()) {
+            syncKeymapCombo();
+        }
+    }
+
+    /**
+     * Re-reads the list editors backed by a shared store if the window is showing: a store changed (a Connect
+     * finished, an abbreviation was defined, another window's Settings saved) — possibly while this window has
+     * focus, which the focus listener cannot notice.
+     */
+    public void syncStoreBackedEditors() {
+        if (built && stage.isShowing() && !loading) {
+            reloadStoreBackedEditors();
+        }
     }
 
     /** Re-selects the keymap combo to match the current setting (after the {@code keymap.select} command). */

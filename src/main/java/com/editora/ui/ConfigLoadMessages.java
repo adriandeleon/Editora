@@ -26,6 +26,7 @@ final class ConfigLoadMessages {
                         tr("status.config.valuesReset", problem.skipped().size(), name, names(problem.skipped()));
                     case UNREADABLE -> tr("status.config.unreadable", name);
                     case NEWER_VERSION -> tr("status.config.newerVersion", name);
+                    case NOT_UTF8 -> tr("status.config.notUtf8", name);
                 };
         if (problem.backup() != null) {
             return tr(

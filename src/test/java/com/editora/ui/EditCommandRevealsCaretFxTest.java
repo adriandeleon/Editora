@@ -115,6 +115,62 @@ class EditCommandRevealsCaretFxTest {
                 "still scrolled away: " + e.viewport(area));
     }
 
+    /** Not only {@code edit.*}: a Markdown formatting command edits at the caret just the same. */
+    @Test
+    void aMarkdownFormattingCommandRevealsTheCaretItEditedAt() throws Exception {
+        EditorBuffer b = e.open("format.md", EditingFx.lines("some words here", 400));
+        CodeArea area = b.getArea();
+        FxTestSupport.runOnFx(() -> area.selectRange(5, 5, 5, 10));
+        FxTestSupport.runOnFx(() -> area.showParagraphAtTop(300));
+        assertTrue(e.await(() -> area.firstVisibleParToAllParIndex() >= 250), "scrolled away first");
+
+        e.run("markdown.bold");
+
+        assertEquals(
+                "some **words** here 6",
+                FxTestSupport.callOnFx(() -> area.getParagraph(5).getText()));
+        assertTrue(e.await(() -> visible(area)), "the view follows the formatted text: " + e.viewport(area));
+    }
+
+    /** A command that rewrites the whole file is not an edit at the caret, whatever it is called. */
+    @Test
+    void aWholeFileCommandLeavesTheScrollPositionAlone() throws Exception {
+        EditorBuffer b = e.open("whole.txt", EditingFx.lines("line", 400).replace("\n", "   \n"));
+        CodeArea area = b.getArea();
+        FxTestSupport.runOnFx(() -> area.moveTo(3, 0));
+        FxTestSupport.runOnFx(() -> area.showParagraphAtTop(300));
+        assertTrue(e.await(() -> area.firstVisibleParToAllParIndex() >= 250), "scrolled away first");
+        com.editora.command.CommandRegistry registry = FxTestSupport.field(e.fx.controller, "registry");
+        FxTestSupport.runOnFx(() -> {
+            // Stands in for any command that reformats the buffer; an "edit." name must not matter.
+            registry.register(com.editora.command.Command.of("edit.testRewriteFile", "Rewrite", () -> {
+                int caret = area.getCaretPosition();
+                area.replaceText(0, area.getLength(), area.getText().replace("   \n", "\n"));
+                area.moveTo(Math.min(caret, area.getLength()));
+                area.showParagraphAtTop(300); // as such commands do: replacing everything resets the viewport
+            }));
+            // And one that edits far from the caret (what a save that trims trailing whitespace does).
+            registry.register(com.editora.command.Command.of("edit.testEditElsewhere", "Elsewhere", () -> {
+                int at = area.getAbsolutePosition(350, 0);
+                area.replaceText(at, at + 4, "LINE");
+            }));
+        });
+
+        e.run("edit.testRewriteFile");
+        e.pulses(10);
+        assertTrue(FxTestSupport.callOnFx(() -> !area.getText().contains("   \n")), "the file was rewritten");
+        int top = FxTestSupport.callOnFx(area::firstVisibleParToAllParIndex);
+        assertTrue(top >= 250, "still scrolled away after a whole-file rewrite: " + e.viewport(area));
+
+        e.run("edit.testEditElsewhere");
+        e.pulses(10);
+        assertEquals(
+                "LINE 351", FxTestSupport.callOnFx(() -> area.getParagraph(350).getText()));
+        assertTrue(
+                FxTestSupport.callOnFx(() -> area.firstVisibleParToAllParIndex() >= 250),
+                "still scrolled away after an edit elsewhere: " + e.viewport(area));
+    }
+
     private static boolean visible(CodeArea area) {
         int par = area.getCurrentParagraph();
         return area.firstVisibleParToAllParIndex() <= par && par <= area.lastVisibleParToAllParIndex();

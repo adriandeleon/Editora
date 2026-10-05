@@ -32,4 +32,26 @@ final class ScrollAnchor {
         }
         area.estimatedScrollYProperty().setValue(pixelY);
     }
+
+    /**
+     * Gives {@code area} the caret, selection and scroll position of {@code other}, another view of the same
+     * document whose first visible line was {@code otherTop} (-1 = unknown: just reveal the caret).
+     */
+    static void adopt(CodeArea area, CodeArea other, int otherTop) {
+        int length = area.getLength();
+        area.selectRange(Math.min(other.getAnchor(), length), Math.min(other.getCaretPosition(), length));
+        if (otherTop < 0 || otherTop >= area.getParagraphs().size()) {
+            area.requestFollowCaret();
+            return;
+        }
+        // A pulse later: the view is being put back into the scene right now, and a scroll asked for in the
+        // same turn is resolved against the layout it had as half of the split.
+        javafx.application.Platform.runLater(() -> {
+            try {
+                area.showParagraphAtTop(Math.min(otherTop, area.getParagraphs().size() - 1));
+            } catch (RuntimeException notLaidOut) {
+                area.requestFollowCaret();
+            }
+        });
+    }
 }

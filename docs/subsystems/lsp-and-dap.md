@@ -549,6 +549,20 @@ Breakpoints are persisted per-project in `breakpoints.json` (`config/Breakpoint`
 that toggles a breakpoint on click. They are snapshotted on the FX thread at session start and sent to
 the adapter on its `initialized` event (DAP is 1-based; the model is 0-based).
 
+**What the adapter says back.** `DapClient` keeps the `setBreakpoints` answer and later `breakpoint`
+events (matched to the requested line by the adapter's breakpoint id — java-debug's event carries nothing
+else) and reports them as `DapModels.BreakpointStatus`; `DebugCoordinator` turns them into
+`BreakpointManager.Live` states that exist only while a session is live. The gutter draws an unverified
+breakpoint hollow, with the adapter's message on hover. *Unverified is not rejected*: java-debug leaves a
+breakpoint on a line with no code unverified with no message, and js-debug ("Unbound breakpoint") and
+debugpy ("Waiting for code to be loaded…") describe a wait in `message` — so only `reason: "failed"`, an
+error answer to the whole request, or an evaluation failure flags a breakpoint as rejected
+(`DebugFeedback.live`). java-debug reports a condition or logpoint message it cannot evaluate in a
+non-standard `usernotification` event at the first hit, naming only the quoted expression; the breakpoints
+carrying that expression are flagged until it is edited. A verified answer naming another line (debugpy's
+`translated_line`) moves the breakpoint there. A root session that only starts child sessions (js-debug)
+never reports: its "unbound" answers would overwrite the child's.
+
 ### DebugCoordinator
 
 The integration lives in [`ui/DebugCoordinator`](../../src/main/java/com/editora/ui/DebugCoordinator.java)

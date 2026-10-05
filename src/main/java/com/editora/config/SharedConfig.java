@@ -124,6 +124,7 @@ public class SharedConfig {
     private java.util.concurrent.CompletableFuture<Path> runningExport;
 
     private Consumer<ConfigManager> onSettingsChanged = origin -> {};
+    private volatile Runnable onStoreChanged = () -> {};
 
     public SharedConfig(Path configDir, boolean dev) {
         this.configDir = configDir;
@@ -665,6 +666,7 @@ public class SharedConfig {
 
     public void saveAbbreviations() {
         writeStore(getAbbreviationsFile(), abbrevStore);
+        onStoreChanged.run();
     }
 
     // --- SFTP connections ---
@@ -691,6 +693,17 @@ public class SharedConfig {
 
     public void saveConnections() {
         writeStore(getConnectionsFile(), connectionStore);
+        onStoreChanged.run();
+    }
+
+    /**
+     * Sets what runs (on the saving thread) after the abbreviations or the saved SFTP sites were changed and
+     * saved. Both are edited as whole lists by every window's Settings page, which therefore has to re-read
+     * them when a command, a finished Connect or another window changes one — a focus change is not a reliable
+     * moment for that, since the change can land while Settings already has focus.
+     */
+    public void setOnStoreChanged(Runnable handler) {
+        this.onStoreChanged = handler == null ? () -> {} : handler;
     }
 
     // --- bucketed stores (keyed by project key) ---
@@ -904,7 +917,10 @@ public class SharedConfig {
         }
         // Decided after the read, which is what leaves a backup behind. The backup keeps protecting the
         // bodies in later sessions, when the index this session writes loads cleanly.
-        historyIndexIntact = !lost && loadProblems.size() == problemsBefore && !HistoryIndexGuard.backupPresent(index);
+        // An index that was read with a non-UTF-8 byte replaced still lists every revision, so it does not count.
+        boolean readAsWritten = loadProblems.subList(problemsBefore, loadProblems.size()).stream()
+                .allMatch(p -> p.kind() == ConfigLoadProblem.Kind.NOT_UTF8);
+        historyIndexIntact = !lost && readAsWritten && !HistoryIndexGuard.backupPresent(index);
         Set<String> loaded = HistoryRetention.liveHashes(historyStore.getByProject());
         synchronized (historyPublicationLock) {
             durableHistoryHashes = loaded;

@@ -179,6 +179,18 @@ final class DebugCoordinator {
     /** What each open file's breakpoints were when last sent to the live session (cleared between sessions). */
     private final Map<Path, DapModels.FileBreakpoints> sentBreakpoints = new java.util.HashMap<>();
 
+    /** What the live session said about each file's breakpoints, by document line (cleared between sessions). */
+    private final Map<Path, Map<Integer, DapModels.BreakpointStatus>> breakpointStatus = new java.util.HashMap<>();
+
+    /** A breakpoint condition or log message the adapter could not evaluate, and what it said about it. */
+    private record EvaluationFailure(String expression, String message) {}
+
+    /** Evaluation failures of this session, by file and document line; one ends when its expression is edited. */
+    private final Map<Path, Map<Integer, EvaluationFailure>> evaluationFailures = new java.util.HashMap<>();
+
+    /** Rejections already reported in the status bar this session, so a re-sent file does not repeat them. */
+    private final Set<String> reportedRejections = new HashSet<>();
+
     /** Repeats the last coordinator-level start (save, before-launch build, closed-file breakpoints, launch). */
     private Runnable relaunch;
 
@@ -276,6 +288,11 @@ final class DebugCoordinator {
         }
         dapManager.stop();
         again.run();
+    }
+
+    /** Whether Restart can do anything for the session there is: not for one attached to a build or test run. */
+    boolean restartAvailable() {
+        return relaunch != ONE_SHOT_ATTACH;
     }
 
     /** Window close: the before-launch build must not outlive the window that started it. */
@@ -428,7 +445,112 @@ final class DebugCoordinator {
             if (!now.equals(sentBreakpoints.put(buffer.getPath(), now))) {
                 dapManager.updateBreakpoints(now);
             }
+            showBreakpointStates(buffer); // a new breakpoint is unverified until the adapter answers for it
         }
+    }
+
+    // --- what the live session says about the breakpoints ------------------------------------------
+
+    /**
+     * Paints {@code buffer}'s breakpoints as the live session sees them — hollow while the adapter has not
+     * bound one, flagged when it refused one — or as plain breakpoints when there is no session.
+     */
+    private void showBreakpointStates(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        if (file == null || dapManager.state() == DapManager.State.INACTIVE) {
+            buffer.getBreakpointManager().setLive(null);
+            return;
+        }
+        Map<Integer, DapModels.BreakpointStatus> known = breakpointStatus.getOrDefault(file, Map.of());
+        Map<Integer, EvaluationFailure> failures = evaluationFailures.get(file);
+        Map<Integer, BreakpointManager.Live> live = new java.util.HashMap<>();
+        for (Breakpoint bp : buffer.getBreakpointManager().documentSnapshot()) {
+            EvaluationFailure failure = failures == null ? null : failures.get(bp.line());
+            if (failure != null
+                    && !failure.expression().equals(bp.condition())
+                    && !failure.expression().equals(bp.logMessage())) {
+                failures.remove(bp.line()); // the expression it was about has been edited
+                failure = null;
+            }
+            live.put(
+                    bp.line(),
+                    DebugFeedback.live(
+                            known.get(bp.line()),
+                            failure == null ? null : failure.message(),
+                            tr("debug.breakpoint.pending"),
+                            tr("debug.breakpoint.rejected")));
+        }
+        buffer.getBreakpointManager().setLive(live);
+    }
+
+    /** The adapter answered for {@code file}'s breakpoints, or changed its mind about some of them. */
+    private void breakpointStatusChanged(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+        Map<Integer, DapModels.BreakpointStatus> known =
+                breakpointStatus.computeIfAbsent(file, f -> new java.util.HashMap<>());
+        if (whole) {
+            known.clear();
+        }
+        EditorBuffer buffer = ops.bufferForPath(file);
+        DapModels.FileBreakpoints sent = sentBreakpoints.get(file);
+        for (DapModels.BreakpointStatus status : statuses) {
+            known.put(status.line(), status);
+            boolean armed = sent != null && sent.breakpoints().stream().anyMatch(lb -> lb.line() == status.line());
+            if (!armed) {
+                continue; // a run-to-cursor stop, or an answer about a set that has since been replaced
+            }
+            if (status.failed() && reportedRejections.add(file + ":" + status.line() + ":" + status.message())) {
+                host.setStatus(tr(
+                        "status.debug.breakpointInvalid",
+                        file.getFileName() + ":" + (status.line() + 1),
+                        status.message().isEmpty() ? tr("debug.breakpoint.rejected") : status.message()));
+            }
+            // The adapter bound it to another line (the next one with code): the breakpoint follows, so the
+            // dot sits where the program will actually stop. Moving it re-sends the file, now at that line.
+            if (status.verified()
+                    && status.actualLine() >= 0
+                    && status.actualLine() != status.line()
+                    && buffer != null
+                    && buffer.getBreakpointManager().moveDocumentLine(status.line(), status.actualLine())) {
+                known.remove(status.line());
+                known.put(
+                        status.actualLine(),
+                        new DapModels.BreakpointStatus(status.actualLine(), true, false, "", status.actualLine()));
+                host.setStatus(tr("status.debug.breakpointMoved", status.line() + 1, status.actualLine() + 1));
+            }
+        }
+        if (buffer != null) {
+            showBreakpointStates(buffer);
+        }
+    }
+
+    /**
+     * A notice from the adapter. java-debug reports a breakpoint condition or logpoint message it could not
+     * evaluate this way — and then stops on every hit — so the breakpoints carrying that expression are
+     * flagged, and the text is shown in the console and the status bar either way.
+     */
+    private void adapterNotice(String message, boolean error) {
+        debugPanel.appendOutput(message + System.lineSeparator(), error ? "stderr" : "console");
+        host.setStatus(tr("status.debug.error", message));
+        host.forEachBuffer(b -> {
+            if (b.getPath() == null) {
+                return;
+            }
+            boolean flagged = false;
+            for (Breakpoint bp : b.getBreakpointManager().documentSnapshot()) {
+                String expression = DebugFeedback.noticeNames(message, bp.condition())
+                        ? bp.condition()
+                        : DebugFeedback.noticeNames(message, bp.logMessage()) ? bp.logMessage() : null;
+                if (bp.enabled() && expression != null) {
+                    evaluationFailures
+                            .computeIfAbsent(b.getPath(), f -> new java.util.HashMap<>())
+                            .put(bp.line(), new EvaluationFailure(expression, message));
+                    flagged = true;
+                }
+            }
+            if (flagged) {
+                showBreakpointStates(b);
+            }
+        });
     }
 
     /**
@@ -460,6 +582,9 @@ final class DebugCoordinator {
         if (newPath == null || newPath.equals(oldPath)) {
             return;
         }
+        if (com.editora.vfs.Vfs.isRemote(oldPath)) {
+            oldPath = null; // never debuggable, so nothing to carry over — and asking a closed connection throws
+        }
         var map = ops.breakpointMap();
         List<Breakpoint> stored = null;
         if (oldPath != null && !Files.exists(oldPath)) {
@@ -483,6 +608,18 @@ final class DebugCoordinator {
             DapModels.FileBreakpoints now = fileBreakpoints(buffer);
             sentBreakpoints.put(newPath, now);
             dapManager.updateBreakpoints(now);
+        }
+    }
+
+    /**
+     * Breakpoints stored for files that are not open — a closed file renamed from the Project tree, the
+     * files below a renamed folder — follow the rename too. Open buffers moved theirs in
+     * {@link #bufferPathChanged}, so there is nothing left under the old path for those.
+     */
+    void pathRenamed(Path old, Path target) {
+        String sep = old.getFileSystem().getSeparator();
+        if (RenamedFileState.rekey(ops.breakpointMap(), old.toString(), target.toString(), sep)) {
+            ops.saveBreakpoints();
         }
     }
 
@@ -512,6 +649,7 @@ final class DebugCoordinator {
         if (buffer.applyBreakpoints(ops.breakpointMap().get(file.toString()))) {
             persistBreakpoints(buffer); // self-heal re-anchored indices once
         }
+        showBreakpointStates(buffer); // opened during a session: it shows what the adapter already said
         reshowFrameIn(buffer);
     }
 
@@ -689,6 +827,7 @@ final class DebugCoordinator {
                     }
                     consoleStarted = false;
                 }
+                debugPanel.setRestartBlocked(restartAvailable() ? null : tr("status.debug.cannotRestartAttached"));
                 debugPanel.setState(state);
                 if (state == DapManager.State.STARTING) {
                     nameSession(sessionLabel); // ending the replaced session cleared it
@@ -700,6 +839,10 @@ final class DebugCoordinator {
                 updateDebugStatus(state);
                 if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
                     sentBreakpoints.clear(); // the next session is told everything afresh
+                    breakpointStatus.clear(); // and what the last one said about them no longer holds
+                    evaluationFailures.clear();
+                    reportedRejections.clear();
+                    host.forEachBuffer(DebugCoordinator.this::showBreakpointStates);
                 }
                 if (state != DapManager.State.SUSPENDED) {
                     clearExecHighlight();
@@ -734,6 +877,23 @@ final class DebugCoordinator {
             @Override
             public void onError(String message) {
                 host.setStatus(tr("status.debug.error", message));
+            }
+
+            @Override
+            public void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+                breakpointStatusChanged(file, statuses, whole);
+            }
+
+            @Override
+            public void onNotice(String message, boolean error) {
+                adapterNotice(message, error);
+            }
+
+            @Override
+            public void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {
+                // Which exception: the one thing an exception stop has to say, and the stop event does not.
+                debugPanel.setStoppedException(DebugFeedback.exceptionSummary(info, true));
+                host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
             }
         };
     }
