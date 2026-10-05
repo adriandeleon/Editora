@@ -126,4 +126,15 @@ class BreakpointManagerTest {
         assertFalse(out.containsKey(19), "the fully-deleted middle line's breakpoint is dropped");
         assertTrue(out.containsKey(18), "the trailing survivor line's breakpoint follows to the join line");
     }
+
+    @Test
+    void reanchorMatchesALineLongerThanTheStoredSnapshot() {
+        // The stored text is cut to MAX_LINE_TEXT; comparing it with the whole line never matched, so a
+        // long breakpoint line stayed at its stored index after an external edit.
+        String longLine = "call(" + "a, ".repeat(90) + "z);";
+        List<String> doc = List.of("one", "two", "three", longLine);
+        NavigableMap<Integer, Breakpoint> out =
+                BreakpointManager.reanchor(List.of(Breakpoint.plain(1, longLine)), doc.size(), doc::get, 100);
+        assertEquals(List.of(3), new java.util.ArrayList<>(out.keySet()));
+    }
 }

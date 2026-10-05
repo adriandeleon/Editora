@@ -202,4 +202,77 @@ class SnippetManagerTest {
         assertTrue(b.contains("$Get_ItemParams"), "splat sanitises non-word chars in the mirror: " + b);
         assertTrue(!b.contains("$Get-ItemParams"), "the invalid unsanitised form must not appear: " + b);
     }
+
+    // --- JSONC user files and lossless write-back (A4-4) ---
+
+    private static final String JSONC = """
+            {
+              // Place your snippets for python here.
+              /* a block comment */
+              "Dataclass": { "prefix": "zdc", "body": ["@dataclass", "class ${1:Name}:",], },
+            }
+            """;
+
+    @Test
+    void userFileWithCommentsAndTrailingCommasLoads(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("snippets"));
+        Files.writeString(dir.resolve("snippets").resolve("python.json"), JSONC);
+        SnippetManager m = manager(dir);
+        assertNotNull(m.byPrefix("python", "zdc"), "a VS Code style (JSONC) file is read");
+        assertEquals(1, m.userSnippets("python").size());
+        assertNull(m.userFileProblem("python"));
+        assertTrue(m.unreadableUserFiles().isEmpty());
+    }
+
+    @Test
+    void anUnparseableUserFileIsReportedAndNeverOverwritten(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("snippets"));
+        Path file = dir.resolve("snippets").resolve("java.json");
+        String broken = "{ \"Mine\": { \"prefix\": \"zz\", \"body\": \"x\" } not valid";
+        Files.writeString(file, broken);
+        SnippetManager m = manager(dir);
+        assertNotNull(m.userFileProblem("java"));
+        assertNull(m.userFileProblem("kotlin"), "no file is not a problem");
+        assertEquals(java.util.List.of("java.json"), m.unreadableUserFiles());
+        org.junit.jupiter.api.Assertions.assertThrows(
+                java.io.IOException.class,
+                () -> m.saveUserSnippets("java", java.util.List.of(new Snippet("New", "nw", "pass", "", "java"))));
+        assertEquals(broken, Files.readString(file), "the file the user wrote is left exactly as it was");
+    }
+
+    @Test
+    void saveKeepsEveryPrefixScopeAndUntouchedArrayBodies(@TempDir Path dir) throws Exception {
+        Files.createDirectories(dir.resolve("snippets"));
+        Path file = dir.resolve("snippets").resolve("go.json");
+        Files.writeString(file, """
+                {
+                  "Function": { "prefix": ["zfn", "zfunc"], "body": ["func ${1:name}() {", "\\t$0", "}"],
+                                "description": "a function", "scope": "go" },
+                  "Log": { "prefix": "zlg", "body": "fmt.Println($1)" }
+                }
+                """);
+        SnippetManager m = manager(dir);
+        java.util.List<Snippet> user = new java.util.ArrayList<>(m.userSnippets("go"));
+        // What Settings does: edit the OTHER snippet and write the whole list back.
+        user.set(1, new Snippet("Log", "zlog", "fmt.Println($1)", "", "go"));
+        m.saveUserSnippets("go", user);
+
+        assertNotNull(m.byPrefix("go", "zfn"));
+        assertNotNull(m.byPrefix("go", "zfunc"), "the second trigger survives the round trip");
+        assertNotNull(m.byPrefix("go", "zlog"));
+        assertNull(m.byPrefix("go", "zlg"));
+        var tree = new com.fasterxml.jackson.databind.ObjectMapper().readTree(file.toFile());
+        assertEquals("go", tree.get("Function").get("scope").asText(), "fields the editor does not model are kept");
+        assertTrue(tree.get("Function").get("prefix").isArray());
+        assertTrue(tree.get("Function").get("body").isArray(), "an unchanged body keeps its array form");
+
+        // Changing the shown trigger of a multi-prefix snippet replaces the first and keeps the rest.
+        user = new java.util.ArrayList<>(m.userSnippets("go"));
+        Snippet f = user.get(0);
+        user.set(0, new Snippet(f.name(), "zf", f.body(), f.description(), "go"));
+        m.saveUserSnippets("go", user);
+        assertNotNull(m.byPrefix("go", "zf"));
+        assertNotNull(m.byPrefix("go", "zfunc"));
+        assertNull(m.byPrefix("go", "zfn"));
+    }
 }

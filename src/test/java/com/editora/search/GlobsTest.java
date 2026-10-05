@@ -90,4 +90,17 @@ class GlobsTest {
         assertTrue(Globs.acceptFile("src/A.java", List.of("*.java"), ex));
         assertFalse(Globs.acceptFile("src/A.kt", List.of("*.java"), ex));
     }
+
+    // --- B5-8: an escaped comma means the same to the Java matcher as to ripgrep ---------------------------
+
+    @Test
+    void anEscapedCommaMatchesALiteralCommaOnTheJavaSide() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(java.io.File.separatorChar == '/', "backslash escapes");
+        List<String> globs = Globs.split("we\\,ird/*");
+        assertEquals(List.of("we\\,ird/*"), globs, "one glob, kept raw for ripgrep");
+        assertTrue(Globs.accept("we,ird/a.txt", globs, List.of()), "include");
+        assertFalse(Globs.accept("other/a.txt", globs, List.of()));
+        assertFalse(Globs.accept("we,ird/a.txt", List.of(), Globs.split("we\\,ird")), "exclude names the dir");
+        assertTrue(Globs.excludesDirectory("we,ird", Globs.split("we\\,ird/")));
+    }
 }

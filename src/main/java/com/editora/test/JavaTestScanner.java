@@ -35,13 +35,21 @@ public final class JavaTestScanner {
     private static final Set<String> TEST_ANNOTATIONS =
             Set.of("Test", "ParameterizedTest", "RepeatedTest", "TestFactory", "TestTemplate");
 
-    private static final Pattern PACKAGE = Pattern.compile("^\\s*package\\s+([\\w.]+)\\s*;");
-    private static final Pattern TYPE_DECL = Pattern.compile("\\b(?:class|interface|enum|record)\\s+(\\w+)");
+    /**
+     * A Java identifier. Not {@code \w+}, which is ASCII-only in {@code java.util.regex}: a test named
+     * {@code größeIstKorrekt} or {@code 正常系_ログインできる} got no gutter marker and no seeded row.
+     */
+    private static final String ID = "[\\p{L}_$][\\p{L}\\p{N}_$]*";
+
+    private static final Pattern PACKAGE = Pattern.compile("^\\s*package\\s+([\\p{L}\\p{N}_$.]+)\\s*;");
+    private static final Pattern TYPE_DECL =
+            Pattern.compile("(?<![\\p{L}\\p{N}_$])(?:class|interface|enum|record)\\s+(" + ID + ")");
     private static final Pattern TEST_ANNO =
             Pattern.compile("@(?:\\w+\\.)*(Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate)\\b");
     private static final Pattern LEADING_ANNOTATIONS = Pattern.compile("^(?:@[\\w.]+(?:\\s*\\([^)]*\\))?\\s*)+");
     // A method declaration: a return type (or modifiers/generics) then the name immediately before "(".
-    private static final Pattern METHOD = Pattern.compile("^\\s*(?:[A-Za-z_$][\\w$.<>\\[\\],?\\s]*?\\s+)(\\w+)\\s*\\(");
+    private static final Pattern METHOD =
+            Pattern.compile("^\\s*(?:[\\p{L}_$][\\p{L}\\p{N}_$.<>\\[\\],?\\s]*?\\s+)(" + ID + ")\\s*\\(");
 
     /** Ordered targets: the class-level target first (only when ≥1 test method was found), then the methods. */
     public static List<TestTarget> scan(String source) {

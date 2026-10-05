@@ -1314,7 +1314,12 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("snippets.insert", host::insertSnippetPicker));
         host.registry().register(Command.of("snippets.reload", () -> {
             host.snippets().reload();
-            host.setStatus(tr("status.snippetsReloaded"));
+            // A user file that does not parse loads as "no snippets"; say so rather than claim success.
+            java.util.List<String> unreadable = host.snippets().unreadableUserFiles();
+            host.setStatus(
+                    unreadable.isEmpty()
+                            ? tr("status.snippetsReloaded")
+                            : tr("settings.snippet.reloadUnreadable", String.join(", ", unreadable)));
         }));
         host.registry().register(Command.of("snippets.editUser", host::editUserSnippets));
         host.registry()
@@ -1681,7 +1686,7 @@ final class WindowCommandRegistrar {
                         Command.of("debug.stop", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::stop)));
         host.registry()
                 .register(Command.of(
-                        "debug.restart", () -> host.debugCoordinator().ifDebug(host.dapManager()::restart)));
+                        "debug.restart", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::restart)));
         host.registry()
                 .register(Command.of(
                         "debug.attach", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::debugAttach)));
@@ -1965,7 +1970,7 @@ final class WindowCommandRegistrar {
                         () -> host.github().ifEnabled(() -> {
                             host.toolWindows().open(host.githubToolWindow());
                             host.githubPanel().selectRuns();
-                            host.github().fetchRuns(host.githubPanel()::setRuns);
+                            host.gitWindows().fetchGithub(GitHubPanel.Mode.RUNS);
                         })));
         host.registry().register(Command.of("github.viewRunLog", host.github()::viewRunLogPicked));
         host.registry().register(Command.of("github.refresh", host.github()::refresh));

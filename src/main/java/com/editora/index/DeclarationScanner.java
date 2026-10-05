@@ -117,7 +117,14 @@ public final class DeclarationScanner {
                 continue;
             }
             String name = m.group("n");
-            if (name == null || name.isEmpty() || DeclarationRules.CONTROL_KEYWORDS.contains(name)) {
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            // Only a keyword-less pattern can mistake `if (` or `new (` for a declaration; behind a
+            // declaring keyword the name is whatever follows it — Rust's `fn new`, Python's `def match`.
+            if (rule.needsSignatureShape()
+                    && (DeclarationRules.CONTROL_KEYWORDS.contains(name)
+                            || startsWithStatementKeyword(lineText, m.start("n")))) {
                 continue;
             }
             SymbolKind kind = rule.kind();
@@ -133,6 +140,16 @@ public final class DeclarationScanner {
             return new Symbol(name, kind, line, m.start("n"), container);
         }
         return null;
+    }
+
+    /** Whether any word before the name (what the pattern took for modifiers and a type) starts a statement. */
+    private static boolean startsWithStatementKeyword(String lineText, int nameStart) {
+        for (String word : lineText.substring(0, nameStart).strip().split("\\s+")) {
+            if (DeclarationRules.STATEMENT_KEYWORDS.contains(word)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

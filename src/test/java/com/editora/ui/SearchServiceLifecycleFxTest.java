@@ -359,8 +359,94 @@ class SearchServiceLifecycleFxTest {
     }
 
     private static Future<?> currentSearch(SearchService service) throws Exception {
-        Field field = SearchService.class.getDeclaredField("currentSearch");
+        Field main = SearchService.class.getDeclaredField("main");
+        main.setAccessible(true);
+        Object channel = main.get(service);
+        Field field = channel.getClass().getDeclaredField("current");
         field.setAccessible(true);
-        return (Future<?>) field.get(service);
+        return (Future<?>) field.get(channel);
+    }
+
+    private static SearchService.Outcome searchAndWait(
+            SearchService service, SearchQuery query, Path root, Map<Path, String> open) throws Exception {
+        CountDownLatch delivered = new CountDownLatch(1);
+        var outcome = new java.util.concurrent.atomic.AtomicReference<SearchService.Outcome>();
+        Platform.runLater(() -> service.search(query, root, open, result -> {
+            outcome.set(result);
+            delivered.countDown();
+        }));
+        assertTrue(delivered.await(20, TimeUnit.SECONDS), "the search answered");
+        return outcome.get();
+    }
+
+    /** A12-15: rg exits 2 for one unreadable directory although it searched everything else. */
+    @Test
+    void ripgrepsResultSurvivesAnUnreadableDirectory(@TempDir Path root) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                com.editora.search.Ripgrep.detect(List.of("rg")), "ripgrep is not installed");
+        // Only ripgrep reads a .ignore file, so whether skipped.txt is listed says which backend answered.
+        Files.writeString(root.resolve("a.txt"), "needle\n");
+        Files.writeString(root.resolve("skipped.txt"), "needle\n");
+        Files.writeString(root.resolve(".ignore"), "skipped.txt\n");
+        Path locked = Files.createDirectories(root.resolve("locked"));
+        Files.writeString(locked.resolve("b.txt"), "needle\n");
+        java.nio.file.attribute.PosixFileAttributeView view =
+                Files.getFileAttributeView(locked, java.nio.file.attribute.PosixFileAttributeView.class);
+        org.junit.jupiter.api.Assumptions.assumeTrue(view != null, "POSIX permissions");
+        view.setPermissions(java.util.Set.of());
+        org.junit.jupiter.api.Assumptions.assumeTrue(!Files.isReadable(locked), "running as root");
+        SearchService service = new SearchService();
+        try {
+            service.setBackend(true, List.of("rg"), true);
+            SearchService.Outcome outcome =
+                    searchAndWait(service, new SearchQuery("needle", true, false, false), root, Map.of());
+            assertEquals(1, outcome.totalMatches(), "ripgrep's own result is kept, not re-done by the walker");
+            assertTrue(outcome.truncated(), "and the result is flagged partial");
+        } finally {
+            service.shutdown();
+            view.setPermissions(java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"));
+        }
+    }
+
+    /** A path from another provider whose {@code equals} refuses a local path, as an SFTP path's does. */
+    private static Path foreignPath(String shown, int hash) {
+        return (Path) java.lang.reflect.Proxy.newProxyInstance(
+                Path.class.getClassLoader(),
+                new Class<?>[] {Path.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "hashCode" -> hash;
+                    case "toString" -> shown;
+                    case "equals" -> {
+                        if (args[0] == proxy) {
+                            yield true;
+                        }
+                        throw new java.nio.file.ProviderMismatchException();
+                    }
+                    case "getFileSystem" -> null; // anything but the default file system
+                    case "toAbsolutePath", "normalize" -> proxy;
+                    case "relativize", "compareTo", "startsWith" -> throw new java.nio.file.ProviderMismatchException();
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+    }
+
+    /** D1-4: a remote tab among the open buffers made the search throw before it was submitted. */
+    @Test
+    void aRemoteOpenBufferIsSearchedBesideLocalOnes(@TempDir Path root) throws Exception {
+        Path local = root.resolve("a.txt");
+        Files.writeString(local, "needle on disk\n");
+        // Ordered by name and never hashed here, so the keys only meet inside the service.
+        Map<Path, String> open = new java.util.TreeMap<>(java.util.Comparator.comparing(Path::toString));
+        open.put(local, "needle in memory\n");
+        // The same hash as the local key: the slot an immutable map probes, and so the equals it calls.
+        open.put(foreignPath("sftp://host/remote.txt", local.hashCode()), "remote needle\n");
+        SearchService service = new SearchService();
+        try {
+            SearchService.Outcome outcome =
+                    searchAndWait(service, new SearchQuery("needle", true, false, false), root, open);
+            assertEquals(2, outcome.totalMatches());
+            assertEquals(2, outcome.fileCount());
+        } finally {
+            service.shutdown();
+        }
     }
 }

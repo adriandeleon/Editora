@@ -496,7 +496,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Updates the active-file marker used for current-file emphasis in the tree. */
     public void setActiveFile(Path file) {
         Path next = file == null ? null : file.toAbsolutePath().normalize();
-        if (Objects.equals(activeFile, next)) {
+        if (com.editora.config.PathKeys.samePath(activeFile, next)) {
             return;
         }
         activeFile = next;
@@ -1815,6 +1815,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         "git-status-deleted",
         "git-status-renamed",
         "git-status-untracked",
+        "git-status-conflict",
         "git-status-dir-changed"
     };
 
@@ -1921,7 +1922,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             boolean dirty = !isDir && isModified != null && isModified.test(item);
             Path absolute = item.toAbsolutePath().normalize();
             boolean open = !isDir && ProjectPanel.this.isOpen.test(absolute);
-            boolean active = !isDir && open && activeFile != null && absolute.equals(activeFile);
+            boolean active =
+                    !isDir && open && activeFile != null && com.editora.config.PathKeys.samePath(absolute, activeFile);
             // Mark the cell so the stylesheet can theme the folder vs. file icon color.
             getStyleClass().removeAll(CELL_CLASSES);
             getStyleClass().add(isDir ? "folder-cell" : "file-cell");

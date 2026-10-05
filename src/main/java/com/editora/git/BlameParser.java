@@ -12,8 +12,25 @@ import java.util.regex.Pattern;
  */
 public final class BlameParser {
 
-    /** One blamed line: the commit it last changed in, the author, commit time (epoch seconds), and subject. */
-    public record BlameLine(String hash, String author, long epochSeconds, String summary, boolean uncommitted) {}
+    /**
+     * One blamed line: the commit it last changed in, the author, commit time (epoch seconds), and subject.
+     * {@code path} is the file's repo-relative name <em>in that commit</em> — blame follows whole-file renames,
+     * so for a line older than a move it is the old path, the only one {@code <hash>:<path>} resolves.
+     * {@code previousPath} is its name in the commit's parent ({@code null} when the commit added the file).
+     */
+    public record BlameLine(
+            String hash,
+            String author,
+            long epochSeconds,
+            String summary,
+            boolean uncommitted,
+            String path,
+            String previousPath) {
+
+        public BlameLine(String hash, String author, long epochSeconds, String summary, boolean uncommitted) {
+            this(hash, author, epochSeconds, summary, uncommitted, null, null);
+        }
+    }
 
     private static final Pattern HEADER = Pattern.compile("^[0-9a-f]{40} \\d+ \\d+");
 
@@ -28,13 +45,17 @@ public final class BlameParser {
         String author = "";
         String summary = "";
         long time = 0;
+        String path = null;
+        String previousPath = null;
         for (String line : porcelain.split("\n", -1)) {
             if (line.startsWith("\t")) {
                 // The content line terminates the current block: emit it.
                 if (hash != null) {
                     boolean uncommitted = hash.chars().allMatch(c -> c == '0');
-                    out.add(new BlameLine(hash, author, time, summary, uncommitted));
+                    out.add(new BlameLine(hash, author, time, summary, uncommitted, path, previousPath));
                 }
+                path = null;
+                previousPath = null;
                 hash = null;
                 author = "";
                 summary = "";
@@ -52,6 +73,11 @@ public final class BlameParser {
                 }
             } else if (line.startsWith("summary ")) {
                 summary = line.substring("summary ".length()).strip();
+            } else if (line.startsWith("filename ")) {
+                path = StatusParser.unquotePath(line.substring("filename ".length()));
+            } else if (line.startsWith("previous ") && line.length() > "previous ".length() + 41) {
+                // previous <40-hex parent commit> <the file's path there>
+                previousPath = StatusParser.unquotePath(line.substring("previous ".length() + 41));
             }
         }
         return out;

@@ -72,7 +72,7 @@ class StatusParserTest {
     }
 
     @Test
-    void unmergedEntryIsRetainedAsBothStagedAndUnstaged() {
+    void unmergedEntryIsRetainedAsAConflictUnderChanges() {
         String out = "# branch.head main\n"
                 + "u UU N... 100644 100644 100644 100644 aaaaaaa bbbbbbb ccccccc conflicted.txt\n";
 
@@ -81,7 +81,8 @@ class StatusParserTest {
         assertEquals(1, status.files().size());
         FileEntry entry = status.files().get(0);
         assertEquals("conflicted.txt", entry.path());
-        assertTrue(entry.staged());
+        assertTrue(entry.unmerged());
+        assertFalse(entry.staged(), "its index entries are merge stages: unstaging would discard the conflict");
         assertTrue(entry.unstaged());
     }
 

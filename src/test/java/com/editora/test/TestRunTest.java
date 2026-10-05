@@ -49,6 +49,20 @@ class TestRunTest {
                 runWithFailures(BuildTool.GO).failedTestFilters());
     }
 
+    /** "[build failed]" is a synthetic leaf, not a test: it must not end up in a -run pattern. */
+    @Test
+    void goFilterSkipsSyntheticPackageFailureLeaves() {
+        TestRun run = new TestRun(BuildTool.GO, Path.of("."), List.of("test", "./..."), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "ex/q", List.of(ParsedTest.of("ex/q", GoTestJsonParser.BUILD_FAILED, TestStatus.ERROR, 0))));
+        assertEquals(List.of(), run.failedTestFilters(), "nothing targetable: the caller does a full rerun");
+        TestTreeBuilder.merge(
+                run.root(), new ParsedSuite("ex/p", List.of(ParsedTest.of("ex/p", "TestBoom", TestStatus.FAILED, 0))));
+        assertEquals(List.of("test", "-run", "^(TestBoom)$", "./..."), run.failedTestFilters());
+    }
+
     @Test
     void cargoFilter() {
         assertEquals(
@@ -118,5 +132,43 @@ class TestRunTest {
         run.finish(0, 3_000L);
         assertEquals(2_000, run.elapsedMillis(9_999L));
         assertTrue(!run.isRunning());
+    }
+
+    private static TestRun runWith(BuildTool tool, String cls, String... failedMethods) {
+        TestRun run = new TestRun(tool, Path.of("."), List.of("test"), List.of(), 0L);
+        List<ParsedTest> tests = new java.util.ArrayList<>();
+        for (String m : failedMethods) {
+            tests.add(ParsedTest.of(cls, m, TestStatus.FAILED, 0));
+        }
+        TestTreeBuilder.merge(run.root(), new ParsedSuite(cls, tests));
+        return run;
+    }
+
+    /** Surefire matches a method filter against the declaring class file: {@code Outer#m} misses a @Nested test. */
+    @Test
+    void mavenFilterKeepsTheNestedClass() {
+        assertEquals(
+                "-Dtest=OrderServiceTest$WhenEmpty#rejects",
+                runWith(BuildTool.MAVEN, "com.x.OrderServiceTest$WhenEmpty", "rejects")
+                        .failedTestFilters()
+                        .get(1));
+    }
+
+    /** A JUnit 4 Parameterized invocation is really named {@code testMethod[0]}; {@code testMethod} alone misses it. */
+    @Test
+    void mavenFilterStillMatchesAJUnit4ParameterizedInvocation() {
+        assertEquals(
+                "-Dtest=FooTest#testMethod+testMethod[*]",
+                runWith(BuildTool.MAVEN, "com.acme.FooTest", "testMethod[0]", "testMethod[1]")
+                        .failedTestFilters()
+                        .get(1));
+    }
+
+    /** A subtest name is arbitrary text; raw in a -run regex it is a syntax error ("missing closing ]"). */
+    @Test
+    void goFilterUsesTheTopLevelTestsSoSubtestNamesCannotBreakTheRegex() {
+        TestRun run = runWith(BuildTool.GO, "ex/p", "TestParse", "TestParse/a[b", "TestParse/1+1_(sum)", "TestOther");
+        assertEquals(List.of("test", "-run", "^(TestParse|TestOther)$", "./..."), run.failedTestFilters());
+        java.util.regex.Pattern.compile(run.failedTestFilters().get(2)); // and it is a valid expression
     }
 }

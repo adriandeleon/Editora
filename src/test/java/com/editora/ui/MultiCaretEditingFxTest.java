@@ -144,7 +144,6 @@ class MultiCaretEditingFxTest {
             created.setMultiCaretEnabled(true);
             created.getNode();
             created.getArea().requestFocus();
-            created.getArea().getUndoManager().forgetHistory();
             created.markClean();
             return created;
         });

@@ -131,6 +131,17 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public volatile InitializeRequestArguments initializeArgs;
         public volatile Map<String, Object> launchArgs;
         public volatile boolean attached;
+        /** When set, every step request is refused with this message (java-debug: "thread is not suspended"). */
+        public volatile String stepFailure;
+        /** The {@code allThreadsContinued} of every {@code continue} response; null leaves it out. */
+        public volatile Boolean allThreadsContinued;
+        /** The thread id of every {@code continue} request, in arrival order. */
+        public final List<Integer> continuedThreads = new CopyOnWriteArrayList<>();
+        /** The source path and 1-based line of the one frame every {@code stackTrace} answers with. */
+        public volatile String framePath;
+
+        public volatile int frameLine = 3;
+
         /** Root only: completes when the client has answered the reverse {@code startDebugging} request. */
         public final CompletableFuture<Void> startDebuggingAnswered = new CompletableFuture<>();
 
@@ -175,9 +186,15 @@ public final class FakeDebugAdapter implements AutoCloseable {
         // --- the adapter's side, driven by the test -------------------------------------------------
 
         public void stop(int threadId, String reason) {
+            stop(threadId, reason, null);
+        }
+
+        /** A stop that says whether every thread was suspended ({@code null} leaves the property out). */
+        public void stop(int threadId, String reason, Boolean allThreadsStopped) {
             StoppedEventArguments stopped = new StoppedEventArguments();
             stopped.setThreadId(threadId);
             stopped.setReason(reason);
+            stopped.setAllThreadsStopped(allThreadsStopped);
             client.stopped(stopped);
         }
 
@@ -298,7 +315,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
             StackFrame frame = new StackFrame();
             frame.setId(1);
             frame.setName(first && multiSession ? "root" : "debuggee");
-            frame.setLine(3);
+            frame.setLine(frameLine);
+            if (framePath != null) {
+                org.eclipse.lsp4j.debug.Source source = new org.eclipse.lsp4j.debug.Source();
+                source.setPath(framePath);
+                frame.setSource(source);
+            }
             StackTraceResponse response = new StackTraceResponse();
             response.setStackFrames(new StackFrame[] {frame});
             return CompletableFuture.completedFuture(response);
@@ -307,25 +329,38 @@ public final class FakeDebugAdapter implements AutoCloseable {
         @Override
         public CompletableFuture<Void> next(NextArguments args) {
             record("next");
-            return CompletableFuture.completedFuture(null);
+            return stepResult();
         }
 
         @Override
         public CompletableFuture<Void> stepIn(StepInArguments args) {
             record("stepIn");
-            return CompletableFuture.completedFuture(null);
+            return stepResult();
         }
 
         @Override
         public CompletableFuture<Void> stepOut(StepOutArguments args) {
             record("stepOut");
-            return CompletableFuture.completedFuture(null);
+            return stepResult();
+        }
+
+        private CompletableFuture<Void> stepResult() {
+            String failure = stepFailure;
+            if (failure == null) {
+                return CompletableFuture.completedFuture(null);
+            }
+            return CompletableFuture.failedFuture(new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                    new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                            org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.RequestFailed, failure, null)));
         }
 
         @Override
         public CompletableFuture<ContinueResponse> continue_(ContinueArguments args) {
+            continuedThreads.add(args.getThreadId());
             record("continue");
-            return CompletableFuture.completedFuture(new ContinueResponse());
+            ContinueResponse response = new ContinueResponse();
+            response.setAllThreadsContinued(allThreadsContinued);
+            return CompletableFuture.completedFuture(response);
         }
 
         @Override

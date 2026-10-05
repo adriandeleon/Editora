@@ -21,7 +21,7 @@ public record CargoProject(String packageName, List<String> binNames, List<Strin
     /** Parses {@code Cargo.toml} text. Throws if the TOML is malformed (the caller reports it distinctly). */
     public static CargoProject parse(String cargoTomlText) {
         try {
-            JsonNode root = MAPPER.readTree(cargoTomlText);
+            JsonNode root = MAPPER.readTree(BuildTool.withoutBom(cargoTomlText));
             String name = null;
             if (root != null) {
                 JsonNode pkgName = root.path("package").path("name");

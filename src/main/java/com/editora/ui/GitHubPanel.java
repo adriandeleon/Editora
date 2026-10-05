@@ -292,12 +292,30 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         beginLoading(mode());
     }
 
+    /**
+     * Ends the loading state of {@code mode}'s fetch with {@code message} in place of the rows — a failed
+     * {@code gh} call must not read as "no open pull requests", nor leave the spinner up forever.
+     */
+    public void showError(Mode mode, String message) {
+        if (!accept(mode)) {
+            return;
+        }
+        allItems.clear();
+        placeholder.setText(message);
+    }
+
+    /** The text shown in place of the rows (the empty-list note, or a failure message). For tests. */
+    String placeholderText() {
+        return list.getPlaceholder() == placeholder ? placeholder.getText() : null;
+    }
+
     /** Replaces the list with pull requests. */
     public void setPrs(List<PullRequest> prs) {
         if (!accept(Mode.PRS)) {
             return;
         }
         prsToggle.setSelected(true);
+        placeholder.setText(tr("github.panel.noPrs")); // may still hold an earlier failure's message
         allItems.setAll(prs);
     }
 
@@ -307,6 +325,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
             return;
         }
         issuesToggle.setSelected(true);
+        placeholder.setText(tr("github.panel.noIssues"));
         allItems.setAll(issues);
     }
 

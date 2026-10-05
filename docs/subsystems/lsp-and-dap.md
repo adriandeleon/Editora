@@ -57,9 +57,13 @@ which `isLspLanguage()` checks so `editor` imports nothing from `lsp`.
 ### One session per `(serverId, root)`
 
 [`lsp/RootResolver`](../../src/main/java/com/editora/lsp/RootResolver.java) computes the workspace
-root: the active Editora project folder (only when the file actually lives under it), else the
-nearest ancestor containing a root marker, else the file's directory. One root → one server process,
-shared by every file beneath it.
+root: this **window's** project folder (only when the file actually lives under it — compared by real
+path, so a project opened through a symlink and a location reported under its resolved path are one
+workspace), else the nearest ancestor containing a root marker, else the file's directory. A marker found in
+the user's home directory or at a filesystem root is ignored: a dotfiles `~/.git` must not hand a server the
+whole home directory. One root → one server process, shared by every file beneath it. A session with no open
+document is evicted after a grace period unless something holds a lease on it (`LspManager.retain`): a Java
+debug session runs inside its jdtls, so `DapManager` retains that session until the debug session ends.
 
 [`lsp/LspManager`](../../src/main/java/com/editora/lsp/LspManager.java) is the UI-facing facade
 (mirrors `MermaidService`). It keys sessions by `serverId + " " + root.toUri()` — **not** by
@@ -94,7 +98,18 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   [below](#processregistry--processrunner)), then registers the process with `ProcessRegistry.track`.
 - **Handshake**: `initialize` (client capabilities + workspace folder + optional
   `initializationOptions`) → on success cache the server `ServerCapabilities`, send `initialized`,
-  push default configuration (enables Pyright auto-imports), then flush queued requests.
+  push that server's own configuration, then flush queued requests.
+- **Settings are per server** (`lsp/LspServerSettings`), in both directions. The
+  `workspace/didChangeConfiguration` push goes only to a server Editora has settings for (`python`: the
+  `python.analysis` object; `java`: signature help, smart semicolon, on-type formatting) and every other
+  server gets **no push at all** — vscode-json-language-server reads any pushed object without
+  `json.validate.enable`, even `{}`, as "validation off". `workspace/configuration` is answered per server
+  and section: the Python server's `python` / `*.analysis` objects (always with `autoSearchPaths: true`
+  beside `autoImportCompletions`, because Pyright turns its default-on `src/` search path off as soon as an
+  `analysis` object without that key exists); `{}` for the CSS server's `css`/`scss`/`less` and the HTML
+  server's `css`/`html`/`javascript`, whose validators throw on `null`; and `null` for everything else —
+  including the HTML server's `js/ts`, where `{}` makes its JavaScript mode throw. A new server's sections
+  must be checked against the real server before anything other than `null` is answered.
 - **Startup preparation** runs on `lsp-start`: per-project JDT workspace directory creation and installed-JDK
   discovery never execute on the JavaFX routing path.
 - **One ordered writer.** LSP4J writes a message on the calling thread, and most callers are the FX thread.
@@ -128,13 +143,17 @@ implements `LanguageClient`, so it receives `publishDiagnostics`/log/show-messag
   them or throws. Each registration is applied on its own, so one unusable entry cannot abort the batch.
   Rename and code-action registrations keep their options object (`prepareProvider`, `codeActionKinds`)
   rather than being reduced to a Boolean. Diagnostic, semantic-token, inlay-hint, and folding refresh
-  requests immediately re-request data for managed open buffers; a capability change re-pushes every
+  requests are advertised (`workspace.*.refreshSupport` — servers send none without it) and re-request
+  data for managed open buffers, coalesced over a 100 ms window; semantic tokens and inlay hints are
+  re-requested for the active buffer only, the one their replies are applied to. A capability change re-pushes every
   buffer gate, including Go to Implementation / Type Definition.
 - **jdtls on-type formatting** is registered by the server only while `java.format.onType.enabled` is set.
   `Settings.lspOnTypeFormatting` is mirrored into it: in `initializationOptions`, in the configuration pushed
   after `initialized`, and again (to running Java sessions) when the setting flips. The opt-in
   `JdtlsDynamicRegistrationProbeTest` checks this, rename's `prepareProvider`, and semantic tokens against
-  a real jdtls.
+  a real jdtls. The on-type request is issued one pulse **after** the keystroke (the `KEY_TYPED` filter runs
+  before the character is inserted), and it and Tab's range-format re-indent flush the debounced `didChange`
+  first, so the server is asked about the line as it reads on screen.
 - **stderr must be drained.** A daemon thread (`drainStderr`) reads the server's stderr to EOF and
   logs the first 200 lines to the Debug Log. An undrained PIPE fills its ~64 KB OS buffer on a chatty
   server (jdtls logs heavily) and the server blocks mid-startup, deadlocking the handshake. Capturing
@@ -158,8 +177,10 @@ command. The dir is `jdtlsWorkspaceBase / workspaceDirName(root)`, where `worksp
 truncated SHA-256 of the root's absolute path (pure, unit-tested). `withDataDir` is a no-op if the
 user's configured command already specifies `-data`. The workspace persists across sessions so jdtls's
 index is reused. If a session dies before completing `initialize`, `LspManager` treats that data directory
-as suspect: it removes the rebuildable cache when the Eclipse lock is free, or writes a sidecar failure
-marker and selects a fresh suffixed directory when another process still owns the lock. Automatic crash
+as suspect: once the failed server's process has exited (bounded wait — the kill is non-blocking, and a
+dying JVM still holds the lock) it removes the rebuildable cache when the Eclipse lock is free, or writes a
+sidecar failure marker and selects a fresh suffixed directory when another process still owns the lock. A
+marker is re-tested on every later claim and removed with its cache as soon as the lock is free. Automatic crash
 restarts are scoped to the failed `(server, root)` pair so one broken project cannot deactivate or restart
 Java buffers belonging to another root. A deliberately disposed session keeps its workspace claim until its
 process has actually exited (it is given a moment to shut down cleanly, and still holds the Eclipse lock
@@ -265,6 +286,17 @@ cleanup on virtual threads; only RichTextFX mutation and tab/session bookkeeping
 Resource preflight includes dirty deletion targets, overwritten destinations, narrowed buffers, and buffers
 in other windows. Path changes retire the old URI before registering the new one.
 
+**Moved and deleted files are followed by buffer identity, not by path.** The open buffer for every rename
+source and delete target is resolved, with the buffer's own path, *before* the filesystem transaction —
+afterwards the file is gone, so the server's spelling of the old path can no longer be canonicalised, and
+when it differs from the tab's (a project opened through a symlink; `/tmp` on macOS) a second lookup finds
+nothing. The remap then uses the tab's own old path, closes the LSP document under that path, and writes the
+destination in the tab's spelling (`LspCoordinator.inSpellingOf`) so the tab stays under the project and
+LSP root it was opened in. A tab that changed or closed while the transaction was staging rolls the edit
+back; one that still did not follow its file is reported (`status.lsp.editTabNotRemapped`) and the edit is
+**not** reported as applied. `MainController.remapProjectFileLocal` looks the tab up before it clears the
+canonical-path cache for the same reason.
+
 **Targets the server did not have open** (a cross-file rename reaching a file with no tab, or a tab that was
 restored but never shown). jdtls sends a null version for every document, so these cannot be validated by
 version, and reading the file once the response is in would only bless whatever is there now. The preimage
@@ -273,9 +305,14 @@ closed target only when its modification time **predates the moment the request 
 content on disk is what the server computed from (`WorkspaceEditMapper.unchangedSince`; a whole-second
 timestamp needs a 2 s margin, since a coarse filesystem can record a later write as earlier). The file edit
 is marked `diskPreimageAt`, and the applier re-checks it against the buffer it loaded: no window has unsaved
-changes to the file, the buffer's recorded disk snapshot equals the file as it is now, and the file is still
-unmodified since the request. A version the server attaches to a document it never had open is dropped
-rather than compared. Anything that cannot be shown — an edit with no known request time, a changed, missing,
+changes to the file, the buffer's recorded disk snapshot equals the file as it is now **and carries a content
+fingerprint** (only a load or a save records one — "changed on disk → Keep" re-baselines time and size over a
+buffer that holds different text, and must not pass), and the file is still unmodified since the request. A version the server attaches to a document it never had open is dropped
+rather than compared. The check runs twice: on the FX thread **before anything is staged**, and again after
+staging, where a target the same edit also moves (jdtls's answer to renaming a class from a usage site:
+an edit to the declaring file plus a `RenameFile` of it) is examined at the **destination** the staged
+rename put it — a move keeps size and modification time, and the old path no longer exists. Anything that
+cannot be shown — an edit with no known request time, a changed, missing,
 unsaved or not-yet-loaded file — refuses the whole edit, and the blocking files are named in the status
 line (`status.lsp.editBlocked`) instead of a bare "Rename failed".
 
@@ -292,6 +329,19 @@ settings apply, and a save of the project file) re-runs `applySupport` when the 
 `syncBuffer` does the same when the window's project changed since the manager was configured, because a
 window learns its project after `init` has already run. The `lsp.setServerCommand` prompt is prefilled from
 the global value, never the project's, since it writes the global setting.
+
+**The Astro TypeScript SDK is under the same gate.** astro-ls refuses to initialize without
+`initializationOptions.typescript.tsdk` and loads — runs — the JavaScript in that directory, so the path
+Editora computes is a choice of code to execute, with or without a project settings file.
+`LspManager.astroTypeScriptSdk` takes the folder's own `node_modules/typescript/lib` only when the session
+root is trusted (`setFolderTrust`, wired to `TrustStore.isTrusted`), and the upward walk for hoisted
+workspaces stops at the topmost trusted ancestor (`trustedCeiling`) instead of running to the filesystem
+root. Otherwise it uses the SDK installed beside the resolved `astro-ls`, which is the user's own. An
+untrusted folder with no SDK beside the server gets **no server**: the session is dropped before the fork
+(no crash notice, no auto-restart) and the status line says why and names `lsp.trustProjectSettings`
+(`status.lsp.astroSdkUntrusted`). That command's prompt lists each folder SDK as an `astro: <dir>` line next
+to the project file's commands, and trusting restarts the Astro server so it picks the SDK up. Revoking
+trust does not stop a server that is already running; it applies from the next start.
 
 Save completion first synchronizes the current open document, then sends `didSave` with the exact transformed
 text written to disk when the server negotiated `includeText`; explicit and automatic saves share this path.
@@ -417,7 +467,15 @@ and dispatches `startLaunch(file, language, picker)`. Adapter `output` events re
 console's pump: a bounded queue, one scheduled drain at a time, a bounded slice per drain with neighbouring
 events joined into one append, and a "truncated" notice when the debuggee outruns the UI; the queue is
 flushed before a session ends so its last lines are not lost. Step Over/Into/Out put the state back to
-RUNNING until the next stop, exactly like Resume. Launch paths:
+RUNNING until the next stop, exactly like Resume — but only once the adapter *acknowledges* the step: a
+refused step (java-debug: "the thread is not suspended") leaves the session SUSPENDED and reports the
+adapter's message. `isStepping()` is true from the request to the next stop; `debug.start` treats that as
+the paused session it is (Continue), never as a running one to retarget. The manager also tracks *which*
+threads are stopped (`stopped.allThreadsStopped`, `continue`'s `allThreadsContinued`, `continued`
+events): java-debug suspends and resumes per thread, so after Continue on one of several stopped threads
+the next still-stopped thread is brought forward instead of reporting a running session. Restart goes
+through `DebugCoordinator.restart()`, which repeats the coordinator-level start (save, before-launch
+build, closed-file breakpoints) rather than only the adapter launch. Launch paths:
 
 - **java** → resolve main class (`vscode.java.resolveMainClass`) → `resolveClasspath` →
   `resolveJavaExecutable` → `startDebugSession` → connect the socket → `launch`. A loose file with

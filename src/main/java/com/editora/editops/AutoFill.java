@@ -30,15 +30,18 @@ public final class AutoFill {
         if (lineText == null || fillColumn < 1 || lineText.length() <= fillColumn) {
             return null;
         }
+        // Never break inside the fill prefix: the space after a "> " or "// " marker is not a word gap, and
+        // breaking there would re-break the same line on every keystroke.
+        int floor = fillPrefix != null && lineText.startsWith(fillPrefix) ? fillPrefix.length() : 0;
         int brk = -1;
-        for (int i = Math.min(fillColumn, lineText.length() - 1); i >= 0; i--) {
+        for (int i = Math.min(fillColumn, lineText.length() - 1); i >= floor; i--) {
             if (isSpaceOrTab(lineText.charAt(i))) {
                 brk = i;
                 break;
             }
         }
         if (brk < 0) {
-            for (int i = fillColumn + 1; i < lineText.length(); i++) {
+            for (int i = Math.max(fillColumn + 1, floor); i < lineText.length(); i++) {
                 if (isSpaceOrTab(lineText.charAt(i))) {
                     brk = i;
                     break;

@@ -99,6 +99,13 @@ public class SharedConfig {
     private SearchHistory searchHistory;
     private AgentSessionHistory agentSessions;
 
+    /**
+     * Whether the Local History index in memory is the one that was written — false when it failed to load, or
+     * while a backup of one that failed is still on disk. Blob GC is refused when false (see
+     * {@link #mayCollectHistoryBlobs}); read on the history worker.
+     */
+    private volatile boolean historyIndexIntact = true;
+
     /** What {@link #load()} could not read as written, held until a window shows it (see {@link #takeLoadProblems}). */
     private final List<ConfigLoadProblem> loadProblems = new ArrayList<>();
     /**
@@ -161,8 +168,15 @@ public class SharedConfig {
      * History view then listed revisions that opened empty. A secondary therefore never collects, and the
      * primary skips collection while a secondary is alive (its unreferenced blobs are picked up by the first
      * collection after it exits). Evaluated on the history worker immediately before deleting.
+     *
+     * <p>Nor while the index is not the one that was written ({@link HistoryIndexGuard}): the in-memory index
+     * is then missing revisions whose bodies are still on disk, and collecting against it would delete them
+     * all — leaving the kept {@code index.json…bak} pointing at nothing.
      */
     boolean mayCollectHistoryBlobs() {
+        if (!historyIndexIntact) {
+            return false;
+        }
         InstanceLock lock = instanceLock;
         return lock == null || (lock.primary() && !lock.othersPresent());
     }
@@ -800,13 +814,23 @@ public class SharedConfig {
     }
 
     private void loadHistory() {
-        if (Files.exists(getHistoryFile())) {
+        Path index = getHistoryFile();
+        int problemsBefore = loadProblems.size();
+        boolean lost = HistoryIndexGuard.lostIndex(index, getHistoryBlobsDir());
+        if (lost && Files.exists(index)) {
+            // Zero-length beside stored revision bodies: a write the OS never flushed, not "no history yet".
+            loadProblems.add(ConfigMigrations.unreadable(index));
+            historyStore = new HistoryStore();
+        } else if (Files.exists(index)) {
             // Reported, but never write-protected: the index publication protocol below must keep running.
             historyStore = ConfigMigrations.readVersioned(
-                    getHistoryFile(), json, new HistoryStore(), ConfigSchema.HISTORY, loadProblems::add);
+                    index, json, new HistoryStore(), ConfigSchema.HISTORY, loadProblems::add);
         } else {
             historyStore = new HistoryStore();
         }
+        // Decided after the read, which is what leaves a backup behind. The backup keeps protecting the
+        // bodies in later sessions, when the index this session writes loads cleanly.
+        historyIndexIntact = !lost && loadProblems.size() == problemsBefore && !HistoryIndexGuard.backupPresent(index);
         Set<String> loaded = HistoryRetention.liveHashes(historyStore.getByProject());
         synchronized (historyPublicationLock) {
             durableHistoryHashes = loaded;

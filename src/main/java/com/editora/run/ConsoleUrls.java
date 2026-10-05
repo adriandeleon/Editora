@@ -39,7 +39,9 @@ public final class ConsoleUrls {
         if (text == null || offset < 0 || offset >= text.length()) {
             return null;
         }
-        int lineStart = text.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
+        // Offset 0 is always on the first line — even when that line is empty (the text starts with '\n'),
+        // where searching back from index 0 found that newline and put the line start past its end.
+        int lineStart = offset == 0 ? 0 : text.lastIndexOf('\n', offset - 1) + 1;
         int lineEnd = text.indexOf('\n', offset);
         if (lineEnd < 0) {
             lineEnd = text.length();

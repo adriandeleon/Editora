@@ -295,7 +295,8 @@ public class KeyDispatcher {
         if (pending.isEmpty()
                 && !prefix
                 && isEditorContext(commandId) // checked first: plain typing must not walk the ancestor chain
-                && leftToFocusOwner(commandId, ownsKeys(event.getTarget()), inTextInput(event.getTarget()))) {
+                && (leftToFocusOwner(commandId, ownsKeys(event.getTarget()), inTextInput(event.getTarget()))
+                        || ownsChord(event.getTarget(), token, commandId))) {
             return; // let the focused window or field handle this editor-context key
         }
         // A key the focused component declared its own (the Project tree's F2 = rename file) wins over a
@@ -529,6 +530,36 @@ public class KeyDispatcher {
             node = node.getParent();
         }
         return false;
+    }
+
+    /**
+     * Node property for a component that takes over only a <em>few</em> editor chords while something
+     * transient is up over the editor (the completion popup, the quick-fix list): a
+     * {@code Map<String, String>} of chord token → the command id the component stands in for
+     * ({@code "C-n" -> "nav.lineDown"}: the list moves its selection instead of the caret). A chord is left
+     * to the component only while the keymap binds it to exactly that command, so every other binding —
+     * and the same chord under a keymap that gives it another meaning — is dispatched as usual.
+     * {@code editora.ownsKeys} is the wrong tool there: it yields <em>every</em> {@code nav.*}/{@code edit.*}
+     * chord, which then falls through to the text area's built-in bindings or types a character.
+     */
+    public static final String OWNED_CHORDS = "editora.ownsChords";
+
+    private static boolean ownsChord(EventTarget target, String token, String commandId) {
+        Node node = target instanceof Node n ? n : null;
+        while (node != null) {
+            if (node.hasProperties() && chordOwned(node.getProperties().get(OWNED_CHORDS), token, commandId)) {
+                return true;
+            }
+            node = node.getParent();
+        }
+        return false;
+    }
+
+    /** Whether an {@link #OWNED_CHORDS} property value hands {@code token} (bound to {@code commandId}) over. Pure. */
+    static boolean chordOwned(Object property, String token, String commandId) {
+        return property instanceof java.util.Map<?, ?> chords
+                && commandId != null
+                && commandId.equals(chords.get(token));
     }
 
     /**

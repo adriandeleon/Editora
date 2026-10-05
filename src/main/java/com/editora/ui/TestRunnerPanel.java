@@ -337,15 +337,26 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
         elapsed.setText(formatElapsed(ms));
     }
 
-    /** The run finished: final header + enable rerun / rerun-failed, disable stop. */
+    /**
+     * The run finished: final header + enable rerun / rerun-failed, disable stop. A non-zero {@code exitCode}
+     * with no failed test (a compile error, a crashed test JVM, a later module failing, Stop) is a failed run
+     * too — the leaves alone would read "N of N passed" — so it gets its own header and the failed style.
+     */
     void finishRun(TestRun run, int exitCode) {
         update(run);
         TestCounts counts = run.counts();
         setElapsed(run.elapsedMillis(0)); // finished → elapsedMillis ignores the arg and uses the stored finish time
-        status.setText(
-                counts.anyFailed()
-                        ? tr("testrunner.finishedFailed", counts.failedOrErrored(), counts.total())
-                        : tr("testrunner.finishedOk", counts.passed(), counts.total()));
+        boolean aborted = exitCode != 0 && !counts.anyFailed();
+        if (aborted) {
+            status.setText(tr("testrunner.finishedAborted", exitCode));
+            progress.setProgress(1); // an empty bar cannot show the failed colour (0 tests reported)
+            setProgressFailed(true);
+        } else {
+            status.setText(
+                    counts.anyFailed()
+                            ? tr("testrunner.finishedFailed", counts.failedOrErrored(), counts.total())
+                            : tr("testrunner.finishedOk", counts.passed(), counts.total()));
+        }
         rerunButton.setDisable(onRerun == null);
         rerunFailedButton.setDisable(!counts.anyFailed() || onRerunFailed == null);
         stopButton.setDisable(true);

@@ -29,6 +29,7 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.PathKeys;
 import com.editora.config.SharedConfig;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.LineEndings;
 import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.history.HistoryQueries;
 import com.editora.history.HistoryRetention;
@@ -233,8 +234,8 @@ final class HistoryCoordinator {
             }
 
             @Override
-            public void revert(HistoryRevision revision) {
-                restoreHistory(revision);
+            public void revert(HistoryRevision revision, Runnable done) {
+                restoreHistory(revision).whenComplete((result, failure) -> onFx(done));
             }
 
             @Override
@@ -364,7 +365,7 @@ final class HistoryCoordinator {
             return;
         }
         String key = historyKey(b.getPath());
-        int count = ops.historyMap().getOrDefault(key, List.of()).size();
+        int count = revisionsInEveryProject(key);
         if (count == 0) {
             host.setStatus(tr("status.history.nothingToPurge"));
             return;
@@ -373,9 +374,27 @@ final class HistoryCoordinator {
                 tr("dialog.history.purgeFile.confirm", count, b.getPath().getFileName()))) {
             return;
         }
-        // Re-read after the modal dialog: revisions recorded while it was open are purged too.
-        List<HistoryRevision> removed = ops.historyMap().remove(key);
-        finishPurge(removed == null ? 0 : removed.size());
+        // Re-read after the modal dialog: revisions recorded while it was open are purged too. Every
+        // project's bucket, not only this window's: the same file recorded from a No-Project window or an
+        // overlapping project kept its revisions (and its content on disk) while the status said "purged".
+        int removed = revisionsInEveryProject(key);
+        ops.historyMap().remove(key);
+        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
+            bucket.remove(key);
+        }
+        finishPurge(removed);
+    }
+
+    /** How many revisions of {@code key} are recorded, in this window's bucket and every other project's. */
+    private int revisionsInEveryProject(String key) {
+        Map<String, List<HistoryRevision>> own = ops.historyMap();
+        int count = own.getOrDefault(key, List.of()).size();
+        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
+            if (bucket != own) {
+                count += bucket.getOrDefault(key, List.of()).size();
+            }
+        }
+        return count;
     }
 
     /** Deletes every recorded revision of every file in the active project's history, after confirmation. */
@@ -719,6 +738,7 @@ final class HistoryCoordinator {
                                     finishDiskRestore(file, completion, RestoreResult.CONTENT_UNAVAILABLE);
                                     return;
                                 }
+                                recordBeforeOverwrite(file, target);
                                 byte[] replacement = restoredBytes(text, target.expectedBytes(), charsetRuleFor(file));
                                 if (!submitRestoreWork(
                                         completion,
@@ -730,6 +750,20 @@ final class HistoryCoordinator {
             ticket.close();
             finishDiskRestore(file, completion, RestoreResult.CONTENT_UNAVAILABLE);
         }
+    }
+
+    /**
+     * Records the file a disk restore is about to replace, as delete and replace-in-files do. Without it,
+     * content changed outside the editor since the last recorded save was gone once the user confirmed the
+     * overwrite. The text is captured here, from the bytes the write is conditional on.
+     */
+    private void recordBeforeOverwrite(Path file, TargetState target) {
+        byte[] current = target.existed() ? target.expectedBytes() : null;
+        if (current == null || com.editora.diff.BinaryDiff.isProbablyBinary(current)) {
+            return;
+        }
+        String text = LineEndings.toLf(decodeCaptured(current, charsetRuleFor(file)));
+        recordFor(file, text, HistoryRevision.REASON_EXTERNAL, "", false, null);
     }
 
     private void commitDiskRestore(
@@ -777,29 +811,42 @@ final class HistoryCoordinator {
     }
 
     /**
-     * The bytes a restored revision is written as: the charset the editor itself would use for that file —
-     * the BOM of the file being replaced wins, else its {@code .editorconfig} charset, else UTF-8 — falling
-     * back to UTF-8 only when the text has a character that charset cannot hold. Hard-coding UTF-8 here
-     * rewrote a Latin-1 or UTF-16 file in a different encoding as a side effect of restoring it.
+     * The bytes a restored revision is written as: the encoding of the file being replaced, read the way
+     * the editor reads it — its byte-order mark, else its {@code .editorconfig} charset, else UTF-8, else
+     * the lossless stand-in for bytes that charset cannot decode — and that file's line ending. Revisions
+     * hold the editor's {@code \n}-only text, so writing one verbatim turned a CRLF file into an LF one, and
+     * choosing the charset without looking at the bytes rewrote a BOM-less Windows-1252 file as UTF-8.
+     * A file that no longer exists (or has no line break to learn from) keeps the revision's own
+     * terminators, which a pre-delete capture preserves. UTF-8 is used only when the text has a character
+     * the charset cannot hold.
      *
      * @param existing the bytes currently at the path, or {@code null} when the file no longer exists
      */
     static byte[] restoredBytes(String text, byte[] existing, String editorConfigCharset) {
         String name = EditorConfigCharset.resolveName(existing, editorConfigCharset);
-        if (!EditorConfigCharset.canEncode(text, name)) {
+        String body = text;
+        if (existing != null) {
+            EditorConfigCharset.Decoded current = DiffSideText.decodeRaw(existing, editorConfigCharset, null);
+            name = current.charset();
+            if (current.text().indexOf('\n') >= 0 || current.text().indexOf('\r') >= 0) {
+                body = LineEndings.apply(LineEndings.toLf(text), LineEndings.dominant(current.text()));
+            }
+        }
+        if (!EditorConfigCharset.canEncode(body, name)) {
             name = EditorConfigCharset.UTF_8;
         }
-        return EditorConfigCharset.encode(text, name);
+        return EditorConfigCharset.encode(body, name);
     }
 
     /**
      * Decodes a file captured just before deletion the way the editor would have read it (BOM, then the
-     * {@code .editorconfig} charset, then UTF-8). The history store keeps text, so decoding a Latin-1 or
-     * UTF-16 file as UTF-8 here replaced every non-ASCII character with U+FFFD in what may be the only
-     * copy left.
+     * {@code .editorconfig} charset, then UTF-8, then the editor's lossless stand-in when the bytes are not
+     * valid in that charset). The history store keeps text, so a decode that substitutes U+FFFD destroyed
+     * every non-ASCII character in what may be the only copy left. Line terminators are kept as they were:
+     * nothing else records them once the file is gone.
      */
     static String decodeCaptured(byte[] bytes, String editorConfigCharset) {
-        return EditorConfigCharset.decode(bytes, EditorConfigCharset.resolveName(bytes, editorConfigCharset));
+        return DiffSideText.decodeRaw(bytes, editorConfigCharset, null).text();
     }
 
     private boolean confirmRestoreOverwrite(Path file) {

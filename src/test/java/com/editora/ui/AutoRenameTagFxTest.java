@@ -31,8 +31,6 @@ class AutoRenameTagFxTest {
             b.setContent(text);
             b.setAutoRenameTag(true);
             b.getNode();
-            CodeArea area = FxTestSupport.field(b, "area");
-            area.getUndoManager().forgetHistory(); // the initial setContent must not be undoable in tests
             return b;
         });
     }
@@ -219,6 +217,39 @@ class AutoRenameTagFxTest {
             }
         });
         assertEquals("<div>text</div>", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void oneUndoRevertsTheKeystrokeAndItsMirrorTogether() throws Exception {
+        EditorBuffer b = htmlBuffer("<div>text</div>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.moveTo(4);
+            area.replaceText(4, 4, "x");
+            area.replaceText(5, 5, "y");
+        });
+        assertEquals("<divxy>text</divxy>", FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> ((CodeArea) FxTestSupport.field(b, "area")).undo());
+        assertEquals("<divx>text</divx>", FxTestSupport.callOnFx(b::getContent), "never <divx>…</divxy>");
+        FxTestSupport.runOnFx(() -> ((CodeArea) FxTestSupport.field(b, "area")).undo());
+        assertEquals("<div>text</div>", FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> ((CodeArea) FxTestSupport.field(b, "area")).redo());
+        assertEquals("<divx>text</divx>", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void typingANewTagDoesNotRenameTheEnclosingElementsCloser() throws Exception {
+        // <p … <pr| <em>: the half-typed <pr is a new tag on its way to <pre>, not a rename of <p>.
+        EditorBuffer b = htmlBuffer("<p>Intro <em>x</em> and code: done.</p>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.moveTo(9);
+            for (String ch : new String[] {"<", "p", "r", "e", ">"}) {
+                int at = area.getCaretPosition();
+                area.replaceText(at, at, ch);
+            }
+        });
+        assertEquals("<p>Intro <pre><em>x</em> and code: done.</p>", FxTestSupport.callOnFx(b::getContent));
     }
 
     @Test

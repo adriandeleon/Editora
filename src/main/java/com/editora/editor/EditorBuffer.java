@@ -201,6 +201,11 @@ public class EditorBuffer implements TabContent {
         }
 
         @Override
+        public int snippetDepth() {
+            return snippetSession.depth();
+        }
+
+        @Override
         public void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
             EditorBuffer.this.startSnippet(a, snippet, from, to, reindent);
         }
@@ -501,7 +506,7 @@ public class EditorBuffer implements TabContent {
     private javafx.scene.control.ContextMenu previewContextMenu;
     private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
-    private final SnippetSessions snippetSession = new SnippetSessions();
+    private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */
@@ -1629,8 +1634,10 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
-        Commenter.Edit edit = Commenter.toggle(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), Commenter.styleFor(language));
+        // A collapsed header is commented together with its (then expanded) body.
+        int[] span = folds.expandHeaderSpan(
+                a.getSelection().getStart(), a.getSelection().getEnd());
+        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], Commenter.styleFor(language));
         if (edit == null) {
             return false;
         }
@@ -1897,7 +1904,9 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         String sel = a.getSelectedText();
         boolean fromSelection = sel != null && !sel.isBlank();
-        String csv = fromSelection ? sel : Clipboard.getSystemClipboard().getString();
+        String csv = fromSelection
+                ? sel
+                : LineEndings.toLf(Clipboard.getSystemClipboard().getString());
         if (csv == null || csv.isBlank()) {
             return false;
         }
@@ -5427,7 +5436,7 @@ public class EditorBuffer implements TabContent {
     /**
      * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
      * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
-     * matching. Returns the number of carets placed (0 when there's nothing to match).
+     * matching (whole-word when seeded from the caret's word). Returns the number of carets placed (0 when there's nothing to match).
      */
     public int selectAllOccurrences() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -5446,7 +5455,8 @@ public class EditorBuffer implements TabContent {
             query = text.substring(w[0], w[1]);
             anchor = w[0];
         }
-        List<int[]> matches = SearchMatcher.matches(text, query, true, false, false);
+        // A query seeded from the word under a bare caret matches whole words only (id, not valid / width).
+        List<int[]> matches = SearchMatcher.matches(text, query, true, false, sel.isEmpty());
         return placeOccurrenceCarets(matches, anchor);
     }
 
@@ -5552,8 +5562,9 @@ public class EditorBuffer implements TabContent {
     public void copyCurrentLine() {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int p = a.getCurrentParagraph();
+        int q = folds.hiddenRunEnd(p); // a collapsed fold's header takes its hidden body along
         javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(a.getParagraph(p).getText() + "\n");
+        content.putString(a.getText(p, 0, q, a.getParagraphLength(q)) + "\n");
         Clipboard.getSystemClipboard().setContent(content);
     }
 
@@ -5562,18 +5573,19 @@ public class EditorBuffer implements TabContent {
     public void cutCurrentLine() {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int p = a.getCurrentParagraph();
+        int q = folds.hiddenRunEnd(p); // a collapsed fold's header takes its hidden body along
         javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(a.getParagraph(p).getText() + "\n");
+        content.putString(a.getText(p, 0, q, a.getParagraphLength(q)) + "\n");
         Clipboard.getSystemClipboard().setContent(content);
         int total = a.getParagraphs().size();
         int start;
         int end;
-        if (p < total - 1) { // not the last line: take this line plus its trailing newline
+        if (q < total - 1) { // not the last line: take this line plus its trailing newline
             start = a.getAbsolutePosition(p, 0);
-            end = a.getAbsolutePosition(p + 1, 0);
-        } else if (total > 1) { // last line: take the preceding newline plus this line
+            end = a.getAbsolutePosition(q + 1, 0);
+        } else if (p > 0) { // last line: take the preceding newline plus this line
             start = a.getAbsolutePosition(p - 1, a.getParagraph(p - 1).length());
-            end = a.getAbsolutePosition(p, a.getParagraph(p).length());
+            end = a.getAbsolutePosition(q, a.getParagraph(q).length());
         } else { // only line in the buffer: clear it
             start = 0;
             end = a.getLength();
@@ -6940,28 +6952,22 @@ public class EditorBuffer implements TabContent {
         return reanchored;
     }
 
-    /** 0-based line currently highlighted as the debugger's execution point, or -1 when none. */
-    private int executionLine = -1;
+    /** The debugger's execution-point highlight (see {@link ExecutionLine}). */
+    private final ExecutionLine executionLine = new ExecutionLine();
 
     /**
      * Marks {@code line} as the current execution point (a distinct paragraph background) and scrolls/moves
      * the caret there so the built-in current-line highlight reinforces it. Clears any previous mark.
      */
     public void setExecutionLine(int line) {
-        clearExecutionLine();
-        if (line >= 0 && line < area.getParagraphs().size()) {
-            executionLine = line;
-            area.setParagraphStyle(line, java.util.List.of("exec-line"));
+        if (executionLine.set(area, folds, line)) {
             jumpToLine(line);
         }
     }
 
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
-        if (executionLine >= 0 && executionLine < area.getParagraphs().size()) {
-            area.setParagraphStyle(executionLine, java.util.Collections.emptyList());
-        }
-        executionLine = -1;
+        executionLine.clear(area);
     }
 
     /** The extra glyph CSS-class suffix for the breakpoint on {@code line} (disabled/logpoint/conditional). */
@@ -8508,7 +8514,9 @@ public class EditorBuffer implements TabContent {
             // state the server's answer is expressed in. Never consumes, so the char inserts as normal.
             maybeSmartSemicolon(a, typed); // #746
             applyCloserDedent(a, typed);
-            maybeOnTypeFormat(a, typed); // #740 — after the local assist, which usually already got it right
+            // #740. Deferred: this filter runs BEFORE the character is inserted, and both the request's
+            // position and its staleness baseline must describe the line with the character in it.
+            Platform.runLater(() -> maybeOnTypeFormat(a, typed));
         });
     }
 
@@ -8610,7 +8618,7 @@ public class EditorBuffer implements TabContent {
      * leaves the line already correct.
      */
     private void maybeOnTypeFormat(CodeArea a, char typed) {
-        if (!onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
+        if (disposed || !onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
             return;
         }
         if (!lspOnTypeTriggers.contains(typed)) {
@@ -8626,6 +8634,9 @@ public class EditorBuffer implements TabContent {
         int par = a.getCurrentParagraph();
         String line = a.getParagraph(par).getText();
         int caret = a.getCaretPosition();
+        if (a.getCaretColumn() == 0 || line.charAt(a.getCaretColumn() - 1) != typed) {
+            return; // the keystroke did not insert its character after all
+        }
         long gen = ++reindentGen; // shares the Tab re-indent's generation: both adjust the same line's indent
         lspOnTypeFormatter.format(par, a.getCaretColumn(), typed, edits -> {
             if (gen != reindentGen
@@ -8754,7 +8765,7 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
+        String aligned = Indenter.closerAlignIndent(style, a.getText(), caret, tabSize, currentIndent);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
@@ -9030,7 +9041,8 @@ public class EditorBuffer implements TabContent {
                 : path.toAbsolutePath().getParent().toString();
         String filePath = path == null ? "" : path.toAbsolutePath().toString();
         String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
-                ? javafx.scene.input.Clipboard.getSystemClipboard().getString()
+                ? LineEndings.toLf(
+                        javafx.scene.input.Clipboard.getSystemClipboard().getString())
                 : "";
         int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();
@@ -9039,7 +9051,11 @@ public class EditorBuffer implements TabContent {
                 new VariableResolver(fileName, directory, filePath, a.getSelectedText(), clip, line, currentLine);
         ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
-        snippetSession.start(a, parsed, from, to, indent);
+        // asIs (no reindent) keeps the text untouched; otherwise the body's tabs become the buffer's unit.
+        String unit = reindent
+                ? Indenter.unitFor(a.getText(), tabSize, indentInsertSpacesOverride, indentSizeOverride)
+                : null;
+        snippetSession.start(a, parsed, from, to, indent, unit);
     }
 
     /**
@@ -9211,6 +9227,7 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int caretBefore = a.getCaretPosition();
         int anchorBefore = a.getAnchor();
+        LspEditView.Before view = preserveCaret ? null : LspEditView.capture(a);
         // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
         // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
         // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
@@ -9246,7 +9263,7 @@ public class EditorBuffer implements TabContent {
         }
         if (ranges.size() == 1) {
             a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
-            restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
+            restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
             return;
         }
         // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
@@ -9261,18 +9278,19 @@ public class EditorBuffer implements TabContent {
             builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
         }
         builder.commit(); // one undo unit for the whole edit set
-        restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
+        restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
     }
 
     /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
     private static void restoreCaretAfterEdits(
             CodeArea a,
-            boolean preserveCaret,
+            LspEditView.Before view,
             int caretBefore,
             int anchorBefore,
             java.util.List<int[]> ranges,
             java.util.List<String> texts) {
-        if (!preserveCaret) {
+        if (view != null) {
+            LspEditView.restore(a, view, ranges, texts); // format / quick fix / rename: see LspEditView
             return;
         }
         int target = LspEditShift.caretAfterEdits(caretBefore, ranges, texts);
@@ -9376,6 +9394,8 @@ public class EditorBuffer implements TabContent {
         } else {
             area.replaceText(initial);
         }
+        forgetHistoryAtNarrowBoundary(); // the load is the baseline, not an undo step: undoing it emptied the file
+        captureUndoCheckpoint(); // ...and the Undo History baseline is the loaded text, not the loading shell
         refilter.run();
         dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)

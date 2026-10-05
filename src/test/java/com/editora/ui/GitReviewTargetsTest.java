@@ -49,4 +49,14 @@ class GitReviewTargetsTest {
     void absentRepositoryHasNoReviewTargets() {
         assertEquals(List.of(), DiffCoordinator.gitReviewTargets(GitStatus.NOT_A_REPO, false));
     }
+
+    /** The Commit window's Show Diff reads a staged rename's HEAD side from the old path, as the review does. */
+    @Test
+    void aStagedRowsLeftSideIsItsRenameSource() {
+        assertEquals("original.java", DiffCoordinator.leftSourcePath(STATUS, "renamed.java", true));
+        assertEquals("staged.txt", DiffCoordinator.leftSourcePath(STATUS, "staged.txt", true));
+        assertEquals("renamed.java", DiffCoordinator.leftSourcePath(STATUS, "renamed.java", false));
+        assertEquals("gone.txt", DiffCoordinator.leftSourcePath(STATUS, "gone.txt", true));
+        assertEquals("x.txt", DiffCoordinator.leftSourcePath(null, "x.txt", true));
+    }
 }

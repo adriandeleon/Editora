@@ -160,4 +160,137 @@ class SnippetTabStopShiftFxTest {
             return null;
         });
     }
+
+    // --- stops that contain, or coincide with, the range being edited ---
+
+    /** Types into a mirrored field the way the editor's KEY_TYPED filter does. */
+    private static void typeMirrored(CodeArea area, SnippetSession session, String text) {
+        for (int i = 0; i < text.length(); i++) {
+            assertTrue(session.replaceInActiveField(
+                    area.getSelection().getStart(), area.getSelection().getEnd(), String.valueOf(text.charAt(i))));
+        }
+    }
+
+    @Test
+    void aStopWhoseDefaultMirrorsAnotherStillSelectsTheMirroredText() throws Exception {
+        String body = bundled("python", "property"); // @${4:$1}.setter / def ${5:$1}(self, value):
+        onFx(() -> {
+            CodeArea area = new CodeArea();
+            SnippetSession session = new SnippetSession(area, SnippetParser.parse(body, n -> null), 0, 0, "");
+            typeMirrored(area, session, "size");
+            session.next(); // $2
+            session.next(); // $3
+            session.next(); // $4
+            assertEquals("size", area.getSelectedText(), "$4 covers the mirror it wraps");
+            session.next(); // $5
+            assertEquals("size", area.getSelectedText(), "and so does $5");
+            return null;
+        });
+    }
+
+    @Test
+    void anEmptyMirrorInsideAStopGrowsThatStop() throws Exception {
+        onFx(() -> {
+            CodeArea area = new CodeArea();
+            SnippetSession session = new SnippetSession(area, SnippetParser.parse("$1 ${2:$1}", n -> null), 0, 0, "");
+            typeMirrored(area, session, "xy");
+            assertEquals("xy xy", area.getText());
+            session.next();
+            assertEquals(3, area.getSelection().getStart());
+            assertEquals("xy", area.getSelectedText(), "$2 was not pushed past the mirror it contains");
+            return null;
+        });
+    }
+
+    @Test
+    void theReactiveMirrorPathKeepsTheEnclosingStopToo() throws Exception {
+        onFx(() -> {
+            CodeArea area = new CodeArea();
+            SnippetSession session =
+                    new SnippetSession(area, SnippetParser.parse("${1:a} ${2:$1}", n -> null), 0, 0, "");
+            area.replaceSelection(""); // Backspace over the selected placeholder: both occurrences empty
+            assertEquals(" ", area.getText());
+            area.replaceSelection("pasted"); // a paste: not intercepted, mirrored reactively
+            assertEquals("pasted pasted", area.getText());
+            session.next();
+            assertEquals("pasted", area.getSelectedText());
+            assertEquals(7, area.getSelection().getStart());
+            return null;
+        });
+    }
+
+    @Test
+    void aFinalStopWrappingATransformIsSelectedWhole() throws Exception {
+        String body = bundled("powershell", "foreach-item"); // ${0:${1/(.*)/$1Item/}} … in ${1:collection}
+        onFx(() -> {
+            CodeArea area = new CodeArea();
+            SnippetSession session = new SnippetSession(area, SnippetParser.parse(body, n -> null), 0, 0, "");
+            typeMirrored(area, session, "$users");
+            session.next(); // past the only field → $0
+            assertFalse(session.isActive());
+            assertEquals("$usersItem", area.getSelectedText(), "the final placeholder is selected, not skipped");
+            return null;
+        });
+    }
+
+    @Test
+    void typingOverAFieldDoesNotRetireTheStopAroundIt() throws Exception {
+        onFx(() -> {
+            CodeArea area = new CodeArea();
+            SnippetSession session =
+                    new SnippetSession(area, SnippetParser.parse("${2:${1:foo}} ${3:end}", n -> null), 0, 0, "");
+            assertEquals("foo", area.getSelectedText());
+            type(area, "x");
+            session.next();
+            assertEquals("x", area.getSelectedText(), "$2 — same extent as $1, but around it — is still visited");
+            assertEquals(0, area.getSelection().getStart());
+            session.next();
+            assertEquals("end", area.getSelectedText());
+            return null;
+        });
+    }
+
+    @Test
+    void textTypedInAStopNestedAtTheStartStaysInsideItsParent() throws Exception {
+        onFx(() -> {
+            CodeArea area = new CodeArea();
+            SnippetSession session =
+                    new SnippetSession(area, SnippetParser.parse("f(${2:${1}foo})", n -> null), 0, 0, "");
+            type(area, "x");
+            session.next();
+            assertEquals("xfoo", area.getSelectedText());
+
+            area = new CodeArea();
+            session = new SnippetSession(area, SnippetParser.parse("${1:${2:void} name}", n -> null), 0, 0, "");
+            session.next(); // $2, "void"
+            area.replaceSelection("");
+            type(area, "int");
+            session.previous();
+            assertEquals("int name", area.getSelectedText());
+            return null;
+        });
+    }
+
+    @Test
+    void emptyStopsAtTheSameOffsetKeepTheirOrder() throws Exception {
+        onFx(() -> {
+            CodeArea area = new CodeArea();
+            SnippetSession session = new SnippetSession(area, SnippetParser.parse("a$1$2b", n -> null), 0, 0, "");
+            session.next(); // $2
+            type(area, "x");
+            session.previous(); // $1, in front of it
+            type(area, "y");
+            assertEquals("ayxb", area.getText());
+
+            area = new CodeArea();
+            session = new SnippetSession(area, SnippetParser.parse("a$2$1b", n -> null), 0, 0, "");
+            type(area, "x"); // $1, the second in the document
+            session.next(); // $2, in front of it
+            type(area, "y");
+            assertEquals("ayxb", area.getText());
+            session.previous();
+            assertEquals("x", area.getSelectedText());
+            return null;
+        });
+    }
 }

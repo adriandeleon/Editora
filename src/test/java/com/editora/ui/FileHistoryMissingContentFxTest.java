@@ -62,7 +62,7 @@ class FileHistoryMissingContentFxTest {
                 }
 
                 @Override
-                public void revert(HistoryRevision revision) {}
+                public void revert(HistoryRevision revision, Runnable done) {}
 
                 @Override
                 public void applyToLocalIfUnchanged(

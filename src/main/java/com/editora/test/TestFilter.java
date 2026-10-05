@@ -92,10 +92,17 @@ public record TestFilter(Set<Bucket> buckets, String query) {
         return matchesQuery(test);
     }
 
-    /** Whether a suite row is shown: only when at least one of its tests survives the filter. */
+    /**
+     * Whether a suite row is shown: only when at least one of its tests survives the filter. A suite with no
+     * tests at all is a message row (the npm "structured results unavailable" banner), not a filtered-out
+     * class, so it is shown whenever nothing is being hidden.
+     */
     public boolean acceptsSuite(TestNode suite) {
         if (suite == null) {
             return false;
+        }
+        if (suite.children().isEmpty()) {
+            return !isActive();
         }
         for (TestNode child : suite.children()) {
             if (acceptsTest(child)) {

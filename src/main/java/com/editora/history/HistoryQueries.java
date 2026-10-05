@@ -88,6 +88,9 @@ public final class HistoryQueries {
         if (key == null || !key.startsWith(folder) || key.length() == folder.length()) {
             return false;
         }
+        if (folder.endsWith("/") || folder.endsWith("\\")) {
+            return true; // the folder is a filesystem root ("/"): its own separator is the boundary
+        }
         char sep = key.charAt(folder.length());
         return sep == '/' || sep == '\\';
     }

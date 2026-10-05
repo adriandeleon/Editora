@@ -128,41 +128,81 @@ class LspManagerTest {
         assertNull(LspManager.initOptionsFor(null, List.of()));
     }
 
+    private java.nio.file.Path typeScriptSdkIn(java.nio.file.Path dir, String marker) throws Exception {
+        var sdk = dir.resolve("node_modules/typescript/lib");
+        java.nio.file.Files.createDirectories(sdk);
+        java.nio.file.Files.createFile(sdk.resolve(marker));
+        return sdk;
+    }
+
     @SuppressWarnings("unchecked")
     @Test
-    void astroInitOptionsUseProjectTypeScriptSdk() throws Exception {
-        var sdk = tempDir.resolve("node_modules/typescript/lib");
-        java.nio.file.Files.createDirectories(sdk);
-        java.nio.file.Files.createFile(sdk.resolve("typescript.js"));
+    void astroInitOptionsCarryTheChosenTypeScriptSdk() throws Exception {
+        var sdk = typeScriptSdkIn(tempDir, "typescript.js");
 
-        var options = (Map<String, Object>)
-                LspManager.initOptionsFor("astro", List.of(), tempDir, List.of("astro-ls", "--stdio"));
+        var options = (Map<String, Object>) LspManager.initOptionsFor("astro", List.of(), sdk, false);
         var typescript = (Map<String, Object>) options.get("typescript");
 
         assertEquals(sdk.toString(), typescript.get("tsdk"));
+        assertNull(LspManager.initOptionsFor("astro", List.of()), "no SDK, no options: the server is not started");
+    }
+
+    /** astro-ls runs the JavaScript in the SDK directory, so an untrusted folder must not supply it. */
+    @Test
+    void anUntrustedFolderDoesNotSupplyTheAstroTypeScriptSdk() throws Exception {
+        typeScriptSdkIn(tempDir, "typescript.js");
+
+        assertNull(LspManager.astroTypeScriptSdk(tempDir, null, List.of()));
+        assertNull(LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), null, List.of()));
     }
 
     @Test
-    void astroSdkDiscoveryWalksUpForHoistedTypeScript() throws Exception {
-        var sdk = tempDir.resolve("node_modules/typescript/lib");
-        java.nio.file.Files.createDirectories(sdk);
-        java.nio.file.Files.createFile(sdk.resolve("tsserverlibrary.js"));
+    void aTrustedFolderSuppliesItsOwnAstroTypeScriptSdk() throws Exception {
+        var sdk = typeScriptSdkIn(tempDir, "typescript.js");
 
-        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), List.of()));
+        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir, tempDir, List.of()));
     }
 
+    @Test
+    void astroSdkDiscoveryWalksUpForHoistedTypeScriptInsideTheTrustedFolder() throws Exception {
+        var sdk = typeScriptSdkIn(tempDir, "tsserverlibrary.js");
+
+        assertEquals(sdk, LspManager.astroTypeScriptSdk(tempDir.resolve("packages/site"), tempDir, List.of()));
+    }
+
+    /** Only {@code packages} is trusted: the walk must not pick up the SDK of the untrusted folder above it. */
+    @Test
+    void astroSdkDiscoveryStopsAtTheTrustedFolder() throws Exception {
+        typeScriptSdkIn(tempDir, "typescript.js");
+        var site = tempDir.resolve("packages/site");
+
+        assertEquals(
+                site.resolve("node_modules/typescript/lib"),
+                LspManager.astroTypeScriptSdk(site, tempDir.resolve("packages"), List.of()));
+        assertNull(LspManager.findTypeScriptSdk(site, tempDir.resolve("packages")));
+    }
+
+    @Test
+    void trustedCeilingIsTheTopmostTrustedAncestor() {
+        var trusted = tempDir.resolve("work");
+        var root = trusted.resolve("packages/site");
+
+        assertEquals(trusted, LspManager.trustedCeiling(root, p -> p.startsWith(trusted)));
+        assertNull(LspManager.trustedCeiling(root, p -> false));
+        assertNull(LspManager.trustedCeiling(null, p -> true));
+    }
+
+    /** The SDK beside the installed server is the user's own, so it serves trusted and untrusted folders. */
     @Test
     void astroSdkDiscoveryFallsBackBesideGlobalServer() throws Exception {
         var server = tempDir.resolve("lib/node_modules/@astrojs/language-server/bin/nodeServer.js");
         java.nio.file.Files.createDirectories(server.getParent());
         java.nio.file.Files.createFile(server);
-        var sdk = tempDir.resolve("lib/node_modules/typescript/lib");
-        java.nio.file.Files.createDirectories(sdk);
-        java.nio.file.Files.createFile(sdk.resolve("typescript.js"));
+        var sdk = typeScriptSdkIn(tempDir.resolve("lib"), "typescript.js");
+        var project = tempDir.resolve("project");
+        typeScriptSdkIn(project, "typescript.js");
 
-        assertEquals(
-                sdk.toRealPath(),
-                LspManager.astroTypeScriptSdk(tempDir.resolve("project"), List.of(server.toString())));
+        assertEquals(sdk.toRealPath(), LspManager.astroTypeScriptSdk(project, null, List.of(server.toString())));
     }
 
     @Test

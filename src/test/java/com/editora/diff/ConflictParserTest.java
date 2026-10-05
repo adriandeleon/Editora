@@ -147,4 +147,44 @@ class ConflictParserTest {
         assertEquals(List.of(">>>>>>>>>> still theirs"), c.theirs());
         assertEquals("feature", c.theirsLabel());
     }
+
+    /** gitattributes' {@code conflict-marker-size}: longer markers are markers when the whole set matches. */
+    @Test
+    void recognisesMarkersWrittenWithALargerConflictMarkerSize() {
+        List<String> lines = List.of(
+                "# Title",
+                "<<<<<<<<<<<< HEAD",
+                "Ours",
+                "=======",
+                "|||||||||||| base",
+                "Was",
+                "============",
+                "Theirs",
+                ">>>>>>> not the end",
+                ">>>>>>>>>>>> feature",
+                "tail");
+        assertTrue(ConflictParser.hasConflictMarkers(String.join("\n", lines)));
+
+        ConflictFile file = ConflictParser.parse(lines);
+        assertEquals(1, file.conflictCount());
+        Conflict c = ((ConflictSegment) file.segments().get(1)).conflict();
+        assertEquals(12, c.markerSize());
+        assertEquals("HEAD", c.oursLabel());
+        assertEquals(List.of("Ours", "======="), c.ours());
+        assertEquals(List.of("Was"), c.base());
+        assertEquals(List.of("Theirs", ">>>>>>> not the end"), c.theirs());
+        assertEquals("feature", c.theirsLabel());
+        // Unresolved conflicts go back with the markers they came with.
+        assertEquals(lines, ConflictParser.resolve(file, List.of(Choice.UNRESOLVED)));
+        assertEquals(
+                List.of("# Title", "Theirs", ">>>>>>> not the end", "tail"),
+                ConflictParser.resolve(file, List.of(Choice.THEIRS)));
+    }
+
+    @Test
+    void aLongRunOfOpeningCharactersWithoutItsClosingMarkersIsText() {
+        List<String> lines = List.of("<<<<<<<<<<<< decoration", "text", "============", "more");
+        assertFalse(ConflictParser.hasConflictMarkers(String.join("\n", lines)));
+        assertEquals(0, ConflictParser.parse(lines).conflictCount());
+    }
 }

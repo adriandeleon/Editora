@@ -208,8 +208,20 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     /** The current structure as a flat, document-order list (for the Jump-to-Structure picker). */
     public List<Outline> outline() {
         List<Outline> out = new ArrayList<>();
-        collectOutline(roots, out);
+        // While the tool window is closed the tree is not rebuilt (#549), so {@code roots} is empty or still
+        // the outline of whichever file was active when it was last open. The picker is the keyboard "go to
+        // symbol in file" and has to work with the window closed: compute the model for this request.
+        collectOutline(pendingRebuild ? computeRoots() : roots, out);
         return out;
+    }
+
+    /** The structure model for the attached buffer: the LSP outline when there is one, else the heuristic. */
+    private List<StructureNode> computeRoots() {
+        if (buffer == null) {
+            return new ArrayList<>(); // mutable: sortNodes sorts roots in place (a diff/Welcome tab has no buffer)
+        }
+        // LSP-served file: precise hierarchy + kinds; fallback: fold-region nesting + TextMate-scope names.
+        return lspSymbols != null ? fromLsp(lspSymbols) : buildNodes();
     }
 
     private static void collectOutline(List<StructureNode> nodes, List<Outline> out) {
@@ -472,13 +484,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             return;
         }
         pendingRebuild = false;
-        if (buffer == null) {
-            roots = new ArrayList<>(); // mutable: sortNodes sorts roots in place (a diff/Welcome tab has no buffer)
-        } else if (lspSymbols != null) {
-            roots = fromLsp(lspSymbols); // LSP-served file: precise hierarchy + kinds
-        } else {
-            roots = buildNodes(); // fallback: fold-region nesting + TextMate-scope names
-        }
+        roots = computeRoots();
         attachDocs(roots);
         attachSyntaxStyles(roots);
         sortNodes(roots);
@@ -975,6 +981,11 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
         boolean haveSymbols = !symbolByLine.isEmpty();
         boolean brace = isBraceLanguage(buffer.getLanguage());
+        if (regions.isEmpty() && haveSymbols) {
+            // No delimiter folding for this language (python, ruby, shell, lua, yaml, ini …): there are no
+            // regions to hang the symbols on, and the outline used to come out empty. Nest by indentation.
+            return symbolNodes(area, symbolByLine, paras);
+        }
 
         List<StructureNode> rootNodes = new ArrayList<>();
         Deque<StructureNode> stack = new ArrayDeque<>();
@@ -1034,6 +1045,14 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     }
                     probe--;
                 }
+            } else if (symbol == null && brace) {
+                // A signature wrapped over several lines: the name is on the line that opened the
+                // parameter list, the region starts on the line that closes it (`String language) {`).
+                int opener = signatureStartLine(i -> area.getParagraph(i).getText(), start);
+                if (opener >= 0 && symbolByLine.get(opener) != null) {
+                    symbol = symbolByLine.get(opener);
+                    line = opener;
+                }
             }
             if (symbol == null) {
                 return null;
@@ -1043,6 +1062,70 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         // No grammar/symbols: keep the old header-text label and show every region.
         String text = area.getParagraph(start).getText().trim();
         return new StructureNode(r, text.isEmpty() ? "line " + (start + 1) : text, null, start);
+    }
+
+    /** How far above a block's opening line the start of its wrapped signature is looked for. */
+    private static final int MAX_SIGNATURE_LINES = 40;
+
+    /**
+     * The line that opened the parameter list which {@code braceLine} closes, or -1 when {@code braceLine}
+     * does not close one. Only a header with more {@code )} than {@code (} qualifies, so an ordinary
+     * {@code if (x) &#123;} or a lambda argument never borrows the symbol of a line above it.
+     */
+    static int signatureStartLine(java.util.function.IntFunction<String> lineText, int braceLine) {
+        String header = lineText.apply(braceLine);
+        int balance = parenBalance(header);
+        if (balance >= 0 || header.strip().startsWith("}")) {
+            return -1;
+        }
+        for (int line = braceLine - 1; line >= 0 && braceLine - line <= MAX_SIGNATURE_LINES; line--) {
+            balance += parenBalance(lineText.apply(line));
+            if (balance >= 0) {
+                return line;
+            }
+        }
+        return -1;
+    }
+
+    private static int parenBalance(String line) {
+        int balance = 0;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '(') {
+                balance++;
+            } else if (c == ')') {
+                balance--;
+            }
+        }
+        return balance;
+    }
+
+    /** An outline built from the symbols alone, nested by each symbol line's indentation. */
+    private static List<StructureNode> symbolNodes(CodeArea area, Map<Integer, Symbol> symbolByLine, int paras) {
+        List<StructureNode> rootNodes = new ArrayList<>();
+        Deque<StructureNode> stack = new ArrayDeque<>();
+        Deque<Integer> indents = new ArrayDeque<>();
+        for (int line : new java.util.TreeSet<>(symbolByLine.keySet())) {
+            if (line < 0 || line >= paras) {
+                continue;
+            }
+            Symbol symbol = symbolByLine.get(line);
+            String text = area.getParagraph(line).getText();
+            int indent = text.length() - text.stripLeading().length();
+            while (!indents.isEmpty() && indents.peek() >= indent) {
+                indents.pop();
+                stack.pop();
+            }
+            StructureNode node = new StructureNode(null, symbol.name(), symbol.kind(), line);
+            if (stack.isEmpty()) {
+                rootNodes.add(node);
+            } else {
+                stack.peek().children().add(node);
+            }
+            stack.push(node);
+            indents.push(indent);
+        }
+        return rootNodes;
     }
 
     /** Whether an Allman-style opening delimiter may take its declaration symbol from a preceding line. */

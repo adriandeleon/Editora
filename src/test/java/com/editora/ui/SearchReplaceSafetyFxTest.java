@@ -31,7 +31,6 @@ class SearchReplaceSafetyFxTest {
         EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
             EditorBuffer b = new EditorBuffer();
             b.setContent("old text");
-            b.getArea().getUndoManager().forgetHistory(); // loaded baseline, as seen by the editing workflow
             return b;
         });
 

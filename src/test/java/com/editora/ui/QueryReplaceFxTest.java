@@ -182,4 +182,50 @@ class QueryReplaceFxTest {
         assertFalse(sessionActive(), "a session with no matches never starts");
         assertFalse(ownsKeys(b));
     }
+
+    // --- resuming after a replacement --------------------------------------------------------------
+
+    @Test
+    void anEmptyReplacementStillOffersTheAdjacentMatch() throws Exception {
+        EditorBuffer b = begin("a,,,,b", ",", "");
+        for (int i = 0; i < 4; i++) {
+            assertTrue(sessionActive(), "match " + (i + 1) + " is offered");
+            type(b, 'y');
+        }
+        assertEquals("ab", text(b));
+        assertFalse(sessionActive());
+    }
+
+    private EditorBuffer beginRegex(String content, String query, String replacement) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setContent(content);
+            FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, b, true);
+            b.getArea().moveTo(0);
+            FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "editing"),
+                    "beginQueryReplace",
+                    new Class[] {EditorBuffer.class, QueryReplace.Spec.class},
+                    b,
+                    new QueryReplace.Spec(query, replacement, false, true, false, false));
+            return b;
+        });
+    }
+
+    @Test
+    void aZeroWidthMatchIsReplacedOncePerLine() throws Exception {
+        EditorBuffer b = beginRegex("one\ntwo\nthree", "$", ";");
+        for (int i = 0; i < 3 && sessionActive(); i++) {
+            type(b, 'y');
+        }
+        assertEquals("one;\ntwo;\nthree;", text(b));
+        assertFalse(sessionActive(), "the session ends at the end of the document");
+    }
+
+    @Test
+    void aMissingGroupReferenceIsReportedNotThrown() throws Exception {
+        EditorBuffer b = beginRegex("ab ab", "(a)b", "$2");
+        assertFalse(sessionActive(), "no session starts");
+        assertEquals("ab ab", text(b));
+    }
 }

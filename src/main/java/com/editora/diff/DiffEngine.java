@@ -12,7 +12,6 @@ import com.editora.diff.DiffModels.Row;
 import com.editora.diff.DiffModels.RowType;
 import com.editora.diff.DiffModels.UnifiedRow;
 import com.editora.diff.DiffModels.UnifiedType;
-import com.github.difflib.DiffUtils;
 import com.github.difflib.patch.AbstractDelta;
 import com.github.difflib.patch.Patch;
 
@@ -21,7 +20,8 @@ import com.github.difflib.patch.Patch;
  * unit-tested. {@link #compute} walks the {@link Patch} deltas, emitting an {@link DiffModels.Row} per
  * screen line — equal stretches first, then each delta as ADD/REMOVE rows, and a CHANGE delta paired
  * positionally or by bounded similarity alignment into MODIFIED rows (with {@link InlineDiff} word ranges)
- * plus filler for the longer side.
+ * plus filler for the longer side. Two texts more than {@link #MAX_LINE_EDITS} line edits apart are aligned
+ * coarsely instead ({@link Quality#LINE_ONLY}).
  */
 public final class DiffEngine {
 
@@ -88,6 +88,11 @@ public final class DiffEngine {
     private static final int SMART_ALIGNMENT_MAX_CELLS = 10_000;
     private static final double GAP_COST = 0.55;
     private static final double MIN_PAIR_SIMILARITY = 0.35;
+    /**
+     * Above this many line edits the Myers search (quadratic in the edit distance) is abandoned for the
+     * linear {@link #computeCoarse} alignment: 20,000 edits take about a second, 80,000 took 25.
+     */
+    static final int MAX_LINE_EDITS = 20_000;
 
     /** Computes the diff of two already-split line lists (default options). */
     public static DiffModel compute(List<String> left, List<String> right) {
@@ -104,7 +109,10 @@ public final class DiffEngine {
         DiffOptions o = opts == null ? DiffOptions.DEFAULT : opts;
         List<String> dl = normalizeAll(left, o);
         List<String> dr = normalizeAll(right, o);
-        Patch<String> patch = DiffUtils.diff(dl, dr);
+        Patch<String> patch = BoundedDiff.diff(dl, dr, MAX_LINE_EDITS);
+        if (patch == null) {
+            return coarse(left, right, false, false);
+        }
         List<Row> rows = new ArrayList<>();
         int li = 0; // 0-based pointer into left (original)
         int ri = 0; // 0-based pointer into right (original)
@@ -159,7 +167,7 @@ public final class DiffEngine {
         DiffText l = DiffText.parse(left);
         DiffText r = DiffText.parse(right);
         DiffModel model = compute(l.lines(), r.lines(), opts);
-        return withMetadata(model, l.finalNewline(), r.finalNewline(), Quality.FULL);
+        return withMetadata(model, l.finalNewline(), r.finalNewline(), model.quality());
     }
 
     /**
@@ -169,8 +177,11 @@ public final class DiffEngine {
     public static DiffModel computeCoarse(String left, String right) {
         DiffText l = DiffText.parse(left);
         DiffText r = DiffText.parse(right);
-        List<String> a = l.lines();
-        List<String> b = r.lines();
+        return coarse(l.lines(), r.lines(), l.finalNewline(), r.finalNewline());
+    }
+
+    private static DiffModel coarse(
+            List<String> a, List<String> b, boolean leftFinalNewline, boolean rightFinalNewline) {
         int prefix = 0;
         while (prefix < a.size() && prefix < b.size() && a.get(prefix).equals(b.get(prefix))) {
             prefix++;
@@ -207,7 +218,7 @@ public final class DiffEngine {
             int bi = b.size() - i;
             rows.add(Row.equal(a.get(ai), ai + 1, bi + 1));
         }
-        return finish(rows, l.finalNewline(), r.finalNewline(), Quality.LINE_ONLY);
+        return finish(rows, leftFinalNewline, rightFinalNewline, Quality.LINE_ONLY);
     }
 
     /** Bounded fallback when even materializing every aligned row would be unreasonable. */

@@ -50,7 +50,9 @@ public final class CodeActionPopup {
         list.setFixedCellSize(ROW_HEIGHT);
         list.setCellFactory(v -> new ActionCell());
         list.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
+            // Only a click on a row accepts. A click on the list's scroll bar (more than nine actions) or
+            // its border is not a choice, and used to apply whichever action happened to be selected.
+            if (e.getButton() == MouseButton.PRIMARY && onRow(e.getTarget())) {
                 CodeAction sel = selected();
                 if (sel != null) {
                     onAccept.accept(sel);
@@ -67,6 +69,18 @@ public final class CodeActionPopup {
         // popup hid itself first, the filter then saw a closed list, skipped its branch, and left the editor
         // owning chords it no longer needed. CompletionPopup sets this for the same reason.
         popup.setHideOnEscape(false);
+    }
+
+    /** Whether a click's target lies inside a non-empty action row. */
+    public static boolean onRow(Object target) {
+        for (javafx.scene.Node n = target instanceof javafx.scene.Node node ? node : null;
+                n != null;
+                n = n.getParent()) {
+            if (n instanceof ListCell<?> cell) {
+                return !cell.isEmpty();
+            }
+        }
+        return false;
     }
 
     /**

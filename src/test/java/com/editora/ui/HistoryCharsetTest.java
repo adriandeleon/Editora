@@ -47,4 +47,36 @@ class HistoryCharsetTest {
                 HistoryCoordinator.restoredBytes("price €", null, "latin1"),
                 "text the charset cannot hold falls back to UTF-8 rather than writing '?'");
     }
+
+    @Test
+    void preDeleteCaptureOfAFileThatIsNotValidUtf8KeepsItsCharacters() {
+        // BOM-less windows-1252 with no .editorconfig charset: the editor reads it losslessly, and so must the
+        // capture — as UTF-8 with replacement this stored "a\uFFFDo caf\uFFFD".
+        byte[] bytes = {'a', (byte) 0xF1, 'o', ' ', 'c', 'a', 'f', (byte) 0xE9, '\r', '\n'};
+        assertEquals("año café\r\n", HistoryCoordinator.decodeCaptured(bytes, null));
+        assertEquals("año café\r\n", HistoryCoordinator.decodeCaptured(bytes, "utf-8"));
+    }
+
+    @Test
+    void restoreToDiskKeepsTheLineEndingsOfTheFileItReplaces() {
+        byte[] crlf = "one\r\ntwo\r\nthree\r\n".getBytes(StandardCharsets.UTF_8);
+        // Revisions hold the editor's \n-only text.
+        assertArrayEquals(
+                "one\r\nTWO\r\n".getBytes(StandardCharsets.UTF_8),
+                HistoryCoordinator.restoredBytes("one\nTWO\n", crlf, null));
+        assertArrayEquals(
+                "one\nTWO\n".getBytes(StandardCharsets.UTF_8),
+                HistoryCoordinator.restoredBytes("one\r\nTWO\r\n", "x\ny\n".getBytes(StandardCharsets.UTF_8), null),
+                "and a pre-delete capture with CRLF follows an LF file that now sits at the path");
+    }
+
+    @Test
+    void restoreToDiskKeepsTheAssumedCharsetOfTheFileItReplaces() {
+        java.nio.charset.Charset cp1252 = java.nio.charset.Charset.forName("windows-1252");
+        byte[] existing = "café €\n".getBytes(cp1252); // not valid UTF-8, no byte-order mark, no rule
+        assertArrayEquals(
+                "café € más\n".getBytes(cp1252),
+                HistoryCoordinator.restoredBytes("café € más\n", existing, null),
+                "restoring over a windows-1252 file must not rewrite it as UTF-8");
+    }
 }

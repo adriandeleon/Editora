@@ -94,22 +94,35 @@ public final class ProjectWalk {
         if (root == null || !Files.isDirectory(root)) {
             return new Outcome(0, false, false, 0);
         }
+        // A root that is itself a symbolic link (~/proj -> /data/proj) is walked through its target: without
+        // FOLLOW_LINKS the walker reports the link as one non-directory entry and the project looks empty.
+        // Links below the root are still not followed. Every path offered is mapped back under the root as it
+        // was given, so results keep equalling the paths of the open buffers.
+        Path real;
+        try {
+            real = Files.isSymbolicLink(root) ? root.toRealPath() : root;
+        } catch (IOException | RuntimeException e) {
+            return new Outcome(0, false, false, 1);
+        }
+        Path given = root;
+        java.util.function.UnaryOperator<Path> shown =
+                real == given ? p -> p : p -> given.resolve(real.relativize(p).toString());
         try {
             Files.walkFileTree(
-                    root, EnumSet.noneOf(FileVisitOption.class), options.maxDepth(), new SimpleFileVisitor<>() {
+                    real, EnumSet.noneOf(FileVisitOption.class), options.maxDepth(), new SimpleFileVisitor<>() {
                         @Override
                         public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                             if (options.cancelled().getAsBoolean()) {
                                 return FileVisitResult.TERMINATE;
                             }
-                            if (dir.equals(root)) {
+                            if (dir.equals(real)) {
                                 return FileVisitResult.CONTINUE;
                             }
                             if (hidden(dir)) {
                                 return FileVisitResult.SKIP_SUBTREE; // .git, .idea, …
                             }
-                            String rel = relativize(root, dir);
-                            if (options.gitignore().ignored(rel, true) || !visitor.enter(dir, rel)) {
+                            String rel = relativize(real, dir);
+                            if (options.gitignore().ignored(rel, true) || !visitor.enter(shown.apply(dir), rel)) {
                                 return FileVisitResult.SKIP_SUBTREE; // target/, node_modules/, …
                             }
                             return FileVisitResult.CONTINUE;
@@ -122,7 +135,7 @@ public final class ProjectWalk {
                             }
                             if (attrs.isDirectory()) {
                                 // walkFileTree hands a directory to visitFile only at the depth limit.
-                                if (!hidden(file) && !options.gitignore().ignored(relativize(root, file), true)) {
+                                if (!hidden(file) && !options.gitignore().ignored(relativize(real, file), true)) {
                                     depthLimited[0] = true;
                                 }
                                 return FileVisitResult.CONTINUE;
@@ -130,7 +143,7 @@ public final class ProjectWalk {
                             if (hidden(file)) {
                                 return FileVisitResult.CONTINUE;
                             }
-                            String rel = relativize(root, file);
+                            String rel = relativize(real, file);
                             if (options.gitignore().ignored(rel, false)) {
                                 return FileVisitResult.CONTINUE;
                             }
@@ -138,7 +151,7 @@ public final class ProjectWalk {
                                 capped[0] = true; // one more candidate than the cap allows
                                 return FileVisitResult.TERMINATE;
                             }
-                            Verdict verdict = visitor.file(file, rel, attrs);
+                            Verdict verdict = visitor.file(shown.apply(file), rel, attrs);
                             if (verdict == Verdict.STOP) {
                                 return FileVisitResult.TERMINATE;
                             }

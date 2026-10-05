@@ -387,6 +387,12 @@ public final class SearchPanel extends VBox implements ToolWindowContent {
                                 outcome.fileCount()));
     }
 
+    /** Empties the results and shows {@code message} where the summary goes (an invalid regex). */
+    public void showError(String message) {
+        clearResults();
+        summary.setText(message);
+    }
+
     /** Empties the results tree + summary (e.g. when the query is cleared). */
     private void clearResults() {
         lastFiles = List.of();

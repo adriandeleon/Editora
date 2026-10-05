@@ -296,7 +296,8 @@ final class ExternalToolCoordinator {
         }
         var area = b.getArea();
         switch (tool.getOutput()) {
-            case REPLACE_BUFFER -> area.replaceText(r.out());
+            // stdin was getContent() (the whole file), so the result replaces the whole file: widen first.
+            case REPLACE_BUFFER -> b.replaceWholeDocument(r.out());
             case REPLACE_SELECTION -> area.replaceSelection(stripOneTrailingNewline(r.out()));
             case INSERT_AT_CARET -> area.insertText(area.getCaretPosition(), stripOneTrailingNewline(r.out()));
             default -> {}

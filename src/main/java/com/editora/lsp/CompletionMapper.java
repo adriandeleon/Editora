@@ -54,7 +54,7 @@ public final class CompletionMapper {
             if (item.getLabelDetails() != null && item.getLabelDetails().getDetail() != null) {
                 label += item.getLabelDetails().getDetail();
             }
-            String insert = insertText(item, label);
+            String insert = insertText(item, item.getLabel().strip());
             Runnable onAccept = onAcceptFor == null ? null : onAcceptFor.apply(item);
             out.add(Completion.lsp(
                             label,
@@ -210,16 +210,22 @@ public final class CompletionMapper {
     /**
      * The literal text to insert. Prefers the {@code textEdit}/{@code insertText} (the display label is
      * decorated — e.g. "names : List&lt;String&gt;" — and must never be inserted). Snippet-format text has
-     * its placeholders expanded for matching; the original template is retained for the snippet session. Only
-     * when neither is present do we fall back to the label's leading identifier.
+     * its placeholders expanded for matching; the original template is retained for the snippet session.
+     *
+     * <p>When neither is present the protocol says the label <em>is</em> the insert text, and
+     * {@code rawLabel} — the item's own label, without the {@code labelDetails} suffix — is used whole:
+     * bash-language-server's commands ({@code docker-compose}, {@code g++}) and pyright's keyword arguments
+     * ({@code timeout=}) are label-only, and cutting them at the first non-identifier character inserted
+     * {@code docker}. Only a label with whitespace in it is taken to be decorated ("names : List…") and
+     * reduced to its leading identifier.
      */
-    static String insertText(CompletionItem item, String label) {
+    static String insertText(CompletionItem item, String rawLabel) {
         String raw = textEditNewText(item);
         if (raw == null) {
             raw = item.getInsertText();
         }
         if (raw == null) {
-            return leadingIdentifier(label);
+            return rawLabel.chars().anyMatch(Character::isWhitespace) ? leadingIdentifier(rawLabel) : rawLabel;
         }
         return item.getInsertTextFormat() == InsertTextFormat.Snippet ? stripSnippet(raw) : raw;
     }

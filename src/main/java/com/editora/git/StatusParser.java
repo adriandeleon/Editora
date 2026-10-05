@@ -98,7 +98,7 @@ public final class StatusParser {
      * unquoted field (no surrounding quotes) is returned unchanged. The octal escapes are the raw UTF-8 bytes,
      * so they are collected and decoded as UTF-8. Returns {@code null} unchanged (rename orig may be absent).
      */
-    static String unquotePath(String field) {
+    public static String unquotePath(String field) {
         if (field == null || field.length() < 2 || field.charAt(0) != '"' || field.charAt(field.length() - 1) != '"') {
             return field; // not quoted
         }

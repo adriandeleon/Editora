@@ -92,11 +92,10 @@ final class WindowSessionCoordinator {
 
         Path windowProjectRoot();
 
-        void restoreFolds(EditorBuffer buffer);
+        /** Re-applies the file's stored folds, bookmarks, breakpoints, notes and read-only pin. */
+        void restorePerFileState(EditorBuffer buffer);
 
         Tab tabForBuffer(EditorBuffer buffer);
-
-        void restoreReadOnly(EditorBuffer buffer);
 
         void refreshStatusBar();
     }
@@ -555,9 +554,23 @@ final class WindowSessionCoordinator {
 
     /** Jumps to {@code file}:{@code line1}:{@code col1}; {@code focusEditor} false leaves focus where it is. */
     void gotoInFile(Path file, int line1, int col1, boolean focusEditor) {
-        NavigationHistory.Location origin = (host.navigation().suppressNavRecord || host.navigation().navigating)
-                ? null
-                : host.navigation().captureCurrent();
+        boolean record = !host.navigation().suppressNavRecord && !host.navigation().navigating;
+        gotoInFile(
+                file,
+                line1,
+                col1,
+                focusEditor,
+                record,
+                record ? host.navigation().captureCurrent() : null);
+    }
+
+    /**
+     * {@code record} and {@code origin} are decided by the first call and carried through a load deferral:
+     * by the time the text lands the caller has reset its suppress flags and the caret sits on the freshly
+     * loaded file's first line, so re-reading either would record a jump the caller suppressed, from line 1.
+     */
+    private void gotoInFile(
+            Path file, int line1, int col1, boolean focusEditor, boolean record, NavigationHistory.Location origin) {
         Tab tab = host.tabForPath(file);
         if (tab == null) {
             return;
@@ -568,7 +581,7 @@ final class WindowSessionCoordinator {
             host.fileWorkflows()
                     .afterBufferLoad
                     .computeIfAbsent(buffer, ignored -> new ArrayList<>())
-                    .add(() -> gotoInFile(file, line1, col1, focusEditor));
+                    .add(() -> gotoInFile(file, line1, col1, focusEditor, record, origin));
             return;
         }
         CodeArea area = buffer.getArea();
@@ -583,7 +596,7 @@ final class WindowSessionCoordinator {
         int targetLine = line;
         int targetCol = col;
         area.moveTo(targetLine, targetCol);
-        if (!host.navigation().suppressNavRecord && !host.navigation().navigating) {
+        if (record) {
             host.navigation().recordJump(origin, new NavigationHistory.Location(file, targetLine, targetCol));
         }
         area.requestFollowCaret();
@@ -677,19 +690,16 @@ final class WindowSessionCoordinator {
         if (!note.isEmpty()) {
             host.setStatus(note);
         }
-        host.restoreFolds(buffer);
-        host.bookmarkCoordinator().restoreBookmarks(buffer);
-        host.debugCoordinator().restoreBreakpoints(buffer);
-        host.notesCoordinator().restoreNotes(buffer);
-        host.restoreReadOnly(buffer);
+        host.restorePerFileState(buffer);
         buffer.setLoading(false);
         host.previews().restoreMarkdownMode(buffer);
         // The tab was selected while it was still a non-editable loading shell. Refresh after the
         // restored file's real View mode has been applied so the status segment cannot retain that
         // temporary "Read-Only" state for an editable buffer.
         host.refreshStatusBar();
-        // The tab was set up before content loaded; start or close its server now that its real tier is known.
-        host.lspCoordinator().syncBuffer(buffer);
+        // The tab was set up before content loaded; its real tier is known now. Only the visible tab starts
+        // its server here — a restored background tab still waits for its first show.
+        host.lspCoordinator().syncBufferWhenShown(buffer);
         CodeArea area = buffer.getArea();
         int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
         area.moveTo(caret);

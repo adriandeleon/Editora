@@ -5,7 +5,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BooleanSupplier;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.eclipse.tm4e.core.grammar.IStateStack;
@@ -26,6 +30,9 @@ public final class TextMateHighlighter {
 
     /** Zero means "no per-line timeout" to tm4e — we tokenize lazily/debounced anyway. */
     private static final Duration NO_TIMEOUT = Duration.ZERO;
+
+    private static final Logger LOG = Logger.getLogger(TextMateHighlighter.class.getName());
+    private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
 
     private TextMateHighlighter() {}
 
@@ -106,6 +113,29 @@ public final class TextMateHighlighter {
         }
     }
 
+    /**
+     * Logs a swallowed tokenizer failure, once per grammar. Degrading a line to plain text is right for the
+     * editor, but doing it silently hid a grammar whose root scanner could never compile (one look-behind
+     * joni rejects): every line of every Ruby file threw, and nothing said so. Once per grammar, because a
+     * broken grammar throws on each line of each pass.
+     */
+    private static void reportTokenizeFailure(IGrammar grammar, Throwable e) {
+        String scope;
+        try {
+            scope = String.valueOf(grammar.getScopeName());
+        } catch (RuntimeException | LinkageError ex) {
+            scope = "?";
+        }
+        if (REPORTED_FAILURES.add(scope)) {
+            LOG.log(Level.WARNING, "Syntax highlighting: the " + scope + " grammar failed to tokenize a line", e);
+        }
+    }
+
+    /** Scopes whose tokenizer failure has been logged (see {@link #reportTokenizeFailure}). Test hook. */
+    static Set<String> reportedFailures() {
+        return REPORTED_FAILURES;
+    }
+
     private static IncrementalAnalysis analyzeFromLocked(
             String text, IGrammar grammar, int fromLine, IStateStack startState, BooleanSupplier cancelled) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
@@ -139,6 +169,7 @@ public final class TextMateHighlighter {
                 collectSymbol(symbols, lineIndex, line, result.getTokens());
             } catch (Exception | LinkageError e) {
                 spans.add(null, line.length());
+                reportTokenizeFailure(grammar, e);
             }
             endStates.add(state); // end state of this line (carried unchanged on a tokenization failure)
             if (newline < 0) {
@@ -167,9 +198,15 @@ public final class TextMateHighlighter {
         return pos;
     }
 
-    /** Records the first definition name on a line (if any) for the structure view. */
+    /**
+     * Records the definition name on a line (if any) for the structure view: the first declaration token,
+     * except that a function name wins over a type name before it — in Go's
+     * {@code func (s *Server) Run()} the receiver type comes first, and every method of a type used to be
+     * listed as that type. A type name that is only a <em>reference</em> is not a definition at all.
+     */
     private static void collectSymbol(List<Symbol> symbols, int lineIndex, String line, IToken[] tokens) {
         int len = line.length();
+        Symbol type = null;
         for (IToken token : tokens) {
             String kind = kindForScopes(token.getScopes());
             if (kind == null) {
@@ -181,11 +218,74 @@ public final class TextMateHighlighter {
                 continue;
             }
             String name = line.substring(start, end).strip();
-            if (!name.isEmpty()) {
+            if (name.isEmpty()) {
+                continue;
+            }
+            if (!kind.equals("type")) {
                 symbols.add(new Symbol(lineIndex, name, kind));
                 return; // one definition name per line is enough for the outline
             }
+            if (type == null && !isTypeReference(token.getScopes(), line.substring(0, start))) {
+                type = new Symbol(lineIndex, name, kind);
+            }
         }
+        if (type != null) {
+            symbols.add(type);
+        }
+    }
+
+    /** Words that introduce a type declaration, for grammars whose declared and referenced names share a scope. */
+    private static final java.util.regex.Pattern TYPE_DECLARATION_PREFIX = java.util.regex.Pattern.compile(
+            ".*\\b(?:type|impl|class|struct|interface|enum|trait|union|object|record|module|namespace|typedef"
+                    + "|protocol|extension|typealias|newtype|data|message|service|input|scalar)(?:<[^>]*>)?\\s*$");
+
+    /**
+     * Whether a type-name token is a use of a type rather than its declaration. Grammars mark type
+     * references with {@code entity.name.type*} too — a parameter's or field's annotation, a generic
+     * argument, a return type, a Rust lifetime or {@code Some}/{@code None}, a cast — and each of those on
+     * a block's header line became a bogus "type" entry in the outline.
+     *
+     * <p>A declaration is recognised by its sub-kind ({@code entity.name.type.class.ts},
+     * {@code .struct.rust}, {@code .interface}, …). A bare {@code entity.name.type.<lang>} — what Go, Rust,
+     * TypeScript, Kotlin and C++ give references, and Go also gives declarations — counts as one only
+     * when a declaring keyword precedes it on the line, or (Go's grouped {@code type ( … )} form) nothing
+     * does.
+     *
+     * @param scopes the token's scope stack
+     * @param before the line's text before the token
+     */
+    static boolean isTypeReference(List<String> scopes, String before) {
+        String entity = null;
+        for (String scope : scopes) {
+            if (scope.startsWith("meta.type.annotation")
+                    || scope.startsWith("meta.type.parameters")
+                    || scope.startsWith("meta.return.type")) {
+                return true;
+            }
+            if (scope.startsWith("entity.name.type") || scope.startsWith("entity.name.class")) {
+                entity = scope;
+            }
+        }
+        if (entity == null || entity.startsWith("entity.name.class")) {
+            return false;
+        }
+        String[] parts = entity.split("\\.");
+        if (parts.length > 4) { // entity.name.type.<sub-kind>.<lang>
+            String sub = parts[3];
+            return sub.equals("lifetime")
+                    || sub.equals("primitive")
+                    || sub.equals("numeric")
+                    || sub.equals("option")
+                    || sub.equals("result")
+                    || sub.equals("parameter");
+        }
+        if (parts.length < 4) {
+            return false; // "entity.name.type" with no language suffix: nothing to go by
+        }
+        if (TYPE_DECLARATION_PREFIX.matcher(before).matches()) {
+            return false;
+        }
+        return !(entity.endsWith(".go") && before.isBlank());
     }
 
     /**
@@ -387,7 +487,12 @@ public final class TextMateHighlighter {
             return "string";
         }
         // Annotations/decorators before generic storage/keyword rules.
-        if (scope.contains("annotation")
+        // …but not a TypeScript/Python *type* annotation: meta.type.annotation.ts and the ":" / "->" that
+        // introduce one are not decorators.
+        if ((scope.contains("annotation")
+                        && !scope.startsWith("meta.type.annotation")
+                        && !scope.startsWith("keyword.operator.type.annotation")
+                        && !scope.startsWith("punctuation.separator.annotation"))
                 || scope.startsWith("meta.decorator")
                 || scope.startsWith("entity.name.function.decorator")) {
             return "annotation";
@@ -401,9 +506,12 @@ public final class TextMateHighlighter {
         if (scope.startsWith("storage")) {
             return classifyStorage(scope);
         }
+        // Only the callee is a function name. Python has no entity scope for it, just
+        // meta.function-call.generic; the enclosing meta.function-call / …arguments scopes cover the whole
+        // call, and styling by them coloured every plain argument, comma and parenthesis as a function.
         if (scope.startsWith("entity.name.function")
                 || scope.startsWith("support.function")
-                || scope.startsWith("meta.function-call")) {
+                || scope.startsWith("meta.function-call.generic")) {
             return "function";
         }
         if (scope.startsWith("entity.name.tag")) {

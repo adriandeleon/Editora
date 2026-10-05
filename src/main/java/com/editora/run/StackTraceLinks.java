@@ -27,10 +27,16 @@ public final class StackTraceLinks {
         }
     }
 
-    private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$]+\\.java):(\\d+)\\)");
-    private static final Pattern PYTHON = Pattern.compile("File \"([^\"]+\\.py[a-z]?)\", line (\\d+)");
+    // Line numbers are {@code \d{1,9}}: a longer digit run is not a line number, and would overflow parseInt.
+    private static final Pattern JAVA = Pattern.compile("\\(([A-Za-z0-9_$]+\\.java):(\\d{1,9})\\)");
+    private static final Pattern PYTHON = Pattern.compile("File \"([^\"]+\\.py[a-z]?)\", line (\\d{1,9})(?!\\d)");
+    /**
+     * Anchored at a token start (the lookbehind): unanchored, the pattern was retried from every index of a
+     * long unbroken token — a 64K base64 line — each time consuming the rest and backing off, which froze the
+     * FX thread for seconds on a double-click.
+     */
     private static final Pattern NODE =
-            Pattern.compile("((?:[A-Za-z]:)?[^\\s():]+\\.(?:js|mjs|cjs|ts)):(\\d+)(?::\\d+)?");
+            Pattern.compile("(?<![^\\s():])((?:[A-Za-z]:)?[^\\s():]+\\.(?:js|mjs|cjs|ts)):(\\d{1,9})(?!\\d)(?::\\d+)?");
 
     /**
      * A Java frame's qualified class and file: {@code at [loader/module/]pkg.Outer$Inner.method(File.java:12)}.
@@ -38,7 +44,7 @@ public final class StackTraceLinks {
      * {@code java.base/}) is skipped, and the method may be {@code <init>} or a {@code lambda$x$0}.
      */
     private static final Pattern JAVA_FRAME = Pattern.compile(
-            "\\bat\\s+(?:[^\\s/(]*/)*([\\p{L}\\p{N}_$.]+)\\.[^.\\s(]+\\(([A-Za-z0-9_$]+\\.java):\\d+\\)");
+            "\\bat\\s+(?:[^\\s/(]*+/)*+([\\p{L}\\p{N}_$.]+)\\.[^.\\s(]+\\(([A-Za-z0-9_$]+\\.java):\\d+\\)");
 
     private StackTraceLinks() {}
 

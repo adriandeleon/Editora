@@ -359,7 +359,6 @@ class SearchCoordinatorReplaceInFilesFxTest {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(file);
             buffer.setContent(content);
-            buffer.getArea().getUndoManager().forgetHistory();
             return buffer;
         });
     }

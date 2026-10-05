@@ -75,7 +75,8 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
         String currentText(Path target);
 
-        void revert(HistoryRevision revision);
+        /** Restores {@code revision} into the file; {@code done} runs on the FX thread once that has finished. */
+        void revert(HistoryRevision revision, Runnable done);
 
         /**
          * Applies {@code newText} only while {@code target} still holds {@code expectedText} (the text the
@@ -116,6 +117,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private DiffViewerPane pane; // built on the first diff result for the current file
     private String snapshotText = "";
     private String baseText = "";
+    private boolean keepingSelection; // setRevisions is re-selecting the revision whose diff is showing
     private int gen; // stale-guard for async re-diffs (selection / toggle can overlap)
 
     public FileHistoryPanel(Actions actions) {
@@ -142,7 +144,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         revisions.getStyleClass().add("git-tree");
         revisions.setCellFactory(v -> new RevisionCell());
         revisions.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
-            if (b != null) {
+            if (b != null && !keepingSelection) {
                 showRevision(b);
             }
         });
@@ -217,13 +219,37 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     /** Replaces the revision list (single-file mode). {@code fileName} = null/blank ⇒ "no file". */
     public void setRevisions(List<HistoryRevision> list, String fileName, Path target) {
         setFolderMode(false);
+        // The list is reloaded after every recorded revision of the active file (each save and autosave).
+        // While the selected revision of the same file is still listed its diff stays: clearing it threw the
+        // user back to "select a revision" in the middle of a hunk-by-hunk restore, on the diff's own Save.
+        HistoryRevision selected = revisions.getSelectionModel().getSelectedItem();
+        boolean keep = pane != null
+                && target != null
+                && target.equals(this.target)
+                && selected != null
+                && list.contains(selected);
         this.target = target;
         fileLabel.setText(
                 fileName == null || fileName.isBlank() ? tr("history.noFile") : tr("history.forFile", fileName));
         allRevisions.clear();
         allRevisions.addAll(list);
-        resetDiff(); // the previously-shown diff was for the old file (or old list) — clear it
-        applyFilter();
+        if (!keep) {
+            resetDiff(); // the previously-shown diff was for the old file (or old list) — clear it
+            applyFilter();
+            return;
+        }
+        keepingSelection = true;
+        try {
+            applyFilter();
+            revisions.getSelectionModel().select(selected);
+        } finally {
+            keepingSelection = false;
+        }
+        if (revisions.getSelectionModel().getSelectedItem() == null) {
+            resetDiff(); // filtered out of the list
+        } else if (support != null && !support.currentText(target).equals(baseText)) {
+            reDiffAfterEdit(); // same revision, but the file has moved on
+        }
     }
 
     /** Selects {@code revision} in the list (which shows its diff on the right); used by external entry points. */
@@ -365,9 +391,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         if (sel == null || support == null) {
             return;
         }
-        support.revert(sel);
-        // The editor buffer changed underneath → re-baseline and re-diff (now identical).
-        Platform.runLater(() -> {
+        // The restore reads the revision off-thread and applies it later, so re-baseline when it reports
+        // back: a runLater queued here ran first and left the panel diffing the pre-revert text.
+        support.revert(sel, () -> {
             if (target != null) {
                 baseText = support.currentText(target);
                 recompute();

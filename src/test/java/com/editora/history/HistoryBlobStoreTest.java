@@ -101,4 +101,20 @@ class HistoryBlobStoreTest {
         HistoryBlobStore store = new HistoryBlobStore(Path.of(System.getProperty("java.io.tmpdir")));
         assertTrue(HistoryBlobStore.sha256("x").length() == 64);
     }
+
+    /** A blob truncated by a crash is healed the next time the same content is recorded. */
+    @Test
+    void recordingTheSameContentAgainRepairsADamagedBlob(@TempDir Path dir) throws Exception {
+        HistoryBlobStore store = new HistoryBlobStore(dir);
+        String content = "the text of a revision\n".repeat(50);
+        String sha = store.put(content);
+        Path blob = dir.resolve(sha.substring(0, 2)).resolve(sha + ".txt.gz");
+        byte[] bytes = Files.readAllBytes(blob);
+        Files.write(blob, java.util.Arrays.copyOf(bytes, bytes.length / 2));
+        assertNull(store.get(sha), "the truncated blob is unreadable");
+
+        assertEquals(sha, store.put(content));
+
+        assertEquals(content, store.get(sha));
+    }
 }

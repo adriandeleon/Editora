@@ -200,6 +200,52 @@ class LspEditPlanFxTest {
         assertNotNull(editFor(applied.get(), closed).diskPreimageAt());
     }
 
+    // --- a server edit nobody is waiting for ------------------------------------------------------------
+
+    private Boolean serverApplies(WorkspaceEdit edit) throws Exception {
+        return sessions.get(0)
+                .applyEdit(new org.eclipse.lsp4j.ApplyWorkspaceEditParams(edit))
+                .get(10, TimeUnit.SECONDS)
+                .isApplied();
+    }
+
+    private WorkspaceEdit versionedEditOfOpenFile(Integer version) {
+        var id = new org.eclipse.lsp4j.VersionedTextDocumentIdentifier(
+                open.toUri().toString(), version);
+        return new WorkspaceEdit(List.of(
+                org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(new org.eclipse.lsp4j.TextDocumentEdit(
+                        id, List.of(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(edit(0, 6, 7, "Renamed")))))));
+    }
+
+    /**
+     * An applyEdit outside a tracked command (a completion item's command, an unsolicited fix) used to be
+     * judged against an empty basis, which made even an open document named with its current version a
+     * "closed file with no request time" — always refused.
+     */
+    @Test
+    void anUntrackedServerEditNamingTheCurrentVersionIsApplied() throws Exception {
+        var applied = new AtomicReference<WorkspaceEditMapper.Mapped>();
+        manager.setApplyEditHandler((mapped, done) -> {
+            applied.set(mapped);
+            done.accept(true);
+        });
+
+        assertTrue(serverApplies(versionedEditOfOpenFile(1)));
+
+        assertTrue(blocked.isEmpty(), "an open, current document is not a blocked closed file: " + blocked);
+        assertEquals("class A {}\n", editFor(applied.get(), open).expectedText(), "the session's text is the preimage");
+        assertEquals(1, editFor(applied.get(), open).version());
+    }
+
+    /** A version the session does not hold proves nothing, and neither does no version: still refused. */
+    @Test
+    void anUntrackedServerEditWithAnotherOrNoVersionIsStillRefused() throws Exception {
+        manager.setApplyEditHandler((mapped, done) -> done.accept(true));
+
+        assertFalse(serverApplies(versionedEditOfOpenFile(7)));
+        assertFalse(serverApplies(versionedEditOfOpenFile(null)));
+    }
+
     // --- raw diagnostics for the code-action context --------------------------------------------------
 
     private void drainFx() throws Exception {

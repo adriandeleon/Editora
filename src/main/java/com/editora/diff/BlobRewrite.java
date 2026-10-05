@@ -44,20 +44,26 @@ public final class BlobRewrite {
      * @param original the stored blob (empty for a path not yet in the index)
      * @param charset the charset {@code original} is decoded with
      * @param bom the charset's byte-order mark; honoured only when {@code original} actually starts with it
-     * @param beforeText the decoded text the edit was computed against (must equal the decoded blob)
+     * @param beforeText the decoded text the edit was computed against (must be the decoded blob, line
+     *     terminators aside)
      * @param afterText the desired decoded text, line terminators not significant except at end of file
      */
     public static byte[] rewrite(byte[] original, Charset charset, byte[] bom, String beforeText, String afterText) {
         byte[] source = original == null ? new byte[0] : original;
         byte[] mark = bom != null && bom.length > 0 && startsWith(source, bom) ? bom : new byte[0];
         String decoded = new String(source, mark.length, source.length - mark.length, charset);
-        if (!decoded.equals(beforeText == null ? "" : beforeText)) {
+        List<Line> before = split(decoded);
+        // The view holds text in the editor's form (bare \n), so the comparison is by line and by whether the
+        // last line is terminated; which terminator each line has is exactly what the blob is consulted for.
+        DiffText shown = DiffText.parse(beforeText == null ? "" : beforeText);
+        boolean terminated =
+                !before.isEmpty() && !before.get(before.size() - 1).terminator().isEmpty();
+        if (!shown.lines().equals(before.stream().map(Line::text).toList()) || shown.finalNewline() != terminated) {
             return null; // the view is not showing this blob
         }
         if (!Arrays.equals(source, encode(decoded, charset, mark))) {
             return null; // lossy decode: re-encoding would already change bytes the user never touched
         }
-        List<Line> before = split(decoded);
         DiffText after = DiffText.parse(afterText == null ? "" : afterText);
         String dominant = DiffText.parse(decoded).lineSeparator();
 

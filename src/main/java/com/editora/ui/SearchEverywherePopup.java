@@ -58,7 +58,10 @@ final class SearchEverywherePopup {
 
         List<Item> symbols(String query);
 
-        /** Ensures the project corpus exists, then runs the callback — may be asynchronous. */
+        /**
+         * Ensures the project corpus exists as far as it can, then runs the callback — always, exactly once,
+         * possibly later (a walk in flight) and also when there is no corpus to build.
+         */
         void ensureIndex(Runnable then);
 
         /** Acts on the chosen result: run the command, open the file, jump to the symbol. */
@@ -244,16 +247,28 @@ final class SearchEverywherePopup {
         // An empty query lists every command and touches no corpus. That is what lets this stand in for
         // the command palette: opening it shows the same browsable list rather than a blank box.
         // Otherwise: files and symbols need the corpus, so a command-scoped query must not trigger a walk.
-        if (currentQuery.isEmpty() || scope.kind() == Kind.COMMAND) {
+        if (currentQuery.isEmpty() || scope.kind() == Kind.COMMAND || awaitingIndex) {
+            populate(scope); // while a walk is in flight: what needs no corpus, now; the rest when it lands
+            return;
+        }
+        boolean[] inline = {true};
+        awaitingIndex = true;
+        ops.ensureIndex(() -> {
+            awaitingIndex = false;
+            if (inline[0]) {
+                populate(scope);
+            } else if (showing) {
+                refresh(); // from the live field: the query has usually moved on since this was parked
+            }
+        });
+        if (awaitingIndex) {
+            inline[0] = false;
             populate(scope);
-        } else {
-            ops.ensureIndex(() -> {
-                if (showing) {
-                    populate(scope);
-                }
-            });
         }
     }
+
+    /** True while a {@link Ops#ensureIndex} callback is parked on a project walk that has not landed. */
+    private boolean awaitingIndex;
 
     private void populate(Scope scope) {
         // The corpus sources answer nothing useful for an empty query, and asking would build the index.

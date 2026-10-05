@@ -17,7 +17,8 @@ public final class LaunchConfig {
     /**
      * A {@code launch} request body. {@code mainClass} is required; {@code projectName}/{@code classPaths}/
      * {@code modulePaths}/{@code javaExec}/{@code cwd}/{@code args} are optional (omitted when blank/empty).
-     * Program args are passed as an argv array, so an argument containing spaces stays one argument.
+     * Program args are passed as one quoted string ({@link #javaArgs}) — java-debug's {@code args} is a
+     * String — encoded so an argument containing spaces stays one argument.
      */
     public static Map<String, Object> launch(
             String mainClass,
@@ -73,15 +74,70 @@ public final class LaunchConfig {
             m.put("cwd", cwd);
         }
         if (notEmpty(args)) {
-            // The argv, NOT a joined string: ProgramArgs.tokenize already quote-parsed the user's input
-            // into arguments, so re-joining on a space throws that grouping away — `"hello world" second`
-            // would reach main() as three arguments while Run passes two. java-debug accepts an array
-            // (as does the program(...) sibling below, which always did this correctly).
-            m.put("args", args);
+            // java-debug declares LaunchArguments.args as a String and decodes with a plain Gson: a JSON
+            // array makes it throw while decoding the request, which it then never answers (the launch
+            // hangs until the request timeout). So send ONE string — but not a bare space-join, which
+            // would turn `"hello world" second` into three arguments: quote it so the adapter's own
+            // tokenizer splits it back into the argv ProgramArgs.tokenize produced (what Run passes).
+            m.put("args", javaArgs(args, isWindows()));
         }
         m.put("console", "internalConsole");
         m.put("stopOnEntry", stopOnEntry);
         return m;
+    }
+
+    /**
+     * Encodes an argv as the single command-line string java-debug expects in {@code args}, so that its
+     * tokenizer ({@code DebugUtility.parseArguments}) yields the same arguments back. The adapter tokenizes
+     * by its own OS: elsewhere a double-quoted argument with {@code \} and {@code "} backslash-escaped; on
+     * Windows the {@code CommandLineToArgvW} convention (backslashes are literal unless they precede a
+     * quote). An argument needing no quoting is passed through unchanged. Known limit: the adapter's Windows
+     * tokenizer has no spelling for an empty argument (it keeps {@code ""} literally).
+     */
+    static String javaArgs(List<String> argv, boolean windows) {
+        StringBuilder sb = new StringBuilder();
+        for (String arg : argv) {
+            if (!sb.isEmpty()) {
+                sb.append(' ');
+            }
+            String a = arg == null ? "" : arg;
+            sb.append(windows ? quoteWindows(a) : quotePosix(a));
+        }
+        return sb.toString();
+    }
+
+    private static String quotePosix(String a) {
+        boolean plain = !a.isEmpty()
+                && a.chars().noneMatch(c -> Character.isWhitespace(c) || c == '"' || c == '\'' || c == '\\');
+        return plain ? a : '"' + a.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+    }
+
+    private static String quoteWindows(String a) {
+        boolean plain = !a.isEmpty() && a.chars().noneMatch(c -> Character.isWhitespace(c) || c == '"');
+        if (plain) {
+            return a;
+        }
+        StringBuilder sb = new StringBuilder("\"");
+        int backslashes = 0;
+        for (int i = 0; i < a.length(); i++) {
+            char c = a.charAt(i);
+            if (c == '\\') {
+                backslashes++;
+            } else if (c == '"') {
+                sb.append("\\".repeat(backslashes * 2 + 1)).append('"');
+                backslashes = 0;
+            } else {
+                sb.append("\\".repeat(backslashes)).append(c);
+                backslashes = 0;
+            }
+        }
+        return sb.append("\\".repeat(backslashes * 2)).append('"').toString();
+    }
+
+    private static boolean isWindows() {
+        return System.getProperty("os.name", "")
+                .toLowerCase(java.util.Locale.ROOT)
+                .contains("win");
     }
 
     /**

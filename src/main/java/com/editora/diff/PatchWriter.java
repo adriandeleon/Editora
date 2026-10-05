@@ -11,6 +11,8 @@ import com.github.difflib.patch.Patch;
  * Generates a unified diff ({@code .patch}) between two texts via java-diff-utils, for the diff viewer's
  * "Export patch" action (SDD Phase 4). Pure and unit-tested.
  *
+ * <p>Lines are split on {@code \n} alone, so carriage returns are line content and survive into the patch.
+ *
  * <p>A final line with no terminator is a different line from the same text <em>with</em> one, and a patch
  * must say so with a {@code \ No newline at end of file} marker after exactly that line. Rather than patch
  * markers into the generated hunks afterwards, the unterminated last line of each side is given a distinct
@@ -34,8 +36,8 @@ public final class PatchWriter {
      * file labels. Returns an empty string when the two are identical (no hunks).
      */
     public static String unifiedDiff(String leftLabel, String rightLabel, String leftText, String rightText) {
-        List<String> left = eofAwareLines(DiffText.parse(leftText));
-        List<String> right = eofAwareLines(DiffText.parse(rightText));
+        List<String> left = eofAwareLines(leftText);
+        List<String> right = eofAwareLines(rightText);
         Patch<String> patch = DiffUtils.diff(left, right);
         if (patch.getDeltas().isEmpty()) {
             return "";
@@ -53,15 +55,26 @@ public final class PatchWriter {
         return String.join("\n", lines) + "\n";
     }
 
-    /** The document's lines, with an unterminated final line made distinct from its terminated twin. */
-    private static List<String> eofAwareLines(DiffText text) {
-        List<String> lines = text.lines();
-        if (lines.isEmpty() || text.finalNewline()) {
+    /**
+     * The document's lines as Git sees them, with an unterminated final line made distinct from its
+     * terminated twin. Only {@code \n} ends a line: the {@code \r} of a CRLF file stays at the end of its
+     * line (and a lone {@code \r} inside it), exactly as {@code git diff} writes them, so the exported patch
+     * applies to CRLF content. Splitting with {@link DiffText} dropped every {@code \r} and Git then
+     * refused the patch.
+     */
+    private static List<String> eofAwareLines(String text) {
+        List<String> lines = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
             return lines;
         }
-        List<String> marked = new ArrayList<>(lines);
-        int last = marked.size() - 1;
-        marked.set(last, marked.get(last) + UNTERMINATED);
-        return marked;
+        int start = 0;
+        for (int nl = text.indexOf('\n'); nl >= 0; nl = text.indexOf('\n', start)) {
+            lines.add(text.substring(start, nl));
+            start = nl + 1;
+        }
+        if (start < text.length()) {
+            lines.add(text.substring(start) + UNTERMINATED);
+        }
+        return lines;
     }
 }

@@ -147,6 +147,61 @@ class LspCoordinatorDiagnosticsFxTest {
         return FxTestSupport.callOnFx(() -> coordinator.problems());
     }
 
+    // --- an edit that leaves the server nothing to publish -----------------------------------------------
+
+    private static int overlayCount(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            Object overlay = FxTestSupport.field(b, "lspOverlay");
+            return overlay == null
+                    ? 0
+                    : ((List<?>) FxTestSupport.call(overlay, "diagnostics", new Class<?>[] {})).size();
+        });
+    }
+
+    /**
+     * Every edit clears the squiggles, expecting the server to publish again. Type a character and Backspace
+     * it inside the didChange debounce and the text the server would be sent is the text it already has:
+     * nothing is sent, nothing is published, and the marks used to stay gone while Problems still listed them.
+     */
+    @Test
+    void aNetZeroEditPutsTheDiagnosticsBack() throws Exception {
+        EditorBuffer b = openJava("A.java", "class A {}\n");
+        FxTestSupport.runOnFx(() -> {
+            coordinator.wireBuffer(b);
+            coordinator.syncBuffer(b);
+        });
+        publish(b.getPath(), one("boom"));
+        assertEquals(1, overlayCount(b), "precondition: the squiggle is shown");
+
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().insertText(0, " ");
+            b.getArea().deleteText(0, 1);
+        });
+        assertEquals(0, overlayCount(b), "an edit hides marks that may now be misplaced");
+        FxTestSupport.runOnFx(b::sendLspChange); // the settled pulse
+
+        assertEquals(1, overlayCount(b), "nothing was sent, so nothing will be published: the marks return");
+        assertEquals(1, problems().size());
+    }
+
+    /** A real edit still waits for the server: stale marks must not be repainted on shifted lines. */
+    @Test
+    void aRealEditKeepsTheMarksHiddenUntilTheServerPublishes() throws Exception {
+        EditorBuffer b = openJava("A.java", "class A {}\n");
+        FxTestSupport.runOnFx(() -> {
+            coordinator.wireBuffer(b);
+            coordinator.syncBuffer(b);
+        });
+        publish(b.getPath(), one("boom"));
+
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().insertText(0, "\n");
+            b.sendLspChange();
+        });
+
+        assertEquals(0, overlayCount(b));
+    }
+
     // --- open-files-only scoping ---------------------------------------------------------------------
 
     @Test

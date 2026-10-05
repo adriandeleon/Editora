@@ -62,7 +62,11 @@ public final class TextInputKeymap {
         control.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             consumed[0] = false;
             if (e.isConsumed()) {
-                return; // an earlier filter (e.g. a picker's list navigation) already claimed this chord
+                // An earlier filter (e.g. a picker's list navigation) already claimed this chord. Its typed
+                // character is that chord's by-product all the same: on macOS Option-V (page up in a picker)
+                // also emits "√", which would otherwise be typed into the query and re-run the search.
+                consumed[0] = true;
+                return;
             }
             String token = KeyDispatcher.chord(e);
             if (token == null) {

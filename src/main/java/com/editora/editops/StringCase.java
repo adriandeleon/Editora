@@ -151,15 +151,23 @@ public final class StringCase {
      * ({@code dot.case} re-enters the cycle at {@code camelCase} — it is reachable only directly).
      */
     public static String cycle(String token) {
-        Style next =
-                switch (detect(token)) {
-                    case CAMEL -> Style.SNAKE;
-                    case SNAKE -> Style.SCREAMING_SNAKE;
-                    case SCREAMING_SNAKE -> Style.KEBAB;
-                    case KEBAB -> Style.PASCAL;
-                    case PASCAL, DOT -> Style.CAMEL;
-                };
-        return to(next, token);
+        // A one-word token looks the same in several styles (foo is camel, snake and kebab at once), so
+        // step on until the text actually changes — otherwise the gesture is stuck on it.
+        Style style = detect(token);
+        for (int i = 0; i < Style.values().length; i++) {
+            style = switch (style) {
+                case CAMEL -> Style.SNAKE;
+                case SNAKE -> Style.SCREAMING_SNAKE;
+                case SCREAMING_SNAKE -> Style.KEBAB;
+                case KEBAB -> Style.PASCAL;
+                case PASCAL, DOT -> Style.CAMEL;
+            };
+            String out = to(style, token);
+            if (!out.equals(token)) {
+                return out;
+            }
+        }
+        return token;
     }
 
     /** Inverts every letter's case ({@code fooBar} → {@code FOObAR}); non-letters pass through. */

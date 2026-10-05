@@ -66,6 +66,10 @@ It rebases item ranges across those edits. Moving to another expression, deletin
 prefix, editing elsewhere, closing the buffer, or dismissing completion invalidates the session.
 Both response delivery and worker-to-FX rendering check identity/generation/version/caret. Acceptance
 checks the visible session again; a stale popup cannot apply old text edits while refresh is pending.
+The local list (snippets/keywords, no server session) has the same guarantee by other means: every
+document change recomputes it once the edit has settled, a caret move without an edit closes it, and
+acceptance refuses a row whose trigger no longer starts with the word before the caret — the key is
+then left unconsumed, so Enter is a newline and Tab indents.
 
 Complete lists are filtered locally on subsequent typing and backspace. Incomplete lists retrigger
 with `TriggerForIncompleteCompletions`; real trigger characters use `TriggerCharacter`; explicit
@@ -76,7 +80,9 @@ original JSON-RPC future. Cancellation is best effort, so delivery guards remain
 The mapper expands `CompletionList.itemDefaults` before mapping or resolve and retains insert/replace
 ranges, `filterText`, `commitCharacters`, snippet format, resolve data, and indentation mode. Enter
 uses the insert range; Tab uses the replace range. Snippets use the existing parser, including choice
-and nested placeholders. `AsIs` preserves indentation; `AdjustIndentation` uses the snippet indentation
+and nested placeholders. `AsIs` preserves indentation (the text goes in untouched apart from line
+endings, which are always normalised to LF before tab-stop offsets are used); `AdjustIndentation`
+converts the snippet's leading tabs to the buffer's indent unit and uses the snippet indentation
 logic. Existing method argument lists are reused, and method references do not acquire parentheses.
 Plain method completions get a conservative call insertion when the server omits one.
 

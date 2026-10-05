@@ -170,7 +170,57 @@ final class IndexCoordinator {
         // The buffer's text is authoritative and already in memory, so this costs no disk read.
         String language = LanguageRegistry.forFileName(file.getFileName().toString());
         index.put(file, DeclarationScanner.scan(buffer.getContent(), language));
+        if (!projectFiles.contains(file)) {
+            // A file first saved after the walk: its symbols were found but the file itself was not, so
+            // Search Everywhere offered the class and not the file it lives in.
+            List<Path> files = new ArrayList<>(projectFiles);
+            files.add(file);
+            projectFiles = List.copyOf(files);
+            projectRelPaths = relativize(indexedRoot, projectFiles);
+        }
     }
+
+    /**
+     * The tree changed in a way the index was not told file by file (an external program, a checkout, a
+     * rename): the next use walks again instead of answering from a list of files that may be gone. Cheap to
+     * call repeatedly — nothing is walked until something asks.
+     */
+    void markStale() {
+        staleMarks++;
+        if (indexedRoot != null) {
+            stale = true;
+        }
+    }
+
+    /** {@code path} (a file, or a folder and everything under it) was deleted: stop offering it now. */
+    void onFileDeleted(Path path) {
+        if (indexedRoot == null || path == null || !Vfs.isLocal(path)) {
+            return;
+        }
+        List<Path> kept = new ArrayList<>(projectFiles.size());
+        for (Path file : projectFiles) {
+            if (file.startsWith(path)) {
+                index.remove(file);
+            } else {
+                kept.add(file);
+            }
+        }
+        if (kept.size() != projectFiles.size()) {
+            projectFiles = List.copyOf(kept);
+            projectRelPaths = relativize(indexedRoot, projectFiles);
+        }
+    }
+
+    /** A rename is a delete of the old path now, and a re-walk before the new one is next asked about. */
+    void onFileRenamed(Path from, Path to) {
+        onFileDeleted(from);
+        markStale();
+    }
+
+    /** Set by {@link #markStale}; cleared when a walk that started after the last mark lands. */
+    private boolean stale;
+
+    private long staleMarks;
 
     /** {@code index.rebuild}: forget everything and walk again, for when the tree changed underneath us. */
     void rebuild() {
@@ -192,7 +242,7 @@ final class IndexCoordinator {
             host.setStatus(tr("status.index.disabled"));
             return;
         }
-        if (indexedRoot != null) {
+        if (isBuilt()) {
             promptForSymbol();
             return;
         }
@@ -218,6 +268,7 @@ final class IndexCoordinator {
         building = true;
         host.setStatus(tr("status.index.building"));
         long gen = generation.incrementAndGet();
+        long marks = staleMarks;
         AutoCloseable task = host.startBackgroundTask(tr("status.index.building"));
         worker.submit(() -> {
             Walked walked = walk(root);
@@ -225,8 +276,11 @@ final class IndexCoordinator {
                 building = false;
                 close(task);
                 if (gen != generation.get()) {
+                    settleWaiters(); // they asked for "when it lands", and it has — with nothing to show
                     return; // a project switch or a rebuild superseded this walk
                 }
+                index.clear(); // a re-walk of a stale index replaces it; entries of vanished files must go
+                stale = marks != staleMarks; // changed again while this walk ran: it may have missed it
                 for (Scanned s : walked.scanned()) {
                     index.put(s.file(), s.symbols());
                 }
@@ -237,6 +291,7 @@ final class IndexCoordinator {
                 if (then != null) {
                     then.run();
                 }
+                settleWaiters();
                 if (truncated) {
                     // Last, so it is what the status bar is left showing: a partial index that looks
                     // complete sends the user hunting for a symbol that was simply never read.
@@ -328,18 +383,42 @@ final class IndexCoordinator {
 
     /** True once a walk has landed, so a caller can decide whether to trigger one. */
     boolean isBuilt() {
-        return indexedRoot != null;
+        return indexedRoot != null && !stale;
     }
 
-    /** Builds if needed, then runs {@code then} — the entry point for a caller that wants results now. */
+    /** {@link #ensureBuilt} callbacks parked on the walk in flight; run when it lands, superseded or not. */
+    private final List<Runnable> waiters = new ArrayList<>();
+
+    private void settleWaiters() {
+        List<Runnable> due = List.copyOf(waiters);
+        waiters.clear(); // first: a callback may call ensureBuilt again
+        due.forEach(Runnable::run);
+    }
+
+    /**
+     * Builds if needed, then runs {@code then} — the entry point for a caller that wants results now.
+     *
+     * <p>{@code then} always runs, exactly once: at once when the index is built or cannot be (switched off,
+     * no local project), else when the walk — this call's or one already in flight — lands. A caller that
+     * was dropped on those exits never refreshed: Search Everywhere kept the previous query's rows, and Enter
+     * ran whatever they happened to start with.
+     */
     void ensureBuilt(Runnable then) {
-        if (!isEnabled()) {
+        if (!isEnabled() || isBuilt()) {
+            then.run();
             return;
         }
-        if (isBuilt()) {
+        Path root = ops.projectRoot();
+        if (root == null || !Vfs.isLocal(root)) {
+            host.setStatus(tr("status.index.noProject"));
             then.run();
+            return;
+        }
+        waiters.add(then);
+        if (building) {
+            host.setStatus(tr("status.index.building"));
         } else {
-            build(then);
+            build(null);
         }
     }
 

@@ -64,9 +64,9 @@
         "prefix": ["block-comment"],
         "description": "A multi-line comment.",
         "body": [
-            "$BLOCK_COMMENT_START",
+            "<#",
             " # ${0:{$TM_SELECTED_TEXT:Enter a comment or description}}",
-            "$BLOCK_COMMENT_END"
+            "#>"
         ]
     },
     "do-until": {

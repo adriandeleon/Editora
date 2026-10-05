@@ -199,7 +199,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
      * match the LSP diagnostic keys). Re-sorts the existing tree without needing fresh diagnostics.
      */
     public void setActiveFile(Path canonicalActive) {
-        if (java.util.Objects.equals(activeFile, canonicalActive)) {
+        if (com.editora.config.PathKeys.samePath(activeFile, canonicalActive)) {
             return;
         }
         activeFile = canonicalActive;

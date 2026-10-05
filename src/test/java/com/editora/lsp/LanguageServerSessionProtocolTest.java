@@ -470,6 +470,51 @@ class LanguageServerSessionProtocolTest {
         build.complete("built");
     }
 
+    // --- a lost session settles what it still owes ------------------------------------------------
+
+    /**
+     * A request already on the wire used to be left to its own timer when the server died: 30 s for a hover,
+     * ten minutes for a workspace build — whose stale callback then reported a failure against whatever the
+     * window was doing by then.
+     */
+    @Test
+    void aServerDeathFailsTheRequestsStillOnTheWire() {
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var session = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {}, null);
+        var server = new FakeLanguageServer();
+        server.hoverFuture = new java.util.concurrent.CompletableFuture<>(); // never answered
+        session.attachForTest(server, new ServerCapabilities());
+        int timers = LanguageServerSession.pendingRequestTimeouts();
+
+        var hover = session.hover(URI, new org.eclipse.lsp4j.Position(0, 0));
+        assertFalse(hover.isDone());
+        assertEquals(1, session.inFlightRequests());
+
+        session.simulateServerDeathForTest();
+
+        assertTrue(hover.isCompletedExceptionally(), "the request must settle when the server is lost");
+        assertEquals(0, session.inFlightRequests());
+        assertEquals(timers, LanguageServerSession.pendingRequestTimeouts(), "and release its timer");
+        // A request made after the death must not be queued for an initialize that will never come.
+        assertTrue(session.executeCommand("x", List.of()).isCompletedExceptionally());
+    }
+
+    /** The same for a deliberate dispose (Restart Servers while a request is out). */
+    @Test
+    void disposingASessionFailsTheRequestsStillOnTheWire() {
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var session = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {}, null);
+        var server = new FakeLanguageServer();
+        server.hoverFuture = new java.util.concurrent.CompletableFuture<>();
+        session.attachForTest(server, new ServerCapabilities());
+
+        var hover = session.hover(URI, new org.eclipse.lsp4j.Position(0, 0));
+        session.dispose();
+
+        assertTrue(hover.isCompletedExceptionally());
+        assertEquals(0, session.inFlightRequests());
+    }
+
     // --- initialize: a filesystem root has no file name --------------------------------------------
 
     /** {@code Path.getFileName()} is null for {@code /} or a drive root; the handshake used to NPE on it. */

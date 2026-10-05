@@ -27,12 +27,29 @@ public final class SearchMatcher {
     /** Bounded variant used by multi-file search so dense lines cannot allocate past its result budget. */
     public static List<int[]> matches(
             String text, String query, boolean caseSensitive, boolean regex, boolean wholeWord, int limit) {
+        return search(text, query, caseSensitive, regex, wholeWord, limit).matches();
+    }
+
+    /**
+     * A search's matches plus whether the search ran to the end of the text. {@code complete} is false when a
+     * regex search was abandoned part-way — it ran out of its time budget or overflowed the stack — so the
+     * caller can say so instead of presenting a partial (possibly empty) list as the whole answer.
+     */
+    public record Result(List<int[]> matches, boolean complete) {}
+
+    /** As {@link #matches(String, String, boolean, boolean, boolean)}, also reporting an abandoned search. */
+    public static Result search(String text, String query, boolean caseSensitive, boolean regex, boolean wholeWord) {
+        return search(text, query, caseSensitive, regex, wholeWord, Integer.MAX_VALUE);
+    }
+
+    private static Result search(
+            String text, String query, boolean caseSensitive, boolean regex, boolean wholeWord, int limit) {
         if (text == null || query == null || query.isEmpty()) {
-            return List.of();
+            return new Result(List.of(), true);
         }
         return regex
-                ? regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS, limit)
-                : literalMatches(text, query, caseSensitive, wholeWord, limit);
+                ? regexSearch(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS, limit)
+                : new Result(literalMatches(text, query, caseSensitive, wholeWord, limit), true);
     }
 
     /** The regex compile error description, or {@code null} if {@code query} is a valid pattern. */
@@ -154,22 +171,41 @@ public final class SearchMatcher {
         return out;
     }
 
+    /** A character that counts as part of a word for whole-word matching — the regex twin of isWordChar. */
+    private static final String WORD_CHAR = "[\\p{L}\\p{Nd}_]";
+
     /**
-     * Compiles the regex query exactly as {@link #matches} does (whole-word wrapped in a non-capturing
-     * group so user capture groups keep their numbers; {@code ^}/{@code $} anchor per line), or
-     * {@code null} on a bad pattern. Shared with
-     * {@code MultiFileSearch.replaceAll}'s capture-group replace so the two can't diverge.
+     * Compiles the regex query for a <b>line-oriented</b> caller ({@code MultiFileSearch}, which hands in one
+     * line at a time), or {@code null} on a bad pattern: the same whole-word wrapping and case flags as
+     * {@link #matches}, but without {@link Pattern#MULTILINE}. On a single line the flag adds nothing, and it
+     * takes something away — a MULTILINE {@code ^} refuses to match at the end of the input, so {@code ^},
+     * {@code ^$} and {@code ^\s*$} would all miss an empty line.
      */
     public static Pattern compileRegex(String query, boolean caseSensitive, boolean wholeWord) {
-        String pattern = wholeWord ? "\\b(?:" + (query == null ? "" : query) + ")\\b" : (query == null ? "" : query);
+        return compile(query, caseSensitive, wholeWord, false);
+    }
+
+    /**
+     * Compiles the regex query for a <b>whole-document</b> search (the find bar, Replace All, Query Replace),
+     * or {@code null} on a bad pattern: {@code ^} and {@code $} anchor at every line rather than only at the
+     * document's two ends.
+     */
+    public static Pattern compileDocumentRegex(String query, boolean caseSensitive, boolean wholeWord) {
+        return compile(query, caseSensitive, wholeWord, true);
+    }
+
+    private static Pattern compile(String query, boolean caseSensitive, boolean wholeWord, boolean multiline) {
+        String q = query == null ? "" : query;
+        // Whole-word means "no word character immediately before or after the match" — the same test the
+        // literal path makes (isWordBounded) and the half boundaries ripgrep -w uses. The query sits in a
+        // non-capturing group so user capture groups keep their numbers.
+        String pattern = wholeWord ? "(?<!" + WORD_CHAR + ")(?:" + q + ")(?!" + WORD_CHAR + ")" : q;
         try {
             // UNICODE_CASE so case-insensitive folds non-ASCII too (é↔É) — matching the literal path's
             // String.regionMatches folding and ripgrep's -i; without it the regex path silently misses
             // accented/Cyrillic/Greek case variants that the other two backends find.
-            // MULTILINE so ^ and $ anchor at every line of a whole-document search (the find bar, Replace All,
-            // Query Replace) instead of only at the document's two ends. The line-oriented callers
-            // (MultiFileSearch) hand in one line at a time, where the flag changes nothing.
-            int flags = Pattern.MULTILINE | (caseSensitive ? 0 : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE));
+            int flags = (multiline ? Pattern.MULTILINE : 0)
+                    | (caseSensitive ? 0 : (Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE));
             return Pattern.compile(pattern, flags);
         } catch (PatternSyntaxException e) {
             return null;
@@ -190,10 +226,6 @@ public final class SearchMatcher {
         return new Deadline(text, DEFAULT_MATCH_BUDGET_NANOS);
     }
 
-    private static List<int[]> regexMatches(String text, String query, boolean caseSensitive, boolean wholeWord) {
-        return regexMatches(text, query, caseSensitive, wholeWord, DEFAULT_MATCH_BUDGET_NANOS, Integer.MAX_VALUE);
-    }
-
     /**
      * Regex matches, but bounded in time. {@code java.util.regex} is a backtracking engine with no timeout, so
      * a <b>valid</b> but pathological pattern — the classic {@code (a+)+$} against a long run of {@code a}s
@@ -207,17 +239,19 @@ public final class SearchMatcher {
      */
     static List<int[]> regexMatches(
             String text, String query, boolean caseSensitive, boolean wholeWord, long budgetNanos) {
-        return regexMatches(text, query, caseSensitive, wholeWord, budgetNanos, Integer.MAX_VALUE);
+        return regexSearch(text, query, caseSensitive, wholeWord, budgetNanos, Integer.MAX_VALUE)
+                .matches();
     }
 
-    private static List<int[]> regexMatches(
+    private static Result regexSearch(
             String text, String query, boolean caseSensitive, boolean wholeWord, long budgetNanos, int limit) {
         if (limit <= 0 || Thread.currentThread().isInterrupted()) {
-            return List.of();
+            return new Result(List.of(), true);
         }
-        Pattern p = compileRegex(query, caseSensitive, wholeWord);
+        // An empty text is one empty line, which a MULTILINE ^ cannot match (see compileRegex).
+        Pattern p = compile(query, caseSensitive, wholeWord, !text.isEmpty());
         if (p == null) {
-            return List.of();
+            return new Result(List.of(), true);
         }
         List<int[]> out = new ArrayList<>();
         Matcher matcher = p.matcher(new Deadline(text, budgetNanos));
@@ -225,20 +259,23 @@ public final class SearchMatcher {
         try {
             while (from <= text.length() && matcher.find(from)) {
                 if (Thread.currentThread().isInterrupted()) {
-                    return out;
+                    return new Result(out, false);
                 }
                 int start = matcher.start();
                 int end = matcher.end();
                 out.add(new int[] {start, end});
                 if (out.size() >= limit) {
-                    return out;
+                    return new Result(out, true);
                 }
                 from = end > start ? end : end + 1; // advance past a zero-width match
             }
-        } catch (MatchBudgetExceededException aborted) {
-            return out; // budget exceeded — partial results beat freezing the UI
+        } catch (MatchBudgetExceededException | StackOverflowError aborted) {
+            // Budget exceeded, or java.util.regex recursed once per repetition of a group (`(.|\n)*?` over
+            // a couple of thousand characters) and ran out of stack. Partial results beat freezing the UI
+            // or an Error escaping onto the FX / search thread.
+            return new Result(out, false);
         }
-        return out;
+        return new Result(out, true);
     }
 
     /**
@@ -293,19 +330,17 @@ public final class SearchMatcher {
     }
 
     /**
-     * True word-boundary ({@code \b}) test for a literal match — a boundary exists where the char inside the
-     * match and the char just outside it differ in word-ness. Using {@code \b} semantics (rather than
-     * "the outside char must be a non-word char") keeps literal whole-word in agreement with the regex path's
-     * {@code \b(?:…)\b} and with ripgrep {@code -w} when the query's own edge char is a non-word char (e.g.
-     * {@code +foo} does match in {@code a+foo} — there is a boundary between {@code a} and {@code +}). For a
-     * query with word-char edges (the common case) this is identical to the old test.
+     * Whole-word test for a literal match: the character immediately before the match and the one
+     * immediately after it must not be word characters. These are ripgrep {@code -w}'s half boundaries, and
+     * the regex path wraps its pattern in the same two lookarounds, so the find bar, replace and project
+     * search agree in both modes. Unlike {@code \b…\b} this does not look at the query's own edge
+     * characters, so a query that starts or ends with punctuation ({@code @Override}, {@code $var},
+     * {@code run()}, {@code --flag}) matches wherever it is not glued to a word.
      */
     private static boolean isWordBounded(String text, int start, int end) {
         boolean beforeWord = start > 0 && isWordChar(text.charAt(start - 1));
-        boolean firstWord = isWordChar(text.charAt(start));
-        boolean lastWord = isWordChar(text.charAt(end - 1));
         boolean afterWord = end < text.length() && isWordChar(text.charAt(end));
-        return (beforeWord != firstWord) && (lastWord != afterWord);
+        return !beforeWord && !afterWord;
     }
 
     private static boolean isWordChar(char c) {

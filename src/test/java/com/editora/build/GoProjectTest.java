@@ -26,4 +26,11 @@ class GoProjectTest {
         assertNull(GoProject.parse("").moduleName());
         assertNull(GoProject.parse(null).moduleName());
     }
+
+    @Test
+    void aByteOrderMarkDoesNotHideTheModuleLine() {
+        assertEquals(
+                "example.com/m",
+                GoProject.parse("\uFEFFmodule example.com/m\n\ngo 1.22\n").moduleName());
+    }
 }

@@ -115,6 +115,28 @@ class LspSessionLifecycleFxTest {
         assertTrue(sessions.get(0).isDisposed(), "the evicted session must be disposed, not merely dropped");
     }
 
+    /**
+     * A Java debug session runs inside the jdtls process, so the session it was started on must outlive its
+     * last open document — and become evictable again once the debug session releases it.
+     */
+    @Test
+    void aRetainedSessionIsNotEvictedUntilItIsReleased() throws Exception {
+        manager.setIdleEvictionGraceForTest(Duration.ofMillis(50));
+        Path f = javaFile("A.java");
+        manager.openDocument(f, root, "java", "class A {}");
+        Runnable lease = manager.retain(f);
+
+        manager.closeDocument(f);
+        Thread.sleep(250);
+        drainFx();
+        assertTrue(manager.hasSessionForTest("java", root), "a session hosting a debug adapter is in use");
+        assertFalse(sessions.get(0).isDisposed());
+
+        lease.run();
+        lease.run(); // idempotent
+        awaitFx(() -> !manager.hasSessionForTest("java", root), "the released session to be evicted");
+    }
+
     /** An eviction must NOT fire while the session still serves another open document. */
     @Test
     void aSessionStillServingAnotherDocumentIsNotEvicted() throws Exception {
@@ -354,18 +376,76 @@ class LspSessionLifecycleFxTest {
             sessions.get(0).simulateServerDeathForTest();
             awaitFx(() -> !crashedServers.isEmpty(), "the failed initialize crash callback");
             assertTrue(Files.exists(workspace), "a cache owned by another process must not be deleted");
+
+            manager.openDocument(f, project, "java", "class A {}");
+            assertEquals(2, sessions.size(), "the retry should create a fresh session");
+            try (var entries = Files.list(base)) {
+                List<String> dirs = entries.filter(Files::isDirectory)
+                        .map(p -> p.getFileName().toString())
+                        .sorted()
+                        .toList();
+                assertEquals(2, dirs.size());
+                assertTrue(dirs.get(1).endsWith("-2"), "the failed canonical cache should be bypassed: " + dirs);
+            }
+        }
+    }
+
+    /**
+     * A failure marker is not permanent: once nothing holds the Eclipse lock any more, the next claim removes
+     * the rebuildable cache and its marker and reuses the canonical name. Nothing used to delete a marker, so
+     * one timed-out handshake orphaned the index and burned a fresh suffix on every later start.
+     */
+    @Test
+    void aMarkedWorkspaceIsReclaimedOnceItsLockIsFree() throws Exception {
+        Path base = root.resolve("jdtls-workspaces");
+        Path workspace = base.resolve("abc123");
+        Path lockFile = workspace.resolve(".metadata/.lock");
+        Files.createDirectories(lockFile.getParent());
+        Path marker = base.resolve(".abc123.initialize-failed");
+        Files.writeString(marker, "initialize failed");
+
+        try (var channel = java.nio.channels.FileChannel.open(
+                        lockFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
+                var ignored = channel.lock()) {
+            String whileLocked = LspManager.claimUsableJdtlsWorkspaceName(base, "abc123");
+            LspManager.releaseJdtlsWorkspaceName(whileLocked);
+            assertEquals("abc123-2", whileLocked, "a cache someone still holds is bypassed");
+            assertTrue(Files.exists(marker));
         }
 
-        manager.openDocument(f, project, "java", "class A {}");
-        assertEquals(2, sessions.size(), "the retry should create a fresh session");
-        try (var entries = Files.list(base)) {
-            List<String> dirs = entries.filter(Files::isDirectory)
-                    .map(p -> p.getFileName().toString())
-                    .sorted()
-                    .toList();
-            assertEquals(2, dirs.size());
-            assertTrue(dirs.get(1).endsWith("-2"), "the failed canonical cache should be bypassed: " + dirs);
+        String afterRelease = LspManager.claimUsableJdtlsWorkspaceName(base, "abc123");
+        LspManager.releaseJdtlsWorkspaceName(afterRelease);
+        assertEquals("abc123", afterRelease, "the canonical name is reused once the lock is free");
+        assertFalse(Files.exists(marker), "the marker heals itself");
+        assertFalse(Files.exists(workspace), "the failed cache is rebuilt from scratch");
+    }
+
+    /**
+     * The repair must wait for the failed server to exit. Killing is non-blocking, so probing the Eclipse
+     * lock straight after it found the session's own dying JVM and marked a cache that was free a moment later.
+     */
+    @Test
+    void aFailedWorkspaceIsRepairedOnlyAfterItsServerHasExited() throws Exception {
+        Path base = root.resolve("jdtls-workspaces");
+        Path workspace = base.resolve("def456");
+        Path lockFile = workspace.resolve(".metadata/.lock");
+        Files.createDirectories(lockFile.getParent());
+        Path marker = base.resolve(".def456.initialize-failed");
+        manager.setJdtlsWorkspaceBase(base);
+        var exited = new java.util.concurrent.CompletableFuture<Void>();
+
+        try (var channel = java.nio.channels.FileChannel.open(
+                        lockFile, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.WRITE);
+                var ignored = channel.lock()) { // the dying server still holds its lock
+            manager.repairAfterExit("java@x", exited, "def456");
+            Thread.sleep(150);
+            assertFalse(Files.exists(marker), "nothing is decided while the server is still exiting");
         }
+        exited.complete(null);
+        manager.pendingExitsForTest().get(10, TimeUnit.SECONDS);
+
+        assertFalse(Files.exists(workspace), "with the server gone its cache is free and is discarded");
+        assertFalse(Files.exists(marker), "and it is not marked as failed");
     }
 
     /** Only jdtls gets a {@code -data} dir; another server must not have one invented for it. */
