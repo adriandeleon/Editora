@@ -7446,6 +7446,7 @@ public class EditorBuffer implements TabContent {
             rulerInputsDirty = false; // nothing to place; a later show() re-marks via setColumnRulerVisible
             return;
         }
+        boolean inputsChanged = rulerInputsDirty;
         Double x = columnRulerX();
         // Clear the pending flag only on a measure that actually produced a position. Before the area's
         // first layout the geometry is unmeasurable and columnRulerX returns null; clearing the flag there
@@ -7453,6 +7454,9 @@ public class EditorBuffer implements TabContent {
         // stay hidden for the life of the buffer.
         if (x != null) {
             rulerInputsDirty = false;
+            if (inputsChanged) {
+                confirmRulerAfterLayout();
+            }
         }
         double viewportWidth = scrollPane.getWidth();
         boolean show = x != null && x >= 0 && x <= viewportWidth;
@@ -7462,6 +7466,36 @@ public class EditorBuffer implements TabContent {
             columnRuler.setEndX(x);
         }
     }
+
+    /**
+     * Measures once more two frames after a measure that followed a changed input (gutter, font, wrap). That
+     * first measure runs from {@code runLater}, which can land before the pulse that lays the new gutter out;
+     * it then reads column 0 at its old x and nothing else would ever correct it. One-shot, and the second
+     * measure does not re-arm it.
+     */
+    private void confirmRulerAfterLayout() {
+        if (rulerConfirm != null) {
+            return;
+        }
+        rulerConfirm = new javafx.animation.AnimationTimer() {
+            private int frames;
+
+            @Override
+            public void handle(long now) {
+                if (++frames < 2) {
+                    return;
+                }
+                stop();
+                rulerConfirm = null;
+                if (rulerVisible && renderingActive) {
+                    measureAndPlaceRuler();
+                }
+            }
+        };
+        rulerConfirm.start();
+    }
+
+    private javafx.animation.AnimationTimer rulerConfirm;
 
     /**
      * Root-local x of column 80: where column 0 starts on screen (the left edge of the first character of any
