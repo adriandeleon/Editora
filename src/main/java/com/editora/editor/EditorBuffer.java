@@ -4459,10 +4459,10 @@ public class EditorBuffer implements TabContent {
 
     // --- Debugger editor surfaces: inline values + hover value tooltip --------------------------
 
-    /** While suspended: the frame's variable name → value map painted as grey end-of-line
-     *  annotations on visible lines that mention them; null/empty clears (resume/terminate). */
-    public void setInlineValues(java.util.Map<String, String> values) {
-        inlineValues.setValues(hugeFile ? null : values);
+    /** While suspended: the frame's variable name → value map painted as grey end-of-line annotations on the
+     *  visible lines of the function stopped at {@code frameLine}; null/empty clears (resume/terminate). */
+    public void setInlineValues(java.util.Map<String, String> values, int frameLine) {
+        inlineValues.setValues(hugeFile ? null : values, frameLine);
     }
 
     /** IntelliJ-style blame "Annotate" gutter column: per-0-based-line annotations (null/empty clears it).
