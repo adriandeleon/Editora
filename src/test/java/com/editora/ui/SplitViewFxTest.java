@@ -374,12 +374,19 @@ class SplitViewFxTest {
 
         javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu");
         FxTestSupport.runOnFx(() -> {
-            javafx.geometry.Point2D at = second.localToScreen(40, 40);
+            // Inside pane 2's selection: a right-click outside it moves the caret there and drops it.
+            second.showParagraphAtTop(8);
+            second.layout();
+            int inSelection = second.getAbsolutePosition(10, 6);
+            javafx.geometry.Bounds on = second.getCharacterBoundsOnScreen(inSelection, inSelection + 1)
+                    .orElseThrow();
+            javafx.geometry.Point2D at = new javafx.geometry.Point2D(on.getMinX() + 1, on.getCenterY());
+            javafx.geometry.Point2D local = second.screenToLocal(at);
             second.getOnContextMenuRequested()
                     .handle(new javafx.scene.input.ContextMenuEvent(
                             javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED,
-                            40,
-                            40,
+                            local.getX(),
+                            local.getY(),
                             at.getX(),
                             at.getY(),
                             false,
