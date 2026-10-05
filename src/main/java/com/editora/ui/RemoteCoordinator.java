@@ -2,7 +2,9 @@ package com.editora.ui;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -329,7 +331,16 @@ final class RemoteCoordinator {
 
     /** Mounts a connected remote folder as the Project tree root + opens the Project tool window. */
     private void mount(RemoteConnection conn, Path root) {
+        String previous = activeRemoteAuthority;
         activeRemoteAuthority = conn.id();
+        if (previous != null
+                && !previous.equals(conn.id())
+                && remoteFs != null
+                && buffersOn(Set.of(previous), false).isEmpty()) {
+            // Nothing shows the earlier host any more: without this its SSH session stayed authenticated and
+            // open until the window closed. With tabs still on it, it stays up so they can be saved.
+            remoteFs.disconnect(previous);
+        }
         ops.putConnection(conn); // remember the connection (metadata only — no secret) for next time
         panel.refresh(); // surface the just-used site at the top of the list
         rebindOpenBuffers(conn.id());
@@ -388,13 +399,49 @@ final class RemoteCoordinator {
         });
     }
 
-    /** Disconnects the mounted remote folder and returns the Project tree to the active local project. */
+    /** The names of open remote files on {@code authorities} — all of them, or only those with unsaved edits. */
+    private List<String> buffersOn(Set<String> authorities, boolean unsavedOnly) {
+        List<String> names = new ArrayList<>();
+        host.forEachBuffer(buffer -> {
+            String authority = Vfs.authorityOf(buffer.getPath());
+            if (authority != null && authorities.contains(authority) && (!unsavedOnly || buffer.isDirty())) {
+                names.add(Vfs.displayLabel(buffer.getPath()));
+            }
+        });
+        return names;
+    }
+
+    /** Asks before closing connections that unsaved remote tabs still need for their next save. */
+    private boolean confirmDisconnect(List<String> unsaved) {
+        ButtonType disconnect = new ButtonType(tr("dialog.remoteDisconnect.confirm"), ButtonBar.ButtonData.OK_DONE);
+        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        Alert alert = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("dialog.remoteDisconnect.content", String.join("\n", unsaved), tr("command.file.saveAs")),
+                disconnect,
+                cancel);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.remoteDisconnect.title"));
+        alert.setHeaderText(tr("dialog.remoteDisconnect.header"));
+        return Dialogs.styled(alert).showAndWait().orElse(cancel) == disconnect;
+    }
+
+    /**
+     * Closes every remote connection of this window — the mounted folder's, and any earlier host that was
+     * kept open for its tabs — and returns the Project tree to the active local project. Tabs on those
+     * hosts stay open; when any has unsaved changes the user is asked first.
+     */
     void disconnect() {
-        if (activeRemoteAuthority == null || remoteFs == null) {
+        Set<String> connected = remoteFs == null ? Set.of() : remoteFs.connectedAuthorities();
+        if (activeRemoteAuthority == null && connected.isEmpty()) {
             host.setStatus(tr("status.remote.notConnected"));
             return;
         }
-        remoteFs.disconnect(activeRemoteAuthority);
+        List<String> unsaved = buffersOn(connected, true);
+        if (!unsaved.isEmpty() && !confirmDisconnect(unsaved)) {
+            return;
+        }
+        connected.forEach(remoteFs::disconnect);
         activeRemoteAuthority = null;
         Path activeRoot = ops.activeProjectRoot();
         if (activeRoot != null) {

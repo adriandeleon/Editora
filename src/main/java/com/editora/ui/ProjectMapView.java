@@ -378,9 +378,14 @@ final class ProjectMapView extends VBox {
 
     void setRoot(Path root) {
         Path normalized = ProjectMapModel.normalize(root);
-        if (java.util.Objects.equals(this.root, normalized)) {
+        // Not Objects.equals: two SFTP paths on different connections throw from equals() instead of
+        // answering false, which made mounting a second host (or reconnecting to the first) fail half-way.
+        if (com.editora.config.PathKeys.samePath(this.root, normalized)) {
             return;
         }
+        boolean otherFileSystem = this.root != null
+                && normalized != null
+                && !com.editora.config.PathKeys.sameFileSystem(this.root, normalized);
         this.root = normalized;
         closeAllPreviews();
         expanded.clear();
@@ -390,6 +395,11 @@ final class ProjectMapView extends VBox {
         pendingSelection = normalized;
         setOutputEnabled(false);
         surface.resetForRoot();
+        if (otherFileSystem) {
+            // Until the reload lands the surface would compare the old connection's entries with the new
+            // root's paths, and those comparisons throw too.
+            surface.setEntries(List.of(), Set.of());
+        }
         if (normalized != null) {
             expanded.add(normalized);
             recordSelection(normalized);
@@ -950,7 +960,10 @@ final class ProjectMapView extends VBox {
 
     void revealPath(Path path) {
         Path normalized = ProjectMapModel.normalize(path);
-        if (normalized == null || root == null || !normalized.startsWith(root)) {
+        if (normalized == null
+                || root == null
+                || !com.editora.config.PathKeys.sameFileSystem(normalized, root)
+                || !normalized.startsWith(root)) {
             return;
         }
         if (surface.contains(normalized)) {
@@ -973,7 +986,11 @@ final class ProjectMapView extends VBox {
         backButton.setDisable(historyIndex <= 0);
         forwardButton.setDisable(historyIndex < 0 || historyIndex >= selectionHistory.size() - 1);
         Path selected = surface.selectedEntry().map(ProjectMapModel.Entry::path).orElse(pendingSelection);
-        if (selected == null || root == null || !selected.startsWith(root)) {
+        // The surface may still hold the previous root's selection, which can be on another connection.
+        if (selected == null
+                || root == null
+                || !com.editora.config.PathKeys.sameFileSystem(selected, root)
+                || !selected.startsWith(root)) {
             breadcrumbs.getChildren().clear();
             return;
         }
