@@ -56,6 +56,22 @@ public final class SexpNav {
      * Punctuation on the way (an operator, a separator) is skipped with the whitespace. Returns {@code pos} unchanged when there is nothing ahead or the caret is before a closing bracket.
      */
     public static int forward(String text, int pos) {
+        int end = scanForward(text, pos);
+        return end < 0 ? text.length() : end; // unbalanced: go to end
+    }
+
+    /**
+     * As {@link #forward}, for the commands that act on the span ({@code kill-sexp}, {@code mark-sexp}): a
+     * bracket with no matching closer is a no-op ({@code pos}) rather than "everything to the end of the
+     * buffer", which is what Emacs' "Unbalanced parentheses" error protects against.
+     */
+    public static int forwardBalanced(String text, int pos) {
+        int end = scanForward(text, pos);
+        return end < 0 ? pos : end;
+    }
+
+    /** {@link #forward}'s scan; -1 when the bracket ahead has no matching closer. */
+    private static int scanForward(String text, int pos) {
         int n = text.length();
         int i = clamp(pos, n);
         while (i < n && (isSpace(text.charAt(i)) || isPunctuation(text.charAt(i)))) {
@@ -85,7 +101,7 @@ public final class SexpNav {
                     }
                 }
             }
-            return n; // unbalanced: go to end
+            return -1;
         }
         if (isQuote(c)) {
             return skipStringForward(text, i) + 1;
@@ -141,32 +157,20 @@ public final class SexpNav {
         return i < pos ? i : pos;
     }
 
-    /** Index of the closing quote that matches the opening quote at {@code open} (or end of text). */
+    /**
+     * Index of the closing quote that matches the opening quote at {@code open}, or {@code open} itself
+     * when that quote opens no string (an apostrophe, a lifetime, a quote with no partner on its line —
+     * see {@link Quotes}), so the caller steps over it as an ordinary character.
+     */
     private static int skipStringForward(String text, int open) {
-        char q = text.charAt(open);
-        int n = text.length();
-        for (int j = open + 1; j < n; j++) {
-            char d = text.charAt(j);
-            if (d == '\\') {
-                j++; // skip the escaped char
-                continue;
-            }
-            if (d == q) {
-                return j;
-            }
-        }
-        return n - 1;
+        int close = Quotes.closing(text, open, text.length());
+        return close < 0 ? open : close;
     }
 
-    /** Index of the opening quote that matches the closing quote at {@code close} (or 0). */
+    /** Index of the opening quote that matches the closing quote at {@code close}, or {@code close} itself. */
     private static int skipStringBackward(String text, int close) {
-        char q = text.charAt(close);
-        for (int j = close - 1; j >= 0; j--) {
-            if (text.charAt(j) == q && (j == 0 || text.charAt(j - 1) != '\\')) {
-                return j;
-            }
-        }
-        return 0;
+        int open = Quotes.opening(text, close);
+        return open < 0 ? close : open;
     }
 
     private static int lineStartOf(String text, int pos) {
@@ -187,7 +191,7 @@ public final class SexpNav {
     }
 
     /** Whether the line starting at {@code ls} begins a defun (heuristic; see the class doc). */
-    private static boolean isDefunStart(String text, int ls) {
+    static boolean isDefunStart(String text, int ls) {
         if (ls >= text.length()) {
             return false;
         }

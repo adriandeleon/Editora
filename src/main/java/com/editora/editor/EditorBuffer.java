@@ -4885,9 +4885,10 @@ public class EditorBuffer implements TabContent {
         if (line.length() <= fillColumn) {
             return;
         }
-        String prefix = com.editora.editops.Filler.fillPrefix(
-                line, com.editora.editops.Commenter.styleFor(getLanguage()).line());
-        com.editora.editops.AutoFill.Break brk = com.editora.editops.AutoFill.compute(line, fillColumn, prefix);
+        com.editora.editops.AutoFill.Break brk = com.editora.editops.AutoFill.computeProse(
+                line,
+                fillColumn,
+                com.editora.editops.Commenter.styleFor(getLanguage()).line());
         if (brk == null) {
             return;
         }
@@ -8765,7 +8766,7 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = Indenter.closerAlignIndent(style, a.getText(), caret, tabSize, currentIndent);
+        String aligned = Indenter.closerAlignIndent(style, a.getText(), caret, tabSize, currentIndent, c);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
