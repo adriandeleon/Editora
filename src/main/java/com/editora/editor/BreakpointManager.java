@@ -31,6 +31,8 @@ public final class BreakpointManager implements LineMarks.Carrier {
     private Runnable onChanged = () -> {};
     private java.util.function.Consumer<java.util.Collection<Integer>> onLinesRepaint = c -> {};
     private boolean restoring;
+    /** The change being reported came from a text edit moving / re-texting marks, not from the user's own action. */
+    private boolean editDriven;
     /** True while a narrow/widen text swap runs: the swap is not an edit, so nothing is shifted through it. */
     private boolean swapping;
     /** A marked line's text changed since the last {@link #snapshot()} (reported once, not per keystroke). */
@@ -183,6 +185,7 @@ public final class BreakpointManager implements LineMarks.Carrier {
      */
     public boolean restore(List<Breakpoint> saved) {
         restoring = true;
+        dropped.clear();
         try {
             byLine = reanchor(
                     saved,
@@ -312,11 +315,36 @@ public final class BreakpointManager implements LineMarks.Carrier {
         return LineMarks.snapshotText(lineTextAt.apply(line));
     }
 
+    /**
+     * Whether the change now being reported through {@link #setOnChanged} was caused by a text edit (lines
+     * shifting under the breakpoints, a marked line retyped) rather than by a toggle / edit of a breakpoint.
+     * Edits arrive per keystroke and may be persisted lazily; a user's own change must not wait.
+     */
+    public boolean isEditDriven() {
+        return editDriven;
+    }
+
     private void onTextChanges(List<PlainTextChange> changes) {
-        if (swapping || byLine.isEmpty()) {
+        if (swapping || (byLine.isEmpty() && dropped.isEmpty())) {
             return; // hot-path early-out: nothing to track
         }
+        editDriven = true;
+        try {
+            trackEdit(changes);
+        } finally {
+            editDriven = false;
+        }
+    }
+
+    private void trackEdit(List<PlainTextChange> changes) {
         LineMarkTracker.Result<Breakpoint> result = LineMarkTracker.apply(byLine, KIND, changes, area);
+        if (result.moved()) {
+            rememberDropped(byLine, result.marks());
+        }
+        NavigableMap<Integer, Breakpoint> revived = revive(result.marks(), changes);
+        if (revived != null) {
+            result = new LineMarkTracker.Result<>(revived, true, result.retexted());
+        }
         if (result.moved()) {
             // Both the vacated and the new lines need their gutter markers repainted: the document edit
             // already rebuilds those graphics, but with the pre-shift set, so the moved marker would
@@ -394,6 +422,75 @@ public final class BreakpointManager implements LineMarks.Carrier {
         } finally {
             swapping = false;
         }
+    }
+
+    /** How many deleted lines' breakpoints are remembered for an undo / a paste to bring back. */
+    private static final int MAX_DROPPED = 32;
+
+    /**
+     * Breakpoints whose line was deleted, newest last. Deleting the line drops the breakpoint — but Undo, or
+     * pasting a line that was cut to move it, puts the very same text back, and the breakpoint (with its
+     * condition and log message) belongs to that text. See {@link #revive}.
+     */
+    private final java.util.ArrayDeque<Breakpoint> dropped = new java.util.ArrayDeque<>();
+
+    private void rememberDropped(NavigableMap<Integer, Breakpoint> before, NavigableMap<Integer, Breakpoint> after) {
+        if (after.size() >= before.size()) {
+            return;
+        }
+        List<Breakpoint> left = new ArrayList<>(after.values());
+        for (Breakpoint was : before.values()) {
+            boolean kept = left.removeIf(now -> now.lineText().equals(was.lineText())
+                    && now.condition().equals(was.condition())
+                    && now.logMessage().equals(was.logMessage()));
+            if (!kept && !was.lineText().isEmpty()) {
+                dropped.addLast(was);
+                if (dropped.size() > MAX_DROPPED) {
+                    dropped.removeFirst();
+                }
+            }
+        }
+    }
+
+    /**
+     * Puts back the breakpoints of deleted lines that this edit re-inserted: an insertion whose text contains
+     * a dropped breakpoint's line, landing on a line that now reads exactly that. Returns the marks with them
+     * added, or {@code null} when nothing came back. Typing never matches — the inserted text itself must
+     * hold the whole line, which only an undo, a redo or a paste does.
+     */
+    private NavigableMap<Integer, Breakpoint> revive(
+            NavigableMap<Integer, Breakpoint> marks, List<PlainTextChange> changes) {
+        if (dropped.isEmpty() || changes.size() != 1) {
+            return null;
+        }
+        String inserted = changes.get(0).getInserted();
+        if (inserted.indexOf('\n') < 0) {
+            return null;
+        }
+        int first = area.offsetToPosition(Math.min(changes.get(0).getPosition(), area.getLength()), Bias.Forward)
+                .getMajor();
+        int last = Math.min(area.getParagraphs().size() - 1, first + LineMarks.countNewlines(inserted));
+        NavigableMap<Integer, Breakpoint> out = null;
+        for (var it = dropped.iterator(); it.hasNext(); ) {
+            Breakpoint was = it.next();
+            if (!inserted.contains(was.lineText())) {
+                continue;
+            }
+            for (int line = first; line <= last; line++) {
+                NavigableMap<Integer, Breakpoint> current = out == null ? marks : out;
+                if (!current.containsKey(line)
+                        && LineMarks.snapshotText(area.getParagraph(line).getText())
+                                .equals(was.lineText())) {
+                    if (out == null) {
+                        out = new TreeMap<>(marks);
+                    }
+                    out.put(line, was.withLine(line));
+                    it.remove();
+                    break;
+                }
+            }
+        }
+        return out;
     }
 
     private void fireChanged() {

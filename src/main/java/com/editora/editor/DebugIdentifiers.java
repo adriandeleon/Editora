@@ -43,6 +43,14 @@ final class DebugIdentifiers {
     /** The members of {@code names} appearing in {@code line} as whole identifiers, in
      *  first-occurrence order, deduplicated. */
     static List<String> matchesIn(String line, Set<String> names) {
+        return matchesIn(line, names, col -> false);
+    }
+
+    /**
+     * As {@link #matchesIn(String, Set)}, leaving out occurrences that start at a column {@code notCode}
+     * accepts — a name inside a comment or a string literal is a word, not the variable.
+     */
+    static List<String> matchesIn(String line, Set<String> names, java.util.function.IntPredicate notCode) {
         List<String> out = new ArrayList<>();
         if (line == null || names == null || names.isEmpty()) {
             return out;
@@ -57,7 +65,7 @@ final class DebugIdentifiers {
                     i++;
                 }
                 String w = line.substring(s, i);
-                if (names.contains(w) && !out.contains(w)) {
+                if (names.contains(w) && !out.contains(w) && !notCode.test(s)) {
                     out.add(w);
                 }
             } else if (isIdentChar(c)) {

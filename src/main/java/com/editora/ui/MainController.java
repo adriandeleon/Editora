@@ -1022,7 +1022,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private Chrome.PaletteContext paletteContext() {
         EditorBuffer b = activeBuffer();
-        boolean debugActive = dapManager.isActive();
+        boolean debugActive = debugCoordinator != null && debugCoordinator.sessionLive(); // incl. starting/building
         boolean suspended = dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED;
         return new Chrome.PaletteContext(
                 b != null,
@@ -1602,6 +1602,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             buffer.setPath(target);
             editorSettings.applyEditorConfig(buffer);
             lspCoordinator.documentPathChanged(buffer, old, oldLspAlreadyClosed);
+            debugCoordinator.bufferPathChanged(buffer, old);
             updateTabMeta(tab, buffer);
             if (buffer == activeBuffer()) {
                 breadcrumb.setActiveFile(target);
@@ -1624,6 +1625,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     b.setPath(moved);
                     editorSettings.applyEditorConfig(b);
                     lspCoordinator.documentPathChanged(b, p, oldLspAlreadyClosed);
+                    debugCoordinator.bufferPathChanged(b, p);
                     updateTabMeta(t, b);
                     migrateFileState(p, moved);
                     if (b == activeBuffer()) {
@@ -2430,7 +2432,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                     @Override
                     public void openPath(Path file) {
-                        fileWorkflows.openPath(file);
+                        fileWorkflows.openPath(file, true); // no "Already open" echo on every stop and step
+                    }
+
+                    @Override
+                    public boolean isToolWindowOpen() {
+                        return toolWindows.isOpen(debugToolWindow);
                     }
 
                     @Override
@@ -5058,6 +5065,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
                     lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
+                    debugCoordinator.bufferPathChanged(buffer, oldPath);
                 }
 
                 @Override

@@ -1450,12 +1450,17 @@ public final class DapManager implements DapClient.Host {
     }
 
     public void variables(int ref, Consumer<List<DapModels.VariableInfo>> cb) {
+        variables(ref, null, 0, 0, cb);
+    }
+
+    /** One page of a container's children — see {@link DapClient#variables(int, String, int, int)}. */
+    public void variables(int ref, String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
         DapClient c = client;
         if (c == null) {
             cb.accept(List.of());
             return;
         }
-        c.variables(ref)
+        c.variables(ref, filter, start, count)
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(vars == null ? List.of() : vars);
@@ -1512,15 +1517,24 @@ public final class DapManager implements DapClient.Host {
                 }));
     }
 
+    /**
+     * Sets a variable. {@code cb} gets the value the adapter reports back — only when the adapter accepted it;
+     * a refusal (wrong type, a final field, an unparsable value) goes to {@link Listener#onError} and leaves
+     * {@code cb} uncalled, so the caller never shows the typed text as if it were the variable's new value.
+     */
     public void setVariable(int ref, String name, String value, Consumer<String> cb) {
-        if (client == null) {
-            cb.accept(value);
-            return;
-        }
         DapClient c = client;
+        if (c == null) {
+            return; // no session: nothing was set
+        }
         c.setVariable(ref, name, value)
                 .whenComplete((r, e) -> Platform.runLater(() -> {
-                    if (client == c) {
+                    if (client != c) {
+                        return;
+                    }
+                    if (e != null) {
+                        listener.onError(msg(e));
+                    } else {
                         cb.accept(r == null ? value : r);
                     }
                 }));
@@ -1780,6 +1794,13 @@ public final class DapManager implements DapClient.Host {
     }
 
     private static String msg(Throwable t) {
+        // A failed request arrives wrapped (CompletionException / ExecutionException), whose own message is
+        // "<exception class>: <adapter message>" — show what the adapter said, not the Java class name.
+        while ((t instanceof java.util.concurrent.CompletionException
+                        || t instanceof java.util.concurrent.ExecutionException)
+                && t.getCause() != null) {
+            t = t.getCause();
+        }
         return t == null ? "" : (t.getMessage() == null ? t.toString() : t.getMessage());
     }
 

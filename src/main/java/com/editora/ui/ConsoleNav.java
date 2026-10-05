@@ -91,6 +91,9 @@ public final class ConsoleNav {
         return m;
     }
 
+    /** How far past the cap a trim looks for a line end to cut at. */
+    private static final int TRIM_LINE_SCAN = 4096;
+
     /**
      * The tail of a console's append: trims to {@code maxChars}, then either scrolls to the new end or —
      * when the user had scrolled back ({@code follow} false) — puts the caret back where they left it.
@@ -108,6 +111,12 @@ public final class ConsoleNav {
         int len = console.getLength();
         if (len > maxChars) {
             trimmed = len - maxChars;
+            // Cut at the end of a line, not in the middle of one: the first thing shown is then a whole line.
+            int lineEnd = console.getText(trimmed, Math.min(len, trimmed + TRIM_LINE_SCAN))
+                    .indexOf('\n');
+            if (lineEnd >= 0) {
+                trimmed += lineEnd + 1;
+            }
             console.deleteText(0, trimmed);
         }
         if (follow) {

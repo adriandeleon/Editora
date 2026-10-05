@@ -3152,6 +3152,10 @@
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
 }
+/* The frame rows as dense as the variable rows beside them: the theme's default list-cell height is twice
+   that, which halved the frames a strip-high list can show. */
+.debug-panel .debug-stack { -fx-fixed-cell-size: 22px; }
+.debug-panel .debug-stack .list-cell { -fx-cell-size: 22px; -fx-alignment: center-left; }
 .debug-panel .split-pane {
     -fx-background-color: transparent;
     -fx-background-insets: 0;
