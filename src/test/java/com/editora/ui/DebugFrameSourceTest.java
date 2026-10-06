@@ -5,6 +5,8 @@ import java.util.List;
 
 import com.editora.dap.DapModels.StackFrameInfo;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -18,6 +20,9 @@ class DebugFrameSourceTest {
     }
 
     @Test
+    @DisabledOnOs(
+            value = OS.WINDOWS,
+            disabledReason = "a jdt: URI is not a legal Windows path; DapClient.sourcePath yields no file for it there")
     void theTopmostFrameWithSourceIsShown() {
         List<StackFrameInfo> frames = List.of(
                 frame(1, Path.of("jdt:/contents/java.base/java.lang/Thread.java")), frame(2, null), frame(3, MAIN));

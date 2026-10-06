@@ -50,7 +50,7 @@ class VfsTest {
     @Test
     void localPathRoundTripsAsAPlainString() {
         Path p = Path.of("/Users/ada/foo.java");
-        assertEquals("/Users/ada/foo.java", Vfs.toStorableString(p));
+        assertEquals(p.toString(), Vfs.toStorableString(p), "a local path is stored as itself, with no scheme");
         assertEquals(p, Vfs.parseStorable(Vfs.toStorableString(p)));
     }
 

@@ -40,14 +40,14 @@ class InstallCatalogTest {
     @Test
     void pipTargetArgvUsesUpgradeAndTarget() {
         assertEquals(
-                List.of("python3", "-m", "pip", "install", "--upgrade", "--target", "/tmp/dest", "debugpy"),
+                List.of("python3", "-m", "pip", "install", "--upgrade", "--target", str("/tmp/dest"), "debugpy"),
                 InstallCatalog.pipInstallTargetArgv("python3", Path.of("/tmp/dest"), "debugpy"));
     }
 
     @Test
     void tarArgvExtractsGzipIntoDest() {
         assertEquals(
-                List.of("tar", "-xzf", "/tmp/x.tar.gz", "-C", "/tmp/out"),
+                List.of("tar", "-xzf", str("/tmp/x.tar.gz"), "-C", str("/tmp/out")),
                 InstallCatalog.tarExtractArgv(Path.of("/tmp/x.tar.gz"), Path.of("/tmp/out")));
     }
 
@@ -262,7 +262,7 @@ class InstallCatalogTest {
     @Test
     void tarExtractArgvAutoDetectsCompression() {
         assertEquals(
-                java.util.List.of("tar", "-xf", "/tmp/x.tar.xz", "-C", "/tmp/out"),
+                java.util.List.of("tar", "-xf", str("/tmp/x.tar.xz"), "-C", str("/tmp/out")),
                 InstallCatalog.tarExtractArgvAuto(Path.of("/tmp/x.tar.xz"), Path.of("/tmp/out")));
     }
 
@@ -357,8 +357,10 @@ class InstallCatalogTest {
             assertEquals(List.of(unix.toString(), "lsp"), argv);
         }
         // What the old code stored: the very same path, unquoted, is two arguments and names no file.
+        String raw = unix.toString(); // rendered with the platform's separator
+        int space = raw.indexOf(' ');
         assertEquals(
-                List.of("/Users/John", "Smith/.editora/plugins/lsp/typst/tinymist", "lsp"),
+                List.of(raw.substring(0, space), raw.substring(space + 1), "lsp"),
                 com.editora.lsp.LspServerRegistry.tokenize(unix + " lsp"));
     }
 
@@ -390,20 +392,19 @@ class InstallCatalogTest {
 
     @Test
     void jvmClasspathCommandQuotesTheWildcardDir() {
-        String cmd = InstallCatalog.jvmClasspathCommand(
-                Path.of("/home/u/.editora/plugins/lsp/maven"), InstallCatalog.LEMMINX_MAIN_CLASS);
+        Path dir = Path.of("/home/u/.editora/plugins/lsp/maven");
+        String cmd = InstallCatalog.jvmClasspathCommand(dir, InstallCatalog.LEMMINX_MAIN_CLASS);
         String sep = java.io.File.separator;
-        assertEquals(
-                "java -cp \"/home/u/.editora/plugins/lsp/maven" + sep + "*\" org.eclipse.lemminx.XMLServerLauncher",
-                cmd);
+        assertEquals("java -cp \"" + dir + sep + "*\" org.eclipse.lemminx.XMLServerLauncher", cmd);
         // Re-tokenizing (as LspServerRegistry does) keeps the quoted classpath as one argv element.
         assertEquals(
-                List.of(
-                        "java",
-                        "-cp",
-                        "/home/u/.editora/plugins/lsp/maven" + sep + "*",
-                        "org.eclipse.lemminx.XMLServerLauncher"),
+                List.of("java", "-cp", dir + sep + "*", "org.eclipse.lemminx.XMLServerLauncher"),
                 com.editora.lsp.LspServerRegistry.tokenize(cmd));
+    }
+
+    /** {@code path} as the platform renders it — what an argv built from a {@link Path} carries. */
+    private static String str(String path) {
+        return Path.of(path).toString();
     }
 
     /** Extracts {@code <default>} from a {@code NAME="${NAME:-<default>}"} line of a shell script. */

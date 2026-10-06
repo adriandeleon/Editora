@@ -276,12 +276,12 @@ public final class SingleInstance implements AutoCloseable {
         List<String> args = parseRequest(line, token);
         if (args == null) {
             out.write(MAGIC + " ERR");
-            out.newLine();
+            out.write('\n'); // the wire format's terminator, not the platform's line separator
             out.flush();
             return;
         }
         out.write(ACK_OK);
-        out.newLine();
+        out.write('\n'); // the wire format's terminator, not the platform's line separator
         out.flush();
         deliver(args);
     }
@@ -365,7 +365,7 @@ public final class SingleInstance implements AutoCloseable {
             socket.setSoTimeout(READ_TIMEOUT_MS);
             var out = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.UTF_8));
             out.write(buildRequest(endpoint.token, args));
-            out.newLine();
+            out.write('\n'); // the wire format's terminator, not the platform's line separator
             out.flush();
             var in = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
             return ACK_OK.equals(readBounded(in));
@@ -384,12 +384,21 @@ public final class SingleInstance implements AutoCloseable {
         }
     }
 
-    private static String readBounded(BufferedReader in) throws IOException {
+    /**
+     * One line of the wire format, without its terminator. A carriage return is dropped wherever it appears:
+     * requests and replies are ASCII tokens and hex, so it is never data, and a peer that ended its line with
+     * the platform separator ({@code \r\n} on Windows — every reply then failed the {@link #ACK_OK} check, so
+     * no launch was ever forwarded there) must still be understood.
+     */
+    static String readBounded(BufferedReader in) throws IOException {
         StringBuilder sb = new StringBuilder();
         int c;
         while ((c = in.read()) != -1) {
             if (c == '\n') {
                 break;
+            }
+            if (c == '\r') {
+                continue;
             }
             if (sb.length() >= MAX_REQUEST_BYTES) {
                 return null;

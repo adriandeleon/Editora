@@ -143,6 +143,9 @@ class PatchWriterTest {
     void everyEofShapeRoundTripsThroughGitApply(@TempDir Path dir) throws Exception {
         Assumptions.assumeTrue(gitAvailable(), "git is not installed");
         run(dir, null, "git", "init", "-q");
+        // Git for Windows defaults to core.autocrlf=true, which rewrites the applied file's line endings and
+        // would fail the byte-for-byte comparison below for a reason that has nothing to do with the patch.
+        run(dir, null, "git", "config", "core.autocrlf", "false");
         List<String> bodies = List.of(
                 "",
                 "a",

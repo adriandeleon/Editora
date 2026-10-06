@@ -84,14 +84,16 @@ class MaidOutputTest {
 
     @Test
     void renderArgsPrefixesTheBaseCommand() {
-        List<String> args = Mermaid.renderArgs(List.of("mmdc"), Path.of("/tmp/in.mmd"), Path.of("/tmp/out.png"), true);
+        Path in = Path.of("/tmp/in.mmd");
+        Path out = Path.of("/tmp/out.png");
+        List<String> args = Mermaid.renderArgs(List.of("mmdc"), in, out, true);
         assertEquals(
                 List.of(
                         "mmdc",
                         "-i",
-                        "/tmp/in.mmd",
+                        in.toString(),
                         "-o",
-                        "/tmp/out.png",
+                        out.toString(),
                         "-t",
                         "dark",
                         "-b",

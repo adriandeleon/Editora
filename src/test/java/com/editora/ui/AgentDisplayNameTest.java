@@ -83,7 +83,9 @@ class AgentDisplayNameTest {
     void homeCollapsedAbbreviatesHomePrefix() {
         String home = System.getProperty("user.home");
         assertEquals("~", AgentCoordinator.homeCollapsed(home));
-        assertEquals("~/proj", AgentCoordinator.homeCollapsed(home + java.io.File.separator + "proj"));
+        assertEquals(
+                "~" + java.io.File.separator + "proj",
+                AgentCoordinator.homeCollapsed(home + java.io.File.separator + "proj"));
         assertEquals("/etc/x", AgentCoordinator.homeCollapsed("/etc/x"));
         assertEquals("", AgentCoordinator.homeCollapsed(null));
     }

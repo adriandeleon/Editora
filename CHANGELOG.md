@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Python. A missing Mermaid linter is now a warning rather than a problem, since diagrams still render
   without it. Refresh no longer lets the previous run's queued checks start, the Git row shows the
   configured Git command, and the Java row links to the Build Tools page where its JDK is chosen.
+- A setting toggled from the command palette or a key binding now always reaches the other open windows.
+  When another window happened to save just before the window you toggled it in, that window was taken for
+  the one that made the change and kept the old view until restart or its next settings change.
+- Windows: opening a file while Editora is already running now hands it to the running editor instead of
+  starting a second one. The two sides ended their messages with the platform's line ending and the reply
+  check did not expect the extra carriage return, so no launch was ever forwarded there.
+- Windows: AI requests through the Codex agent no longer leave an empty `editora-ai-` folder behind in the
+  temp directory each time; the folder could not be removed while the agent was still exiting.
 - Follow-ups to the Settings, Java debugging and editing review, plus a review of mouse editing, tab dragging
   and remote (SFTP) saves. Lines marked 'Changed' are behaviour you will notice as different rather than
   fixed:
