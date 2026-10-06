@@ -37,7 +37,7 @@ class JdkToolchainTest {
                 .map(Map.Entry::getValue)
                 .findFirst()
                 .orElseThrow();
-        assertEquals("/opt/jdk-25/bin" + File.pathSeparator + "/usr/bin", path);
+        assertEquals(Path.of("/opt/jdk-25", "bin") + File.pathSeparator + "/usr/bin", path);
         assertTrue(JdkToolchain.javaExecutable("/opt/jdk-25").contains("bin"));
         assertEquals(
                 Path.of("/opt/jdk-25", "bin", isWindows() ? "javac.exe" : "javac")

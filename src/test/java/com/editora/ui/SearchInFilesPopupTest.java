@@ -11,7 +11,10 @@ class SearchInFilesPopupTest {
     @Test
     void relativeWhenUnderRoot() {
         Path root = Path.of("/proj");
-        assertEquals("src/Main.java", SearchInFilesPopup.displayPath(root, Path.of("/proj/src/Main.java")));
+        // Shown with the platform's separator.
+        assertEquals(
+                Path.of("src", "Main.java").toString(),
+                SearchInFilesPopup.displayPath(root, Path.of("/proj/src/Main.java")));
     }
 
     @Test

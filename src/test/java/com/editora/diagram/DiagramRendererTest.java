@@ -38,17 +38,18 @@ class DiagramRendererTest {
 
     @Test
     void dotArgs_specifyOutputFile() {
-        List<String> args = DiagramKind.DOT.args(
-                List.of("dot"), Path.of("/t/diagram.dot"), Path.of("/t/diagram.png"), "png", false);
-        assertEquals(List.of("dot", "-Tpng", "-o", "/t/diagram.png", "/t/diagram.dot"), args);
+        Path in = Path.of("/t/diagram.dot");
+        Path out = Path.of("/t/diagram.png");
+        List<String> args = DiagramKind.DOT.args(List.of("dot"), in, out, "png", false);
+        assertEquals(List.of("dot", "-Tpng", "-o", out.toString(), in.toString()), args);
     }
 
     @Test
     void plantumlArgs_writeBesideInput() {
-        List<String> args = DiagramKind.PLANTUML.args(
-                List.of("plantuml"), Path.of("/t/diagram.puml"), Path.of("/t/diagram.svg"), "svg", false);
+        Path in = Path.of("/t/diagram.puml");
+        List<String> args = DiagramKind.PLANTUML.args(List.of("plantuml"), in, Path.of("/t/diagram.svg"), "svg", false);
         // PlantUML derives the output name from the input, so no -o flag is emitted.
-        assertEquals(List.of("plantuml", "-tsvg", "/t/diagram.puml"), args);
+        assertEquals(List.of("plantuml", "-tsvg", in.toString()), args);
     }
 
     @Test

@@ -20,19 +20,20 @@ class MavenClasspathTest {
         assertEquals("mvn", argv.get(0));
         assertTrue(argv.contains("compile"));
         assertTrue(argv.contains("dependency:build-classpath"));
-        assertTrue(argv.contains("-Dmdep.outputFile=/tmp/cp.txt"));
+        assertTrue(argv.contains("-Dmdep.outputFile=" + out));
         assertTrue(argv.contains("-Dmdep.pathSeparator=" + File.pathSeparator));
     }
 
     @Test
     void reactorArgvSelectsModuleAndAlsoMakes() {
-        List<String> argv = MavenClasspath.reactorArgv(Path.of("/tmp/cp.txt"), "services/api");
+        Path out = Path.of("/tmp/cp.txt");
+        List<String> argv = MavenClasspath.reactorArgv(out, "services/api");
         assertEquals("mvn", argv.get(0));
         assertTrue(argv.contains("-pl"));
         assertTrue(argv.contains("services/api"));
         assertTrue(argv.contains("-am"));
         assertTrue(argv.contains("dependency:build-classpath"));
-        assertTrue(argv.contains("-Dmdep.outputFile=/tmp/cp.txt"));
+        assertTrue(argv.contains("-Dmdep.outputFile=" + out));
     }
 
     @Test
