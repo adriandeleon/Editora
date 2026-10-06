@@ -46,7 +46,9 @@ class ElevatedSaveTest {
 
     @Test
     void osascriptArgvUsesAdminPrivilegesAndQuotedForm() {
-        List<String> argv = ElevatedSave.osascriptArgv(Path.of("/tmp/x.tmp"), Path.of("/etc/hosts"));
+        Path source = Path.of("/tmp/x.tmp");
+        Path target = Path.of("/etc/hosts");
+        List<String> argv = ElevatedSave.osascriptArgv(source, target);
         assertEquals("osascript", argv.get(0));
         // The AppleScript runs `do shell script … with administrator privileges` and shell-escapes the
         // paths via `quoted form of` (never interpolating them into the script).
@@ -54,8 +56,8 @@ class ElevatedSaveTest {
                 argv.stream().anyMatch(s -> s.contains("with administrator privileges")), "elevates via AppleScript");
         assertTrue(argv.stream().anyMatch(s -> s.contains("quoted form of")), "paths shell-escaped");
         // The two paths are passed as osascript argv (item 1/2 of argv), the last two entries.
-        assertEquals("/tmp/x.tmp", argv.get(argv.size() - 2));
-        assertEquals("/etc/hosts", argv.get(argv.size() - 1));
+        assertEquals(source.toString(), argv.get(argv.size() - 2));
+        assertEquals(target.toString(), argv.get(argv.size() - 1));
     }
 
     @Test
@@ -70,14 +72,16 @@ class ElevatedSaveTest {
 
     @Test
     void argvCopiesSourceIntoTargetInPlaceAsRoot() {
-        List<String> argv = ElevatedSave.pkexecArgv(ElevatedSave.PKEXEC, Path.of("/tmp/x.tmp"), Path.of("/etc/hosts"));
+        Path source = Path.of("/tmp/x.tmp");
+        Path target = Path.of("/etc/hosts");
+        List<String> argv = ElevatedSave.pkexecArgv(ElevatedSave.PKEXEC, source, target);
         assertEquals("pkexec", argv.get(0));
         assertEquals("/bin/sh", argv.get(1));
         assertEquals("-c", argv.get(2));
         assertEquals("cat \"$1\" > \"$2\"", argv.get(3), "in-place rewrite preserves owner/mode");
         // The two paths are the last two positional args ($1 and $2), never interpolated into the script.
-        assertEquals("/tmp/x.tmp", argv.get(argv.size() - 2));
-        assertEquals("/etc/hosts", argv.get(argv.size() - 1));
+        assertEquals(source.toString(), argv.get(argv.size() - 2));
+        assertEquals(target.toString(), argv.get(argv.size() - 1));
     }
 
     @Test

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Windows: opening a file while Editora is already running now hands it to the running editor instead of
+  starting a second one. The two sides ended their messages with the platform's line ending and the reply
+  check did not expect the extra carriage return, so no launch was ever forwarded there.
+- Windows: AI requests through the Codex agent no longer leave an empty `editora-ai-` folder behind in the
+  temp directory each time; the folder could not be removed while the agent was still exiting.
 - Follow-ups to the Settings, Java debugging and editing review, plus a review of mouse editing, tab dragging
   and remote (SFTP) saves. Lines marked 'Changed' are behaviour you will notice as different rather than
   fixed:

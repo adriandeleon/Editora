@@ -96,8 +96,13 @@ class ExternalLinksTest {
         for (String link : List.of("setup.command", "./run.sh", "-a Calculator", "--help", "www.example.com", "#top")) {
             assertEquals(ExternalLinks.KEY_INVALID, refusal(ExternalLinks.classify(link, null, null)), link);
         }
-        assertEquals(ExternalLinks.KEY_OUTSIDE, refusal(ExternalLinks.classify("/etc/passwd", null, null)));
-        assertEquals(ExternalLinks.KEY_OUTSIDE, refusal(ExternalLinks.classify("file:///etc/passwd", null, null)));
+        // An absolute path the platform's way: "/etc/passwd" on Unix, with a drive on Windows — where a
+        // leading slash alone is not absolute and would be refused as unresolvable instead.
+        java.nio.file.Path outside = java.nio.file.Path.of("/etc/passwd").toAbsolutePath();
+        assertEquals(ExternalLinks.KEY_OUTSIDE, refusal(ExternalLinks.classify(outside.toString(), null, null)));
+        assertEquals(
+                ExternalLinks.KEY_OUTSIDE,
+                refusal(ExternalLinks.classify(outside.toUri().toString(), null, null)));
     }
 
     @Test

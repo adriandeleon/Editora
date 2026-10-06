@@ -22,7 +22,7 @@ class RipgrepOutputTest {
         List<FileResult> results = RipgrepOutput.parse(out);
         assertEquals(1, results.size());
         FileResult fr = results.get(0);
-        assertEquals("src/Foo.java", fr.file().toString());
+        assertEquals(java.nio.file.Path.of("src", "Foo.java"), fr.file());
         assertEquals(1, fr.matches().size());
         LineMatch m = fr.matches().get(0);
         assertEquals(12, m.line());
