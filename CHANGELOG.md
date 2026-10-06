@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A setting toggled from the command palette or a key binding now always reaches the other open windows.
+  When another window happened to save just before the window you toggled it in, that window was taken for
+  the one that made the change and kept the old view until restart or its next settings change.
 - Windows: opening a file while Editora is already running now hands it to the running editor instead of
   starting a second one. The two sides ended their messages with the platform's line ending and the reply
   check did not expect the extra carriage return, so no launch was ever forwarded there.

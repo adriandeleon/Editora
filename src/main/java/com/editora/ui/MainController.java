@@ -9076,6 +9076,15 @@ public class MainController implements com.editora.mcp.McpBridge {
     private boolean configSavePending;
 
     /**
+     * True while a {@link #requestSave()} of this window has not run yet. A command that changes a shared
+     * preference requests a save in the same step, so {@code WindowManager} reads this to tell whether the
+     * window whose save carried a change is the one that made it.
+     */
+    boolean saveRequestPending() {
+        return configSavePending;
+    }
+
+    /**
      * Coalesces config writes to one per FX pulse and performs the disk I/O <em>off</em> the FX thread.
      * Many actions (especially a single Settings apply, which runs ~10 field setters back-to-back) request
      * a save several times in the same pulse; this collapses such a burst into a single end-of-pulse
