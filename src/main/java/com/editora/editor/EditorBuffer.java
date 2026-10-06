@@ -4441,7 +4441,11 @@ public class EditorBuffer implements TabContent {
      *  stays git-free. Off on huge files. Computes the fixed column width from the widest author+date, then
      *  rebuilds the gutter so the column appears/disappears. */
     public void setBlame(java.util.List<BlameInfo> lines) {
-        this.blameLines = (hugeFile || lines == null || lines.isEmpty()) ? null : java.util.List.copyOf(lines);
+        var next = (hugeFile || lines == null || lines.isEmpty()) ? null : java.util.List.copyOf(lines);
+        if (java.util.Objects.equals(next, blameLines)) {
+            return; // every git refresh comes through here, mostly with nothing: no gutter rebuild for that
+        }
+        this.blameLines = next;
         this.blameColumnWidth = blameLines == null ? 0 : measureBlameColumnWidth(blameLines);
         refreshGutter();
     }
@@ -7417,18 +7421,18 @@ public class EditorBuffer implements TabContent {
      * Measures once more two frames after a measure that followed a changed input (gutter, font, wrap). That
      * first measure runs from {@code runLater}, which can land before the pulse that lays the new gutter out;
      * it then reads column 0 at its old x and nothing else would ever correct it. One-shot, and the second
-     * measure does not re-arm it.
+     * measure does not re-arm it. A changed input while one is waiting starts the two frames again: the
+     * confirm that was about to fire would otherwise also run before the new layout, and be the last word.
      */
     private void confirmRulerAfterLayout() {
+        rulerConfirmFrames = 0;
         if (rulerConfirm != null) {
             return;
         }
         rulerConfirm = new javafx.animation.AnimationTimer() {
-            private int frames;
-
             @Override
             public void handle(long now) {
-                if (++frames < 2) {
+                if (++rulerConfirmFrames < 2) {
                     return;
                 }
                 stop();
@@ -7442,6 +7446,12 @@ public class EditorBuffer implements TabContent {
     }
 
     private javafx.animation.AnimationTimer rulerConfirm;
+    private int rulerConfirmFrames;
+
+    /** Whether a ruler measure is still to come (the deferred one or its confirmation); for tests to wait on. */
+    boolean rulerMeasurePending() {
+        return rulerMeasurePending || rulerConfirm != null;
+    }
 
     /**
      * Root-local x of column 80: where column 0 starts on screen (the left edge of the first character of any
