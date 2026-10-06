@@ -1648,6 +1648,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         bookmarkCoordinator.pathRenamed(old, target);
         notesCoordinator.pathRenamed(old, target);
         debugCoordinator.pathRenamed(old, target);
+        historyCoordinator.pathRenamed(old, target);
     }
 
     /** Syncs editor/session state after the Project tree deletes a file on disk. */
@@ -5053,6 +5054,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     debugCoordinator.bufferPathChanged(buffer, oldPath);
                     bookmarkCoordinator.bufferPathChanged(buffer, oldPath); // Save As: its marks go with it
                     notesCoordinator.bufferPathChanged(buffer, oldPath);
+                    historyCoordinator.bufferPathChanged(buffer, oldPath);
                     RenamedFileState.copyWorkspace(config.getWorkspaceState(), oldPath, buffer.getPath());
                 }
 
