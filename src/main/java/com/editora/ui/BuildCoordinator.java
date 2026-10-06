@@ -105,7 +105,7 @@ final class BuildCoordinator {
         this.panel = sharedConsole; // the shared tabbed Output window (owned by MainController)
         this.tree = new BuildActionsTree();
         this.popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
-                tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.hint"), tr("buildpopup.runCustom")));
+                tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.runCustom")));
         popup.setOnRunCustom(this::runCustom);
         popup.setOnRun(this::runTask);
         tree.setOnRun(this::runTask);
@@ -280,6 +280,35 @@ final class BuildCoordinator {
         launch(markerRoot, argv, taskArgs, toggleArgs);
     }
 
+    /**
+     * As {@link #runTask}, but in {@code root} rather than wherever the active tab's marker was last
+     * detected — for repeating a run (Test Results' Rerun / Rerun failed / Rerun this test), which must
+     * happen where the original did. {@link #markerRoot} follows the active tab, so after opening a file of
+     * another module the rerun ran that module's build: a filter matching nothing there, reported as passed.
+     */
+    void runTaskAt(Path root, List<String> taskArgs, List<String> toggleArgs) {
+        if (root == null) {
+            runTask(taskArgs, toggleArgs);
+            return;
+        }
+        if (!isEnabled()) {
+            host.setStatus(tr("status.build.disabled", tool.displayName()));
+            return;
+        }
+        if (service.isRunning()) {
+            host.setStatus(tr("status.build.busy", tool.displayName()));
+            return;
+        }
+        if (!Files.isDirectory(root)) {
+            host.setStatus(tr("status.build.notDetected", tool.displayName()));
+            return;
+        }
+        List<String> argv = new ArrayList<>(executable(root));
+        argv.addAll(taskArgs);
+        argv.addAll(toggleArgs);
+        launch(root, argv, taskArgs, toggleArgs);
+    }
+
     /** Prompts for a freeform task string and runs it verbatim (no toggle args — type the modifier flag
      *  directly if one is needed). */
     void runCustom() {
@@ -332,7 +361,21 @@ final class BuildCoordinator {
     /** The launch argv prefix: the project wrapper when present, else the Settings override, else the tool's
      *  default command. */
     private List<String> executable(Path root) {
-        return tool.executable(root, isWindows(), tool.commandIn(host.settings()));
+        return tool.executable(root, wrapperBoundary(root), isWindows(), tool.commandIn(host.settings()));
+    }
+
+    /**
+     * How far above {@code root} a build wrapper is looked for: the open project's root when {@code root} is
+     * inside it (a module of a multi-module build keeps its {@code mvnw}/{@code gradlew} at the top), else
+     * {@code root} itself — never a folder the user has not opened.
+     */
+    private Path wrapperBoundary(Path root) {
+        Path project = ops.projectRoot();
+        if (project == null) {
+            return root;
+        }
+        Path normalized = project.toAbsolutePath().normalize();
+        return root.toAbsolutePath().normalize().startsWith(normalized) ? normalized : root;
     }
 
     /**
@@ -353,15 +396,21 @@ final class BuildCoordinator {
         if (root == null) {
             return false;
         }
-        Path wrapper = tool.repoWrapper(root, isWindows());
-        if (wrapper == null || ops.isTrusted(root)) {
+        Path wrapper = tool.repoWrapper(root, wrapperBoundary(root), isWindows());
+        if (wrapper == null) {
             return true;
         }
-        if (!ops.confirmTrust(root, wrapper)) {
+        // Trust is asked about the folder that ships the wrapper actually launched — the module's own, or
+        // the project root above it. Trusting a module must not silently cover a script one level up.
+        Path wrapperDir = wrapper.getParent();
+        if (ops.isTrusted(wrapperDir)) {
+            return true;
+        }
+        if (!ops.confirmTrust(wrapperDir, wrapper)) {
             host.setStatus(tr("status.build.untrusted", tool.displayName()));
             return false;
         }
-        ops.trust(root);
+        ops.trust(wrapperDir);
         return true;
     }
 
@@ -488,27 +537,31 @@ final class BuildCoordinator {
         if (!allowRun(root)) {
             return;
         }
-        int gen = detectGeneration;
         String override = tool.commandIn(host.settings());
+        Path boundary = wrapperBoundary(root);
         host.setStatus(tr("status.build.loadingTasks", tool.displayName()));
         Thread t = new Thread(
                 () -> {
                     List<String> tasks;
                     try {
-                        tasks = tool.loadTasks(root, isWindows(), override);
+                        tasks = tool.loadTasks(root, boundary, isWindows(), override);
                     } catch (Exception e) {
                         tasks = List.of();
                     }
                     List<String> finalTasks = tasks;
                     Platform.runLater(() -> {
-                        // Guard like refresh() does: this can take ~90s, and the callback used to read the
-                        // CURRENT provider — so switching to another Gradle project meanwhile merged this
+                        // The result belongs to `root`, so it is always remembered for it (applyDetected
+                        // re-applies it whenever that root is detected again). It is only shown now if that
+                        // project is still the detected one: this can take ~90s, and the callback used to read
+                        // the CURRENT provider — so switching to another Gradle project meanwhile merged this
                         // project's task names into that one's tree, where running one fails "task not found".
-                        if (gen != detectGeneration || !root.equals(markerRoot)) {
-                            return;
-                        }
+                        // Not guarded by detectGeneration: refresh() bumps that on every tab switch, save
+                        // and focus-regain, which threw the whole enumeration away for the same project.
                         loadedTasksRoot = root;
                         loadedTasks = List.copyOf(finalTasks);
+                        if (!root.equals(markerRoot)) {
+                            return;
+                        }
                         if (provider != null) {
                             provider.addLoadedTasks(finalTasks); // mutate the shared provider once…
                             tree.refreshFromProvider(); // …then re-render both views over it
@@ -537,7 +590,7 @@ final class BuildCoordinator {
     }
 
     void shutdown() {
-        service.stop();
+        service.shutdown();
     }
 
     /** The per-tool toolbar/tool-window icon. A single UI switch (icons can't live in the pure {@code build}

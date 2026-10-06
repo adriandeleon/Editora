@@ -69,8 +69,11 @@ a raw cast.
 a node property
 (`getProperties().put("editora.ownsKeys", Boolean.TRUE)`) that tells the scene-level
 [`KeyDispatcher`](#keydispatcher) to leave a focused node's own navigation keys (`C-n`/`C-p`/arrows)
-alone instead of resolving them as commands. Set on in-scene overlay cards and the completion popup
-so their list navigation works. See `ui/ProjectPanel`, `ui/OverlayHost`.
+alone instead of resolving them as commands. Set on in-scene overlay cards and tool windows so their
+list navigation works. See `ui/ProjectPanel`, `ui/OverlayHost`. The completion popup and the quick-fix
+list do **not** use it — they sit over the editor, which must keep its keymap — and set
+`editora.ownsChords` (a few chords, each tied to one command) instead. A focused text field gets the
+same treatment without the property (see the [command system](subsystems/command-system.md)).
 
 ### feature coordinator
 

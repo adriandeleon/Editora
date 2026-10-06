@@ -54,4 +54,21 @@ class GitChangeBarsTest {
         Path relInside = Path.of("repo/file.txt");
         assertTrue(GitChangeBars.shouldRediff(relInside, root, false, false));
     }
+
+    @Test
+    void shouldRediffSeesThroughASymlinkedProjectPath(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        // git reports the real root; the buffer keeps the path it was opened with.
+        Path real =
+                java.nio.file.Files.createDirectories(dir.resolve("repo/src")).getParent();
+        java.nio.file.Files.writeString(real.resolve("src/Foo.java"), "x");
+        Path link;
+        try {
+            link = java.nio.file.Files.createSymbolicLink(dir.resolve("app-link"), real);
+        } catch (java.io.IOException | UnsupportedOperationException noSymlinks) {
+            org.junit.jupiter.api.Assumptions.abort("symbolic links are not available here");
+            return;
+        }
+        assertTrue(GitChangeBars.shouldRediff(link.resolve("src/Foo.java"), real.toRealPath(), false, false));
+        assertFalse(GitChangeBars.shouldRediff(dir.resolve("elsewhere.txt"), real.toRealPath(), false, false));
+    }
 }

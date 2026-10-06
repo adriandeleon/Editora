@@ -89,4 +89,102 @@ class ConflictParserTest {
         assertTrue(c.base().isEmpty());
         assertEquals(diff3, ConflictParser.resolve(f, List.of(Choice.UNRESOLVED)));
     }
+
+    /**
+     * A reStructuredText / Markdown heading underline is a run of "=" longer than seven. Treating any line
+     * that merely starts with seven marker characters as a marker ended "ours" at the underline, so a
+     * marker-fallback merge of a document file lost or duplicated text.
+     */
+    @Test
+    void aHeadingUnderlineInsideAConflictIsContentNotASeparator() {
+        List<String> lines = List.of(
+                "<<<<<<< HEAD",
+                "Our Title",
+                "==========",
+                "our body",
+                "=======",
+                "Their Title",
+                "===========",
+                "their body",
+                ">>>>>>> feature",
+                "tail");
+        ConflictFile f = ConflictParser.parse(lines);
+
+        assertEquals(1, f.conflictCount());
+        Conflict c = ((ConflictSegment) f.segments().get(0)).conflict();
+        assertEquals(List.of("Our Title", "==========", "our body"), c.ours());
+        assertEquals(List.of("Their Title", "===========", "their body"), c.theirs());
+        assertEquals(
+                List.of("Our Title", "==========", "our body", "tail"),
+                ConflictParser.resolve(f, List.of(Choice.OURS)));
+        assertEquals(lines, ConflictParser.resolve(f, List.of(Choice.UNRESOLVED)));
+    }
+
+    @Test
+    void markersAreExactlySevenCharactersThenSpaceOrEndOfLine() {
+        // Longer runs and runs glued to text are ordinary lines everywhere a marker is looked for.
+        assertFalse(ConflictParser.hasConflictMarkers("<<<<<<<<< not a marker\nplain"));
+        assertFalse(ConflictParser.hasConflictMarkers("<<<<<<<HEAD"));
+        assertTrue(ConflictParser.hasConflictMarkers("<<<<<<<\nours\n=======\ntheirs\n>>>>>>>"));
+        assertTrue(ConflictParser.hasConflictMarkers("<<<<<<< HEAD\r\nours"));
+
+        List<String> lines = List.of(
+                "<<<<<<< HEAD",
+                "<<<<<<<<< quoted",
+                "||||||||| table rule",
+                "======= trailing words",
+                ">>>>>>>>> quoted",
+                "||||||| base",
+                "was",
+                "=======",
+                ">>>>>>>>>> still theirs",
+                ">>>>>>> feature");
+        Conflict c = ((ConflictSegment) ConflictParser.parse(lines).segments().get(0)).conflict();
+        assertEquals(
+                List.of("<<<<<<<<< quoted", "||||||||| table rule", "======= trailing words", ">>>>>>>>> quoted"),
+                c.ours());
+        assertEquals(List.of("was"), c.base());
+        assertEquals(List.of(">>>>>>>>>> still theirs"), c.theirs());
+        assertEquals("feature", c.theirsLabel());
+    }
+
+    /** gitattributes' {@code conflict-marker-size}: longer markers are markers when the whole set matches. */
+    @Test
+    void recognisesMarkersWrittenWithALargerConflictMarkerSize() {
+        List<String> lines = List.of(
+                "# Title",
+                "<<<<<<<<<<<< HEAD",
+                "Ours",
+                "=======",
+                "|||||||||||| base",
+                "Was",
+                "============",
+                "Theirs",
+                ">>>>>>> not the end",
+                ">>>>>>>>>>>> feature",
+                "tail");
+        assertTrue(ConflictParser.hasConflictMarkers(String.join("\n", lines)));
+
+        ConflictFile file = ConflictParser.parse(lines);
+        assertEquals(1, file.conflictCount());
+        Conflict c = ((ConflictSegment) file.segments().get(1)).conflict();
+        assertEquals(12, c.markerSize());
+        assertEquals("HEAD", c.oursLabel());
+        assertEquals(List.of("Ours", "======="), c.ours());
+        assertEquals(List.of("Was"), c.base());
+        assertEquals(List.of("Theirs", ">>>>>>> not the end"), c.theirs());
+        assertEquals("feature", c.theirsLabel());
+        // Unresolved conflicts go back with the markers they came with.
+        assertEquals(lines, ConflictParser.resolve(file, List.of(Choice.UNRESOLVED)));
+        assertEquals(
+                List.of("# Title", "Theirs", ">>>>>>> not the end", "tail"),
+                ConflictParser.resolve(file, List.of(Choice.THEIRS)));
+    }
+
+    @Test
+    void aLongRunOfOpeningCharactersWithoutItsClosingMarkersIsText() {
+        List<String> lines = List.of("<<<<<<<<<<<< decoration", "text", "============", "more");
+        assertFalse(ConflictParser.hasConflictMarkers(String.join("\n", lines)));
+        assertEquals(0, ConflictParser.parse(lines).conflictCount());
+    }
 }

@@ -12,6 +12,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -189,7 +190,10 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
                     closeQuietly(prev); // reconnecting the same site: don't leak the previous filesystem
                 }
                 String start = conn.lastPath() != null && !conn.lastPath().isBlank() ? conn.lastPath() : ".";
-                result = new Result(true, fs.getPath(start), null); // "." resolves to the SFTP home dir
+                // Resolved to an absolute path now, while the session is live: "." is the SFTP home directory,
+                // and since MINA SSHD 2.17 a relative path can no longer be made absolute once its
+                // filesystem has been closed (a reconnect closes the previous one).
+                result = new Result(true, fs.getPath(start).toAbsolutePath().normalize(), null);
             } catch (Exception e) {
                 result = new Result(false, null, message(e));
             } finally {
@@ -360,6 +364,27 @@ public final class RemoteFileSystems implements Vfs.RemoteProvider {
 
     public boolean isConnected(String authority) {
         return byAuthority.containsKey(authority);
+    }
+
+    /** Every connection this engine currently holds open ({@code user@host:port}). */
+    public Set<String> connectedAuthorities() {
+        return Set.copyOf(byAuthority.keySet());
+    }
+
+    /**
+     * True when {@code path} is on an SFTP filesystem that can no longer be used: it was disconnected, or
+     * its SSH session has gone. Asked before a save so a dead connection is reported as one, rather than as
+     * whichever exception the first request on it happens to raise.
+     */
+    public static boolean isDisconnected(Path path) {
+        if (path == null || !(path.getFileSystem() instanceof SftpFileSystem fs)) {
+            return false;
+        }
+        try {
+            return !fs.isOpen() || fs.getSession() == null || !fs.getSession().isOpen();
+        } catch (RuntimeException unknown) {
+            return true;
+        }
     }
 
     public void disconnect(String authority) {

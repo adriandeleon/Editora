@@ -66,7 +66,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     /**
      * The diff machinery the right pane needs, injected once by the coordinator (delegates to
      * {@code DiffCoordinator}/{@code HistoryService}). Kept separate from {@link Actions} so the panel stays
-     * a view. {@code applyToLocal}/{@code undoLocal}/{@code saveLocal} back the per-hunk chevrons.
+     * a view. {@code applyToLocalIfUnchanged}/{@code undoLocal}/{@code saveLocal} back the per-hunk chevrons.
      */
     public interface DiffSupport {
         void fetchContent(HistoryRevision revision, Consumer<Optional<String>> onText);
@@ -75,9 +75,14 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
         String currentText(Path target);
 
-        void revert(HistoryRevision revision);
+        /** Restores {@code revision} into the file; {@code done} runs on the FX thread once that has finished. */
+        void revert(HistoryRevision revision, Runnable done);
 
-        void applyToLocal(Path target, String newText);
+        /**
+         * Applies {@code newText} only while {@code target} still holds {@code expectedText} (the text the
+         * hunk was computed from) and reports whether it did.
+         */
+        void applyToLocalIfUnchanged(Path target, String expectedText, String newText, Consumer<Boolean> done);
 
         void undoLocal(Path target);
 
@@ -112,6 +117,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     private DiffViewerPane pane; // built on the first diff result for the current file
     private String snapshotText = "";
     private String baseText = "";
+    private boolean keepingSelection; // setRevisions is re-selecting the revision whose diff is showing
     private int gen; // stale-guard for async re-diffs (selection / toggle can overlap)
 
     public FileHistoryPanel(Actions actions) {
@@ -138,7 +144,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         revisions.getStyleClass().add("git-tree");
         revisions.setCellFactory(v -> new RevisionCell());
         revisions.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
-            if (b != null) {
+            if (b != null && !keepingSelection) {
                 showRevision(b);
             }
         });
@@ -207,25 +213,43 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
     }
 
     private static Button iconButton(javafx.scene.Node icon, String tip, Runnable action) {
-        Button b = new Button();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("flat", "git-toolbar-button");
-        b.setFocusTraversable(false);
-        b.setTooltip(new Tooltip(tip));
-        b.setOnAction(e -> action.run());
-        return b;
+        return Icons.toolbarButton(icon, tip, action, "flat", "git-toolbar-button"); // tooltip + accessible name
     }
 
     /** Replaces the revision list (single-file mode). {@code fileName} = null/blank ⇒ "no file". */
     public void setRevisions(List<HistoryRevision> list, String fileName, Path target) {
         setFolderMode(false);
+        // The list is reloaded after every recorded revision of the active file (each save and autosave).
+        // While the selected revision of the same file is still listed its diff stays: clearing it threw the
+        // user back to "select a revision" in the middle of a hunk-by-hunk restore, on the diff's own Save.
+        HistoryRevision selected = revisions.getSelectionModel().getSelectedItem();
+        boolean keep = pane != null
+                && target != null
+                && target.equals(this.target)
+                && selected != null
+                && list.contains(selected);
         this.target = target;
         fileLabel.setText(
                 fileName == null || fileName.isBlank() ? tr("history.noFile") : tr("history.forFile", fileName));
         allRevisions.clear();
         allRevisions.addAll(list);
-        resetDiff(); // the previously-shown diff was for the old file (or old list) — clear it
-        applyFilter();
+        if (!keep) {
+            resetDiff(); // the previously-shown diff was for the old file (or old list) — clear it
+            applyFilter();
+            return;
+        }
+        keepingSelection = true;
+        try {
+            applyFilter();
+            revisions.getSelectionModel().select(selected);
+        } finally {
+            keepingSelection = false;
+        }
+        if (revisions.getSelectionModel().getSelectedItem() == null) {
+            resetDiff(); // filtered out of the list
+        } else if (support != null && !support.currentText(target).equals(baseText)) {
+            reDiffAfterEdit(); // same revision, but the file has moved on
+        }
     }
 
     /** Selects {@code revision} in the list (which shows its diff on the right); used by external entry points. */
@@ -326,14 +350,19 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 pane.setOptionsControlsVisible(false);
                 // Per-hunk "apply change" chevrons on the current-file (right) side — IntelliJ-style
                 // selective restore. Each apply writes the whole-file result through the undoable buffer,
-                // then we re-diff so the remaining changes (and chevrons) update.
+                // then we re-diff so the remaining changes (and chevrons) update. The whole-file result is
+                // "the file as this pane shows it, plus that hunk", so it is applied only while the file
+                // still equals the pane's own current-side text: anything typed since the revision was
+                // selected is kept, and the refused apply re-baselines and re-diffs instead.
                 Path t = target;
-                pane.setEditable(
+                DiffViewerPane built = pane;
+                pane.setEditableAsync(
                         DiffViewerPane.EditableSide.RIGHT,
-                        newText -> {
-                            support.applyToLocal(t, newText);
-                            reDiffAfterEdit();
-                        },
+                        (newText, done) ->
+                                support.applyToLocalIfUnchanged(t, built.editableBaselineText(), newText, applied -> {
+                                    done.accept(applied);
+                                    reDiffAfterEdit();
+                                }),
                         () -> {
                             support.undoLocal(t);
                             reDiffAfterEdit();
@@ -362,9 +391,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
         if (sel == null || support == null) {
             return;
         }
-        support.revert(sel);
-        // The editor buffer changed underneath → re-baseline and re-diff (now identical).
-        Platform.runLater(() -> {
+        // The restore reads the revision off-thread and applies it later, so re-baseline when it reports
+        // back: a runLater queued here ran first and left the panel diffing the pre-revert text.
+        support.revert(sel, () -> {
             if (target != null) {
                 baseText = support.currentText(target);
                 recompute();

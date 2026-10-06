@@ -1,9 +1,13 @@
 package com.editora.config.migration;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Consumer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -54,7 +58,7 @@ public final class ConfigMigrations {
      */
     public static ObjectNode upgrade(ConfigSchema schema, JsonNode tree, ObjectMapper mapper) {
         int current = schema.currentVersion();
-        int stored = versionOf(tree, schema.assumedLegacyVersion());
+        int stored = versionOf(tree, schema.versionWithoutMarker(tree));
         if (stored > current) {
             throw new NewerThanSupportedException(schema, stored, current);
         }
@@ -83,33 +87,151 @@ public final class ConfigMigrations {
      * this build ⇒ backed up to {@code <name>.v<n>.bak} and {@code defaults} returned.
      */
     public static <T> T readVersioned(Path file, ObjectMapper mapper, T defaults, ConfigSchema schema) {
+        return readVersioned(file, mapper, defaults, schema, problem -> {});
+    }
+
+    /**
+     * As {@link #readVersioned(Path, ObjectMapper, Object, ConfigSchema)}, reporting anything that could not be
+     * read as written to {@code problems} so the caller can tell the user and decide whether the file may be
+     * saved again (see {@link ConfigLoadProblem#mustNotOverwrite}).
+     *
+     * <p>A value of the wrong type (a hand edit such as {@code "showMinimap": "yes"}) is <b>not</b> fatal: that
+     * one top-level property keeps its default and every other property is still read. Jackson's bulk update
+     * stops at the first bad value, which used to leave every later property — key bindings, API keys — at its
+     * default and let the next save write that loss back to disk.
+     */
+    public static <T> T readVersioned(
+            Path file, ObjectMapper mapper, T defaults, ConfigSchema schema, Consumer<ConfigLoadProblem> problems) {
         if (file == null || !Files.isReadable(file)) {
             return defaults;
         }
         JsonNode tree;
+        boolean bytesReplaced;
         try {
-            tree = mapper.readTree(Files.readString(file));
+            Decoded decoded = decode(file);
+            bytesReplaced = decoded.bytesReplaced();
+            tree = mapper.readTree(decoded.text());
         } catch (IOException e) {
             // Unreadable, or not even valid JSON/TOML. Returning defaults means the next save writes an EMPTY
             // store straight over it — so preserve what's there first (see keepCorrupt).
-            keepCorrupt(file);
+            reportUnreadable(file, problems);
             return defaults;
         }
         if (tree == null || tree.isMissingNode()) {
             return defaults; // an empty file — nothing to preserve
         }
+        ObjectNode migrated;
         try {
-            ObjectNode migrated = upgrade(schema, tree, mapper);
-            return mapper.readerForUpdating(defaults).readValue(migrated);
+            migrated = upgrade(schema, tree, mapper);
         } catch (NewerThanSupportedException e) {
-            backupQuietly(file, e.storedVersion());
+            problems.accept(new ConfigLoadProblem(
+                    file, ConfigLoadProblem.Kind.NEWER_VERSION, List.of(), backupQuietly(file, e.storedVersion())));
             return defaults;
-        } catch (IOException | RuntimeException e) {
-            // Malformed content or a misconfigured migration: fall back to defaults rather than crash — but
-            // keep a copy first, because the very next save overwrites the file.
-            keepCorrupt(file);
+        } catch (RuntimeException e) {
+            // A misconfigured migration: fall back to defaults rather than crash — but keep a copy first,
+            // because the very next save overwrites the file.
+            reportUnreadable(file, problems);
             return defaults;
         }
+        if (bytesReplaced) {
+            // The file loads, but not as written, and the next save makes the replacement permanent. Say so,
+            // and keep the original bytes — except beside the Local History index, where any backup stops
+            // blob collection (HistoryIndexGuard) although this index still lists every revision.
+            problems.accept(new ConfigLoadProblem(
+                    file,
+                    ConfigLoadProblem.Kind.NOT_UTF8,
+                    List.of(),
+                    schema.keepsCopyOfUndecodableFile() ? keepCorrupt(file) : null));
+        }
+        try {
+            return mapper.readerForUpdating(defaults).readValue(migrated);
+        } catch (IOException | RuntimeException bulkFailure) {
+            List<String> skipped = new ArrayList<>();
+            T merged = readPropertyByProperty(mapper, defaults, migrated, skipped);
+            if (!skipped.isEmpty()) {
+                problems.accept(
+                        new ConfigLoadProblem(file, ConfigLoadProblem.Kind.VALUES_SKIPPED, skipped, keepCorrupt(file)));
+            }
+            return merged;
+        }
+    }
+
+    /**
+     * Merges {@code migrated} onto {@code target} one top-level property at a time, so a property whose value
+     * cannot be deserialized is skipped (its name added to {@code skipped}) without affecting the others. Only
+     * used after the bulk update failed; properties that update already applied are simply applied again.
+     */
+    private static <T> T readPropertyByProperty(
+            ObjectMapper mapper, T target, ObjectNode migrated, List<String> skipped) {
+        T merged = target;
+        for (Map.Entry<String, JsonNode> property : migrated.properties()) {
+            ObjectNode single = mapper.createObjectNode();
+            single.set(property.getKey(), property.getValue());
+            try {
+                merged = mapper.readerForUpdating(merged).readValue(single);
+            } catch (IOException | RuntimeException badValue) {
+                skipped.add(property.getKey());
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * The text of a config file, decoded so that an encoding detail does not cost the whole file: a leading
+     * UTF-8 byte-order mark (Windows Notepad's "UTF-8 with BOM", older PowerShell) is dropped, and a byte that
+     * is not valid UTF-8 (a file saved as Windows-1252 with one accented name) becomes U+FFFD in that one value.
+     *
+     * <p>{@code Files.readString} throws on the stray byte, and a parser handed a {@code String} rejects the
+     * BOM as an unexpected character. Either way the file used to read as unparseable, so every value in it
+     * fell back to its default and the next save wrote those defaults over it.
+     */
+    public static String readText(Path file) throws IOException {
+        return decode(file).text();
+    }
+
+    /** A config file's text and whether decoding it had to replace bytes that are not UTF-8. */
+    private record Decoded(String text, boolean bytesReplaced) {}
+
+    private static Decoded decode(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        String text = new String(bytes, StandardCharsets.UTF_8);
+        boolean replaced = text.indexOf('\uFFFD') >= 0 && !isValidUtf8(bytes);
+        if (replaced) {
+            LOG.log(
+                    java.util.logging.Level.WARNING,
+                    "Config file {0} is not valid UTF-8; the undecodable bytes were replaced",
+                    file);
+        }
+        return new Decoded(!text.isEmpty() && text.charAt(0) == '\uFEFF' ? text.substring(1) : text, replaced);
+    }
+
+    private static boolean isValidUtf8(byte[] bytes) {
+        try {
+            StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes));
+            return true;
+        } catch (java.nio.charset.CharacterCodingException malformed) {
+            return false;
+        }
+    }
+
+    private static void reportUnreadable(Path file, Consumer<ConfigLoadProblem> problems) {
+        try {
+            if (!Files.exists(file) || Files.size(file) == 0) {
+                return; // nothing worth keeping, so nothing was lost
+            }
+        } catch (IOException ignored) {
+            // cannot tell — treat it as content worth keeping
+        }
+        problems.accept(unreadable(file));
+    }
+
+    /**
+     * An {@link ConfigLoadProblem.Kind#UNREADABLE} problem for {@code file}, keeping a copy of it beside it
+     * first. For an owner that knows a file is damaged when {@link #readVersioned} cannot — a zero-length
+     * Local History index beside stored revision bodies, which reads as "an empty file".
+     */
+    public static ConfigLoadProblem unreadable(Path file) {
+        return new ConfigLoadProblem(file, ConfigLoadProblem.Kind.UNREADABLE, List.of(), keepCorrupt(file));
     }
 
     /**
@@ -118,33 +240,70 @@ public final class ConfigMigrations {
      * is NEWER than this build understands, and we're about to load defaults over it — so skipping meant a
      * second downgrade overwrote a re-customized config with defaults while the only backup on disk was the
      * stale one from the first downgrade. The user's settings were lost with no copy at all.
+     *
+     * @return the backup's path
      */
-    public static void backup(Path file, int storedVersion) throws IOException {
-        Files.move(file, freeName(file, ".v" + storedVersion + ".bak"));
+    public static Path backup(Path file, int storedVersion) throws IOException {
+        Path target = freeName(file, ".v" + storedVersion + ".bak");
+        Files.move(file, target);
+        return target;
     }
 
     /**
      * Keeps a copy of a config file we could not parse — overwhelmingly a torn write (a crash, a full disk, or
      * a kill mid-save). The caller loads defaults, and the next save writes those defaults over the file, so
      * without this the partially-written bookmarks/notes/projects are gone for good.
+     *
+     * @return the copy's path, or {@code null} when no copy could be made
      */
-    private static void keepCorrupt(Path file) {
+    private static Path keepCorrupt(Path file) {
         try {
-            if (!Files.exists(file) || Files.size(file) == 0) {
-                return; // nothing worth keeping
+            Path existing = identicalBackup(file, ".corrupt.bak");
+            if (existing != null) {
+                return existing; // the same damage as last launch: one copy of it is enough
             }
             Path kept = freeName(file, ".corrupt.bak");
             Files.copy(file, kept);
             LOG.log(
                     java.util.logging.Level.WARNING,
-                    "Could not parse config file {0} — kept a copy at {1} and loaded defaults",
+                    "Could not read all of config file {0} — kept a copy at {1}",
                     new Object[] {file, kept});
-        } catch (IOException | RuntimeException ignored) {
-            // best effort — we still return defaults
+            return kept;
+        } catch (IOException | RuntimeException e) {
+            LOG.log(java.util.logging.Level.WARNING, "Could not keep a copy of config file {0}: {1}", new Object[] {
+                file, e
+            });
+            return null;
         }
     }
 
-    /** {@code file + suffix}, with a counter appended when that name is already taken. */
+    /**
+     * An existing {@code file + suffix[.n]} backup whose content equals {@code file}, or {@code null}.
+     *
+     * <p>A store that is only rewritten when the user changes it (connections, macros, plugins, trusted
+     * folders, abbreviations) stays damaged from one launch to the next. Copying it again each time filled all
+     * {@link #MAX_BACKUPS} names with the same bytes; the next launch could then make no copy, and the file
+     * became write-protected — so saving a connection silently did nothing.
+     */
+    private static Path identicalBackup(Path file, String suffix) throws IOException {
+        Path candidate = file.resolveSibling(file.getFileName() + suffix);
+        for (int i = 2; Files.exists(candidate); i++) {
+            if (Files.isRegularFile(candidate) && Files.mismatch(file, candidate) == -1) {
+                return candidate;
+            }
+            if (i > MAX_BACKUPS) {
+                break;
+            }
+            candidate = file.resolveSibling(file.getFileName() + suffix + "." + i);
+        }
+        return null;
+    }
+
+    /**
+     * {@code file + suffix}, with a counter appended when that name is already taken. Once all
+     * {@link #MAX_BACKUPS} names are taken the last one is returned as is; the copy or move then fails with
+     * {@code FileAlreadyExistsException}, which callers report as a failed backup rather than replacing one.
+     */
     private static Path freeName(Path file, String suffix) {
         Path candidate = file.resolveSibling(file.getFileName() + suffix);
         for (int i = 2; Files.exists(candidate) && i <= MAX_BACKUPS; i++) {
@@ -153,11 +312,17 @@ public final class ConfigMigrations {
         return candidate;
     }
 
-    private static void backupQuietly(Path file, int storedVersion) {
+    /** {@link #backup}, returning {@code null} instead of throwing when the file could not be moved aside. */
+    private static Path backupQuietly(Path file, int storedVersion) {
         try {
-            backup(file, storedVersion);
-        } catch (IOException ignored) {
-            // best effort — if we can't back it up we still return defaults and won't overwrite on save
+            return backup(file, storedVersion);
+        } catch (IOException | RuntimeException e) {
+            // The newer file is still in place. The caller reports the failed backup so its owner stops
+            // saving the file for this session (ConfigLoadProblem.mustNotOverwrite) instead of replacing it.
+            LOG.log(java.util.logging.Level.WARNING, "Could not back up newer config file {0}: {1}", new Object[] {
+                file, e
+            });
+            return null;
         }
     }
 
@@ -291,7 +456,9 @@ public final class ConfigMigrations {
      * the same file starts from defaults instead of stale Cmd-chord overrides.
      */
     static ObjectNode splitKeybindings(ObjectNode o, boolean mac) {
-        if (!mac) {
+        if (!mac || o.has("keybindingsMac")) {
+            // Already split (the step is re-run for a current-shape file that lost its schemaVersion marker):
+            // moving again would replace the user's Cmd overrides with the Ctrl map and empty that one.
             return o;
         }
         JsonNode existing = o.get("keybindings");
@@ -366,6 +533,64 @@ public final class ConfigMigrations {
         }
         o.set("toolbarLayout", out);
         return o;
+    }
+
+    /**
+     * v104 → v105 for the settings file: drops two keys that were only ever written by accident or never read.
+     *
+     * <p>{@code authorNameRaw} was not a setting: Jackson serialized the {@code getAuthorNameRaw()} helper
+     * next to {@code authorName}, which itself was written through the <em>resolving</em> getter — so a blank
+     * "follow the OS user" author name was persisted as the OS user name on the first save. Where the junk key
+     * still records that the configured name was blank, the blank is restored; that is the only case the file
+     * proves, so an {@code authorName} that merely equals the OS user name is left alone.
+     *
+     * <p>{@code ijhttpCommand} was never read by any feature (the HTTP client is built in).
+     */
+    static JsonNode retireUnusedSettingsKeys(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        JsonNode raw = o.remove("authorNameRaw");
+        if (raw != null && raw.isTextual() && raw.asText().isBlank()) {
+            o.put("authorName", "");
+        }
+        o.remove("ijhttpCommand");
+        return o;
+    }
+
+    /** The plugin-registry URL every build up to schema 106 shipped, and froze into a fresh settings file. */
+    static final String FROZEN_PLUGIN_REGISTRY =
+            "https://raw.githubusercontent.com/adriandeleon/editora-plugins/main/index.json";
+    /** The Maven archetype catalog URL every build up to schema 106 shipped and wrote out as a literal. */
+    static final String FROZEN_MAVEN_ARCHETYPE_CATALOG = "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
+
+    /**
+     * v106 → v107 for the settings file: a {@code pluginRegistryUrl} or {@code mavenArchetypeCatalogUrl} that
+     * is the built-in address of the build that wrote it becomes blank, which now means "the built-in
+     * default".
+     *
+     * <p>Both were written as literals by the first save, so every install carries them whether or not the
+     * user ever opened the page. The setters recognise the <em>current</em> default, but once a default
+     * moves they cannot recognise the old one: such a file would keep the stale address for good. The old
+     * addresses are spelled out here for that reason, not read from {@code Settings}.
+     *
+     * <p>Only an exact match is blanked. A URL the user chose is a different string and is left alone; a
+     * user who typed the built-in address chose what blank resolves to. Safe to repeat.
+     */
+    static JsonNode blankFrozenDefaultUrls(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        blankIfEqual(o, "pluginRegistryUrl", FROZEN_PLUGIN_REGISTRY);
+        blankIfEqual(o, "mavenArchetypeCatalogUrl", FROZEN_MAVEN_ARCHETYPE_CATALOG);
+        return o;
+    }
+
+    private static void blankIfEqual(ObjectNode o, String key, String frozen) {
+        JsonNode value = o.get(key);
+        if (value != null && value.isTextual() && frozen.equals(value.asText().strip())) {
+            o.put(key, "");
+        }
     }
 
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {

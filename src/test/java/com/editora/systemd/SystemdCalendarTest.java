@@ -53,6 +53,30 @@ class SystemdCalendarTest {
     }
 
     @Test
+    void acceptsTrailingTimeZone() {
+        assertEquals("Daily at 03:00 (UTC)", describe("*-*-* 03:00:00 UTC"));
+        assertEquals("At 10:00, Monday through Friday (Europe/Berlin)", describe("Mon..Fri *-*-* 10:00 Europe/Berlin"));
+        assertEquals("Daily at midnight (UTC)", describe("daily UTC"));
+        // Matched in the expression's zone, reported in the reader's: 03:00 UTC is 05:00 CEST.
+        SystemdCalendar c = SystemdCalendar.parse("*-*-* 03:00:00 UTC").calendar();
+        assertEquals(java.time.ZoneId.of("UTC"), c.zone());
+        LocalDateTime from = LocalDateTime.of(2026, 7, 10, 9, 41);
+        assertEquals(
+                List.of(LocalDateTime.of(2026, 7, 11, 5, 0), LocalDateTime.of(2026, 7, 12, 5, 0)),
+                c.nextRuns(from, 2, java.time.ZoneId.of("Europe/Berlin")));
+        // A bogus zone is still an error, not silently dropped.
+        assertFalse(SystemdCalendar.parse("*-*-* 03:00:00 Mars/Olympus").ok());
+    }
+
+    @Test
+    void acceptsLegacyWeekdayRange() {
+        assertEquals("At 09:00, Monday through Friday", describe("Mon-Fri *-*-* 09:00:00"));
+        assertEquals("At 09:00, Monday through Friday", describe("Mon-Fri 09:00"));
+        assertEquals("At 04:30, on Monday, Wednesday, Thursday, Friday", describe("Mon,Wed-Fri 04:30"));
+        assertFalse(SystemdCalendar.parse("Mon-Funday 09:00").ok());
+    }
+
+    @Test
     void rejectsGarbage() {
         assertFalse(SystemdCalendar.parse("Mon..Funday *-*-* 00:00:00").ok());
         assertFalse(SystemdCalendar.parse("*-13-01 00:00:00").ok()); // month 13

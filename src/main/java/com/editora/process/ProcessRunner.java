@@ -23,9 +23,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * <p>This is the single place Editora shells out (used by {@code git} integration and the Mermaid
  * CLI). It does no threading itself beyond the stderr drainer, so callers must run it off the JavaFX
- * thread (see {@code GitService} / {@code MermaidService}). {@code LC_ALL=C} is always set so output
- * parses the same regardless of the user's locale; feature-specific env vars go through the
- * {@link #run(Path, Duration, List, Map)} overload.
+ * thread (see {@code GitService} / {@code MermaidService}).
+ *
+ * <p><b>Two child environments.</b> {@link #run} sets {@code LC_ALL=C} so output Editora <em>parses</em> (git,
+ * ripgrep, {@code gh}, version probes) reads the same in every locale. That is the wrong environment for a
+ * tool whose output is <em>shown</em> or whose job involves the user's own paths: under {@code LC_ALL=C} a
+ * JVM decodes file names as ASCII, so {@code java año/H.java} fails and a program prints {@code a?o}. Those
+ * go through {@link #runInUserLocale} (or {@link #applyUserEnv} for long-lived children), which inherits the
+ * user's locale and only adds the augmented PATH. Feature-specific env vars go through the {@code extraEnv}
+ * overloads.
  */
 public final class ProcessRunner {
 
@@ -73,11 +79,84 @@ public final class ProcessRunner {
     /**
      * As {@link #run(Path, Duration, List, Map)} but, when {@code stdin != null}, writes it (UTF-8) to the
      * child's standard input on a daemon thread and then <b>closes</b> stdin so a filter (e.g. {@code jq}/
-     * {@code wc}) sees EOF and terminates. Used by the External Tools feature.
+     * {@code wc}) sees EOF and terminates.
      */
     public static Result run(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
-        BytesResult raw = runRaw(workingDir, timeout, command, extraEnv, stdin);
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), false, false));
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List, Map, String)} but feeds {@code stdin} to the child as <b>raw
+     * bytes</b>, for input whose encoding is not the caller's to choose — a git blob body handed to
+     * {@code git hash-object --stdin} must arrive byte-for-byte, not re-encoded as UTF-8.
+     */
+    public static Result runWithInput(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, byte[] stdin) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, false, false));
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List)} but the child <b>inherits the user's locale</b> (no
+     * {@code LC_ALL=C}; still the augmented PATH). For a user's own tool whose output is shown or inserted
+     * rather than parsed — an External Tools filter, a before-launch step, an installer, a renderer — and for
+     * any JVM tool handed the user's paths (Maven, Gradle, {@code javac}), which cannot even open a file whose
+     * name is not ASCII when forced into the C locale.
+     */
+    public static Result runInUserLocale(Path workingDir, Duration timeout, List<String> command) {
+        return runInUserLocale(workingDir, timeout, command, Map.of(), null);
+    }
+
+    /** As {@link #runInUserLocale(Path, Duration, List)}, with {@code extraEnv} merged on top. */
+    public static Result runInUserLocale(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
+        return runInUserLocale(workingDir, timeout, command, extraEnv, null);
+    }
+
+    /**
+     * As {@link #runInUserLocale(Path, Duration, List, Map)}, feeding {@code stdin} like
+     * {@link #run(Path, Duration, List, Map, String)}. Used by the External Tools feature.
+     */
+    public static Result runInUserLocale(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
+        return decodedInUserLocale(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), true, false));
+    }
+
+    /**
+     * {@link #runWithInput} in the user's locale: raw {@code stdin} bytes for a user-initiated command (git
+     * applying a patch or hashing a blob through the user's clean filters).
+     */
+    public static Result runWithInputInUserLocale(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, byte[] stdin) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, true, false));
+    }
+
+    private static byte[] utf8(String stdin) {
+        return stdin == null ? null : stdin.getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List, Map)}, for a child that processes <b>untrusted document content</b>
+     * — the preview render CLIs (PlantUML, Graphviz, mmdc, Typst). Secret-looking variables
+     * ({@link SecretEnv}) are removed from the inherited environment first, so a diagram that can read its
+     * environment ({@code %getenv} in PlantUML) or a tool that phones home finds no API keys or tokens there.
+     * {@code extraEnv} is applied afterwards and is never scrubbed. The child inherits the user's locale, like
+     * {@link #runInUserLocale}: these tools are handed the user's paths and their messages are shown, not parsed.
+     */
+    public static Result runScrubbed(
+            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, null, true, true));
+    }
+
+    /**
+     * As {@link #decoded} for a child that ran in the user's locale and so may have written its native
+     * encoding rather than UTF-8 ({@link ChildText}) — {@code date +%B} under {@code de_DE} is Latin-1.
+     */
+    private static Result decodedInUserLocale(BytesResult raw) {
+        return new Result(raw.exit(), ChildText.decode(raw.out()), raw.err(), raw.outTruncated(), raw.errTruncated());
+    }
+
+    private static Result decoded(BytesResult raw) {
         return new Result(
                 raw.exit(),
                 new String(raw.out(), StandardCharsets.UTF_8),
@@ -101,20 +180,28 @@ public final class ProcessRunner {
     /** Runs {@code command} and returns its raw stdout bytes (undecoded). No stdin. */
     public static BytesResult runBytes(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
-        return runRaw(workingDir, timeout, command, extraEnv, null);
+        return runRaw(workingDir, timeout, command, extraEnv, null, false, false);
     }
 
     private static BytesResult runRaw(
-            Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            byte[] stdin,
+            boolean userLocale,
+            boolean scrubSecrets) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
         // child env we set below — so without this, mmdc/npx still wouldn't be found.
         ProcessBuilder pb = new ProcessBuilder(resolveExecutable(command));
+        if (scrubSecrets) {
+            SecretEnv.scrub(pb.environment());
+        }
         if (workingDir != null) {
             pb.directory(workingDir.toFile());
         }
-        applyStandardEnv(pb);
-        pb.environment().putAll(extraEnv);
+        childEnvironment(pb.environment(), userLocale, extraEnv);
         Process process;
         try {
             process = pb.start();
@@ -127,7 +214,7 @@ public final class ProcessRunner {
             Thread stdinWriter = new Thread(
                     () -> {
                         try (java.io.OutputStream os = process.getOutputStream()) {
-                            os.write(stdin.getBytes(StandardCharsets.UTF_8));
+                            os.write(stdin);
                         } catch (IOException ignored) {
                             // child closed stdin early / exited — nothing to do
                         }
@@ -183,18 +270,67 @@ public final class ProcessRunner {
             return new BytesResult(-1, new byte[0], "interrupted");
         }
         return new BytesResult(
-                process.exitValue(), outBuf.toByteArray(), text(errBuf), outTruncated.get(), errTruncated.get());
+                process.exitValue(),
+                outBuf.toByteArray(),
+                userLocale ? ChildText.decode(errBuf.toByteArray()) : text(errBuf),
+                outTruncated.get(),
+                errTruncated.get());
     }
 
     /**
-     * Applies Editora's standard child-process environment to {@code pb}: {@code LC_ALL=C} for stable
-     * parsing plus the {@link #augmentedPath() augmented PATH} so GUI-launched apps (whose inherited PATH
-     * omits Homebrew/Node/user-local dirs) can still find tools. Exposed so long-lived processes that
-     * can't use {@link #run} — e.g. a stdio language server driven by LSP4J — share the same env logic.
+     * Applies the <b>parse-stable</b> child environment to {@code pb}: {@code LC_ALL=C} plus the
+     * {@link #augmentedPath() augmented PATH}. Only for a process whose output Editora parses (a probe). A
+     * long-lived or user-facing child — a language server, a debug adapter, a run, a build, a terminal, a
+     * browser — must use {@link #applyUserEnv(ProcessBuilder)} instead: see the class comment.
      */
     public static void applyStandardEnv(ProcessBuilder pb) {
-        pb.environment().put("LC_ALL", "C");
-        pb.environment().put(pathKey(pb), augmentedPath());
+        applyStandardEnv(pb.environment());
+    }
+
+    /** {@link #applyStandardEnv(ProcessBuilder)} on a bare environment map (the form the unit tests drive). */
+    static void applyStandardEnv(Map<String, String> env) {
+        applyUserEnv(env);
+        env.put("LC_ALL", "C");
+    }
+
+    /**
+     * Applies the <b>user-facing</b> child environment to {@code pb}: only the {@link #augmentedPath()
+     * augmented PATH} (so a GUI-launched app, whose inherited PATH omits Homebrew/Node/user-local dirs, can
+     * still find tools). The locale is left exactly as the user has it, so the child reads and prints
+     * non-ASCII paths and text the way it does in their terminal.
+     */
+    public static void applyUserEnv(ProcessBuilder pb) {
+        applyUserEnv(pb.environment());
+    }
+
+    /** {@link #applyUserEnv(ProcessBuilder)} on a bare environment map. */
+    public static void applyUserEnv(Map<String, String> env) {
+        env.put(pathKey(env), augmentedPath());
+    }
+
+    /**
+     * {@link #applyUserEnv(Map)} followed by a launcher's own {@code overrides} (a run configuration's
+     * variables, a selected JDK), which therefore win — including over PATH. Returns {@code env}.
+     */
+    public static Map<String, String> applyUserEnv(Map<String, String> env, Map<String, String> overrides) {
+        return childEnvironment(env, true, overrides);
+    }
+
+    /**
+     * Turns the inherited environment {@code env} into the one a child is started with, in place, and returns
+     * it: the augmented PATH, {@code LC_ALL=C} unless {@code userLocale}, then {@code overrides}.
+     */
+    static Map<String, String> childEnvironment(
+            Map<String, String> env, boolean userLocale, Map<String, String> overrides) {
+        if (userLocale) {
+            applyUserEnv(env);
+        } else {
+            applyStandardEnv(env);
+        }
+        if (overrides != null) {
+            env.putAll(overrides);
+        }
+        return env;
     }
 
     /** Common bin dirs a GUI-launched app's PATH usually lacks (Homebrew, Node installers, user-local). */
@@ -376,21 +512,40 @@ public final class ProcessRunner {
         boolean windows = System.getProperty("os.name", "")
                 .toLowerCase(java.util.Locale.ROOT)
                 .contains("win");
-        for (String dir : augmentedPath().split(File.pathSeparator)) {
+        return resolveExecutable(command, augmentedPath(), windows);
+    }
+
+    private static final List<String> WINDOWS_EXECUTABLE_EXTENSIONS = List.of(".exe", ".cmd", ".bat");
+
+    /**
+     * {@link #resolveExecutable(List)} against an explicit {@code path} and platform (the form the unit tests
+     * drive).
+     *
+     * <p>On Windows the {@code .exe}/{@code .cmd}/{@code .bat} forms are tried <em>first</em>, and an
+     * extension-less file is never taken: npm, Maven, Gradle, yarn and pnpm all ship a POSIX shell shim
+     * ({@code npm}) beside the real launcher ({@code npm.cmd}), {@code Files.isExecutable} is true for any
+     * ordinary file there, and {@code CreateProcess} cannot start the shim (error 193).
+     */
+    static List<String> resolveExecutable(List<String> command, String path, boolean windows) {
+        String exe = command.get(0);
+        String lower = exe.toLowerCase(java.util.Locale.ROOT);
+        boolean hasWindowsExtension = WINDOWS_EXECUTABLE_EXTENSIONS.stream().anyMatch(lower::endsWith);
+        for (String dir : path.split(File.pathSeparator)) {
             if (dir.isBlank()) {
                 continue;
             }
-            Path candidate = Path.of(dir, exe);
-            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
-                return rewriteFirst(command, candidate.toString());
-            }
-            if (windows) {
-                for (String ext : List.of(".exe", ".cmd", ".bat")) {
+            if (windows && !hasWindowsExtension) {
+                for (String ext : WINDOWS_EXECUTABLE_EXTENSIONS) {
                     Path w = Path.of(dir, exe + ext);
                     if (Files.isRegularFile(w)) {
                         return rewriteFirst(command, w.toString());
                     }
                 }
+                continue;
+            }
+            Path candidate = Path.of(dir, exe);
+            if (Files.isRegularFile(candidate) && Files.isExecutable(candidate)) {
+                return rewriteFirst(command, candidate.toString());
             }
         }
         return command;
@@ -403,8 +558,8 @@ public final class ProcessRunner {
     }
 
     /** The PATH env key — case-insensitive on Windows, so reuse the existing key if the JVM has one. */
-    private static String pathKey(ProcessBuilder pb) {
-        for (String key : pb.environment().keySet()) {
+    private static String pathKey(Map<String, String> env) {
+        for (String key : env.keySet()) {
             if (key.equalsIgnoreCase("PATH")) {
                 return key;
             }

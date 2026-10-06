@@ -111,6 +111,13 @@ class QueryReplaceTest {
     }
 
     @Test
+    void regexLineAnchorsApplyToEveryLine() {
+        List<Match> plan = QueryReplace.planRemaining("import a;\nimport b;\n", 0, regex("^import", "use"));
+        assertEquals(2, plan.size(), "^ anchors at each line, not only at the document start");
+        assertEquals(10, plan.get(1).start());
+    }
+
+    @Test
     void planRemainingStartsFromTheOffset() {
         assertEquals(
                 1, QueryReplace.planRemaining("a a a", 1, literal("a", "b")).size() - 1);
@@ -123,15 +130,78 @@ class QueryReplaceTest {
         assertEquals(4, plan.size(), "one empty match at each of the 4 positions in a 3-char string");
     }
 
-    // --- advance ---------------------------------------------------------------------------------
-
     @Test
-    void advanceMovesPastTheReplacementLength() {
-        assertEquals(15, QueryReplace.advance(new Match(10, 13, "hello"), 5), "resume after the inserted text");
+    void planRemainingIsLinearInTheNumberOfMatches() {
+        // 40,000 matches: one pass takes milliseconds; a rescan per match took over a minute.
+        String text = "x = foo(1);\n".repeat(40_000);
+        for (Spec spec : List.of(literal("foo", "bar"), regex("fo+", "bar"))) {
+            List<Match> plan = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                    java.time.Duration.ofSeconds(10), () -> QueryReplace.planRemaining(text, 0, spec));
+            assertEquals(40_000, plan.size());
+            assertEquals(new Match(12 * 39_999 + 4, 12 * 39_999 + 7, "bar"), plan.get(39_999));
+        }
     }
 
     @Test
-    void advanceAlwaysMakesProgressPastAZeroWidthMatch() {
-        assertEquals(6, QueryReplace.advance(new Match(5, 5, ""), 0), "a zero-width no-op still steps forward");
+    void planRemainingExpandsGroupsForEveryMatch() {
+        List<Match> plan = QueryReplace.planRemaining("k1=v1 k2=v2 k3=v3", 3, regex("(\\w+)=(\\w+)", "$2:$1"));
+        assertEquals(List.of(new Match(6, 11, "v2:k2"), new Match(12, 17, "v3:k3")), plan);
+    }
+
+    // --- resuming after an action -----------------------------------------------------------------
+
+    /** Answers "y" to every prompt, as the interactive session does, and returns the resulting text. */
+    private static String replaceEach(String text, Spec spec) {
+        int from = 0;
+        for (int guard = 0; guard < 1000; guard++) {
+            Optional<Match> next = QueryReplace.next(text, from, spec);
+            if (next.isEmpty()) {
+                return text;
+            }
+            Match m = next.get();
+            text = text.substring(0, m.start()) + m.replacement() + text.substring(m.end());
+            from = QueryReplace.afterReplace(m);
+        }
+        throw new AssertionError("the session never ran out of matches: " + text);
+    }
+
+    @Test
+    void resumesRightAfterTheInsertedText() {
+        assertEquals(15, QueryReplace.afterReplace(new Match(10, 13, "hello")));
+        assertEquals(13, QueryReplace.afterSkip(new Match(10, 13, "hello")));
+    }
+
+    @Test
+    void anEmptyReplacementDoesNotSkipTheAdjacentMatch() {
+        assertEquals(10, QueryReplace.afterReplace(new Match(10, 11, "")), "the next match may start right here");
+        assertEquals("ab", replaceEach("a,,,,b", literal(",", "")));
+        assertEquals("bold and ", replaceEach("**bold** and ****", literal("*", "")));
+    }
+
+    @Test
+    void aZeroWidthMatchIsOfferedOncePerPosition() {
+        assertEquals(6, QueryReplace.afterSkip(new Match(5, 5, "")), "a skipped zero-width match steps forward");
+        assertEquals(7, QueryReplace.afterReplace(new Match(5, 5, ";")), "past the insertion and one further");
+        assertEquals("one;\ntwo;\nthree;", replaceEach("one\ntwo\nthree", regex("$", ";")));
+        assertEquals("Xfoo Xfoo", replaceEach("foo foo", regex("(?=foo)", "X")));
+        // …which is what "replace all the rest" produces for the same request.
+        assertEquals(
+                3,
+                QueryReplace.planRemaining("one\ntwo\nthree", 0, regex("$", ";"))
+                        .size());
+    }
+
+    @Test
+    void nothingIsFoundPastTheEndOfTheText() {
+        assertTrue(QueryReplace.next("abc", 4, regex("$", ";")).isEmpty());
+        assertTrue(QueryReplace.planRemaining("abc", 4, regex("$", ";")).isEmpty());
+    }
+
+    @Test
+    void aRegexThatOverflowsTheStackFindsNothingInsteadOfThrowing() {
+        String text = "/*" + "x".repeat(400_000) + "*/";
+        assertTrue(QueryReplace.next(text, 0, regex("/\\*(.|\\n)*?\\*/", "")).isEmpty());
+        assertTrue(QueryReplace.planRemaining(text, 0, regex("/\\*(.|\\n)*?\\*/", ""))
+                .isEmpty());
     }
 }

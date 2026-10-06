@@ -92,11 +92,10 @@ final class WindowSessionCoordinator {
 
         Path windowProjectRoot();
 
-        void restoreFolds(EditorBuffer buffer);
+        /** Re-applies the file's stored folds, bookmarks, breakpoints, notes and read-only pin. */
+        void restorePerFileState(EditorBuffer buffer);
 
         Tab tabForBuffer(EditorBuffer buffer);
-
-        void restoreReadOnly(EditorBuffer buffer);
 
         void refreshStatusBar();
     }
@@ -118,6 +117,7 @@ final class WindowSessionCoordinator {
     public void openInitialBuffer() {
         WorkspaceState state = host.config().getWorkspaceState();
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
+        missingSessionFiles.clear();
         for (WorkspaceState.OpenFile f : skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles()) {
             // parseStorable reconstructs a local path directly, or a remote (sftp://) one via the resolver —
             // which is null until its connection is open, so a remote entry is skipped at startup rather than
@@ -127,8 +127,13 @@ final class WindowSessionCoordinator {
                     : com.editora.vfs.Vfs.parseStorable(f.getPath());
             if (rp != null && Files.isReadable(rp)) {
                 files.add(f);
+            } else if (SessionEntries.keepUnreadable(rp, Files::isDirectory, Files::notExists)) {
+                // Not openable right now, but not known to be gone either (its folder is missing — an
+                // unmounted volume). Dropping it here made the next save persist a session without it.
+                missingSessionFiles.add(f);
             }
         }
+        restoreStarted = true; // the saved list has been read: a live capture can no longer pre-empt it
         if (files.isEmpty()) {
             // No session to restore (empty, or --no-session): open the CLI action's file (--new-file / FILE
             // target) synchronously, so it's on the first frame exactly as in the with-session path — there
@@ -226,11 +231,17 @@ final class WindowSessionCoordinator {
 
     /** Fills one restored buffer per pulse (in {@code order}), keeping the UI responsive between files. */
     void fillSessionFiles(List<WorkspaceState.OpenFile> files, List<EditorBuffer> buffers, List<Integer> order, int k) {
+        if (host.fileWorkflows().isShutdown()) {
+            return; // the window closed mid-restore: there is nothing left to fill or to open
+        }
         if (k >= order.size()) {
             runPendingAfterRestore(); // session fully restored — now safe to apply CLI targets
             return;
         }
         Platform.runLater(() -> {
+            if (host.fileWorkflows().isShutdown()) {
+                return;
+            }
             int i = order.get(k);
             EditorBuffer buffer = buffers.get(i);
             Runnable continued = () -> {
@@ -298,6 +309,16 @@ final class WindowSessionCoordinator {
 
     /** {@code --no-session}: don't restore the saved session's open files (see {@link #startup}). */
     boolean skipSessionFiles;
+
+    /** True once {@link #openInitialBuffer()} has read the saved open-file list. */
+    private boolean restoreStarted;
+
+    /**
+     * Saved entries whose file could not be read when the session was restored (an unmounted volume, a
+     * folder that is not there yet). They have no tab, but are written back with every session save so the
+     * tabs return once the files do.
+     */
+    private final List<WorkspaceState.OpenFile> missingSessionFiles = new ArrayList<>();
 
     /** Standalone diff startup is asynchronous, so don't insert Welcome while its worker is reading files. */
     boolean suppressWelcome;
@@ -419,7 +440,10 @@ final class WindowSessionCoordinator {
         }
         if (targets != null) {
             for (OpenTarget t : targets) {
-                host.fileWorkflows().openPath(t.file().toAbsolutePath().normalize(), true);
+                Path file = t.file().toAbsolutePath().normalize();
+                if (!host.fileWorkflows().openNewFileAt(file)) {
+                    host.fileWorkflows().openPath(file, true);
+                }
             }
             if (targets.stream().anyMatch(t -> t.line() > 0)) {
                 // Defer once more so it runs after openPath's own goToStart for any newly-opened file.
@@ -533,9 +557,23 @@ final class WindowSessionCoordinator {
 
     /** Jumps to {@code file}:{@code line1}:{@code col1}; {@code focusEditor} false leaves focus where it is. */
     void gotoInFile(Path file, int line1, int col1, boolean focusEditor) {
-        NavigationHistory.Location origin = (host.navigation().suppressNavRecord || host.navigation().navigating)
-                ? null
-                : host.navigation().captureCurrent();
+        boolean record = !host.navigation().suppressNavRecord && !host.navigation().navigating;
+        gotoInFile(
+                file,
+                line1,
+                col1,
+                focusEditor,
+                record,
+                record ? host.navigation().captureCurrent() : null);
+    }
+
+    /**
+     * {@code record} and {@code origin} are decided by the first call and carried through a load deferral:
+     * by the time the text lands the caller has reset its suppress flags and the caret sits on the freshly
+     * loaded file's first line, so re-reading either would record a jump the caller suppressed, from line 1.
+     */
+    private void gotoInFile(
+            Path file, int line1, int col1, boolean focusEditor, boolean record, NavigationHistory.Location origin) {
         Tab tab = host.tabForPath(file);
         if (tab == null) {
             return;
@@ -546,12 +584,15 @@ final class WindowSessionCoordinator {
             host.fileWorkflows()
                     .afterBufferLoad
                     .computeIfAbsent(buffer, ignored -> new ArrayList<>())
-                    .add(() -> gotoInFile(file, line1, col1, focusEditor));
+                    .add(() -> gotoInFile(file, line1, col1, focusEditor, record, origin));
             return;
         }
         CodeArea area = buffer.getArea();
+        // The caller names a line of the file. In a narrowed buffer the area holds only the region, so rebase
+        // (or widen, when the target is outside it) before clamping against the area's own line count.
+        int areaLine1 = host.navigation().areaLine(buffer, line1 - 1) + 1;
         int total = area.getParagraphs().size();
-        int line = Math.max(1, Math.min(total, line1)) - 1;
+        int line = Math.max(1, Math.min(total, areaLine1)) - 1;
         int col = 0;
         if (col1 > 0) {
             int lineLen = area.getParagraphLength(line);
@@ -561,8 +602,12 @@ final class WindowSessionCoordinator {
         int targetLine = line;
         int targetCol = col;
         area.moveTo(targetLine, targetCol);
-        if (!host.navigation().suppressNavRecord && !host.navigation().navigating) {
-            host.navigation().recordJump(origin, new NavigationHistory.Location(file, targetLine, targetCol));
+        if (record) {
+            host.navigation()
+                    .recordJump(
+                            origin,
+                            new NavigationHistory.Location(
+                                    file, host.navigation().documentLine(buffer, targetLine), targetCol));
         }
         area.requestFollowCaret();
         Platform.runLater(() -> {
@@ -579,11 +624,27 @@ final class WindowSessionCoordinator {
 
     /** Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). */
     void fillSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer, Runnable onComplete) {
-        Path file = Path.of(f.getPath());
+        // The resolver openInitialBuffer used to create this tab. Path.of() would hand an sftp:// entry to the
+        // local filesystem, where it either fails or names an unrelated local file.
+        Path file = com.editora.vfs.Vfs.parseStorable(f.getPath());
+        if (file == null) {
+            failSessionBuffer(f, buffer, f.getPath());
+            onComplete.run();
+            return;
+        }
         host.fileWorkflows().fileLoadExecutor.execute(() -> {
             try {
                 FileWorkflowCoordinator.PreparedLoad load = host.fileWorkflows().prepareLoad(file, true);
                 Platform.runLater(() -> {
+                    if (buffer.isDisposed() || host.fileWorkflows().isShutdown()) {
+                        // Closed while its read was running. Applying the text would revive a dead buffer
+                        // (and ask for a language server on behalf of a window that no longer exists).
+                        host.discardLoading(buffer);
+                        if (!host.fileWorkflows().isShutdown()) {
+                            onComplete.run(); // only this tab was closed: the rest of the session still loads
+                        }
+                        return;
+                    }
                     Tab tab = host.tabForBuffer(buffer);
                     if (tab != null) {
                         if (load.binary()) {
@@ -606,11 +667,30 @@ final class WindowSessionCoordinator {
                 });
             } catch (IOException | RuntimeException e) {
                 Platform.runLater(() -> {
-                    host.discardLoading(buffer); // unreadable now — leave the restored tab empty
+                    if (host.fileWorkflows().isShutdown()) {
+                        return;
+                    }
+                    failSessionBuffer(f, buffer, e.getMessage());
                     onComplete.run();
                 });
             }
         });
+    }
+
+    /**
+     * A restored tab whose file could not be read. Its shell is removed rather than left behind: an empty
+     * buffer still bound to the path is one {@code file.save} away from replacing the file with nothing. The
+     * session entry is kept so the tab comes back when the file does.
+     */
+    private void failSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer, String reason) {
+        host.discardLoading(buffer);
+        missingSessionFiles.add(f);
+        Tab tab = host.tabForBuffer(buffer);
+        if (tab != null) {
+            host.pinned().remove(tab);
+            host.editorArea().remove(tab);
+        }
+        host.setStatus(tr("status.failedOpen", reason));
     }
 
     void finishSessionBuffer(
@@ -620,19 +700,16 @@ final class WindowSessionCoordinator {
         if (!note.isEmpty()) {
             host.setStatus(note);
         }
-        host.restoreFolds(buffer);
-        host.bookmarkCoordinator().restoreBookmarks(buffer);
-        host.debugCoordinator().restoreBreakpoints(buffer);
-        host.notesCoordinator().restoreNotes(buffer);
-        host.restoreReadOnly(buffer);
+        host.restorePerFileState(buffer);
         buffer.setLoading(false);
         host.previews().restoreMarkdownMode(buffer);
         // The tab was selected while it was still a non-editable loading shell. Refresh after the
         // restored file's real View mode has been applied so the status segment cannot retain that
         // temporary "Read-Only" state for an editable buffer.
         host.refreshStatusBar();
-        // The tab was set up before content loaded; start or close its server now that its real tier is known.
-        host.lspCoordinator().syncBuffer(buffer);
+        // The tab was set up before content loaded; its real tier is known now. Only the visible tab starts
+        // its server here — a restored background tab still waits for its first show.
+        host.lspCoordinator().syncBufferWhenShown(buffer);
         CodeArea area = buffer.getArea();
         int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
         area.moveTo(caret);
@@ -714,6 +791,7 @@ final class WindowSessionCoordinator {
     }
 
     void persistSession() {
+        flushPendingMarks(); // before the early return: bookmarks and notes are not part of the tab list
         if (skipSessionFiles) {
             // --no-session opened only the command line's file, so this window's tab list is *not* the
             // session — writing it back would replace the user's saved tabs with the single file they
@@ -721,31 +799,68 @@ final class WindowSessionCoordinator {
             // the whole session write is skipped and the saved session is left exactly as it was.
             return;
         }
+        WorkspaceState state = host.config().getWorkspaceState();
+        captureOpenFiles(state);
+        persistWindowBounds(state);
+        host.toolWindows().persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
+        restoreCliFocusToolWindows(state);
+        host.config().save(); // durable flush on quit — not coalesced
+    }
+
+    /** Writes any bookmark / note positions still waiting on their edit debounce. */
+    void flushPendingMarks() {
+        host.bookmarkCoordinator().flushPendingPersist();
+        host.notesCoordinator().flushPendingPersist();
+    }
+
+    /**
+     * Refreshes the in-memory session (open files, carets, split layout, active file) ahead of a coalesced
+     * config save, so a crash or a kill loses at most the last pulse of tab changes instead of everything
+     * since the previous clean exit. No disk I/O here: the caller's save serialises the result. Window bounds
+     * and tool-window dividers are still recorded only by {@link #persistSession()} — mid-startup geometry is
+     * not yet the user's.
+     *
+     * <p>Skipped until {@link #openInitialBuffer()} has read the saved list — a save requested while the
+     * window is still being built would otherwise replace the session with "no tabs" before it is restored.
+     */
+    void captureSession() {
+        if (restoreStarted && !skipSessionFiles) {
+            captureOpenFiles(host.config().getWorkspaceState());
+        }
+    }
+
+    private void captureOpenFiles(WorkspaceState state) {
+        java.util.Map<String, WorkspaceState.OpenFile> saved = new java.util.HashMap<>();
+        for (WorkspaceState.OpenFile f : state.getOpenFiles()) {
+            saved.putIfAbsent(f.getPath(), f);
+        }
         List<WorkspaceState.OpenFile> files = new ArrayList<>();
         for (Tab tab : host.editorArea().tabs()) {
             EditorBuffer buffer = host.bufferOf(tab);
             Path p = host.tabPath(tab); // buffer or image-viewer path (image tabs restore too)
             if (p != null) {
-                int caret = buffer != null ? buffer.getArea().getCaretPosition() : 0;
                 // Vfs.toStorableString keeps a remote file's sftp:// URI — a bare path would be reopened as a
                 // *local* file on restart (a same-named local file could silently open in its place).
+                String stored = com.editora.vfs.Vfs.toStorableString(p);
+                int caret = buffer != null ? buffer.getArea().getCaretPosition() : 0;
+                if (buffer != null && buffer.isLoading() && saved.containsKey(stored)) {
+                    caret = saved.get(stored).getCaret(); // a shell's caret is 0 until its text arrives
+                }
                 files.add(new WorkspaceState.OpenFile(
-                        com.editora.vfs.Vfs.toStorableString(p),
+                        stored,
                         caret,
                         host.pinned().contains(tab),
                         host.editorArea().groupIndexOf(tab)));
             }
         }
-        WorkspaceState state = host.config().getWorkspaceState();
-        state.setOpenFiles(files);
+        // A retained entry the user has since opened by hand is theirs again: if they close it, it stays closed.
+        missingSessionFiles.removeIf(
+                missing -> files.stream().anyMatch(open -> open.getPath().equals(missing.getPath())));
+        state.setOpenFiles(SessionEntries.withMissing(files, missingSessionFiles));
         // Same predicate the loop above filters on, so the saved selection index counts the same tabs.
         state.setEditorLayout(host.editorArea().snapshotLayout(t -> host.tabPath(t) != null));
         Path activePath = host.tabPath(host.editorArea().selectedTab());
         state.setActiveFile(activePath != null ? com.editora.vfs.Vfs.toStorableString(activePath) : "");
-        persistWindowBounds(state);
-        host.toolWindows().persistDividers(); // capture a divider dragged but left open (close() only saves on hide)
-        restoreCliFocusToolWindows(state);
-        host.config().save(); // durable flush on quit — not coalesced
     }
 
     /**

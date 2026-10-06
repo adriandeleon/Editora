@@ -123,4 +123,44 @@ class ProjectSettingsTest {
             Messages.init("en");
         }
     }
+
+    // --- trust: a checkout must not choose what runs until its folder is trusted -------------------
+
+    @Test
+    void aProjectCommandIsOnlyLaunchedForATrustedFolder(@TempDir Path root) throws Exception {
+        write(root, "{\"lspCommands\": {\"java\": \"/tmp/evil.sh\"}}");
+        ProjectSettings ps = ProjectSettings.load(root);
+
+        assertEquals("jdtls", ps.commandFor("java", "jdtls", false), "untrusted: the user's own command runs");
+        assertEquals("/tmp/evil.sh", ps.commandFor("java", "jdtls", true));
+    }
+
+    @Test
+    void aProjectCannotReEnableAServerTheUserDisabledUnlessTrusted(@TempDir Path root) throws Exception {
+        write(root, "{\"lspEnabled\": {\"rust\": true, \"go\": false}}");
+        ProjectSettings ps = ProjectSettings.load(root);
+
+        assertFalse(ps.enabledFor("rust", false, false), "untrusted: a globally disabled server stays off");
+        assertTrue(ps.enabledFor("rust", false, true), "trusted: the project may switch it on");
+        assertTrue(ps.enabledFor("rust", true, false), "already on globally: nothing to gate");
+        assertFalse(ps.enabledFor("go", true, false), "switching a server off only ever runs less — always allowed");
+    }
+
+    @Test
+    void trustRequestsListExactlyWhatNeedsTrust(@TempDir Path root) throws Exception {
+        write(
+                root,
+                "{\"lspCommands\": {\"java\": \"/opt/jdk17/bin/jdtls\", \"go\": \"gopls\", \"python\": \" \"},"
+                        + " \"lspEnabled\": {\"rust\": true, \"yaml\": true, \"xml\": false}}");
+        ProjectSettings ps = ProjectSettings.load(root);
+        java.util.Map<String, String> global = java.util.Map.of("java", "jdtls", "go", "gopls", "python", "pyright");
+
+        var requests = ps.trustRequests(global::get, id -> !id.equals("rust"));
+
+        assertEquals(
+                java.util.List.of("java: /opt/jdk17/bin/jdtls", "rust"),
+                requests,
+                "a command equal to the global one, a blank one, an already-enabled server and a disable need none");
+        assertTrue(new ProjectSettings().trustRequests(global::get, id -> false).isEmpty());
+    }
 }

@@ -138,8 +138,8 @@ final class NavigationCoordinator {
     /** Builds the keyboard "Jump to…" pickers (recent files, structure) — command-palette-style popups. */
     void setupJumpPickers() {
         recentPalette = new QuickOpen<>(
-                "Jump to Recent File",
-                "Type to filter recent files…",
+                tr("nav.recentFiles.title"),
+                tr("nav.recentFiles.prompt"),
                 () -> List.copyOf(host.recentFiles().getList()),
                 p -> p.getFileName() == null ? p.toString() : p.getFileName().toString(),
                 p -> p.getParent() == null ? "" : p.getParent().toString(),
@@ -147,15 +147,15 @@ final class NavigationCoordinator {
         recentPalette.setItemIcon(p -> FileIcons.forFileName(
                 p.getFileName() == null ? p.toString() : p.getFileName().toString()));
         structurePalette = new QuickOpen<>(
-                "Jump to Structure",
-                "Type to filter symbols…",
+                tr("nav.structure.title"),
+                tr("nav.structure.prompt"),
                 () -> host.structurePanel().outline(),
                 StructurePanel.Outline::label,
                 StructurePanel.Outline::kind,
                 entry -> host.navigateToLine(entry.line()));
         openFilesPalette = new QuickOpen<>(
-                "Jump to Open File",
-                "Type to filter open files…",
+                tr("nav.openFiles.title"),
+                tr("nav.openFiles.prompt"),
                 host::openTabsForSwitcher,
                 tab -> (isTabDirty(tab) ? "• " : "") + bufferTitle(tab), // dirty marker, like the tab
                 tab -> bufferParentDir(tab),
@@ -165,8 +165,8 @@ final class NavigationCoordinator {
                 tab -> isTabDirty(tab) ? "dirty-name" : null); // amber/italic, like a dirty tab
         openFilesPalette.setItemIcon(tab -> FileIcons.forFileName(bufferTitle(tab))); // file-type glyph
         toolWindowPalette = new QuickOpen<>(
-                "Jump to Tool Window",
-                "Type to filter tool windows…",
+                tr("nav.toolWindows.title"),
+                tr("toolwindow.splitPrompt"),
                 () -> host.toolWindows().getRegisteredToolWindows().stream()
                         .filter(tw -> host.git().isEnabled() || !"tool.commit".equals(tw.getCommandId()))
                         .filter(tw -> host.projectsEnabled() || !"tool.project".equals(tw.getCommandId()))
@@ -210,8 +210,8 @@ final class NavigationCoordinator {
                 host.fileWorkflows()::openPath);
         relatedPalette.setOverlayHost(host.overlayHost());
         snippetPalette = new QuickOpen<>(
-                "Insert Snippet",
-                "Type to filter snippets…",
+                tr("nav.snippets.title"),
+                tr("nav.snippets.prompt"),
                 () -> {
                     EditorBuffer b = host.activeBuffer();
                     return new ArrayList<>(host.snippets().forLanguage(b == null ? "global" : b.getLanguage()));
@@ -293,7 +293,46 @@ final class NavigationCoordinator {
         CodeArea a = b.getArea();
         return a == null
                 ? null
-                : new NavigationHistory.Location(b.getPath(), a.getCurrentParagraph(), a.getCaretColumn());
+                : new NavigationHistory.Location(
+                        b.getPath(), documentLine(b, a.getCurrentParagraph()), a.getCaretColumn());
+    }
+
+    /**
+     * The 0-based <b>document</b> line for a line of {@code buffer}'s text area. They differ only while the
+     * buffer is narrowed: the area then holds just the region, so its line numbers are region-relative.
+     * Everything that names a place in the file — the jump history, a search hit, a Problems entry — is in
+     * document lines, and crosses into area lines through {@link #areaLine} at the moment of the jump.
+     */
+    int documentLine(EditorBuffer buffer, int areaLine) {
+        return buffer.isNarrowed()
+                ? areaLine + com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart())
+                : areaLine;
+    }
+
+    /**
+     * The text-area line to move to for 0-based {@code documentLine} of {@code buffer}. A narrowed buffer is
+     * rebased by its region's first line; when the target lies outside the region the buffer is <b>widened
+     * first</b> (what Emacs does for a jump from outside, {@code widen-automatically}) — the alternative was
+     * landing on whatever region line happened to carry that number, or silently not moving at all.
+     */
+    int areaLine(EditorBuffer buffer, int documentLine) {
+        if (buffer == null || !buffer.isNarrowed()) {
+            return documentLine;
+        }
+        int first = com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart());
+        int local = com.editora.editor.NarrowLines.toRegionLine(
+                first, buffer.getArea().getParagraphs().size(), documentLine);
+        if (local >= 0) {
+            return local;
+        }
+        buffer.widen(); // the narrow-changed hook reconciles the status chip, title, LSP and git
+        host.setStatus(tr("status.narrow.widened"));
+        return documentLine;
+    }
+
+    /** Records a jump to the start of {@code areaLine} of {@code buffer} (a file-backed buffer's area line). */
+    void recordJumpToLine(NavigationHistory.Location origin, EditorBuffer buffer, int areaLine) {
+        recordJump(origin, new NavigationHistory.Location(buffer.getPath(), documentLine(buffer, areaLine), 0));
     }
 
     /** Records a jump into the back/forward history: the {@code origin} we left, then the {@code dest}. */
@@ -328,11 +367,37 @@ final class NavigationCoordinator {
         Tab tab = host.tabForPath(path);
         EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
         CodeArea area = buffer == null ? null : buffer.getArea();
+        if (area != null && buffer.isNarrowed()) { // a recorded line is a document line; the area is the region
+            line -= documentLine(buffer, 0);
+        }
         if (area == null || line < 0 || line >= area.getParagraphs().size()) {
             return "";
         }
         String text = area.getParagraph(line).getText().strip();
         return text.length() <= MAX_LOCATION_SNIPPET ? text : text.substring(0, MAX_LOCATION_SNIPPET) + "…";
+    }
+
+    /**
+     * The second half of {@code openAndGoto}, a pulse after its {@code openPath}: moves the caret once the
+     * file's text has landed and records the jump exactly once, from the {@code origin} captured before the
+     * open. Whether to record is decided here, before the wait — a back/forward jump must stay unrecorded
+     * even though {@link #navigating} is released now (a load that fails never runs the continuation, and
+     * must not leave every later jump unrecorded).
+     */
+    void landJump(NavigationHistory.Location origin, Path file, int line0, int col0) {
+        boolean record = !navigating;
+        navigating = false;
+        host.fileWorkflows().whenLoaded(file, () -> {
+            suppressNavRecord = true; // this outer call owns the recording, not the nested gotoInFile
+            try {
+                host.sessions().gotoInFile(file, line0 + 1, col0 + 1);
+            } finally {
+                suppressNavRecord = false;
+            }
+            if (record) {
+                recordJump(origin, new NavigationHistory.Location(file, line0, col0));
+            }
+        });
     }
 
     /** {@code nav.back}: return to the previous location in the jump list. */
@@ -343,7 +408,7 @@ final class NavigationCoordinator {
             return;
         }
         navigating = true;
-        host.openAndGoto(loc.path(), loc.line(), loc.column()); // clears `navigating` in its runLater
+        host.openAndGoto(loc.path(), loc.line(), loc.column()); // landJump clears `navigating`
     }
 
     /** {@code nav.forward}: go to the next location in the jump list (after going back). */

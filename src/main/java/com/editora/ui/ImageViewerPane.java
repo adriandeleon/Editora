@@ -1,10 +1,11 @@
 package com.editora.ui;
 
 import java.io.ByteArrayInputStream;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -30,6 +31,12 @@ import static com.editora.i18n.Messages.tr;
  * zoom out / in / fit-to-window / actual-size; the image sits in a scroll pane, and {@code Ctrl}+wheel zooms.
  * Nothing here is editable. {@link #dispose()} drops the decoded {@link Image} so its GPU texture is released
  * when the tab closes (bounding the Prism texture pool — see the perf notes in CLAUDE.md).
+ *
+ * <p>The file is read and decoded on a {@link ViewerLoads} worker, never on the FX thread; the tab shows a
+ * "loading" note until the image lands (a result for a tab closed meanwhile is dropped). The decode is
+ * bounded by pixel count, not just file size: an image over {@link ViewerLoads#MAX_PIXELS} is decoded at a
+ * reduced size and the bar says so, and a failure — unreadable file, unknown format, out of memory — is
+ * shown as a message in the tab.
  */
 public final class ImageViewerPane implements TabContent {
 
@@ -46,12 +53,27 @@ public final class ImageViewerPane implements TabContent {
     private final ImageView imageView = new ImageView();
     private final ScrollPane scroll = new ScrollPane();
     private final Label zoomLabel = new Label();
+    private final Label noteLabel = new Label();
+    private final long maxPixels;
+    private final CompletableFuture<Void> loaded = new CompletableFuture<>();
+    private volatile boolean disposed;
+    private Node toolbar;
     private Image image;
+    /** The picture's own pixel size — the decoded {@link #image} is smaller when it was reduced. */
+    private double naturalWidth;
+
+    private double naturalHeight;
     private double zoom = 1.0;
     private boolean fitMode = true; // start fit-to-window so a large image is visible at once
 
     public ImageViewerPane(Path path) {
+        this(path, ViewerLoads.MAX_PIXELS);
+    }
+
+    /** Test seam: a small pixel cap, so the reduced-decode path runs on a small file. */
+    ImageViewerPane(Path path, long maxPixels) {
         this.path = path;
+        this.maxPixels = maxPixels;
         this.title = path.getFileName() == null
                 ? path.toString()
                 : path.getFileName().toString();
@@ -85,8 +107,8 @@ public final class ImageViewerPane implements TabContent {
                 e.consume();
             }
         });
-        root.setCenter(scroll);
-        root.setTop(buildToolbar());
+        toolbar = buildToolbar();
+        showMessage(tr("imageviewer.loading"), "image-viewer-loading"); // until the worker delivers the image
     }
 
     private Node buildToolbar() {
@@ -102,7 +124,8 @@ public final class ImageViewerPane implements TabContent {
         HBox.setHgrow(spacer, Priority.ALWAYS);
         Label readOnly = new Label(tr("imageviewer.readOnly"));
         readOnly.getStyleClass().add("image-viewer-readonly");
-        HBox bar = new HBox(6, out, in, fit, actual, zoomLabel, spacer, readOnly);
+        noteLabel.getStyleClass().add("image-viewer-note");
+        HBox bar = new HBox(6, out, in, fit, actual, zoomLabel, noteLabel, spacer, readOnly);
         bar.getStyleClass().add("image-viewer-bar");
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(6, 10, 6, 10));
@@ -118,29 +141,84 @@ public final class ImageViewerPane implements TabContent {
         return b;
     }
 
+    /** A decode result handed from the worker to the FX thread. */
+    private record Decoded(Image image, int width, int height, boolean reduced) {}
+
     private void load() {
-        try {
-            long size = Files.size(path);
-            if (size > MAX_BYTES) {
-                showError(tr("imageviewer.tooLarge"));
-                return;
+        ViewerLoads.submit(() -> {
+            Decoded decoded = null;
+            String error = null;
+            try {
+                decoded = decode();
+                if (decoded == null) {
+                    error = tr("imageviewer.loadFailed");
+                }
+            } catch (TooLargeException | OutOfMemoryError e) {
+                error = tr("imageviewer.tooLarge");
+            } catch (Throwable e) { // unreadable file, a decoder bug: say so in the tab, never fail silently
+                error = tr("imageviewer.loadFailed");
             }
-            byte[] bytes = Files.readAllBytes(path); // provider-agnostic (works for local + SFTP)
-            image = new Image(new ByteArrayInputStream(bytes));
-            if (image.isError()) {
-                showError(tr("imageviewer.loadFailed"));
-                return;
-            }
-            imageView.setImage(image);
-            fitToWindow();
-        } catch (IOException | RuntimeException e) {
-            showError(tr("imageviewer.loadFailed"));
-        }
+            Decoded result = decoded;
+            String message = error;
+            Platform.runLater(() -> {
+                try {
+                    if (!disposed) {
+                        if (result == null) {
+                            showMessage(message, "image-viewer-error");
+                        } else {
+                            show(result);
+                        }
+                    }
+                } finally {
+                    loaded.complete(null);
+                }
+            });
+        });
     }
 
-    private void showError(String message) {
+    /** Worker thread: reads the file and decodes it within the pixel cap; null when it is not a picture. */
+    private Decoded decode() throws Exception {
+        if (Files.size(path) > MAX_BYTES) {
+            throw new TooLargeException();
+        }
+        byte[] bytes = Files.readAllBytes(path); // provider-agnostic (works for local + SFTP)
+        if (disposed) {
+            return null;
+        }
+        // The header says how big the bitmap will be; decide the decode size before allocating it.
+        int[] size = ViewerLoads.dimensions(bytes);
+        int[] reduced = size == null ? null : ViewerLoads.reducedSize(size[0], size[1], maxPixels);
+        Image img = reduced == null
+                ? new Image(new ByteArrayInputStream(bytes))
+                : new Image(new ByteArrayInputStream(bytes), reduced[0], reduced[1], true, true);
+        if (img.isError() || img.getWidth() <= 0 || img.getHeight() <= 0) {
+            return null;
+        }
+        int w = size == null ? (int) Math.round(img.getWidth()) : size[0];
+        int h = size == null ? (int) Math.round(img.getHeight()) : size[1];
+        return new Decoded(img, w, h, reduced != null);
+    }
+
+    /** The file (or the bitmap it would decode to) is over a hard limit. */
+    private static final class TooLargeException extends Exception {
+        private static final long serialVersionUID = 1L;
+    }
+
+    private void show(Decoded decoded) {
+        image = decoded.image();
+        naturalWidth = decoded.width();
+        naturalHeight = decoded.height();
+        noteLabel.setText(decoded.reduced() ? tr("imageviewer.reduced", decoded.width(), decoded.height()) : "");
+        imageView.setImage(image);
+        root.setCenter(scroll);
+        root.setTop(toolbar);
+        fitToWindow();
+    }
+
+    private void showMessage(String message, String styleClass) {
         Label label = new Label(message);
-        label.getStyleClass().add("image-viewer-error");
+        label.getStyleClass().add(styleClass);
+        label.setWrapText(true);
         StackPane center = new StackPane(label);
         center.setPadding(new Insets(24));
         root.setCenter(center);
@@ -163,8 +241,8 @@ public final class ImageViewerPane implements TabContent {
         if (image == null) {
             return;
         }
-        double natW = image.getWidth();
-        double natH = image.getHeight();
+        double natW = naturalWidth; // zoom is relative to the picture's real size, even when decoded reduced
+        double natH = naturalHeight;
         if (fitMode) {
             double viewW = scroll.getViewportBounds().getWidth() - 24; // minus the holder padding
             double viewH = scroll.getViewportBounds().getHeight() - 24;
@@ -188,13 +266,24 @@ public final class ImageViewerPane implements TabContent {
         }
     }
 
-    /** True once the image decoded successfully (false while loading failed / refused). Test accessor. */
+    /** True once the image decoded successfully (false while loading / failed / refused). Test accessor. */
     boolean hasImage() {
         return image != null && !image.isError();
     }
 
-    /** Releases the decoded image (and its GPU texture) when the tab closes. */
+    /** Completes once the background load has been applied (or dropped, for a disposed pane). Test accessor. */
+    CompletableFuture<Void> loadedForTest() {
+        return loaded;
+    }
+
+    /** The decoded bitmap (smaller than the picture when it was reduced). Test accessor. */
+    Image imageForTest() {
+        return image;
+    }
+
+    /** Releases the decoded image (and its GPU texture) when the tab closes; a load still running is dropped. */
     public void dispose() {
+        disposed = true;
         imageView.setImage(null);
         image = null;
     }

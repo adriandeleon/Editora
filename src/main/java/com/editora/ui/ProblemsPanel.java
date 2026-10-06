@@ -169,10 +169,28 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Rebuilds the tree, grouping the per-file diagnostics by language → file (called on the FX thread). */
+    /**
+     * Shows {@code byFile}, grouped by language → file (called on the FX thread). The tree is rebuilt only
+     * when the content differs from what it already shows: a server re-publishing identical diagnostics —
+     * which most do on every keystroke for every unaffected file — costs a comparison, not a rebuild that
+     * also throws away the selection and scroll position.
+     */
     public void setProblems(Map<Path, List<LspDiagnostic>> byFile) {
         lastByFile = byFile == null ? Map.of() : byFile;
+        if (lastByFile.equals(rendered)) {
+            return;
+        }
         rebuild();
+    }
+
+    /** A copy of what the tree shows (callers hand in their live map, so it cannot be compared to itself). */
+    private Map<Path, List<LspDiagnostic>> rendered;
+
+    private int rebuilds;
+
+    /** How many times the tree has been rebuilt — lets a test show that a burst costs one rebuild. */
+    int rebuildCount() {
+        return rebuilds;
     }
 
     /**
@@ -181,7 +199,7 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
      * match the LSP diagnostic keys). Re-sorts the existing tree without needing fresh diagnostics.
      */
     public void setActiveFile(Path canonicalActive) {
-        if (java.util.Objects.equals(activeFile, canonicalActive)) {
+        if (com.editora.config.PathKeys.samePath(activeFile, canonicalActive)) {
             return;
         }
         activeFile = canonicalActive;
@@ -189,6 +207,8 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
     }
 
     private void rebuild() {
+        rebuilds++;
+        rendered = new HashMap<>(lastByFile);
         // Bucket the non-empty files by display language name (TreeMap keeps the language headers sorted).
         Map<String, List<Path>> byLanguage = new TreeMap<>();
         Map<Path, List<LspDiagnostic>> kept = new HashMap<>();

@@ -49,6 +49,35 @@ class ProcessRunnerProcessTest {
     }
 
     /**
+     * {@code run} is for output Editora parses, so its child is pinned to the C locale; {@code
+     * runInUserLocale} is for the user's own tools, whose child must see the locale exactly as Editora
+     * inherited it. Before the split both forced {@code LC_ALL=C}, which made a JVM child treat file names as
+     * ASCII and print {@code ?} for everything else.
+     */
+    @Test
+    void onlyTheParsingRunnerForcesTheCLocaleOnItsChild(@TempDir Path dir) {
+        List<String> printLcAll = List.of("sh", "-c", "printf %s \"${LC_ALL-<unset>}\"");
+        String inherited = System.getenv("LC_ALL") == null ? "<unset>" : System.getenv("LC_ALL");
+
+        assertEquals(
+                "C", ProcessRunner.run(dir, Duration.ofSeconds(10), printLcAll).out());
+        assertEquals(
+                inherited,
+                ProcessRunner.runInUserLocale(dir, Duration.ofSeconds(10), printLcAll)
+                        .out());
+        assertEquals(
+                inherited,
+                ProcessRunner.runInUserLocale(dir, Duration.ofSeconds(10), printLcAll, Map.of(), "ignored")
+                        .out(),
+                "the stdin-feeding form (External Tools) is a user tool too");
+        assertEquals(
+                "tr_TR.UTF-8",
+                ProcessRunner.runInUserLocale(dir, Duration.ofSeconds(10), printLcAll, Map.of("LC_ALL", "tr_TR.UTF-8"))
+                        .out(),
+                "extraEnv still wins");
+    }
+
+    /**
      * The timeout used to be unreachable: stdout was drained inline on the calling thread, and
      * {@code waitFor(timeout)} only ran once that drain hit EOF — which needs the child to exit. So a child
      * that outlived its timeout was simply waited for. Measured before the fix: a 1 s timeout on {@code sleep

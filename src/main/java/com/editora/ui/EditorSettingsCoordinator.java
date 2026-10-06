@@ -139,11 +139,19 @@ final class EditorSettingsCoordinator {
         this.host = host;
     }
 
+    /** Moves an open Settings window's view switches to the values a toggle command just wrote. */
+    private void syncSettingsViewChecks() {
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncViewChecks();
+        }
+    }
+
     void toggleColumnRuler() {
         Settings s = host.config().getSettings();
         s.setShowColumnRuler(!s.isShowColumnRuler());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.ruler", tr(s.isShowColumnRuler() ? "common.on" : "common.off")));
     }
 
@@ -152,6 +160,7 @@ final class EditorSettingsCoordinator {
         s.setHighlightCurrentLine(!s.isHighlightCurrentLine());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.lineHighlight", tr(s.isHighlightCurrentLine() ? "common.on" : "common.off")));
     }
 
@@ -160,6 +169,7 @@ final class EditorSettingsCoordinator {
         s.setShowLineNumbers(!s.isShowLineNumbers());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.lineNumbers", tr(s.isShowLineNumbers() ? "common.on" : "common.off")));
     }
 
@@ -168,17 +178,27 @@ final class EditorSettingsCoordinator {
         s.setShowMinimap(!s.isShowMinimap());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.minimap", tr(s.isShowMinimap() ? "common.on" : "common.off")));
     }
 
     void toggleWordWrap() {
         Settings s = host.config().getSettings();
+        EditorBuffer active = host.activeBuffer();
+        if (active != null && active.isWrapSuppressed()) {
+            // Wrap was held off for this long-line file. Asking for it here is the explicit opt-in: if the
+            // preference is already on, wrap this buffer rather than turning wrap off everywhere else.
+            active.setWrapSuppressed(false);
+            if (s.isWordWrap()) {
+                active.setWordWrap(true);
+                host.setStatus(tr("status.toggle.wordWrap", tr("common.on")));
+                return;
+            }
+        }
         s.setWordWrap(!s.isWordWrap());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
-        if (host.settingsWindow() != null) {
-            host.settingsWindow().syncViewChecks();
-        }
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.wordWrap", tr(s.isWordWrap() ? "common.on" : "common.off")));
     }
 
@@ -187,6 +207,7 @@ final class EditorSettingsCoordinator {
         s.setShowWhitespace(!s.isShowWhitespace());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.whitespace", tr(s.isShowWhitespace() ? "common.on" : "common.off")));
     }
 
@@ -195,6 +216,7 @@ final class EditorSettingsCoordinator {
         s.setSpellCheck(!s.isSpellCheck());
         host.requestSave();
         applyViewSettingsToAllBuffers(s);
+        syncSettingsViewChecks();
         host.setStatus(tr("status.toggle.spellCheck", tr(s.isSpellCheck() ? "common.on" : "common.off")));
     }
 
@@ -273,8 +295,8 @@ final class EditorSettingsCoordinator {
             return;
         }
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set Spell Check Language",
-                "Type to filter languages…",
+                tr("palette.spellLanguage.title"),
+                tr("palette.spellLanguage.prompt"),
                 SpellDictionaries::available,
                 id -> id,
                 id -> "",
@@ -311,7 +333,7 @@ final class EditorSettingsCoordinator {
         if (id == null) {
             return;
         }
-        host.config().getSettings().setKeymap(id);
+        KeymapLayers.switchKeymap(host.config().getSettings(), id);
         host.config().save();
         reloadKeymap();
         host.settingsWindow().syncKeymapCombo(); // keep the Settings window combo in step if it's open
@@ -390,8 +412,8 @@ final class EditorSettingsCoordinator {
     /** Picker for the app (chrome) theme — also switches the editor theme to match. */
     void chooseAppTheme() {
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set App Theme",
-                "Type to filter themes…",
+                tr("palette.theme.appTitle"),
+                tr("palette.theme.prompt"),
                 () -> Themes.names(),
                 name -> name,
                 name -> "",
@@ -403,8 +425,8 @@ final class EditorSettingsCoordinator {
     /** Picker for the editor color theme only (leaves the chrome theme untouched). */
     void chooseEditorTheme() {
         QuickOpen<String> picker = new QuickOpen<>(
-                "Set Editor Theme",
-                "Type to filter themes…",
+                tr("palette.theme.editorTitle"),
+                tr("palette.theme.prompt"),
                 () -> EditorThemes.names(),
                 name -> name,
                 name -> "",
@@ -744,6 +766,11 @@ final class EditorSettingsCoordinator {
         }
         chooseSetting(
                 "buffer.convertLineEndings", () -> List.of("LF", "CRLF"), c -> c, buffer::getLineEnding, choice -> {
+                    if (buffer.isLineEndingForced()) {
+                        // end_of_line is applied on every save, so a conversion here could never reach disk.
+                        host.setStatus(tr("status.lineEndingsEditorConfig", buffer.getLineEnding()));
+                        return;
+                    }
                     buffer.convertLineEndings("CRLF".equals(choice));
                     host.statusBar().refresh();
                     host.setStatus(tr("status.lineEndingsSet", choice));
@@ -785,7 +812,7 @@ final class EditorSettingsCoordinator {
         buffer.setLineHighlightOn(Chrome.lineHighlight(s.isHighlightCurrentLine(), zen));
         buffer.setLineNumbersVisible(Chrome.lineNumbers(s.isShowLineNumbers(), zen, simple));
         buffer.setMinimapVisible(Chrome.minimap(s.isShowMinimap(), zen, simple));
-        buffer.setWordWrap(s.isWordWrap());
+        buffer.setWordWrap(s.isWordWrap() && !buffer.isWrapSuppressed());
         buffer.setGutterVisible(Chrome.gutter(simple)); // Simple mode removes the entire gutter strip
         if (simple) {
             buffer.unfoldAll(); // collapsed regions would be stranded behind the now-hidden fold chevrons
@@ -854,10 +881,48 @@ final class EditorSettingsCoordinator {
         Path path = buffer.getPath();
         if (!editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)) {
             applyResolvedEditorConfig(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY);
-            return; // EOL override is left to a manual choice; tab size already comes from global settings
+            return; // the file keeps its own line ending; tab size already comes from global settings
         }
         com.editora.editorconfig.EditorConfigProperties p = com.editora.editorconfig.EditorConfig.resolveFor(path);
         applyResolvedEditorConfig(buffer, p);
+    }
+
+    /**
+     * Re-resolves {@code buffer}'s {@code .editorconfig} rules and applies them when they changed since they
+     * were last applied. The rules used to be resolved once, when the file was opened: editing
+     * {@code .editorconfig} (or pulling a commit that does) had no effect on an open file until its tab was
+     * closed and reopened, so it kept being saved with the old charset, line ending and trim rules.
+     * {@code resolveFor} is cached by modified time, so an unchanged tree costs a few {@code stat} calls.
+     *
+     * @return true when the rules changed
+     */
+    boolean refreshEditorConfig(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        com.editora.editorconfig.EditorConfigProperties now =
+                !editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)
+                        ? com.editora.editorconfig.EditorConfigProperties.EMPTY
+                        : com.editora.editorconfig.EditorConfig.resolveFor(path);
+        if (now.equals(buffer.getEditorConfigProps())) {
+            return false;
+        }
+        applyResolvedEditorConfig(buffer, now);
+        if (buffer == host.activeBuffer() && host.statusBar() != null) {
+            host.statusBar().refresh();
+        }
+        return true;
+    }
+
+    /**
+     * A save had to leave the declared charset for UTF-8 (see {@link SaveEncoding}): the file now starts with
+     * a UTF-8 byte-order mark, and the buffer must say so — the status bar kept showing the old charset, and
+     * the next open decodes by that BOM.
+     */
+    void charsetFellBackToUtf8(EditorBuffer buffer) {
+        buffer.setCharsetOverride(null);
+        buffer.setDetectedCharset(com.editora.editorconfig.EditorConfigCharset.UTF_8_BOM);
+        if (buffer == host.activeBuffer() && host.statusBar() != null) {
+            host.statusBar().refresh();
+        }
     }
 
     /** Applies an already-resolved EditorConfig result without touching the filesystem. */
@@ -869,9 +934,9 @@ final class EditorSettingsCoordinator {
         if (p.insertSpaces() != null || p.tabWidth() != null || p.indentSize() != null) {
             buffer.setTabSize(p.effectiveTabWidth(host.config().getSettings().getTabSize()));
         }
-        if (p.endOfLine() != null) {
-            buffer.setEolOverride("crlf".equals(p.endOfLine()) ? "CRLF" : "lf".equals(p.endOfLine()) ? "LF" : null);
-        }
+        // Unconditional, so a file that leaves an end_of_line rule behind (Save As, EditorConfig switched off)
+        // goes back to its own line ending. A manual conversion lives on the buffer, not in this override.
+        buffer.setEolOverride(com.editora.editor.LineEndings.labelOf(p.endOfLine()));
         buffer.setRulerColumn(p.maxLineLength()); // null = default 80, OFF = hide
         buffer.setCharsetOverride(p.charset());
     }

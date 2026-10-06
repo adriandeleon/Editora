@@ -51,4 +51,16 @@ class BinaryDiffTest {
 
         assertTrue(BinaryDiff.isProbablyBinary(bytes));
     }
+
+    @Test
+    void aLargeFilesIdentityFollowsItsContent(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path a = java.nio.file.Files.writeString(dir.resolve("a.log"), "a".repeat(200_000));
+        java.nio.file.Path same = java.nio.file.Files.writeString(dir.resolve("same.log"), "a".repeat(200_000));
+        java.nio.file.Path b = java.nio.file.Files.writeString(dir.resolve("b.log"), "b".repeat(200_000));
+
+        assertTrue(BinaryDiff.describeLarge(a).equals(BinaryDiff.describeLarge(same)));
+        assertFalse(BinaryDiff.describeLarge(a).equals(BinaryDiff.describeLarge(b)));
+        assertTrue(BinaryDiff.describeLarge(a).startsWith("195.3 KiB · SHA-256 "), BinaryDiff.describeLarge(a));
+    }
 }

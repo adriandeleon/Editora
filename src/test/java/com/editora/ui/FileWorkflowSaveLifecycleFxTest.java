@@ -534,11 +534,18 @@ class FileWorkflowSaveLifecycleFxTest {
     private static CountDownLatch pressNextDialog(AsyncTestScope async, ButtonBar.ButtonData buttonData)
             throws Exception {
         CountDownLatch pressed = new CountDownLatch(1);
+        // Answers every dialog that appears until the scope closes, each once. Stopping after the first left
+        // the test hanging whenever an unrelated prompt (the focus-regain "changed on disk" check) happened
+        // to open ahead of the one under test: that one was answered, and the save prompt never was.
+        java.util.Set<DialogPane> answered = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         AnimationTimer timer = new AnimationTimer() {
             @Override
             public void handle(long now) {
                 for (Window window : Window.getWindows().stream().toList()) {
                     if (window.getScene() == null || !(window.getScene().getRoot() instanceof DialogPane pane)) {
+                        continue;
+                    }
+                    if (!answered.add(pane)) {
                         continue;
                     }
                     pane.getButtonTypes().stream()
@@ -548,9 +555,6 @@ class FileWorkflowSaveLifecycleFxTest {
                                 pressed.countDown();
                                 ((Button) pane.lookupButton(type)).fire();
                             });
-                }
-                if (pressed.getCount() == 0) {
-                    stop();
                 }
             }
         };

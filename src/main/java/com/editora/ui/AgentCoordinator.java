@@ -93,6 +93,9 @@ final class AgentCoordinator implements AcpClient.Host {
 
     private final CoordinatorHost host;
     private final Ops ops;
+    /** Where agent file writes are always refused — the editor's config directory ({@link #protectDirectory}). */
+    private volatile Path writeProtectedDir;
+
     private final AtomicFileWrite.FileOperations documentFiles;
     /** Spawning the agent runs a login-shell PATH probe + process start — keep it off the FX thread. */
     private final ExecutorService lifecycleExec = Executors.newSingleThreadExecutor(r -> {
@@ -831,7 +834,9 @@ final class AgentCoordinator implements AcpClient.Host {
                     return false;
                 }
                 // Undoable, review-first: the buffer goes dirty and the user saves (one C-z reverts the edit).
-                open.getArea().replaceText(body);
+                // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in
+                // it.
+                open.replaceWholeDocument(body);
                 host.setStatus(tr("status.agent.editedBuffer", open.getTitle()));
                 return true;
             });
@@ -852,6 +857,17 @@ final class AgentCoordinator implements AcpClient.Host {
             ops.refreshProjectTree();
             ops.openBackgroundBuffer(file);
         });
+    }
+
+    /** The agent may edit the project, never the editor's own settings/keymaps/plugins (which can run code). */
+    @Override
+    public Path writeProtectedDirectory() {
+        return writeProtectedDir;
+    }
+
+    /** Sets the directory agent file writes are refused under (the editor's configuration directory). */
+    void protectDirectory(Path dir) {
+        this.writeProtectedDir = dir;
     }
 
     @Override

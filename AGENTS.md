@@ -23,7 +23,8 @@ Run Maven from the repository root.
 
 The `clean` in every `-Pdist` build is mandatory. Incremental compilation can leave synthetic
 enum-switch classes out of `target/classes`; jlink can then package an app whose keyboard fails on
-the first keypress. See [building and packaging](docs/building-and-packaging.md) and the
+the first keypress. The `dist` profile now runs `clean` itself (and `fatjar` wipes `target/classes`),
+so a forgotten `clean` no longer ships stale classes — keep typing it anyway. See [building and packaging](docs/building-and-packaging.md) and the
 [detailed command reference](docs/reference/commands.md).
 
 ## Worktrees — one per task
@@ -32,8 +33,9 @@ Multiple Codex sessions may work on this repository concurrently. Every task get
 worktree so branch switches and commits cannot interfere.
 
 - Create one with `scripts/worktree.sh new <branch>`; the base defaults to `origin/master`.
-- Work in `../Editora-V2-worktrees/<slug>`. `scripts/worktree.sh list`, `rm <branch>`, and `prune`
-  inspect or clean worktrees.
+- Work in `../Editora-worktrees/<slug>` (always beside the main checkout, wherever the script is
+  run from). `scripts/worktree.sh list`, `rm <branch>`, and `prune` inspect or clean worktrees; `rm`
+  keeps a branch that is not fully merged unless `--force` is given.
 - Never switch the main checkout away from `master`. A session anchored there must operate on a
   worktree by explicit path.
 - A created worktree does not move the current terminal into it. Open a session there or pass its

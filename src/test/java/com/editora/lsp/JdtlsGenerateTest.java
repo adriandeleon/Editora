@@ -7,6 +7,7 @@ import com.google.gson.JsonParser;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -117,6 +118,42 @@ class JdtlsGenerateTest {
                 "Ldemo/Person;.name)Ljava/lang/String;",
                 picked.get(0).getAsJsonObject().get("bindingKey").getAsString(),
                 "the opaque binding key survives the round trip");
+    }
+
+    /**
+     * {@code class AppException extends RuntimeException {}}: five super constructors and no fields. The
+     * prompt used to read only {@code fields} ("nothing to generate") and to send every super constructor
+     * back, generating one constructor each.
+     */
+    @Test
+    void superConstructorsAreChoosableAndOnlyTheChosenOnesAreSent() {
+        JsonElement status = json("{\"constructors\":["
+                + "{\"name\":\"RuntimeException\",\"parameters\":[],\"bindingKey\":\"c0\"},"
+                + "{\"name\":\"RuntimeException\",\"parameters\":[\"String\"],\"bindingKey\":\"c1\"},"
+                + "{\"name\":\"RuntimeException\",\"parameters\":[\"String\",\"Throwable\"],\"bindingKey\":\"c2\"}],"
+                + "\"fields\":[]}");
+
+        assertTrue(JdtlsGenerate.candidates(JdtlsGenerate.Kind.CONSTRUCTORS, status)
+                .isEmpty());
+        List<JdtlsGenerate.Candidate> offered = JdtlsGenerate.constructorCandidates(status);
+        assertEquals(3, offered.size(), "a class without fields still has constructors to generate");
+        assertEquals("RuntimeException(String, Throwable)", offered.get(2).label());
+        assertTrue(offered.get(0).preselected());
+        assertFalse(offered.get(1).preselected());
+
+        var args = JdtlsGenerate.generateParams(
+                JdtlsGenerate.Kind.CONSTRUCTORS, json("{}"), List.of(), status, List.of(offered.get(1)));
+
+        assertEquals(1, args.getAsJsonArray("constructors").size(), "only the chosen super constructor");
+        assertEquals(
+                "c1",
+                args.getAsJsonArray("constructors")
+                        .get(0)
+                        .getAsJsonObject()
+                        .get("bindingKey")
+                        .getAsString());
+        assertEquals(0, args.getAsJsonArray("fields").size());
+        assertTrue(JdtlsGenerate.constructorCandidates(json("[]")).isEmpty());
     }
 
     /** Each request is one server-defined object, including constructor choices and regenerate=false. */

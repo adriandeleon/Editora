@@ -24,7 +24,7 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class WhitespaceOverlay extends Region {
 
-    private static final Color MARKER = Color.web("#b8bdc4");
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final String SPACE = "·";
     private static final String TAB = "→";
     private static final String EOL = "¶";
@@ -34,6 +34,8 @@ final class WhitespaceOverlay extends Region {
     private boolean active;
     private boolean redrawPending;
     private Font font = Font.font("monospace", 14);
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private WhitespaceOverlay follower;
 
     WhitespaceOverlay(CodeArea area) {
         this.area = area;
@@ -48,10 +50,34 @@ final class WhitespaceOverlay extends Region {
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            colors = palette; // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
+    }
+
+    /**
+     * The same markers for a split's second {@code view}: an overlay to put in that view's pane, which lies
+     * over {@code text} (the view's scroll pane, wherever a minimap leaves it) and from then on is switched
+     * and re-fonted together with this one.
+     */
+    WhitespaceOverlay follower(CodeArea view, Region text) {
+        var second = new WhitespaceOverlay(view);
+        second.setManaged(false);
+        text.boundsInParentProperty()
+                .addListener(
+                        (obs, old, b) -> second.resizeRelocate(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight()));
+        second.font = font;
+        second.setActive(active);
+        follower = second;
+        return second;
     }
 
     /** Turns the markers on or off. */
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -71,6 +97,9 @@ final class WhitespaceOverlay extends Region {
     void setFont(String family, int size) {
         this.font = Font.font(family, size);
         scheduleRedraw();
+        if (follower != null) {
+            follower.setFont(family, size);
+        }
     }
 
     @Override
@@ -119,7 +148,7 @@ final class WhitespaceOverlay extends Region {
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            g.setFill(MARKER);
+            g.setFill(colors.whitespace());
             g.setFont(font);
             g.setTextBaseline(VPos.CENTER);
             // The text area's left edge (past the line-number gutter). Empty lines have no character

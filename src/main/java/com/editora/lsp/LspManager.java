@@ -22,8 +22,6 @@ import org.eclipse.lsp4j.CompletionItem;
 import org.eclipse.lsp4j.Hover;
 import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.LocationLink;
-import org.eclipse.lsp4j.MarkedString;
-import org.eclipse.lsp4j.MarkupContent;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 
@@ -83,6 +81,10 @@ public final class LspManager {
     private final Map<String, LanguageServerSession> sessionByDocUri = new ConcurrentHashMap<>();
 
     private volatile boolean enabled;
+    /** Set by {@link #close()}: the owning window is gone, so nothing may start a server here again. */
+    private volatile boolean closed;
+    /** Mirrors {@code Settings.lspOnTypeFormatting} into jdtls's {@code java.format.onType.enabled}. */
+    private volatile boolean javaOnTypeFormatting;
     /** jdtls {@code initializationOptions.bundles} — the java-debug plugin jar(s) that enable debugging.
      *  Applied only to the java server, at {@code initialize}; empty = no debug bundle. */
     private volatile List<String> debugBundles = List.of();
@@ -109,6 +111,9 @@ public final class LspManager {
     /** Updates the feature flag + each server's command ({@code serverId → command}); a changed command
      *  invalidates that server's cached probe. */
     public void configure(boolean enabled, Map<String, String> serverCommands) {
+        if (closed) {
+            return; // a late settings apply for a window that has closed must not re-enable its servers
+        }
         if (serverCommands != null) {
             serverCommands.forEach(this::putCommand);
         }
@@ -116,6 +121,21 @@ public final class LspManager {
         if (!enabled) {
             shutdownAll();
         }
+    }
+
+    /**
+     * Tells jdtls whether to format as you type. jdtls registers its on-type formatting provider only while
+     * {@code java.format.onType.enabled} is set, so this is sent at {@code initialize}, pushed after it, and
+     * re-pushed to running Java sessions when the setting flips.
+     */
+    public void setJavaOnTypeFormatting(boolean enabled) {
+        javaOnTypeFormatting = enabled;
+        String prefix = sessionKeyPrefix(LspServerRegistry.JAVA_SERVER_ID);
+        sessionsByRoot.forEach((key, session) -> {
+            if (key.startsWith(prefix)) {
+                session.setJavaOnTypeFormatting(enabled);
+            }
+        });
     }
 
     private void putCommand(String serverId, String command) {
@@ -187,6 +207,9 @@ public final class LspManager {
 
     /** Probes whether {@code serverId}'s configured command resolves to an executable; cached, off-thread. */
     public void detect(String serverId, Consumer<Boolean> onResult) {
+        if (closed) {
+            return; // the window is gone; a probe result would only try to open documents on it
+        }
         Boolean hit = availableCache.get(serverId);
         if (hit != null) {
             Platform.runLater(() -> onResult.accept(hit));
@@ -196,7 +219,34 @@ public final class LspManager {
         detectExec.submit(() -> {
             boolean ok = available(command);
             availableCache.put(serverId, ok);
-            Platform.runLater(() -> onResult.accept(ok));
+            Platform.runLater(() -> {
+                if (!closed) {
+                    onResult.accept(ok);
+                }
+            });
+        });
+    }
+
+    /**
+     * Probes whether {@code command} (blank = {@code serverId}'s default) resolves to an executable, off-thread
+     * and <b>without touching this manager's configuration</b>. For a status label that describes a command
+     * other than the one in force — the Settings page shows the global command while a trusted project may
+     * override it; configuring the manager to probe it replaced the override and stopped the running server.
+     */
+    public void detectCommand(String serverId, String command, Consumer<Boolean> onResult) {
+        if (closed) {
+            return;
+        }
+        Map<String, String> one = new java.util.HashMap<>();
+        one.put(serverId, command);
+        List<String> argv = LspServerRegistry.commandFor(serverId, one);
+        detectExec.submit(() -> {
+            boolean ok = available(argv);
+            Platform.runLater(() -> {
+                if (!closed) {
+                    onResult.accept(ok);
+                }
+            });
         });
     }
 
@@ -222,7 +272,7 @@ public final class LspManager {
      * {@link LspServerRegistry#protocolLanguageId} (so a {@code maven-pom} route opens as {@code xml}).
      */
     public void openDocument(Path file, Path root, String routeLanguageId, String text) {
-        if (!enabled || file == null || root == null || !LspServerRegistry.isSupported(routeLanguageId)) {
+        if (closed || !enabled || file == null || root == null || !LspServerRegistry.isSupported(routeLanguageId)) {
             return;
         }
         LanguageServerSession session = sessionForRoot(root, routeLanguageId);
@@ -235,11 +285,14 @@ public final class LspManager {
         session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
     }
 
-    public void changeDocument(Path file, String text) {
+    /**
+     * Syncs {@code text} to the server. Returns false when the server already holds exactly this text and so
+     * was sent nothing: it then has no reason to publish diagnostics again, and the caller must not wait for
+     * a publish that will not come.
+     */
+    public boolean changeDocument(Path file, String text) {
         LanguageServerSession s = sessionFor(file);
-        if (s != null) {
-            s.didChange(uri(file), text);
-        }
+        return s == null || s.didChange(uri(file), text);
     }
 
     public void saveDocument(Path file, String savedText) {
@@ -262,14 +315,7 @@ public final class LspManager {
         semanticTokenState.remove(uri); // the next open starts from a full request (#679)
         semanticRequestGeneration.remove(uri);
         diagnosticRequestGeneration.merge(uri, 1L, Long::sum);
-        rawDiagnostics.remove(uri); // open-documents-only retention (#670); the symlink-form key, if any,
-        try { //                       is dropped too so a closed file can't pin its diagnostics
-            String realUri = file.toRealPath().toUri().toString();
-            rawDiagnostics.remove(realUri);
-            diagnosticRequestGeneration.merge(realUri, 1L, Long::sum);
-        } catch (java.io.IOException | RuntimeException ignored) {
-            // file gone/remote — nothing more to drop
-        }
+        rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
         if (s != null) {
             s.didClose(uri);
             maybeScheduleEviction(s);
@@ -317,10 +363,37 @@ public final class LspManager {
         return null;
     }
 
+    /** Sessions something other than an open document depends on, with a use count; see {@link #retain}. */
+    private final Map<LanguageServerSession, Integer> retained = new ConcurrentHashMap<>();
+
+    /**
+     * Keeps the session serving {@code file} alive until the returned handle is run, even with no document
+     * open on it. Open documents are not the only client a server has: a Java debug session runs
+     * <em>inside</em> the jdtls process (the adapter is started there by {@code vscode.java.startDebugSession}
+     * and the debuggee is its child), so evicting the "idle" server three minutes after the last Java tab
+     * closed killed the adapter and the program being debugged. The handle is idempotent; releasing it
+     * re-arms the idle timer. A no-op handle is returned when {@code file} has no session.
+     */
+    public Runnable retain(Path file) {
+        LanguageServerSession session = sessionFor(file);
+        if (session == null) {
+            return () -> {};
+        }
+        retained.merge(session, 1, Integer::sum);
+        cancelEviction(session);
+        var released = new java.util.concurrent.atomic.AtomicBoolean();
+        return () -> {
+            if (released.compareAndSet(false, true)) {
+                retained.computeIfPresent(session, (k, n) -> n > 1 ? n - 1 : null);
+                maybeScheduleEviction(session);
+            }
+        };
+    }
+
     /** Starts the idle-eviction timer for {@code session} if it no longer serves any open document. */
     private void maybeScheduleEviction(LanguageServerSession session) {
-        if (sessionByDocUri.containsValue(session)) {
-            return; // still serving other open documents
+        if (sessionByDocUri.containsValue(session) || retained.containsKey(session)) {
+            return; // still serving other open documents, or pinned by a debug session
         }
         String key = keyOf(session);
         if (key == null) {
@@ -353,12 +426,70 @@ public final class LspManager {
     /** FX thread: disposes {@code session} if it is still cached under {@code key} and still document-less. */
     private void evictIfIdle(String key, LanguageServerSession session) {
         pendingEvictions.remove(key);
-        if (sessionsByRoot.get(key) != session || sessionByDocUri.containsValue(session)) {
-            return; // replaced, already dropped, or a document reopened during the grace period
+        if (sessionsByRoot.get(key) != session
+                || sessionByDocUri.containsValue(session)
+                || retained.containsKey(session)) {
+            return; // replaced, already dropped, pinned, or a document reopened during the grace period
         }
         sessionsByRoot.remove(key, session);
+        disposeDeliberately(key, session);
+    }
+
+    /** How long a restarted session waits for the one it replaces to finish exiting. */
+    private static final long PRIOR_EXIT_WAIT_MILLIS = 8_000;
+
+    /** Session key → the exit of a session that was deliberately disposed and has not gone yet. */
+    private final Map<String, CompletableFuture<Void>> exiting = new ConcurrentHashMap<>();
+
+    /**
+     * Disposes a session on purpose (restart, disable, idle eviction, window close) and keeps what it held
+     * until its process has really gone.
+     *
+     * <p>{@code dispose()} gives the server a moment to exit by itself, and until it has, a jdtls still
+     * holds its Eclipse workspace lock. So the workspace claim is released only when the process exits, and
+     * the exit is remembered under the session key: a replacement for the same (server, root) waits for it
+     * before starting ({@link #awaitPriorExit}), instead of launching into a locked workspace.
+     */
+    private void disposeDeliberately(String key, LanguageServerSession session) {
         session.dispose();
-        releaseJdtlsWorkspace(session);
+        String workspace = jdtlsWorkspaceBySession.remove(session);
+        CompletableFuture<Void> gone =
+                session.exited().whenComplete((done, error) -> releaseJdtlsWorkspaceName(workspace));
+        if (!gone.isDone()) {
+            exiting.put(key, gone);
+            gone.whenComplete((done, error) -> exiting.remove(key, gone));
+        }
+    }
+
+    /** TEST SEAM — completes once every deliberately disposed session's process has gone and released
+     *  what it held. */
+    CompletableFuture<Void> pendingExitsForTest() {
+        return CompletableFuture.allOf(exiting.values().toArray(CompletableFuture[]::new));
+    }
+
+    /** Start thread: waits (bounded) for the session this one replaces to finish exiting. */
+    private void awaitPriorExit(String key) {
+        CompletableFuture<Void> prior = exiting.get(key);
+        if (prior == null) {
+            return;
+        }
+        try {
+            prior.get(PRIOR_EXIT_WAIT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            LOG.log(java.util.logging.Level.FINE, "the previous language server had not exited yet", e);
+        }
+    }
+
+    /** TEST SEAM — the session serving {@code file}, so a test can play the server's side of it. */
+    LanguageServerSession sessionForTest(Path file) {
+        return sessionFor(file);
+    }
+
+    /** TEST SEAM — the command currently configured for {@code serverId} (what the next launch runs). */
+    String configuredCommandForTest(String serverId) {
+        return commands.get(serverId);
     }
 
     /** TEST SEAM — whether a session is currently cached for {@code (serverId, root)}. Lets a test observe
@@ -391,6 +522,30 @@ public final class LspManager {
         return null;
     }
 
+    /**
+     * What a response is validated against: the text of every document the session held when the request
+     * was sent (keyed by local path, as opened and canonical), and the wall-clock instant it was sent
+     * ({@code 0} when no request time is known, e.g. an edit handed in without the request that produced it).
+     */
+    record EditBasis(Map<Path, String> documents, long sentAtMillis) {
+        static final EditBasis UNKNOWN = new EditBasis(Map.of(), 0);
+
+        /** The same documents, re-stamped with the moment a follow-up request is sent. */
+        EditBasis sentNow() {
+            return new EditBasis(documents, System.currentTimeMillis());
+        }
+    }
+
+    /** A workspace edit ready to apply, or the files that prevented it ({@code mapped} null). */
+    public record EditPlan(WorkspaceEditMapper.Mapped mapped, List<Path> blocked) {
+        static final EditPlan REFUSED = new EditPlan(null, List.of());
+    }
+
+    /** Request-time text for every open document in a session, stamped with the current time. */
+    private static EditBasis editBasis(LanguageServerSession session) {
+        return new EditBasis(expectedDocuments(session), System.currentTimeMillis());
+    }
+
     /** Request-time text for every open document in a session, keyed by local path. */
     private static Map<Path, String> expectedDocuments(LanguageServerSession session) {
         Map<Path, String> out = new java.util.LinkedHashMap<>();
@@ -404,38 +559,111 @@ public final class LspManager {
         return Map.copyOf(out);
     }
 
-    /**
-     * Maps a returned edit and attaches only genuine request-time preimages. An unversioned closed-file edit
-     * has no verifiable preimage; reading that file after the response would merely bless stale ranges, so
-     * the whole transaction is refused instead.
-     */
-    private static WorkspaceEditMapper.Mapped mapWorkspaceEdit(
-            org.eclipse.lsp4j.WorkspaceEdit edit, Map<Path, String> expected) {
+    /** The no-I/O half of planning: the mapped edit with every server-open target's request-time text
+     *  attached, plus the targets the server did not have open (still to be checked against the disk). */
+    private record EditDraft(WorkspaceEditMapper.Mapped mapped, List<Path> closedTargets) {}
+
+    private static EditDraft draftWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
         WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(edit);
         if (mapped == null) {
             return null;
         }
-        Map<Path, String> all = new java.util.LinkedHashMap<>(expected == null ? Map.of() : expected);
+        Map<Path, String> documents = basis == null ? Map.of() : basis.documents();
         java.util.Set<String> created = mapped.creates().stream()
                 .map(create -> com.editora.config.PathKeys.key(create.file()))
                 .collect(java.util.stream.Collectors.toSet());
+        List<WorkspaceEditMapper.FileEdit> edits =
+                new ArrayList<>(mapped.edits().size());
+        List<Path> closedTargets = new ArrayList<>();
         for (WorkspaceEditMapper.FileEdit fileEdit : mapped.edits()) {
-            if (!all.containsKey(fileEdit.file())) {
-                String canonicalExpected = all.get(com.editora.config.PathKeys.canonical(fileEdit.file()));
-                if (canonicalExpected != null) {
-                    all.put(fileEdit.file(), canonicalExpected);
-                    continue;
-                }
-                if (created.contains(com.editora.config.PathKeys.key(fileEdit.file()))) {
-                    all.put(fileEdit.file(), "");
-                    continue;
-                }
-                if (fileEdit.version() == null) {
-                    return null;
-                }
+            String expected = documents.get(fileEdit.file());
+            if (expected == null) {
+                expected = documents.get(com.editora.config.PathKeys.canonical(fileEdit.file()));
+            }
+            if (expected == null && created.contains(com.editora.config.PathKeys.key(fileEdit.file()))) {
+                expected = "";
+            }
+            if (expected != null) {
+                edits.add(new WorkspaceEditMapper.FileEdit(
+                        fileEdit.file(), fileEdit.edits(), fileEdit.version(), expected, null));
+            } else {
+                edits.add(fileEdit);
+                closedTargets.add(fileEdit.file());
             }
         }
-        return WorkspaceEditMapper.withExpectedText(mapped, all);
+        return new EditDraft(
+                new WorkspaceEditMapper.Mapped(
+                        List.copyOf(edits), mapped.renames(), mapped.creates(), mapped.deletes()),
+                List.copyOf(closedTargets));
+    }
+
+    /**
+     * Completes a draft by establishing a preimage for each target the server did not have open.
+     *
+     * <p>The server computed those edits from the file on disk. Reading the file once the response is in
+     * would bless whatever is there now, so that alone proves nothing; what does is the file's modification
+     * time predating the moment the request was sent — then the content on disk is the content the edit was
+     * computed from. Such a target is marked with that instant, and the applier re-checks it against a clean
+     * buffer. A target that changed since the request, is missing, or belongs to an edit whose request time
+     * is unknown is reported as blocking, and nothing is applied.
+     *
+     * <p>A version the server attached to a document it never had open means nothing to this client (no
+     * version was ever sent for it), so it is dropped rather than compared against a version that cannot
+     * exist. Pure given {@code lastModified} (millis, negative for a missing file).
+     */
+    static EditPlan completeWorkspaceEdit(
+            WorkspaceEditMapper.Mapped mapped,
+            List<Path> closedTargets,
+            EditBasis basis,
+            java.util.function.ToLongFunction<Path> lastModified) {
+        if (closedTargets.isEmpty()) {
+            return new EditPlan(mapped, List.of());
+        }
+        long sentAt = basis == null ? 0 : basis.sentAtMillis();
+        java.util.Set<Path> closed = new java.util.HashSet<>(closedTargets);
+        List<Path> blocked = new ArrayList<>();
+        List<WorkspaceEditMapper.FileEdit> edits =
+                new ArrayList<>(mapped.edits().size());
+        for (WorkspaceEditMapper.FileEdit fileEdit : mapped.edits()) {
+            if (!closed.contains(fileEdit.file())) {
+                edits.add(fileEdit);
+            } else if (WorkspaceEditMapper.unchangedSince(lastModified.applyAsLong(fileEdit.file()), sentAt)) {
+                edits.add(new WorkspaceEditMapper.FileEdit(fileEdit.file(), fileEdit.edits(), null, null, sentAt));
+            } else {
+                blocked.add(fileEdit.file());
+            }
+        }
+        if (!blocked.isEmpty()) {
+            return new EditPlan(null, List.copyOf(blocked));
+        }
+        return new EditPlan(
+                new WorkspaceEditMapper.Mapped(
+                        List.copyOf(edits), mapped.renames(), mapped.creates(), mapped.deletes()),
+                List.of());
+    }
+
+    /** A local file's modification time in millis, or -1 when it cannot be read. */
+    private static long lastModifiedMillis(Path file) {
+        try {
+            return Files.getLastModifiedTime(file).toMillis();
+        } catch (java.io.IOException | RuntimeException e) {
+            return -1;
+        }
+    }
+
+    /** Maps and validates a returned edit in one step. Stats closed targets: call it off the FX thread. */
+    private static EditPlan planWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis) {
+        EditDraft draft = draftWorkspaceEdit(edit, basis);
+        return draft == null
+                ? EditPlan.REFUSED
+                : completeWorkspaceEdit(draft.mapped(), draft.closedTargets(), basis, LspManager::lastModifiedMillis);
+    }
+
+    /** Told (on the FX thread) which files prevented a workspace edit, just before its caller hears failure. */
+    private volatile Consumer<List<Path>> onEditBlocked = files -> {};
+
+    public void setOnEditBlocked(Consumer<List<Path>> handler) {
+        this.onEditBlocked = handler == null ? files -> {} : handler;
     }
 
     /** The server id currently managing {@code file}, or null if it is not open on any server. Lets the
@@ -505,6 +733,7 @@ public final class LspManager {
                 params -> onPublishDiagnostics(diagnosticSource[0], params),
                 (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)));
         diagnosticSource[0] = session;
+        session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         // Drop the session the moment it can no longer serve requests — the process died on its own, or the
         // handshake failed/timed out. Otherwise it stays cached looking alive: isManaged() keeps returning true
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
@@ -544,8 +773,12 @@ public final class LspManager {
         Path workspaceBase = jdtlsWorkspaceBase;
         String workspaceBaseName = needsJdtlsWorkspace ? LspServerRegistry.workspaceDirName(root) : null;
         List<String> bundles = List.copyOf(debugBundles);
+        boolean onTypeFormatting = javaOnTypeFormatting;
+        // Trust is read here, on the caller's thread, where the trust list is also edited.
+        Path sdkCeiling = ASTRO_SERVER_ID.equals(serverId) ? trustedCeiling(root, folderTrust) : null;
         startExec.execute(() -> {
-            if (session.isDisposed()) {
+            awaitPriorExit(key); // a restart: let the server being replaced release what it holds
+            if (closed || session.isDisposed()) {
                 dropSession(key, session);
                 return;
             }
@@ -574,7 +807,18 @@ public final class LspManager {
                 }
             }
             List<String> startCommand = resolvedSpec.command();
-            session.configureStart(startCommand, () -> initOptionsFor(serverId, bundles, root, startCommand));
+            Path astroTsdk =
+                    ASTRO_SERVER_ID.equals(serverId) ? astroTypeScriptSdk(root, sdkCeiling, startCommand) : null;
+            if (ASTRO_SERVER_ID.equals(serverId) && astroTsdk == null) {
+                // astro-ls cannot initialize without a TypeScript SDK, and the only one on offer belongs
+                // to a folder that is not trusted to choose code that runs. Disposed first, so the drop
+                // reads as deliberate (no crash notice, no auto-restart).
+                session.dispose();
+                dropSession(key, session);
+                Platform.runLater(() -> onStartWithheld.accept(serverId, root));
+                return;
+            }
+            session.configureStart(startCommand, () -> initOptionsFor(serverId, bundles, astroTsdk, onTypeFormatting));
             if (!session.start()) {
                 dropSession(key, session);
             }
@@ -632,17 +876,33 @@ public final class LspManager {
         return unique;
     }
 
-    /** Off-thread production claim. Sidecar markers identify caches whose previous session never completed
-     *  initialize and could not be safely removed (usually another process still held the Eclipse lock). */
-    private static String claimUsableJdtlsWorkspaceName(Path base, String baseName) {
+    /**
+     * Off-thread production claim. Sidecar markers identify caches whose previous session never completed
+     * initialize and could not be safely removed (usually another process still held the Eclipse lock).
+     *
+     * <p>A marker is re-tested here rather than obeyed forever: once the lock is free the rebuildable cache
+     * and its marker are removed and the name is reused. Nothing else ever deleted a marker, so one timed-out
+     * handshake orphaned the canonical index for good and every later start burned another suffix.
+     */
+    static String claimUsableJdtlsWorkspaceName(Path base, String baseName) {
         for (int i = 1; i <= 20; i++) {
             String candidate = workspaceCandidate(baseName, i);
-            if (Files.exists(failedWorkspaceMarker(base, candidate))) {
+            if (!claimedJdtlsWorkspaces.add(candidate)) {
                 continue;
             }
-            if (claimedJdtlsWorkspaces.add(candidate)) {
+            Path marker = failedWorkspaceMarker(base, candidate);
+            if (!Files.exists(marker)) {
                 return candidate;
             }
+            if (deleteUnlockedJdtlsWorkspace(base.resolve(candidate))) {
+                try {
+                    Files.deleteIfExists(marker);
+                    return candidate;
+                } catch (java.io.IOException e) {
+                    LOG.log(java.util.logging.Level.FINE, "Could not clear " + marker, e);
+                }
+            }
+            claimedJdtlsWorkspaces.remove(candidate); // still locked by someone else: leave it alone
         }
         String unique = baseName + "-x" + Long.toHexString(System.nanoTime());
         claimedJdtlsWorkspaces.add(unique);
@@ -687,13 +947,42 @@ public final class LspManager {
                     && !session.initializedOnce();
             session.dispose(); // hygiene: stop its executor + untrack the dead process
             if (failedJdtlsInitialization) {
-                repairFailedJdtlsWorkspace(workspaceName);
+                repairAfterExit(key, session.exited(), workspaceName);
+            } else {
+                releaseJdtlsWorkspaceName(workspaceName);
             }
-            releaseJdtlsWorkspaceName(workspaceName);
             Platform.runLater(() -> onSessionCrashed.accept(session.serverId(), session.root()));
         } else {
             releaseJdtlsWorkspaceName(workspaceName);
         }
+    }
+
+    /**
+     * Repairs a failed jdtls workspace once its process has really gone, then releases the claim.
+     *
+     * <p>{@code dispose()} only signals the process (the kill is non-blocking), and a JVM that has not exited
+     * yet still holds the Eclipse lock. Probing the lock in the same breath therefore always found the
+     * session's <em>own</em> dying server, kept the cache and marked it failed. The wait is bounded, and is
+     * remembered under the session key so the auto-restart waits for it ({@link #awaitPriorExit}) and gets the
+     * canonical name back instead of a fresh suffix.
+     */
+    void repairAfterExit(String key, CompletableFuture<Void> exited, String workspaceName) {
+        Runnable repair = () -> {
+            repairFailedJdtlsWorkspace(workspaceName);
+            releaseJdtlsWorkspaceName(workspaceName);
+        };
+        if (exited.isDone()) {
+            repair.run();
+            return;
+        }
+        CompletableFuture<Void> repaired = exited.copy()
+                .orTimeout(PRIOR_EXIT_WAIT_MILLIS / 2, java.util.concurrent.TimeUnit.MILLISECONDS)
+                .handleAsync((done, error) -> {
+                    repair.run();
+                    return null;
+                });
+        exiting.put(key, repaired);
+        repaired.whenComplete((done, error) -> exiting.remove(key, repaired));
     }
 
     /** A jdtls data directory contains only rebuildable Eclipse indexes. After a failed handshake, remove it
@@ -1480,10 +1769,15 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
-        Map<Path, String> expected = expectedDocuments(s);
+        EditBasis basis = editBasis(s);
         s.rename(uri(file), new Position(line, character), newName).whenComplete((edit, e) -> {
-            WorkspaceEditMapper.Mapped mapped = e != null || edit == null ? null : mapWorkspaceEdit(edit, expected);
-            Platform.runLater(() -> cb.accept(mapped));
+            EditPlan plan = e != null || edit == null ? EditPlan.REFUSED : planWorkspaceEdit(edit, basis);
+            Platform.runLater(() -> {
+                if (!plan.blocked().isEmpty()) {
+                    onEditBlocked.accept(plan.blocked());
+                }
+                cb.accept(plan.mapped());
+            });
         });
     }
 
@@ -1493,13 +1787,13 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(false));
             return;
         }
-        Map<Path, String> expected = expectedDocuments(s);
+        EditBasis basis = editBasis(s);
         s.rename(uri(file), new Position(line, character), newName)
                 .whenComplete((edit, e) -> Platform.runLater(() -> {
                     if (e != null || edit == null) {
                         cb.accept(false);
                     } else {
-                        applyWorkspaceEdit(edit, expected, cb);
+                        applyWorkspaceEdit(edit, basis, cb);
                     }
                 }));
     }
@@ -2190,9 +2484,19 @@ public final class LspManager {
      *  back to {@link #applyCodeAction}. {@code kind} is the LSP kind ({@code quickfix}, {@code source.…})
      *  or empty; {@code preferred} marks the server's recommended fix (listed first). */
     public record CodeActionItem(
-            String title, String kind, boolean preferred, Object raw, Map<Path, String> expectedDocuments) {
+            String title,
+            String kind,
+            boolean preferred,
+            Object raw,
+            Map<Path, String> expectedDocuments,
+            long requestedAtMillis) {
         public CodeActionItem(String title, String kind, boolean preferred, Object raw) {
-            this(title, kind, preferred, raw, Map.of());
+            this(title, kind, preferred, raw, Map.of(), 0);
+        }
+
+        /** What an edit this action carries (or resolves to) was computed against. */
+        EditBasis basis() {
+            return new EditBasis(expectedDocuments, requestedAtMillis);
         }
     }
 
@@ -2220,22 +2524,21 @@ public final class LspManager {
         return null;
     }
 
-    /** Last raw published diagnostics per server-reported URI (open documents only — see
-     *  {@link #onPublishDiagnostics}); the context a code-action request sends back to the server. */
+    /**
+     * Last raw published diagnostics per <b>managed document URI</b> — the spelling this client opened the
+     * document under, never the one the server reported it under (open documents only — see
+     * {@link #onPublishDiagnostics}); the context a code-action request sends back to the server.
+     *
+     * <p>Keying by the server's string lost them whenever the server spelled the URI differently
+     * ({@code file:///c%3A/…} for our {@code file:///C:/…}, or a symlink-resolved path): the lookup below
+     * missed, the request went out with empty {@code context.diagnostics}, and every quick fix that keys off
+     * a diagnostic silently disappeared.
+     */
     private final Map<String, List<org.eclipse.lsp4j.Diagnostic>> rawDiagnostics = new ConcurrentHashMap<>();
 
-    /** The retained raw diagnostics for {@code file}, tolerant of the server having reported a
-     *  symlink-resolved URI ({@code /private/tmp} vs {@code /tmp} — the #470 mismatch). */
+    /** The retained raw diagnostics for {@code file}. */
     private List<org.eclipse.lsp4j.Diagnostic> rawDiagnosticsFor(Path file) {
-        List<org.eclipse.lsp4j.Diagnostic> hit = rawDiagnostics.get(uri(file));
-        if (hit != null) {
-            return hit;
-        }
-        try {
-            return rawDiagnostics.getOrDefault(file.toRealPath().toUri().toString(), List.of());
-        } catch (java.io.IOException | RuntimeException e) {
-            return List.of();
-        }
+        return rawDiagnostics.getOrDefault(uri(file), List.of());
     }
 
     /**
@@ -2252,7 +2555,9 @@ public final class LspManager {
         }
         var range = new org.eclipse.lsp4j.Range(new Position(startLine, startChar), new Position(endLine, endChar));
         List<org.eclipse.lsp4j.Diagnostic> context = diagnosticsOverlapping(rawDiagnosticsFor(file), range);
-        Map<Path, String> expected = expectedDocuments(s);
+        EditBasis basis = editBasis(s);
+        Map<Path, String> expected = basis.documents();
+        long sentAt = basis.sentAtMillis();
         s.codeAction(uri(file), range, context).whenComplete((result, error) -> {
             List<CodeActionItem> items = new ArrayList<>();
             if (error == null && result != null) {
@@ -2263,7 +2568,7 @@ public final class LspManager {
                     if (either.isLeft() && either.getLeft() != null) {
                         var cmd = either.getLeft();
                         items.add(new CodeActionItem(
-                                cmd.getTitle() == null ? "" : cmd.getTitle(), "", false, cmd, expected));
+                                cmd.getTitle() == null ? "" : cmd.getTitle(), "", false, cmd, expected, sentAt));
                     } else if (either.isRight() && either.getRight() != null) {
                         var action = either.getRight();
                         if (action.getDisabled() != null) {
@@ -2274,7 +2579,8 @@ public final class LspManager {
                                 action.getKind() == null ? "" : action.getKind(),
                                 Boolean.TRUE.equals(action.getIsPreferred()),
                                 action,
-                                expected));
+                                expected,
+                                sentAt));
                     }
                 }
                 items.sort((a, b) -> Boolean.compare(b.preferred(), a.preferred())); // preferred first (stable)
@@ -2313,7 +2619,9 @@ public final class LspManager {
      */
     public void applyCodeAction(Path file, Object raw, Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
-        Map<Path, String> expected = s == null ? Map.of() : expectedDocuments(s);
+        // No request time: an edit already inside this action was computed at some earlier, unknown moment,
+        // so nothing can show a closed file is still what the server saw.
+        EditBasis expected = s == null ? EditBasis.UNKNOWN : new EditBasis(expectedDocuments(s), 0);
         if (raw instanceof org.eclipse.lsp4j.Command cmd) {
             executeCommandExpectingEdit(file, cmd, expected, cb);
             return;
@@ -2337,20 +2645,21 @@ public final class LspManager {
     }
 
     /** Request-time snapshots and eventual apply result for one command-driven edit per session. */
-    private record PendingApply(
-            Map<Path, String> expected, java.util.concurrent.atomic.AtomicReference<Boolean> applied) {}
+    private record PendingApply(EditBasis expected, java.util.concurrent.atomic.AtomicReference<Boolean> applied) {}
 
     private final Map<LanguageServerSession, PendingApply> pendingApplyExpected = new ConcurrentHashMap<>();
 
     private void executeCommandExpectingEdit(
-            Path file, org.eclipse.lsp4j.Command command, Map<Path, String> expected, Consumer<Boolean> cb) {
+            Path file, org.eclipse.lsp4j.Command command, EditBasis expected, Consumer<Boolean> cb) {
         LanguageServerSession session = sessionFor(file);
         if (session == null) {
             Platform.runLater(() -> cb.accept(false));
             return;
         }
+        // The server computes this edit while it runs the command, so closed files are judged against now.
         PendingApply pending = new PendingApply(
-                expected == null ? Map.of() : expected, new java.util.concurrent.atomic.AtomicReference<>());
+                (expected == null ? EditBasis.UNKNOWN : expected).sentNow(),
+                new java.util.concurrent.atomic.AtomicReference<>());
         if (pendingApplyExpected.putIfAbsent(session, pending) != null) {
             Platform.runLater(() -> cb.accept(false));
             return; // do not let concurrent commands share or overwrite each other's stale-edit guard
@@ -2370,7 +2679,7 @@ public final class LspManager {
         }
         Object raw = item.raw();
         if (raw instanceof org.eclipse.lsp4j.Command cmd) {
-            executeCommandExpectingEdit(file, cmd, item.expectedDocuments(), cb);
+            executeCommandExpectingEdit(file, cmd, item.basis(), cb);
             return;
         }
         if (!(raw instanceof org.eclipse.lsp4j.CodeAction action)) {
@@ -2378,7 +2687,7 @@ public final class LspManager {
             return;
         }
         if (action.getEdit() != null) {
-            Platform.runLater(() -> finishCodeAction(file, action, action.getEdit(), item.expectedDocuments(), cb));
+            Platform.runLater(() -> finishCodeAction(file, action, action.getEdit(), item.basis(), cb));
             return;
         }
         LanguageServerSession s = sessionFor(file);
@@ -2388,7 +2697,7 @@ public final class LspManager {
         }
         s.resolveCodeAction(action).whenComplete((resolved, error) -> {
             org.eclipse.lsp4j.CodeAction use = error == null && resolved != null ? resolved : action;
-            Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), item.expectedDocuments(), cb));
+            Platform.runLater(() -> finishCodeAction(file, use, use.getEdit(), item.basis(), cb));
         });
     }
 
@@ -2397,7 +2706,7 @@ public final class LspManager {
             Path file,
             org.eclipse.lsp4j.CodeAction action,
             org.eclipse.lsp4j.WorkspaceEdit edit,
-            Map<Path, String> expected,
+            EditBasis expected,
             Consumer<Boolean> cb) {
         if (edit != null) {
             applyWorkspaceEdit(
@@ -2410,7 +2719,7 @@ public final class LspManager {
     private void finishCodeActionAfterEdit(
             Path file,
             org.eclipse.lsp4j.CodeAction action,
-            Map<Path, String> expected,
+            EditBasis expected,
             Consumer<Boolean> cb,
             boolean editPresent,
             boolean editOk) {
@@ -2421,8 +2730,7 @@ public final class LspManager {
         if (action.getCommand() != null && action.getCommand().getCommand() != null) {
             boolean editApplied = editOk;
             LanguageServerSession session = sessionFor(file);
-            Map<Path, String> commandExpected =
-                    editPresent && editOk && session != null ? expectedDocuments(session) : expected;
+            EditBasis commandExpected = editPresent && editOk && session != null ? editBasis(session) : expected;
             executeCommandExpectingEdit(
                     file, action.getCommand(), commandExpected, commandOk -> cb.accept(editApplied && commandOk));
             return;
@@ -2441,21 +2749,78 @@ public final class LspManager {
         this.applyEditHandler = handler == null ? (edits, done) -> done.accept(false) : handler;
     }
 
-    private void applyWorkspaceEdit(
-            org.eclipse.lsp4j.WorkspaceEdit edit, Map<Path, String> expected, Consumer<Boolean> done) {
-        WorkspaceEditMapper.Mapped mapped = mapWorkspaceEdit(edit, expected);
-        if (mapped == null) {
+    /**
+     * FX thread: validates {@code edit} against {@code basis} and hands it to the applier. An edit that only
+     * touches documents the server had open is applied in the same call, as before. One that reaches a
+     * closed file needs that file's modification time, so the check runs on a virtual thread and the apply
+     * returns to the FX thread — no file I/O happens here.
+     */
+    private void applyWorkspaceEdit(org.eclipse.lsp4j.WorkspaceEdit edit, EditBasis basis, Consumer<Boolean> done) {
+        EditDraft draft = draftWorkspaceEdit(edit, basis);
+        if (draft == null) {
             done.accept(false);
             return;
         }
-        applyEditHandler.accept(mapped, done);
+        if (draft.closedTargets().isEmpty()) {
+            applyEditHandler.accept(draft.mapped(), done);
+            return;
+        }
+        Thread.ofVirtual().name("lsp-edit-preimage").start(() -> {
+            EditPlan plan =
+                    completeWorkspaceEdit(draft.mapped(), draft.closedTargets(), basis, LspManager::lastModifiedMillis);
+            Platform.runLater(() -> {
+                if (plan.mapped() == null) {
+                    onEditBlocked.accept(plan.blocked());
+                    done.accept(false);
+                } else {
+                    applyEditHandler.accept(plan.mapped(), done);
+                }
+            });
+        });
+    }
+
+    /**
+     * The basis for a server edit that no tracked command is waiting for (the edit of a completion item's
+     * command, one sent after {@code executeCommand} was already answered, an unsolicited one). There is no
+     * request to date it by, but a target the server names <em>with the version the session currently
+     * holds</em> needs none: that version identifies the text, which is the session's own copy. Such targets
+     * get that text as their preimage (and keep the applier's version check); every other target stays
+     * unknown and is refused as before.
+     */
+    static EditBasis versionedBasis(LanguageServerSession session, org.eclipse.lsp4j.WorkspaceEdit edit) {
+        if (session == null || edit == null || edit.getDocumentChanges() == null) {
+            return EditBasis.UNKNOWN;
+        }
+        Map<String, String> snapshots = null;
+        Map<Path, String> documents = new java.util.LinkedHashMap<>();
+        for (var change : edit.getDocumentChanges()) {
+            var id = change != null && change.isLeft() && change.getLeft() != null
+                    ? change.getLeft().getTextDocument()
+                    : null;
+            if (id == null || id.getUri() == null || id.getVersion() == null) {
+                continue;
+            }
+            Path path = uriToPath(id.getUri());
+            if (path == null || !id.getVersion().equals(session.documentVersion(id.getUri()))) {
+                continue;
+            }
+            if (snapshots == null) {
+                snapshots = session.documentSnapshots();
+            }
+            String text = snapshots.get(id.getUri());
+            if (text != null) {
+                documents.put(path, text);
+                documents.put(com.editora.config.PathKeys.canonical(path), text);
+            }
+        }
+        return documents.isEmpty() ? EditBasis.UNKNOWN : new EditBasis(Map.copyOf(documents), 0);
     }
 
     /** A server-initiated {@code workspace/applyEdit} (from any session): apply on FX, answer the server. */
     private void onServerApplyEdit(
             LanguageServerSession session, org.eclipse.lsp4j.WorkspaceEdit edit, Consumer<Boolean> respond) {
         PendingApply pending = pendingApplyExpected.get(session);
-        Map<Path, String> expected = pending == null ? Map.of() : pending.expected();
+        EditBasis expected = pending == null ? versionedBasis(session, edit) : pending.expected();
         Platform.runLater(() -> applyWorkspaceEdit(edit, expected, applied -> {
             if (pending != null) {
                 pending.applied().set(applied);
@@ -2527,8 +2892,12 @@ public final class LspManager {
      * Pure + package-private so it's directly unit-tested.
      */
     static Map<String, Object> javaInitOptions(List<String> debugBundles) {
+        return javaInitOptions(debugBundles, false);
+    }
+
+    static Map<String, Object> javaInitOptions(List<String> debugBundles, boolean onTypeFormatting) {
         Map<String, Object> options = new java.util.HashMap<>();
-        options.put("settings", Map.of("java", javaSettings()));
+        options.put("settings", Map.of("java", javaSettings(onTypeFormatting)));
         return finishJavaInitOptions(options, debugBundles);
     }
 
@@ -2544,9 +2913,11 @@ public final class LspManager {
      * importing" for a project that had imported perfectly. Declaring the real runtimes also gives jdtls a
      * sane default to fall back to when a project's exact release isn't installed at all.
      */
-    private static Map<String, Object> javaSettings() {
+    private static Map<String, Object> javaSettings(boolean onTypeFormatting) {
         Map<String, Object> java = new java.util.HashMap<>();
         java.put("autobuild", Map.of("enabled", false));
+        // jdtls registers textDocument/onTypeFormatting dynamically, and only while this preference is on.
+        java.put("format", Map.of("onType", Map.of("enabled", onTypeFormatting)));
         List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(JavaRuntimes.discover());
         if (!runtimes.isEmpty()) {
             java.put("configuration", Map.of("runtimes", runtimes));
@@ -2615,8 +2986,9 @@ public final class LspManager {
      *       {@code provideFormatter} flag is passed; without it, Format Document was silently unavailable on a
      *       {@code .json}/{@code .css}/{@code .html} even though the server would format (#468; verified by
      *       driving the real servers: the flag flips the advertised capability from false to true).</li>
-     *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at the nearest project TypeScript SDK,
-     *       or the SDK installed beside the language server. Astro refuses initialization without it.</li>
+     *   <li><b>astro</b> (astro-ls): {@code typescript.tsdk} points at a <i>trusted</i> folder's own TypeScript
+     *       SDK, or the SDK installed beside the language server ({@link #astroTypeScriptSdk}). Astro refuses
+     *       initialization without it, so with neither the server is not started.</li>
      *   <li><b>maven-pom</b> (JVM lemminx + lemminx-maven): {@code settings.xml.maven.central.skip=true} —
      *       the lemminx-maven settings live under an {@code xml.maven} object (schema verified against the
      *       extension's {@code XMLMavenSettings}). {@code central.skip=true} disables the heavy Maven Central
@@ -2626,34 +2998,77 @@ public final class LspManager {
      * </ul>
      */
     static Object initOptionsFor(String serverId, List<String> debugBundles) {
-        return initOptionsFor(serverId, debugBundles, null, List.of());
+        return initOptionsFor(serverId, debugBundles, null, false);
     }
 
-    static Object initOptionsFor(String serverId, List<String> debugBundles, Path root, List<String> command) {
+    /** {@code astroTsdk} is the SDK {@link #astroTypeScriptSdk} chose; it is only read for the Astro server. */
+    static Object initOptionsFor(
+            String serverId, List<String> debugBundles, Path astroTsdk, boolean javaOnTypeFormatting) {
         return switch (serverId == null ? "" : serverId) {
-            case "java" -> javaInitOptions(debugBundles);
+            case "java" -> javaInitOptions(debugBundles, javaOnTypeFormatting);
             case "go" -> Map.of("semanticTokens", true);
             case "json", "css", "html" -> Map.of("provideFormatter", true);
-            case "astro" ->
-                Map.of(
-                        "typescript",
-                        Map.of("tsdk", astroTypeScriptSdk(root, command).toString()));
+            case ASTRO_SERVER_ID ->
+                astroTsdk == null ? null : Map.of("typescript", Map.of("tsdk", astroTsdk.toString()));
             case LspServerRegistry.MAVEN_POM_SERVER_ID ->
                 Map.of("settings", Map.of("xml", Map.of("maven", Map.of("central", Map.of("skip", true)))));
             default -> null;
         };
     }
 
+    private static final String ASTRO_SERVER_ID = "astro";
+
     /**
-     * Finds the TypeScript SDK required by astro-ls. Prefer the project's own TypeScript version, walking
-     * upward for npm/pnpm workspace hoisting; then look beside the resolved global astro-ls installation.
-     * The final project-local fallback produces Astro's own clear "can't find TypeScript" error if neither
-     * exists, while still always satisfying its required initialization-options shape.
+     * Whether a folder is trusted to supply code a language server loads — today the project-local
+     * TypeScript SDK handed to astro-ls. The same per-folder record that gates project LSP commands; nothing
+     * is trusted until the coordinator installs the real check.
      */
-    static Path astroTypeScriptSdk(Path root, List<String> command) {
-        Path projectSdk = findTypeScriptSdk(root);
-        if (projectSdk != null) {
-            return projectSdk;
+    private volatile java.util.function.Predicate<Path> folderTrust = folder -> false;
+
+    public void setFolderTrust(java.util.function.Predicate<Path> trust) {
+        this.folderTrust = trust == null ? folder -> false : trust;
+    }
+
+    /** Told (on the FX thread) that a server was <b>not started</b> because it would need untrusted code. */
+    private volatile BiConsumer<String, Path> onStartWithheld = (id, root) -> {};
+
+    public void setOnStartWithheld(BiConsumer<String, Path> callback) {
+        this.onStartWithheld = callback == null ? (id, root) -> {} : callback;
+    }
+
+    /**
+     * The topmost ancestor of {@code root} (or {@code root} itself) that is still trusted — how far up a
+     * search for project-supplied code may go — or {@code null} when {@code root} is not trusted at all.
+     */
+    static Path trustedCeiling(Path root, java.util.function.Predicate<Path> trusted) {
+        if (root == null || trusted == null) {
+            return null;
+        }
+        Path dir = root.toAbsolutePath().normalize();
+        if (!trusted.test(dir)) {
+            return null;
+        }
+        for (Path parent = dir.getParent(); parent != null && trusted.test(parent); parent = parent.getParent()) {
+            dir = parent;
+        }
+        return dir;
+    }
+
+    /**
+     * Finds the TypeScript SDK required by astro-ls, which loads and <b>runs</b> the JavaScript in that
+     * directory during {@code initialize}. The folder's own TypeScript is therefore taken only from a
+     * trusted folder: {@code trustedCeiling} ({@link #trustedCeiling}) is null for an untrusted root, and
+     * otherwise bounds the upward walk (npm/pnpm workspace hoisting) so it never leaves the trusted folder.
+     * Next comes the SDK beside the resolved astro-ls installation, which is the user's own. A trusted
+     * folder with neither gets its deterministic project-local path, which produces Astro's own clear
+     * "can't find TypeScript" error; an untrusted one gets {@code null} — the server is not started.
+     */
+    static Path astroTypeScriptSdk(Path root, Path trustedCeiling, List<String> command) {
+        if (trustedCeiling != null) {
+            Path projectSdk = findTypeScriptSdk(root, trustedCeiling);
+            if (projectSdk != null) {
+                return projectSdk;
+            }
         }
         if (command != null && !command.isEmpty()) {
             List<String> resolved = ProcessRunner.resolveExecutable(command);
@@ -2663,21 +3078,32 @@ public final class LspManager {
                     if (Files.exists(executable)) {
                         executable = executable.toRealPath();
                     }
-                    Path installedSdk = findTypeScriptSdk(executable.getParent());
+                    Path installedSdk = findTypeScriptSdk(executable.getParent(), null);
                     if (installedSdk != null) {
                         return installedSdk;
                     }
                 } catch (java.io.IOException | java.nio.file.InvalidPathException ignored) {
-                    // Fall through to the deterministic project-local path below.
+                    // Fall through to the trusted project-local path, or to not starting.
                 }
             }
+        }
+        if (trustedCeiling == null) {
+            return null;
         }
         Path base = root == null ? Path.of("") : root;
         return base.toAbsolutePath().normalize().resolve("node_modules/typescript/lib");
     }
 
-    private static Path findTypeScriptSdk(Path start) {
+    /**
+     * The first {@code node_modules/typescript/lib} walking up from {@code start}; {@code ceiling}, when
+     * given, is the last directory looked at. Public for the trust prompt, which lists what trusting adds.
+     */
+    public static Path findTypeScriptSdk(Path start, Path ceiling) {
+        Path stop = ceiling == null ? null : ceiling.toAbsolutePath().normalize();
         for (Path dir = start == null ? null : start.toAbsolutePath().normalize(); dir != null; dir = dir.getParent()) {
+            if (stop != null && !dir.startsWith(stop)) {
+                break;
+            }
             Path candidate = dir.resolve("node_modules/typescript/lib");
             if (Files.isRegularFile(candidate.resolve("typescript.js"))
                     || Files.isRegularFile(candidate.resolve("tsserverlibrary.js"))) {
@@ -2693,6 +3119,13 @@ public final class LspManager {
      * file's server advertises a {@code diagnosticProvider} (so push-only servers like jdtls/pyright/tsserver
      * are untouched). An "unchanged" report leaves the current diagnostics in place.
      */
+    /** Told (FX thread) that a document's diagnostics are confirmed unchanged by its server. */
+    private volatile Consumer<Path> onDiagnosticsUnchanged = file -> {};
+
+    public void setOnDiagnosticsUnchanged(Consumer<Path> handler) {
+        onDiagnosticsUnchanged = handler == null ? file -> {} : handler;
+    }
+
     public void pullDiagnostics(Path file) {
         if (file == null) {
             return;
@@ -2710,16 +3143,54 @@ public final class LspManager {
             }
             List<LspDiagnostic> mapped = DiagnosticMapper.mapReport(report);
             if (mapped == null) {
-                return; // unchanged report — keep what's already shown
+                // An "unchanged" report: what was shown before the edit is still right. The editor cleared
+                // its marks on the edit, so say so rather than leave it showing a clean file.
+                Platform.runLater(() -> {
+                    if (sessionFor(file) == s
+                            && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)) {
+                        onDiagnosticsUnchanged.accept(file);
+                    }
+                });
+                return;
             }
+            var full = report == null ? null : report.getRelatedFullDocumentDiagnosticReport();
+            List<org.eclipse.lsp4j.Diagnostic> raw =
+                    full == null || full.getItems() == null ? List.of() : List.copyOf(full.getItems());
             Platform.runLater(() -> {
                 if (sessionFor(file) == s
                         && java.util.Objects.equals(diagnosticRequestGeneration.get(documentUri), generation)
                         && java.util.Objects.equals(s.documentVersion(documentUri), requestedVersion)) {
+                    // The code-action context is built from these. A pull-only server (vscode-css, ruby-lsp)
+                    // never publishes, so without this it was always asked with an empty context and offered
+                    // no quick fix for a diagnostic the editor was showing.
+                    rawDiagnostics.put(documentUri, raw);
                     onDiagnostics.accept(file, mapped);
                 }
             });
         });
+    }
+
+    /**
+     * Final shutdown for a window that is closing: stops every server and makes the manager terminal.
+     *
+     * <p>{@link #shutdownAll} alone is not enough for that. It is also the restart/disable primitive, so it
+     * leaves the manager usable — and a callback that lands after the window closed (a detection probe, a
+     * settings apply, a crash-restart) would then open a document and fork a server nothing owns or will
+     * ever stop. After this, {@link #openDocument}, {@link #configure} and {@link #detect} do nothing.
+     */
+    public void close() {
+        closed = true;
+        enabled = false;
+        shutdownAll();
+        pendingEvictions.values().forEach(timer -> timer.cancel(false));
+        pendingEvictions.clear();
+        detectExec.shutdown();
+        startExec.shutdown();
+    }
+
+    /** Whether {@link #close()} ran. */
+    public boolean isClosed() {
+        return closed;
     }
 
     /** Shuts down every running server (best-effort) and clears all routing state. */
@@ -2730,9 +3201,8 @@ public final class LspManager {
         semanticRequestGeneration.clear();
         diagnosticRequestGeneration.clear();
         pendingApplyExpected.clear();
-        for (LanguageServerSession s : sessionsByRoot.values()) {
-            s.dispose();
-            releaseJdtlsWorkspace(s);
+        for (Map.Entry<String, LanguageServerSession> entry : sessionsByRoot.entrySet()) {
+            disposeDeliberately(entry.getKey(), entry.getValue());
         }
         sessionsByRoot.clear();
     }
@@ -2746,8 +3216,7 @@ public final class LspManager {
             if (e.getKey().startsWith(prefix)) {
                 sessionByDocUri.values().removeIf(s -> s == e.getValue());
                 pendingApplyExpected.remove(e.getValue());
-                e.getValue().dispose();
-                releaseJdtlsWorkspace(e.getValue());
+                disposeDeliberately(e.getKey(), e.getValue());
                 it.remove();
             }
         }
@@ -2766,7 +3235,8 @@ public final class LspManager {
                         || !java.util.Objects.equals(params.getVersion(), source.documentVersion(sourceUri)))) {
             return; // ranges from an older server snapshot must never replace current diagnostics
         }
-        long generation = diagnosticRequestGeneration.merge(params.getUri(), 1L, Long::sum);
+        String generationKey = sourceUri != null ? sourceUri : params.getUri();
+        long generation = diagnosticRequestGeneration.merge(generationKey, 1L, Long::sum);
         // Retain the RAW lsp4j diagnostics for open documents: a code-action request must send the
         // originals as context (their code/source/data are what a quick fix keys off — the mapped neutral
         // LspDiagnostic loses them). Open-documents-only, so a server's project-wide publishes don't
@@ -2778,14 +3248,14 @@ public final class LspManager {
         Platform.runLater(() -> {
             if (source.isDisposed()
                     || !sessionsByRoot.containsValue(source)
-                    || !java.util.Objects.equals(diagnosticRequestGeneration.get(params.getUri()), generation)
+                    || !java.util.Objects.equals(diagnosticRequestGeneration.get(generationKey), generation)
                     || sourceUri != null && sessionByDocUri.get(sourceUri) != source
                     || acceptedVersion != null
                             && !java.util.Objects.equals(acceptedVersion, source.documentVersion(sourceUri))) {
                 return;
             }
             if (sourceUri != null) {
-                rawDiagnostics.put(params.getUri(), raw);
+                rawDiagnostics.put(sourceUri, raw);
             }
             onDiagnostics.accept(file, mapped);
         });
@@ -2795,10 +3265,22 @@ public final class LspManager {
         if (sessionByDocUri.get(reportedUri) == source) {
             return reportedUri;
         }
+        Path canonical = null;
         for (var entry : sessionByDocUri.entrySet()) {
             if (entry.getValue() == source) {
                 Path openPath = uriToPath(entry.getKey());
-                if (openPath != null && com.editora.config.PathKeys.sameNormalized(openPath, file)) {
+                if (openPath == null) {
+                    continue;
+                }
+                if (com.editora.config.PathKeys.sameNormalized(openPath, file)) {
+                    return entry.getKey();
+                }
+                // A server may report the symlink-resolved path (/private/tmp for /tmp). Off the FX thread
+                // (the reader thread), and the resolution is cached.
+                if (canonical == null) {
+                    canonical = com.editora.config.PathKeys.canonical(file);
+                }
+                if (canonical.equals(com.editora.config.PathKeys.canonical(openPath))) {
                     return entry.getKey();
                 }
             }
@@ -2872,16 +3354,31 @@ public final class LspManager {
             Map<Path, String> expectedAtAction,
             List<JdtlsGenerate.Candidate> chosen,
             Consumer<Boolean> cb) {
+        jdtlsGenerateApply(file, kind, actionParams, checkResponse, expectedAtAction, chosen, null, cb);
+    }
+
+    /** As above, with the super constructors the user chose (constructors only; null = all on offer). */
+    public void jdtlsGenerateApply(
+            Path file,
+            JdtlsGenerate.Kind kind,
+            Object actionParams,
+            JsonElement checkResponse,
+            Map<Path, String> expectedAtAction,
+            List<JdtlsGenerate.Candidate> chosen,
+            List<JdtlsGenerate.Candidate> chosenConstructors,
+            Consumer<Boolean> cb) {
         LanguageServerSession s = sessionFor(file);
         if (s == null || kind == null) {
             Platform.runLater(() -> cb.accept(false));
             return;
         }
-        Map<Path, String> expected =
-                expectedAtAction == null || expectedAtAction.isEmpty() ? expectedDocuments(s) : expectedAtAction;
+        EditBasis expected = expectedAtAction == null || expectedAtAction.isEmpty()
+                ? editBasis(s)
+                : new EditBasis(expectedAtAction, System.currentTimeMillis());
         s.rawRequest(
                         kind.generateRequest(),
-                        JdtlsGenerate.generateParams(kind, asJson(actionParams), chosen, checkResponse))
+                        JdtlsGenerate.generateParams(
+                                kind, asJson(actionParams), chosen, checkResponse, chosenConstructors))
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .whenComplete((r, e) -> {
                     org.eclipse.lsp4j.WorkspaceEdit edit = e != null ? null : asWorkspaceEdit(r);
@@ -2900,7 +3397,7 @@ public final class LspManager {
         if (raw instanceof com.google.gson.JsonElement json) {
             return json;
         }
-        return raw == null ? null : new com.google.gson.Gson().toJsonTree(raw);
+        return raw == null ? null : LanguageServerSession.LSP_GSON.toJsonTree(raw);
     }
 
     /**
@@ -2936,7 +3433,7 @@ public final class LspManager {
         // server-side (established empirically; see JdtlsPaste).
         String params = JdtlsPaste.paramsJson(
                 uri(file), startLine, startChar, endLine, endChar, pastedText, tabSize, insertSpaces);
-        Map<Path, String> expected = expectedDocuments(s);
+        EditBasis expected = editBasis(s);
         s.executeCommand(JdtlsPaste.COMMAND, List.of(params))
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .whenComplete((r, e) -> {
@@ -2976,13 +3473,17 @@ public final class LspManager {
                 });
     }
 
-    /** Decodes a {@code java/generate…} answer (an untyped {@code WorkspaceEdit}) into the typed form. */
+    /**
+     * Decodes a {@code java/generate…} answer (an untyped {@code WorkspaceEdit}) into the typed form — with
+     * LSP4J's own gson, whose adapters are what read the {@code Either}s inside {@code documentChanges}. A
+     * plain gson cannot, so an answer in that shape was dropped as "nothing generated".
+     */
     private static org.eclipse.lsp4j.WorkspaceEdit asWorkspaceEdit(Object raw) {
         try {
             com.google.gson.JsonElement json = asJson(raw);
             return json == null || !json.isJsonObject()
                     ? null
-                    : new com.google.gson.Gson().fromJson(json, org.eclipse.lsp4j.WorkspaceEdit.class);
+                    : LanguageServerSession.LSP_GSON.fromJson(json, org.eclipse.lsp4j.WorkspaceEdit.class);
         } catch (RuntimeException malformed) {
             return null; // a malformed answer degrades to "nothing generated", never an exception
         }
@@ -3048,6 +3549,10 @@ public final class LspManager {
         return null;
     }
 
+    /** The budget for a full workspace build — passed to the session too, whose own request bound would
+     *  otherwise cancel the build at the ordinary 30 seconds. */
+    static final java.time.Duration BUILD_WORKSPACE_TIMEOUT = java.time.Duration.ofMinutes(10);
+
     /**
      * Rebuilds the project and republishes its diagnostics ({@code java.project.refreshDiagnostics}, #743).
      *
@@ -3065,8 +3570,8 @@ public final class LspManager {
             return;
         }
         // (uri, isFullBuild) — a full build, since the point is the files we have NOT opened.
-        s.rawRequest("java/buildWorkspace", Boolean.TRUE)
-                .orTimeout(10, java.util.concurrent.TimeUnit.MINUTES)
+        s.rawRequest("java/buildWorkspace", Boolean.TRUE, BUILD_WORKSPACE_TIMEOUT)
+                .orTimeout(BUILD_WORKSPACE_TIMEOUT.toMinutes(), java.util.concurrent.TimeUnit.MINUTES)
                 .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null)));
     }
 
@@ -3090,7 +3595,7 @@ public final class LspManager {
                 new org.eclipse.lsp4j.TextDocumentIdentifier(uri(file)),
                 range,
                 new org.eclipse.lsp4j.CodeActionContext(List.of()));
-        Map<Path, String> expected = expectedDocuments(s);
+        EditBasis expected = editBasis(s);
         s.rawRequest("java/organizeImports", params)
                 .orTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                 .whenComplete((r, e) -> {
@@ -3182,27 +3687,7 @@ public final class LspManager {
     }
 
     private static String hoverText(Hover hover) {
-        if (hover == null || hover.getContents() == null) {
-            return "";
-        }
-        var contents = hover.getContents();
-        if (contents.isRight()) {
-            MarkupContent mc = contents.getRight();
-            return mc == null || mc.getValue() == null ? "" : mc.getValue();
-        }
-        StringBuilder sb = new StringBuilder();
-        for (var entry : contents.getLeft()) {
-            if (entry.isLeft()) {
-                sb.append(entry.getLeft());
-            } else {
-                MarkedString ms = entry.getRight();
-                if (ms != null && ms.getValue() != null) {
-                    sb.append(ms.getValue());
-                }
-            }
-            sb.append("\n\n");
-        }
-        return sb.toString().strip();
+        return HoverMarkdown.of(hover);
     }
 
     private static String uri(Path file) {

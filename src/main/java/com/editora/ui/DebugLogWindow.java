@@ -50,10 +50,7 @@ public final class DebugLogWindow {
         if (stage.isShowing()) {
             stage.toFront();
         } else {
-            if (owner != null) {
-                stage.setX(owner.getX() + Math.max(0, (owner.getWidth() - 900) / 2));
-                stage.setY(owner.getY() + Math.max(0, (owner.getHeight() - 600) / 2));
-            }
+            WindowPlacement.centerOnOwner(stage, owner, 900, 600);
             stage.show();
         }
     }

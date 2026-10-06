@@ -53,10 +53,11 @@ class IndenterTest {
 
     @Test
     void luaClosersDeIndentViaKeyword() {
-        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "    end"));
-        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "  until"));
-        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "\telseif"));
+        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "    end\n"));
+        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "  until "));
+        assertTrue(Indenter.completesCloserKeyword(Style.LUA, "\telseif "));
         assertFalse(Indenter.completesCloserKeyword(Style.LUA, "    x = 1"));
+        assertFalse(Indenter.completesCloserKeyword(Style.LUA, "    endpoint"), "end is only a prefix here");
     }
 
     @Test
@@ -154,19 +155,77 @@ class IndenterTest {
     }
 
     @Test
+    void closerAlignIsIdempotent() {
+        // Still at body level (previous line is body at the same indent, or an opener one level out): align.
+        String fresh = "f() {\n    if a; then\n        b\n        fi";
+        assertEquals("    ", Indenter.closerAlignIndent(Style.SHELL, fresh, fresh.length(), 4, "        "));
+        String first = "f() {\n    if a; then\n        fi";
+        assertEquals("    ", Indenter.closerAlignIndent(Style.SHELL, first, first.length(), 4, "        "));
+        // Already aligned (the body above is deeper): unchanged, not stepped out to the enclosing block.
+        String aligned = "f() {\n    if a; then\n        b\n    fi";
+        assertEquals("    ", Indenter.closerAlignIndent(Style.SHELL, aligned, aligned.length(), 4, "    "));
+        // Already aligned, empty block: the opener is the previous line, at the same indent.
+        String empty = "class Foo\n  def bar\n  end";
+        assertEquals("  ", Indenter.closerAlignIndent(Style.RUBY, empty, empty.length(), 2, "  "));
+        // A sibling closer at the same indent is not an opener: `end` under `end` still closes the outer block.
+        String outer = "class Foo\n  def bar\n  end\n  end";
+        assertEquals("", Indenter.closerAlignIndent(Style.RUBY, outer, outer.length(), 2, "  "));
+    }
+
+    @Test
+    void aControlCharacterDoesNotFinishACloserKeyword() {
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    fi\b"));
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    fi\u001b"));
+        assertFalse(Indenter.completesCloserKeyword(Style.RUBY, "  end\u007f"));
+        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "    fi\n"));
+    }
+
+    @Test
     void closerCharAndKeywordDetection() {
         assertTrue(Indenter.isCloserChar(Style.BRACES, '}'));
         assertTrue(Indenter.isCloserChar(Style.BRACES, ')'));
         assertFalse(Indenter.isCloserChar(Style.PY, '}'));
         assertFalse(Indenter.isCloserChar(Style.XML, '}'));
 
-        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "  fi"));
-        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "done"));
-        assertTrue(Indenter.completesCloserKeyword(Style.RUBY, "    end"));
-        assertTrue(Indenter.completesCloserKeyword(Style.RUBY, "  rescue"));
+        // A keyword closer is complete once a non-word character (or Enter) follows it.
+        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "  fi\n"));
+        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "  fi;"));
+        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "done "));
+        assertTrue(Indenter.completesCloserKeyword(Style.RUBY, "    end\n"));
+        assertTrue(Indenter.completesCloserKeyword(Style.RUBY, "    end."), "end.each — still the block's end");
+        assertTrue(Indenter.completesCloserKeyword(Style.RUBY, "  rescue "));
+        assertTrue(Indenter.completesCloserKeyword(Style.SHELL, "    ;;"), "a symbolic closer needs no terminator");
         assertFalse(Indenter.completesCloserKeyword(Style.RUBY, "  endpoint")); // not exact
         assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "  fix"));
-        assertFalse(Indenter.completesCloserKeyword(Style.BRACES, "  end")); // braces have no keywords
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "  ;"));
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "  ;;;"), "already de-indented at ;;");
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "  x fi "), "not alone on its line");
+        assertFalse(Indenter.completesCloserKeyword(Style.BRACES, "  end ")); // braces have no keywords
+    }
+
+    @Test
+    void aCloserKeywordThatIsOnlyAPrefixDoesNotDeIndent() {
+        // The reported case: `fi` is how `find` starts, `end` how `endpoint` does. De-indenting on the
+        // keyword's last letter dragged every such line to its opener's column.
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    fi"));
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    fin"));
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    find"));
+        assertFalse(Indenter.completesCloserKeyword(Style.SHELL, "    find "), "find is not a closer");
+        assertFalse(Indenter.completesCloserKeyword(Style.RUBY, "    end"));
+        assertFalse(Indenter.completesCloserKeyword(Style.LUA, "    end_marker"));
+        assertFalse(Indenter.completesCloserKeyword(Style.LUA, "    end_marker "));
+    }
+
+    @Test
+    void enterTakesItsIndentFromTheTextBeforeTheCaret() {
+        // Column 0 of an indented line: the code keeps its own four spaces, so Enter adds none.
+        assertEquals("\n", enter("    foo();\n", 0, "java"));
+        // Inside the leading whitespace: only the part already passed is repeated.
+        assertEquals("\n  ", enter("    foo();\n", 2, "java"));
+        // At or after the code: the full indent, as before.
+        assertEquals("\n    ", enter("    foo();\n", 4, "java"));
+        assertEquals("\n    ", enter("    foo();\n", 10, "java"));
+        assertEquals("\n\t", enter("\tfoo();\n", 7, "java"));
     }
 
     @Test

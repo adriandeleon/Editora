@@ -49,20 +49,46 @@ public final class TestRunRecognizer {
     /**
      * The task args that run one test class ({@code methodName == null}) or one method — the gutter ▶ / run-at-
      * caret dispatch. Only the JVM tools have a usable per-test filter; Go/Cargo in-file runs are out of scope
-     * (returns an empty list). Maven's {@code -Dtest} matches the <b>simple</b> class name (like
-     * {@link TestRun#failedTestFilters}); Gradle's {@code --tests} takes the FQN. {@code -DfailIfNoTests=false}
-     * keeps a reactor build from failing the modules that don't hold the target.
+     * (returns an empty list). Maven's {@code -Dtest} takes the class name without its package (like
+     * {@link TestRun#failedTestFilters}); Gradle's {@code --tests} takes the FQN. The method is reduced to a
+     * name a filter accepts ({@link TestSourceLocator#filterMethodName}); see {@link #mavenTestFilter} for
+     * the reactor flags.
      */
     public static List<String> singleTestTask(BuildTool tool, String className, String methodName) {
+        String method = TestSourceLocator.filterMethodName(methodName);
+        boolean wholeClass = method == null || method.isEmpty();
         return switch (tool) {
             case MAVEN -> {
-                String cls = TestSourceLocator.simpleName(className);
-                String sel = methodName == null ? cls : cls + "#" + methodName;
-                yield List.of("test", "-Dtest=" + sel, "-DfailIfNoTests=false");
+                String cls = TestSourceLocator.filterClassName(className); // keeps a @Nested class's $Inner
+                yield mavenTestFilter(wholeClass ? cls : cls + "#" + TestSourceLocator.mavenMethodFilter(methodName));
             }
-            case GRADLE -> List.of("test", "--tests", methodName == null ? className : className + "." + methodName);
+            case GRADLE -> List.of("test", "--tests", wholeClass ? className : className + "." + method);
             default -> List.of();
         };
+    }
+
+    /**
+     * The Maven task args that run only {@code selector} (a {@code -Dtest} value).
+     *
+     * <p>Both flags are needed in a reactor. {@code -DfailIfNoTests=false} covers a module with no tests at
+     * all; {@code -Dsurefire.failIfNoSpecifiedTests=false} covers a module that has tests, none of which
+     * match — without it Surefire fails the first such module with "No tests matching pattern" and the
+     * module that does hold the target never runs.
+     */
+    public static List<String> mavenTestFilter(String selector) {
+        return List.of(
+                "test", "-Dtest=" + selector, "-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false");
+    }
+
+    /**
+     * Whether a finished JVM test run should show the reports already on disk. Gradle skips an up-to-date
+     * {@code test} task: it exits 0 and rewrites nothing, so every report is "a leftover from before the
+     * run" and the tree came up empty — while the previous results are, by Gradle's own up-to-date check,
+     * exactly what running again would have produced. Maven is excluded: Surefire always re-runs, so an
+     * untouched report there really is a leftover (e.g. another class's, under {@code -Dtest=Foo}).
+     */
+    public static boolean showsExistingReports(BuildTool tool, int exitCode, boolean anyReportWritten) {
+        return tool == BuildTool.GRADLE && exitCode == 0 && !anyReportWritten;
     }
 
     /**

@@ -56,6 +56,14 @@ class BuildCoordinatorFxTest {
         public void setStatus(String message) {
             lastStatus = message;
         }
+
+        /** The file whose project drives detection, when a test needs one below the project root. */
+        com.editora.editor.EditorBuffer active;
+
+        @Override
+        public com.editora.editor.EditorBuffer activeBuffer() {
+            return active;
+        }
     }
 
     private static final class FakeOps implements BuildCoordinator.Ops {
@@ -414,6 +422,48 @@ class BuildCoordinatorFxTest {
         assertEquals(tr("status.build.untrusted", disp(BuildTool.MAVEN)), host.lastStatus);
     }
 
+    /**
+     * A module of a multi-module build: the nearest pom.xml is the module's, the wrapper is the project
+     * root's. The build must launch that wrapper (not fall back to {@code mvn} on PATH), and the trust
+     * prompt must be about the folder that ships the script actually run — the project root.
+     */
+    @Test
+    void aModuleBuildUsesAndGatesOnTheWrapperAtTheProjectRoot(@TempDir Path project) throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = project;
+        ops.promptAnswer = false;
+        Files.writeString(project.resolve("pom.xml"), VALID_POM);
+        writeMavenWrapper(project);
+        Path module = Files.createDirectories(project.resolve("services").resolve("billing"));
+        Files.writeString(module.resolve("pom.xml"), VALID_POM);
+        Path source = Files.writeString(module.resolve("App.java"), "class App {}\n");
+        host.active = FxTestSupport.callOnFx(() -> {
+            com.editora.editor.EditorBuffer b = new com.editora.editor.EditorBuffer();
+            b.setPath(source);
+            return b;
+        });
+        try {
+            BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+            FxTestSupport.runOnFx(c::refresh);
+            waitUntil(
+                    () -> module.equals(c.markerRoot()) && c.detectedLabel() != null,
+                    "the module's pom.xml roots the tool");
+
+            FxTestSupport.runOnFx(() -> c.runTask(List.of("compile"), List.of()));
+
+            assertEquals(1, ops.promptCount, "the root's wrapper is what would run, so it must be consented to");
+            assertEquals(project, ops.promptedRoot, "trust is asked about the folder that ships the wrapper");
+            assertEquals(project, ops.promptedWrapper.getParent());
+            assertTrue(ops.promptedWrapper.getFileName().toString().startsWith("mvnw"));
+            assertEquals(0, ops.openConsoleCount, "declined: nothing runs, and no quiet fallback to mvn");
+        } finally {
+            com.editora.editor.EditorBuffer active = host.active;
+            FxTestSupport.runOnFx(active::dispose);
+        }
+    }
+
     @Test
     void decliningDoesNotFallBackToThePathTool(@TempDir Path dir) throws Exception {
         // The tempting "fall back to mvn" would still execute a hostile pom's plugins — no must mean no build.
@@ -503,6 +553,91 @@ class BuildCoordinatorFxTest {
 
         assertEquals(2, ops.promptCount, "rerunLast goes through the same gate");
         assertEquals(1, ops.openConsoleCount, "and the declined rerun never ran");
+    }
+
+    private static Path script(Path file, String body) throws Exception {
+        Files.writeString(file, "#!/bin/sh\n" + body + "\n");
+        assertTrue(file.toFile().setExecutable(true));
+        return file;
+    }
+
+    /**
+     * Test Results repeats a run where it ran. The marker root follows the active tab, so after opening a
+     * file of another module the rerun used to launch that module's build instead.
+     */
+    @Test
+    void runTaskAtLaunchesInTheGivenRootNotTheActiveTabsModule(@TempDir Path project) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"), "needs a POSIX sh");
+        Path moduleA = Files.createDirectories(project.resolve("module-a"));
+        Path moduleB = Files.createDirectories(project.resolve("module-b"));
+        Files.writeString(moduleA.resolve("pom.xml"), VALID_POM);
+        Files.writeString(moduleB.resolve("pom.xml"), VALID_POM);
+        Path cwdLog = project.resolve("cwd.log");
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.settings.setMavenCommand(
+                script(project.resolve("fakemvn.sh"), "pwd >> '" + cwdLog + "'").toString());
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = moduleB; // what the active tab now resolves to
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> moduleB.equals(c.markerRoot()), "module-b is the detected root");
+
+        FxTestSupport.runOnFx(() -> c.runTaskAt(moduleA, List.of("test"), List.of()));
+        waitUntil(() -> !c.isRunning() && Files.exists(cwdLog), "the rerun finished");
+
+        assertEquals(
+                List.of(moduleA.toRealPath().toString()),
+                Files.readAllLines(cwdLog).stream()
+                        .map(l -> uncheckedRealPath(Path.of(l)))
+                        .toList());
+    }
+
+    private static String uncheckedRealPath(Path p) {
+        try {
+            return p.toRealPath().toString();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * "Load all tasks…" takes Gradle about 90 s. Its result was dropped whenever anything re-detected the
+     * project meanwhile — a tab switch, a save, the window regaining focus — although the project was the same.
+     */
+    @Test
+    void loadedGradleTasksSurviveARefreshOfTheSameProjectDuringTheLoad(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"), "needs a POSIX sh");
+        Files.writeString(dir.resolve("build.gradle"), "plugins { id 'java' }\n");
+        Path fake = Files.createTempFile("fakegradle", ".sh"); // outside the project: not a repo wrapper
+        try {
+            script(
+                    fake,
+                    "sleep 1\ncat <<'EOT'\nBuild tasks\n-----------\nassemble - Assembles the outputs.\n"
+                            + "customDeploy - Deploys.\n\nEOT");
+            FakeHost host = new FakeHost();
+            host.settings.setGradleSupport(true);
+            host.settings.setGradleCommand(fake.toString());
+            FakeOps ops = new FakeOps();
+            ops.projectRoot = dir;
+            BuildCoordinator c = coordinator(BuildTool.GRADLE, host, ops);
+            FxTestSupport.runOnFx(c::refresh);
+            waitUntil(c::isDetected, "the Gradle project is detected");
+
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(c, "loadAllTasks", new Class<?>[] {}));
+            FxTestSupport.runOnFx(c::refresh); // what a tab switch / save / focus-regain does
+            waitUntil(
+                    () -> !((List<?>) FxTestSupport.field(c, "loadedTasks")).isEmpty(),
+                    "the enumeration is kept, not discarded");
+
+            List<String> loaded = FxTestSupport.field(c, "loadedTasks");
+            assertTrue(loaded.contains("assemble") && loaded.contains("customDeploy"), loaded.toString());
+            assertEquals(tr("status.build.loadedTasks", disp(BuildTool.GRADLE), loaded.size()), host.lastStatus);
+        } finally {
+            Files.deleteIfExists(fake);
+        }
     }
 
     /**

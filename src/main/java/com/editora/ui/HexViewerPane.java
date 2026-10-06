@@ -1,10 +1,11 @@
 package com.editora.ui;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CompletableFuture;
 
+import javafx.application.Platform;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -27,6 +28,9 @@ import static com.editora.i18n.Messages.tr;
  * binary shows its first slice with a "truncated" note, so a multi-GB file can't exhaust memory); the dump
  * sits in a read-only monospace {@link CodeArea} (selectable + copyable, never editable). {@link #dispose()}
  * drops the rendered text when the tab closes.
+ *
+ * <p>Reading the bytes and formatting the dump (65 536 rows for a full megabyte) happen on a
+ * {@link ViewerLoads} worker; the FX thread only receives the finished text.
  */
 public final class HexViewerPane implements TabContent {
 
@@ -38,6 +42,8 @@ public final class HexViewerPane implements TabContent {
     private final BorderPane root = new BorderPane();
     private final CodeArea area = new CodeArea();
     private boolean loaded;
+    private volatile boolean disposed;
+    private final CompletableFuture<Void> finished = new CompletableFuture<>();
 
     public HexViewerPane(Path path) {
         this.path = path;
@@ -48,32 +54,60 @@ public final class HexViewerPane implements TabContent {
         area.setEditable(false);
         area.setWrapText(false);
         area.getStyleClass().add("hex-viewer-area");
-        // A bare CodeArea virtualizes but shows no scrollbars; wrap it like the editor does so the dump
+        // A bare CodeArea virtualizes but shows no scrollbars; load() wraps it like the editor does so the dump
         // scrolls vertically (65k+ rows) and horizontally (a narrow window clips the ASCII column).
-        root.setCenter(new VirtualizedScrollPane<>(area));
         load();
     }
 
     private void load() {
-        try {
-            long size = Files.size(path);
-            byte[] bytes;
-            try (InputStream in = Files.newInputStream(path)) {
-                bytes = in.readNBytes(MAX_DISPLAY_BYTES); // reads up to the cap (provider-agnostic: local + SFTP)
+        VirtualizedScrollPane<CodeArea> dumpView = new VirtualizedScrollPane<>(area);
+        showMessage(tr("hexviewer.loading"), "hex-viewer-loading");
+        ViewerLoads.submit(() -> {
+            String dump = null;
+            long size = 0;
+            int shown = 0;
+            try {
+                size = Files.size(path);
+                byte[] bytes;
+                try (InputStream in = Files.newInputStream(path)) {
+                    bytes = in.readNBytes(MAX_DISPLAY_BYTES); // up to the cap (provider-agnostic: local + SFTP)
+                }
+                shown = bytes.length;
+                dump = disposed ? null : HexDump.format(bytes, 0);
+            } catch (Throwable e) {
+                // reported below, in the tab
             }
-            boolean truncated = size > bytes.length;
-            area.replaceText(HexDump.format(bytes, 0));
-            area.moveTo(0);
-            area.scrollToPixel(0, 0);
-            loaded = true;
-            root.setTop(buildBar(size, bytes.length, truncated));
-        } catch (IOException | RuntimeException e) {
-            Label err = new Label(tr("hexviewer.loadFailed"));
-            err.getStyleClass().add("hex-viewer-error");
-            StackPane center = new StackPane(err);
-            center.setPadding(new Insets(24));
-            root.setCenter(center);
-        }
+            String text = dump;
+            long total = size;
+            int count = shown;
+            Platform.runLater(() -> {
+                try {
+                    if (disposed) {
+                        return;
+                    }
+                    if (text == null) {
+                        showMessage(tr("hexviewer.loadFailed"), "hex-viewer-error");
+                        return;
+                    }
+                    area.replaceText(text);
+                    area.moveTo(0);
+                    area.scrollToPixel(0, 0);
+                    loaded = true;
+                    root.setCenter(dumpView);
+                    root.setTop(buildBar(total, count, total > count));
+                } finally {
+                    finished.complete(null);
+                }
+            });
+        });
+    }
+
+    private void showMessage(String message, String styleClass) {
+        Label label = new Label(message);
+        label.getStyleClass().add(styleClass);
+        StackPane center = new StackPane(label);
+        center.setPadding(new Insets(24));
+        root.setCenter(center);
     }
 
     private Node buildBar(long size, int shown, boolean truncated) {
@@ -96,13 +130,19 @@ public final class HexViewerPane implements TabContent {
         return bar;
     }
 
-    /** True once the dump was built (false when the read failed). Test accessor. */
+    /** True once the dump was built (false while loading / when the read failed). Test accessor. */
     boolean isLoaded() {
         return loaded;
     }
 
-    /** Frees the rendered dump text when the tab closes. */
+    /** Completes once the background load has been applied (or dropped, for a disposed pane). Test accessor. */
+    CompletableFuture<Void> loadedForTest() {
+        return finished;
+    }
+
+    /** Frees the rendered dump text when the tab closes; a load still running is dropped. */
     public void dispose() {
+        disposed = true;
         area.replaceText("");
     }
 

@@ -3,6 +3,7 @@ package com.editora.command;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -32,7 +33,19 @@ public class KeymapManager {
         m.put("sublime", "Sublime Text");
         m.put("vscode", "Visual Studio Code");
         m.put("intellij", "IntelliJ IDEA");
-        AVAILABLE = Map.copyOf(m);
+        AVAILABLE = Collections.unmodifiableMap(m); // not Map.copyOf: the pickers list these in this order
+    }
+
+    /** The keymap used when {@code Settings.keymap} names none of {@link #AVAILABLE}. */
+    public static final String DEFAULT = "emacs";
+
+    /**
+     * The bundled keymap to load for a configured name: the name itself when it is one of
+     * {@link #AVAILABLE}, else {@link #DEFAULT}. A hand-edited {@code "keymap": "vim"}, a typo or a null must
+     * cost the user their preferred bindings, not the whole launch. Pure.
+     */
+    public static String resolveName(String name) {
+        return name != null && AVAILABLE.containsKey(name) ? name : DEFAULT;
     }
 
     /** Display name for a keymap id, or the id itself if unknown. */
@@ -47,17 +60,39 @@ public class KeymapManager {
 
     private final Map<String, String> bindings = new LinkedHashMap<>();
 
+    /** The bundled keymap currently loaded (always one of {@link #AVAILABLE}). */
+    private String activeName = DEFAULT;
+    /** The platform the keymap was loaded for; decides chord notation and which chords are typable. */
+    private boolean mac = isMac();
+    /** A configured name that was not a bundled keymap and has not been reported yet (see {@link #takeUnknownName}). */
+    private String unknownName;
+    /** The unknown name already handed out, so reloading the same bad setting does not report it again. */
+    private String reportedUnknown;
+    /** command id -> the chord to show for it, formatted; rebuilt lazily after the bindings change. */
+    private Map<String, String> displayChords;
+
     /**
      * Loads the named bundled keymap as the base, replacing current bindings. On macOS a
      * {@code <name>.mac.json} variant (Cmd-based accelerators) is preferred when present, falling back to
-     * {@code <name>.json} (the Ctrl-based Win/Linux map).
+     * {@code <name>.json} (the Ctrl-based Win/Linux map). A name that is not a bundled keymap loads
+     * {@link #DEFAULT} instead (see {@link #resolveName}) and is remembered for {@link #takeUnknownName}.
      */
     public void loadNamed(String name) {
         loadNamed(name, isMac());
     }
 
     /** Package-visible variant with an explicit platform flag so tests don't depend on the host OS. */
-    void loadNamed(String name, boolean mac) {
+    void loadNamed(String configured, boolean mac) {
+        String name = resolveName(configured);
+        if (name.equals(configured)) {
+            reportedUnknown = null;
+            unknownName = null;
+        } else {
+            unknownName = String.valueOf(configured);
+        }
+        this.activeName = name;
+        this.mac = mac;
+        this.displayChords = null;
         String macResource = "/com/editora/keymaps/" + name + ".mac.json";
         String baseResource = "/com/editora/keymaps/" + name + ".json";
         String resource = mac && KeymapManager.class.getResource(macResource) != null ? macResource : baseResource;
@@ -85,6 +120,7 @@ public class KeymapManager {
         if (overrides == null) {
             return;
         }
+        displayChords = null;
         overrides.forEach((sequence, id) -> {
             if (id == null || id.isBlank()) {
                 bindings.remove(sequence);
@@ -110,7 +146,81 @@ public class KeymapManager {
         return false;
     }
 
+    /**
+     * A snapshot of the current bindings in keymap order — the file's order, then overrides in the order
+     * they were applied. The order is part of the contract: "the first chord bound to a command" must mean
+     * the same chord on every launch, which {@code Map.copyOf} (unspecified iteration order) did not give.
+     */
     public Map<String, String> bindings() {
-        return Map.copyOf(bindings);
+        return Collections.unmodifiableMap(new LinkedHashMap<>(bindings));
+    }
+
+    /** The bundled keymap currently loaded — {@link #DEFAULT} when the configured name was unknown. */
+    public String activeName() {
+        return activeName;
+    }
+
+    /**
+     * The configured keymap name that could not be loaded, exactly once per bad name: the caller reports it
+     * (status bar + message log) and later calls return null until a different unknown name is configured.
+     */
+    public String takeUnknownName() {
+        String name = unknownName;
+        unknownName = null;
+        if (name == null || name.equals(reportedUnknown)) {
+            return null;
+        }
+        reportedUnknown = name;
+        return name;
+    }
+
+    /**
+     * The chord to advertise for {@code commandId} as raw keymap tokens, or null when it is unbound: the first
+     * binding in keymap order that can be typed on this platform (so never {@code Cmd-…} on Windows/Linux),
+     * falling back to the first binding of any kind.
+     */
+    public String chordFor(String commandId) {
+        String fallback = null;
+        for (Map.Entry<String, String> e : bindings.entrySet()) {
+            if (e.getValue().equals(commandId)) {
+                if (ChordFormat.typable(e.getKey(), mac)) {
+                    return e.getKey();
+                }
+                if (fallback == null) {
+                    fallback = e.getKey();
+                }
+            }
+        }
+        return fallback;
+    }
+
+    /** Formats a chord sequence in the active keymap's notation — see {@link ChordFormat}. */
+    public String display(String sequence) {
+        return ChordFormat.format(sequence, ChordFormat.styleFor(activeName, mac));
+    }
+
+    /** The formatted chord to show for {@code commandId}, or null when it is unbound. */
+    public String displayChord(String commandId) {
+        return displayChords().get(commandId);
+    }
+
+    /**
+     * command id → the formatted chord to show for it (see {@link #chordFor}), for every bound command. Cached
+     * until the bindings change, so a menu, a palette and a toolbar that each ask per row share one pass.
+     */
+    public Map<String, String> displayChords() {
+        if (displayChords == null) {
+            ChordFormat.Style style = ChordFormat.styleFor(activeName, mac);
+            Map<String, String> raw = new LinkedHashMap<>();
+            for (Map.Entry<String, String> e : bindings.entrySet()) {
+                String current = raw.get(e.getValue());
+                if (current == null || (!ChordFormat.typable(current, mac) && ChordFormat.typable(e.getKey(), mac))) {
+                    raw.put(e.getValue(), e.getKey());
+                }
+            }
+            raw.replaceAll((id, sequence) -> ChordFormat.format(sequence, style));
+            displayChords = Collections.unmodifiableMap(raw);
+        }
+        return displayChords;
     }
 }

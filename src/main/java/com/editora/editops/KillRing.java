@@ -61,6 +61,7 @@ public final class KillRing {
         if (text == null || text.isEmpty()) {
             return;
         }
+        text = lf(text);
         if (merge && !entries.isEmpty()) {
             String head = entries.get(0);
             entries.set(0, direction == Direction.BACKWARD ? text + head : head + text);
@@ -78,17 +79,22 @@ public final class KillRing {
         if (text == null || text.isEmpty()) {
             return;
         }
-        push(text);
+        push(lf(text));
         yankIndex = 0;
     }
 
     /**
      * Adopts text that arrived from outside the editor, so that copying in another application and then
      * yanking does the expected thing (Emacs' {@code interprogram-paste-function}). No-op when the text
-     * is empty or already the current entry. Returns whether it was adopted.
+     * is empty or already the current entry (compared with line endings normalised). Returns whether it
+     * was adopted.
      */
     public boolean adoptExternal(String text) {
-        if (text == null || text.isEmpty() || text.equals(current())) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        text = lf(text);
+        if (text.equals(current())) {
             return false;
         }
         push(text);
@@ -139,6 +145,16 @@ public final class KillRing {
     public void clear() {
         entries.clear();
         yankIndex = 0;
+    }
+
+    /**
+     * Line endings as the editor's document stores them: {@code \r\n} and a lone {@code \r} become
+     * {@code \n}. Every entry is normalised on the way in, so an entry's length is the length of what a
+     * yank inserts (the caret and the yank-pop range are computed from it), and clipboard text copied in
+     * another application — CRLF on Windows — still compares equal to the entry it was adopted as.
+     */
+    static String lf(String text) {
+        return text.indexOf('\r') < 0 ? text : text.replace("\r\n", "\n").replace('\r', '\n');
     }
 
     private void push(String text) {

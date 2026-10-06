@@ -266,8 +266,8 @@ final class LogViewerCoordinator {
         ifLog(() -> {
             EditorBuffer b = host.activeBuffer();
             int from = b.getFocusedArea().getCurrentParagraph();
-            int target =
-                    com.editora.logviewer.LogNavigation.nextLevelLine(b.getContent(), from, forward, LogLevel.WARN);
+            int target = com.editora.logviewer.LogNavigation.nextLevelLine(
+                    b.getVisibleContent(), from, forward, LogLevel.WARN);
             if (target < 0) {
                 host.setStatus(tr("status.log.noError"));
                 return;

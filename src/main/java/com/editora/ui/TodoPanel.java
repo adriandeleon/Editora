@@ -152,6 +152,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
         tree.setShowRoot(false);
         tree.setRoot(new TreeItem<>());
         tree.setCellFactory(t -> new RowCell(actions, this::reopenKeywords));
+        RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
                 activateSelected();
@@ -266,7 +267,7 @@ public final class TodoPanel extends VBox implements ToolWindowContent {
 
     /** Sets the active file so its group sorts to the top under "group by file". Re-sorts without re-scanning. */
     public void setActiveFile(Path normalizedActive) {
-        if (java.util.Objects.equals(activeFile, normalizedActive)) {
+        if (com.editora.config.PathKeys.samePath(activeFile, normalizedActive)) {
             return;
         }
         activeFile = normalizedActive;

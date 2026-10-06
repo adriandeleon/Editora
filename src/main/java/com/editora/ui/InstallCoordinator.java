@@ -267,7 +267,7 @@ final class InstallCoordinator {
             Path bin = ops.configDir().resolve("plugins/lsp/java/bin");
             Path launcher = isWindows() ? bin.resolve("jdtls.bat") : bin.resolve("jdtls");
             if (Files.exists(launcher)) {
-                host.settings().setJavaLspCommand(launcher.toString());
+                host.settings().setJavaLspCommand(InstallCatalog.quoteCommandPath(launcher.toString()));
             }
         }
         ops.reapplyToolSupport();

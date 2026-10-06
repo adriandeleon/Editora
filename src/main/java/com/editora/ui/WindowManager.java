@@ -86,13 +86,35 @@ public class WindowManager {
      */
     private final PauseTransition openSetReconcile = new PauseTransition(Duration.seconds(3));
 
-    /** A live window: its project key ({@code ""} = the global session), its stage and controller. */
-    private record Holder(String key, Stage stage, MainController controller) {}
+    /**
+     * Coalesces cross-window re-applies of a preference changed through one window's command (a palette
+     * toggle, a key binding, a text zoom). The windows it reaches are not the one being used, so a short
+     * delay is invisible there, and it turns a burst — a Ctrl+wheel zoom fires a save per pulse — into one
+     * full re-apply per window instead of one per notch.
+     */
+    private final PauseTransition settingsRebroadcast = new PauseTransition(Duration.millis(200));
+    /** True from a reported change until the windows it must reach have re-applied. */
+    private boolean settingsChangePending;
+    /** The window whose save started the pending re-apply; it applied the change itself and is skipped. */
+    private ConfigManager settingsChangeOrigin;
+    /** Set when the pending changes came from different (or unknown) windows: then none can be skipped. */
+    private boolean settingsChangeFromSeveral;
+
+    /** True while a refresh of the windows' recent-files menus / search dropdowns is queued for this pulse. */
+    private boolean sharedHistoryBroadcastQueued;
+
+    /** A live window: its project key ({@code ""} = the global session), its stage, controller and config. */
+    private record Holder(String key, Stage stage, MainController controller, ConfigManager config) {}
 
     public WindowManager(SharedConfig shared, KeymapManager keymap, HostServices hostServices) {
         this.shared = shared;
         this.keymap = keymap;
         this.hostServices = hostServices;
+        // Make the (single, shared) keymap available to plain text fields and consoles, so they can install
+        // the configured caret/editing chords without threading it through their constructors (see
+        // TextInputKeymap). Done here, by the keymap's owner, so every window this manager builds — including
+        // the headless test fixture's — gets them, not only one launched through App.
+        com.editora.command.TextInputKeymap.setShared(keymap);
         // Discover plugins once (startup I/O + class loaders). The predicate factors the master gate, so
         // no untrusted code loads unless plugins are enabled; the Settings page still lists all of them.
         this.pluginManager = new com.editora.plugin.PluginManager(
@@ -104,7 +126,67 @@ public class WindowManager {
         // Surface durable config-write failures (full disk, read-only ~/.editora) instead of silently
         // swallowing them — a setting/session change would otherwise vanish next launch with no sign (#418).
         shared.setOnWriteError((file, err) -> javafx.application.Platform.runLater(() -> notifyConfigWriteError(file)));
+        // A second Editora process on this config dir (a launch that was not forwarded to the running editor)
+        // works from its own in-memory copy of settings, notes, bookmarks, breakpoints, projects and recents.
+        // Say so once, after the first window exists, instead of letting one editor silently undo the other.
+        if (!shared.isPrimaryInstance()) {
+            javafx.application.Platform.runLater(this::warnSecondaryInstance);
+        }
+        // Preferences are one object shared by every window, but each window applies them to its own buffers
+        // and services. A save that carries a change no other window has applied yet re-applies it there.
+        shared.setOnSettingsChanged(this::onSharedSettingsChanged);
+        shared.setOnStoreChanged(this::onSharedStoreChanged);
+        settingsRebroadcast.setOnFinished(e -> flushPendingSettingsBroadcast());
+        // The recent-files and search-history lists are single shared instances; a change made through any
+        // window refreshes what every window shows. Registered once here (not per window) so a closed window
+        // is never kept alive by — or called back from — a list that outlives it.
+        shared.recentFiles().getList().addListener((javafx.collections.ListChangeListener<Path>)
+                c -> scheduleSharedHistoryBroadcast());
+        shared.searchHistory().getList().addListener((javafx.collections.ListChangeListener<String>)
+                c -> scheduleSharedHistoryBroadcast());
     }
+
+    /** One-time notice, in the focused window, that another Editora process shares this configuration. Shown
+     *  as an error so it stays flagged in the message log after routine startup messages replace the echo. */
+    private void warnSecondaryInstance() {
+        java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                .warning("Another Editora instance is already using " + shared.getConfigDir());
+        Holder h = focusedHolder();
+        if (h != null && h.controller() != null) {
+            h.controller().setError(com.editora.i18n.Messages.tr("status.config.secondaryInstance"));
+        }
+    }
+
+    /**
+     * Shows, once, what the shared config could not read as written when it loaded: values that were reset,
+     * files that fell back to defaults, and files that will not be saved this session. Reported as errors so
+     * they stay flagged in the message log after routine startup messages replace the status line.
+     */
+    private void reportConfigLoadProblems(MainController controller) {
+        List<com.editora.config.migration.ConfigLoadProblem> problems = shared.takeLoadProblems();
+        if (problems.isEmpty() && unshownWriteErrors.isEmpty()) {
+            return;
+        }
+        // Deferred past startup's own status messages, so the report is the line left showing.
+        javafx.application.Platform.runLater(() -> {
+            for (com.editora.config.migration.ConfigLoadProblem problem : problems) {
+                controller.setError(ConfigLoadMessages.describe(problem, shared.isWriteProtected(problem.file())));
+            }
+            List<Path> failed = new ArrayList<>(unshownWriteErrors);
+            unshownWriteErrors.clear();
+            for (Path file : failed) {
+                controller.setError(com.editora.i18n.Messages.tr(
+                        "status.config.saveFailed", file.getFileName().toString()));
+            }
+        });
+    }
+
+    /**
+     * Config files whose write failed before any window existed to say so (FX thread only). A read-only or
+     * full config folder fails its first write while the config is still loading; the first window reports
+     * these with the load problems.
+     */
+    private final java.util.Set<Path> unshownWriteErrors = new java.util.LinkedHashSet<>();
 
     /** Shows a config-write failure in the focused window's status bar (best-effort; logged regardless). */
     private void notifyConfigWriteError(Path file) {
@@ -115,6 +197,22 @@ public class WindowManager {
             h.controller()
                     .setError(com.editora.i18n.Messages.tr(
                             "status.config.saveFailed", file.getFileName().toString()));
+        } else {
+            unshownWriteErrors.add(file); // no window yet: the first one reports it
+        }
+    }
+
+    /**
+     * The abbreviations or the saved SFTP sites changed: every open Settings window re-reads them now. Each
+     * edits them as a whole list, so one left showing the old list would write it back over the change.
+     */
+    private void onSharedStoreChanged() {
+        if (!javafx.application.Platform.isFxApplicationThread()) {
+            javafx.application.Platform.runLater(this::onSharedStoreChanged);
+            return;
+        }
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncStoreBackedEditors();
         }
     }
 
@@ -460,6 +558,24 @@ public class WindowManager {
         return List.copyOf(out);
     }
 
+    /** Whether a window other than {@code asking} has {@code file} open in a tab. */
+    boolean openInAnotherWindow(MainController asking, Path file) {
+        for (Holder holder : windows) {
+            if (holder.controller() != asking
+                    && !holder.controller().buffersAtOrUnderLocal(file).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A saved {@code .editorconfig} governs files in every window, not only the one it was saved from. */
+    void editorConfigSavedAcrossWindows() {
+        for (Holder holder : List.copyOf(windows)) {
+            holder.controller().applyEditorConfigLocal();
+        }
+    }
+
     void fileRenamedAcrossWindows(MainController initiator, Path from, Path to, boolean initiatorAlreadyClosed) {
         for (Holder holder : List.copyOf(windows)) {
             holder.controller()
@@ -719,10 +835,86 @@ public class WindowManager {
 
     /** Re-applies view settings + the editor theme to every open window (after a Settings change). */
     public void broadcastSettingsApplied() {
+        broadcastSettingsApplied(null);
+    }
+
+    /**
+     * As {@link #broadcastSettingsApplied()}, for a change made in {@code origin}'s Settings window: every
+     * other window's Settings window, if open, re-reads its controls too. Left showing the old values, its
+     * next edit of any stale control would write that value back over this change.
+     */
+    public void broadcastSettingsApplied(MainController origin) {
+        settingsRebroadcast.stop(); // every window is about to apply everything, pending changes included
+        settingsChangePending = false;
         Settings settings = shared.getSettings();
         for (Holder h : new ArrayList<>(windows)) {
             h.controller.reapplyAfterSharedSettingsChange(settings);
+            if (origin != null && h.controller != origin) {
+                h.controller.settingsWindow().syncAll();
+            }
         }
+        shared.markSettingsApplied();
+    }
+
+    /**
+     * A window saved preferences that the other windows have not applied — the change came from a palette
+     * command or key binding, which applies it only in its own window. Schedules the others to catch up.
+     */
+    private void onSharedSettingsChanged(ConfigManager origin) {
+        if (!javafx.application.Platform.isFxApplicationThread()) {
+            javafx.application.Platform.runLater(() -> onSharedSettingsChanged(origin));
+            return;
+        }
+        if (!settingsChangePending) {
+            settingsChangePending = true;
+            settingsChangeOrigin = origin;
+            settingsChangeFromSeveral = origin == null;
+        } else if (origin != settingsChangeOrigin) {
+            settingsChangeFromSeveral = true;
+        }
+        settingsRebroadcast.playFromStart();
+    }
+
+    /**
+     * Runs a pending cross-window re-apply now: every window except the one that made the change re-applies
+     * the shared preferences and refreshes its Settings window. A no-op when nothing is pending. Also the
+     * seam tests use instead of waiting out the delay.
+     */
+    void flushPendingSettingsBroadcast() {
+        settingsRebroadcast.stop();
+        if (!settingsChangePending) {
+            return;
+        }
+        settingsChangePending = false;
+        ConfigManager skip = settingsChangeFromSeveral ? null : settingsChangeOrigin;
+        settingsChangeOrigin = null;
+        Settings settings = shared.getSettings();
+        for (Holder h : new ArrayList<>(windows)) {
+            if (h.config() != skip && h.stage().isShowing()) { // a window closed while this was pending is left alone
+                h.controller().reapplyAfterSharedSettingsChange(settings);
+                h.controller().settingsWindow().syncAll();
+            }
+        }
+    }
+
+    /**
+     * Refreshes every window's recent-files menu and search-history dropdown from the shared lists, once per
+     * pulse: restoring a session adds a recent file per opened tab, and each refresh rebuilds a menu in every
+     * window.
+     */
+    private void scheduleSharedHistoryBroadcast() {
+        if (sharedHistoryBroadcastQueued) {
+            return;
+        }
+        sharedHistoryBroadcastQueued = true;
+        javafx.application.Platform.runLater(() -> {
+            sharedHistoryBroadcastQueued = false;
+            for (Holder h : new ArrayList<>(windows)) {
+                if (h.stage().isShowing()) {
+                    h.controller().sharedHistoryChanged();
+                }
+            }
+        });
     }
 
     /** Re-registers the synthetic {@code macro.run.*} commands in every window after the saved set changed. */
@@ -740,6 +932,17 @@ public class WindowManager {
         }
     }
 
+    /**
+     * A folder-trust decision changed (granted or revoked, here or in Settings). Each window re-resolves the
+     * project overrides it may honour: revoking only edited the trust store, so a manager configured while
+     * the folder was trusted kept launching the project-supplied command.
+     */
+    public void broadcastTrustChanged() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller.trustChanged();
+        }
+    }
+
     /** Re-registers the synthetic {@code externalTool.run.*} commands in every window after the set changed. */
     public void broadcastExternalToolsChanged() {
         for (Holder h : new ArrayList<>(windows)) {
@@ -749,24 +952,53 @@ public class WindowManager {
 
     /**
      * Rebuilds the shared keymap from scratch — base keymap ({@code Settings.keymap}, with the macOS
-     * {@code .mac} variant when present) → user overrides → enabled plugins' keymap overrides — mirroring
-     * the startup order in {@link MainController}'s {@code applyPlugins}. The {@code KeymapManager} is a
+     * {@code .mac} variant when present) → user overrides → enabled plugins' keymap overrides → the user's
+     * own bindings again, so a plugin cannot take back a chord the user bound (see {@link KeymapLayers}) —
+     * the same result the startup order in {@code PluginCoordinator.applyPlugins} produces. The {@code KeymapManager} is a
      * single instance shared by every window's {@link KeyDispatcher}, so this switches the active keymap
      * live across all windows with no restart; a broadcast refreshes keymap-derived UI. A stale mid-chord
      * prefix in any dispatcher self-cancels on the next key, so no explicit reset is needed.
      */
     public void reloadSharedKeymap() {
         Settings settings = shared.getSettings();
-        keymap.loadNamed(settings.getKeymap());
-        keymap.applyOverrides(settings.keybindingsFor(com.editora.command.KeymapManager.isMac()));
+        List<java.util.Map<String, String>> pluginKeymaps = new ArrayList<>();
         if (settings.isPluginSupport()) {
             for (com.editora.plugin.PluginDescriptor d : pluginManager.descriptors()) {
                 if (d.enabled() && d.loadError() == null && d.manifest().keymap != null) {
-                    keymap.applyOverrides(d.manifest().keymap);
+                    pluginKeymaps.add(d.manifest().keymap);
                 }
             }
         }
+        KeymapLayers.rebuild(
+                keymap,
+                settings.getKeymap(),
+                pluginKeymaps,
+                settings.keybindingsFor(com.editora.command.KeymapManager.isMac()));
         broadcastSettingsApplied();
+        // Every open Settings window shows the keymap: its combo, the shortcut list, the chord chips and the
+        // Macros key-binding row. The window that made the change refreshes itself; the others are told here.
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncKeymap();
+        }
+        Holder focused = focusedHolder();
+        reportUnknownKeymap(focused != null ? focused.controller() : null);
+    }
+
+    /**
+     * Tells the user — once per bad value — that {@code Settings.keymap} names no bundled keymap and the
+     * default is in use instead. The setting itself is left as written: it may be a typo the user will fix,
+     * or a keymap a newer build provides. Reported as an error so it stays in the message log, since the
+     * startup status echo is overwritten almost immediately.
+     */
+    private void reportUnknownKeymap(MainController controller) {
+        if (controller == null) {
+            return; // no window to tell yet; the name stays pending for the next one
+        }
+        String unknown = keymap.takeUnknownName();
+        if (unknown != null) {
+            controller.setError(com.editora.i18n.Messages.tr(
+                    "status.keymap.unknown", unknown, KeymapManager.displayName(keymap.activeName())));
+        }
     }
 
     // --- window construction (extracted from App.start) ---
@@ -902,12 +1134,20 @@ public class WindowManager {
             cascadeIfOverlapping(stage);
             focus(stage);
 
-            windows.add(new Holder(key, stage, controller));
+            windows.add(new Holder(key, stage, controller, config));
+            if (windows.size() == 2) {
+                // From here a preference changed in one window has another window to reach. Both reflect the
+                // current preferences right now (this one was just built from them), so this is the baseline
+                // later saves are compared against. A single window needs no detection at all.
+                shared.markSettingsApplied();
+            }
             if (diffUi != null) {
                 controller.startupDiffUi(diffUi.left(), diffUi.right());
             } else {
                 controller.startup(null, targets, newFile, noSession); // chrome flags already applied, pre-show()
             }
+            reportUnknownKeymap(controller);
+            reportConfigLoadProblems(controller);
             return stage;
         } catch (java.io.IOException e) {
             throw new java.io.UncheckedIOException("Failed to build a window for project '" + key + "'", e);

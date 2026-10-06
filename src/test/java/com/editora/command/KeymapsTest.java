@@ -85,6 +85,89 @@ class KeymapsTest {
         assertFalse(emacs.containsKey("C-x S-f"));
     }
 
+    /**
+     * Chords are matched on the key code plus Shift, so a binding on US punctuation is unreachable where
+     * that character sits elsewhere: on ES/DE/IT/PT keyboards "/" is Shift+7, which made {@code C-/} — the
+     * Emacs keymap's only undo — impossible to type. Essential commands keep a layout-independent alias.
+     */
+    @Test
+    void emacsUndoAndRedoHaveLayoutIndependentAliases() {
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("emacs", false);
+        assertEquals("edit.undo", km.commandFor("C-/"), "the original binding stays");
+        assertEquals("edit.undo", km.commandFor("C-x u"));
+        assertEquals("edit.undo", km.commandFor("C-S--"), "C-_ : Shift+minus is the underscore on every one");
+        assertEquals("edit.undo", km.commandFor("C-S-7"), "what Ctrl+/ physically is where / is Shift+7");
+        assertEquals("edit.redo", km.commandFor("C-M-S--"), "C-M-_");
+        // The aliases must not shadow, or be shadowed by, a longer sequence.
+        for (String alias : List.of("C-x u", "C-S--", "C-S-7", "C-M-S--")) {
+            assertFalse(km.isPrefix(alias), alias + " must not also be a prefix");
+        }
+        assertTrue(km.isPrefix("C-x"), "C-x u continues the existing C-x prefix");
+        assertEquals("edit.upcaseRegion", km.commandFor("C-x C-u"), "C-x u does not disturb C-x C-u");
+        assertEquals("view.textZoomOut", km.commandFor("C--"), "C-_ does not disturb C-- (zoom out)");
+    }
+
+    @Test
+    void guiKeymapsCanToggleCommentWithoutUsPunctuation() {
+        for (String id : GUI) {
+            Map<String, String> base = load("/com/editora/keymaps/" + id + ".json");
+            assertEquals("edit.toggleComment", base.get("C-/"), id);
+            assertEquals("edit.toggleComment", base.get("C-S-7"), id + ": Ctrl+/ where / is Shift+7");
+            assertEquals("edit.toggleComment", base.get("C-divide"), id + ": the numpad slash");
+            Map<String, String> mac = load("/com/editora/keymaps/" + id + ".mac.json");
+            assertEquals("edit.toggleComment", mac.get("Cmd-S-7"), id + ".mac");
+            assertEquals("edit.toggleComment", mac.get("Cmd-divide"), id + ".mac");
+            // Undo and redo in these keymaps are letter chords, which every layout can type.
+            for (Map<String, String> map : List.of(base, mac)) {
+                for (String command : List.of("edit.undo", "edit.redo")) {
+                    assertTrue(
+                            map.entrySet().stream()
+                                    .anyMatch(e -> e.getValue().equals(command)
+                                            && e.getKey().matches("(C-|M-|Cmd-|S-)*[a-z]")),
+                            id + ": " + command + " needs a letter chord");
+                }
+            }
+        }
+    }
+
+    @Test
+    void theNumpadSlashTokenIsWhatTheDispatcherEmits() {
+        assertEquals(
+                "C-divide",
+                KeyDispatcher.chord(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.DIVIDE,
+                        false,
+                        true,
+                        false,
+                        false)));
+        assertEquals(
+                "C-S-7",
+                KeyDispatcher.chord(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.DIGIT7,
+                        true,
+                        true,
+                        false,
+                        false)));
+        assertEquals(
+                "C-S--",
+                KeyDispatcher.chord(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.MINUS,
+                        true,
+                        true,
+                        false,
+                        false)));
+    }
+
     @Test
     void everyKeymapParsesAndBindsOnlyRealCommandIds() {
         Set<String> valid = validCommandIds();

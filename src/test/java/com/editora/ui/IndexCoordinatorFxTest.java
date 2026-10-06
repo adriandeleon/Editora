@@ -124,11 +124,88 @@ class IndexCoordinatorFxTest {
                 "answering with the previous project's symbols would send the user to another repository");
     }
 
+    /**
+     * A walk the cap cut short says so in the status bar, after whatever the build itself reports — a
+     * partial index that looks complete sends the user hunting for a symbol that was simply never read.
+     */
+    @Test
+    void anIndexCutShortByTheCapSaysSoInTheStatusBar() throws Exception {
+        Files.createDirectories(project.resolve("cap"));
+        for (String name : List.of("One", "Two", "Three")) {
+            Files.writeString(project.resolve("cap").resolve(name + ".java"), "class Cap" + name + " {}\n");
+        }
+        Harness h = harness(project.resolve("cap"));
+        h.coordinator().maxFiles = 2;
+
+        buildAndSettle(h.coordinator());
+        FxTestSupport.runOnFx(() -> {});
+
+        String truncated = com.editora.i18n.Messages.tr("status.index.truncated", 2);
+        assertEquals(truncated, h.statuses().get(h.statuses().size() - 1), "statuses: " + h.statuses());
+        assertEquals(2, indexOf(h.coordinator()).fileCount());
+    }
+
+    @Test
+    void aCompleteIndexDoesNotClaimToBePartial() throws Exception {
+        Files.createDirectories(project.resolve("whole"));
+        Files.writeString(project.resolve("whole").resolve("Whole.java"), "class Whole {}\n");
+        Harness h = harness(project.resolve("whole"));
+
+        buildAndSettle(h.coordinator());
+        FxTestSupport.runOnFx(() -> {});
+
+        String built = com.editora.i18n.Messages.tr("status.index.built", 1, 1);
+        assertEquals(built, h.statuses().get(h.statuses().size() - 1), "statuses: " + h.statuses());
+    }
+
     @Test
     void withNoProjectItSaysSoRatherThanDoingNothing() throws Exception {
         Harness h = harness(null);
         FxTestSupport.runOnFx(() -> FxTestSupport.invoke(h.coordinator(), "gotoSymbol"));
         assertFalse(h.statuses().isEmpty(), "a command that silently no-ops reads as broken");
+    }
+
+    /**
+     * {@code ensureBuilt} promises "then runs {@code then}". It dropped the callback when there was nothing
+     * to build, which left Search Everywhere showing the previous query's rows for ever.
+     */
+    @Test
+    void ensureBuiltSettlesAtOnceWhenThereIsNothingToBuild() throws Exception {
+        int[] ran = {0};
+        Harness noProject = harness(null);
+        FxTestSupport.runOnFx(() -> noProject.coordinator().ensureBuilt(() -> ran[0]++));
+        assertEquals(1, ran[0], "no project: the caller is still answered");
+
+        Harness off = harness(project);
+        FxTestSupport.runOnFx(() -> {
+            FxTestSupport.<CoordinatorHost>field(off.coordinator(), "host")
+                    .settings()
+                    .setSymbolIndex(false);
+            off.coordinator().ensureBuilt(() -> ran[0]++);
+        });
+        assertEquals(2, ran[0], "index switched off: the caller is still answered");
+        assertFalse(off.coordinator().isBuilt(), "and nothing was walked on its behalf");
+    }
+
+    /** A second caller during a walk used to be dropped; every caller is answered when the walk lands. */
+    @Test
+    void everyCallerWaitingOnAWalkInFlightIsAnswered() throws Exception {
+        Files.writeString(project.resolve("Waited.java"), "class Waited {}\n");
+        Harness h = harness(project);
+        List<String> order = new java.util.concurrent.CopyOnWriteArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            // One FX runnable: the walk cannot land between the two calls.
+            h.coordinator()
+                    .ensureBuilt(() -> order.add("first:" + h.coordinator().isBuilt()));
+            h.coordinator()
+                    .ensureBuilt(() -> order.add("second:" + h.coordinator().isBuilt()));
+            assertTrue(order.isEmpty(), "neither runs before the walk lands");
+        });
+        for (int i = 0; i < 200 && order.size() < 2; i++) {
+            Thread.sleep(25);
+            FxTestSupport.runOnFx(() -> {});
+        }
+        assertEquals(List.of("first:true", "second:true"), order);
     }
 
     @Test

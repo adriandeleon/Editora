@@ -420,4 +420,26 @@ class LspCoordinatorSyncFxTest {
 
         assertEquals("xml", FxTestSupport.callOnFx(() -> coordinator.serverIdForBuffer(b)));
     }
+
+    // --- capability gates follow dynamic registrations ----------------------------------------------
+
+    /**
+     * Go to Implementation / Type Definition were gated only by {@code syncBuffer}, which runs before the
+     * server has said anything. A provider that arrives later — by dynamic registration, or simply once
+     * {@code initialize} answers — never switched the menu entries on.
+     */
+    @Test
+    void navigationGatesAreRefreshedWhenACapabilityArrivesLater() throws Exception {
+        EditorBuffer b = javaBuffer("A.java");
+        sync(b);
+        assertFalse((Boolean) FxTestSupport.field(b, "lspImplementationAvailable"), "precondition: not advertised");
+        assertFalse((Boolean) FxTestSupport.field(b, "lspTypeDefinitionAvailable"));
+
+        LspTestHooks.registerCapability(manager, b.getPath(), "textDocument/implementation");
+        LspTestHooks.registerCapability(manager, b.getPath(), "textDocument/typeDefinition");
+        FxTestSupport.runOnFx(() -> {}); // the refresh hop to the FX thread
+
+        assertTrue((Boolean) FxTestSupport.field(b, "lspImplementationAvailable"));
+        assertTrue((Boolean) FxTestSupport.field(b, "lspTypeDefinitionAvailable"));
+    }
 }

@@ -25,8 +25,16 @@ public final class PdfExportService {
     private static final java.util.logging.Logger LOG =
             java.util.logging.Logger.getLogger(PdfExportService.class.getName());
 
-    /** Outcome of an export: {@code ok} plus an error {@code message} on failure. */
-    public record Result(boolean ok, String message) {}
+    /**
+     * Outcome of an export: {@code ok} plus an error {@code message} on failure. {@code unrendered} is the
+     * number of characters no available font could draw (written as {@code ?}) — non-zero means the PDF was
+     * produced but is not a faithful copy, and the caller says so instead of a plain "Exported".
+     */
+    public record Result(boolean ok, String message, int unrendered) {
+        public Result(boolean ok, String message) {
+            this(ok, message, 0);
+        }
+    }
 
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "pdf-export");
@@ -57,8 +65,8 @@ public final class PdfExportService {
                         spans = TextMateHighlighter.compute(text, grammar);
                     }
                 }
-                CodePdfWriter.write(text, spans, lineNumbers, tabSize, pageSize, out);
-                result = new Result(true, "");
+                int unrendered = CodePdfWriter.write(text, spans, lineNumbers, tabSize, pageSize, out);
+                result = new Result(true, "", unrendered);
             } catch (Throwable e) {
                 // Throwable, not Exception: an Error (e.g. a jlink/resource NoClassDefFoundError) on this
                 // submit()'d task would otherwise be swallowed by the Future, hanging the "Exporting…" status.
@@ -84,10 +92,29 @@ public final class PdfExportService {
         exec.submit(() -> {
             Result result;
             try {
-                MarkdownPdfWriter.write(markdown, baseDir, pageSize, mmdcCommand, out);
-                result = new Result(true, "");
+                int unrendered = MarkdownPdfWriter.write(markdown, baseDir, pageSize, mmdcCommand, out);
+                result = new Result(true, "", unrendered);
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "Markdown PDF export failed", e);
+                result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
+            }
+            Result r = result;
+            Platform.runLater(() -> onResult.accept(r));
+        });
+    }
+
+    /**
+     * Exports an already-built CommonMark {@code document} through {@link MarkdownPdfWriter} — the CSV
+     * export's table, whose cells are data and must not be parsed as Markdown. Runs off the FX thread.
+     */
+    public void exportDocument(
+            org.commonmark.node.Node document, String pageSize, Path out, Consumer<Result> onResult) {
+        exec.submit(() -> {
+            Result result;
+            try {
+                result = new Result(true, "", MarkdownPdfWriter.write(document, null, pageSize, null, out));
+            } catch (Throwable e) {
+                LOG.log(java.util.logging.Level.SEVERE, "Table PDF export failed", e);
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;

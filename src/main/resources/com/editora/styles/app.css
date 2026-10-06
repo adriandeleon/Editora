@@ -191,7 +191,7 @@
     -fx-font-size: 10px;
 }
 .editor-area .fold-gutter .blame-date {
-    -fx-text-fill: -color-fg-subtle;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-family: "monospace";
     -fx-font-size: 10px;
 }
@@ -272,7 +272,7 @@
 .structure-tree .structure-line-number,
 .bookmarks-tree .bookmark-line-number,
 .notes-tree .note-line-number {
-    -fx-fill: -color-fg-subtle;
+    -fx-fill: -color-fg-muted;
     -fx-font-size: 0.85em;
 }
 
@@ -494,7 +494,7 @@
 }
 .markwhen-cal-daynum { -fx-font-size: 0.85em; -fx-text-fill: -color-fg-muted; }
 .markwhen-cal-chip {
-    -fx-background-color: -color-accent-emphasis; -fx-text-fill: white; -fx-background-radius: 3;
+    -fx-background-color: -color-accent-emphasis; -fx-text-fill: -color-fg-emphasis; -fx-background-radius: 3;
     -fx-padding: 1 5 1 5; -fx-font-size: 0.82em;
 }
 .markwhen-cal-more { -fx-font-size: 0.75em; -fx-text-fill: -color-fg-muted; }
@@ -824,7 +824,7 @@
 .openapi-method {
     -fx-font-weight: bold;
     -fx-font-size: 0.8em;
-    -fx-text-fill: white;
+    -fx-text-fill: -color-fg-emphasis; /* the theme's on-emphasis ink: white is 1.68:1 in Editora Dark */
     -fx-padding: 2 8 2 8;
     -fx-background-radius: 4;
     -fx-min-width: 56;
@@ -835,7 +835,11 @@
 .openapi-method-put { -fx-background-color: -color-warning-emphasis; }
 .openapi-method-patch { -fx-background-color: -color-warning-emphasis; }
 .openapi-method-delete { -fx-background-color: -color-danger-emphasis; }
-.openapi-method-head, .openapi-method-options, .openapi-method-trace { -fx-background-color: -color-neutral-emphasis; }
+/* Neutral emphasis is a mid grey in both themes, where white is the readable ink (4.8:1 / 6.6:1). */
+.openapi-method-head, .openapi-method-options, .openapi-method-trace {
+    -fx-background-color: -color-neutral-emphasis;
+    -fx-text-fill: -color-light;
+}
 
 /* Independent preview color theme (toggled by the floating sun/moon control, persisted, separate from
    the app/editor theme). When "md-light"/"md-dark" is set on the preview pane, it redefines the
@@ -920,11 +924,13 @@
     -fx-border-radius: 4;
     -fx-background-radius: 4;
     -fx-padding: 1;
-    -fx-opacity: 0.92;
 }
+/* Thin single glyphs (−, +, ☾): at a regular weight under a translucent card they read as grey on grey.
+   Full opacity and a bold 14px keep them at the muted role's real contrast. */
 .md-zoom-button {
     -fx-padding: 1 8 1 8;
-    -fx-font-size: 13px;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
     -fx-text-fill: -color-fg-muted;
     -fx-background-radius: 3;
     -fx-min-width: 24px;
@@ -1255,6 +1261,7 @@
 .project-map-probe-text { -fx-fill: -color-fg-default; }
 .project-map-probe-muted { -fx-fill: -color-fg-muted; }
 .project-map-probe-accent { -fx-fill: -color-accent-emphasis; }
+.project-map-probe-on-accent { -fx-fill: -color-fg-emphasis; }
 .project-map-probe-warning { -fx-fill: -state-amber; }
 .project-map-probe-success { -fx-fill: -state-green; }
 .project-map-probe-folder { -fx-fill: -project-folder-color; }
@@ -1311,6 +1318,9 @@
 .project-tree .git-status-deleted, .project-tree .git-status-deleted .project-file-name,
 .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
+.project-tree .git-status-conflict, .project-tree .git-status-conflict .project-file-name,
+.git-tree .git-status-conflict { -fx-text-fill: -color-danger-fg; }
+.project-tree .git-status-conflict .toolbar-icon, .git-tree .git-status-conflict .toolbar-icon { -fx-fill: -color-danger-fg; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
 /* The M/A/D/R/U indicator (FileIcons.withStatusLetter) is its own Label inside the cell, so that it can
    be bold while the file name beside it is not. Being a child, it does not pick up the cell's
@@ -1326,6 +1336,8 @@
 .git-tree .git-status-renamed .git-status-letter { -fx-text-fill: -state-violet; }
 .project-tree .git-status-deleted .git-status-letter,
 .git-tree .git-status-deleted .git-status-letter { -fx-text-fill: -color-fg-muted; }
+.project-tree .git-status-conflict .git-status-letter,
+.git-tree .git-status-conflict .git-status-letter { -fx-text-fill: -color-danger-fg; }
 /* Git Log commit list: the short hash reads in the accent color, the subject in the default text color. */
 .git-log-panel .git-log-hash { -fx-fill: -color-accent-fg; }
 .git-log-panel .git-log-subject { -fx-fill: -color-fg-default; }
@@ -2092,9 +2104,9 @@
     -fx-padding: 0 6 0 6;
 }
 
-/* "dev mode" toolbar badge, shown only when launched with --dev (light red). */
+/* "dev mode" toolbar badge, shown only when launched with --dev (the state red). */
 .dev-mode-badge {
-    -fx-text-fill: #e57373;
+    -fx-text-fill: -state-red;
     -fx-font-size: 13px;
     -fx-font-weight: bold;
     -fx-padding: 0 6 0 6;
@@ -2461,6 +2473,16 @@
     -fx-font-size: 13px;
     -fx-background-color: -color-border-muted, -color-bg-subtle;
 }
+/* The base rule above would otherwise erase the theme's focused border (author beats user-agent). */
+.settings-search:focused {
+    -fx-background-color: -color-input-border-focused, -color-bg-default;
+    /* The theme hides a focused field's prompt, and this field has the focus when the window opens: it
+       was a blank, unlabelled box. The shortcut recorder is focused for as long as it exists. */
+    -fx-prompt-text-fill: -color-fg-muted;
+}
+.shortcut-capture:focused {
+    -fx-prompt-text-fill: -color-fg-muted;
+}
 /* The nav rail (search + sidebar) — kit .set-nav: the DEFAULT surface with a right border, sitting
    beside a SUBTLE page ground so the white cards on it actually read as cards. (This is the inverse
    of the old scheme, which put the grey on the rail and left cards white-on-white.) */
@@ -2489,6 +2511,10 @@
     -fx-background-color: -color-accent-subtle;
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
+}
+/* A category with no search hit is disabled (CategoryCell); say so, or it looks clickable and is not. */
+.settings-sidebar .list-cell.settings-sidebar-item:disabled {
+    -fx-opacity: 0.4;
 }
 .settings-content {
     -fx-background-color: -color-bg-subtle;
@@ -2554,6 +2580,17 @@
 .settings-git-missing {
     -fx-text-fill: -state-red;
     -fx-background-color: -state-red-bg;
+}
+/* "Does not apply here" (no Maven project for the active file) — a neutral fact, so no state colour. */
+.settings-git-neutral {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -color-neutral-muted;
+}
+/* Settings search with no hits: said in words, in place of a blank page. */
+.settings-search-empty {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 13px;
+    -fx-padding: 32 24 24 24;
 }
 
 /* ---- Settings card rows (UI Kit v1) ------------------------------------------------------------
@@ -2659,7 +2696,7 @@
 /* Static legend of the navigation keys at the bottom of the palette / Jump-to popups (mirrors the
    Switcher's footer). */
 .command-palette .palette-hint {
-    -fx-text-fill: -color-fg-subtle;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
     -fx-padding: 7 10 2 10;
 }
@@ -2680,6 +2717,15 @@
     -fx-padding: 4 8 4 8;
     -fx-spacing: 6;
     -fx-alignment: center-left;
+}
+
+/* Search options (match case / regex / whole word / …) in the Find bar and Find in Files: compact
+   toggle buttons with a short caption; the tooltip and the accessible name carry the full meaning. */
+.option-toggle {
+    -fx-padding: 3 7 3 7;
+    -fx-font-size: 12px;
+    -fx-min-height: 26;
+    -fx-background-radius: 6px, 5px;
 }
 
 .find-bar .find-bar-icon {
@@ -2909,7 +2955,8 @@
 .welcome-actions, .welcome-recent {
     -fx-spacing: 8;
 }
-/* Start actions + recent files are Hyperlinks in the accent color, no focus box. */
+/* Start actions + recent files are Hyperlinks in the accent color. No box at rest; keyboard focus
+   draws the shared ring (see "Keyboard focus" at the end of this file). */
 .welcome-action, .welcome-link {
     -fx-text-fill: -color-accent-fg;
     -fx-border-color: transparent;
@@ -3060,9 +3107,9 @@
 
 /* LSP: Problems tool window severity colors + the diagnostic hover tooltip. */
 .problems-panel .problem-lang-row { -fx-font-weight: bold; -fx-text-fill: -color-accent-fg; }
-.problems-panel .problem-error { -fx-text-fill: #e5484d; }
-.problems-panel .problem-warning { -fx-text-fill: #e2a03f; }
-.problems-panel .problem-info { -fx-text-fill: #4c8eda; }
+.problems-panel .problem-error { -fx-text-fill: -state-red; }
+.problems-panel .problem-warning { -fx-text-fill: -state-amber; }
+.problems-panel .problem-info { -fx-text-fill: -state-accent; }
 .lsp-diagnostic-tooltip {
     -fx-font-size: 12px;
     -fx-background-color: -color-bg-overlay;
@@ -3115,6 +3162,10 @@
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
 }
+/* The frame rows as dense as the variable rows beside them: the theme's default list-cell height is twice
+   that, which halved the frames a strip-high list can show. */
+.debug-panel .debug-stack { -fx-fixed-cell-size: 22px; }
+.debug-panel .debug-stack .list-cell { -fx-cell-size: 22px; -fx-alignment: center-left; }
 .debug-panel .split-pane {
     -fx-background-color: transparent;
     -fx-background-insets: 0;
@@ -3142,11 +3193,13 @@
 .debug-panel .debug-var-type { -fx-fill: -color-fg-muted; }
 .debug-panel .debug-scope-row { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
 .debug-panel .debug-add-watch { -fx-fill: -color-accent-fg; }
-.debug-panel .debug-val-string { -fx-fill: #3fb950; }   /* green, like the run/start accent */
-.debug-panel .debug-val-number { -fx-fill: #4493f8; }   /* blue */
-.debug-panel .debug-val-bool { -fx-fill: #d29922; }     /* amber */
+.debug-panel .debug-val-string { -fx-fill: -state-green; }  /* like the run/start accent */
+.debug-panel .debug-val-number { -fx-fill: -state-accent; }
+.debug-panel .debug-val-bool { -fx-fill: -state-amber; }
 .debug-panel .debug-val-null { -fx-fill: -color-fg-muted; }
 .debug-panel .debug-val-other { -fx-fill: -color-fg-default; }
+/* A watch the adapter could not evaluate: its message, not a value. */
+.debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
 /* Hover value tooltip in the editor while suspended (IntelliJ's value popup). */
 .debug-value-tooltip {
     -fx-font-size: 12px;
@@ -3158,8 +3211,8 @@
 .settings-experimental { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
 
 /* Green "Start / Continue" play button in the Debug toolbar (text + the play glyph). */
-.debug-panel .debug-start { -fx-text-fill: #3fb950; -fx-font-weight: bold; }
-.debug-panel .debug-start .toolbar-icon { -fx-fill: #3fb950; }
+.debug-panel .debug-start { -fx-text-fill: -state-green; -fx-font-weight: bold; }
+.debug-panel .debug-start .toolbar-icon { -fx-fill: -state-green; }
 .debug-panel .debug-start:disabled { -fx-opacity: 0.5; }
 /* The Run console's stdin field (compact, like the Debug evaluate field). */
 .run-panel .run-input {
@@ -3223,9 +3276,9 @@
 }
 
 /* Green play glyph for the gutter Run marker (compact source main line) + the right-click Run item. */
-.run-marker { -fx-fill: #3fb950; }
-.fold-gutter .run-slot:hover .run-marker { -fx-fill: #56d364; }
-/* JUnit test gutter ▶ — theme-aware accent so it's tellable-apart from the fixed-green script/make ▶. */
+.run-marker { -fx-fill: -state-green; }
+.fold-gutter .run-slot:hover .run-marker { -fx-fill: derive(-state-green, 25%); }
+/* JUnit test gutter ▶ — accent, so it's tellable-apart from the green script/make ▶. */
 .run-marker.test-run-marker { -fx-fill: -color-accent-fg; }
 .fold-gutter .run-slot:hover .run-marker.test-run-marker { -fx-fill: -color-accent-emphasis; }
 
@@ -3235,6 +3288,11 @@
 .breakpoint-marker.breakpoint-conditional { -fx-fill: #d29922; }
 .breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }
 .breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.5; }
+/* While a debug session is live: a breakpoint the adapter has not bound (its class is not loaded yet, or
+   the line has no code) is a hollow ring; one it refused, or whose condition it cannot evaluate, an amber one.
+   The glyph is drawn at half scale, so the stroke is twice the width it shows. */
+.breakpoint-marker.breakpoint-unverified { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 3.5; }
+.breakpoint-marker.breakpoint-unverified.breakpoint-rejected { -fx-stroke: -state-amber; }
 .fold-gutter .breakpoint-slot:hover { -fx-background-color: rgba(229, 20, 0, 0.12); }
 
 /* Current execution line while the debugger is suspended (a RichTextFX paragraph style). A translucent
@@ -3407,8 +3465,16 @@
    (click to select), so the list stays uncluttered. */
 .shortcut-row-clickable {
     -fx-cursor: hand;
-    -fx-padding: 2 4 2 4;
+    -fx-padding: 0 2 0 2;
     -fx-background-radius: 4;
+    /* The keyboard-focus ring below is this border recoloured, so focusing a row never shifts the list. */
+    -fx-border-color: transparent;
+    -fx-border-width: 2;
+    -fx-border-radius: 4;
+}
+/* :focused, not :focus-visible — the arrow keys move between rows with requestFocus(). */
+.shortcut-row-clickable:focused {
+    -fx-border-color: -color-accent-emphasis;
 }
 .shortcut-row-clickable:hover {
     -fx-background-color: -color-bg-subtle;
@@ -3420,7 +3486,7 @@
 
 /* Small "Beta" pill shown beside a still-beta feature's name in the Settings sidebar. */
 .settings-beta-pill {
-    -fx-background-color: -color-accent-muted;
+    -fx-background-color: -color-accent-subtle;
     -fx-text-fill: -color-accent-fg;
     -fx-background-radius: 8;
     -fx-padding: 0 6 0 6;
@@ -3492,6 +3558,8 @@
 }
 .image-viewer-holder { -fx-background-color: -color-bg-default; }
 .image-viewer-error { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+.image-viewer-loading { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+.image-viewer-note { -fx-text-fill: -color-fg-muted; -fx-padding: 0 4 0 10; }
 
 /* PDF viewer — mirrors the image viewer, plus page navigation. */
 .pdf-viewer { -fx-background-color: -color-bg-default; }
@@ -3539,6 +3607,7 @@
     -fx-padding: 1 8 1 8;
 }
 .hex-viewer-error { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
+.hex-viewer-loading { -fx-text-fill: -color-fg-muted; -fx-font-size: 1.05em; }
 /* The dump area: monospace, theme background/foreground, no line-number gutter. */
 .hex-viewer-area {
     -fx-font-family: "JetBrains Mono", "Consolas", "Menlo", monospace;
@@ -3607,7 +3676,7 @@
     -fx-padding: 0 6 0 6;
 }
 .shortcut-unbound {
-    -fx-text-fill: -color-fg-subtle;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
 }
 
@@ -3640,7 +3709,10 @@
 .tool-stripe-button:hover .icon-line {
     -fx-stroke: -color-fg-default;
 }
-.tool-stripe-button:selected .icon-line {
+/* Stripe buttons are plain Buttons carrying the custom :open / :tw-active pseudo-classes (never
+   :selected), so the line glyph mirrors the .toolbar-icon state rules for those. */
+.tool-stripe-button:open .icon-line,
+.tool-stripe-button:tw-active .icon-line {
     -fx-stroke: -color-accent-fg;
 }
 
@@ -3756,6 +3828,19 @@
 .combo-box-base, .choice-box {
     -fx-background-color: -color-border-default, -color-bg-subtle;
     -fx-background-radius: 7px, 6px;
+}
+/* …and because that base rule is an author rule, it beats the theme's state variants of the same
+   property whatever their specificity. Restate them on the kit's ground, in the theme's order. */
+.combo-box-base:success, .combo-box-base:success:focused,
+.choice-box:success, .choice-box:success:focused {
+    -fx-background-color: -color-success-emphasis, -color-bg-subtle;
+}
+.combo-box-base:danger, .combo-box-base:danger:focused,
+.choice-box:danger, .choice-box:danger:focused {
+    -fx-background-color: -color-danger-emphasis, -color-bg-subtle;
+}
+.combo-box-base:focused, .choice-box:focused {
+    -fx-background-color: -color-accent-emphasis, -color-bg-subtle;
 }
 .text-input {
     -fx-background-radius: 7px, 6px;
@@ -4007,7 +4092,7 @@
     -fx-padding: 7 10 8 10;
 }
 .switcher-hint {
-    -fx-text-fill: -color-fg-subtle;
+    -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
     -fx-padding: 7 10 2 10;
 }
@@ -4070,4 +4155,65 @@
    convention VS Code uses, and the same one .dirty-name uses for "not durable yet". */
 .tab-title.preview-tab-title {
     -fx-font-style: italic;
+}
+
+/* ---- Keyboard focus (one layer for every control) ----------------------------------------------
+   AtlantaFX marks focus by recolouring a control's 1px border layer, which this sheet's base-state
+   backgrounds (flat buttons, the transparent icon/toggle classes, combos, the Settings search) erase —
+   and the theme has no focus rule at all for check boxes, radio buttons, switches or hyperlinks. So the
+   indicator is drawn here, once, as a ring that does not depend on how a control paints itself.
+
+   `:focus-visible` is set only when focus arrives from the keyboard, so a mouse click never leaves a
+   ring behind. The ring is a 2px border with NEGATIVE insets: it sits just outside the control with a
+   1px gap, and a border whose inner edge is at or outside the bounds adds nothing to the control's
+   insets — so focusing never shifts layout. `-focus-ring` is a looked-up colour: 4.2–4.5:1 on the light
+   surfaces and 8.8–9.9:1 on the dark ones in the flagship themes (3:1 is the bar for an indicator).
+
+   Keep this block LAST: equal-specificity author rules are decided by order. */
+.root {
+    -focus-ring: -color-accent-emphasis;
+}
+.button:focus-visible,
+.toggle-button:focus-visible,
+.menu-button:focus-visible,
+.split-menu-button:focus-visible,
+.hyperlink:focus-visible,
+.combo-box-base:focus-visible,
+.choice-box:focus-visible,
+.check-box:focus-visible > .box,
+.radio-button:focus-visible > .radio,
+.toggle-switch:focus-visible > .thumb-area,
+.project-view-toggle:focus-visible,
+.file-info-tab:focus-visible,
+.image-viewer-btn:focus-visible,
+.pdf-viewer-btn:focus-visible,
+.test-chip:focus-visible {
+    -fx-border-color: -focus-ring;
+    -fx-border-width: 2;
+    -fx-border-insets: -3;
+    -fx-border-radius: 10;
+    -fx-border-style: solid;
+}
+.check-box:focus-visible > .box {
+    -fx-border-radius: 6;
+}
+.radio-button:focus-visible > .radio,
+.toggle-switch:focus-visible > .thumb-area {
+    -fx-border-radius: 999;
+}
+/* A text field already gets the theme's accent border on focus; from the keyboard it is thickened to
+   the same 2px weight by widening that border layer, which keeps the ring inside the field. */
+.text-field:focus-visible,
+.password-field:focus-visible {
+    -fx-background-insets: 0, 2px;
+}
+/* Stripe buttons sit flush against the window edge, where an outside ring would be cut off: draw it
+   inside, and take the 3px it occupies back out of the padding so the rail does not move. */
+.tool-stripe-button:focus-visible {
+    -fx-border-insets: 1;
+    -fx-border-radius: 6;
+    -fx-padding: 6 2 6 2;
+}
+.tool-stripe-horizontal .tool-stripe-button:focus-visible {
+    -fx-padding: 0 5 0 5;
 }

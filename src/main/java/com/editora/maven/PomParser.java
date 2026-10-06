@@ -1,8 +1,8 @@
 package com.editora.maven;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -29,13 +29,27 @@ public final class PomParser {
 
     private PomParser() {}
 
-    /** Reads and parses {@code pomXml} (UTF-8). */
+    /**
+     * Reads and parses {@code pomXml}, letting the XML parser decide the encoding.
+     *
+     * <p>The bytes go to the parser as bytes. Decoding them as UTF-8 first — as this did — took the decision
+     * away from the one component that knows the answer: a pom saved with a UTF-8 byte-order mark then began
+     * with a stray U+FEFF ("content is not allowed in prolog"), and one declaring
+     * {@code encoding="ISO-8859-1"} with an accented developer name was not valid UTF-8 at all. Both are
+     * poms Maven builds without complaint, and both were reported as malformed.
+     */
     public static PomModel parseFile(Path pomXml) throws IOException, PomParseException {
-        return parse(Files.readString(pomXml, StandardCharsets.UTF_8));
+        try (InputStream in = Files.newInputStream(pomXml)) {
+            return model(parseDocument(new InputSource(in)));
+        }
     }
 
     public static PomModel parse(String xml) throws PomParseException {
-        Element project = parseDocument(xml).getDocumentElement();
+        return model(parseDocument(xml));
+    }
+
+    private static PomModel model(Document document) throws PomParseException {
+        Element project = document.getDocumentElement();
         if (project == null || !"project".equals(project.getTagName())) {
             throw new PomParseException("Not a Maven pom.xml (missing <project> root element)");
         }
@@ -134,6 +148,14 @@ public final class PomParser {
     // set of child-element accessors rather than carrying a second copy of them.
 
     static Document parseDocument(String xml) throws PomParseException {
+        // Already-decoded text has no encoding left to detect, but it can still carry the byte-order mark
+        // its decoder passed through (an editor buffer does not) — which is not XML.
+        String text = xml != null && !xml.isEmpty() && xml.charAt(0) == '\uFEFF' ? xml.substring(1) : xml;
+        return parseDocument(new InputSource(new StringReader(text)));
+    }
+
+    /** The one XXE-hardened parse; the source carries either characters or bytes plus their own encoding. */
+    private static Document parseDocument(InputSource source) throws PomParseException {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             // XXE hardening: never resolve a DOCTYPE or an external/parameter entity.
@@ -144,7 +166,7 @@ public final class PomParser {
             dbf.setXIncludeAware(false);
             dbf.setExpandEntityReferences(false);
             DocumentBuilder builder = dbf.newDocumentBuilder();
-            return builder.parse(new InputSource(new StringReader(xml)));
+            return builder.parse(source);
         } catch (ParserConfigurationException | SAXException | IOException e) {
             throw new PomParseException("Malformed pom.xml: " + e.getMessage(), e);
         }

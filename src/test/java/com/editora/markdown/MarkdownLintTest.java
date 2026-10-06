@@ -127,6 +127,23 @@ class MarkdownLintTest {
     }
 
     @Test
+    void md034IgnoresUrlsThatAreAlreadyLinks() {
+        // The URL used as its own link text, and URLs in inline-HTML attributes, are not bare.
+        assertFalse(has("# T\n\nSee [https://x.io](https://x.io) here.\n", "MD034"));
+        assertFalse(has("# T\n\n<a href=\"https://x.io/a\">docs</a>\n", "MD034"));
+        assertFalse(has("# T\n\n<img src=\"https://x.io/a.png\" alt=\"a\">\n", "MD034"));
+        // …but a bare URL next to a link, or after a comparison, still is.
+        assertTrue(has("# T\n\n[docs](https://x.io) and https://y.io\n", "MD034"));
+        assertTrue(has("# T\n\nif a < b see https://y.io > c\n", "MD034"));
+    }
+
+    @Test
+    void md052IgnoresIndexingInsideInlineCode() {
+        assertFalse(has("# T\n\nRead `m[i][j]` first.\n", "MD052"));
+        assertTrue(has("# T\n\nRead `x` then [a][missing].\n", "MD052"));
+    }
+
+    @Test
     void md041FirstLineHeading() {
         assertTrue(has("Not a heading\n", "MD041"));
         assertFalse(has("# Heading\n", "MD041"));

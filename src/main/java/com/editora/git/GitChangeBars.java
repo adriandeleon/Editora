@@ -6,7 +6,8 @@ import java.util.Map;
 
 /**
  * Pure decision helpers for the editor's Git gutter change bars, extracted from {@code MainController} so the
- * logic is unit-testable ahead of the larger Git-coordinator extraction. java.base + the git models only.
+ * logic is unit-testable ahead of the larger Git-coordinator extraction. java.base + the git models only
+ * ({@link #shouldRediff} resolves symlinks, so it touches the file system).
  */
 public final class GitChangeBars {
 
@@ -34,6 +35,11 @@ public final class GitChangeBars {
         if (bufferPath == null || repoRoot == null || active || huge) {
             return false;
         }
-        return bufferPath.toAbsolutePath().startsWith(repoRoot.toAbsolutePath());
+        if (bufferPath.getFileSystem() != repoRoot.getFileSystem()) {
+            return false; // a remote (SFTP) buffer is never inside a local repository
+        }
+        // Not a lexical prefix test: git reports the real root, a buffer keeps its as-opened path, and the
+        // two share no prefix when the project is reached through a symlink (see GitService.repoRelative).
+        return GitService.repoRelative(repoRoot, bufferPath) != null;
     }
 }

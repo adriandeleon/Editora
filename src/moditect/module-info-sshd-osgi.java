@@ -65,6 +65,7 @@ module org.apache.sshd.osgi {
     exports org.apache.sshd.common.kex.extension.parser;
     exports org.apache.sshd.common.keyprovider;
     exports org.apache.sshd.common.mac;
+    exports org.apache.sshd.common.net;
     exports org.apache.sshd.common.random;
     exports org.apache.sshd.common.session;
     exports org.apache.sshd.common.session.helpers;

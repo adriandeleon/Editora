@@ -61,4 +61,39 @@ class BreadcrumbTrailTest {
         assertEquals(Path.of("/"), trail.get(0).path());
         assertEquals("/", trail.get(0).label());
     }
+
+    private static List<String> labels(Path file, Path home, Path project) {
+        return BreadcrumbTrail.of(file, home, project).stream()
+                .map(BreadcrumbTrail.Crumb::label)
+                .toList();
+    }
+
+    @Test
+    void aFileInsideTheProjectStartsAtTheProjectRoot() {
+        Path home = Path.of("/home/adl");
+        Path project = Path.of("/home/adl/src/Editora");
+        assertEquals(
+                List.of("Editora", "src", "main", "App.java"),
+                labels(Path.of("/home/adl/src/Editora/src/main/App.java"), home, project),
+                "the trail starts at the project folder, not at ~");
+        List<BreadcrumbTrail.Crumb> trail = BreadcrumbTrail.of(Path.of("/home/adl/src/Editora/pom.xml"), home, project);
+        assertEquals(project, trail.get(0).path(), "the first crumb navigates to the project root itself");
+        assertEquals(Path.of("/home/adl/src/Editora/pom.xml"), trail.get(1).path());
+        assertEquals(List.of("Editora"), labels(project, home, project), "the root itself is one crumb");
+    }
+
+    @Test
+    void aFileOutsideTheProjectKeepsTheFullTrail() {
+        Path home = Path.of("/home/adl");
+        Path project = Path.of("/home/adl/src/Editora");
+        assertEquals(List.of("etc", "hosts"), labels(Path.of("/etc/hosts"), home, project));
+        assertEquals(
+                List.of("~", "src", "Editora-notes", "todo.md"),
+                labels(Path.of("/home/adl/src/Editora-notes/todo.md"), home, project),
+                "a sibling whose name merely starts with the project's is outside it");
+        assertEquals(
+                List.of("~", "src", "Editora", "pom.xml"),
+                labels(Path.of("/home/adl/src/Editora/pom.xml"), home, null),
+                "no project: today's behaviour");
+    }
 }

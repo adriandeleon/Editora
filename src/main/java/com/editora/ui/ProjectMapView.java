@@ -378,9 +378,14 @@ final class ProjectMapView extends VBox {
 
     void setRoot(Path root) {
         Path normalized = ProjectMapModel.normalize(root);
-        if (java.util.Objects.equals(this.root, normalized)) {
+        // Not Objects.equals: two SFTP paths on different connections throw from equals() instead of
+        // answering false, which made mounting a second host (or reconnecting to the first) fail half-way.
+        if (com.editora.config.PathKeys.samePath(this.root, normalized)) {
             return;
         }
+        boolean otherFileSystem = this.root != null
+                && normalized != null
+                && !com.editora.config.PathKeys.sameFileSystem(this.root, normalized);
         this.root = normalized;
         closeAllPreviews();
         expanded.clear();
@@ -390,6 +395,11 @@ final class ProjectMapView extends VBox {
         pendingSelection = normalized;
         setOutputEnabled(false);
         surface.resetForRoot();
+        if (otherFileSystem) {
+            // Until the reload lands the surface would compare the old connection's entries with the new
+            // root's paths, and those comparisons throw too.
+            surface.setEntries(List.of(), Set.of());
+        }
         if (normalized != null) {
             expanded.add(normalized);
             recordSelection(normalized);
@@ -950,7 +960,10 @@ final class ProjectMapView extends VBox {
 
     void revealPath(Path path) {
         Path normalized = ProjectMapModel.normalize(path);
-        if (normalized == null || root == null || !normalized.startsWith(root)) {
+        if (normalized == null
+                || root == null
+                || !com.editora.config.PathKeys.sameFileSystem(normalized, root)
+                || !normalized.startsWith(root)) {
             return;
         }
         if (surface.contains(normalized)) {
@@ -973,7 +986,11 @@ final class ProjectMapView extends VBox {
         backButton.setDisable(historyIndex <= 0);
         forwardButton.setDisable(historyIndex < 0 || historyIndex >= selectionHistory.size() - 1);
         Path selected = surface.selectedEntry().map(ProjectMapModel.Entry::path).orElse(pendingSelection);
-        if (selected == null || root == null || !selected.startsWith(root)) {
+        // The surface may still hold the previous root's selection, which can be on another connection.
+        if (selected == null
+                || root == null
+                || !com.editora.config.PathKeys.sameFileSystem(selected, root)
+                || !selected.startsWith(root)) {
             breadcrumbs.getChildren().clear();
             return;
         }
@@ -1041,6 +1058,9 @@ final class ProjectMapView extends VBox {
         private final Rectangle textProbe = probe("project-map-probe-text");
         private final Rectangle mutedProbe = probe("project-map-probe-muted");
         private final Rectangle accentProbe = probe("project-map-probe-accent");
+        /** Ink on the accent fill ({@code -color-fg-emphasis}): white suits a dark accent only. */
+        private final Rectangle onAccentProbe = probe("project-map-probe-on-accent");
+
         private final Rectangle warningProbe = probe("project-map-probe-warning");
         private final Rectangle successProbe = probe("project-map-probe-success");
         private final Rectangle folderProbe = probe("project-map-probe-folder");
@@ -1143,6 +1163,7 @@ final class ProjectMapView extends VBox {
                             textProbe,
                             mutedProbe,
                             accentProbe,
+                            onAccentProbe,
                             warningProbe,
                             successProbe,
                             folderProbe,
@@ -1169,6 +1190,7 @@ final class ProjectMapView extends VBox {
                     textProbe,
                     mutedProbe,
                     accentProbe,
+                    onAccentProbe,
                     warningProbe,
                     successProbe,
                     folderProbe,
@@ -2082,7 +2104,7 @@ final class ProjectMapView extends VBox {
             drawIcon(g, entry, iconX, iconY);
             g.setFill(
                     isSelected
-                            ? Color.WHITE
+                            ? onAccent()
                             : openPaths.contains(entry.path()) ? accent : color(textProbe, Color.web("#d8dee9")));
             g.setFont(Font.font("System", isSelected ? FontWeight.SEMI_BOLD : FontWeight.NORMAL, 12 * zoom));
             g.fillText(entry.name(), box.x() + 31 * zoom, box.y() + 20.5 * zoom);
@@ -2090,12 +2112,12 @@ final class ProjectMapView extends VBox {
             drawStatusDots(g, entry, box);
             drawFileMarkers(g, entry, box, isSelected);
             if (!entry.directory()) {
-                g.setFill(isSelected ? Color.WHITE : color(mutedProbe, Color.web("#8b949e")));
+                g.setFill(isSelected ? onAccent() : color(mutedProbe, Color.web("#8b949e")));
                 g.setFont(Font.font(Math.max(9, 11 * zoom)));
                 g.fillText("◉", box.x() + box.width() - 21 * zoom, box.y() + 20.5 * zoom);
             }
             if (entry.directory() && expandedSnapshot.contains(entry.path())) {
-                g.setFill(isSelected ? Color.WHITE : color(mutedProbe, Color.web("#8b949e")));
+                g.setFill(isSelected ? onAccent() : color(mutedProbe, Color.web("#8b949e")));
                 String indicator =
                         switch (flowDirection) {
                             case LEFT_TO_RIGHT -> "›";
@@ -2113,7 +2135,7 @@ final class ProjectMapView extends VBox {
             if (entry.directory() || !openPaths.contains(entry.path())) {
                 return;
             }
-            g.setFill(selectedNode ? Color.WHITE : color(accentProbe, Color.web("#388bfd")));
+            g.setFill(selectedNode ? onAccent() : color(accentProbe, Color.web("#388bfd")));
             g.fillRoundRect(
                     box.x() + 2 * zoom, box.y() + 7 * zoom, 3 * zoom, box.height() - 14 * zoom, 3 * zoom, 3 * zoom);
         }
@@ -2206,13 +2228,13 @@ final class ProjectMapView extends VBox {
             double y = box.y() + 10 * zoom;
             g.setLineWidth(Math.max(1, 1.25 * zoom));
             if (notedPaths.contains(entry.path())) {
-                g.setStroke(selectedNode ? Color.WHITE : color(accentProbe, Color.web("#388bfd")));
+                g.setStroke(selectedNode ? onAccent() : color(accentProbe, Color.web("#388bfd")));
                 g.strokeRoundRect(x - 4 * zoom, y, 8 * zoom, 7 * zoom, 2 * zoom, 2 * zoom);
                 g.strokeLine(x - 2 * zoom, y + 7 * zoom, x - 4 * zoom, y + 9 * zoom);
                 x -= 13 * zoom;
             }
             if (bookmarkedPaths.contains(entry.path())) {
-                g.setStroke(selectedNode ? Color.WHITE : color(warningProbe, Color.web("#d29922")));
+                g.setStroke(selectedNode ? onAccent() : color(warningProbe, Color.web("#d29922")));
                 g.beginPath();
                 g.moveTo(x - 3.5 * zoom, y);
                 g.lineTo(x + 3.5 * zoom, y);
@@ -2846,6 +2868,11 @@ final class ProjectMapView extends VBox {
             probe.setManaged(false);
             probe.setMouseTransparent(true);
             return probe;
+        }
+
+        /** Text, glyphs and markers drawn over the selected node's accent fill. */
+        private Color onAccent() {
+            return color(onAccentProbe, Color.WHITE);
         }
 
         private Color color(Rectangle probe, Color fallback) {

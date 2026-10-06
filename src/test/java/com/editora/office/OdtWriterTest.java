@@ -39,6 +39,42 @@ class OdtWriterTest {
         assertTrue(xml.contains("text:style-name=\"Horizontal_20_Line\""), "thematic break");
     }
 
+    /** The plain text of every paragraph/heading in {@code content.xml}, one per line. */
+    private static String odtText(String md) throws Exception {
+        String xml = OdtWriter.contentXml(md, null, null, new ArrayList<>());
+        DocumentBuilderFactory f = DocumentBuilderFactory.newInstance();
+        f.setNamespaceAware(true);
+        org.w3c.dom.Document doc =
+                f.newDocumentBuilder().parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        String ns = "urn:oasis:names:tc:opendocument:xmlns:text:1.0";
+        StringBuilder out = new StringBuilder();
+        org.w3c.dom.NodeList all = doc.getElementsByTagNameNS(ns, "*");
+        for (int i = 0; i < all.getLength(); i++) {
+            String name = all.item(i).getLocalName();
+            if (name.equals("p") || name.equals("h")) {
+                out.append(all.item(i).getTextContent()).append('\n');
+            }
+        }
+        return out.toString();
+    }
+
+    @Test
+    void nothingWithTextIsDroppedFromTheDocument() throws Exception {
+        String text = odtText(DocxWriterTest.EVERYTHING); // also proves the XML is well-formed
+        assertTrue(text.contains("Install the tools:"), text);
+        assertTrue(text.contains("npm ci --prefer-offline"), text);
+        assertTrue(text.contains("quoted inside the item"), text);
+        assertTrue(text.contains("☑ done task") && text.contains("☐ open task"), "task state survives: " + text);
+        assertTrue(text.contains("A claim[src] and more."), "the footnote reference is visible: " + text);
+        assertTrue(text.contains("<summary>Raw html block</summary>"), "raw HTML is shown as source: " + text);
+        assertTrue(!text.contains("invisible comment"), text);
+        assertTrue(text.contains("[src] The footnote body, with bold."), text);
+        assertTrue(text.contains("Second footnote paragraph."), text);
+        assertTrue(
+                text.indexOf("After the footnote.") < text.indexOf("[src] The footnote body"),
+                "footnotes are written at the end: " + text);
+    }
+
     @Test
     void contentXmlIsWellFormed() {
         String xml = OdtWriter.contentXml(MD, null, null, new ArrayList<>());

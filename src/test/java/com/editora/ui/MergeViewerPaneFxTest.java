@@ -65,6 +65,44 @@ class MergeViewerPaneFxTest {
         }
     }
 
+    /** A TextArea drops control characters; the resolution must not lose them from untouched lines. */
+    @Test
+    void applyKeepsControlCharactersOutsideTheEditedLines() throws Exception {
+        var file = com.editora.diff.ConflictParser.parse(java.util.List.of(
+                "section one",
+                "\f",
+                "two \u001b[0m esc",
+                "<<<<<<< HEAD",
+                "ours",
+                "=======",
+                "theirs",
+                ">>>>>>> b",
+                "end"));
+        AtomicReference<String> applied = new AtomicReference<>();
+        MergeViewerPane pane = FxTestSupport.callOnFx(
+                () -> new MergeViewerPane("merge", file, "Monospaced", 13, "\n", true, applied::set));
+        Stage stage = FxTestSupport.callOnFx(() -> {
+            Stage window = new Stage();
+            window.setScene(new Scene(new StackPane(pane.node()), 900, 650));
+            window.show();
+            return window;
+        });
+        try {
+            TextArea result = FxTestSupport.field(pane, "resultArea");
+            FxTestSupport.runOnFx(button((Parent) pane.node(), "Accept Ours")::fire);
+            Button save = button((Parent) pane.node(), "Save resolution");
+            FxTestSupport.runOnFx(save::fire);
+            assertEquals("section one\n\f\ntwo \u001b[0m esc\nours\nend\n", applied.get());
+
+            // A hand edit of one line leaves the others exact.
+            FxTestSupport.runOnFx(() -> result.setText(result.getText().replace("ours", "mine")));
+            FxTestSupport.runOnFx(save::fire);
+            assertEquals("section one\n\f\ntwo \u001b[0m esc\nmine\nend\n", applied.get());
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
     private static Button button(Parent root, String text) {
         return root.lookupAll(".button").stream()
                 .filter(Button.class::isInstance)

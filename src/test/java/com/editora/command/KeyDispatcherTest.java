@@ -149,4 +149,177 @@ class KeyDispatcherTest {
         assertFalse(KeyDispatcher.plainAltActive(false, false, false)); // plain key
         assertFalse(KeyDispatcher.plainAltActive(false, false, true)); // Ctrl-only chord
     }
+
+    // --- a focused text field keeps editor-context chords (the Find-bar C-k defect) ---
+
+    @Test
+    void aTextFieldKeepsEditorContextChordsButNotCancel() {
+        // In a plain text field (not inside a key-owning window) caret/edit chords belong to the field…
+        assertTrue(KeyDispatcher.leftToFocusOwner("edit.killLine", false, true));
+        assertTrue(KeyDispatcher.leftToFocusOwner("edit.paste", false, true));
+        assertTrue(KeyDispatcher.leftToFocusOwner("nav.lineStart", false, true));
+        assertTrue(KeyDispatcher.leftToFocusOwner("edit.universalArgument", false, true));
+        // …but cancel stays global, so C-g still closes the find bar / palette from inside their fields…
+        assertFalse(KeyDispatcher.leftToFocusOwner(KeyDispatcher.CANCEL, false, true));
+        // …and so does every non-editor command (find next, palette, tool windows).
+        assertFalse(KeyDispatcher.leftToFocusOwner("find.show", false, true));
+        assertFalse(KeyDispatcher.leftToFocusOwner("palette.show", false, true));
+        assertFalse(KeyDispatcher.leftToFocusOwner(null, false, true));
+    }
+
+    @Test
+    void aKeyOwningWindowKeepsEveryEditorContextChordIncludingCancel() {
+        assertTrue(KeyDispatcher.leftToFocusOwner("nav.lineDown", true, false));
+        assertTrue(KeyDispatcher.leftToFocusOwner(KeyDispatcher.CANCEL, true, false));
+        assertTrue(KeyDispatcher.leftToFocusOwner(KeyDispatcher.CANCEL, true, true), "owning wins over the field rule");
+        assertFalse(KeyDispatcher.leftToFocusOwner("palette.show", true, true));
+    }
+
+    @Test
+    void theEditorItselfKeepsNothing() {
+        assertFalse(KeyDispatcher.leftToFocusOwner("edit.killLine", false, false));
+        assertFalse(KeyDispatcher.inTextInput(null));
+        assertFalse(KeyDispatcher.inTextInput(new javafx.scene.layout.Region()), "a non-text node is not a field");
+    }
+
+    // --- AltGr (reported as Ctrl+Alt outside macOS) is typing, not a C-M- chord ---
+
+    @Test
+    void altGrTextNeedsTheAltGrKeyAndBothModifiers() {
+        assertTrue(KeyDispatcher.altGrText(false, true, true, true));
+        // Ctrl+LEFT Alt+letter (US layout, no AltGr key held) stays a chord.
+        assertFalse(KeyDispatcher.altGrText(false, true, true, false));
+        // A stale AltGr flag never turns a plain Alt or plain Ctrl chord into text.
+        assertFalse(KeyDispatcher.altGrText(false, false, true, true));
+        assertFalse(KeyDispatcher.altGrText(false, true, false, true));
+        // macOS: Option is Meta; its glyphs are handled by the KEY_TYPED rule instead.
+        assertFalse(KeyDispatcher.altGrText(true, true, true, true));
+    }
+
+    private static final class Recorder {
+        final java.util.List<String> ran = new java.util.ArrayList<>();
+        final KeyDispatcher dispatcher;
+
+        Recorder(boolean mac) {
+            KeymapManager km = new KeymapManager();
+            km.loadNamed("emacs", mac); // C-M-e is nav.endOfDefun
+            CommandRegistry registry = new CommandRegistry();
+            registry.register(Command.of("nav.endOfDefun", "End of Defun", () -> ran.add("nav.endOfDefun")));
+            dispatcher = new KeyDispatcher(registry, km, s -> {}, mac);
+        }
+    }
+
+    @Test
+    void altGrPlusLetterIsLeftToTextInputOnWindows() {
+        Recorder r = new Recorder(false);
+        // AltGr down: Windows sends a synthetic Ctrl and then the AltGr key itself.
+        r.dispatcher.handle(press(KeyCode.CONTROL, false, true, false, false));
+        r.dispatcher.handle(press(KeyCode.ALT_GRAPH, false, true, true, false));
+        KeyEvent e = press(KeyCode.E, false, true, true, false); // AltGr+E: the euro sign on DE/ES/IT layouts
+        r.dispatcher.handle(e);
+        assertFalse(e.isConsumed(), "the press must fall through so its KEY_TYPED can type the character");
+        assertTrue(r.ran.isEmpty(), "C-M-e (nav.endOfDefun) must not run");
+        KeyEvent typed = new KeyEvent(KeyEvent.KEY_TYPED, "€", "", KeyCode.UNDEFINED, false, true, true, false);
+        r.dispatcher.handleTyped(typed);
+        assertFalse(typed.isConsumed(), "the composed character must reach the focused control");
+    }
+
+    @Test
+    void controlLeftAltLetterStillDispatchesItsChord() {
+        Recorder r = new Recorder(false);
+        r.dispatcher.handle(press(KeyCode.CONTROL, false, true, false, false));
+        r.dispatcher.handle(press(KeyCode.ALT, false, true, true, false)); // Left Alt, not AltGr
+        KeyEvent e = press(KeyCode.E, false, true, true, false);
+        r.dispatcher.handle(e);
+        assertTrue(e.isConsumed());
+        assertEquals(java.util.List.of("nav.endOfDefun"), r.ran, "C-M-e on a US layout is unchanged");
+    }
+
+    @Test
+    void releasingAltGrRestoresControlAltChords() {
+        Recorder r = new Recorder(false);
+        r.dispatcher.handle(press(KeyCode.ALT_GRAPH, false, true, true, false));
+        r.dispatcher.handleReleased(
+                new KeyEvent(KeyEvent.KEY_RELEASED, "", "", KeyCode.ALT_GRAPH, false, false, false, false));
+        r.dispatcher.handle(press(KeyCode.E, false, true, true, false));
+        assertEquals(java.util.List.of("nav.endOfDefun"), r.ran);
+    }
+
+    @Test
+    void aMissedAltGrReleaseDoesNotOutliveTheNextPlainKey() {
+        Recorder r = new Recorder(false);
+        r.dispatcher.handle(press(KeyCode.ALT_GRAPH, false, true, true, false));
+        // The release went to another window. Any key pressed without Alt proves AltGr is no longer held.
+        r.dispatcher.handle(press(KeyCode.A, false, false, false, false));
+        r.dispatcher.handle(press(KeyCode.E, false, true, true, false));
+        assertEquals(java.util.List.of("nav.endOfDefun"), r.ran);
+    }
+
+    @Test
+    void onMacOptionControlChordsAreNeverMistakenForAltGr() {
+        Recorder r = new Recorder(true);
+        r.dispatcher.handle(press(KeyCode.ALT_GRAPH, false, true, true, false));
+        r.dispatcher.handle(press(KeyCode.E, false, true, true, false));
+        assertEquals(java.util.List.of("nav.endOfDefun"), r.ran);
+    }
+
+    // --- a component can claim a bare key over a global binding (the Project tree's F2 = rename file) ---
+
+    private static KeyEvent pressAt(javafx.scene.Node target, KeyCode code) {
+        return new KeyEvent(target, target, KeyEvent.KEY_PRESSED, "", "", code, false, false, false, false);
+    }
+
+    @Test
+    void aClaimedKeyIsLeftToItsComponentEvenWhenBoundGlobally() {
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("vscode", false); // F2 is lsp.rename — a global, non-editor-context command
+        assertEquals("lsp.rename", km.commandFor("f2"));
+        java.util.List<String> ran = new java.util.ArrayList<>();
+        CommandRegistry registry = new CommandRegistry();
+        registry.register(Command.of("lsp.rename", "Rename Symbol", () -> ran.add("lsp.rename")));
+        KeyDispatcher d = new KeyDispatcher(registry, km, s -> {}, false);
+
+        javafx.scene.layout.Region tree = new javafx.scene.layout.Region();
+        tree.getProperties().put(KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("f2", "delete"));
+        javafx.scene.layout.Region cell = new javafx.scene.layout.Region();
+        javafx.scene.layout.Pane holder = new javafx.scene.layout.Pane(cell);
+        tree.getProperties().put("holder", holder); // unrelated properties do not confuse the lookup
+
+        KeyEvent inTree = pressAt(tree, KeyCode.F2);
+        d.handle(inTree);
+        assertFalse(inTree.isConsumed(), "F2 in the tree is the tree's key");
+        assertTrue(ran.isEmpty(), "…so the global lsp.rename must not run");
+
+        KeyEvent elsewhere = pressAt(cell, KeyCode.F2); // a node with no claiming ancestor
+        d.handle(elsewhere);
+        assertTrue(elsewhere.isConsumed());
+        assertEquals(java.util.List.of("lsp.rename"), ran, "everywhere else F2 is still the keymap's command");
+    }
+
+    @Test
+    void aClaimOnlyCoversTheKeysItNames() {
+        KeymapManager km = new KeymapManager();
+        km.loadNamed("vscode", false);
+        java.util.List<String> ran = new java.util.ArrayList<>();
+        CommandRegistry registry = new CommandRegistry();
+        registry.register(Command.of("palette.show", "Palette", () -> ran.add("palette.show")));
+        KeyDispatcher d = new KeyDispatcher(registry, km, s -> {}, false);
+        javafx.scene.layout.Region tree = new javafx.scene.layout.Region();
+        tree.getProperties().put(KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("delete"));
+        d.handle(pressAt(tree, KeyCode.F1)); // F1 = palette.show in the VS Code keymap, not claimed
+        assertEquals(java.util.List.of("palette.show"), ran);
+    }
+
+    /** A transient list over the editor takes a chord only while the keymap binds it to the command it stands in for. */
+    @Test
+    void ownedChordsYieldOnlyTheNamedChordBoundToTheNamedCommand() {
+        var chords = java.util.Map.of("C-n", "nav.lineDown", "C-g", "edit.cancel");
+        assertTrue(KeyDispatcher.chordOwned(chords, "C-n", "nav.lineDown"));
+        assertTrue(KeyDispatcher.chordOwned(chords, "C-g", "edit.cancel"));
+        assertFalse(KeyDispatcher.chordOwned(chords, "C-a", "nav.lineStart"), "every other chord stays on the keymap");
+        assertFalse(KeyDispatcher.chordOwned(chords, "C-g", "nav.goToLine"), "same chord, another keymap's meaning");
+        assertFalse(KeyDispatcher.chordOwned(chords, "C-n", null));
+        assertFalse(KeyDispatcher.chordOwned(null, "C-n", "nav.lineDown"));
+        assertFalse(KeyDispatcher.chordOwned(Boolean.TRUE, "C-n", "nav.lineDown"));
+    }
 }

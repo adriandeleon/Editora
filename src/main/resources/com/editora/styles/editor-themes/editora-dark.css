@@ -14,7 +14,7 @@
 
 .minimap { -fx-background-color: #141722; -fx-border-color: #2a2e3f; }
 
-.editor-area .lineno { -fx-background-color: #141722; -fx-text-fill: #6c7288; }
+.editor-area .lineno { -fx-background-color: #141722; -fx-text-fill: #7c8297; } /* 4.7:1 on the gutter */
 .editor-area .fold-header-line { -fx-background-color: #232736; }
 .editor-area .fold-gutter { -fx-background-color: #141722; }
 .editor-area .fold-gutter .lineno { -fx-background-color: transparent; }

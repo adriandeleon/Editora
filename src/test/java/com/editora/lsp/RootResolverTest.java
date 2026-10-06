@@ -9,7 +9,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RootResolverTest {
 
@@ -90,5 +92,47 @@ class RootResolverTest {
         Path file = Files.createFile(dir.resolve("Main.java"));
         assertEquals(dir.toAbsolutePath().normalize(), RootResolver.findMarkerRoot(file, List.of(".git")));
         assertNull(RootResolver.findMarkerRoot(file, List.of(".git"), true), "filesOnly ignores a dir marker");
+    }
+
+    /** A dotfiles {@code ~/.git} or a stray {@code ~/package.json} must not make the home directory a workspace. */
+    @Test
+    void aMarkerInTheHomeDirectoryDoesNotRootALooseFileThere(@TempDir Path tmp) throws IOException {
+        Path home = Files.createDirectories(tmp.resolve("home/me"));
+        Files.createDirectories(home.resolve(".git"));
+        Files.createFile(home.resolve("package.json"));
+        Path dir = Files.createDirectories(home.resolve("Downloads/tmp"));
+        Path file = Files.createFile(dir.resolve("note.py"));
+
+        assertEquals(dir, RootResolver.resolve(null, file, List.of(".git", "package.json"), home));
+        // A real project below home is unaffected.
+        Path project = Files.createDirectories(home.resolve("src/app"));
+        Files.createFile(project.resolve("package.json"));
+        Path inProject = Files.createFile(project.resolve("index.py"));
+        assertEquals(project, RootResolver.resolve(null, inProject, List.of(".git", "package.json"), home));
+    }
+
+    @Test
+    void aFilesystemRootIsNeverAnInferredWorkspace(@TempDir Path tmp) {
+        Path fsRoot = tmp.toAbsolutePath().getRoot();
+        assertTrue(RootResolver.tooBroad(fsRoot, null));
+        assertFalse(RootResolver.tooBroad(tmp, null));
+    }
+
+    /** One project reached by two spellings (a symlinked parent) is one workspace, in the project's spelling. */
+    @Test
+    void aFileReachedByItsRealPathStillBelongsToTheSymlinkedProject(@TempDir Path tmp) throws IOException {
+        Path data = Files.createDirectories(tmp.resolve("data/proj/src"));
+        Files.createFile(tmp.resolve("data/proj/pom.xml"));
+        Path real = Files.createFile(data.resolve("B.java")).toRealPath();
+        Path link;
+        try {
+            link = Files.createSymbolicLink(tmp.resolve("work"), tmp.resolve("data"));
+        } catch (UnsupportedOperationException | IOException e) {
+            org.junit.jupiter.api.Assumptions.abort("symbolic links are not available here");
+            return;
+        }
+        Path project = link.resolve("proj");
+
+        assertEquals(project.toAbsolutePath().normalize(), RootResolver.resolve(project, real, MARKERS, null));
     }
 }

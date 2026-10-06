@@ -157,11 +157,7 @@ final class ToolbarCoordinator {
         b.setGraphic(ToolbarIcons.node(item.iconKey()));
         b.getStyleClass().addAll("button-icon", "flat", "toolbar-button");
         String base = tr("command." + item.commandId());
-        String chord = keymap.bindings().entrySet().stream()
-                .filter(e -> item.commandId().equals(e.getValue()))
-                .map(Map.Entry::getKey)
-                .findFirst()
-                .orElse(null);
+        String chord = keymap.displayChord(item.commandId());
         b.setTooltip(new Tooltip(chord == null || chord.isEmpty() ? base : base + " (" + chord + ")"));
         b.setOnAction(e -> registry.run(item.commandId()));
         return b;

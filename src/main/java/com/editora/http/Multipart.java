@@ -98,12 +98,9 @@ public final class Multipart {
         String filePath = null;
         for (; i < lines.size(); i++) {
             String t = lines.get(i).stripLeading();
-            if (filePath == null && content.length() == 0 && t.startsWith("<") && !t.startsWith("<>")) {
-                String ref = t.substring(1).strip();
-                if (ref.startsWith("@")) {
-                    ref = ref.substring(1).strip();
-                }
-                filePath = ref;
+            // Same rule as a request body: "< path" needs the whitespace, so an XML/HTML part stays inline.
+            if (filePath == null && content.length() == 0 && HttpFile.isBodyFileRef(t)) {
+                filePath = HttpFile.parseBodyRef(t).path();
                 continue;
             }
             if (content.length() > 0) {
@@ -117,6 +114,16 @@ public final class Multipart {
     /** Assembles the multipart wire bytes; inline parts pass through {@code subst} and file parts are read
      *  from {@code baseDir}. Best-effort — a missing file leaves its part empty rather than throwing. */
     public static byte[] build(List<Part> parts, String boundary, Path baseDir, Function<String, String> subst) {
+        return build(parts, boundary, baseDir, subst, new ArrayList<>());
+    }
+
+    /**
+     * As {@link #build(List, String, Path, Function)}, but reports each file part that could not be read
+     * (missing, unreadable, or outside the request file's folder) in {@code problems}, so the caller can
+     * refuse to send a form whose upload is silently empty.
+     */
+    public static byte[] build(
+            List<Part> parts, String boundary, Path baseDir, Function<String, String> subst, List<String> problems) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         String delim = "--" + boundary;
         for (Part p : parts) {
@@ -129,9 +136,13 @@ public final class Multipart {
                 try {
                     // contained: a file part must not read outside the request file's own folder
                     Path file = HttpPaths.contained(baseDir, p.filePath());
-                    out.writeBytes(file == null ? new byte[0] : Files.readAllBytes(file));
-                } catch (Exception ignore) {
-                    // a missing file part — leave it empty
+                    if (file == null) {
+                        problems.add("multipart file is outside the request folder: " + p.filePath());
+                    } else {
+                        out.writeBytes(Files.readAllBytes(file));
+                    }
+                } catch (Exception e) {
+                    problems.add("multipart file not found: " + p.filePath()); // the part stays empty
                 }
             } else {
                 write(out, subst == null ? p.inlineBody() : subst.apply(p.inlineBody()));

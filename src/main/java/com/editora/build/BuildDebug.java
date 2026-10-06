@@ -16,8 +16,14 @@ public final class BuildDebug {
 
     private BuildDebug() {}
 
-    /** The JDWP agent options for a suspended debuggee on port 5005 (matches Gradle {@code --debug-jvm}). */
-    public static final String JDWP_AGENT = "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005";
+    /**
+     * The JDWP agent options for a suspended debuggee on port 5005, listening on the loopback interface only
+     * (as Gradle's {@code --debug-jvm} does). JDWP is unauthenticated: {@code address=*:5005} offered code
+     * execution as the user to every host that could reach the machine, and Editora only ever attaches to
+     * {@code localhost}.
+     */
+    public static final String JDWP_AGENT =
+            "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=127.0.0.1:5005";
 
     /** Gradle Run under debug: {@code <runTask> --debug-jvm} (suspends on 5005, prints the JDWP banner). */
     public static List<String> gradleDebugArgs(String runTask) {

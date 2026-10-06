@@ -3,6 +3,7 @@ package com.editora.diagram;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The rendered "diagram-as-code" tools that get an IntelliJ-style 3-mode preview via an external CLI —
@@ -42,7 +43,16 @@ public enum DiagramKind {
             a.add(in.toString());
             return a;
         }
+
+        @Override
+        Map<String, String> environment() {
+            return plantumlEnvironment(System.getenv(PLANTUML_SECURITY_PROFILE));
+        }
     };
+
+    /** PlantUML's security-profile variable (https://plantuml.com/security). It is honoured only as an OS
+     *  environment variable — the {@code -D} system-property form is ignored for {@code !include}. */
+    static final String PLANTUML_SECURITY_PROFILE = "PLANTUML_SECURITY_PROFILE";
 
     private final String languageId;
     private final String defaultCommand;
@@ -77,6 +87,26 @@ public enum DiagramKind {
 
     /** The argv (base command + flags) to render {@code in} → {@code out} as {@code fmt}. Pure. */
     abstract List<String> args(List<String> cmd, Path in, Path out, String fmt, boolean dark);
+
+    /** Extra environment for this kind's render child (on top of the scrubbed, inherited one). */
+    Map<String, String> environment() {
+        return Map.of();
+    }
+
+    /**
+     * The PlantUML child environment: {@code PLANTUML_SECURITY_PROFILE=SANDBOX} unless the user already chose a
+     * profile in the environment Editora was started from ({@code inheritedProfile}). A {@code .puml} is
+     * content — often from a repository the user merely opened — and PlantUML's command-line default profile
+     * ({@code LEGACY}) lets it {@code !include} any local file or URL and read environment variables; toggling
+     * the preview must not do that. {@code SANDBOX} still renders ordinary diagrams and the bundled standard
+     * library ({@code !include <C4/C4_Container>}); it refuses local-file and URL includes. Someone who needs
+     * those exports a wider profile themselves, which a document cannot do. Pure; unit-tested.
+     */
+    static Map<String, String> plantumlEnvironment(String inheritedProfile) {
+        return inheritedProfile == null || inheritedProfile.isBlank()
+                ? Map.of(PLANTUML_SECURITY_PROFILE, "SANDBOX")
+                : Map.of();
+    }
 
     /** The rendered diagram kind for a buffer {@code language}, or {@code null} if it isn't one. */
     public static DiagramKind fromLanguage(String language) {

@@ -1,6 +1,8 @@
 package com.editora.io;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -11,7 +13,9 @@ import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Arrays;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 
@@ -35,12 +39,25 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  *       link is resolved first and the target is written.
  *   <li><b>Permissions.</b> A fresh temp file gets default permissions, so a shell script would silently lose
  *       its executable bit and any group/other access. The existing file's POSIX permissions are copied onto
- *       the temp file before the move.
+ *       the temp file before the move. A <em>new</em> file has nothing to copy, and must not inherit the
+ *       temp file's owner-only mode either: it is staged with the mode any newly created file gets
+ *       (read/write for everyone, narrowed by the process umask).
  * </ul>
  *
- * <p>If an existing target cannot be staged safely, the save fails without touching it. A plain in-place
- * write truncates first and could destroy the only recoverable copy if the write then fails. Direct writing
- * is retained only for a brand-new target, where there is no prior file to preserve.
+ * <p>The staged bytes are forced to the device before the move. Without that, a crash shortly after the save
+ * can leave the new name pointing at a file whose data never reached the disk — an empty document where the
+ * previous version used to be.
+ *
+ * <p>If an existing target cannot be staged safely, {@link #writeIf} fails without touching it. A plain
+ * in-place write truncates first and could destroy the only recoverable copy if the write then fails. Direct
+ * writing is retained only for a brand-new target, where there is no prior file to preserve.
+ *
+ * <p>{@link #writeDocument} is the editor's own save. It adds one more step for the files a replacement
+ * cannot reach or would damage — a writable file in a directory that does not allow new entries, a file
+ * that cannot be renamed over, one with several hard links or another owner: the previous bytes are first
+ * copied to a backup file, and only then is the target overwritten in place (see {@link Outcome#IN_PLACE}).
+ * The same holds for a file on an SFTP server; its backup is a local file, so the previous bytes survive
+ * the connection.
  */
 public final class AtomicFileWrite {
 
@@ -63,7 +80,22 @@ public final class AtomicFileWrite {
 
         void write(Path path, byte[] bytes) throws IOException;
 
+        /** Makes {@code path}'s written bytes durable before it is moved into place. No-op by default. */
+        default void force(Path path) throws IOException {}
+
         void writeNew(Path path, byte[] bytes) throws IOException;
+
+        /** Overwrites the <em>existing</em> {@code path} in place and forces the bytes to the device. */
+        default void overwrite(Path path, byte[] bytes) throws IOException {
+            try (FileChannel channel =
+                    FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+                ByteBuffer buffer = ByteBuffer.wrap(bytes);
+                while (buffer.hasRemaining()) {
+                    channel.write(buffer);
+                }
+                channel.force(true);
+            }
+        }
 
         void move(Path source, Path target, CopyOption... options) throws IOException;
 
@@ -105,8 +137,34 @@ public final class AtomicFileWrite {
         }
 
         @Override
+        public void force(Path path) throws IOException {
+            if (isRemote(path)) {
+                return; // SFTP has no portable fsync; the server-side rename is the commit point there
+            }
+            try (FileChannel channel = FileChannel.open(path, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
+        }
+
+        @Override
         public void writeNew(Path path, byte[] bytes) throws IOException {
             Files.write(path, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        }
+
+        @Override
+        public void overwrite(Path path, byte[] bytes) throws IOException {
+            if (isRemote(path)) {
+                // No fsync over SFTP; the caller holds the previous bytes in a local backup meanwhile.
+                try {
+                    Files.write(path, bytes, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING);
+                } catch (RuntimeException closed) {
+                    // A closed SFTP filesystem throws unchecked; the caller's restore-or-keep-the-backup
+                    // handling must see it as the failed write it is.
+                    throw new IOException(String.valueOf(closed.getMessage()), closed);
+                }
+                return;
+            }
+            FileOperations.super.overwrite(path, bytes);
         }
 
         @Override
@@ -199,6 +257,56 @@ public final class AtomicFileWrite {
      */
     public static boolean writeIf(Path file, byte[] bytes, BooleanSupplier commit, FileOperations files)
             throws IOException {
+        return write(file, bytes, commit, files, false, null) != Outcome.SKIPPED;
+    }
+
+    /** How {@link #writeDocument} put the bytes on disk. */
+    public enum Outcome {
+        /** {@code commit} refused: the write became obsolete and the target is untouched. */
+        SKIPPED,
+        /** The target was replaced by a complete staged file (or newly created). */
+        REPLACED,
+        /**
+         * The existing file was overwritten in place, because it could not be replaced or a replacement
+         * would have changed what it is. Its previous bytes were held in a backup file for the duration.
+         */
+        IN_PLACE
+    }
+
+    /**
+     * Saves an editor document: a staged replacement wherever that is possible and harmless, and otherwise
+     * a backed-up overwrite of the existing file.
+     *
+     * <p>A replacement needs permission to create an entry beside the target and to rename over it. A file
+     * the user may write can lack both — it sits in a directory they cannot write to, in a sticky directory
+     * under another owner, or it is a bind-mounted single file — and {@link #writeIf} then refuses for good,
+     * although {@code echo > file} works. A replacement is also a <em>new</em> file: other hard links keep
+     * the old content, and a file owned by someone else changes owner. In those cases the target is
+     * overwritten in place instead, after its current bytes have been copied to {@code backupDir} (the
+     * system temp directory when null or unusable). If the overwrite fails, the previous bytes are written
+     * back; if that fails too, the error names the backup file, which is then kept.
+     *
+     * @param backupDir where the previous bytes are held during an in-place write; may be null
+     */
+    public static Outcome writeDocument(Path file, byte[] bytes, BooleanSupplier commit, Path backupDir)
+            throws IOException {
+        return writeDocument(file, bytes, commit, backupDir, FILES);
+    }
+
+    /** As {@link #writeDocument(Path, byte[], BooleanSupplier, Path)}, with an injectable filesystem boundary. */
+    public static Outcome writeDocument(
+            Path file, byte[] bytes, BooleanSupplier commit, Path backupDir, FileOperations files) throws IOException {
+        return write(file, bytes, commit, files, true, backupDir);
+    }
+
+    private static Outcome write(
+            Path file,
+            byte[] bytes,
+            BooleanSupplier commit,
+            FileOperations files,
+            boolean inPlaceAllowed,
+            Path backupDir)
+            throws IOException {
         Path target = resolveLink(file);
         Path dir = target.getParent();
         if (dir == null) {
@@ -207,50 +315,238 @@ public final class AtomicFileWrite {
         if (dir == null || !files.isDirectory(dir)) {
             return writeUnstagedNewTarget(target, bytes, commit, files, null);
         }
+        boolean remote = isRemote(target);
+        if (inPlaceAllowed && canOverwrite(target) && hasOtherLinks(target)) {
+            return writeInPlace(target, bytes, commit, files, backupDir, null);
+        }
+        if (remote) {
+            SftpFiles.sweepOrphans(target);
+        }
         Path tmp;
         try {
-            tmp = files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
+            tmp = createStagingFile(files, dir, target);
         } catch (IOException cannotStage) {
+            // Over SFTP only a refusal for permissions leads to an in-place write: a full disk, a quota or a
+            // failing link is no reason to truncate the one good copy on the server.
+            if (inPlaceAllowed && (!remote || SftpFiles.permissionDenied(cannotStage)) && canOverwrite(target)) {
+                return writeInPlace(target, bytes, commit, files, backupDir, cannotStage);
+            }
             return writeUnstagedNewTarget(target, bytes, commit, files, cannotStage);
         }
         boolean replaced = false;
+        IOException cannotReplace = null;
         try {
-            files.write(tmp, bytes);
-            copyPermissions(target, tmp);
-            if (!commit.getAsBoolean()) {
-                return false;
-            }
-            try {
-                files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-            } catch (IOException atomicUnsupported) {
-                if (isRemote(tmp)) {
-                    throw atomicUnsupported;
-                }
+            boolean keepsIdentity = !inPlaceAllowed || !canOverwrite(target) || keepsOwnership(target, tmp);
+            if (keepsIdentity) {
+                files.write(tmp, bytes);
+                files.force(tmp);
+                copyPermissions(target, tmp);
                 if (!commit.getAsBoolean()) {
-                    return false;
+                    return Outcome.SKIPPED;
                 }
-                files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                try {
+                    files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                } catch (IOException atomicUnsupported) {
+                    if (isRemote(tmp)) {
+                        throw atomicUnsupported;
+                    }
+                    if (!commit.getAsBoolean()) {
+                        return Outcome.SKIPPED;
+                    }
+                    try {
+                        files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException neitherMove) {
+                        if (!inPlaceAllowed || !canOverwrite(target)) {
+                            throw neitherMove;
+                        }
+                        cannotReplace = neitherMove;
+                    }
+                }
+                if (cannotReplace == null) {
+                    replaced = true;
+                    return Outcome.REPLACED;
+                }
             }
-            replaced = true;
-            return true;
         } finally {
             if (!replaced) {
-                files.deleteIfExists(tmp);
+                discardStaged(files, tmp);
             }
         }
+        return writeInPlace(target, bytes, commit, files, backupDir, cannotReplace);
     }
 
-    private static boolean writeUnstagedNewTarget(
+    private static Outcome writeUnstagedNewTarget(
             Path target, byte[] bytes, BooleanSupplier commit, FileOperations files, IOException stagingFailure)
             throws IOException {
         if (!commit.getAsBoolean()) {
-            return false;
+            return Outcome.SKIPPED;
         }
         if (files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("Cannot stage a safe replacement for existing file " + target, stagingFailure);
         }
         files.writeNew(target, bytes);
-        return true;
+        return Outcome.REPLACED;
+    }
+
+    /**
+     * An existing regular file this process may write: the only thing ever overwritten in place. For a
+     * remote file "may write" is read off its mode bits ({@code Files.isWritable} says yes to 0444 there).
+     */
+    private static boolean canOverwrite(Path target) {
+        if (isRemote(target)) {
+            return SftpFiles.looksOverwritable(target);
+        }
+        return Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS) && Files.isWritable(target);
+    }
+
+    /** Removes an unused staging file; over SFTP that can fail with the connection, and must not mask why. */
+    private static void discardStaged(FileOperations files, Path tmp) throws IOException {
+        if (isRemote(tmp)) {
+            SftpFiles.discardStaged(tmp);
+        } else {
+            files.deleteIfExists(tmp);
+        }
+    }
+
+    /** True when {@code target} has another name: a replacement would leave that name on the old content. */
+    private static boolean hasOtherLinks(Path target) {
+        if (isRemote(target)) {
+            return SftpFiles.hasOtherLinks(target);
+        }
+        try {
+            return Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)
+                    && Files.getAttribute(target, "unix:nlink") instanceof Integer links
+                    && links > 1;
+        } catch (IOException | RuntimeException noLinkCount) {
+            return false; // not a POSIX filesystem: nothing to preserve that a replacement would lose
+        }
+    }
+
+    /**
+     * Whether a replacement staged as {@code tmp} would still belong to {@code target}'s owner and group.
+     * The group is carried over where the process is allowed to (it is a member); an owner cannot be given
+     * away, so a file that belongs to someone else is written in place rather than re-owned by a save.
+     */
+    private static boolean keepsOwnership(Path target, Path tmp) {
+        if (isRemote(target)) {
+            return SftpFiles.sameOwner(target, tmp);
+        }
+        try {
+            if (!Objects.equals(Files.getAttribute(target, "unix:uid"), Files.getAttribute(tmp, "unix:uid"))) {
+                return false;
+            }
+            Object group = Files.getAttribute(target, "unix:gid");
+            if (!Objects.equals(group, Files.getAttribute(tmp, "unix:gid"))) {
+                Files.setAttribute(tmp, "unix:gid", group);
+            }
+            return true;
+        } catch (IOException | RuntimeException notPosixOrNotPermitted) {
+            // No POSIX ownership here (true: nothing to lose), or the group could not be carried over.
+            return !(notPosixOrNotPermitted instanceof IOException);
+        }
+    }
+
+    /**
+     * Overwrites the existing {@code target}, holding its previous bytes in a backup file until the new ones
+     * are on the device. {@code cause} is why no replacement was possible, when that is what led here.
+     */
+    private static Outcome writeInPlace(
+            Path target, byte[] bytes, BooleanSupplier commit, FileOperations files, Path backupDir, IOException cause)
+            throws IOException {
+        byte[] previous;
+        Path backup;
+        try {
+            previous = files.readAllBytes(target);
+            backup = createBackupFile(files, backupDir, target);
+        } catch (IOException noBackup) {
+            IOException refused = new IOException("Cannot stage a safe replacement for existing file " + target, cause);
+            refused.addSuppressed(noBackup);
+            throw refused;
+        }
+        boolean keepBackup = false;
+        try {
+            files.write(backup, previous);
+            files.force(backup);
+            if (!commit.getAsBoolean()) {
+                return Outcome.SKIPPED;
+            }
+            try {
+                files.overwrite(target, bytes);
+            } catch (IOException torn) {
+                if (isRemote(target) && unchanged(files, target, previous)) {
+                    // The server refused before anything was written (the usual "permission denied").
+                    throw new IOException("Could not write " + target + " in place: " + torn.getMessage(), torn);
+                }
+                try {
+                    files.overwrite(target, previous);
+                } catch (IOException notRestored) {
+                    keepBackup = true;
+                    torn.addSuppressed(notRestored);
+                    throw new IOException(
+                            "Could not finish writing " + target + " in place; it may be incomplete. Its previous"
+                                    + " contents are in " + backup,
+                            torn);
+                }
+                throw new IOException(
+                        "Could not write " + target + " in place (" + torn.getMessage()
+                                + "); its previous contents were restored",
+                        torn);
+            }
+            return Outcome.IN_PLACE;
+        } finally {
+            if (!keepBackup) {
+                try {
+                    files.deleteIfExists(backup);
+                } catch (IOException leftBehind) {
+                    // The save itself is decided; a stray backup copy must not turn it into a failure.
+                }
+            }
+        }
+    }
+
+    private static boolean unchanged(FileOperations files, Path target, byte[] previous) {
+        try {
+            return Arrays.equals(previous, files.readAllBytes(target));
+        } catch (IOException | RuntimeException unreadable) {
+            return false;
+        }
+    }
+
+    private static Path createBackupFile(FileOperations files, Path backupDir, Path target) throws IOException {
+        String prefix = boundedName(target) + ".";
+        if (backupDir != null) {
+            try {
+                files.createDirectories(backupDir);
+                return files.createTempFile(backupDir, prefix, ".editora-backup");
+            } catch (IOException | RuntimeException unusable) {
+                // Fall through to the system temp directory: a backup somewhere beats none.
+            }
+        }
+        return files.createTempFile(prefix, ".editora-backup");
+    }
+
+    /** Longest slice of a file name kept in a staging or backup name, in UTF-8 bytes. */
+    private static final int MAX_NAME_BYTES = 96;
+
+    /**
+     * {@code target}'s file name, cut to {@link #MAX_NAME_BYTES}. A staging name used to be the whole name
+     * plus ~34 characters, which overflows the 255-byte limit for any name longer than ~220 bytes — a file
+     * the filesystem allows but which could then never be saved.
+     */
+    static String boundedName(Path target) {
+        String name = String.valueOf(target.getFileName());
+        int bytes = 0;
+        int end = 0;
+        while (end < name.length()) {
+            int codePoint = name.codePointAt(end);
+            int width = codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
+            if (bytes + width > MAX_NAME_BYTES) {
+                break;
+            }
+            bytes += width;
+            end += Character.charCount(codePoint);
+        }
+        return name.substring(0, end);
     }
 
     /**
@@ -275,10 +571,11 @@ public final class AtomicFileWrite {
         if (dir == null || !files.isDirectory(dir)) {
             throw new IOException("Cannot stage a safe replacement for " + target);
         }
-        Path tmp = files.createTempFile(dir, "." + target.getFileName() + ".", ".editora-tmp");
+        Path tmp = files.createTempFile(dir, "." + boundedName(target) + ".", ".editora-tmp");
         boolean replaced = false;
         try {
             files.write(tmp, replacementBytes);
+            files.force(tmp);
             copyPermissions(target, tmp);
             if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, files.readAllBytes(target))) {
                 return false;
@@ -298,9 +595,35 @@ public final class AtomicFileWrite {
             return true;
         } finally {
             if (!replaced) {
-                files.deleteIfExists(tmp);
+                discardStaged(files, tmp);
             }
         }
+    }
+
+    /** What {@code open(2)} is asked for when a program creates a file; the process umask narrows it. */
+    private static final Set<PosixFilePermission> NEW_FILE_PERMISSIONS = PosixFilePermissions.fromString("rw-rw-rw-");
+
+    /**
+     * Creates the temp file a write is staged in. {@code createTempFile} makes it owner-only (0600) — right
+     * for a secret, and fine for a replacement, whose mode is then copied from the file it replaces. A target
+     * that does not exist yet has no mode to copy, so every newly saved file used to keep the 0600 and
+     * ignore the umask: unreadable to the group, to a web server, to a container user. Such a target is
+     * staged with the ordinary new-file mode instead, which the kernel narrows by the umask at creation.
+     */
+    private static Path createStagingFile(FileOperations files, Path dir, Path target) throws IOException {
+        String prefix = "." + boundedName(target) + ".";
+        boolean newTarget = !Files.exists(target, LinkOption.NOFOLLOW_LINKS);
+        if (newTarget
+                && !isRemote(dir)
+                && dir.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            try {
+                return files.createTempFile(
+                        dir, prefix, ".editora-tmp", PosixFilePermissions.asFileAttribute(NEW_FILE_PERMISSIONS));
+            } catch (UnsupportedOperationException noInitialMode) {
+                // This provider cannot set a mode at creation; fall back to its default below.
+            }
+        }
+        return files.createTempFile(dir, prefix, ".editora-tmp");
     }
 
     /**
@@ -309,8 +632,11 @@ public final class AtomicFileWrite {
      */
     static Path resolveLink(Path file) {
         try {
+            if (isRemote(file)) {
+                return SftpFiles.resolveLink(file); // an SFTP path's toRealPath() does not follow links
+            }
             return Files.isSymbolicLink(file) ? file.toRealPath() : file;
-        } catch (IOException brokenLink) {
+        } catch (IOException | RuntimeException brokenLink) {
             return file;
         }
     }
@@ -323,7 +649,7 @@ public final class AtomicFileWrite {
     private static void copyPermissions(Path from, Path to) {
         try {
             if (!Files.exists(from, LinkOption.NOFOLLOW_LINKS)) {
-                return; // a brand-new file: the temp file's defaults are correct
+                return; // a brand-new file: createStagingFile already gave it the ordinary new-file mode
             }
             PosixFileAttributeView view = Files.getFileAttributeView(from, PosixFileAttributeView.class);
             if (view == null) {

@@ -16,8 +16,8 @@ Each project (and each New Window) opens in its **own top-level window** with it
 split in two:
 
 - **`SharedConfig`** — app-wide state held by reference across every window (`Settings`, the
-  bookmark/note/breakpoint/connection/macro stores, the user dictionary, the `ProjectManager`
-  index).
+  bookmark/note/breakpoint/connection/macro stores, the user dictionary, the recent-files / search /
+  agent-session histories, the `ProjectManager` index).
 - **`ConfigManager`** — per-window, owning only that window's session (`WorkspaceState` + its
   `workspaceStateFile`) and delegating everything shared to `SharedConfig`.
 
@@ -25,7 +25,11 @@ split in two:
 
 - A `config.save()` from any window writes `settings.json` + that window's session file without
   clobbering another window's in-memory copy. A settings change broadcasts via
-  `WindowManager.broadcastSettingsApplied()`.
+  `WindowManager.broadcastSettingsApplied()`; a change made by any other command is detected when it
+  is saved and re-applied in the other windows, so commands do not broadcast themselves.
+- Anything a window keeps per-instance but persists to one file is a last-writer-wins bug: the
+  recent-files, search and agent-session lists were per-window copies of one file until they moved
+  here.
 - `config.getBookmarks()/getNotes()/getBreakpoints()` return the bucket for *this* window's
   project, keyed off its session file (`currentBookmarkKey()`).
 - The open-window set is tracked in `ProjectManager.Index.openProjectIds` and restored next launch

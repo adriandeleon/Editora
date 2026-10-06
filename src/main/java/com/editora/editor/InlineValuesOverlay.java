@@ -19,14 +19,15 @@ import org.fxmisc.richtext.CodeArea;
 /**
  * IntelliJ-style inline debugger values: while execution is suspended, grey italic
  * {@code name: value} annotations are painted after the text of each visible line that mentions a
- * variable of the suspended frame. A mouse-transparent {@link Canvas} mirroring
+ * variable of the suspended frame — in code (not in a comment or a string literal), and within the function
+ * the frame is stopped in ({@link InlineValueScope}): the same name elsewhere is another variable. A mouse-transparent {@link Canvas} mirroring
  * {@link WhitespaceOverlay}: only visible paragraphs are scanned (via the pure
  * {@link DebugIdentifiers#matchesIn}), redraws coalesce to one per pulse, and when no values are set
  * the canvas is 1×1 and invisible — zero cost outside a paused debug session.
  */
 final class InlineValuesOverlay extends Region {
 
-    private static final Color VALUE_COLOR = Color.web("#808a93");
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final int MAX_PER_LINE = 3;
     private static final int MAX_VALUE_CHARS = 60;
 
@@ -34,6 +35,9 @@ final class InlineValuesOverlay extends Region {
     private final Canvas canvas = new Canvas(1, 1);
     /** Variable name → rendered value for the suspended frame; null = inactive. */
     private Map<String, String> values;
+
+    /** The 0-based line the frame is stopped on (its function is the only one annotated); -1 = unknown. */
+    private int frameLine = -1;
 
     private boolean redrawPending;
     private Font font = Font.font("monospace", FontPosture.ITALIC, 14);
@@ -48,11 +52,16 @@ final class InlineValuesOverlay extends Region {
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            colors = palette; // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
     }
 
     /** Sets the suspended frame's variables (null or empty clears and releases the canvas). */
-    void setValues(Map<String, String> v) {
+    void setValues(Map<String, String> v, int frameLine) {
         this.values = (v == null || v.isEmpty()) ? null : Map.copyOf(v);
+        this.frameLine = frameLine;
         boolean active = values != null;
         setVisible(active);
         if (active) {
@@ -117,7 +126,7 @@ final class InlineValuesOverlay extends Region {
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            g.setFill(VALUE_COLOR);
+            g.setFill(colors.inlineValue());
             g.setFont(font);
             g.setTextBaseline(VPos.CENTER);
             g.setTextAlign(TextAlignment.LEFT);
@@ -129,8 +138,10 @@ final class InlineValuesOverlay extends Region {
                 if (line.isEmpty()) {
                     continue;
                 }
-                List<String> names = DebugIdentifiers.matchesIn(line, vals.keySet());
-                if (names.isEmpty()) {
+                int par = p;
+                List<String> names = DebugIdentifiers.matchesIn(
+                        line, vals.keySet(), col -> !isCode(area.getStyleAtPosition(par, col + 1)));
+                if (names.isEmpty() || !InlineValueScope.sameScope(this::codeLine, frameLine, p)) {
                     continue;
                 }
                 int lastChar = line.length() - 1;
@@ -150,6 +161,23 @@ final class InlineValuesOverlay extends Region {
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event redraws.
         }
+    }
+
+    private static boolean isCode(java.util.Collection<String> style) {
+        return style == null || !(style.contains("comment") || style.contains("string"));
+    }
+
+    /** A line's text for the scope walk; {@code ""} for one that starts inside a comment or a string. */
+    private String codeLine(int p) {
+        if (p < 0 || p >= area.getParagraphs().size()) {
+            return "";
+        }
+        String text = area.getParagraph(p).getText();
+        int first = 0;
+        while (first < text.length() && Character.isWhitespace(text.charAt(first))) {
+            first++;
+        }
+        return first == text.length() || !isCode(area.getStyleAtPosition(p, first + 1)) ? "" : text;
     }
 
     /** {@code name: value  name2: value2} for up to {@link #MAX_PER_LINE} names, values capped. */

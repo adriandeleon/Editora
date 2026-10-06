@@ -187,4 +187,76 @@ class MultiFileSearchTest {
         assertEquals("bar bar bar", r.text());
         assertEquals(3, r.count());
     }
+
+    // --- B4(d): the Find-in-Files regex dialect matches ripgrep's -------------------------------------
+
+    private static final SearchQuery WORD = new SearchQuery("\\w+", true, true, false);
+
+    @Test
+    void unicodeClassesMakeWordCharsMatchNonAsciiLettersLikeRipgrep() {
+        List<LineMatch> ripgrepLike =
+                MultiFileSearch.matchesInText("café", WORD, Integer.MAX_VALUE, MultiFileSearch.UNICODE_CLASSES);
+        assertEquals(1, ripgrepLike.size(), "\\w+ covers the whole word, as Rust regex does");
+        assertEquals(4, ripgrepLike.get(0).length());
+
+        // Without the flag java.util.regex keeps \w ASCII-only — the find bar's behaviour, left alone.
+        List<LineMatch> findBar = MultiFileSearch.matchesInText("café", WORD, Integer.MAX_VALUE);
+        assertEquals(3, findBar.get(0).length(), "ASCII \\w stops at the accent");
+    }
+
+    @Test
+    void unicodeDigitsAndWordBoundariesFollowTheSameDialect() {
+        SearchQuery digits = new SearchQuery("\\d+", true, true, false);
+        assertEquals(
+                1,
+                MultiFileSearch.matchesInText("n=٣٤", digits, 10, MultiFileSearch.UNICODE_CLASSES)
+                        .size(),
+                "Arabic-Indic digits are \\d in Rust regex");
+        assertTrue(MultiFileSearch.matchesInText("n=٣٤", digits, 10).isEmpty());
+
+        // Whole word: "é" is a word char, so there is no boundary inside "résumé" for "sum".
+        SearchQuery sum = new SearchQuery("sum", true, true, true);
+        assertTrue(MultiFileSearch.matchesInText("résumé", sum, 10, MultiFileSearch.UNICODE_CLASSES)
+                .isEmpty());
+        assertTrue(
+                MultiFileSearch.matchesInText("résumé", sum, 10).isEmpty(),
+                "whole-word tests the neighbouring characters as letters in the find-bar dialect too");
+    }
+
+    @Test
+    void replaceUsesTheSameDialectAsThePreviewSoItRewritesWhatWasShown() {
+        var replaced = MultiFileSearch.replaceAll("café au lait", WORD, "<$0>", MultiFileSearch.UNICODE_CLASSES);
+        assertEquals("<café> <au> <lait>", replaced.text());
+        assertEquals(3, replaced.count());
+        assertEquals(
+                "<caf>é <au> <lait>",
+                MultiFileSearch.replaceAll("café au lait", WORD, "<$0>").text());
+    }
+
+    @Test
+    void theUnicodeDialectKeepsLimitsBadPatternsAndLiteralSearchIntact() {
+        assertEquals(
+                2,
+                MultiFileSearch.matchesInText("a b c d", WORD, 2, MultiFileSearch.UNICODE_CLASSES)
+                        .size());
+        SearchQuery bad = new SearchQuery("(", true, true, false);
+        assertTrue(MultiFileSearch.matchesInText("(x)", bad, 10, MultiFileSearch.UNICODE_CLASSES)
+                .isEmpty());
+        assertEquals(
+                "(x)",
+                MultiFileSearch.replaceAll("(x)", bad, "y", MultiFileSearch.UNICODE_CLASSES)
+                        .text());
+        SearchQuery literal = new SearchQuery("\\w+", true, false, false);
+        assertEquals(
+                1,
+                MultiFileSearch.matchesInText("a \\w+ b", literal, 10, MultiFileSearch.UNICODE_CLASSES)
+                        .size(),
+                "a literal query is not a regex in either dialect");
+        // A zero-width match must advance, not loop.
+        SearchQuery empty = new SearchQuery("x*", true, true, false);
+        assertEquals(
+                3,
+                MultiFileSearch.matchesInText("ab", empty, 10, MultiFileSearch.UNICODE_CLASSES)
+                        .size());
+    }
 }

@@ -2,6 +2,9 @@ package com.editora.search;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 import com.editora.editor.SearchMatcher;
 
@@ -21,8 +24,22 @@ public final class MultiFileSearch {
         return matchesInText(text, q, Integer.MAX_VALUE);
     }
 
+    /**
+     * Passed as {@code unicodeClasses} by Find in Files, so the Java side reads a regex the way ripgrep's
+     * Rust engine does: {@code \w}, {@code \d}, {@code \s} and {@code \b} are Unicode-aware there and
+     * ASCII-only in {@code java.util.regex} by default. Without it one search disagreed with itself — ripgrep
+     * matched {@code \w+} against {@code café} in a closed file while the same file, once open, matched only
+     * {@code caf}, and Replace All (always Java) rewrote a different span than the preview showed.
+     */
+    public static final boolean UNICODE_CLASSES = true;
+
     /** As {@link #matchesInText(String, SearchQuery)}, stopping once {@code limit} matches are collected. */
     public static List<LineMatch> matchesInText(String text, SearchQuery q, int limit) {
+        return matchesInText(text, q, limit, false);
+    }
+
+    /** As above; {@code unicodeClasses} selects the ripgrep-compatible regex dialect ({@link #UNICODE_CLASSES}). */
+    public static List<LineMatch> matchesInText(String text, SearchQuery q, int limit, boolean unicodeClasses) {
         List<LineMatch> out = new ArrayList<>();
         if (text == null
                 || text.isEmpty()
@@ -32,6 +49,10 @@ public final class MultiFileSearch {
                 || limit <= 0
                 || Thread.currentThread().isInterrupted()) {
             return out;
+        }
+        Pattern unicode = unicodeClasses && q.regex() ? unicodeRegex(q) : null;
+        if (unicodeClasses && q.regex() && unicode == null) {
+            return out; // bad pattern
         }
         int line = 1;
         int start = 0;
@@ -44,8 +65,7 @@ public final class MultiFileSearch {
                 int end = i > start && text.charAt(i - 1) == '\r' ? i - 1 : i; // drop a trailing CR
                 String lineText = text.substring(start, end);
                 int remaining = Math.max(0, limit - out.size());
-                for (int[] m : SearchMatcher.matches(
-                        lineText, q.text(), q.caseSensitive(), q.regex(), q.wholeWord(), remaining)) {
+                for (int[] m : lineMatches(lineText, q, unicode, remaining)) {
                     out.add(new LineMatch(line, m[0] + 1, m[1] - m[0], lineText));
                     if (out.size() >= limit) {
                         return out;
@@ -70,6 +90,11 @@ public final class MultiFileSearch {
      * nothing in the panel yet rewrote across the newline.)
      */
     public static ReplaceResult replaceAll(String text, SearchQuery q, String replacement) {
+        return replaceAll(text, q, replacement, false);
+    }
+
+    /** As above; {@code unicodeClasses} selects the ripgrep-compatible regex dialect ({@link #UNICODE_CLASSES}). */
+    public static ReplaceResult replaceAll(String text, SearchQuery q, String replacement, boolean unicodeClasses) {
         if (text == null) {
             return new ReplaceResult("", 0);
         }
@@ -77,8 +102,12 @@ public final class MultiFileSearch {
             return new ReplaceResult(text, 0);
         }
         String repl = replacement == null ? "" : replacement;
-        java.util.regex.Pattern regex =
-                q.regex() ? SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord()) : null;
+        Pattern regex = !q.regex()
+                ? null
+                : unicodeClasses
+                        ? unicodeRegex(q)
+                        : SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord());
+        Pattern unicode = unicodeClasses ? regex : null;
         if (q.regex() && regex == null) {
             return new ReplaceResult(text, 0); // bad pattern → leave the text untouched
         }
@@ -92,7 +121,7 @@ public final class MultiFileSearch {
                 int lineEnd = nl < 0 ? n : nl;
                 int contentEnd = lineEnd > i && text.charAt(lineEnd - 1) == '\r' ? lineEnd - 1 : lineEnd;
                 String content = text.substring(i, contentEnd);
-                List<int[]> ms = SearchMatcher.matches(content, q.text(), q.caseSensitive(), q.regex(), q.wholeWord());
+                List<int[]> ms = lineMatches(content, q, unicode, Integer.MAX_VALUE);
                 if (ms.isEmpty()) {
                     out.append(content);
                 } else if (regex != null) {
@@ -117,5 +146,89 @@ public final class MultiFileSearch {
             return new ReplaceResult(text, 0); // invalid $-group reference → leave the text untouched
         }
         return new ReplaceResult(out.toString(), count);
+    }
+
+    /**
+     * Why {@code replacement} cannot be applied to matches of {@code q}, or {@code null} when it can. Only a
+     * regex replacement can be wrong: a reference to a group the pattern does not have ({@code $9}), a
+     * {@code $} that starts no reference ({@code $cost}), a trailing {@code \} or {@code $}.
+     *
+     * <p>{@link #replaceAll} answers such a replacement with "nothing replaced", which Replace in Files
+     * reported as "Replaced 0 occurrences in 0 files" under a panel full of matches. Checked up front, the
+     * user is told instead. The check needs no real match: the pattern is given an empty alternative, which
+     * keeps its groups and matches the empty string, and the replacement is expanded against that.
+     */
+    public static String replacementError(SearchQuery q, String replacement) {
+        if (q == null || !q.regex() || q.text() == null || q.text().isEmpty() || replacement == null) {
+            return null;
+        }
+        Pattern base = SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord());
+        if (base == null) {
+            return null; // a bad pattern is reported as such, not as a bad replacement
+        }
+        Matcher probe;
+        try {
+            // The line break ends a trailing `#` comment when the pattern was compiled with (?x).
+            probe = Pattern.compile("(?:" + base.pattern() + "\n)|", base.flags())
+                    .matcher("");
+        } catch (PatternSyntaxException e) {
+            return null;
+        }
+        if (!probe.find()) {
+            return null;
+        }
+        try {
+            probe.appendReplacement(new StringBuilder(), replacement);
+            return null;
+        } catch (RuntimeException bad) {
+            String message = bad.getMessage();
+            return message == null || message.isBlank() ? bad.getClass().getSimpleName() : message;
+        }
+    }
+
+    /**
+     * {@link SearchMatcher}'s own pattern — same whole-word wrapping, same flags — plus
+     * {@link Pattern#UNICODE_CHARACTER_CLASS}, or {@code null} for a bad pattern. Derived from the compiled
+     * pattern rather than rebuilt, so whatever flags the shared compile uses carry over.
+     */
+    private static Pattern unicodeRegex(SearchQuery q) {
+        Pattern base = SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord());
+        if (base == null) {
+            return null;
+        }
+        try {
+            return Pattern.compile(base.pattern(), base.flags() | Pattern.UNICODE_CHARACTER_CLASS);
+        } catch (PatternSyntaxException e) {
+            return base;
+        }
+    }
+
+    /** One line's matches: through {@code unicode} when given, else exactly as the find bar matches. */
+    private static List<int[]> lineMatches(String line, SearchQuery q, Pattern unicode, int limit) {
+        if (unicode == null) {
+            return SearchMatcher.matches(line, q.text(), q.caseSensitive(), q.regex(), q.wholeWord(), limit);
+        }
+        List<int[]> out = new ArrayList<>();
+        if (limit <= 0) {
+            return out;
+        }
+        // The same wall-clock guard the shared matcher applies: a valid but pathological pattern must
+        // return what it found rather than pin the search thread.
+        Matcher matcher = unicode.matcher(SearchMatcher.budgetedSequence(line));
+        int from = 0;
+        try {
+            while (from <= line.length() && matcher.find(from)) {
+                int start = matcher.start();
+                int end = matcher.end();
+                out.add(new int[] {start, end});
+                if (out.size() >= limit) {
+                    return out;
+                }
+                from = end > start ? end : end + 1; // advance past a zero-width match
+            }
+        } catch (SearchMatcher.MatchBudgetExceededException aborted) {
+            return out;
+        }
+        return out;
     }
 }

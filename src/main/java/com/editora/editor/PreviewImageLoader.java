@@ -10,6 +10,8 @@ import java.net.URI;
 import java.net.URLConnection;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Map;
@@ -26,7 +28,6 @@ import javafx.scene.image.WritableImage;
 import com.github.weisj.jsvg.SVGDocument;
 import com.github.weisj.jsvg.parser.LoaderContext;
 import com.github.weisj.jsvg.parser.SVGLoader;
-import com.github.weisj.jsvg.view.FloatSize;
 import com.github.weisj.jsvg.view.ViewBox;
 
 /**
@@ -46,6 +47,14 @@ public final class PreviewImageLoader {
     private static final long FAILURE_TTL_MS = 60_000;
     /** SVGs render at this device scale for crispness, then display at their logical size. */
     private static final double RASTER_SCALE = 2.0;
+    /** Cap on the bytes of one image, from any source — a preview image is content of any size, and an
+     *  endless response (or {@code /dev/zero} behind a link) must not be read into the heap. */
+    static final int MAX_IMAGE_BYTES = 32 * 1024 * 1024;
+    /** Cap on an SVG's raster, in pixels (16 MP ≈ 64 MB of ARGB): {@code width="100000" height="100000"} in a
+     *  200-byte file would otherwise ask for a 160 GB bitmap. Larger documents are scaled down to fit. */
+    static final long MAX_RASTER_PIXELS = 16L * 1024 * 1024;
+    /** Cap on either side of that raster, so a sliver ({@code width="1e9" height="0.001"}) is bounded too. */
+    static final int MAX_RASTER_SIDE = 16_384;
 
     /**
      * Strong reference to JSVG's logger. Badges often embed a logo as a nested SVG {@code <image>}, which
@@ -133,8 +142,10 @@ public final class PreviewImageLoader {
                 return null;
             }
             return new Loaded(img, img.getWidth());
-        } catch (Exception | LinkageError e) {
-            return null; // unreachable host, malformed SVG, decode failure — leave the image blank
+        } catch (Exception | LinkageError | OutOfMemoryError e) {
+            // unreachable host, malformed SVG, decode failure, or a decompression bomb whose bitmap does not
+            // fit — leave the image blank (an OOM here is one failed allocation, not a wrecked heap)
+            return null;
         }
     }
 
@@ -151,6 +162,64 @@ public final class PreviewImageLoader {
      */
     public static byte[] fetchBytes(String url) throws IOException {
         return fetch(url);
+    }
+
+    /**
+     * Image bytes for an <b>export</b> (PDF / DOCX / ODT), or {@code null}: a {@code data:}, {@code http(s)} or
+     * {@code file:} URL goes through the same guarded {@link #fetch} the preview uses (internal-address block
+     * re-checked on every redirect hop, UNC refusal, byte cap); anything else is a path, resolved against
+     * {@code baseDir} and read only when it is a regular file within the cap. One fetcher for every surface,
+     * so an exported document cannot reach what the preview refuses. Call off the FX thread.
+     */
+    public static byte[] fetchForExport(String src, Path baseDir) {
+        if (src == null || src.isBlank()) {
+            return null;
+        }
+        String s = src.strip();
+        try {
+            if (s.matches("(?i)^(https?|file|data):.*")) {
+                return fetch(s);
+            }
+            if (isUncLike(s)) {
+                return null; // \\host\share\x.png — an SMB connection (and a NetNTLM hash) on Windows
+            }
+            Path p = Path.of(s);
+            if (!p.isAbsolute()) {
+                if (baseDir == null) {
+                    return null; // nothing to anchor a relative path to; never the process cwd
+                }
+                p = baseDir.resolve(p);
+            }
+            return readLocal(p);
+        } catch (Exception | LinkageError e) {
+            return null;
+        }
+    }
+
+    /** True when {@code path} starts with two (or more) slashes or backslashes in any mix — a UNC path on
+     *  Windows, however it was spelled ({@code //host/share}, {@code \\host\share}, {@code /\host}). Pure. */
+    static boolean isUncLike(String path) {
+        return path != null
+                && path.length() >= 2
+                && (path.charAt(0) == '/' || path.charAt(0) == '\\')
+                && (path.charAt(1) == '/' || path.charAt(1) == '\\');
+    }
+
+    /** The bytes of a local regular file within {@link #MAX_IMAGE_BYTES}, else {@code null} (a directory, a
+     *  device or FIFO, a missing or oversized file). */
+    private static byte[] readLocal(Path file) throws IOException {
+        if (!Files.isRegularFile(file) || Files.size(file) > MAX_IMAGE_BYTES) {
+            return null;
+        }
+        try (InputStream in = Files.newInputStream(file)) {
+            return readCapped(in);
+        }
+    }
+
+    /** Reads {@code in} to EOF, or returns {@code null} once it exceeds {@link #MAX_IMAGE_BYTES}. */
+    static byte[] readCapped(InputStream in) throws IOException {
+        byte[] bytes = in.readNBytes(MAX_IMAGE_BYTES + 1);
+        return bytes.length > MAX_IMAGE_BYTES ? null : bytes;
     }
 
     /**
@@ -195,6 +264,9 @@ public final class PreviewImageLoader {
         if ("data".equalsIgnoreCase(uri.getScheme())) {
             return decodeDataUri(url);
         }
+        if ("file".equalsIgnoreCase(uri.getScheme())) {
+            return readLocal(Path.of(uri)); // regular files only: never a directory listing or a device
+        }
         // Follow redirects manually so EACH hop is re-checked: a public URL must not be able to 30x-pivot to a
         // loopback/internal target past the guard (the JDK's automatic redirect following wouldn't re-check).
         for (int hop = 0; hop < MAX_REDIRECTS; hop++) {
@@ -219,7 +291,7 @@ public final class PreviewImageLoader {
                 }
             }
             try (InputStream in = con.getInputStream()) {
-                return in.readAllBytes();
+                return readCapped(in);
             }
         }
         return null; // too many redirects
@@ -248,8 +320,16 @@ public final class PreviewImageLoader {
             }
             case "file" -> {
                 // A local file is fine (that's how relative markdown images load). A non-empty authority means
-                // a UNC/remote path (\\host\share) — the credential-leak vector — so refuse it.
-                return uri.getHost() != null && !uri.getHost().isBlank();
+                // a UNC/remote path (\\host\share) — the credential-leak vector — so refuse it. So does a path
+                // that itself starts with two slashes (file:////host/share, file:///%5C%5Chost/share): there is
+                // no authority to catch, but Windows resolves it to the same \\host\share. An opaque
+                // file:name.png has no path at all and would resolve against the process cwd.
+                String path = uri.getPath();
+                return uri.getRawAuthority() != null && !uri.getRawAuthority().isBlank()
+                        || path == null
+                        || path.isEmpty()
+                        || isUncLike(path)
+                        || isUncLike(path.substring(1));
             }
             case "http", "https" -> {
                 String host = uri.getHost();
@@ -337,20 +417,51 @@ public final class PreviewImageLoader {
         if (doc == null) {
             return null;
         }
-        FloatSize size = doc.size();
-        double w = size.width > 0 ? size.width : 100;
-        double h = size.height > 0 ? size.height : 20;
-        int pw = (int) Math.ceil(w * RASTER_SCALE);
-        int ph = (int) Math.ceil(h * RASTER_SCALE);
-        BufferedImage buf = new BufferedImage(pw, ph, BufferedImage.TYPE_INT_ARGB);
+        Raster r = rasterFor(doc.size().width, doc.size().height);
+        // backing bitmap is 2× (less when clamped); ImageView displays it at logical width w
+        return new Loaded(toFxImage(paint(doc, r)), r.logicalWidth());
+    }
+
+    /** The bitmap an SVG of a given logical size is painted into: pixel dimensions and the scale to paint at. */
+    record Raster(double logicalWidth, double logicalHeight, int pixelWidth, int pixelHeight, double scale) {}
+
+    /**
+     * Sizes the raster for an SVG's declared {@code width}/{@code height}: {@link #RASTER_SCALE}× for crispness,
+     * scaled down uniformly when that would exceed {@link #MAX_RASTER_PIXELS}. The dimensions come straight
+     * from the document, so they are clamped here rather than trusted — an absent, non-finite or negative size
+     * falls back to a badge-sized default. Pure; unit-tested.
+     */
+    static Raster rasterFor(double width, double height) {
+        double w = width > 0 && Double.isFinite(width) ? width : 100;
+        double h = height > 0 && Double.isFinite(height) ? height : 20;
+        double scale = Math.min(RASTER_SCALE, Math.min(MAX_RASTER_SIDE / w, MAX_RASTER_SIDE / h));
+        double pixels = (w * scale) * (h * scale);
+        if (pixels > MAX_RASTER_PIXELS) {
+            scale *= Math.sqrt(MAX_RASTER_PIXELS / pixels);
+        }
+        int pw = (int) Math.max(1, Math.min(MAX_RASTER_SIDE, Math.ceil(w * scale)));
+        int ph = (int) Math.max(1, Math.min(MAX_RASTER_SIDE, Math.ceil(h * scale)));
+        while ((long) pw * ph > MAX_RASTER_PIXELS) { // rounding up can overshoot the cap by a row or column
+            if (pw >= ph) {
+                pw--;
+            } else {
+                ph--;
+            }
+        }
+        return new Raster(w, h, pw, ph, scale);
+    }
+
+    private static BufferedImage paint(SVGDocument doc, Raster r) {
+        BufferedImage buf = new BufferedImage(r.pixelWidth(), r.pixelHeight(), BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = buf.createGraphics();
         g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
         g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-        g.scale(RASTER_SCALE, RASTER_SCALE);
-        doc.render((java.awt.Component) null, g, new ViewBox(0, 0, (float) w, (float) h));
+        g.scale(r.scale(), r.scale());
+        doc.render(
+                (java.awt.Component) null, g, new ViewBox(0, 0, (float) r.logicalWidth(), (float) r.logicalHeight()));
         g.dispose();
-        return new Loaded(toFxImage(buf), w); // backing bitmap is 2×; ImageView displays it at logical width w
+        return buf;
     }
 
     /**
@@ -364,22 +475,10 @@ public final class PreviewImageLoader {
             if (doc == null) {
                 return null;
             }
-            FloatSize size = doc.size();
-            double w = size.width > 0 ? size.width : 100;
-            double h = size.height > 0 ? size.height : 20;
-            int pw = (int) Math.ceil(w * RASTER_SCALE);
-            int ph = (int) Math.ceil(h * RASTER_SCALE);
-            BufferedImage buf = new BufferedImage(pw, ph, BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g = buf.createGraphics();
-            g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            g.setRenderingHint(RenderingHints.KEY_STROKE_CONTROL, RenderingHints.VALUE_STROKE_PURE);
-            g.scale(RASTER_SCALE, RASTER_SCALE);
-            doc.render((java.awt.Component) null, g, new ViewBox(0, 0, (float) w, (float) h));
-            g.dispose();
+            BufferedImage buf = paint(doc, rasterFor(doc.size().width, doc.size().height));
             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
             return javax.imageio.ImageIO.write(buf, "png", out) ? out.toByteArray() : null;
-        } catch (RuntimeException | java.io.IOException e) {
+        } catch (RuntimeException | java.io.IOException | OutOfMemoryError e) {
             return null;
         }
     }

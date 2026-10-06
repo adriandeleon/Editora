@@ -27,7 +27,11 @@ class TestRunTest {
     @Test
     void mavenFilter() {
         assertEquals(
-                List.of("test", "-Dtest=FooTest#TestBar"),
+                List.of(
+                        "test",
+                        "-Dtest=FooTest#TestBar",
+                        "-DfailIfNoTests=false",
+                        "-Dsurefire.failIfNoSpecifiedTests=false"),
                 runWithFailures(BuildTool.MAVEN).failedTestFilters());
     }
 
@@ -45,11 +49,68 @@ class TestRunTest {
                 runWithFailures(BuildTool.GO).failedTestFilters());
     }
 
+    /** "[build failed]" is a synthetic leaf, not a test: it must not end up in a -run pattern. */
+    @Test
+    void goFilterSkipsSyntheticPackageFailureLeaves() {
+        TestRun run = new TestRun(BuildTool.GO, Path.of("."), List.of("test", "./..."), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "ex/q", List.of(ParsedTest.of("ex/q", GoTestJsonParser.BUILD_FAILED, TestStatus.ERROR, 0))));
+        assertEquals(List.of(), run.failedTestFilters(), "nothing targetable: the caller does a full rerun");
+        TestTreeBuilder.merge(
+                run.root(), new ParsedSuite("ex/p", List.of(ParsedTest.of("ex/p", "TestBoom", TestStatus.FAILED, 0))));
+        assertEquals(List.of("test", "-run", "^(TestBoom)$", "./..."), run.failedTestFilters());
+    }
+
     @Test
     void cargoFilter() {
         assertEquals(
                 List.of("test", "--", "TestBar"),
                 runWithFailures(BuildTool.CARGO).failedTestFilters());
+    }
+
+    /**
+     * A parameterized test reports one leaf per invocation — {@code isOdd(int)[1]}, {@code isOdd(int)[2]} —
+     * and neither Surefire nor Gradle accepts that as a filter. Each must collapse to the method, once.
+     */
+    private static TestRun runWithParameterizedFailures(BuildTool tool) {
+        TestRun run = new TestRun(tool, Path.of("."), List.of("test"), List.of(), 0L);
+        TestTreeBuilder.merge(
+                run.root(),
+                new ParsedSuite(
+                        "com.x.NumbersTest",
+                        List.of(
+                                ParsedTest.of("com.x.NumbersTest", "isOdd(int)[1]", TestStatus.FAILED, 1),
+                                ParsedTest.of("com.x.NumbersTest", "isOdd(int)[2]", TestStatus.FAILED, 1),
+                                ParsedTest.of("com.x.NumbersTest", "isEven(int)[1]", TestStatus.FAILED, 1),
+                                ParsedTest.of("com.x.NumbersTest", "plain", TestStatus.FAILED, 1))));
+        return run;
+    }
+
+    @Test
+    void mavenRerunFailedStripsParameterizedSuffixesAndDedupes() {
+        assertEquals(
+                List.of(
+                        "test",
+                        "-Dtest=NumbersTest#isOdd,NumbersTest#isEven,NumbersTest#plain",
+                        "-DfailIfNoTests=false",
+                        "-Dsurefire.failIfNoSpecifiedTests=false"),
+                runWithParameterizedFailures(BuildTool.MAVEN).failedTestFilters());
+    }
+
+    @Test
+    void gradleRerunFailedStripsParameterizedSuffixesAndDedupes() {
+        assertEquals(
+                List.of(
+                        "test",
+                        "--tests",
+                        "com.x.NumbersTest.isOdd",
+                        "--tests",
+                        "com.x.NumbersTest.isEven",
+                        "--tests",
+                        "com.x.NumbersTest.plain"),
+                runWithParameterizedFailures(BuildTool.GRADLE).failedTestFilters());
     }
 
     @Test
@@ -71,5 +132,43 @@ class TestRunTest {
         run.finish(0, 3_000L);
         assertEquals(2_000, run.elapsedMillis(9_999L));
         assertTrue(!run.isRunning());
+    }
+
+    private static TestRun runWith(BuildTool tool, String cls, String... failedMethods) {
+        TestRun run = new TestRun(tool, Path.of("."), List.of("test"), List.of(), 0L);
+        List<ParsedTest> tests = new java.util.ArrayList<>();
+        for (String m : failedMethods) {
+            tests.add(ParsedTest.of(cls, m, TestStatus.FAILED, 0));
+        }
+        TestTreeBuilder.merge(run.root(), new ParsedSuite(cls, tests));
+        return run;
+    }
+
+    /** Surefire matches a method filter against the declaring class file: {@code Outer#m} misses a @Nested test. */
+    @Test
+    void mavenFilterKeepsTheNestedClass() {
+        assertEquals(
+                "-Dtest=OrderServiceTest$WhenEmpty#rejects",
+                runWith(BuildTool.MAVEN, "com.x.OrderServiceTest$WhenEmpty", "rejects")
+                        .failedTestFilters()
+                        .get(1));
+    }
+
+    /** A JUnit 4 Parameterized invocation is really named {@code testMethod[0]}; {@code testMethod} alone misses it. */
+    @Test
+    void mavenFilterStillMatchesAJUnit4ParameterizedInvocation() {
+        assertEquals(
+                "-Dtest=FooTest#testMethod+testMethod[*]",
+                runWith(BuildTool.MAVEN, "com.acme.FooTest", "testMethod[0]", "testMethod[1]")
+                        .failedTestFilters()
+                        .get(1));
+    }
+
+    /** A subtest name is arbitrary text; raw in a -run regex it is a syntax error ("missing closing ]"). */
+    @Test
+    void goFilterUsesTheTopLevelTestsSoSubtestNamesCannotBreakTheRegex() {
+        TestRun run = runWith(BuildTool.GO, "ex/p", "TestParse", "TestParse/a[b", "TestParse/1+1_(sum)", "TestOther");
+        assertEquals(List.of("test", "-run", "^(TestParse|TestOther)$", "./..."), run.failedTestFilters());
+        java.util.regex.Pattern.compile(run.failedTestFilters().get(2)); // and it is a valid expression
     }
 }

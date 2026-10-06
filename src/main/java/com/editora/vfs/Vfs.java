@@ -1,7 +1,10 @@
 package com.editora.vfs;
 
+import java.io.IOException;
 import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermission;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
@@ -64,6 +67,31 @@ public final class Vfs {
     /** True when {@code path} is on a remote (non-default) filesystem. */
     public static boolean isRemote(Path path) {
         return !isLocal(path);
+    }
+
+    /**
+     * Whether the file's permissions allow writing it. A local file is asked directly. A remote one is judged
+     * by its mode bits — read-only when it has no write bit at all — because {@code Files.isWritable} over
+     * SFTP only checks that the file exists. Unknown (no POSIX view, unreachable) counts as writable.
+     */
+    public static boolean isWritableOnDisk(Path path) {
+        if (isLocal(path)) {
+            return Files.isWritable(path);
+        }
+        try {
+            Set<PosixFilePermission> permissions = Files.getPosixFilePermissions(path);
+            return permissions.contains(PosixFilePermission.OWNER_WRITE)
+                    || permissions.contains(PosixFilePermission.GROUP_WRITE)
+                    || permissions.contains(PosixFilePermission.OTHERS_WRITE);
+        } catch (IOException | RuntimeException unknown) {
+            return true;
+        }
+    }
+
+    /** The {@code user@host:port} a remote path belongs to, or null for a local (or unrecognised) path. */
+    public static String authorityOf(Path path) {
+        SftpUri uri = isLocal(path) ? null : SftpUri.parse(toStorableString(path));
+        return uri == null ? null : uri.authority();
     }
 
     /** A stable string for persisting a path: the plain path string for a local file (back-compat with the

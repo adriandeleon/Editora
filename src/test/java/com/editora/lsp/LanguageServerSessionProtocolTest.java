@@ -435,4 +435,96 @@ class LanguageServerSessionProtocolTest {
         assertTrue(server.changed.isEmpty());
         assertEquals(1, delayed.documentVersion(URI));
     }
+
+    // --- request bounds: the timer must not outlive the request ------------------------------------
+
+    /**
+     * {@code bounded()} used to leave its timer scheduled after the reply had arrived, and the timer held
+     * the request future — so every completion list and semantic-token array stayed reachable for the full
+     * timeout. Completing the request must drop the timer.
+     */
+    @Test
+    void completingABoundedRequestReleasesItsTimer() {
+        int before = LanguageServerSession.pendingRequestTimeouts();
+        var request = new java.util.concurrent.CompletableFuture<String>();
+
+        LanguageServerSession.bounded(request, java.time.Duration.ofMinutes(5));
+        assertEquals(before + 1, LanguageServerSession.pendingRequestTimeouts(), "the request is bounded");
+
+        request.complete("reply");
+        assertEquals(before, LanguageServerSession.pendingRequestTimeouts(), "a finished request keeps no timer");
+    }
+
+    /** The bound is the caller's: a short one cancels, while a long one (a workspace build) is left alone. */
+    @Test
+    void aBoundedRequestIsCancelledAtItsOwnTimeoutOnly() throws Exception {
+        var slow = new java.util.concurrent.CompletableFuture<String>();
+        var build = new java.util.concurrent.CompletableFuture<String>();
+        LanguageServerSession.bounded(build, java.time.Duration.ofMinutes(10));
+        LanguageServerSession.bounded(slow, java.time.Duration.ofMillis(20));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                java.util.concurrent.CancellationException.class,
+                () -> slow.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(build.isDone(), "a request with a long budget must outlive the ordinary bound");
+        build.complete("built");
+    }
+
+    // --- a lost session settles what it still owes ------------------------------------------------
+
+    /**
+     * A request already on the wire used to be left to its own timer when the server died: 30 s for a hover,
+     * ten minutes for a workspace build — whose stale callback then reported a failure against whatever the
+     * window was doing by then.
+     */
+    @Test
+    void aServerDeathFailsTheRequestsStillOnTheWire() {
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var session = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {}, null);
+        var server = new FakeLanguageServer();
+        server.hoverFuture = new java.util.concurrent.CompletableFuture<>(); // never answered
+        session.attachForTest(server, new ServerCapabilities());
+        int timers = LanguageServerSession.pendingRequestTimeouts();
+
+        var hover = session.hover(URI, new org.eclipse.lsp4j.Position(0, 0));
+        assertFalse(hover.isDone());
+        assertEquals(1, session.inFlightRequests());
+
+        session.simulateServerDeathForTest();
+
+        assertTrue(hover.isCompletedExceptionally(), "the request must settle when the server is lost");
+        assertEquals(0, session.inFlightRequests());
+        assertEquals(timers, LanguageServerSession.pendingRequestTimeouts(), "and release its timer");
+        // A request made after the death must not be queued for an initialize that will never come.
+        assertTrue(session.executeCommand("x", List.of()).isCompletedExceptionally());
+    }
+
+    /** The same for a deliberate dispose (Restart Servers while a request is out). */
+    @Test
+    void disposingASessionFailsTheRequestsStillOnTheWire() {
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var session = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (t, m) -> {}, null);
+        var server = new FakeLanguageServer();
+        server.hoverFuture = new java.util.concurrent.CompletableFuture<>();
+        session.attachForTest(server, new ServerCapabilities());
+
+        var hover = session.hover(URI, new org.eclipse.lsp4j.Position(0, 0));
+        session.dispose();
+
+        assertTrue(hover.isCompletedExceptionally());
+        assertEquals(0, session.inFlightRequests());
+    }
+
+    // --- initialize: a filesystem root has no file name --------------------------------------------
+
+    /** {@code Path.getFileName()} is null for {@code /} or a drive root; the handshake used to NPE on it. */
+    @Test
+    void theWorkspaceFolderNameOfAFilesystemRootIsItsPath() {
+        Path root = Path.of("").toAbsolutePath().getRoot();
+        assertNull(root.getFileName(), "precondition: a root has no file name");
+        assertEquals(root.toString(), LanguageServerSession.workspaceFolderName(root));
+        assertEquals(
+                "project",
+                LanguageServerSession.workspaceFolderName(root.resolve("work").resolve("project")));
+    }
 }

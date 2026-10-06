@@ -328,6 +328,66 @@ class InstallCatalogTest {
         assertTrue(s.directUrl().endsWith("-zip-with-dependencies.zip"));
     }
 
+    // --- the stored command is a command LINE: a path with a space must come back as one argument ---
+
+    /** Every tokenizer that reads a stored server/tool command back into argv. */
+    private static List<List<String>> tokenizedEverywhere(String command) {
+        return List.of(
+                com.editora.lsp.LspServerRegistry.tokenize(command),
+                com.editora.dap.DapServerRegistry.tokenize(command),
+                com.editora.run.ProgramArgs.tokenize(command));
+    }
+
+    /**
+     * The installer stored the extracted binary's path bare. With a config dir containing a space
+     * ({@code C:\Users\Jane Doe\.editora}) the command split at the space, so the server it had just
+     * installed was reported missing.
+     */
+    @Test
+    void aBinaryUnderAConfigDirWithASpaceIsStoredSoItReadsBackAsOneArgument() {
+        String windows = "C:\\Users\\Jane Doe\\.editora\\plugins\\lsp\\terraform\\terraform-ls.exe";
+        String stored = InstallCatalog.quoteCommandPath(windows) + " serve";
+
+        for (List<String> argv : tokenizedEverywhere(stored)) {
+            assertEquals(List.of(windows, "serve"), argv, "backslashes are literal; the space stays inside");
+        }
+
+        Path unix = Path.of("/Users/John Smith/.editora/plugins/lsp/typst/tinymist");
+        for (List<String> argv : tokenizedEverywhere(InstallCatalog.binaryCommand(unix, " lsp"))) {
+            assertEquals(List.of(unix.toString(), "lsp"), argv);
+        }
+        // What the old code stored: the very same path, unquoted, is two arguments and names no file.
+        assertEquals(
+                List.of("/Users/John", "Smith/.editora/plugins/lsp/typst/tinymist", "lsp"),
+                com.editora.lsp.LspServerRegistry.tokenize(unix + " lsp"));
+    }
+
+    @Test
+    void anOrdinaryPathIsStoredExactlyAsBefore() {
+        Path plain = Path.of("/home/u/.editora/plugins/lsp/clangd/bin/clangd");
+        assertEquals(plain.toString(), InstallCatalog.binaryCommand(plain, ""));
+        assertEquals(plain + " serve", InstallCatalog.binaryCommand(plain, " serve"));
+        assertEquals(plain.toString(), InstallCatalog.binaryCommand(plain, null));
+        assertEquals("", InstallCatalog.quoteCommandPath(""));
+        assertEquals("", InstallCatalog.quoteCommandPath(null));
+    }
+
+    @Test
+    void pathsContainingQuoteCharactersStillRoundTrip() {
+        // The tokenizers do no escape processing, so a quote in the path is wrapped in the other kind — and a
+        // path with both alternates styles; adjacent quoted runs join into one token.
+        for (String path : List.of(
+                "/home/o'brien/my tools/ls",
+                "/home/u/a \"quoted\" dir/ls",
+                "/home/o'brien/a \"quoted\" dir/ls",
+                "/home/o'brien/ls",
+                "/tab\there/ls")) {
+            for (List<String> argv : tokenizedEverywhere(InstallCatalog.quoteCommandPath(path) + " --stdio")) {
+                assertEquals(List.of(path, "--stdio"), argv, path);
+            }
+        }
+    }
+
     @Test
     void jvmClasspathCommandQuotesTheWildcardDir() {
         String cmd = InstallCatalog.jvmClasspathCommand(
@@ -355,5 +415,34 @@ class InstallCatalogTest {
                 "scripts/install-jdtls.sh no longer defines " + var + " as " + var + "=\"${" + var
                         + ":-<default>}\"; update this test's extraction to match the script.");
         return m.group(1);
+    }
+
+    @Test
+    void downloadsAreConfinedToTheHostsTheCatalogUses() {
+        // every endpoint the catalog itself names…
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.JDTLS_TARBALL_URL));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.LEMMINX_MAVEN_ZIP_URL));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.JS_DEBUG_RELEASES_API));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(InstallCatalog.openVsxLatestUrl("redhat", "java")));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://api.releases.hashicorp.com/v1/releases/terraform-ls/latest"));
+        // …and the asset hosts their release metadata points at
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://github.com/clangd/clangd/releases/download/1/clangd-linux-1.zip"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://releases.hashicorp.com/terraform-ls/0.38.7/terraform-ls_0.38.7_linux_amd64.zip"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl(
+                "https://open-vsx.org/api/redhat/java/1.0.0/file/redhat.java-1.0.0.vsix"));
+        assertTrue(InstallCatalog.isTrustedDownloadUrl("https://GitHub.com/x/y/releases/download/1/a.tar.gz"));
+        // a URL pattern-matched out of a release body must not steer the download elsewhere
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://attacker.example/clangd-linux-1.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://github.com.attacker.example/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://attacker.example/github.com/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://github.com@attacker.example/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://github.com:8443/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("http://github.com/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("https://gist.githubusercontent.com/a/raw/a.zip"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl("not a url"));
+        assertFalse(InstallCatalog.isTrustedDownloadUrl(null));
     }
 }

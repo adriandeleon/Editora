@@ -34,16 +34,22 @@ public final class TagRename {
             "wbr");
 
     /** HTML raw-text elements — their content is skipped to the matching close tag. */
-    private static final Set<String> RAW_TEXT_ELEMENTS = Set.of("script", "style", "textarea", "title");
+    static final Set<String> RAW_TEXT_ELEMENTS = Set.of("script", "style", "textarea", "title");
 
     private TagRename() {}
 
     /**
      * Computes the paired-tag rename for the change {@code (changePos, removed, inserted)} already
      * applied to {@code text}, or {@code null} when there is nothing to mirror: the change isn't
-     * fully inside a tag-name region, the name is empty/unchanged, the old name is empty (a
-     * brand-new tag — it has no pre-existing pair), or the tag has no same-name pair (an unclosed
-     * opener / a stray closer).
+     * fully inside a tag-name region, the name is unchanged, or the tag has no same-name pair (an
+     * unclosed opener / a stray closer).
+     *
+     * <p>A name passing through <em>empty</em> is mirrored like any other: clearing {@code div} leaves the
+     * pair as {@code <>…</>}, and the next character typed into either renames the other, because the two
+     * still pair by their (empty) name. Refusing both steps — as this once did, taking an empty old name
+     * for a brand-new tag — abandoned the closing tag half-renamed: Backspace ×3 then {@code span} over
+     * {@code <div>x</div>} gave {@code <span>x</d>}. A genuinely new tag still has no pair to find: there is
+     * no nameless partner waiting for it.
      */
     public static Mirror mirror(String text, int changePos, String removed, String inserted, boolean html) {
         if (text.length() > MAX_DOC) {
@@ -57,12 +63,9 @@ public final class TagRename {
         int nameStart = region[0];
         int nameEnd = region[1];
         String newName = text.substring(nameStart, nameEnd);
-        if (newName.isEmpty()) {
-            return null;
-        }
         // Revert the change inside the region to get the name the tag had before the edit.
         String oldName = text.substring(nameStart, changePos) + removed + text.substring(changeEnd, nameEnd);
-        if (oldName.isEmpty() || oldName.equals(newName) || !isName(oldName)) {
+        if (oldName.equals(newName) || !isName(oldName)) {
             return null;
         }
         boolean closing = text.charAt(nameStart - 1) == '/';
@@ -155,7 +158,7 @@ public final class TagRename {
                 int nameEnd = nameEnd(text, nameStart);
                 String name = text.substring(nameStart, nameEnd);
                 boolean isTarget = nameStart == targetNameStart;
-                if (isTarget && !targetIsClose) {
+                if (isTarget && (!targetIsClose || underConstruction(text, nameEnd))) {
                     return null; // region said opener but the lexer sees a closer — bail
                 }
                 if (isTarget || namesEqual(name, oldName, html)) {
@@ -165,7 +168,12 @@ public final class TagRename {
                     events.add(new Ev(false, nameStart, nameEnd));
                 }
                 i = skipTag(text, nameEnd)[0];
-            } else if (i + 1 < n && isNameChar(text.charAt(i + 1))) {
+            } else if (i + 1 < n
+                    && (isNameChar(text.charAt(i + 1))
+                            // A nameless opener: the edited tag while its name is cleared, or — when the
+                            // name being replaced is the empty one — its {@code <>} partner.
+                            || (!targetIsClose && i + 1 == targetNameStart)
+                            || (oldName.isEmpty() && text.charAt(i + 1) == '>'))) {
                 int nameStart = i + 1;
                 int nameEnd = nameEnd(text, nameStart);
                 String name = text.substring(nameStart, nameEnd);
@@ -175,7 +183,7 @@ public final class TagRename {
                 // and its close tag still go by the old one.
                 String effName = isTarget ? oldName : name;
                 boolean selfClosing = end[1] == 1 || (html && VOID_ELEMENTS.contains(lower(effName)));
-                if (isTarget && (targetIsClose || selfClosing)) {
+                if (isTarget && (targetIsClose || selfClosing || underConstruction(text, nameEnd))) {
                     return null; // region said close but lexer sees an opener (or a self-closer) — bail
                 }
                 if (!selfClosing) {
@@ -260,6 +268,34 @@ public final class TagRename {
             i++;
         }
         return new int[] {n, 0};
+    }
+
+    /**
+     * Whether the tag whose name ends at {@code from} is still being typed: its attribute region meets
+     * another {@code <} — or the end of the text — before its own {@code >}. Such a tag is a new one (the
+     * user has typed {@code <pr} on the way to {@code <pre>}), not a rename of an existing element, so it
+     * must not be paired with a closer that happens to bear the name typed so far.
+     */
+    private static boolean underConstruction(String text, int from) {
+        int n = text.length();
+        int i = from;
+        while (i < n) {
+            char c = text.charAt(i);
+            if (c == '"' || c == '\'') {
+                int close = text.indexOf(c, i + 1);
+                if (close < 0) {
+                    return true;
+                }
+                i = close + 1;
+            } else if (c == '>') {
+                return false;
+            } else if (c == '<') {
+                return true;
+            } else {
+                i++;
+            }
+        }
+        return true;
     }
 
     /** Position of {@code </name} (case-insensitive) at/after {@code from} — for raw-text content. */

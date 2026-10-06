@@ -56,6 +56,13 @@ public class FindReplaceBar extends HBox {
 
     private List<int[]> matches = List.of();
     private int activeIndex = -1;
+    /** The buffer {@link #matches}, the edit subscription and the scope belong to; null while hidden. */
+    private EditorBuffer boundBuffer;
+    /** True when the last search was abandoned part-way (time budget or regex stack depth). */
+    private boolean searchIncomplete;
+    /** True while {@link #resetScope} switches "Sel" off, so its listener does not re-search. */
+    private boolean resettingScope;
+
     private int searchAnchor; // caret offset when the search started — incremental jumps anchor here
     /** Invoked on Alt+Enter in the find field to turn all matches into carets (wired by MainController). */
     private Runnable onSelectAllMatches;
@@ -126,6 +133,12 @@ public class FindReplaceBar extends HBox {
                 e.consume();
             }
         });
+        // The configured keymap's caret/editing chords (C-a/C-e/C-k/C-y, Ctrl+V/X/C/Z/A…) act on these
+        // fields. The scene-level KeyDispatcher leaves every such chord to a focused text field instead of
+        // running it against the document; this is what then handles it. Find's own chords are find.*
+        // commands (and C-g is edit.cancel), which stay global, so next/previous/replace/close still work.
+        com.editora.command.TextInputKeymap.installShared(findField);
+        com.editora.command.TextInputKeymap.installShared(replaceField);
         // Incremental: re-search (debounced) on query or option changes.
         findField.textProperty().addListener((o, a, b) -> debounce.playFromStart());
         caseSensitive.selectedProperty().addListener((o, a, b) -> recompute());
@@ -138,25 +151,68 @@ public class FindReplaceBar extends HBox {
         // but without selecting/scrolling to a match (that would fight the user's typing).
         editDebounce.setOnFinished(e -> recomputeHighlightsOnly());
 
-        getChildren()
-                .addAll(
-                        new Label(tr("find.label")),
-                        findField,
-                        findClear,
-                        countLabel,
-                        prev,
-                        next,
-                        new Label(tr("find.replaceLabel")),
-                        replaceField,
-                        replaceClear,
-                        replace,
-                        replaceAll,
-                        caseSensitive,
-                        regex,
-                        wholeWord,
-                        preserveCase,
-                        inSelection,
-                        close);
+        layoutBar(next, prev, replace, replaceAll, close, findClear, replaceClear);
+    }
+
+    /**
+     * Lays the bar out as three groups — find, replace, options — in a {@link WrapRow}: the two fields
+     * share the spare width (instead of sitting at ~160px beside an empty bar), labels and buttons keep
+     * their full width in every language, and a narrow window wraps the groups onto a second line rather
+     * than ellipsizing them. The option checkboxes stay the state holders; what is shown are compact
+     * toggle buttons bound to them, each named by a tooltip and accessible text.
+     */
+    private void layoutBar(
+            Button next,
+            Button prev,
+            Button replace,
+            Button replaceAll,
+            Button close,
+            Button findClear,
+            Button replaceClear) {
+        Label findLabel = fixed(new Label(tr("find.label")));
+        Label replaceLabel = fixed(new Label(tr("find.replaceLabel")));
+        findLabel.setLabelFor(findField);
+        replaceLabel.setLabelFor(replaceField);
+        fixed(replace);
+        fixed(replaceAll);
+        fixed(countLabel);
+        fixed(findClear);
+        fixed(replaceClear);
+        for (TextField field : List.of(findField, replaceField)) {
+            field.setMinWidth(FIELD_MIN_WIDTH);
+            field.setMaxWidth(Double.MAX_VALUE);
+            HBox.setHgrow(field, javafx.scene.layout.Priority.ALWAYS);
+        }
+        HBox findGroup = group(findLabel, findField, findClear, countLabel, prev, next);
+        HBox replaceGroup = group(replaceLabel, replaceField, replaceClear, replace, replaceAll);
+        HBox options = group(
+                OptionToggle.viewOf(caseSensitive, tr("search.caseTip")),
+                OptionToggle.viewOf(regex, tr("search.regexTip")),
+                OptionToggle.viewOf(wholeWord, tr("find.wholeWord")),
+                OptionToggle.viewOf(preserveCase, tr("find.preserveCase")),
+                OptionToggle.viewOf(inSelection, tr("find.inSelection")));
+        options.setSpacing(2);
+        options.getStyleClass().add("find-options");
+        WrapRow row = new WrapRow(10, 4, WrapRow.setGrow(findGroup), WrapRow.setGrow(replaceGroup), options);
+        HBox.setHgrow(row, javafx.scene.layout.Priority.ALWAYS);
+        javafx.scene.layout.VBox closeBox = new javafx.scene.layout.VBox(close); // stays top-right when wrapped
+        closeBox.setAlignment(Pos.TOP_RIGHT);
+        getChildren().addAll(row, closeBox);
+    }
+
+    /** Narrowest a find/replace field gets before the bar wraps instead. */
+    private static final double FIELD_MIN_WIDTH = 140;
+
+    private static HBox group(Node... nodes) {
+        HBox box = new HBox(6, nodes);
+        box.setAlignment(Pos.CENTER_LEFT);
+        return box;
+    }
+
+    /** Text that must always be readable in full: its minimum width is its preferred width. */
+    private static <T extends javafx.scene.layout.Region> T fixed(T node) {
+        node.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+        return node;
     }
 
     /** A compact icon-only action that remains named for tooltips and assistive technology. */
@@ -174,6 +230,8 @@ public class FindReplaceBar extends HBox {
         setManaged(true);
         CodeArea area = area();
         searchAnchor = area == null ? 0 : area.getCaretPosition();
+        releaseBoundBuffer();
+        boundBuffer = activeBuffer.get();
         captureScope(area); // a multi-line selection becomes the search scope — must run before the
         // seed/recompute below, which replace the selection with the first match
         seedFromSelection(area); // a single-line selection pre-fills the find field
@@ -236,6 +294,9 @@ public class FindReplaceBar extends HBox {
      * than silently behaving like a whole-document search.
      */
     private void onInSelectionToggled(boolean on) {
+        if (resettingScope) {
+            return; // reset by hideBar() or a tab switch: nothing to search or select here
+        }
         if (!on) {
             clearScope();
             recompute();
@@ -267,11 +328,27 @@ public class FindReplaceBar extends HBox {
         scopeEnd = -1;
     }
 
+    /** Drops the scope and switches "Sel" off without the toggle's usual re-search. */
+    private void resetScope() {
+        resettingScope = true;
+        try {
+            clearScope();
+            inSelection.setSelected(false);
+        } finally {
+            resettingScope = false;
+        }
+    }
+
     public void hideBar() {
         setVisible(false);
         setManaged(false);
         unsubscribeFromEdits();
+        // Both debounces: a query typed just before Esc must not re-search (and re-highlight, and move
+        // the selection) 150 ms after the bar has gone.
+        debounce.stop();
         editDebounce.stop();
+        resetScope();
+        releaseBoundBuffer(); // the buffer that was searched, which need not be the active one any more
         EditorBuffer buffer = activeBuffer.get();
         if (buffer != null) {
             buffer.clearSearchMatches();
@@ -279,8 +356,42 @@ public class FindReplaceBar extends HBox {
         }
         matches = List.of();
         activeIndex = -1;
-        clearScope();
-        inSelection.setSelected(false);
+    }
+
+    /** Drops the searched buffer's highlights and forgets it. */
+    private void releaseBoundBuffer() {
+        if (boundBuffer != null) {
+            boundBuffer.clearSearchMatches();
+            boundBuffer = null;
+        }
+    }
+
+    /**
+     * Re-targets the open bar at the buffer that is active now. The match list, the edit subscription and
+     * the find-in-selection scope all belong to one buffer; after a tab switch they would otherwise be
+     * applied — as raw offsets — to a different document, while the old tab kept its highlights. The new
+     * buffer is searched and highlighted without moving its caret or selection.
+     *
+     * <p>Called by the window when the active tab changes, and again before every action that uses the
+     * match list, so the bar is correct even where no such notification arrives.
+     */
+    public void onActiveBufferChanged() {
+        EditorBuffer now = activeBuffer.get();
+        if (!isVisible() || now == boundBuffer) {
+            return;
+        }
+        releaseBoundBuffer();
+        boundBuffer = now;
+        debounce.stop();
+        editDebounce.stop();
+        matches = List.of();
+        activeIndex = -1;
+        countLabel.setText("");
+        resetScope();
+        CodeArea area = area();
+        searchAnchor = area == null ? 0 : area.getCaretPosition();
+        subscribeToEdits(area);
+        recomputeHighlightsOnly();
     }
 
     /**
@@ -328,6 +439,7 @@ public class FindReplaceBar extends HBox {
 
     /** The current match ranges for the live query (empty when nothing matches / the bar is closed). */
     public List<int[]> currentMatches() {
+        onActiveBufferChanged();
         return matches;
     }
 
@@ -343,6 +455,15 @@ public class FindReplaceBar extends HBox {
 
     /** Recomputes the full match set for the current query/options, highlights all, and selects the nearest. */
     private void recompute() {
+        recompute(searchAnchor);
+    }
+
+    /** As {@link #recompute()}, selecting the first match at/after {@code anchor} instead of the open-time caret. */
+    private void recompute(int anchor) {
+        if (!isVisible()) {
+            return; // a late debounce or a toggle reset must not search for a bar that is closed
+        }
+        onActiveBufferChanged();
         EditorBuffer buffer = activeBuffer.get();
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         String query = findField.getText();
@@ -371,11 +492,14 @@ public class FindReplaceBar extends HBox {
             activeIndex = -1;
             buffer.clearSearchMatches();
             countLabel.setText("");
-            status.accept(tr("find.notFound", query));
+            status.accept(searchIncomplete ? tr("find.tooComplex") : tr("find.notFound", query));
             return;
         }
-        activeIndex = SearchMatcher.nextIndex(matches, searchAnchor, true);
+        activeIndex = SearchMatcher.nextIndex(matches, anchor, true);
         applyActive(buffer, area, false);
+        if (searchIncomplete) {
+            status.accept(tr("find.tooComplex")); // what is highlighted is not every match
+        }
     }
 
     /**
@@ -408,12 +532,14 @@ public class FindReplaceBar extends HBox {
      * active (empty on an invalid regex; no UI side effects).
      */
     private List<int[]> computeMatches(CodeArea area, String query) {
+        searchIncomplete = false;
         if (regex.isSelected() && SearchMatcher.regexError(query) != null) {
             return List.of();
         }
-        List<int[]> all = SearchMatcher.matches(
+        SearchMatcher.Result found = SearchMatcher.search(
                 area.getText(), query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
-        return scoped(all);
+        searchIncomplete = !found.complete();
+        return scoped(found.matches());
     }
 
     /**
@@ -470,20 +596,47 @@ public class FindReplaceBar extends HBox {
         if (area == null) {
             return;
         }
+        onActiveBufferChanged();
         if (matches.isEmpty()) {
             recompute();
             if (matches.isEmpty()) {
                 return;
             }
         }
-        int from = forward ? area.getSelection().getEnd() : area.getSelection().getStart();
-        activeIndex = SearchMatcher.nextIndex(matches, from, forward);
+        int selStart = area.getSelection().getStart();
+        int selEnd = area.getSelection().getEnd();
+        if (forward && isActiveMatch(selStart, selEnd)) {
+            // Step by index: searching from the selection's end would land on a zero-width match (^, $,
+            // ^$) again and again, since such a match ends where it starts.
+            activeIndex = (activeIndex + 1) % matches.size();
+        } else {
+            activeIndex = SearchMatcher.nextIndex(matches, forward ? selEnd : selStart, forward);
+        }
         applyActive(buffer, area, true);
+    }
+
+    /** True when {@code [start,end)} is exactly the match the bar currently shows as active. */
+    private boolean isActiveMatch(int start, int end) {
+        if (activeIndex < 0 || activeIndex >= matches.size()) {
+            return false;
+        }
+        int[] m = matches.get(activeIndex);
+        return m[0] == start && m[1] == end;
     }
 
     /** Selects/scrolls to the active match, refreshes the overlay + count. */
     private void applyActive(EditorBuffer buffer, CodeArea area, boolean focusEditor) {
         int[] m = matches.get(activeIndex);
+        // Reveal a match hidden in a collapsed fold first: selecting hidden text shows nothing, and the
+        // selection then spans from the fold header into lines the user cannot see.
+        int firstLine = area.offsetToPosition(m[0], org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        int lastLine = m[1] == m[0]
+                ? firstLine
+                : area.offsetToPosition(m[1], org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                        .getMajor();
+        buffer.getFoldManager().unfoldContaining(firstLine);
+        buffer.getFoldManager().unfoldContaining(lastLine);
         area.selectRange(m[0], m[1]);
         area.requestFollowCaret();
         buffer.setSearchMatches(matches, activeIndex);
@@ -500,11 +653,17 @@ public class FindReplaceBar extends HBox {
         if (area == null || !buffer.isEditable()) {
             return;
         }
+        onActiveBufferChanged();
         int start = area.getSelection().getStart();
         int end = area.getSelection().getEnd();
-        recompute();
-        boolean currentMatch = matches.stream().anyMatch(m -> m[0] == start && m[1] == end);
-        if (end > start && inScope(start, end) && currentMatch) {
+        // Validate the selection against a fresh match list WITHOUT recompute(): that re-selects the first
+        // match after the open-time anchor, and the replace below then rewrote that match instead of this one.
+        String query = findField.getText();
+        boolean currentMatch =
+                !query.isEmpty() && computeMatches(area, query).stream().anyMatch(m -> m[0] == start && m[1] == end);
+        int next = start;
+        // A zero-width match (^, $, a lookahead) is replaceable too: it is an insertion at that spot.
+        if (inScope(start, end) && currentMatch) {
             String matched = area.getText(start, end);
             String repl;
             try {
@@ -512,11 +671,17 @@ public class FindReplaceBar extends HBox {
             } catch (RuntimeException badReference) {
                 status.accept(tr("find.badReplacement", describe(badReference)));
                 return;
+            } catch (StackOverflowError tooDeep) {
+                status.accept(tr("find.tooComplex"));
+                return;
             }
-            area.replaceSelection(repl);
+            area.replaceText(start, end, repl); // by range: never whatever happens to be selected by now
+            // Past a zero-width match step one further, or the same assertion is found at the same spot.
+            next = start + repl.length() + (end > start ? 0 : 1);
         }
-        recompute();
-        navigate(true);
+        // Move on to the first match after the replaced text (or, when the selection was not a match, the
+        // first one at/after it) — the next match in document order, not one relative to the stale anchor.
+        recompute(next);
     }
 
     /**
@@ -534,8 +699,8 @@ public class FindReplaceBar extends HBox {
         String replacement = replaceField.getText();
         String expanded = replacement;
         if (regex.isSelected()) {
-            Pattern p =
-                    SearchMatcher.compileRegex(findField.getText(), caseSensitive.isSelected(), wholeWord.isSelected());
+            Pattern p = SearchMatcher.compileDocumentRegex(
+                    findField.getText(), caseSensitive.isSelected(), wholeWord.isSelected());
             java.util.regex.Matcher matcher = p == null ? null : p.matcher(fullText);
             if (matcher != null && matcher.find(start) && matcher.start() == start && matcher.end() == end) {
                 StringBuffer replacedPrefix = new StringBuffer();
@@ -553,6 +718,7 @@ public class FindReplaceBar extends HBox {
         if (area == null || query.isEmpty() || !buffer.isEditable()) {
             return;
         }
+        onActiveBufferChanged();
         if (regex.isSelected()) {
             String err = SearchMatcher.regexError(query);
             if (err != null) {
@@ -573,6 +739,10 @@ public class FindReplaceBar extends HBox {
         } catch (RuntimeException badReference) {
             // An invalid $-group reference — leave the buffer untouched rather than half-rewrite it.
             status.accept(tr("find.badReplacement", describe(badReference)));
+            return;
+        } catch (StackOverflowError tooDeep) {
+            // java.util.regex recurses per repetition of a group; a long match ran it out of stack.
+            status.accept(tr("find.tooComplex"));
             return;
         }
         if (spans.isEmpty()) {
@@ -617,8 +787,8 @@ public class FindReplaceBar extends HBox {
             }
             return;
         }
-        // Whole-word is wrapped as \b(?:…)\b with a non-capturing group, so user group numbers survive.
-        Pattern p = SearchMatcher.compileRegex(query, caseSensitive.isSelected(), wholeWord.isSelected());
+        // Whole-word wraps the query in a non-capturing group, so user group numbers survive.
+        Pattern p = SearchMatcher.compileDocumentRegex(query, caseSensitive.isSelected(), wholeWord.isSelected());
         if (p == null) {
             return;
         }

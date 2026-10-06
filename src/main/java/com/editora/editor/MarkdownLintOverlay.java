@@ -21,8 +21,7 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class MarkdownLintOverlay extends Region {
 
-    private static final Color ERROR = Color.web("#e5484d");
-    private static final Color WARNING = Color.web("#f5a623");
+    private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
     private static final double STEP = 2.0;
 
@@ -42,6 +41,10 @@ final class MarkdownLintOverlay extends Region {
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            colors = palette; // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
     }
 
     void setActive(boolean active) {
@@ -138,7 +141,7 @@ final class MarkdownLintOverlay extends Region {
         if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
             return;
         }
-        g.setStroke(d.isError() ? ERROR : WARNING);
+        g.setStroke(d.isError() ? colors.error() : colors.warning());
         squiggle(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
     }
 

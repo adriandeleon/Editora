@@ -101,9 +101,22 @@ is the duplicated background cost the lazy build exists to avoid. External chang
 `index.rebuild`.
 
 The usual shape applies: a single `symbol-index` daemon thread, an `AtomicLong` generation guard so
-a project switch discards a superseded walk, results marshalled back with `Platform.runLater`, and
-`search/GitignoreFilter` honoured so `target/` and `node_modules/` are skipped. Bounds:
-`MAX_FILE_BYTES` (2 MB — a generated bundle is not worth the scan) and `MAX_VISIT` (50,000 files).
+a project switch discards a superseded walk, and results marshalled back with `Platform.runLater`.
+
+The walk itself is [`search/ProjectWalk`](../../src/main/java/com/editora/search/ProjectWalk.java), the
+one pruned walk Find in Files, the TODO scan, the index and the test-source lookups share. It prunes
+**on the directory**: a dot-directory or a `.gitignore`d directory is skipped whole, before anything
+under it is listed. Filtering files after an unpruned `Files.walk` does not work — a directory-only
+rule (`target/`) never applies to a file and a slash-less rule (`node_modules`) only matches a base
+name, so nothing *under* an ignored directory is excluded — and that is what the index used to do:
+it read every file in `target/` and `node_modules/`, offered them in Search Everywhere, and charged
+them to the cap. An unreadable directory is stepped over rather than ending the walk.
+
+Bounds: `MAX_FILE_BYTES` (2 MB — a generated bundle is not worth the scan) and `MAX_VISIT` (50,000
+files). The cap counts files the index **keeps**, never ignored ones, and reaching it is reported in
+the status bar (`status.index.truncated`) rather than leaving a partial index that looks complete. A
+file whose language has no declaration rules (`DeclarationScanner.supports`) is listed for Search
+Everywhere but never read.
 
 Gated by `Settings.symbolIndex` (on by default) and off in Simple UI mode; disabling it clears the
 in-memory index rather than merely hiding it.
@@ -134,6 +147,14 @@ single-purpose picker it stands in for.
 browsable list rather than a blank box, and no project walk is provoked by merely opening it. A bare
 sigil with nothing typed after it is a *scope*, not an empty query — it names what it will search
 and walks nothing.
+
+**Every keystroke is answered at once, whatever state the index is in.** `IndexCoordinator.ensureBuilt`
+always runs its callback exactly once: immediately when the index is built or cannot be (switched off,
+Simple mode, no local project), otherwise when the walk lands — its own or one already in flight,
+superseded or not. While a walk is in flight the popup lists what needs no corpus (the matching
+commands) and parks a single callback, which refilters from the *live* field when the walk lands.
+Dropping the callback on those exits is what once left the empty-query list on screen under a typed
+query, with Enter running its first row.
 
 **A command whose feature is switched off is listed, grayed, with an explanation** naming the
 setting that would enable it, exactly as the command palette does (#532). Hiding it is tidier in a
@@ -220,6 +241,8 @@ the vertical equivalent. Scope that before building on it.
   the product here; a test that only asserts non-null passes against a matcher that ranks backwards.
 - A new Search Everywhere source is a `Kind` plus an `Ops` method; the merge does not need to know
   what the payload is.
-- Anything that walks the project goes off the FX thread with a generation guard, honours
-  `GitignoreFilter`, and bounds both file size and file count.
+- Anything that walks the project goes off the FX thread with a generation guard and through
+  `search/ProjectWalk`, which honours `GitignoreFilter` by pruning directories, bounds the file count on
+  accepted files, and reports truncation. Do not hand-roll a `Files.walk` plus a filter. To find one
+  source file from a class name or a stack frame, use `search/SourceFileFinder`.
 - The index is the floor. If a language server can answer, it answers.

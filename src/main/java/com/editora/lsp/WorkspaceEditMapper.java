@@ -36,11 +36,44 @@ public final class WorkspaceEditMapper {
 
     private WorkspaceEditMapper() {}
 
-    /** One file's share of a workspace edit. */
-    public record FileEdit(Path file, List<LspTextEdit> edits, Integer version, String expectedText) {
+    /**
+     * One file's share of a workspace edit, with what it may be applied to.
+     *
+     * <p>{@code version} and {@code expectedText} guard a document the server had open: the protocol version
+     * it named, and the text it had been sent when the request went out. {@code diskPreimageAt} guards a file
+     * the server did <em>not</em> have open — it computed the edit from the file on disk, so the edit is
+     * valid only for a clean buffer whose file has not been modified since that instant (epoch millis, the
+     * moment the request was sent). Null when the target was open on the server.
+     */
+    public record FileEdit(
+            Path file, List<LspTextEdit> edits, Integer version, String expectedText, Long diskPreimageAt) {
         public FileEdit(Path file, List<LspTextEdit> edits) {
-            this(file, edits, null, null);
+            this(file, edits, null, null, null);
         }
+
+        public FileEdit(Path file, List<LspTextEdit> edits, Integer version, String expectedText) {
+            this(file, edits, version, expectedText, null);
+        }
+    }
+
+    /**
+     * Timestamps coarser than a second (FAT, older ext3/HFS+) can record a write made after the request as
+     * if it happened before it; a whole-second timestamp therefore has to predate the request by this much.
+     */
+    static final long COARSE_TIMESTAMP_MARGIN_MILLIS = 2000;
+
+    /**
+     * Whether a file last modified at {@code lastModifiedMillis} is certain not to have changed since a
+     * request sent at {@code sentAtMillis} — the condition under which the file's current content is the
+     * content the server computed its edit from. False for an unknown request time ({@code <= 0}) or a
+     * missing file ({@code < 0}), so anything that cannot be shown is refused.
+     */
+    public static boolean unchangedSince(long lastModifiedMillis, long sentAtMillis) {
+        if (sentAtMillis <= 0 || lastModifiedMillis < 0) {
+            return false;
+        }
+        long margin = lastModifiedMillis % 1000 == 0 ? COARSE_TIMESTAMP_MARGIN_MILLIS : 0;
+        return lastModifiedMillis + margin < sentAtMillis;
     }
 
     /** A {@code RenameFile} resource operation — jdtls emits one when a public class is renamed (the
@@ -62,7 +95,8 @@ public final class WorkspaceEditMapper {
     /**
      * See the class doc: insertion-ordered per-file batches plus create/rename/delete operations, or
      * {@code null} for a non-file URI, snippet edit, or text edit after a rename/delete. Create may precede
-     * edits to the newly created file, which is the standard LSP shape. An empty edit is a valid no-op.
+     * edits to the newly created file, which is the standard LSP shape, or follow edits to other files.
+     * An empty edit is a valid no-op.
      */
     public static Mapped map(WorkspaceEdit edit) {
         if (edit == null) {
@@ -114,11 +148,18 @@ public final class WorkspaceEditMapper {
                     renames.add(new FileRename(from, to, overwrite));
                     terminalResourceOperation = true;
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.CreateFile cf) {
-                    if (sawTextEdit || resourcePhase > 0) {
-                        return null; // grouped staging applies every create before every text/rename/delete
+                    if (resourcePhase > 0) {
+                        return null; // grouped staging applies every create before every rename/delete
                     }
                     Path file = filePath(cf.getUri());
                     if (file == null) {
+                        return null;
+                    }
+                    // Staging applies every create before every text edit. A create that follows text edits
+                    // can be hoisted there without changing meaning unless one of those edits already
+                    // addressed this path. jdtls's package rename is [edits…, CreateFile, RenameFile…,
+                    // DeleteFile]; refusing the order outright made a Java package impossible to rename.
+                    if (sawTextEdit && byFile.containsKey(file)) {
                         return null;
                     }
                     boolean overwrite = cf.getOptions() != null
@@ -150,7 +191,8 @@ public final class WorkspaceEditMapper {
             }
         }
         List<FileEdit> out = new ArrayList<>(byFile.size());
-        byFile.forEach((file, edits) -> out.add(new FileEdit(file, List.copyOf(edits), versions.get(file), null)));
+        byFile.forEach(
+                (file, edits) -> out.add(new FileEdit(file, List.copyOf(edits), versions.get(file), null, null)));
         if (!independentRenames(renames)) {
             return null;
         }
@@ -181,7 +223,8 @@ public final class WorkspaceEditMapper {
                     edit.file(),
                     edit.edits(),
                     edit.version(),
-                    expected.getOrDefault(edit.file(), edit.expectedText())));
+                    expected.getOrDefault(edit.file(), edit.expectedText()),
+                    edit.diskPreimageAt()));
         }
         return new Mapped(List.copyOf(edits), mapped.renames(), mapped.creates(), mapped.deletes());
     }

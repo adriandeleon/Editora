@@ -10,6 +10,7 @@ import org.fxmisc.richtext.model.StyleSpans;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -61,7 +62,124 @@ class TextMateHighlighterTest {
         assertEquals("log-info", TextMateHighlighter.styleForScopes(List.of("source.log", "markup.info.log")));
     }
 
+    @Test
+    void storageScopesSeparateTypeNamesFromKeywords() {
+        // Java and Groovy scope referenced type names under storage.type — they take the type class.
+        for (String scope : List.of(
+                "storage.type.java",
+                "storage.type.generic.java",
+                "storage.type.generic.wildcard.java",
+                "storage.type.object.array.java",
+                "storage.type.groovy",
+                "storage.type.generic.groovy",
+                "storage.type.object.array.groovy",
+                "storage.type.parameters.groovy")) {
+            assertEquals("type", TextMateHighlighter.styleForScopes(List.of("source.x", scope)), scope);
+        }
+        assertEquals(
+                "annotation",
+                TextMateHighlighter.styleForScopes(List.of("source.java", "storage.type.annotation.java")));
+        // Real modifiers, declaration keywords and primitive type words stay keywords — in every grammar.
+        for (String scope : List.of(
+                "storage.modifier.java",
+                "storage.modifier.extends.java",
+                "storage.type.primitive.java",
+                "storage.type.primitive.array.java",
+                "storage.type.local.java",
+                "storage.type.function.arrow.java",
+                "storage.type.def.groovy",
+                "storage.type.ts",
+                "storage.type.class.ts",
+                "storage.type.function.ts",
+                "storage.type.rust",
+                "storage.type.class.cs",
+                "storage.type.built-in.primitive.c",
+                "storage.type.numeric.go",
+                "storage.modifier.kotlin",
+                "storage.type.generic.lua")) {
+            assertEquals("keyword", TextMateHighlighter.styleForScopes(List.of("source.x", scope)), scope);
+        }
+    }
+
+    @Test
+    void importAndPackagePathsArePlainAndDoNotFallThroughToAnOuterScope() {
+        assertNull(TextMateHighlighter.styleForScopes(
+                List.of("source.java", "meta.import.java", "storage.modifier.import.java")));
+        assertNull(TextMateHighlighter.styleForScopes(
+                List.of("source.java", "meta.package.java", "storage.modifier.package.java")));
+        assertNull(TextMateHighlighter.styleForScopes(List.of("source.groovy", "storage.modifier.import.groovy")));
+        // The path scope decides the token: an enclosing styled scope must not leak into it.
+        assertNull(TextMateHighlighter.styleForScopes(List.of("keyword.other.outer", "storage.modifier.import.java")));
+    }
+
     // --- end-to-end tokenization through a real grammar ---
+
+    /** The style class of the first occurrence of {@code token} in {@code text}, or {@code null} if unstyled. */
+    private static String styleOf(String fileName, String text, String token) {
+        IGrammar grammar = GrammarRegistry.shared().forFileName(fileName);
+        assertNotNull(grammar, "grammar should load for " + fileName);
+        StyleSpans<Collection<String>> spans = TextMateHighlighter.compute(text, grammar);
+        assertNotNull(spans);
+        int at = text.indexOf(token);
+        assertTrue(at >= 0, "token " + token + " is in the sample");
+        Collection<String> style = spans.getStyleSpan(
+                        spans.offsetToPosition(at, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                                .getMajor())
+                .getStyle();
+        return style.isEmpty() ? null : style.iterator().next();
+    }
+
+    @Test
+    void javaTypeNamesAndImportPathsAreNotStyledAsKeywords() {
+        String text = "package com.acme.app;\n"
+                + "import java.util.List;\n"
+                + "public final class Foo extends Base {\n"
+                + "    private final Map<String, Widget> cache = new HashMap<>();\n"
+                + "    int count(Registry registry, Entry[] entries) throws IOException {\n"
+                + "        var total = 0;\n"
+                + "        return total;\n"
+                + "    }\n"
+                + "}\n";
+        for (String type : List.of("Map", "String", "Widget", "HashMap", "Registry", "Entry", "IOException")) {
+            assertEquals("type", styleOf("Foo.java", text, type), type);
+        }
+        for (String plain : List.of("com", "acme", "java", "util", "List")) {
+            assertNull(styleOf("Foo.java", text, plain), plain + " is part of a package/import path");
+        }
+        for (String keyword : List.of(
+                "package", "import", "public", "final", "class", "extends", "private", "int", "throws", "var",
+                "return")) {
+            assertEquals("keyword", styleOf("Foo.java", text, keyword), keyword);
+        }
+    }
+
+    @Test
+    void groovyTypeNamesAndImportPathsAreNotStyledAsKeywords() {
+        String text =
+                "import groovy.json.JsonSlurper\nclass Foo {\n    def run() {\n        int n = 1\n        Widget w = new Gadget()\n    }\n}\n";
+        assertEquals("type", styleOf("Foo.groovy", text, "Widget"));
+        assertEquals("type", styleOf("Foo.groovy", text, "Gadget"));
+        assertNull(styleOf("Foo.groovy", text, "groovy.json"));
+        assertEquals("keyword", styleOf("Foo.groovy", text, "int"));
+    }
+
+    @Test
+    void otherGrammarsKeepTheirStorageKeywords() {
+        record Case(String file, String text, String keyword) {}
+        for (Case c : List.of(
+                new Case("a.ts", "const x = 1;\nclass K {}\nfunction f() {}\n", "const"),
+                new Case("a.ts", "const x = 1;\nclass K {}\nfunction f() {}\n", "class"),
+                new Case("a.ts", "const x = 1;\nclass K {}\nfunction f() {}\n", "function"),
+                new Case("a.rs", "fn f() {\n    let x = 1;\n}\n", "fn"),
+                new Case("a.rs", "fn f() {\n    let x = 1;\n}\n", "let"),
+                new Case("a.cs", "public class K {\n}\n", "class"),
+                new Case("a.c", "static int f(void) {\n    return 0;\n}\n", "int"),
+                new Case("a.cpp", "class K {\n};\n", "class"),
+                new Case("a.kt", "private fun f() {}\n", "private"),
+                new Case("a.go", "var x int = 1\n", "int"))) {
+            assertEquals("keyword", styleOf(c.file(), c.text(), c.keyword()), c.file() + " " + c.keyword());
+        }
+    }
 
     @Test
     void emptyTextReturnsNull() {
@@ -273,6 +391,130 @@ class TextMateHighlighterTest {
         assertTrue(
                 symbols.stream().noneMatch(s -> s.name().equals("baz")),
                 "a function call must not appear as a definition");
+    }
+
+    @Test
+    void javaMethodCallsAreNotListedAsDeclarations() {
+        // Java scopes `x.call()` as meta.method-call, not meta.function-call: the outline used to list
+        // getCode(), isEmpty() and test() as members of the enclosing method.
+        String text = "class KeyDispatcher {\n"
+                + "    void handle(KeyEvent event, String s) {\n"
+                + "        if (event.getCode() == KeyCode.ALT) {\n"
+                + "            s.isEmpty();\n"
+                + "            recordTarget.test(x);\n"
+                + "            reset();\n"
+                + "        }\n"
+                + "    }\n"
+                + "}\n";
+        List<TextMateHighlighter.Symbol> symbols = symbolsOf("KeyDispatcher.java", text);
+        assertEquals(
+                List.of("KeyDispatcher", "handle"),
+                symbols.stream().map(TextMateHighlighter.Symbol::name).toList());
+    }
+
+    @Test
+    void declarationsNestedInACallsArgumentsAreStillListed() {
+        // Java keeps meta.method-call open across the whole argument list, so an anonymous class's methods
+        // and a local class sit inside one. Their own declaration scope is nearer and must win — while the
+        // calls inside those bodies are still calls.
+        String text = "class A {\n"
+                + "    void wire() {\n"
+                + "        button.setOnAction(new EventHandler<ActionEvent>() {\n"
+                + "            public void handle(ActionEvent e) {\n"
+                + "                go();\n"
+                + "                e.consume();\n"
+                + "            }\n"
+                + "        });\n"
+                + "        submit(new Runnable() {\n"
+                + "            public void run() {}\n"
+                + "        });\n"
+                + "    }\n"
+                + "}\n";
+        assertEquals(
+                List.of("A", "wire", "handle", "run"),
+                symbolsOf("A.java", text).stream()
+                        .map(TextMateHighlighter.Symbol::name)
+                        .toList());
+        // The decision is the innermost structural scope, in either direction.
+        assertEquals(
+                "function",
+                TextMateHighlighter.kindForScopes(List.of(
+                        "source.java",
+                        "meta.method-call.java",
+                        "meta.inner-class.java",
+                        "meta.method.java",
+                        "meta.method.identifier.java",
+                        "entity.name.function.java")));
+        assertNull(TextMateHighlighter.kindForScopes(List.of(
+                "source.java",
+                "meta.method.java",
+                "meta.method.body.java",
+                "meta.function-call.java",
+                "entity.name.function.java")));
+    }
+
+    @Test
+    void callsAreNotDeclarationsInAnyBundledGrammarThatMarksThem() {
+        // One sample per bundled grammar with a call scope: a declaration named `decl` followed by plain,
+        // member and (where the language has them) static calls. Only the declaration may be a symbol.
+        record Case(String file, String text) {}
+        for (Case c : List.of(
+                new Case("a.java", "class K {\n  void decl() {\n    o.callA();\n    callB(1);\n  }\n}\n"),
+                new Case("a.groovy", "class K {\n  def decl() {\n    o.callA()\n    callB(1)\n  }\n}\n"),
+                new Case("a.php", "<?php\nfunction decl($a) {\n  $a->callA();\n  K::callB(1);\n  callC(2);\n}\n"),
+                new Case("a.c", "int decl(int a) {\n  o.callA(1);\n  p->callB(1);\n  callC(2);\n  return 0;\n}\n"),
+                new Case("a.cpp", "int decl(int a) {\n  o.callA(1);\n  callB(2);\n  ns::callC(3);\n  return 0;\n}\n"),
+                new Case("a.kt", "fun decl(a: Int) {\n  o.callA(1)\n  callB(2)\n  listOf(1).map(::callC)\n}\n"),
+                new Case("a.go", "func decl(a int) {\n  o.CallA(1)\n  callB(2)\n  n := len(s)\n}\n"),
+                new Case("a.rs", "fn decl(a: i32) {\n  o.call_a(1);\n  call_b(2);\n  println!(\"x\");\n}\n"),
+                new Case("a.ts", "function decl(a: number) {\n  o.callA(1);\n  callB(2);\n  const s = callC`x`;\n}\n"),
+                new Case("a.tsx", "function decl(a: number) {\n  o.callA(1);\n  callB(2);\n}\n"),
+                new Case("a.py", "def decl(a):\n    o.call_a(1)\n    call_b(2)\n"),
+                new Case("a.rb", "def decl(a)\n  o.call_a(1)\n  call_b(2)\nend\n"),
+                new Case("a.tf", "locals {\n  decl = max(1, 2)\n}\n"))) {
+            List<String> functions = symbolsOf(c.file(), c.text()).stream()
+                    .filter(s -> s.kind().equals("function"))
+                    .map(TextMateHighlighter.Symbol::name)
+                    .toList();
+            assertTrue(
+                    functions.stream().allMatch("decl"::equals),
+                    c.file() + " listed a call as a declaration: " + functions);
+        }
+    }
+
+    @Test
+    void callScopesAreRecognisedButDeclarationScopesAreNot() {
+        for (String call : List.of(
+                "meta.function-call.java",
+                "meta.method-call.java",
+                "meta.method-call.static.php",
+                "meta.function.call.rust",
+                "meta.macro.rust",
+                "entity.name.function.call.cpp",
+                "entity.name.function.member.c",
+                "entity.name.function.support.builtin.go",
+                "entity.name.function.reference.kotlin",
+                "entity.name.function.tagged-template.ts",
+                "entity.name.function.decorator.python")) {
+            assertTrue(TextMateHighlighter.isCallScope(call), call);
+            assertNull(TextMateHighlighter.kindForScopes(List.of("source.x", call, "entity.name.function.x")), call);
+        }
+        for (String declaration : List.of(
+                "meta.function.definition.rust",
+                "meta.method.identifier.java",
+                "meta.macro.rules.rust",
+                "entity.name.function.java",
+                "entity.name.function.definition.cpp",
+                "entity.name.function.declaration.kotlin",
+                "entity.name.function.preprocessor.c",
+                "entity.name.function.macro.rust",
+                "entity.name.function.target.makefile")) {
+            assertFalse(TextMateHighlighter.isCallScope(declaration), declaration);
+        }
+        assertEquals(
+                "function",
+                TextMateHighlighter.kindForScopes(
+                        List.of("source.rust", "meta.macro.rules.rust", "entity.name.function.macro.rust")));
     }
 
     @Test

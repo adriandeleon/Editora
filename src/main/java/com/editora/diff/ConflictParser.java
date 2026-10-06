@@ -26,8 +26,9 @@ public final class ConflictParser {
 
     /**
      * One conflict: the {@code ours}/{@code theirs} lines, the optional common-ancestor {@code base} lines
-     * (empty unless the markers were written in {@code diff3}/{@code zdiff3} style), and the labels from the
-     * markers.
+     * (empty unless the markers were written in {@code diff3}/{@code zdiff3} style), the labels from the
+     * markers, and the marker length the file used (seven unless a {@code conflict-marker-size} attribute
+     * raised it) so an unresolved conflict is written back with the markers it came with.
      */
     public record Conflict(
             String oursLabel,
@@ -36,7 +37,19 @@ public final class ConflictParser {
             List<String> base,
             String theirsLabel,
             List<String> theirs,
-            boolean basePresent) {
+            boolean basePresent,
+            int markerSize) {
+
+        public Conflict(
+                String oursLabel,
+                List<String> ours,
+                String baseLabel,
+                List<String> base,
+                String theirsLabel,
+                List<String> theirs,
+                boolean basePresent) {
+            this(oursLabel, ours, baseLabel, base, theirsLabel, theirs, basePresent, DEFAULT_MARKER_SIZE);
+        }
 
         public Conflict(
                 String oursLabel,
@@ -55,6 +68,7 @@ public final class ConflictParser {
             base = List.copyOf(base == null ? List.of() : base);
             theirsLabel = theirsLabel == null ? "" : theirsLabel;
             theirs = List.copyOf(theirs == null ? List.of() : theirs);
+            markerSize = Math.max(DEFAULT_MARKER_SIZE, markerSize);
         }
 
         /** Whether this conflict carries a captured 3-way common-ancestor region. */
@@ -90,18 +104,73 @@ public final class ConflictParser {
         }
     }
 
-    private static final String OURS = "<<<<<<<";
-    private static final String BASE = "|||||||";
-    private static final String SEP = "=======";
-    private static final String THEIRS = ">>>>>>>";
+    /** Git's default conflict-marker size; a {@code conflict-marker-size} attribute can only raise it here. */
+    public static final int DEFAULT_MARKER_SIZE = 7;
 
-    /** Fast check (used to offer the merge view) — any line beginning with the ours marker. */
+    private static final char OURS = '<';
+    private static final char BASE = '|';
+    private static final char SEP = '=';
+    private static final char THEIRS = '>';
+
+    /**
+     * The length of the marker run that starts {@code line} — at least seven {@code c} characters followed
+     * by the end of the line or a space and a label — or {@code 0} when the line is not such a marker.
+     */
+    private static int markerRun(String line, char c) {
+        int n = 0;
+        while (n < line.length() && line.charAt(n) == c) {
+            n++;
+        }
+        return n >= DEFAULT_MARKER_SIZE && (n == line.length() || line.charAt(n) == ' ') ? n : 0;
+    }
+
+    /**
+     * Whether {@code line} is a {@code c} marker of exactly {@code size} characters. The size comes from the
+     * conflict's opening marker (seven, or the file's {@code conflict-marker-size} attribute), so a run of a
+     * different length is ordinary text — a Markdown or reStructuredText heading underline
+     * ({@code ==========}) inside a seven-marker conflict used to end the "ours" side early and corrupt a
+     * marker-fallback merge.
+     */
+    private static boolean isMarker(String line, char c, int size) {
+        return markerRun(line, c) == size;
+    }
+
+    /** The ours/theirs separator carries no label: it is the marker run and nothing else. */
+    private static boolean isSeparator(String line, int size) {
+        return line.length() == size && markerRun(line, SEP) == size;
+    }
+
+    /**
+     * The marker size of the conflict that opens at {@code lines[i]}, or {@code 0} when that line does not
+     * open one. Seven {@code <} always open a conflict (Git's default). A longer run does so only when the
+     * separator and closing marker of that same size follow, so a decorative line of {@code <} characters
+     * cannot swallow the rest of the file.
+     */
+    private static int opens(List<String> lines, int i) {
+        int size = markerRun(lines.get(i), OURS);
+        if (size <= DEFAULT_MARKER_SIZE) {
+            return size;
+        }
+        boolean separated = false;
+        for (int k = i + 1; k < lines.size(); k++) {
+            String line = lines.get(k);
+            if (!separated) {
+                separated = isSeparator(line, size);
+            } else if (isMarker(line, THEIRS, size)) {
+                return size;
+            }
+        }
+        return 0;
+    }
+
+    /** Fast check (used to offer the merge view) — any line that opens a conflict. */
     public static boolean hasConflictMarkers(String text) {
         if (text == null || text.isEmpty()) {
             return false;
         }
-        for (String line : text.replace("\r\n", "\n").split("\n", -1)) {
-            if (line.startsWith(OURS)) {
+        List<String> lines = List.of(text.replace("\r\n", "\n").split("\n", -1));
+        for (int i = 0; i < lines.size(); i++) {
+            if (opens(lines, i) > 0) {
                 return true;
             }
         }
@@ -115,12 +184,13 @@ public final class ConflictParser {
         int n = lines.size();
         while (i < n) {
             String line = lines.get(i);
-            if (line.startsWith(OURS)) {
+            int size = opens(lines, i);
+            if (size > 0) {
                 if (!plain.isEmpty()) {
                     segments.add(new PlainSegment(List.copyOf(plain)));
                     plain.clear();
                 }
-                String oursLabel = label(line, OURS);
+                String oursLabel = label(line, size);
                 List<String> ours = new ArrayList<>();
                 List<String> base = new ArrayList<>();
                 List<String> theirs = new ArrayList<>();
@@ -130,33 +200,31 @@ public final class ConflictParser {
                 i++;
                 // ours lines until the base (|||||||) or separator (=======)
                 while (i < n
-                        && !lines.get(i).startsWith(SEP)
-                        && !lines.get(i).startsWith(BASE)
-                        && !lines.get(i).startsWith(THEIRS)) {
+                        && !isSeparator(lines.get(i), size)
+                        && !isMarker(lines.get(i), BASE, size)
+                        && !isMarker(lines.get(i), THEIRS, size)) {
                     ours.add(lines.get(i));
                     i++;
                 }
                 // optional base region (3-way diff3/zdiff3 style) — capture it
-                if (i < n && lines.get(i).startsWith(BASE)) {
+                if (i < n && isMarker(lines.get(i), BASE, size)) {
                     basePresent = true;
-                    baseLabel = label(lines.get(i), BASE);
+                    baseLabel = label(lines.get(i), size);
                     i++;
-                    while (i < n
-                            && !lines.get(i).startsWith(SEP)
-                            && !lines.get(i).startsWith(THEIRS)) {
+                    while (i < n && !isSeparator(lines.get(i), size) && !isMarker(lines.get(i), THEIRS, size)) {
                         base.add(lines.get(i));
                         i++;
                     }
                 }
-                if (i < n && lines.get(i).startsWith(SEP)) {
+                if (i < n && isSeparator(lines.get(i), size)) {
                     i++;
                 }
-                while (i < n && !lines.get(i).startsWith(THEIRS)) {
+                while (i < n && !isMarker(lines.get(i), THEIRS, size)) {
                     theirs.add(lines.get(i));
                     i++;
                 }
-                if (i < n && lines.get(i).startsWith(THEIRS)) {
-                    theirsLabel = label(lines.get(i), THEIRS);
+                if (i < n && isMarker(lines.get(i), THEIRS, size)) {
+                    theirsLabel = label(lines.get(i), size);
                     i++;
                 }
                 segments.add(new ConflictSegment(new Conflict(
@@ -166,7 +234,8 @@ public final class ConflictParser {
                         List.copyOf(base),
                         theirsLabel,
                         List.copyOf(theirs),
-                        basePresent)));
+                        basePresent,
+                        size)));
             } else {
                 plain.add(line);
                 i++;
@@ -179,9 +248,8 @@ public final class ConflictParser {
     }
 
     /** The text after a marker (e.g. {@code "<<<<<<< HEAD"} → {@code "HEAD"}). */
-    private static String label(String markerLine, String marker) {
-        String rest = markerLine.substring(marker.length()).strip();
-        return rest;
+    private static String label(String markerLine, int markerSize) {
+        return markerLine.substring(markerSize).strip();
     }
 
     /**
@@ -208,19 +276,25 @@ public final class ConflictParser {
                         out.addAll(c.theirs());
                     }
                     default -> { // UNRESOLVED: keep the conflict markers verbatim (incl. the 3-way base, if any)
-                        out.add(OURS + (c.oursLabel().isEmpty() ? "" : " " + c.oursLabel()));
+                        int size = c.markerSize();
+                        out.add(marker(OURS, size, c.oursLabel()));
                         out.addAll(c.ours());
                         if (c.hasBase()) {
-                            out.add(BASE + (c.baseLabel().isEmpty() ? "" : " " + c.baseLabel()));
+                            out.add(marker(BASE, size, c.baseLabel()));
                             out.addAll(c.base());
                         }
-                        out.add(SEP);
+                        out.add(marker(SEP, size, ""));
                         out.addAll(c.theirs());
-                        out.add(THEIRS + (c.theirsLabel().isEmpty() ? "" : " " + c.theirsLabel()));
+                        out.add(marker(THEIRS, size, c.theirsLabel()));
                     }
                 }
             }
         }
         return out;
+    }
+
+    private static String marker(char c, int size, String label) {
+        String run = String.valueOf(c).repeat(size);
+        return label.isEmpty() ? run : run + " " + label;
     }
 }

@@ -225,7 +225,7 @@ class RemoteDocumentLifecycleFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             FileWorkflowCoordinator workflows = workflows(fx);
             EditorBuffer buffer = openRemote(async, fx, sftp.remotePath("ordered.txt"));
-            ExecutorService saveWorker = FxTestSupport.field(workflows, "autoSaveExecutor");
+            ExecutorService saveWorker = workflows.saveExecutor(sftp.remotePath("ordered.txt"));
             CountDownLatch unexpectedConflict = pressNextDialog(async, ButtonBar.ButtonData.CANCEL_CLOSE);
 
             FxTestSupport.runOnFx(() -> {
@@ -300,6 +300,11 @@ class RemoteDocumentLifecycleFxTest {
     }
 
     private static void awaitSave(AsyncTestScope async, FileWorkflowCoordinator workflows) throws Exception {
+        // A remote file is written on its connection's own worker, a local one on the shared local worker.
+        java.util.Map<String, ExecutorService> remoteWorkers = FxTestSupport.field(workflows, "remoteSaveExecutors");
+        for (ExecutorService remoteWorker : java.util.List.copyOf(remoteWorkers.values())) {
+            async.awaitWorker(remoteWorker);
+        }
         ExecutorService saveWorker = FxTestSupport.field(workflows, "autoSaveExecutor");
         async.awaitWorker(saveWorker);
         async.awaitFx();

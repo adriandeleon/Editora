@@ -147,6 +147,61 @@ class LspCoordinatorDiagnosticsFxTest {
         return FxTestSupport.callOnFx(() -> coordinator.problems());
     }
 
+    // --- an edit that leaves the server nothing to publish -----------------------------------------------
+
+    private static int overlayCount(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            Object overlay = FxTestSupport.field(b, "lspOverlay");
+            return overlay == null
+                    ? 0
+                    : ((List<?>) FxTestSupport.call(overlay, "diagnostics", new Class<?>[] {})).size();
+        });
+    }
+
+    /**
+     * Every edit clears the squiggles, expecting the server to publish again. Type a character and Backspace
+     * it inside the didChange debounce and the text the server would be sent is the text it already has:
+     * nothing is sent, nothing is published, and the marks used to stay gone while Problems still listed them.
+     */
+    @Test
+    void aNetZeroEditPutsTheDiagnosticsBack() throws Exception {
+        EditorBuffer b = openJava("A.java", "class A {}\n");
+        FxTestSupport.runOnFx(() -> {
+            coordinator.wireBuffer(b);
+            coordinator.syncBuffer(b);
+        });
+        publish(b.getPath(), one("boom"));
+        assertEquals(1, overlayCount(b), "precondition: the squiggle is shown");
+
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().insertText(0, " ");
+            b.getArea().deleteText(0, 1);
+        });
+        assertEquals(0, overlayCount(b), "an edit hides marks that may now be misplaced");
+        FxTestSupport.runOnFx(b::sendLspChange); // the settled pulse
+
+        assertEquals(1, overlayCount(b), "nothing was sent, so nothing will be published: the marks return");
+        assertEquals(1, problems().size());
+    }
+
+    /** A real edit still waits for the server: stale marks must not be repainted on shifted lines. */
+    @Test
+    void aRealEditKeepsTheMarksHiddenUntilTheServerPublishes() throws Exception {
+        EditorBuffer b = openJava("A.java", "class A {}\n");
+        FxTestSupport.runOnFx(() -> {
+            coordinator.wireBuffer(b);
+            coordinator.syncBuffer(b);
+        });
+        publish(b.getPath(), one("boom"));
+
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().insertText(0, "\n");
+            b.sendLspChange();
+        });
+
+        assertEquals(0, overlayCount(b));
+    }
+
     // --- open-files-only scoping ---------------------------------------------------------------------
 
     @Test
@@ -359,5 +414,51 @@ class LspCoordinatorDiagnosticsFxTest {
         FxTestSupport.runOnFx(() -> coordinator.setProjectWideProblems(false));
 
         assertFalse(problems().containsKey(closed));
+    }
+
+    // --- the Problems tree is rebuilt once per burst, and not at all for an identical publish ---------
+
+    private int rebuilds() throws Exception {
+        return FxTestSupport.callOnFx(() -> coordinator.problemsPanel().rebuildCount());
+    }
+
+    /**
+     * jdtls publishes once per file on a project import. Each publish used to rebuild the whole tree, so a
+     * burst of N cost N full rebuilds on the FX thread; now the burst shares one.
+     */
+    @Test
+    void aBurstOfPublishesRebuildsTheProblemsTreeOnce() throws Exception {
+        EditorBuffer a = openJava("A.java", "class A {}\n");
+        EditorBuffer b = openJava("B.java", "class B {}\n");
+        EditorBuffer c = openJava("C.java", "class C {}\n");
+        FxTestSupport.runOnFx(() -> {}); // settle anything queued by opening the buffers
+        int before = rebuilds();
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.onDiagnostics(a.getPath(), one("a"));
+            coordinator.onDiagnostics(b.getPath(), one("b"));
+            coordinator.onDiagnostics(c.getPath(), one("c"));
+        });
+        FxTestSupport.runOnFx(() -> {}); // the single deferred rebuild
+
+        assertEquals(3, problems().size());
+        assertEquals(before + 1, rebuilds(), "three publishes in one burst share one rebuild");
+    }
+
+    /** Most publishes repeat what is already shown (every unaffected file, on every keystroke). */
+    @Test
+    void republishingIdenticalDiagnosticsDoesNotRebuildTheTree() throws Exception {
+        EditorBuffer a = openJava("A.java", "class A {}\n");
+        publish(a.getPath(), one("same"));
+        FxTestSupport.runOnFx(() -> {});
+        int before = rebuilds();
+
+        publish(a.getPath(), one("same"));
+        FxTestSupport.runOnFx(() -> {});
+        assertEquals(before, rebuilds(), "identical content: nothing to rebuild");
+
+        publish(a.getPath(), one("different"));
+        FxTestSupport.runOnFx(() -> {});
+        assertEquals(before + 1, rebuilds());
     }
 }

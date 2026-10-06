@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Locale;
 import java.util.function.Consumer;
 
 import javafx.animation.PauseTransition;
@@ -35,9 +34,6 @@ import static com.editora.i18n.Messages.tr;
  */
 final class WorkspaceSymbolPopup {
 
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
-
     /** Window hooks: run the async server query, and open a symbol's location. */
     interface Ops {
         /** Runs {@code workspace/symbol} for {@code text}; {@code cb} is delivered on the FX thread. */
@@ -56,6 +52,9 @@ final class WorkspaceSymbolPopup {
 
     private final TextField query = new TextField();
     private final ListView<WorkspaceSymbolMatch> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
+    private final Label hint = new Label();
+
     private final ObservableList<WorkspaceSymbolMatch> rows = FXCollections.observableArrayList();
     private final Label status = new Label();
     private final VBox content;
@@ -77,13 +76,6 @@ final class WorkspaceSymbolPopup {
         query.addEventFilter(KeyEvent.KEY_PRESSED, this::onQueryKey);
         // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
         com.editora.command.TextInputKeymap.installShared(query);
-        if (IS_MAC) {
-            query.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                    e.consume();
-                }
-            });
-        }
 
         list.setItems(rows);
         list.setFixedCellSize(CELL_HEIGHT);
@@ -93,7 +85,6 @@ final class WorkspaceSymbolPopup {
         status.getStyleClass().add("fif-status");
         Label title = new Label(tr("lsp.workspaceSymbols.title"));
         title.getStyleClass().add("palette-title");
-        Label hint = new Label(tr("lsp.workspaceSymbols.hint"));
         hint.getStyleClass().add("palette-hint");
 
         VBox card = new VBox(6, title, query, list, status, hint);
@@ -115,6 +106,7 @@ final class WorkspaceSymbolPopup {
 
     /** Shows the popup, seeding the query with {@code seed} (e.g. the selected text) when non-blank. */
     void show(String seed) {
+        hint.setText(PickerKeys.legend(PickerKeys.hint("open", "↵")));
         if (seed != null && !seed.isBlank()) {
             query.setText(seed);
         }
@@ -130,44 +122,13 @@ final class WorkspaceSymbolPopup {
     }
 
     private void onQueryKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
-                }
-            }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case ENTER -> {
-                openSelected();
-                e.consume();
-            }
-            default -> {}
-            // ESCAPE / C-g are handled by the OverlayHost.
+        PickerKeys.Action action = PickerKeys.action(e);
+        if (action == PickerKeys.Action.ACCEPT) {
+            openSelected();
+        } else if (!PickerKeys.navigate(list, action)) {
+            return; // cancel (Esc / the keymap's cancel chord) is handled by the OverlayHost
         }
-    }
-
-    private void move(int delta) {
-        int size = rows.size();
-        if (size == 0) {
-            return;
-        }
-        int idx = Math.floorMod(list.getSelectionModel().getSelectedIndex() + delta, size);
-        list.getSelectionModel().select(idx);
-        list.scrollTo(idx);
+        e.consume();
     }
 
     private void openSelected() {

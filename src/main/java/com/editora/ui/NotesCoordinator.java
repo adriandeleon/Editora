@@ -99,7 +99,10 @@ final class NotesCoordinator {
     // Coalesce the per-edit (line-shift) persist off the FX hot path — see schedulePersistNotes. (#551)
     private final javafx.animation.PauseTransition persistDebounce =
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
-    private EditorBuffer pendingPersist;
+    /** Every buffer with a debounced persist outstanding. One slot lost the first buffer's line shifts
+     *  whenever a second buffer was edited inside the same debounce window. */
+    private final java.util.Set<EditorBuffer> pendingPersist =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     NotesCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -354,17 +357,18 @@ final class NotesCoordinator {
      * lost to a crash before then. (#551)
      */
     void schedulePersistNotes(EditorBuffer buffer) {
-        pendingPersist = buffer;
+        pendingPersist.add(buffer);
         persistDebounce.playFromStart();
         onChanged.run();
     }
 
-    private void flushPendingPersist() {
-        EditorBuffer b = pendingPersist;
-        pendingPersist = null;
-        if (b != null) {
-            persistNotes(b);
-        }
+    /** Writes every outstanding debounced persist now. Also called when the session is saved and when the
+     *  window closes, so a close inside the debounce window does not drop the shifted positions. */
+    void flushPendingPersist() {
+        persistDebounce.stop();
+        java.util.List<EditorBuffer> pending = java.util.List.copyOf(pendingPersist);
+        pendingPersist.clear();
+        pending.forEach(this::persistNotes);
     }
 
     /** Persists the active buffer's notes (keyed by canonical path), preserving the panel's order. */
@@ -416,17 +420,44 @@ final class NotesCoordinator {
         }
     }
 
-    /** Moves a file's personal notes from {@code oldKey} to {@code newKey} (used by in-app rename). */
-    void migrateKey(String oldKey, String newKey) {
-        if (oldKey == null || oldKey.equals(newKey)) {
+    /**
+     * A rename or move ({@code old → target}, a file or a folder): the notes stored for it, and for every
+     * file below it, move to the new path. Call after the move, while {@code target} exists.
+     */
+    void pathRenamed(Path old, Path target) {
+        String sep = old.getFileSystem().getSeparator();
+        String oldKey = RenamedFileState.formerCanonicalKey(old);
+        if (RenamedFileState.rekey(ops.notes(), oldKey, PathKeys.canonicalKey(target), sep)) {
+            ops.saveNotes();
+            refreshViews();
+        }
+    }
+
+    /**
+     * Save As re-pointed {@code buffer} from {@code oldPath}: its notes are stored under the new path as
+     * well, and the file it left keeps its own while it is still on disk (see the bookmarks' twin).
+     */
+    void bufferPathChanged(EditorBuffer buffer, Path oldPath) {
+        if (!isEnabled()) {
             return;
         }
         var map = ops.notes();
-        List<PersonalNote> moved = map.remove(oldKey);
-        if (moved != null) {
-            map.put(newKey, moved);
+        String oldKey = oldPath == null ? null : RenamedFileState.formerCanonicalKey(oldPath);
+        Path now = buffer.getPath();
+        if (oldKey != null && now != null && buffer.isNarrowed() && map.get(oldKey) != null) {
+            map.put(ops.noteKey(buffer), new ArrayList<>(map.get(oldKey)));
             ops.saveNotes();
-            refreshViews();
+        }
+        if (oldKey != null
+                && com.editora.vfs.Vfs.isLocal(oldPath)
+                && !java.nio.file.Files.exists(oldPath)
+                && map.remove(oldKey) != null) {
+            ops.saveNotes();
+        }
+        boolean any = !buffer.getNoteManager().snapshot().isEmpty();
+        if (now != null && !now.equals(oldPath) && (any || map.containsKey(ops.noteKey(buffer)))) {
+            pendingPersist.remove(buffer);
+            persistNotes(buffer);
         }
     }
 
@@ -524,9 +555,10 @@ final class NotesCoordinator {
         if (buffer == null) {
             return;
         }
-        PersonalNote note = buffer.getNoteManager().noteAt(buffer.getArea().getCaretPosition());
+        PersonalNote note =
+                buffer.getNoteManager().noteAt(buffer.getFocusedArea().getCaretPosition());
         if (note == null) {
-            var ns = buffer.getNoteManager().notesOnLine(buffer.getArea().getCurrentParagraph());
+            var ns = buffer.getNoteManager().notesOnLine(buffer.getFocusedArea().getCurrentParagraph());
             if (!ns.isEmpty()) {
                 note = ns.get(0);
             }
@@ -556,9 +588,10 @@ final class NotesCoordinator {
         if (buffer == null) {
             return;
         }
-        PersonalNote note = buffer.getNoteManager().noteAt(buffer.getArea().getCaretPosition());
+        PersonalNote note =
+                buffer.getNoteManager().noteAt(buffer.getFocusedArea().getCaretPosition());
         if (note == null) {
-            var ns = buffer.getNoteManager().notesOnLine(buffer.getArea().getCurrentParagraph());
+            var ns = buffer.getNoteManager().notesOnLine(buffer.getFocusedArea().getCurrentParagraph());
             if (!ns.isEmpty()) {
                 note = ns.get(0);
             }
@@ -578,7 +611,7 @@ final class NotesCoordinator {
         if (b == null) {
             return;
         }
-        var ns = b.getNoteManager().notesOnLine(b.getArea().getCurrentParagraph());
+        var ns = b.getNoteManager().notesOnLine(b.getFocusedArea().getCurrentParagraph());
         if (ns.isEmpty()) {
             host.setStatus(tr("status.noNotesInFile"));
             return;
@@ -592,7 +625,7 @@ final class NotesCoordinator {
         if (b == null) {
             return;
         }
-        int from = b.getArea().getCurrentParagraph();
+        int from = b.getFocusedArea().getCurrentParagraph();
         Integer target =
                 forward ? b.getNoteManager().next(from) : b.getNoteManager().previous(from);
         if (target != null) {

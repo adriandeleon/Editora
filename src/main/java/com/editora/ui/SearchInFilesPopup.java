@@ -4,7 +4,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.function.Consumer;
 
 import javafx.animation.PauseTransition;
@@ -43,9 +42,6 @@ import static com.editora.i18n.Messages.tr;
  * dismiss (handled by the host).
  */
 final class SearchInFilesPopup {
-
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
 
     /** One result row: a file header ({@code match == null}, {@code count} = its match count) or a match. */
     private record Row(Path file, LineMatch match, int count) {
@@ -95,6 +91,9 @@ final class SearchInFilesPopup {
     private final Label backendBadge = new Label("ripgrep");
 
     private final ListView<Row> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
+    private final Label hint = new Label();
+
     private final ObservableList<Row> rows = FXCollections.observableArrayList();
     private final Label status = new Label();
     private final VBox content;
@@ -115,14 +114,6 @@ final class SearchInFilesPopup {
         query.addEventFilter(KeyEvent.KEY_PRESSED, this::onQueryKey);
         // Emacs caret movement + basic editing (registered after onQueryKey so its list navigation wins).
         com.editora.command.TextInputKeymap.installShared(query);
-        if (IS_MAC) {
-            // Swallow Option-composed chars from the opening chord / chorded keys (mirrors QuickOpen).
-            query.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                    e.consume();
-                }
-            });
-        }
 
         caseSensitive.setTooltip(new Tooltip(tr("search.caseTip")));
         regex.setTooltip(new Tooltip(tr("search.regexTip")));
@@ -168,7 +159,6 @@ final class SearchInFilesPopup {
         status.getStyleClass().add("fif-status");
         Label title = new Label(tr("search.popupTitle"));
         title.getStyleClass().add("palette-title");
-        Label hint = new Label(tr("search.popupHint"));
         hint.getStyleClass().add("palette-hint");
 
         VBox card = new VBox(6, title, query, toggles, rootRow, globRow, list, status, hint);
@@ -195,6 +185,7 @@ final class SearchInFilesPopup {
      * focuses + selects the query field, and runs the search if a query is present.
      */
     void show(String selection) {
+        hint.setText(PickerKeys.legend(PickerKeys.hint("open", "↵")));
         Path root = ops.defaultRoot();
         rootField.setText(root == null ? "" : root.toString());
         if (selection != null && !selection.isEmpty()) {
@@ -222,44 +213,13 @@ final class SearchInFilesPopup {
     }
 
     private void onQueryKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
-                }
-            }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case ENTER -> {
-                openSelected();
-                e.consume();
-            }
-            default -> {}
-            // ESCAPE / C-g are handled by the OverlayHost.
+        PickerKeys.Action action = PickerKeys.action(e);
+        if (action == PickerKeys.Action.ACCEPT) {
+            openSelected();
+        } else if (!PickerKeys.navigate(list, action)) {
+            return; // cancel (Esc / the keymap's cancel chord) is handled by the OverlayHost
         }
-    }
-
-    private void move(int delta) {
-        int size = rows.size();
-        if (size == 0) {
-            return;
-        }
-        int idx = Math.floorMod(list.getSelectionModel().getSelectedIndex() + delta, size);
-        list.getSelectionModel().select(idx);
-        list.scrollTo(idx);
+        e.consume();
     }
 
     private void openSelected() {
@@ -268,6 +228,12 @@ final class SearchInFilesPopup {
             return;
         }
         overlayHost.hide();
+        String q = query.getText();
+        if (q != null && !q.isBlank()) {
+            // Here, not in runSearch(): that is the debounce target, so every pause while typing stored
+            // the prefix typed so far (h, ha, han, …) and pushed the real entries out of the shared history.
+            ops.recordSearch(q);
+        }
         if (r.isHeader()) {
             ops.openMatch(r.file(), 1, 0);
         } else {
@@ -296,7 +262,6 @@ final class SearchInFilesPopup {
             status.setText(tr("search.rootNotFound"));
             return;
         }
-        ops.recordSearch(q);
         status.setText(tr("search.searching"));
         SearchQuery sq = new SearchQuery(q, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
         Path scope = root;
@@ -366,6 +331,25 @@ final class SearchInFilesPopup {
         return abs.toString();
     }
 
+    /** Longest preview a row lays out; a match further in is shown in a window around it. */
+    static final int PREVIEW_CHARS = 240;
+
+    /**
+     * The row text for {@code m}: the line, or — for a long one — a window around the match. Setting a whole
+     * minified line (megabytes) as a label's text made every visible row lay all of it out, on each populate
+     * and each scroll step. Pure (unit-tested).
+     */
+    static String previewOf(LineMatch m) {
+        String line = m.lineText() == null ? "" : m.lineText();
+        if (line.length() <= PREVIEW_CHARS) {
+            return line.strip();
+        }
+        int at = Math.max(0, Math.min(m.col() - 1, line.length()));
+        int from = Math.max(0, Math.min(at - PREVIEW_CHARS / 4, line.length() - PREVIEW_CHARS));
+        int to = Math.min(line.length(), from + PREVIEW_CHARS);
+        return (from > 0 ? "…" : "") + line.substring(from, to).strip() + (to < line.length() ? "…" : "");
+    }
+
     private final class ResultCell extends ListCell<Row> {
         private final Label fileName = new Label();
         private final Label count = new Label();
@@ -406,8 +390,7 @@ final class SearchInFilesPopup {
             } else {
                 LineMatch m = item.match();
                 lineNo.setText(String.valueOf(m.line()));
-                String text = m.lineText() == null ? "" : m.lineText().strip();
-                preview.setText(text);
+                preview.setText(previewOf(m));
                 setGraphic(matchRow);
             }
         }

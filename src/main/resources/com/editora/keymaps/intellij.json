@@ -11,6 +11,8 @@
   "C-v": "edit.paste",
   "M-j": "edit.addCaretNextOccurrence",
   "C-/": "edit.toggleComment",
+  "C-S-7": "edit.toggleComment",
+  "C-divide": "edit.toggleComment",
   "C-space": "edit.completion",
   "C-f": "find.show",
   "C-r": "find.replace",

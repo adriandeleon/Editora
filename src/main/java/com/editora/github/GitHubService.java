@@ -5,8 +5,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
@@ -31,6 +33,12 @@ public final class GitHubService {
 
     private static final Duration QUICK = Duration.ofSeconds(10);
     private static final Duration NETWORK = Duration.ofSeconds(120);
+    /**
+     * Ceiling for {@code gh pr checkout}: a fetch plus a branch switch. It rewrites the working tree, so —
+     * like {@code GitService}'s mutations — killing it after two minutes on a large repository or a slow link
+     * leaves a half-switched tree; the limit only exists so a hung child cannot hold the lane forever.
+     */
+    static final Duration CHECKOUT = Duration.ofMinutes(30);
 
     /**
      * The child environment for every {@code gh} call: never prompt, never page, never colorize, never phone
@@ -44,11 +52,15 @@ public final class GitHubService {
             "CLICOLOR", "0",
             "NO_COLOR", "1");
 
-    private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "github-service");
-        t.setDaemon(true);
-        return t;
-    });
+    private final ThreadPoolExecutor exec =
+            new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), r -> {
+                Thread t = new Thread(r, "github-service");
+                t.setDaemon(true);
+                return t;
+            });
+
+    /** Working-tree mutations ({@code gh pr checkout}) currently running; {@link #shutdown()} lets them finish. */
+    private final AtomicInteger runningMutations = new AtomicInteger();
 
     /** The configured {@code gh} command tokens (default {@code ["gh"]}); a blank override resets to gh. */
     private volatile List<String> command = List.of("gh");
@@ -62,7 +74,15 @@ public final class GitHubService {
      */
     private volatile CommandLog commandLog = CommandLog.none();
 
-    private final AtomicLong listGen = new AtomicLong();
+    /**
+     * One generation per list kind: a newer request for the <em>same</em> list supersedes an older one. They
+     * were one shared counter, so asking for issues dropped a pull-request answer still in flight (and the
+     * other way round) and its consumer waited forever.
+     */
+    private final AtomicLong prListGen = new AtomicLong();
+
+    private final AtomicLong issueListGen = new AtomicLong();
+    private final AtomicLong runListGen = new AtomicLong();
 
     /** Whether {@code gh} is on PATH, whether it reports an authenticated host, and its version line. */
     public record Availability(boolean found, boolean authenticated, String version) {
@@ -103,7 +123,7 @@ public final class GitHubService {
      * text has moved between stdout/stderr across gh versions, so it must never be parsed.
      */
     public void detect(Consumer<Availability> onResult) {
-        exec.submit(() -> {
+        submit(() -> {
             boolean found = false;
             boolean auth = false;
             String version = "";
@@ -136,8 +156,20 @@ public final class GitHubService {
 
     /** Lists open PRs ({@code gh pr list --json …}); generation-guarded so a stale refresh is dropped. */
     public void prList(Path dir, Consumer<PrListResult> onResult) {
-        long gen = listGen.incrementAndGet();
-        exec.submit(() -> {
+        prList(dir, prListGen, onResult);
+    }
+
+    /**
+     * {@link #prList} for a one-shot consumer (a picker) that must get its answer whatever the tool window
+     * asks for meanwhile — and must not take the tool window's answer away either.
+     */
+    public void prListOnce(Path dir, Consumer<PrListResult> onResult) {
+        prList(dir, null, onResult);
+    }
+
+    private void prList(Path dir, AtomicLong generation, Consumer<PrListResult> onResult) {
+        long gen = generation == null ? 0 : generation.incrementAndGet();
+        submit(() -> {
             ProcessRunner.Result r = gh(
                     dir,
                     NETWORK,
@@ -150,7 +182,7 @@ public final class GitHubService {
             PrListResult res = r.ok()
                     ? new PrListResult(true, PrListParser.parse(r.out()), "")
                     : new PrListResult(false, List.of(), r.message());
-            if (gen == listGen.get()) {
+            if (generation == null || gen == generation.get()) {
                 Platform.runLater(() -> onResult.accept(res));
             }
         });
@@ -158,7 +190,7 @@ public final class GitHubService {
 
     /** A PR's detail ({@code gh pr view <n> --json …}); posts {@code null} on failure. */
     public void prView(Path dir, int number, Consumer<PrViewParser.PrDetail> onResult) {
-        exec.submit(() -> {
+        submit(() -> {
             ProcessRunner.Result r = gh(
                     dir,
                     NETWORK,
@@ -177,10 +209,10 @@ public final class GitHubService {
 
     /** Fetches a PR's whole unified diff ({@code gh pr diff <n>}) and parses it off-thread into file patches. */
     public void prDiff(Path dir, int number, Consumer<DiffResult> onResult) {
-        exec.submit(() -> {
+        submit(() -> {
             ProcessRunner.Result r = gh(dir, NETWORK, "pr", "diff", String.valueOf(number));
             DiffResult res = r.ok()
-                    ? new DiffResult(true, PatchParser.parse(r.out()), "")
+                    ? new DiffResult(true, PatchParser.parseAllSections(r.out()), "")
                     : new DiffResult(false, List.of(), r.message());
             Platform.runLater(() -> onResult.accept(res));
         });
@@ -188,7 +220,16 @@ public final class GitHubService {
 
     /** Checks out a PR branch ({@code gh pr checkout <n>}); posts the raw result for status/error reporting. */
     public void prCheckout(Path dir, int number, Consumer<ProcessRunner.Result> onResult) {
-        run(dir, NETWORK, onResult, "pr", "checkout", String.valueOf(number));
+        submit(() -> {
+            runningMutations.incrementAndGet();
+            ProcessRunner.Result r;
+            try {
+                r = gh(dir, CHECKOUT, "pr", "checkout", String.valueOf(number));
+            } finally {
+                runningMutations.decrementAndGet();
+            }
+            Platform.runLater(() -> onResult.accept(r));
+        });
     }
 
     /** Creates a PR ({@code gh pr create …}); posts the raw result (the created PR URL is on stdout). */
@@ -209,7 +250,7 @@ public final class GitHubService {
      * {@code number <= 0} omits the PR argument, so {@code gh} resolves the checks for the current branch's PR.
      */
     public void prChecks(Path dir, int number, Consumer<ChecksResult> onResult) {
-        exec.submit(() -> {
+        submit(() -> {
             List<String> args = new ArrayList<>(List.of("pr", "checks"));
             if (number > 0) {
                 args.add(String.valueOf(number));
@@ -233,8 +274,8 @@ public final class GitHubService {
 
     /** Lists open issues ({@code gh issue list --json …}); generation-guarded. */
     public void issueList(Path dir, Consumer<IssueListResult> onResult) {
-        long gen = listGen.incrementAndGet();
-        exec.submit(() -> {
+        long gen = issueListGen.incrementAndGet();
+        submit(() -> {
             ProcessRunner.Result r = gh(
                     dir,
                     NETWORK,
@@ -247,7 +288,7 @@ public final class GitHubService {
             IssueListResult res = r.ok()
                     ? new IssueListResult(true, IssueListParser.parse(r.out()), "")
                     : new IssueListResult(false, List.of(), r.message());
-            if (gen == listGen.get()) {
+            if (gen == issueListGen.get()) {
                 Platform.runLater(() -> onResult.accept(res));
             }
         });
@@ -260,8 +301,17 @@ public final class GitHubService {
 
     /** Lists recent workflow runs ({@code gh run list --json …}); generation-guarded like {@link #prList}. */
     public void runList(Path dir, Consumer<RunListResult> onResult) {
-        long gen = listGen.incrementAndGet();
-        exec.submit(() -> {
+        runList(dir, runListGen, onResult);
+    }
+
+    /** {@link #runList} for a one-shot consumer (a picker); see {@link #prListOnce}. */
+    public void runListOnce(Path dir, Consumer<RunListResult> onResult) {
+        runList(dir, null, onResult);
+    }
+
+    private void runList(Path dir, AtomicLong generation, Consumer<RunListResult> onResult) {
+        long gen = generation == null ? 0 : generation.incrementAndGet();
+        submit(() -> {
             ProcessRunner.Result r = gh(
                     dir,
                     NETWORK,
@@ -274,7 +324,7 @@ public final class GitHubService {
             RunListResult res = r.ok()
                     ? new RunListResult(true, RunListParser.parse(r.out()), "")
                     : new RunListResult(false, List.of(), r.message());
-            if (gen == listGen.get()) {
+            if (generation == null || gen == generation.get()) {
                 Platform.runLater(() -> onResult.accept(res));
             }
         });
@@ -294,7 +344,7 @@ public final class GitHubService {
      * (off the FX thread) to the last {@link #MAX_LOG_LINES} lines.
      */
     public void runFailedLog(Path dir, long id, Consumer<RunLogResult> onResult) {
-        exec.submit(() -> {
+        submit(() -> {
             ProcessRunner.Result r = gh(dir, NETWORK, "run", "view", String.valueOf(id), "--log-failed");
             RunLogResult res;
             if (!r.ok()) {
@@ -334,7 +384,7 @@ public final class GitHubService {
      * bury it. No generation guard: it's a one-shot availability check, not a refreshing list.
      */
     public void hasOpenActivity(Path dir, Consumer<Boolean> onResult) {
-        exec.submit(() -> {
+        submit(() -> {
             boolean any = hasAny(dir, "pr") || hasAny(dir, "issue") || hasAnyRun(dir);
             Platform.runLater(() -> onResult.accept(any));
         });
@@ -374,8 +424,20 @@ public final class GitHubService {
 
     // --- internals -------------------------------------------------------------------------------
 
+    /**
+     * Queues {@code task} on the service lane. After {@link #shutdown()} it is dropped: a Git refresh that
+     * lands while the window closes may still ask for a probe, and that must not throw on the FX thread.
+     */
+    private void submit(Runnable task) {
+        try {
+            exec.execute(task);
+        } catch (java.util.concurrent.RejectedExecutionException closed) {
+            // the window is closing — nothing is waiting for the answer
+        }
+    }
+
     private void run(Path dir, Duration timeout, Consumer<ProcessRunner.Result> onResult, String... args) {
-        exec.submit(() -> {
+        submit(() -> {
             ProcessRunner.Result r = gh(dir, timeout, args);
             Platform.runLater(() -> onResult.accept(r));
         });
@@ -418,7 +480,17 @@ public final class GitHubService {
         return (nl >= 0 ? s.substring(0, nl) : s).strip();
     }
 
+    /**
+     * Stops the service on window close. Queued work is dropped and a running read is interrupted, but a
+     * {@code gh pr checkout} already running is left to finish — interrupting it kills {@code gh} and its
+     * {@code git} child halfway through the branch switch (the same rule as {@code GitService.shutdown()}).
+     */
     public void shutdown() {
-        exec.shutdownNow();
+        if (runningMutations.get() > 0) {
+            exec.shutdown();
+            exec.getQueue().clear();
+        } else {
+            exec.shutdownNow();
+        }
     }
 }

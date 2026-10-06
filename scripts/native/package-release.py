@@ -43,6 +43,9 @@ https://github.com/adriandeleon/Editora/blob/master/docs/native-image-staticfx.m
 '''
 
 
+REPOSITORY = Path(__file__).resolve().parents[2]
+
+
 def package(binary, version, target, output):
     if not re.fullmatch(r'[0-9A-Za-z][0-9A-Za-z.+-]*', version):
         raise ValueError('invalid version')
@@ -87,6 +90,11 @@ def package(binary, version, target, output):
                        'hosted runner\'s virtual Metal GPU crashes at startup. Rendering on\n'
                        'a physical Apple Silicon Mac has not been qualified.\n')
         (root / 'README.txt').write_text(readme)
+        # The licence texts travel with every archive: Editora's own (MIT) and the notice
+        # naming the bundled third-party software, including the static JavaFX libraries
+        # that only this build links in.
+        for document in ('LICENSE', 'NOTICE'):
+            shutil.copy2(REPOSITORY / document, root / document)
         archive = output / (name + ('.zip' if windows else '.tar.gz'))
         if windows:
             with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:

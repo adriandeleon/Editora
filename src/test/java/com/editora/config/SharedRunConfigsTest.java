@@ -60,4 +60,35 @@ class SharedRunConfigsTest {
         assertEquals(1, SharedRunConfigs.merge(List.of(), List.of(cfg("A", ""))).size());
         assertEquals(1, SharedRunConfigs.merge(List.of(cfg("A", "")), List.of()).size());
     }
+
+    /** The on-disk shape is an object so that keys can be added; one more key must not hide the list. */
+    @Test
+    void anExtraTopLevelKeyDoesNotHideTheConfigurations(@org.junit.jupiter.api.io.TempDir Path root) throws Exception {
+        Path file = SharedRunConfigs.fileFor(root);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, """
+                {"_comment": "shared by the team", "schemaVersion": 1,
+                 "configurations": [{"name": "Server", "mainClass": "com.example.App"}]}
+                """);
+
+        List<RunConfiguration> loaded = SharedRunConfigs.load(MAPPER, root);
+
+        assertEquals(1, loaded.size());
+        assertEquals("Server", loaded.get(0).name());
+    }
+
+    /** A hand edit can leave a null entry behind; importing reads every entry's name. */
+    @Test
+    void aNullEntryIsDroppedRatherThanBreakingTheImport(@org.junit.jupiter.api.io.TempDir Path root) throws Exception {
+        Path file = SharedRunConfigs.fileFor(root);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, """
+                {"configurations": [{"name": "Server", "mainClass": "com.example.App"}, null]}
+                """);
+
+        List<RunConfiguration> loaded = SharedRunConfigs.load(MAPPER, root);
+
+        assertEquals(1, loaded.size());
+        assertEquals(1, SharedRunConfigs.merge(List.of(), loaded).size(), "merge reads each name");
+    }
 }

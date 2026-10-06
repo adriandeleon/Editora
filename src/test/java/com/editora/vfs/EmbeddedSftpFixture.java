@@ -94,6 +94,17 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         return block;
     }
 
+    /**
+     * Makes the server speak SFTP protocol {@code version} and reconnects. The embedded server and client
+     * agree on version 6 by default; OpenSSH — what a real connection almost always reaches — speaks 3, whose
+     * attributes and directory listings differ (numeric owners, {@code ls -l} long names).
+     */
+    public Path speakProtocolVersion(int version) throws Exception {
+        org.apache.sshd.sftp.SftpModuleProperties.SFTP_VERSION.set(server, version);
+        disconnect();
+        return reconnect();
+    }
+
     public void disconnect() {
         fileSystems.disconnect(connection.id());
     }

@@ -31,6 +31,24 @@ public final class LspTestHooks {
         return created; // grows as sessions are created, so a test can set canned responses on one
     }
 
+    /** The command the manager is configured to launch for {@code serverId} — what {@code configure} was given. */
+    public static String configuredCommand(LspManager manager, String serverId) {
+        return manager.configuredCommandForTest(serverId);
+    }
+
+    /** The argv the session serving {@code file} was launched with. */
+    public static java.util.List<String> launchCommand(LspManager manager, java.nio.file.Path file) {
+        LanguageServerSession session = manager.sessionForTest(file);
+        return session == null ? java.util.List.of() : session.command();
+    }
+
+    /** Plays the server side of a dynamic registration ({@code client/registerCapability}) for {@code file}. */
+    public static void registerCapability(LspManager manager, java.nio.file.Path file, String method) {
+        manager.sessionForTest(file)
+                .registerCapability(new org.eclipse.lsp4j.RegistrationParams(
+                        java.util.List.of(new org.eclipse.lsp4j.Registration("test-" + method, method))));
+    }
+
     /** Measures the production pure sync calculation without transport or server latency. */
     public static void computeSyncDiff(String before, String after) {
         var delta = TextSyncDiff.diff(before, after);

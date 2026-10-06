@@ -141,6 +141,12 @@ public final class StatusBar extends HBox {
     /** Caret / selection changes update only the cheap caret-dependent segments (Ln/Col + the CSV field) —
      *  NOT the file-size segment, which is O(document) and doesn't change when the caret moves. */
     private final InvalidationListener caretListener = obs -> refreshCaretSegments();
+    /** A split has two views of the buffer, each with its own caret: follow the one the user is in. */
+    private final javafx.beans.value.ChangeListener<org.fxmisc.richtext.CodeArea> viewListener = (obs, old, now) -> {
+        trackCaret(old, false);
+        trackCaret(now, true);
+        refreshCaretSegments();
+    };
     /** The debounced edit subscription that recomputes the (O(n)) file-size segment once per typing burst. */
     private org.reactfx.Subscription sizeSub;
 
@@ -343,8 +349,13 @@ public final class StatusBar extends HBox {
      *  The echo shows a single line only (a Label renders embedded newlines as line breaks, so a multi-line
      *  message — e.g. a compiler error dump — would grow the whole status bar); the full text goes to the
      *  message log, whose rows wrap and are copyable. */
+    /**
+     * Shows {@code message} with the severity its catalog key implies: a {@code status.*Failed} /
+     * {@code *Error} message is an error whichever of the ~90 call sites reported it through the plain
+     * status channel (see {@link StatusSeverity}); everything else is ordinary echo text.
+     */
     public void setMessage(String message) {
-        setMessage(message, MessageLog.Severity.INFO);
+        setMessage(message, StatusSeverity.of(message));
     }
 
     /**
@@ -586,11 +597,23 @@ public final class StatusBar extends HBox {
         debugProgress.setManaged(loading);
     }
 
+    private void trackCaret(org.fxmisc.richtext.CodeArea view, boolean on) {
+        if (view == null) {
+            return;
+        }
+        view.caretPositionProperty().removeListener(caretListener);
+        view.selectionProperty().removeListener(caretListener);
+        if (on) {
+            view.caretPositionProperty().addListener(caretListener);
+            view.selectionProperty().addListener(caretListener);
+        }
+    }
+
     /** Re-binds live listeners to {@code buffer} (or none) and refreshes the segments. */
     public void attach(EditorBuffer buffer) {
         if (attached != null) {
-            attached.getArea().caretPositionProperty().removeListener(caretListener);
-            attached.getArea().selectionProperty().removeListener(caretListener);
+            attached.focusedAreaProperty().removeListener(viewListener);
+            trackCaret(attached.getFocusedArea(), false);
         }
         if (sizeSub != null) {
             sizeSub.unsubscribe();
@@ -599,8 +622,8 @@ public final class StatusBar extends HBox {
         attached = buffer;
         if (buffer != null) {
             // Ln/Col + the CSV field track the caret cheaply (no full-document scan).
-            buffer.getArea().caretPositionProperty().addListener(caretListener);
-            buffer.getArea().selectionProperty().addListener(caretListener);
+            trackCaret(buffer.getFocusedArea(), true);
+            buffer.focusedAreaProperty().addListener(viewListener);
             // The file size only changes on an EDIT — and computing it materializes the whole document (an
             // O(n) String + byte[]), so it must not run per keystroke. It was previously bound to textProperty
             // (which itself re-materializes the whole document per keystroke) AND recomputed on every caret
@@ -630,6 +653,9 @@ public final class StatusBar extends HBox {
         remote.setTooltip(isRemote ? new Tooltip(com.editora.vfs.Vfs.displayLabel(path)) : null);
         position.setVisible(hasBuffer);
         position.setManaged(hasBuffer);
+        // Narrowing is a property of the buffer, not of the window: re-derive the chip on every tab switch, or
+        // it stays lit on tabs that are not narrowed (and after the narrowed tab is closed).
+        setNarrowed(hasBuffer && buffer.isNarrowed());
         // Ln/Col and the file size follow buffer presence even in Simple mode (kept visible there).
         size.setVisible(hasBuffer);
         size.setManaged(hasBuffer);
@@ -680,7 +706,7 @@ public final class StatusBar extends HBox {
             csvField.setManaged(false);
             return;
         }
-        refreshPositionAndCsv(buffer, buffer.getArea());
+        refreshPositionAndCsv(buffer, buffer.getFocusedArea());
         language.setText(displayLanguage(buffer.getLanguage()));
         endings.setText(buffer.getLineEnding());
         refreshSize(buffer);
@@ -690,7 +716,7 @@ public final class StatusBar extends HBox {
     private void refreshCaretSegments() {
         EditorBuffer b = activeBuffer.get();
         if (b != null) {
-            refreshPositionAndCsv(b, b.getArea());
+            refreshPositionAndCsv(b, b.getFocusedArea());
         }
     }
 

@@ -1,15 +1,15 @@
 package com.editora.config;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 
+import com.editora.config.migration.ConfigLoadProblem;
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -20,6 +20,9 @@ import com.fasterxml.jackson.databind.SerializationFeature;
  * Persistent list of recently-opened files in {@code <configDir>/recent-files.json}. Most-recent
  * first; capped at {@link #MAX_ENTRIES}. The backing {@link ObservableList} lets UI controls react
  * to changes automatically.
+ *
+ * <p>The app holds <b>one</b> instance, in {@link SharedConfig#recentFiles()}, shared by every window: a
+ * per-window copy rewrote the whole file from its own list, so the last window to write won.
  *
  * <p>Stored as a versioned object {@code { "schemaVersion": 1, "files": [ … ] }}. The legacy v0 format
  * was a bare JSON array; it is migrated to the wrapped form on read (see {@link ConfigSchema#RECENT}).
@@ -40,12 +43,27 @@ public class RecentFiles {
     }
 
     private final Path file;
+    private final ConfigWriter.Sink sink;
+    /**
+     * Every remembered entry in its stored form, most recent first. This — not {@link #recents} — is what is
+     * written back, so a remote ({@code sftp://}) entry whose connection is not open right now stays in the
+     * file instead of being dropped by the next save.
+     */
+    private final List<String> stored = new ArrayList<>();
+    /** The entries of {@link #stored} that resolve to a path at the moment, in the same order. */
     private final ObservableList<Path> recents = FXCollections.observableArrayList();
+
     private final ObjectMapper mapper = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
+    /** A standalone list that writes on the calling thread (tests, tools). The app uses {@link SharedConfig}. */
     public RecentFiles(Path configDir) {
+        this(configDir, ConfigWriter.DIRECT, problem -> {});
+    }
+
+    RecentFiles(Path configDir, ConfigWriter.Sink sink, Consumer<ConfigLoadProblem> problems) {
         this.file = configDir.resolve(FILE_NAME);
-        load();
+        this.sink = sink;
+        load(problems);
     }
 
     /**
@@ -87,11 +105,12 @@ public class RecentFiles {
         // De-dupe by the storable string, not Path.equals — a remote (SFTP) Path.equals against a local
         // Path throws ProviderMismatchException, so a mixed local/remote list can't be compared directly.
         String key = com.editora.vfs.Vfs.toStorableString(path);
-        recents.removeIf(p -> com.editora.vfs.Vfs.toStorableString(p).equals(key));
-        recents.add(0, path);
-        while (recents.size() > MAX_ENTRIES) {
-            recents.remove(recents.size() - 1);
+        stored.remove(key);
+        stored.add(0, key);
+        while (stored.size() > MAX_ENTRIES) {
+            stored.remove(stored.size() - 1);
         }
+        publish(key, path);
         save();
     }
 
@@ -99,39 +118,59 @@ public class RecentFiles {
         if (path == null) {
             return;
         }
-        String key = com.editora.vfs.Vfs.toStorableString(path);
-        if (recents.removeIf(p -> com.editora.vfs.Vfs.toStorableString(p).equals(key))) {
+        if (stored.remove(com.editora.vfs.Vfs.toStorableString(path))) {
+            publish(null, null);
             save();
         }
     }
 
     public void clear() {
-        if (!recents.isEmpty()) {
-            recents.clear();
+        if (!stored.isEmpty()) {
+            stored.clear();
+            publish(null, null);
             save();
         }
     }
 
-    private void load() {
-        Stored stored = ConfigMigrations.readVersioned(file, mapper, new Stored(), ConfigSchema.RECENT);
-        // Local paths round-trip as plain strings; remote (sftp://) entries resolve only once their
-        // connection is open (else parseStorable returns null and the entry is dropped on this load).
-        recents.setAll(stored.files.stream()
-                .map(com.editora.vfs.Vfs::parseStorable)
-                .filter(java.util.Objects::nonNull)
-                .limit(MAX_ENTRIES)
-                .toList());
+    private void load(Consumer<ConfigLoadProblem> problems) {
+        Stored read = ConfigMigrations.readVersioned(file, mapper, new Stored(), ConfigSchema.RECENT, problems);
+        if (read.files != null) {
+            read.files.stream()
+                    .filter(s -> s != null && !s.isBlank())
+                    .distinct()
+                    .limit(MAX_ENTRIES)
+                    .forEach(stored::add);
+        }
+        publish(null, null);
+    }
+
+    /**
+     * Rebuilds the visible list from {@link #stored} as one change. Local paths round-trip as plain strings;
+     * a remote entry resolves only while its connection is open, and is simply not listed until then.
+     * {@code known} is the live path for {@code knownKey} (the entry just added), used as given.
+     */
+    private void publish(String knownKey, Path known) {
+        List<Path> resolved = new ArrayList<>(stored.size());
+        for (String entry : stored) {
+            Path path = entry.equals(knownKey) ? known : resolve(entry);
+            if (path != null) {
+                resolved.add(path);
+            }
+        }
+        recents.setAll(resolved);
+    }
+
+    private static Path resolve(String entry) {
+        try {
+            return com.editora.vfs.Vfs.parseStorable(entry);
+        } catch (java.nio.file.InvalidPathException notAPathHere) {
+            return null; // e.g. written on another OS — keep it stored, just don't list it
+        }
     }
 
     private void save() {
-        try {
-            Files.createDirectories(file.getParent());
-            Stored stored = new Stored();
-            stored.files =
-                    recents.stream().map(com.editora.vfs.Vfs::toStorableString).toList();
-            ConfigWriter.writeAtomic(file, mapper, stored);
-        } catch (IOException e) {
-            // Best effort.
-        }
+        Stored snapshot = new Stored();
+        snapshot.files = List.copyOf(stored);
+        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
     }
 }

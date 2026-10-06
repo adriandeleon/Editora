@@ -1,17 +1,13 @@
 package com.editora.run;
 
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.ArrayDeque;
-import java.util.Iterator;
 import java.util.List;
 
 import javafx.application.Platform;
 
+import com.editora.process.ChildText;
+import com.editora.process.OutputPump;
 import com.editora.process.ProcessRunner;
 
 /**
@@ -28,17 +24,6 @@ import com.editora.process.ProcessRunner;
  * JDK 25+.
  */
 public final class RunService {
-
-    private static final int MAX_PENDING_OUTPUT_CHARS = 256 * 1024;
-    private static final int MAX_PENDING_OUTPUT_EVENTS = 2_048;
-    private static final int MAX_OUTPUT_LINE_CHARS = 64 * 1024;
-    private static final int MAX_EVENTS_PER_PULSE = 256;
-    private static final int MAX_CHARS_PER_PULSE = 64 * 1024;
-    private static final String OUTPUT_DROPPED = "[output truncated while the UI was busy]";
-
-    private record PendingFx(int generation, int chars, boolean output, Runnable action) {}
-
-    private record Pump(Thread thread, InputStream stream) {}
 
     /** Receives lifecycle + streamed output, always on the FX thread. */
     public interface Listener {
@@ -61,21 +46,26 @@ public final class RunService {
     }
 
     private volatile Process current;
-    private volatile int generation;
-    private final Object outputLock = new Object();
-    private final ArrayDeque<PendingFx> pendingFx = new ArrayDeque<>();
-    private int pendingOutputChars;
-    private int pendingOutputEvents;
-    private boolean outputDrainScheduled;
-    private Runnable droppedOutputNotice;
+
+    /**
+     * The bounded, batched stdout/stderr pump shared with {@code build.BuildService}. A program's console
+     * drops its oldest queued lines when the UI cannot keep up (the newest output is what matters, and the
+     * program is never slowed down), and flushes a line that stops short of a newline so a prompt shows.
+     */
+    private final OutputPump pump = new OutputPump("run", OutputPump.Overflow.DROP_OLDEST, true);
     /** Cache by executable: changing the selected JDK must never reuse the old PATH probe. */
     private final java.util.concurrent.ConcurrentHashMap<String, Integer> javaMajors =
             new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** True while a launched process is still alive. */
+    /**
+     * True from a successful launch until its exit has been <b>delivered</b> to the listener — not merely
+     * until the process dies. The exit is reported only after the readers and the queue have drained, and a
+     * run started in that gap would {@code pump.begin()} over it: the previous run's remaining output and its
+     * {@code onExit} were discarded, leaving whoever waited for that exit (a test run, a before-launch step)
+     * "running" forever.
+     */
     public boolean isRunning() {
-        Process p = current;
-        return p != null && p.isAlive();
+        return current != null;
     }
 
     /**
@@ -91,7 +81,8 @@ public final class RunService {
         Thread t = new Thread(
                 () -> {
                     try {
-                        p.getOutputStream().write((line + System.lineSeparator()).getBytes(StandardCharsets.UTF_8));
+                        // In the encoding the child reads stdin in (see ChildText), not a fixed UTF-8.
+                        p.getOutputStream().write(ChildText.encodeInput(line + System.lineSeparator()));
                         p.getOutputStream().flush();
                     } catch (IOException ignored) {
                         // Process exited between the check and the write — nothing to report.
@@ -100,6 +91,23 @@ public final class RunService {
                 "run-stdin");
         t.setDaemon(true);
         t.start();
+    }
+
+    /**
+     * Closes the running process's stdin, so anything that reads it sees end of input instead of waiting for
+     * text nobody can type — for a child started where there is no console input field (a debug session's
+     * before-launch step). No-op when nothing is running.
+     */
+    public void closeInput() {
+        Process p = current;
+        if (p == null) {
+            return;
+        }
+        try {
+            p.getOutputStream().close();
+        } catch (IOException ignored) {
+            // already gone
+        }
     }
 
     /**
@@ -171,6 +179,24 @@ public final class RunService {
     }
 
     /**
+     * The process a run starts, before it is started: {@code command} in {@code workingDir} with the
+     * <em>user's</em> environment — their locale included — plus the augmented PATH, then the run
+     * configuration's own variables on top (so a config can still override PATH or a locale variable).
+     *
+     * <p>Deliberately not the parse-stable environment: forcing {@code LC_ALL=C} on the user's program made a
+     * JVM child decode file names as ASCII, so a project under {@code año/} could not be run at all and
+     * anything it printed outside ASCII came out as {@code ?}.
+     */
+    static ProcessBuilder processBuilder(Path workingDir, List<String> command, java.util.Map<String, String> env) {
+        ProcessBuilder pb = new ProcessBuilder(command);
+        if (workingDir != null) {
+            pb.directory(workingDir.toAbsolutePath().toFile());
+        }
+        ProcessRunner.applyUserEnv(pb.environment(), env);
+        return pb;
+    }
+
+    /**
      * As {@link #runInDir(Path, List, Listener)}, plus {@code env} — extra environment variables for the
      * child (a saved run configuration's {@code KEY=VALUE} pairs), applied over the inherited environment.
      */
@@ -178,23 +204,9 @@ public final class RunService {
         if (argv == null || argv.isEmpty() || listener == null || isRunning()) {
             return;
         }
-        int gen = ++generation;
-        synchronized (outputLock) {
-            pendingFx.clear();
-            pendingOutputChars = 0;
-            pendingOutputEvents = 0;
-            droppedOutputNotice = null;
-        }
+        int gen = pump.begin();
         List<String> command = ProcessRunner.resolveExecutable(argv);
-        ProcessBuilder pb = new ProcessBuilder(command);
-        Path dir = workingDir == null ? null : workingDir.toAbsolutePath();
-        if (dir != null) {
-            pb.directory(dir.toFile());
-        }
-        ProcessRunner.applyStandardEnv(pb);
-        if (env != null && !env.isEmpty()) {
-            pb.environment().putAll(env); // after applyStandardEnv so a config can override PATH etc.
-        }
+        ProcessBuilder pb = processBuilder(workingDir, command, env);
         Process process;
         try {
             process = pb.start();
@@ -207,8 +219,19 @@ public final class RunService {
         }
         current = process;
         listener.onStart(String.join(" ", command));
-        Pump stdout = pump(process.getInputStream(), false, gen, listener);
-        Pump stderr = pump(process.getErrorStream(), true, gen, listener);
+        OutputPump.Sink sink = new OutputPump.Sink() {
+            @Override
+            public void line(String text, boolean stderr) {
+                listener.onOutput(text, stderr);
+            }
+
+            @Override
+            public void partial(String text, boolean stderr) {
+                listener.onPartialOutput(text, stderr);
+            }
+        };
+        OutputPump.Feed stdout = pump.start(process.getInputStream(), false, gen, sink);
+        OutputPump.Feed stderr = pump.start(process.getErrorStream(), true, gen, sink);
         Thread waiter = new Thread(
                 () -> {
                     int code;
@@ -218,18 +241,14 @@ public final class RunService {
                         Thread.currentThread().interrupt();
                         code = -1;
                     }
-                    finishPump(stdout);
-                    finishPump(stderr);
+                    pump.finish(stdout, stderr);
                     int finalCode = code;
-                    enqueueFx(
-                            gen,
-                            0,
-                            false,
-                            () -> {
-                                current = null;
-                                listener.onExit(finalCode);
-                            },
-                            null);
+                    pump.post(gen, () -> {
+                        if (current == process) {
+                            current = null;
+                        }
+                        listener.onExit(finalCode);
+                    });
                 },
                 "run-wait");
         waiter.setDaemon(true);
@@ -255,194 +274,11 @@ public final class RunService {
 
     /** Final owner shutdown: stop the process and discard callbacks queued for a window that is closing. */
     public void shutdown() {
-        generation++;
-        synchronized (outputLock) {
-            pendingFx.clear();
-            pendingOutputChars = 0;
-            pendingOutputEvents = 0;
-            droppedOutputNotice = null;
-        }
+        pump.cancel();
         Process p = current;
         current = null;
         if (p != null && p.isAlive()) {
             com.editora.process.ProcessRegistry.killTree(p);
-        }
-    }
-
-    /** Drains a stream on a daemon thread without ever materializing more than one bounded line. */
-    private Pump pump(InputStream in, boolean stderr, int gen, Listener listener) {
-        Thread t = new Thread(
-                () -> {
-                    try (BufferedReader reader =
-                            new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-                        char[] chars = new char[8_192];
-                        StringBuilder line = new StringBuilder();
-                        boolean truncated = false;
-                        int read;
-                        while ((read = reader.read(chars)) != -1) {
-                            for (int i = 0; i < read; i++) {
-                                char ch = chars[i];
-                                if (ch == '\n') {
-                                    emitLine(line, truncated, stderr, gen, listener);
-                                    line.setLength(0);
-                                    truncated = false;
-                                } else if (line.length() < MAX_OUTPUT_LINE_CHARS) {
-                                    line.append(ch);
-                                } else {
-                                    truncated = true;
-                                }
-                            }
-                            // A prompt often ends without a newline and then waits for stdin. Wait briefly
-                            // before flushing so a long line arriving in several reads stays one bounded
-                            // event, while an interactive prompt becomes visible before input is sent.
-                            if (!line.isEmpty() && !reader.ready()) {
-                                try {
-                                    Thread.sleep(75);
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                    return;
-                                }
-                                if (!reader.ready()) {
-                                    emitPartial(line, truncated, stderr, gen, listener);
-                                    line.setLength(0);
-                                    truncated = false;
-                                }
-                            }
-                        }
-                        if (!line.isEmpty() || truncated) {
-                            emitLine(line, truncated, stderr, gen, listener);
-                        }
-                    } catch (IOException ignored) {
-                        // Stream closed as the process ended — nothing to report.
-                    }
-                },
-                stderr ? "run-stderr" : "run-stdout");
-        t.setDaemon(true);
-        t.start();
-        return new Pump(t, in);
-    }
-
-    private void emitLine(StringBuilder line, boolean truncated, boolean stderr, int gen, Listener listener) {
-        int length = line.length();
-        if (length > 0 && line.charAt(length - 1) == '\r') {
-            line.setLength(length - 1); // match BufferedReader.readLine() for CRLF
-        }
-        String text = line + (truncated ? " … [line truncated]" : "");
-        enqueueFx(
-                gen,
-                text.length(),
-                true,
-                () -> listener.onOutput(text, stderr),
-                () -> listener.onOutput(OUTPUT_DROPPED, stderr));
-    }
-
-    private void emitPartial(StringBuilder line, boolean truncated, boolean stderr, int gen, Listener listener) {
-        String text = line + (truncated ? " … [line truncated]" : "");
-        enqueueFx(
-                gen,
-                text.length(),
-                true,
-                () -> listener.onPartialOutput(text, stderr),
-                () -> listener.onOutput(OUTPUT_DROPPED, stderr));
-    }
-
-    private static void finishPump(Pump pump) {
-        if (join(pump.thread())) {
-            return;
-        }
-        try {
-            pump.stream().close(); // a descendant may still hold the pipe open after the root exits
-        } catch (IOException ignored) {
-            // best effort
-        }
-        join(pump.thread()); // bounded again; no output is intentionally accepted after the exit event
-    }
-
-    private static boolean join(Thread thread) {
-        try {
-            thread.join(1_000);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-        return !thread.isAlive();
-    }
-
-    private void enqueueFx(int gen, int chars, boolean output, Runnable action, Runnable onDrop) {
-        boolean schedule = false;
-        synchronized (outputLock) {
-            if (gen != generation) {
-                return;
-            }
-            pendingFx.addLast(new PendingFx(gen, chars, output, action));
-            pendingOutputChars += chars;
-            if (output) {
-                pendingOutputEvents++;
-            }
-            while (pendingOutputChars > MAX_PENDING_OUTPUT_CHARS || pendingOutputEvents > MAX_PENDING_OUTPUT_EVENTS) {
-                PendingFx removed = removeOldestOutput();
-                if (removed == null) {
-                    break;
-                }
-                pendingOutputChars -= removed.chars();
-                pendingOutputEvents--;
-                droppedOutputNotice = onDrop;
-            }
-            if (!outputDrainScheduled) {
-                outputDrainScheduled = true;
-                schedule = true;
-            }
-        }
-        if (schedule) {
-            Platform.runLater(this::drainFx);
-        }
-    }
-
-    private PendingFx removeOldestOutput() {
-        Iterator<PendingFx> it = pendingFx.iterator();
-        while (it.hasNext()) {
-            PendingFx event = it.next();
-            if (event.output()) {
-                it.remove();
-                return event;
-            }
-        }
-        return null;
-    }
-
-    private void drainFx() {
-        java.util.ArrayList<PendingFx> batch = new java.util.ArrayList<>();
-        Runnable notice;
-        boolean more;
-        synchronized (outputLock) {
-            notice = droppedOutputNotice;
-            droppedOutputNotice = null;
-            int chars = 0;
-            while (!pendingFx.isEmpty() && batch.size() < MAX_EVENTS_PER_PULSE) {
-                PendingFx next = pendingFx.peekFirst();
-                if (!batch.isEmpty() && chars + next.chars() > MAX_CHARS_PER_PULSE) {
-                    break;
-                }
-                pendingFx.removeFirst();
-                pendingOutputChars -= next.chars();
-                if (next.output()) {
-                    pendingOutputEvents--;
-                }
-                chars += next.chars();
-                batch.add(next);
-            }
-            more = !pendingFx.isEmpty();
-            outputDrainScheduled = more;
-        }
-        if (notice != null) {
-            notice.run();
-        }
-        for (PendingFx event : batch) {
-            if (event.generation() == generation) {
-                event.action().run();
-            }
-        }
-        if (more) {
-            Platform.runLater(this::drainFx);
         }
     }
 }

@@ -91,8 +91,12 @@ class LspWorkspaceEditFxTest {
             return active;
         }
 
+        String status;
+
         @Override
-        public void setStatus(String message) {}
+        public void setStatus(String message) {
+            status = message;
+        }
 
         @Override
         public void setError(String message) {
@@ -133,9 +137,18 @@ class LspWorkspaceEditFxTest {
             return null;
         }
 
+        /** Off models a window whose tab lookup misses: the file moves and the tab stays behind. */
+        boolean remapTabs = true;
+
+        /** Like the real window: the tab holding {@code from} follows the file to {@code to}. */
         @Override
         public void fileRenamed(Path from, Path to) {
             renamed.add(new Path[] {from, to});
+            EditorBuffer moved = remapTabs ? open.remove(from.toAbsolutePath().normalize()) : null;
+            if (moved != null) {
+                moved.setPath(to);
+                open.put(to.toAbsolutePath().normalize(), moved);
+            }
         }
 
         @Override
@@ -348,6 +361,90 @@ class LspWorkspaceEditFxTest {
     }
 
     // --- file renames (#676) -------------------------------------------------------------------------
+
+    /** {@code exists}/{@code isRegularFile}/{@code identity} as a case-insensitive, case-preserving volume answers. */
+    private static final class CaseInsensitiveVolume extends DelegatingWorkspaceFileOperations {
+        private static Path actual(Path path) {
+            Path parent = path.getParent();
+            if (parent == null || !Files.isDirectory(parent)) {
+                return path;
+            }
+            try (var siblings = Files.list(parent)) {
+                String wanted = path.getFileName().toString();
+                return siblings.filter(p -> p.getFileName().toString().equalsIgnoreCase(wanted))
+                        .findFirst()
+                        .orElse(path);
+            } catch (java.io.IOException e) {
+                return path;
+            }
+        }
+
+        @Override
+        public boolean exists(Path path) {
+            return super.exists(actual(path));
+        }
+
+        @Override
+        public boolean isRegularFile(Path path) {
+            return super.isRegularFile(actual(path));
+        }
+
+        @Override
+        public LspCoordinator.WorkspaceFileIdentity identity(Path path) throws java.io.IOException {
+            return super.identity(actual(path));
+        }
+    }
+
+    /**
+     * Renaming class Httpclient → HttpClient on macOS/Windows: the destination "exists" because it is the
+     * source under another letter case. That was taken for a collision and the whole rename was refused.
+     */
+    @Test
+    void aCaseOnlyFileRenameIsNotACollisionOnACaseInsensitiveVolume() throws Exception {
+        useControlledCoordinator(new CaseInsensitiveVolume(), Runnable::run);
+        EditorBuffer b = openBuffer("Httpclient.java", "class Httpclient {}\n");
+        Path from = b.getPath();
+        Path to = root.resolve("HttpClient.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        from, List.of(new LspTextEdit(0, 6, 0, 16, "HttpClient")), null, "class Httpclient {}\n")),
+                List.of(new WorkspaceEditMapper.FileRename(from, to, false)),
+                List.of(),
+                List.of());
+
+        assertTrue(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)));
+
+        assertEquals("class HttpClient {}\n", FxTestSupport.callOnFx(b::getContent));
+        try (var files = Files.list(root)) {
+            assertEquals(
+                    List.of("HttpClient.java"),
+                    files.map(p -> p.getFileName().toString()).toList());
+        }
+    }
+
+    /**
+     * The blocked-files note belongs to the operation it was raised for. A server-initiated edit that was
+     * blocked has no outcome report of its own, and its note used to swallow the failure message of the next
+     * operation (a jdtls Generate… that failed said nothing at all).
+     */
+    @Test
+    void aBlockedEditFromAnEarlierOperationDoesNotSilenceALaterFailure() throws Exception {
+        Path file = root.resolve("A.java");
+        FxTestSupport.runOnFx(() -> {
+            coordinator.editBlocked(List.of(file)); // e.g. an unsolicited workspace/applyEdit
+            coordinator.beginReportedEdit(); // …then the user starts something else
+            coordinator.reportEdit(false, "applied", "Generate failed");
+        });
+        assertEquals("Generate failed", host.status);
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.beginReportedEdit();
+            coordinator.editBlocked(List.of(file)); // blocked during this operation: its files were named
+            host.status = null;
+            coordinator.reportEdit(false, "applied", "Rename failed");
+        });
+        assertEquals(null, host.status, "the more specific message stays");
+    }
 
     /** Renaming a public class moves its file; the text edits land first, then the move. */
     @Test
@@ -841,5 +938,198 @@ class LspWorkspaceEditFxTest {
         assertTrue(
                 WorkspaceEditMapper.map(we) == null,
                 "an edit after a rename would need path remapping mid-apply — refused instead");
+    }
+
+    // --- edits to files the server did not have open (the cross-file rename case) -------------------
+
+    /** Ages the file and records that state as the one the buffer mirrors, as the editor's loader does. */
+    private void mirrorDisk(EditorBuffer buffer, long ageMillis) throws Exception {
+        Path f = buffer.getPath();
+        long at = System.currentTimeMillis() - ageMillis;
+        Files.setLastModifiedTime(f, java.nio.file.attribute.FileTime.fromMillis(at % 1000 == 0 ? at + 1 : at));
+        long modified = Files.getLastModifiedTime(f).toMillis();
+        long size = Files.size(f);
+        FxTestSupport.runOnFx(() -> {
+            buffer.setDiskSnapshot(modified, size, "loaded"); // a load records the content it read
+            buffer.markClean();
+        });
+    }
+
+    /** An edit as {@code LspManager} plans it for a target the server computed from the file on disk. */
+    private static WorkspaceEditMapper.Mapped closedFileEdit(EditorBuffer buffer, long requestSentAt) {
+        return new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        buffer.getPath(), List.of(new LspTextEdit(0, 6, 0, 7, "Renamed")), null, null, requestSentAt)),
+                List.of());
+    }
+
+    @Test
+    void aClosedFileEditAppliesToACleanBufferThatMirrorsTheDisk() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+
+        assertTrue(FxTestSupport.callOnFx(
+                () -> coordinator.applyWorkspaceEdits(closedFileEdit(b, System.currentTimeMillis()))));
+        assertEquals("class Renamed {}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void theAsyncPathAppliesAClosedFileEditToo() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+
+        assertTrue(applyAsync(closedFileEdit(b, System.currentTimeMillis()))
+                .get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("class Renamed {}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    /**
+     * jdtls's answer to renaming a class from a usage site while the declaring file is not open on the
+     * server: an edit to that file (planned against its disk preimage) plus a move of the same file. The
+     * production path re-checks the preimage after the move, when the old path no longer exists.
+     */
+    @Test
+    void theAsyncPathAppliesAClosedFileEditThatAlsoMovesTheFile() throws Exception {
+        EditorBuffer b = openBuffer("Foo.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        Path from = b.getPath();
+        Path to = root.resolve("Renamed.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        from, List.of(new LspTextEdit(0, 6, 0, 7, "Renamed")), null, null, System.currentTimeMillis())),
+                List.of(new WorkspaceEditMapper.FileRename(from, to, false)));
+
+        assertTrue(applyAsync(mapped).get(10, java.util.concurrent.TimeUnit.SECONDS), "refused: " + host.error);
+
+        assertEquals("class Renamed {}\n", FxTestSupport.callOnFx(b::getContent));
+        assertTrue(Files.exists(to), "the file should have moved");
+        assertFalse(Files.exists(from));
+        assertEquals(to, FxTestSupport.callOnFx(b::getPath), "the tab follows the file");
+    }
+
+    /** The move must not hide a real change: the file was written after the request, then moved. */
+    @Test
+    void theAsyncPathStillRefusesAMovedClosedFileThatChangedAfterTheRequest() throws Exception {
+        EditorBuffer b = openBuffer("Foo.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        Path from = b.getPath();
+        Path to = root.resolve("Renamed.java");
+        long sentBeforeTheLastWrite = Files.getLastModifiedTime(from).toMillis() - 5_000;
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        from, List.of(new LspTextEdit(0, 6, 0, 7, "Renamed")), null, null, sentBeforeTheLastWrite)),
+                List.of(new WorkspaceEditMapper.FileRename(from, to, false)));
+
+        assertFalse(applyAsync(mapped).get(10, java.util.concurrent.TimeUnit.SECONDS));
+
+        assertTrue(Files.exists(from), "nothing may be staged for a stale target");
+        assertFalse(Files.exists(to));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent));
+        assertTrue(host.error != null && host.error.contains("Foo.java"), "the blocking file is named: " + host.error);
+    }
+
+    /** A tab left behind on a path that no longer exists is a half-applied refactoring, not a success. */
+    @Test
+    void aTabThatDoesNotFollowItsMovedFileIsNotReportedAsApplied() throws Exception {
+        EditorBuffer b = openBuffer("OldName.java", "class OldName {}\n");
+        Path from = b.getPath();
+        Path to = root.resolve("NewName.java");
+        ops.remapTabs = false;
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(new WorkspaceEditMapper.FileEdit(
+                        from, List.of(new LspTextEdit(0, 6, 0, 13, "NewName")), null, "class OldName {}\n")),
+                List.of(new WorkspaceEditMapper.FileRename(from, to, false)));
+
+        assertFalse(applyAsync(mapped).get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(
+                host.error != null && host.error.contains("OldName.java"), "the stranded tab is named: " + host.error);
+    }
+
+    @Test
+    void aRenameDestinationIsWrittenInTheTabsSpelling() {
+        Path tab = Path.of("/home/u/dev/app/src/Foo.java").toAbsolutePath();
+        Path serverFrom = Path.of("/mnt/data/dev/app/src/Foo.java").toAbsolutePath();
+        Path serverTo = Path.of("/mnt/data/dev/app/src/Baz.java").toAbsolutePath();
+
+        assertEquals(
+                Path.of("/home/u/dev/app/src/Baz.java").toAbsolutePath(),
+                LspCoordinator.inSpellingOf(tab, serverFrom, serverTo));
+        assertEquals(
+                Path.of("/home/u/dev/app/src/sub/Baz.java").toAbsolutePath(),
+                LspCoordinator.inSpellingOf(tab, serverFrom, serverFrom.resolveSibling("sub/Baz.java")));
+        assertEquals(serverTo, LspCoordinator.inSpellingOf(serverFrom, serverFrom, serverTo), "same spelling");
+        Path elsewhere = Path.of("/srv/other/Baz.java").toAbsolutePath();
+        assertEquals(elsewhere, LspCoordinator.inSpellingOf(tab, serverFrom, elsewhere), "outside the shared tree");
+    }
+
+    @Test
+    void aClosedFileEditIsRefusedForUnsavedChangesAndNamesTheFile() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        FxTestSupport.runOnFx(b::markUnsaved);
+
+        assertFalse(FxTestSupport.callOnFx(
+                () -> coordinator.applyWorkspaceEdits(closedFileEdit(b, System.currentTimeMillis()))));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent), "nothing may be half-applied");
+        assertTrue(host.error != null && host.error.contains("B.java"), "the blocking file is named: " + host.error);
+    }
+
+    /** The H12 protection at the applier: the file changed between the request and now. */
+    @Test
+    void aClosedFileEditIsRefusedWhenTheFileChangedAfterTheRequest() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        long sentBeforeTheLastWrite = Files.getLastModifiedTime(b.getPath()).toMillis() - 5_000;
+
+        var result = applyAsync(closedFileEdit(b, sentBeforeTheLastWrite));
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent));
+        assertTrue(host.error != null && host.error.contains("B.java"));
+    }
+
+    /** A clean buffer that was loaded from an older version of the file is not what the server edited. */
+    @Test
+    void aClosedFileEditIsRefusedWhenTheBufferDoesNotMirrorTheDisk() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        long modified = Files.getLastModifiedTime(b.getPath()).toMillis();
+        FxTestSupport.runOnFx(() -> b.setDiskSnapshot(modified - 30_000, 3)); // loaded before an external write
+
+        assertFalse(FxTestSupport.callOnFx(
+                () -> coordinator.applyWorkspaceEdits(closedFileEdit(b, System.currentTimeMillis()))));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    /**
+     * "Changed on disk → Keep" re-baselines the snapshot's time and size without loading: the buffer is clean
+     * and its snapshot matches the file, yet it holds different text. The server computed its edit from the
+     * file, so applying it to that buffer put the change at the wrong place and reported success.
+     */
+    @Test
+    void aClosedFileEditIsRefusedForABufferThatKeptItsTextOverTheDisk() throws Exception {
+        EditorBuffer b = openBuffer("B.java", "class B {}\n");
+        mirrorDisk(b, 60_000);
+        long modified = Files.getLastModifiedTime(b.getPath()).toMillis();
+        long size = Files.size(b.getPath());
+        FxTestSupport.runOnFx(() -> b.setDiskSnapshot(modified, size)); // what Keep does: no content was read
+
+        assertFalse(FxTestSupport.callOnFx(
+                () -> coordinator.applyWorkspaceEdits(closedFileEdit(b, System.currentTimeMillis()))));
+        assertEquals("class B {}\n", FxTestSupport.callOnFx(b::getContent));
+        assertTrue(host.error != null && host.error.contains("B.java"));
+    }
+
+    @Test
+    void blockedFileNamesAreSummarised() {
+        assertEquals("A.java", LspCoordinator.blockedFileNames(List.of(Path.of("/p/A.java"))));
+        assertEquals(
+                "A.java, B.java, C.java +2",
+                LspCoordinator.blockedFileNames(List.of(
+                        Path.of("/p/A.java"),
+                        Path.of("/p/B.java"),
+                        Path.of("/p/C.java"),
+                        Path.of("/p/D.java"),
+                        Path.of("/p/E.java"))));
     }
 }

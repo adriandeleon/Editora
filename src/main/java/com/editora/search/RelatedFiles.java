@@ -62,6 +62,10 @@ public final class RelatedFiles {
             for (String suffix : TEST_SUFFIXES) {
                 out.add(withExtension(base + suffix, ext));
             }
+            // The leading-`test_` spelling testSubject() understands, so the jump works in both directions.
+            if (!base.startsWith(".")) { // a dotfile has no test_ twin worth offering
+                out.add(withExtension("test_" + base, ext));
+            }
         }
         for (String other : siblingExtensions(ext)) {
             out.add(withExtension(base, other));

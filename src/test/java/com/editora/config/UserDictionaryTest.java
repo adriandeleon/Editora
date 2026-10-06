@@ -77,4 +77,21 @@ class UserDictionaryTest {
                 "alpha\n\n  \nALPHA\r\nbeta\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         assertEquals(java.util.Set.of("alpha", "beta"), reload(dir));
     }
+
+    @Test
+    void addingAWordToAFileWithNoFinalNewlineStartsANewLine(@TempDir Path dir) throws Exception {
+        // Hand-edited or synced: the last line is not terminated.
+        Files.writeString(dir.resolve("dictionary.txt"), "alpha\nbeta");
+        ConfigManager c = new ConfigManager(dir);
+        c.load();
+
+        c.addUserWord("gamma");
+
+        assertEquals(java.util.Set.of("alpha", "beta", "gamma"), reload(dir), "not alpha + betagamma");
+        c.addUserWord("delta");
+        assertEquals(
+                java.util.List.of("alpha", "beta", "gamma", "delta"),
+                Files.readAllLines(dir.resolve("dictionary.txt")),
+                "and a terminated file gets no blank line");
+    }
 }

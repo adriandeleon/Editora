@@ -2,6 +2,7 @@ package com.editora.systemd;
 
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -18,6 +19,9 @@ import java.util.TreeSet;
  * {@code quarterly}, {@code semiannually}) and the general
  * {@code [weekdays] [year-month-day] hour:minute[:second]} form, where each field may be {@code *}, a
  * number, a {@code a,b} list, a {@code a..b} range, or a {@code start/step} / {@code &#42;/step} repetition.
+ * A trailing time zone ({@code UTC} or an IANA name such as {@code Europe/Berlin}) is honored — the next runs
+ * are computed in that zone and reported in local time — and the legacy weekday range {@code Mon-Fri} is
+ * accepted alongside {@code Mon..Fri}.
  *
  * <p>{@link #parse} returns a field-level error rather than throwing, so a preview can flag a bad line.
  * Next-run computation steps by minute (bounded ~4 years), matching to minute precision (the sub-minute
@@ -52,6 +56,7 @@ public final class SystemdCalendar {
     private final Field minute;
     private final int displaySecond;
     private final String shorthand; // non-null when parsed from a keyword (nicer describe)
+    private final ZoneId zone; // null = the machine's local time
 
     private SystemdCalendar(
             Set<DayOfWeek> weekdays,
@@ -60,7 +65,8 @@ public final class SystemdCalendar {
             Field hour,
             Field minute,
             int displaySecond,
-            String shorthand) {
+            String shorthand,
+            ZoneId zone) {
         this.weekdays = weekdays;
         this.month = month;
         this.day = day;
@@ -68,6 +74,7 @@ public final class SystemdCalendar {
         this.minute = minute;
         this.displaySecond = displaySecond;
         this.shorthand = shorthand;
+        this.zone = zone;
     }
 
     public record Parsed(SystemdCalendar calendar, String error) {
@@ -81,6 +88,15 @@ public final class SystemdCalendar {
             return new Parsed(null, "empty calendar expression");
         }
         String s = expr.strip();
+        // A time zone, when present, is always the last token ("*-*-* 03:00:00 UTC", "daily Europe/Berlin").
+        ZoneId zone = null;
+        int lastSpace = Math.max(s.lastIndexOf(' '), s.lastIndexOf('\t'));
+        if (lastSpace > 0) {
+            zone = zoneOf(s.substring(lastSpace + 1));
+            if (zone != null) {
+                s = s.substring(0, lastSpace).strip();
+            }
+        }
         String lower = s.toLowerCase(Locale.ROOT);
         String shorthand =
                 switch (lower) {
@@ -98,7 +114,7 @@ public final class SystemdCalendar {
                 };
         String expanded = shorthand == null ? s : expand(shorthand);
         try {
-            return new Parsed(build(expanded, shorthand), null);
+            return new Parsed(build(expanded, shorthand, zone), null);
         } catch (IllegalArgumentException e) {
             return new Parsed(null, e.getMessage());
         }
@@ -118,13 +134,23 @@ public final class SystemdCalendar {
         };
     }
 
-    private static SystemdCalendar build(String s, String shorthand) {
+    /** {@code UTC} or an IANA zone id ({@code Europe/Berlin}); null when {@code token} is not a time zone. */
+    private static ZoneId zoneOf(String token) {
+        if (token.equalsIgnoreCase("UTC")) {
+            return ZoneId.of("UTC");
+        }
+        return token.indexOf('/') > 0 && ZoneId.getAvailableZoneIds().contains(token) ? ZoneId.of(token) : null;
+    }
+
+    private static SystemdCalendar build(String s, String shorthand, ZoneId zone) {
         String[] parts = s.split("\\s+");
         String weekdaysTok = null;
         String dateTok = null;
         String timeTok = null;
         for (String p : parts) {
-            if (p.indexOf(':') >= 0) {
+            if (!p.isEmpty() && Character.isLetter(p.charAt(0))) {
+                weekdaysTok = p; // weekday names — checked first so the legacy "Mon-Fri" is not taken for a date
+            } else if (p.indexOf(':') >= 0) {
                 timeTok = p; // a time always contains ':'
             } else if (p.indexOf('-') >= 0) {
                 dateTok = p; // a date always contains '-'
@@ -169,16 +195,21 @@ public final class SystemdCalendar {
                 second = sec.values().first();
             }
         }
-        return new SystemdCalendar(weekdays, month, day, hour, minute, second, shorthand);
+        return new SystemdCalendar(weekdays, month, day, hour, minute, second, shorthand, zone);
     }
 
     private static Set<DayOfWeek> parseWeekdays(String tok) {
         Set<DayOfWeek> out = EnumSet.noneOf(DayOfWeek.class);
         for (String part : tok.split(",")) {
             int dots = part.indexOf("..");
+            int sepLen = 2;
+            if (dots < 0) {
+                dots = part.indexOf('-'); // the legacy range form, still accepted by systemd
+                sepLen = 1;
+            }
             if (dots >= 0) {
                 DayOfWeek a = dow(part.substring(0, dots));
-                DayOfWeek b = dow(part.substring(dots + 2));
+                DayOfWeek b = dow(part.substring(dots + sepLen));
                 int i = a.getValue();
                 while (true) {
                     out.add(DayOfWeek.of(i));
@@ -216,17 +247,43 @@ public final class SystemdCalendar {
     }
 
     public List<LocalDateTime> nextRuns(LocalDateTime from, int n) {
+        return nextRuns(from, n, ZoneId.systemDefault());
+    }
+
+    /**
+     * The next {@code n} trigger times after {@code from}, both in {@code local} wall-clock time. An
+     * expression with its own time zone is matched in that zone and the hits converted back, so
+     * {@code 03:00 UTC} shows as 05:00 for a reader in {@code Europe/Berlin} in summer.
+     */
+    public List<LocalDateTime> nextRuns(LocalDateTime from, int n, ZoneId local) {
         List<LocalDateTime> out = new ArrayList<>();
-        LocalDateTime t = from.truncatedTo(ChronoUnit.MINUTES).plusMinutes(1);
+        LocalDateTime start = zone == null
+                ? from
+                : from.atZone(local).withZoneSameInstant(zone).toLocalDateTime();
+        LocalDateTime t = start.truncatedTo(ChronoUnit.MINUTES).plusMinutes(1);
         for (int scanned = 0; scanned < MAX_SCAN_MINUTES && out.size() < n; scanned++, t = t.plusMinutes(1)) {
             if (matches(t)) {
-                out.add(t.withSecond(displaySecond));
+                LocalDateTime hit = t.withSecond(displaySecond);
+                out.add(
+                        zone == null
+                                ? hit
+                                : hit.atZone(zone).withZoneSameInstant(local).toLocalDateTime());
             }
         }
         return out;
     }
 
+    /** The expression's own time zone, or {@code null} when it runs in local time. */
+    public ZoneId zone() {
+        return zone;
+    }
+
     public String describe() {
+        String text = describeLocal();
+        return zone == null ? text : text + " (" + zone.getId() + ")";
+    }
+
+    private String describeLocal() {
         if ("minutely".equals(shorthand)) {
             return "Every minute";
         }

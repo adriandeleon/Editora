@@ -173,4 +173,112 @@ class HistoryRetentionTest {
         assertFalse(HistoryRetention.isProtected(rev(1, 1, "s")));
         assertFalse(HistoryRetention.isProtected(null));
     }
+
+    private static final long DAY = 86_400_000L;
+
+    private static HistoryRevision revAt(String path, long ts, long size, String sha) {
+        return new HistoryRevision(path, ts, size, sha, HistoryRevision.REASON_SAVE);
+    }
+
+    /** Protection is a longer lease, not a permanent one: six times the age limit, never under 180 days. */
+    @Test
+    void protectedRevisionsExpireAfterALongerFiniteLease() {
+        assertEquals(180 * DAY, HistoryRetention.protectedMaxAgeMillis(30 * DAY));
+        assertEquals(180 * DAY, HistoryRetention.protectedMaxAgeMillis(DAY));
+        assertEquals(600 * DAY, HistoryRetention.protectedMaxAgeMillis(100 * DAY));
+        assertEquals(0, HistoryRetention.protectedMaxAgeMillis(0), "no age limit means no expiry at all");
+        assertEquals(Long.MAX_VALUE, HistoryRetention.protectedMaxAgeMillis(Long.MAX_VALUE / 2));
+
+        long now = 1_000 * DAY;
+        List<HistoryRevision> revs = List.of(
+                rev(now, 10, "newest"),
+                labelled(now - 179 * DAY, 10, "recent-label", "keep"),
+                labelled(now - 181 * DAY, 10, "ancient-label", "expired"),
+                deleted(now - 181 * DAY, 10, "ancient-delete"));
+        List<HistoryRevision> out = HistoryRetention.prune(revs, 0, 30 * DAY, now);
+        assertEquals(
+                List.of("newest", "recent-label"),
+                out.stream().map(HistoryRevision::sha256).toList());
+        // With the age limit off nothing expires, protected or not.
+        assertEquals(4, HistoryRetention.prune(revs, 0, 0, now).size());
+    }
+
+    /**
+     * The limits were only ever applied to the file being saved. A file saved once and never touched again
+     * kept its revision — and its content on disk — forever. The sweep applies them to every file.
+     */
+    @Test
+    void theSweepAppliesTheLimitsToFilesThatAreNeverSavedAgain() {
+        long now = 1_000 * DAY;
+        Map<String, List<HistoryRevision>> project = new LinkedHashMap<>();
+        project.put("/p/.env", List.of(revAt("/p/.env", now - 400 * DAY, 10, "secret")));
+        project.put(
+                "/p/active.txt",
+                List.of(
+                        revAt("/p/active.txt", now - DAY, 10, "fresh"),
+                        revAt("/p/active.txt", now - 31 * DAY, 10, "stale"),
+                        revAt("/p/active.txt", now - 60 * DAY, 10, "staler")));
+        project.put("/p/idle.txt", List.of(revAt("/p/idle.txt", now - 90 * DAY, 10, "only-copy")));
+        Map<String, Map<String, List<HistoryRevision>>> index = new LinkedHashMap<>();
+        index.put("proj", project);
+        var policy = new HistoryRetention.RetentionPolicy(50, 30 * DAY, 0);
+
+        Map<String, Map<String, List<HistoryRevision>>> swept = HistoryRetention.sweep(index, policy, now);
+
+        Map<String, List<HistoryRevision>> out = swept.get("proj");
+        assertFalse(
+                out.containsKey("/p/.env"),
+                "a newest revision past the protected lease is removed with its file entry");
+        assertEquals(
+                List.of("fresh"),
+                out.get("/p/active.txt").stream().map(HistoryRevision::sha256).toList());
+        assertEquals(1, out.get("/p/idle.txt").size(), "a file's newest revision is kept inside the lease");
+        assertEquals(3, project.get("/p/active.txt").size(), "the input is not mutated");
+        assertEquals(Set.of("fresh", "only-copy"), HistoryRetention.liveHashes(swept));
+
+        Map<String, Map<String, List<HistoryRevision>>> evicted = HistoryRetention.evicted(index, swept);
+        assertEquals(Set.of("/p/.env", "/p/active.txt"), evicted.get("proj").keySet());
+        assertEquals(
+                List.of("stale", "staler"),
+                evicted.get("proj").get("/p/active.txt").stream()
+                        .map(HistoryRevision::sha256)
+                        .toList());
+    }
+
+    @Test
+    void theSweepHoldsEveryProjectToItsByteBudget() {
+        long now = 1_000 * DAY;
+        Map<String, List<HistoryRevision>> a = new LinkedHashMap<>();
+        a.put(
+                "/a/x",
+                List.of(
+                        revAt("/a/x", now - 1, 100, "x3"),
+                        revAt("/a/x", now - 2, 100, "x2"),
+                        revAt("/a/x", now - 3, 100, "x1")));
+        Map<String, List<HistoryRevision>> b = new LinkedHashMap<>();
+        b.put("/b/y", List.of(revAt("/b/y", now - 1, 100, "y2"), revAt("/b/y", now - 2, 100, "y1")));
+        Map<String, Map<String, List<HistoryRevision>>> index = new LinkedHashMap<>();
+        index.put("a", a);
+        index.put("b", b);
+
+        var swept = HistoryRetention.sweep(index, new HistoryRetention.RetentionPolicy(0, 0, 200), now);
+
+        assertEquals(
+                List.of("x3", "x2"),
+                swept.get("a").get("/a/x").stream().map(HistoryRevision::sha256).toList());
+        assertEquals(2, swept.get("b").get("/b/y").size(), "each project has its own budget");
+    }
+
+    @Test
+    void evictedCountsIdenticalRowsRatherThanCollapsingThem() {
+        HistoryRevision same = rev(5, 1, "dup");
+        Map<String, Map<String, List<HistoryRevision>>> before =
+                Map.of("p", Map.of("/f", List.of(same, same, rev(1, 1, "old"))));
+        Map<String, Map<String, List<HistoryRevision>>> after = Map.of("p", Map.of("/f", List.of(same)));
+
+        assertEquals(
+                List.of(same, rev(1, 1, "old")),
+                HistoryRetention.evicted(before, after).get("p").get("/f"));
+        assertTrue(HistoryRetention.evicted(before, before).isEmpty());
+    }
 }

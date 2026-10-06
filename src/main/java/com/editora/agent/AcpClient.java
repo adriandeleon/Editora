@@ -31,7 +31,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  * Finder-launched app finds an npm-installed agent) and a daemon reader thread; requests return
  * {@link CompletableFuture}s completed on the reader thread; agent→client requests (fs reads/writes,
  * permission asks) are dispatched to a small executor so a blocked handler (a permission dialog) never
- * stalls the read loop. The host marshals to the FX thread itself. {@link #dispose} kills the whole
+ * stalls the read loop. The host marshals to the FX thread itself. The two {@code fs/*} methods are confined
+ * to the session folder by {@link AcpFsGuard} before the host is asked at all. {@link #dispose} kills the whole
  * process tree via {@link ProcessRegistry} (an npx wrapper must not orphan the real agent).
  */
 public final class AcpClient {
@@ -58,6 +59,12 @@ public final class AcpClient {
 
         /** Serve {@code session/request_permission}: resolve to the chosen optionId, or null = cancelled. */
         CompletableFuture<String> requestPermission(String title, List<AcpJson.PermissionOption> options);
+
+        /** A directory the agent must never write into even when it lies inside the session folder — the
+         *  editor's own configuration directory. {@code null} = none. */
+        default Path writeProtectedDirectory() {
+            return null;
+        }
     }
 
     private final List<String> command;
@@ -75,6 +82,9 @@ public final class AcpClient {
     });
 
     private volatile JsonNode sessionConfig;
+    /** The folder {@code fs/*} requests are confined to: the latest session's cwd, else the process cwd. */
+    private volatile Path fsRoot;
+
     private volatile Process process;
     private final Object writeLock = new Object();
 
@@ -85,8 +95,23 @@ public final class AcpClient {
     public AcpClient(List<String> command, Path cwd, Host host, Map<String, String> environment) {
         this.command = command;
         this.cwd = cwd;
+        this.fsRoot = cwd;
         this.host = host;
         this.environment = Map.copyOf(environment);
+    }
+
+    /**
+     * The agent process, before it is started: the user's own environment (locale included) plus the
+     * augmented PATH, then {@code environment}. The agent is an interactive CLI that reads and writes the
+     * user's files and prose — the parse-stable {@code LC_ALL=C} would make it treat their paths as ASCII.
+     */
+    static ProcessBuilder processBuilder(List<String> command, Path cwd, Map<String, String> environment) {
+        ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
+        if (cwd != null) {
+            pb.directory(cwd.toFile());
+        }
+        ProcessRunner.applyUserEnv(pb.environment(), environment);
+        return pb;
     }
 
     /** Spawns the agent + reader/stderr threads. Returns false when the command can't launch. */
@@ -95,13 +120,7 @@ public final class AcpClient {
             return true;
         }
         try {
-            ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
-            if (cwd != null) {
-                pb.directory(cwd.toFile());
-            }
-            ProcessRunner.applyStandardEnv(pb);
-            pb.environment().putAll(environment);
-            process = pb.start();
+            process = processBuilder(command, cwd, environment).start();
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             drainStderr(process);
             startReader(process);
@@ -127,6 +146,7 @@ public final class AcpClient {
 
     /** {@code session/new} → the new session's id plus its model/mode catalogs. */
     public CompletableFuture<AcpJson.SessionInfo> newSession(Path sessionCwd) {
+        fsRoot = sessionCwd;
         return request("session/new", AcpJson.newSessionParams(mapper, sessionCwd.toString()))
                 .thenApply(this::rememberSessionConfig);
     }
@@ -135,6 +155,7 @@ public final class AcpClient {
      *  session id (the caller already knows it), so {@code sessionId} is spliced back into the parsed
      *  {@link AcpJson.SessionInfo}. */
     public CompletableFuture<AcpJson.SessionInfo> resumeSession(String sessionId, Path sessionCwd) {
+        fsRoot = sessionCwd;
         return request("session/resume", AcpJson.resumeSessionParams(mapper, sessionId, sessionCwd.toString()))
                 .thenApply(result -> {
                     AcpJson.SessionInfo parsed = rememberSessionConfig(result);
@@ -310,6 +331,7 @@ public final class AcpClient {
             switch (method) {
                 case "fs/read_text_file" -> {
                     String path = textOf(params, "path");
+                    AcpFsGuard.checkRead(fsRoot, path); // confined to the session folder; throws → error reply
                     Integer line = intOf(params, "line");
                     Integer limit = intOf(params, "limit");
                     String content = host.readTextFile(path, line, limit);
@@ -318,7 +340,9 @@ public final class AcpClient {
                     send(AcpJson.response(mapper, id, result));
                 }
                 case "fs/write_text_file" -> {
-                    host.writeTextFile(textOf(params, "path"), textOf(params, "content"));
+                    String path = textOf(params, "path");
+                    AcpFsGuard.checkWrite(fsRoot, host.writeProtectedDirectory(), path);
+                    host.writeTextFile(path, textOf(params, "content"));
                     send(AcpJson.response(mapper, id, null));
                 }
                 case "session/request_permission" -> {

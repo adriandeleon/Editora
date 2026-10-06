@@ -61,11 +61,16 @@ class TestRunRecognizerTest {
     @Test
     void singleTestTaskPerTool() {
         // Maven: simple class name + #method (matches Surefire's -Dtest), + failIfNoTests=false for reactors.
+        // ...and surefire.failIfNoSpecifiedTests=false for a reactor module that HAS tests, none matching.
         assertEquals(
-                List.of("test", "-Dtest=FooTest#bar", "-DfailIfNoTests=false"),
+                List.of(
+                        "test",
+                        "-Dtest=FooTest#bar",
+                        "-DfailIfNoTests=false",
+                        "-Dsurefire.failIfNoSpecifiedTests=false"),
                 TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", "bar"));
         assertEquals(
-                List.of("test", "-Dtest=FooTest", "-DfailIfNoTests=false"),
+                List.of("test", "-Dtest=FooTest", "-DfailIfNoTests=false", "-Dsurefire.failIfNoSpecifiedTests=false"),
                 TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", null));
         // Gradle: FQN.method / FQN.
         assertEquals(
@@ -82,5 +87,45 @@ class TestRunRecognizerTest {
                 BuildTool.MAVEN, TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", "bar")));
         assertTrue(TestRunRecognizer.isTestRun(
                 BuildTool.GRADLE, TestRunRecognizer.singleTestTask(BuildTool.GRADLE, "com.x.FooTest", "bar")));
+    }
+
+    /** Rerun-one on a parameterized invocation targets the method: no filter accepts {@code isOdd(int)[1]}. */
+    @Test
+    void singleTestTaskStripsAParameterizedSuffix() {
+        assertEquals(
+                "-Dtest=NumbersTest#isOdd",
+                TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.NumbersTest", "isOdd(int)[1]")
+                        .get(1));
+        assertEquals(
+                List.of("test", "--tests", "com.x.NumbersTest.isOdd"),
+                TestRunRecognizer.singleTestTask(BuildTool.GRADLE, "com.x.NumbersTest", "isOdd(int)[1]"));
+        assertEquals("isOdd", TestSourceLocator.filterMethodName("isOdd(int)[1]"));
+        assertEquals("repeated", TestSourceLocator.filterMethodName("repeated[3]"));
+        assertEquals("plain", TestSourceLocator.filterMethodName(" plain "));
+        assertEquals("[1] 3", TestSourceLocator.filterMethodName("[1] 3"), "a display name is left as it is");
+    }
+
+    /**
+     * An up-to-date Gradle test task exits 0 and rewrites no report. Showing the reports on disk is right
+     * there and only there: Surefire always re-runs, so an untouched Maven report is a leftover.
+     */
+    @Test
+    void anUpToDateGradleRunShowsTheReportsAlreadyOnDisk() {
+        assertTrue(TestRunRecognizer.showsExistingReports(BuildTool.GRADLE, 0, false));
+        assertFalse(TestRunRecognizer.showsExistingReports(BuildTool.GRADLE, 0, true), "this run wrote its own");
+        assertFalse(TestRunRecognizer.showsExistingReports(BuildTool.GRADLE, 1, false), "a failed build ran nothing");
+        assertFalse(TestRunRecognizer.showsExistingReports(BuildTool.MAVEN, 0, false));
+    }
+
+    @Test
+    void aNestedMavenTestIsSelectedByItsNestedClass() {
+        assertEquals(
+                "-Dtest=OuterTest$Inner#inner",
+                TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.OuterTest$Inner", "inner")
+                        .get(1));
+        assertEquals(
+                "-Dtest=FooTest#testMethod+testMethod[*]",
+                TestRunRecognizer.singleTestTask(BuildTool.MAVEN, "com.x.FooTest", "testMethod[0]")
+                        .get(1));
     }
 }

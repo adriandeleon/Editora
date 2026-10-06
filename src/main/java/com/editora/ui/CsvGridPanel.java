@@ -104,6 +104,8 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         headerToggle.selectedProperty().addListener((o, was, is) -> rebuild());
 
         filterField.setPromptText(tr("csvgrid.filterPrompt"));
+        // The configured keymap's caret/editing chords act on this field (the KeyDispatcher leaves them to it).
+        com.editora.command.TextInputKeymap.installShared(filterField);
         filterField.getStyleClass().add("csv-grid-filter");
         filterField.setPrefColumnCount(14);
         filterField.textProperty().addListener((o, was, is) -> applyView());

@@ -80,6 +80,17 @@ public class SettingsWindow {
     /** Fraction of the screen's usable area the window may occupy before the preferred size is clamped. */
     private static final double MAX_SCREEN_FRACTION = 0.92;
 
+    /** Wide enough to read a path or a command in; SettingRowPane puts the field under its title when the row is narrow. */
+    private static final double PATH_FIELD_WIDTH = 320;
+
+    /**
+     * The narrowest the window may be made. The pages that put a list beside a form (Snippets, Templates,
+     * Macros, Toolbar, Remote) need about this much; below it they scroll sideways rather than collapse.
+     */
+    private static final double MIN_WIDTH = 900;
+
+    private static final double MIN_HEIGHT = 480;
+
     /** Sidebar group headers; every {@link Category} belongs to exactly one, shown in declaration order. */
     private enum Group {
         GENERAL(tr("settings.group.general")),
@@ -157,6 +168,11 @@ public class SettingsWindow {
     /** A searchable settings row: its page, its node (hidden when filtered out), and its keywords. */
     private record SettingRow(Category category, Node node, String keywords, Label section, VBox card) {}
 
+    /** Lazily built search text per row (keywords + shown text); identity-keyed, rows are never removed. */
+    private final java.util.Map<SettingRow, String> searchIndex = new java.util.IdentityHashMap<>();
+
+    private Label searchEmpty; // "no settings match …", shown in place of the page
+
     private final ConfigManager config;
     private final Consumer<Settings> onApply;
     private final Consumer<Boolean> onToggleZen;
@@ -197,6 +213,9 @@ public class SettingsWindow {
     private VBox shortcutListBox; // rebuilt from shortcutActions.rows() on each change/filter
     private String recordingCommandId; // command id whose row is currently capturing a chord, or null
     private String selectedShortcutId; // command id of the selected row (shows its Record/Reset), or null
+    private ScrollPane shortcutScroll;
+    private final Map<String, HBox> shortcutRowsById = new HashMap<>(); // the rows currently in the list
+    private HBox shortcutTabStop; // the one row Tab lands on; the arrow keys move between rows
     private ComboBox<String> fontFamily;
     private Spinner<Integer> fontSize;
     private ComboBox<String> themeCombo;
@@ -304,6 +323,13 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
+    /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
+    private ListView<com.editora.vfs.RemoteConnection> remoteList;
+
+    /** Re-read the Snippets / Templates lists from disk, keeping the selected row (set when the page is built). */
+    private Runnable reloadSnippets;
+
+    private Runnable reloadTemplates;
 
     /** Working copies for the Macros master-detail page. */
     private final javafx.collections.ObservableList<com.editora.macro.Macro> macroItems =
@@ -332,6 +358,10 @@ public class SettingsWindow {
 
     private boolean loadingSnippet = false;
     private String currentSnippetLang = "global";
+
+    /** Why the current language's user snippet file cannot be parsed, or null. While set the page is
+     *  read-only for that language: saving would replace the file with what little the page could load. */
+    private String snippetFileProblem;
     /** Shared template registry (injected after construction); backs the Templates management page. */
     private com.editora.template.TemplateRegistry templateRegistry;
     /** Working copy of the templates (bundled + user) shown on the Templates page. */
@@ -505,6 +535,10 @@ public class SettingsWindow {
 
     private boolean built;
     private boolean loading;
+    /** Re-read each Tool Windows row from the tool-window manager; run by {@link #load} under the flag below. */
+    private final List<Runnable> toolWindowRowSyncs = new ArrayList<>();
+
+    private boolean syncingToolWindowRows;
 
     public SettingsWindow(
             ConfigManager config,
@@ -539,6 +573,10 @@ public class SettingsWindow {
         this.onOpenFile = onOpenFile;
         this.onExportConfig = onExportConfig;
         this.onShowDebugLog = onShowDebugLog;
+        if (com.editora.AppInfo.isSnapshot()) {
+            // Start the (background, bounded) branch lookup now, so About has it without ever waiting on git.
+            com.editora.AppInfo.gitBranchAsync();
+        }
     }
 
     /**
@@ -760,6 +798,10 @@ public class SettingsWindow {
             built = true;
         }
         load();
+        reloadFileBackedEditors();
+        // The keymap may have changed while the window was closed (or, the first time, the chips were
+        // created after the backend was injected and are still empty).
+        refreshShortcuts();
         if (stage.isShowing()) {
             stage.toFront();
         } else {
@@ -768,16 +810,21 @@ public class SettingsWindow {
         }
     }
 
+    /** Centres on the owner using the size the window actually has, kept on the owner's screen. */
     private void centerOnOwner(Window owner) {
-        if (owner == null) {
-            return;
-        }
-        stage.setX(owner.getX() + (owner.getWidth() - WIDTH) / 2);
-        stage.setY(owner.getY() + (owner.getHeight() - HEIGHT) / 2);
+        javafx.geometry.Dimension2D size = preferredSize(owner);
+        WindowPlacement.centerOnOwner(stage, owner, size.getWidth(), size.getHeight());
     }
 
     private void build(Window owner) {
         stage.setTitle(tr("settings.window.title"));
+        // The window is non-modal: a store can change while it is open but in the background.
+        stage.focusedProperty().addListener((o, was, now) -> {
+            if (now && !loading) {
+                reloadStoreBackedEditors();
+            }
+        });
+        stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_HIDING, e -> commitPendingFields());
         stage.initOwner(owner);
         stage.initModality(Modality.NONE);
 
@@ -787,6 +834,7 @@ public class SettingsWindow {
 
         searchField = new TextField();
         searchField.setPromptText(tr("settings.search.prompt"));
+        searchField.setAccessibleText(tr("settings.search.prompt"));
         searchField.getStyleClass().add("settings-search");
         searchField.textProperty().addListener((o, a, b) -> filter(b));
 
@@ -796,9 +844,34 @@ public class SettingsWindow {
         sidebar.setPrefWidth(216);
         sidebar.setMinWidth(216);
         sidebar.setCellFactory(v -> new CategoryCell());
+        // The arrow, Home/End and Page keys only ever land on a category that can be opened: never on a
+        // group header, and never on one the running search has disabled.
+        sidebar.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.isShiftDown() || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                return;
+            }
+            List<Object> items = sidebar.getItems();
+            int from = sidebar.getSelectionModel().getSelectedIndex();
+            int page = (int) Math.max(1, sidebar.getHeight() / 34 - 1);
+            int target = SettingsSidebarNav.target(
+                    items.size(),
+                    from,
+                    e.getCode(),
+                    page,
+                    i -> items.get(i) instanceof Category c && !searchHiddenCats.contains(c));
+            if (target == SettingsSidebarNav.NOT_A_NAVIGATION_KEY) {
+                return;
+            }
+            e.consume();
+            if (target >= 0 && target != from) {
+                sidebar.getSelectionModel().clearAndSelect(target);
+                sidebar.getFocusModel().focus(target);
+                revealSidebarRow(target);
+            }
+        });
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
-            if (b instanceof Category cat) { // group headers aren't pages
-                contentScroll.setContent(pages.get(cat));
+            if (b instanceof Category) { // group headers aren't pages
+                showContent();
                 // Every page starts at its top. A ScrollPane keeps its vvalue across a content swap, so
                 // opening a short page after scrolling down a long one landed mid-page — and on a page
                 // that fits, silently nowhere at all. Deferred: the new content has not been laid out
@@ -807,6 +880,11 @@ public class SettingsWindow {
                 javafx.application.Platform.runLater(() -> contentScroll.setVvalue(0));
             }
         });
+
+        searchEmpty = new Label();
+        searchEmpty.getStyleClass().add("settings-search-empty");
+        searchEmpty.setWrapText(true);
+        searchEmpty.setVisible(false);
 
         contentScroll = new ScrollPane();
         contentScroll.setFitToWidth(true);
@@ -836,7 +914,7 @@ public class SettingsWindow {
         buttons.getStyleClass().add("settings-footer");
 
         VBox root = new VBox(0, body, buttons);
-        javafx.geometry.Dimension2D size = preferredSize();
+        javafx.geometry.Dimension2D size = preferredSize(owner);
         root.setPrefWidth(size.getWidth());
         root.setPrefHeight(size.getHeight());
 
@@ -850,25 +928,69 @@ public class SettingsWindow {
                         SettingsWindow.class
                                 .getResource("/com/editora/styles/syntax.css")
                                 .toExternalForm());
+        // Escape leaves: first a running search, then the window. A filter, because a ListView (the
+        // sidebar, where the focus usually is) swallows Escape — so what really uses the key is exempted
+        // by name in escapeIsTaken. An open combo popup or context menu takes the key before the scene.
+        scene.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() != javafx.scene.input.KeyCode.ESCAPE
+                    || e.isShortcutDown()
+                    || e.isAltDown()
+                    || escapeIsTaken(e.getTarget())) {
+                return;
+            }
+            e.consume();
+            if (!searchField.getText().isEmpty()) {
+                searchField.clear();
+            } else {
+                stage.close();
+            }
+        });
         stage.setScene(scene);
-        // The content scroll pane is fit-to-width (no horizontal scrollbar), so a too-narrow window would
-        // clip the wider rows (label + spinner + unit) with no way to read them. Floor the window size.
-        stage.setMinWidth(720);
-        stage.setMinHeight(480);
+        // Floor the window size: the rows wrap, but the list-beside-form pages need MIN_WIDTH.
+        stage.setMinWidth(Math.min(MIN_WIDTH, size.getWidth())); // never wider than a small screen allows
+        stage.setMinHeight(Math.min(MIN_HEIGHT, size.getHeight()));
 
         sidebar.getSelectionModel().select(Category.APPEARANCE);
     }
 
     /**
-     * {@link #WIDTH}×{@link #HEIGHT}, clamped to {@link #MAX_SCREEN_FRACTION} of the primary screen's
-     * <em>visual</em> bounds (which exclude the menu bar / taskbar). Without the clamp the window would
-     * open taller than a laptop display and hide its own Close button.
+     * Whether Escape pressed on {@code target} is that control's own: the shortcut recorder (cancels the
+     * recording), a snippet/template body (a text editor — not a request to close the window), a cell
+     * being edited, or a combo whose popup is open.
      */
-    private static javafx.geometry.Dimension2D preferredSize() {
-        javafx.geometry.Rectangle2D screen = javafx.stage.Screen.getPrimary().getVisualBounds();
-        return new javafx.geometry.Dimension2D(
-                Math.min(WIDTH, screen.getWidth() * MAX_SCREEN_FRACTION),
-                Math.min(HEIGHT, screen.getHeight() * MAX_SCREEN_FRACTION));
+    private static boolean escapeIsTaken(Object target) {
+        for (Node n = target instanceof Node node ? node : null; n != null; n = n.getParent()) {
+            if (n instanceof CodeArea
+                    || n.getStyleClass().contains("shortcut-capture")
+                    || (n instanceof javafx.scene.control.Cell<?> cell && cell.isEditing())
+                    || (n instanceof javafx.scene.control.ComboBoxBase<?> combo && combo.isShowing())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Scrolls the sidebar just far enough to show row {@code index} (the keyboard moved the selection). */
+    private void revealSidebarRow(int index) {
+        if (sidebar.lookup(".virtual-flow") instanceof javafx.scene.control.skin.VirtualFlow<?> flow) {
+            javafx.scene.control.IndexedCell<?> first = flow.getFirstVisibleCell();
+            javafx.scene.control.IndexedCell<?> last = flow.getLastVisibleCell();
+            if (first != null && last != null && index > first.getIndex() && index < last.getIndex()) {
+                return; // fully in view already
+            }
+        }
+        // Going up, show the group header above the category too rather than cutting it off.
+        boolean up = index > 0 && sidebar.getItems().get(index - 1) instanceof Group;
+        sidebar.scrollTo(up ? index - 1 : index);
+    }
+
+    /**
+     * {@link #WIDTH}×{@link #HEIGHT}, clamped to {@link #MAX_SCREEN_FRACTION} of the <em>visual</em> bounds
+     * (which exclude the menu bar / taskbar) of the screen the owner is on. Without the clamp the window
+     * would open taller than a laptop display and hide its own Close button.
+     */
+    private static javafx.geometry.Dimension2D preferredSize(Window owner) {
+        return WindowPlacement.clampSize(WIDTH, HEIGHT, WindowPlacement.screenOf(owner), MAX_SCREEN_FRACTION);
     }
 
     // --- control construction (logic unchanged from the flat window) -----------------------------
@@ -897,7 +1019,8 @@ public class SettingsWindow {
             }
             config.getSettings().setUiLanguage(now);
             config.save();
-            Alert restart = new Alert(Alert.AlertType.INFORMATION, tr("dialog.language.restart"), ButtonType.OK);
+            Alert restart = Dialogs.styled(
+                    new Alert(Alert.AlertType.INFORMATION, tr("dialog.language.restart"), ButtonType.OK));
             restart.initOwner(stage);
             restart.setTitle(tr("dialog.language.title"));
             restart.setHeaderText(null);
@@ -922,27 +1045,33 @@ public class SettingsWindow {
             if (loading || now == null) {
                 return;
             }
-            config.getSettings().setKeymap(now);
+            KeymapLayers.switchKeymap(config.getSettings(), now);
             config.save();
             if (onKeymapChanged != null) {
                 onKeymapChanged.run(); // reload the shared keymap live across all windows
             }
+            refreshShortcuts(); // the list below and the chord chips show the keymap that is now live
         });
 
         fontFamily = new ComboBox<>();
         fontFamily.getItems().setAll(fontFamilyChoices());
         fontFamily.setPrefWidth(220);
-        fontFamily.valueProperty().addListener((obs, old, now) -> apply());
-
-        fontSize = new Spinner<>(8, 48, 14);
-        fontSize.setEditable(true);
-        fontSize.setPrefWidth(90);
-        fontSize.valueProperty().addListener((obs, old, now) -> apply());
-        fontSize.getEditor().setOnAction(e -> commitFontSize());
-        fontSize.getEditor().focusedProperty().addListener((obs, was, focused) -> {
-            if (!focused) {
-                commitFontSize();
+        fontFamily.valueProperty().addListener((obs, old, now) -> {
+            if (loading || now == null) {
+                return;
             }
+            config.getSettings().setFontFamily(now);
+            apply();
+        });
+
+        fontSize = IntSpinners.editable(Settings.MIN_FONT_SIZE, Settings.MAX_FONT_SIZE, 14, 1);
+        fontSize.setPrefWidth(90);
+        fontSize.valueProperty().addListener((obs, old, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setFontSize(now);
+            apply();
         });
 
         themeCombo = new ComboBox<>();
@@ -979,8 +1108,7 @@ public class SettingsWindow {
             apply();
         });
 
-        tabSizeSpinner = new Spinner<>(1, 16, 4);
-        tabSizeSpinner.setEditable(true);
+        tabSizeSpinner = IntSpinners.editable(Settings.MIN_TAB_SIZE, Settings.MAX_TAB_SIZE, 4, 1);
         tabSizeSpinner.setPrefWidth(90);
         tabSizeSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -990,8 +1118,8 @@ public class SettingsWindow {
             apply();
         });
 
-        fillColumnSpinner = new Spinner<>(20, 200, com.editora.editops.Filler.DEFAULT_FILL_COLUMN);
-        fillColumnSpinner.setEditable(true);
+        fillColumnSpinner = IntSpinners.editable(
+                Settings.MIN_FILL_COLUMN, Settings.MAX_FILL_COLUMN, com.editora.editops.Filler.DEFAULT_FILL_COLUMN, 1);
         fillColumnSpinner.setPrefWidth(90);
         fillColumnSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1002,8 +1130,7 @@ public class SettingsWindow {
         });
 
         // Line count above which the minimap + LSP auto-disable (highlighting + editing stay); 0 = never.
-        largeFileThresholdSpinner = new Spinner<>(0, 10_000_000, 10_000, 1000);
-        largeFileThresholdSpinner.setEditable(true);
+        largeFileThresholdSpinner = IntSpinners.editable(0, Settings.MAX_LARGE_FILE_THRESHOLD, 10_000, 1000);
         largeFileThresholdSpinner.setPrefWidth(120);
         largeFileThresholdSpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1047,7 +1174,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        inlayHintModeCombo.setPrefWidth(170);
+        inlayHintModeCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         inlayHintModeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1080,7 +1207,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        indentStyleCombo.setPrefWidth(170);
+        indentStyleCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         indentStyleCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1102,7 +1229,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        pdfPageSizeCombo.setPrefWidth(170);
+        pdfPageSizeCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         pdfPageSizeCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1209,7 +1336,6 @@ public class SettingsWindow {
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
             blameCheck.setDisable(!now); // inline blame only matters when Git is on
-            gitPathField.setDisable(!now);
         });
 
         blameCheck = new CheckBox(tr("settings.git.blameInline"));
@@ -1220,7 +1346,7 @@ public class SettingsWindow {
 
         gitPathField = new TextField();
         gitPathField.setPromptText("git");
-        gitPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(gitPathField, () -> config.getSettings().getGitPath(), now -> {
             config.getSettings().setGitPath(now);
             apply(); // applySupport pushes the command into GitService
             probeGit();
@@ -1235,7 +1361,7 @@ public class SettingsWindow {
         });
         ghPathField = new TextField();
         ghPathField.setPromptText("gh");
-        ghPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(ghPathField, () -> config.getSettings().getGhPath(), now -> {
             config.getSettings().setGhPath(now);
             apply();
             refreshGithubStatus();
@@ -1244,9 +1370,9 @@ public class SettingsWindow {
         updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
 
         localHistoryCheck = new CheckBox(tr("settings.enableLocalHistory"));
-        historyMaxPerFileSpinner = historySpinner(1, 1000, 50, Settings::setHistoryMaxPerFile);
-        historyMaxAgeSpinner = historySpinner(0, 3650, 30, Settings::setHistoryMaxAgeDays);
-        historyMaxTotalSpinner = historySpinner(1, 5000, 50, Settings::setHistoryMaxTotalMb);
+        historyMaxPerFileSpinner = historySpinner(1, Settings.MAX_HISTORY_PER_FILE, 50, Settings::setHistoryMaxPerFile);
+        historyMaxAgeSpinner = historySpinner(0, Settings.MAX_HISTORY_AGE_DAYS, 30, Settings::setHistoryMaxAgeDays);
+        historyMaxTotalSpinner = historySpinner(1, Settings.MAX_HISTORY_TOTAL_MB, 50, Settings::setHistoryMaxTotalMb);
         localHistoryCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setLocalHistory(now);
             updateHistoryRowsEnabled();
@@ -1261,14 +1387,14 @@ public class SettingsWindow {
         });
         mmdcPathField = new TextField();
         mmdcPathField.setPromptText("mmdc");
-        mmdcPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(mmdcPathField, () -> config.getSettings().getMmdcPath(), now -> {
             config.getSettings().setMmdcPath(now);
             apply();
             refreshMermaidStatus();
         });
         maidPathField = new TextField();
         maidPathField.setPromptText(com.editora.mermaid.MermaidService.DEFAULT_MAID);
-        maidPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(maidPathField, () -> config.getSettings().getMaidPath(), now -> {
             config.getSettings().setMaidPath(now);
             apply();
             refreshMermaidStatus();
@@ -1282,14 +1408,14 @@ public class SettingsWindow {
         });
         dotPathField = new TextField();
         dotPathField.setPromptText("dot");
-        dotPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(dotPathField, () -> config.getSettings().getDotPath(), now -> {
             config.getSettings().setDotPath(now);
             apply();
             refreshDiagramStatus();
         });
         plantumlPathField = new TextField();
         plantumlPathField.setPromptText("plantuml");
-        plantumlPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(plantumlPathField, () -> config.getSettings().getPlantumlPath(), now -> {
             config.getSettings().setPlantumlPath(now);
             apply();
             refreshDiagramStatus();
@@ -1303,7 +1429,7 @@ public class SettingsWindow {
         });
         typstPathField = new TextField();
         typstPathField.setPromptText("typst");
-        typstPathField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(typstPathField, () -> config.getSettings().getTypstPath(), now -> {
             config.getSettings().setTypstPath(now);
             apply();
             refreshTypstStatus();
@@ -1319,7 +1445,7 @@ public class SettingsWindow {
             buildToolChecks.put(bt, check);
             TextField commandField = new TextField();
             commandField.setPromptText(bt.commandExample());
-            commandField.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(commandField, () -> bt.commandIn(config.getSettings()), now -> {
                 bt.setCommandIn(config.getSettings(), now);
                 apply();
             });
@@ -1333,10 +1459,17 @@ public class SettingsWindow {
                         apply();
                     }
                 });
-                mavenArchetypeCatalogField.textProperty().addListener((obs, was, now) -> {
-                    config.getSettings().setMavenArchetypeCatalogUrl(now);
-                    apply();
-                });
+                mavenArchetypeCatalogField.setPromptText(Settings.DEFAULT_MAVEN_ARCHETYPE_CATALOG);
+                commitOnEnterOrBlur(
+                        mavenArchetypeCatalogField,
+                        () -> shownOrBlank(
+                                mavenArchetypeCatalogField,
+                                config.getSettings().getMavenArchetypeCatalogUrl(),
+                                config.getSettings().getMavenArchetypeCatalogUrlRaw()),
+                        now -> {
+                            config.getSettings().setMavenArchetypeCatalogUrl(now);
+                            apply();
+                        });
             }
             Label status = new Label(tr("settings.buildTools.notFound", bt.displayName()));
             status.getStyleClass().add("settings-git-status");
@@ -1358,7 +1491,7 @@ public class SettingsWindow {
         });
         ripgrepCommandField = new TextField();
         ripgrepCommandField.setPromptText(com.editora.search.Ripgrep.DEFAULT_COMMAND);
-        ripgrepCommandField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(ripgrepCommandField, () -> config.getSettings().getRipgrepCommand(), now -> {
             config.getSettings().setRipgrepCommand(now);
             apply();
             refreshRipgrepStatus();
@@ -1428,7 +1561,7 @@ public class SettingsWindow {
         for (AgentClientUi a : agentClientUis()) {
             TextField field = new TextField();
             field.setPromptText(a.defaultCommand());
-            field.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(field, a.getCommand(), now -> {
                 a.setCommand().accept(now);
                 apply();
                 if (agentCoordinator != null) {
@@ -1465,6 +1598,11 @@ public class SettingsWindow {
         });
         aiProviderCombo.valueProperty().addListener((obs, was, now) -> {
             if (!loading && now != null) {
+                if (was != null) {
+                    // Text typed but not yet committed belongs to the provider it was typed for; the fields
+                    // are about to be refilled with the new provider's values.
+                    commitAiFieldsFor(com.editora.ai.AiProvider.from(was));
+                }
                 config.getSettings().setAiProvider(now);
                 // Keys are per-provider: show the newly-selected provider's key (never carry one provider's
                 // credential over to the other, which would send it to that provider's endpoint).
@@ -1476,32 +1614,23 @@ public class SettingsWindow {
         aiStatusDebounce.setOnFinished(e -> refreshAiStatus());
         aiEndpointField = new TextField();
         aiEndpointField.setPromptText(tr("settings.ai.endpointPrompt"));
-        aiEndpointField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
+        commitOnEnterOrBlur(aiEndpointField, () -> config.getSettings().getAiEndpointFor(selectedAiProvider()), now -> {
             config.getSettings().setAiEndpointFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
         aiModelField = new TextField();
         aiModelField.setPromptText("claude-opus-4-8");
-        aiModelField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
+        commitOnEnterOrBlur(aiModelField, () -> config.getSettings().getAiModelFor(selectedAiProvider()), now -> {
             config.getSettings().setAiModelFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
         aiApiKeyField = new javafx.scene.control.PasswordField();
         aiApiKeyField.setPromptText(tr("settings.ai.apiKeyPrompt"));
-        aiApiKeyField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return; // programmatic reload on provider-switch / load — don't write it back
-            }
+        commitOnEnterOrBlur(aiApiKeyField, () -> config.getSettings().getApiKeyFor(selectedAiProvider()), now -> {
             // Store under the currently-selected provider so each provider keeps its own key.
-            config.getSettings().setApiKeyFor(com.editora.ai.AiProvider.from(aiProviderCombo.getValue()), now);
+            config.getSettings().setApiKeyFor(selectedAiProvider(), now);
             apply();
             scheduleAiStatus();
         });
@@ -1512,13 +1641,13 @@ public class SettingsWindow {
         });
         aiCompletionModelField = new TextField();
         aiCompletionModelField.setPromptText("claude-haiku-4-5");
-        aiCompletionModelField.textProperty().addListener((obs, was, now) -> {
-            if (loading) {
-                return;
-            }
-            config.getSettings().setAiCompletionModelFor(selectedAiProvider(), now);
-            apply();
-        });
+        commitOnEnterOrBlur(
+                aiCompletionModelField,
+                () -> config.getSettings().getAiCompletionModelFor(selectedAiProvider()),
+                now -> {
+                    config.getSettings().setAiCompletionModelFor(selectedAiProvider(), now);
+                    apply();
+                });
 
         pluginCheck = new CheckBox(tr("settings.enablePlugins"));
         pluginCheck.selectedProperty().addListener((obs, was, now) -> {
@@ -1533,7 +1662,7 @@ public class SettingsWindow {
 
         templateAuthorField = new TextField();
         templateAuthorField.setPromptText(System.getProperty("user.name", ""));
-        templateAuthorField.textProperty().addListener((obs, was, now) -> {
+        commitOnEnterOrBlur(templateAuthorField, () -> config.getSettings().getAuthorNameRaw(), now -> {
             config.getSettings().setAuthorName(now);
             apply();
         });
@@ -1558,7 +1687,7 @@ public class SettingsWindow {
             }
             TextField field = new TextField();
             field.setPromptText(dbg.commandPrompt());
-            field.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(field, dbg.getCommand(), now -> {
                 dbg.setCommand().accept(now);
                 apply();
                 refreshDebugStatus();
@@ -1582,7 +1711,7 @@ public class SettingsWindow {
             });
             TextField field = new TextField();
             field.setPromptText(srv.defaultCommand());
-            field.textProperty().addListener((obs, was, now) -> {
+            commitOnEnterOrBlur(field, srv.getCommand(), now -> {
                 srv.setCommand().accept(now);
                 apply();
                 refreshLspStatus();
@@ -1598,6 +1727,7 @@ public class SettingsWindow {
             }
             onToggleZen.accept(now);
             syncViewChecks();
+            syncFocusModeChecks();
         });
 
         expertCheck = new CheckBox(tr("settings.expert"));
@@ -1607,6 +1737,7 @@ public class SettingsWindow {
             }
             onToggleExpert.accept(now);
             syncViewChecks();
+            syncFocusModeChecks();
         });
 
         autoSaveCombo = new ComboBox<>();
@@ -1627,7 +1758,7 @@ public class SettingsWindow {
                 return label;
             }
         });
-        autoSaveCombo.setPrefWidth(170);
+        autoSaveCombo.setMinWidth(170); // no fixed width: it cut off the longer (translated) items
         autoSaveCombo.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
                 return;
@@ -1637,8 +1768,8 @@ public class SettingsWindow {
             apply();
         });
 
-        autoSaveDelaySpinner = new Spinner<>(1, 300, 1, 1);
-        autoSaveDelaySpinner.setEditable(true);
+        autoSaveDelaySpinner =
+                IntSpinners.editable(Settings.MIN_AUTO_SAVE_DELAY_SECONDS, Settings.MAX_AUTO_SAVE_DELAY_SECONDS, 1, 1);
         autoSaveDelaySpinner.setPrefWidth(90);
         autoSaveDelaySpinner.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1653,8 +1784,7 @@ public class SettingsWindow {
     /** A small editable int spinner that writes {@code setter} + re-applies (skipping the loading phase). */
     private Spinner<Integer> historySpinner(
             int min, int max, int def, java.util.function.BiConsumer<Settings, Integer> setter) {
-        Spinner<Integer> s = new Spinner<>(min, max, def);
-        s.setEditable(true);
+        Spinner<Integer> s = IntSpinners.editable(min, max, def, 1);
         s.setPrefWidth(100);
         s.valueProperty().addListener((obs, was, now) -> {
             if (loading || now == null) {
@@ -1729,23 +1859,21 @@ public class SettingsWindow {
     private VBox appearancePage() {
         VBox p = page(tr("settings.cat.appearance"));
         Card mainCard = card(p, null);
-        Label langNote = note(tr("settings.uiLanguage.note"));
-        VBox langBox = new VBox(4, languageCombo, langNote);
+        // The hints are row descriptions, not labels boxed with the combo: such a box is as wide as its
+        // (translated) hint and left-aligns the combo inside, so the four combos sat at four x positions.
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
                 tr("settings.uiLanguage"),
-                null,
-                langBox,
+                tr("settings.uiLanguage.note"),
+                languageCombo,
                 "language interface ui locale translation");
-        Label fontNote = note(tr("settings.fontNote"));
-        VBox fontBox = new VBox(4, fontFamily, fontNote);
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
                 tr("settings.fontFamily"),
-                null,
-                fontBox,
+                tr("settings.fontNote"),
+                fontFamily,
                 "font family typeface monospace");
         controlRow(mainCard, Category.APPEARANCE, tr("settings.fontSize"), null, fontSize, "font size text");
         controlRow(
@@ -1755,14 +1883,12 @@ public class SettingsWindow {
                 null,
                 themeCombo,
                 "theme appearance dark light app chrome");
-        Label etNote = note(tr("settings.editorThemeNote"));
-        VBox etBox = new VBox(4, editorThemeCombo, etNote);
         controlRow(
                 mainCard,
                 Category.APPEARANCE,
                 tr("settings.editorTheme"),
-                null,
-                etBox,
+                tr("settings.editorThemeNote"),
+                editorThemeCombo,
                 "editor theme syntax colors highlighting");
         Card previewSection = card(p, tr("settings.livePreview"));
         cardRow(previewSection, Category.APPEARANCE, preview, "preview sample code");
@@ -1772,14 +1898,12 @@ public class SettingsWindow {
     private VBox keymapsPage() {
         VBox p = page(tr("settings.cat.keymaps"));
         Card mainCard = card(p, null);
-        Label kmNote = note(tr("settings.keymap.note"));
-        VBox kmBox = new VBox(4, keymapCombo, kmNote);
         controlRow(
                 mainCard,
                 Category.KEYMAPS,
                 tr("settings.keymap"),
-                null,
-                kmBox,
+                tr("settings.keymap.note"),
+                keymapCombo,
                 "keymap keybindings shortcuts emacs vim cua sublime vscode intellij");
 
         // --- Customize shortcuts: searchable list of every command + its current chord ---
@@ -1790,13 +1914,15 @@ public class SettingsWindow {
         shortcutListBox = new VBox(2);
         shortcutListBox.getStyleClass().add("shortcut-list");
         ScrollPane scroll = new ScrollPane(shortcutListBox);
+        shortcutScroll = scroll;
         scroll.setFitToWidth(true);
         scroll.setPrefHeight(320);
         scroll.getStyleClass().add("shortcut-scroll");
         Label note = note(tr("settings.shortcuts.note"));
+        note.setWrapText(true);
         Button resetAll = new Button(tr("settings.shortcuts.resetAll"));
         resetAll.setOnAction(e -> {
-            if (shortcutActions != null) {
+            if (shortcutActions != null && confirmResetAllShortcuts()) {
                 shortcutActions.resetAll();
                 refreshShortcuts();
             }
@@ -1811,12 +1937,41 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Rebuilds the shortcut list from the backend, honoring the filter. No-op until the backend is set. */
+    /**
+     * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
+     * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
+     */
+    private boolean confirmResetAllShortcuts() {
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("dialog.shortcut.resetAll.body"), ButtonType.OK, ButtonType.CANCEL));
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("dialog.shortcut.resetAll.title"));
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().setMinWidth(460);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /**
+     * Rebuilds the shortcut list from the backend, honoring the filter, and refills the chord chips on the
+     * other pages (both show the live keymap, so they go stale together). The list part is a no-op until the
+     * backend is set and the page is built.
+     */
     private void refreshShortcuts() {
+        refreshShortcuts(null);
+    }
+
+    /** {@link #refreshShortcuts()}, then moves keyboard focus to {@code focusId}'s row (rebuilding drops it). */
+    private void refreshShortcuts(String focusId) {
+        refreshChordChips();
+        if (refreshMacroKeybinding != null) {
+            refreshMacroKeybinding.run();
+        }
         if (shortcutListBox == null || shortcutActions == null) {
             return;
         }
         shortcutListBox.getChildren().clear();
+        shortcutRowsById.clear();
+        shortcutTabStop = null;
         String q = shortcutFilter == null ? "" : shortcutFilter.getText().trim().toLowerCase(Locale.ROOT);
         for (Shortcut s : shortcutActions.rows()) {
             boolean match = q.isEmpty()
@@ -1824,8 +1979,24 @@ public class SettingsWindow {
                     || s.id().toLowerCase(Locale.ROOT).contains(q)
                     || (s.chord() != null && s.chord().toLowerCase(Locale.ROOT).contains(q));
             if (match) {
-                shortcutListBox.getChildren().add(shortcutRow(s));
+                HBox row = shortcutRow(s);
+                shortcutRowsById.put(s.id(), row);
+                shortcutListBox.getChildren().add(row);
             }
+        }
+        // One Tab stop for the whole list (the selected row, else the first); the arrow keys move within it.
+        // ~450 separate Tab stops would put "Reset all shortcuts" and the footer out of reach instead.
+        HBox stop = shortcutRowsById.get(selectedShortcutId);
+        if (stop == null && !shortcutListBox.getChildren().isEmpty()) {
+            stop = (HBox) shortcutListBox.getChildren().get(0);
+        }
+        if (stop != null && !stop.getStyleClass().contains("shortcut-row-recording")) {
+            stop.setFocusTraversable(true);
+            shortcutTabStop = stop;
+        }
+        HBox focus = focusId == null ? null : shortcutRowsById.get(focusId);
+        if (focus != null) {
+            javafx.application.Platform.runLater(focus::requestFocus);
         }
     }
 
@@ -1836,59 +2007,89 @@ public class SettingsWindow {
         row.getStyleClass().add("shortcut-row");
         Label title = new Label(s.title());
         title.setMaxWidth(Double.MAX_VALUE);
+        title.setWrapText(true);
         HBox.setHgrow(title, Priority.ALWAYS);
 
         if (s.id().equals(recordingCommandId)) {
-            TextField capture = new TextField();
-            capture.setEditable(false);
-            capture.setPromptText(tr("settings.shortcuts.recording"));
-            capture.setPrefWidth(180);
-            StringBuilder seq = new StringBuilder();
-            capture.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-                e.consume();
-                if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
-                    recordingCommandId = null;
-                    refreshShortcuts();
-                    return;
-                }
-                String token = com.editora.command.KeyDispatcher.chord(e);
-                if (token == null) {
-                    return; // modifier-only press
-                }
-                if (seq.length() > 0) {
-                    seq.append(' ');
-                }
-                seq.append(token);
-                capture.setText(seq.toString());
+            row.getStyleClass().add("shortcut-row-recording");
+            // Enter saves and Escape cancels from inside the field: it records Tab like any other key, so
+            // the Save button beside it cannot be reached from the keyboard.
+            TextField capture = ShortcutCapture.field(seq -> commitRecording(s.id(), seq), () -> {
+                recordingCommandId = null;
+                refreshShortcuts(s.id());
             });
             Button save = new Button(tr("settings.shortcuts.save"));
             save.getStyleClass().add("success");
             save.setDefaultButton(false);
-            save.setOnAction(e -> commitRecording(s.id(), seq.toString()));
+            save.setOnAction(e -> commitRecording(s.id(), capture.getText()));
             Button cancel = new Button(tr("settings.shortcuts.cancel"));
             cancel.setOnAction(e -> {
                 recordingCommandId = null;
-                refreshShortcuts();
+                refreshShortcuts(s.id());
             });
             row.getChildren().addAll(title, capture, save, cancel);
             javafx.application.Platform.runLater(capture::requestFocus);
         } else {
-            Label chord = new Label(s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord());
+            String chordText = s.chord() == null ? tr("settings.shortcuts.unbound") : s.chord();
+            Label chord = new Label(chordText);
             chord.getStyleClass().add(s.chord() == null ? "shortcut-unbound" : "shortcut-chord");
             chord.setMinWidth(150);
             row.getChildren().addAll(title, chord);
-            // Record/Reset are shown only for the selected row (click a row to reveal them), keeping the
-            // list uncluttered. Clicking the row selects it; the buttons then act on that command.
+            // Record/Reset are shown only for the selected row, keeping the list uncluttered. A click
+            // selects a row; from the keyboard the arrow keys walk the rows and Enter/Space selects.
             row.getStyleClass().add("shortcut-row-clickable");
+            row.setAccessibleRole(javafx.scene.AccessibleRole.LIST_ITEM);
+            row.setAccessibleText(s.title() + ", " + chordText);
+            Button record = new Button(tr("settings.shortcuts.record"));
+            Runnable select = () -> {
+                if (s.id().equals(selectedShortcutId)) {
+                    record.fire(); // a second Enter on the selected row starts recording
+                } else {
+                    selectedShortcutId = s.id();
+                    refreshShortcuts(s.id());
+                }
+            };
             row.setOnMouseClicked(e -> {
                 if (!s.id().equals(selectedShortcutId)) {
-                    selectedShortcutId = s.id();
-                    refreshShortcuts();
+                    select.run();
+                }
+            });
+            row.focusedProperty().addListener((o, was, now) -> {
+                if (now) {
+                    if (shortcutTabStop != null && shortcutTabStop != row) {
+                        shortcutTabStop.setFocusTraversable(false);
+                    }
+                    row.setFocusTraversable(true);
+                    shortcutTabStop = row;
+                    scrollShortcutIntoView(row);
+                }
+            });
+            row.addEventHandler(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+                if (e.getTarget() != row || e.isControlDown() || e.isAltDown() || e.isMetaDown()) {
+                    return; // a key pressed on the row's own Record/Reset button is the button's
+                }
+                List<Node> all = shortcutListBox.getChildren();
+                int target =
+                        switch (e.getCode()) {
+                            case UP -> all.indexOf(row) - 1;
+                            case DOWN -> all.indexOf(row) + 1;
+                            case HOME -> 0;
+                            case END -> all.size() - 1;
+                            default -> -1;
+                        };
+                if (e.getCode() == javafx.scene.input.KeyCode.ENTER
+                        || e.getCode() == javafx.scene.input.KeyCode.SPACE) {
+                    select.run();
+                    e.consume();
+                } else if (target >= 0) {
+                    if (target < all.size()) {
+                        all.get(target).requestFocus();
+                    }
+                    e.consume(); // also at either end: Down on the last row must not jump out of the list
                 }
             });
             if (s.id().equals(selectedShortcutId)) {
                 row.getStyleClass().add("shortcut-row-selected");
-                Button record = new Button(tr("settings.shortcuts.record"));
                 record.setOnAction(e -> {
                     recordingCommandId = s.id();
                     refreshShortcuts();
@@ -1896,7 +2097,7 @@ public class SettingsWindow {
                 Button reset = new Button(tr("settings.shortcuts.reset"));
                 reset.setOnAction(e -> {
                     shortcutActions.reset(s.id());
-                    refreshShortcuts();
+                    refreshShortcuts(s.id());
                 });
                 row.getChildren().addAll(record, reset);
             }
@@ -1904,11 +2105,33 @@ public class SettingsWindow {
         return row;
     }
 
+    /** Scrolls the shortcut list just far enough to show {@code row} (focus moved to it from the keyboard). */
+    private void scrollShortcutIntoView(Node row) {
+        if (shortcutScroll == null) {
+            return;
+        }
+        shortcutListBox.applyCss();
+        shortcutListBox.layout();
+        double contentHeight = shortcutListBox.getHeight();
+        double viewHeight = shortcutScroll.getViewportBounds().getHeight();
+        if (contentHeight <= viewHeight) {
+            return;
+        }
+        double range = contentHeight - viewHeight;
+        double top = shortcutScroll.getVvalue() * range;
+        javafx.geometry.Bounds b = row.getBoundsInParent();
+        if (b.getMinY() < top) {
+            shortcutScroll.setVvalue(b.getMinY() / range);
+        } else if (b.getMaxY() > top + viewHeight) {
+            shortcutScroll.setVvalue((b.getMaxY() - viewHeight) / range);
+        }
+    }
+
     /** Commits a recorded chord sequence to a command, warning first if it steals another command's chord. */
     private void commitRecording(String commandId, String sequence) {
         recordingCommandId = null;
         rebindWithConflictCheck(commandId, sequence);
-        refreshShortcuts();
+        refreshShortcuts(commandId);
     }
 
     /** Rebinds {@code commandId} to {@code sequence}, warning on a conflict; returns whether it bound. Shared
@@ -1927,11 +2150,11 @@ public class SettingsWindow {
             for (var c : conflicts) {
                 affected.append("\n   ").append(c.chord()).append("  —  ").append(titleOf(c.commandId()));
             }
-            Alert confirm = new Alert(
+            Alert confirm = Dialogs.styled(new Alert(
                     Alert.AlertType.CONFIRMATION,
                     tr("dialog.shortcut.conflict.body", seq, affected.toString()),
                     ButtonType.OK,
-                    ButtonType.CANCEL);
+                    ButtonType.CANCEL));
             confirm.initOwner(stage);
             confirm.setTitle(tr("dialog.shortcut.conflict.title"));
             confirm.setHeaderText(null);
@@ -1992,7 +2215,11 @@ public class SettingsWindow {
 
         ListView<com.editora.macro.Macro> list = new ListView<>(macroItems);
         list.setPrefSize(220, 420);
-        list.setPlaceholder(note(tr("settings.macro.empty")));
+        Label noMacros = note(tr("settings.macro.empty"));
+        noMacros.setWrapText(true);
+        noMacros.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
+        noMacros.setMaxWidth(190);
+        list.setPlaceholder(noMacros);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(com.editora.macro.Macro m, boolean empty) {
@@ -2049,6 +2276,7 @@ public class SettingsWindow {
 
         Button stepUp = new Button("▲");
         Button stepDown = new Button("▼");
+        nameReorderButtons(stepUp, stepDown);
         stepUp.getStyleClass().addAll("flat", "reorder-button");
         stepDown.getStyleClass().addAll("flat", "reorder-button");
         stepUp.setOnAction(e -> moveStep(steps, -1));
@@ -2072,8 +2300,8 @@ public class SettingsWindow {
             steps.getSelectionModel().selectLast();
             stepValue.requestFocus();
         });
-        HBox stepButtons = new HBox(6, addCmd, addText, spacer(), stepUp, stepDown, stepRemove);
-        stepButtons.setAlignment(Pos.CENTER_LEFT);
+        // Wraps: the five German buttons are wider than the form at the window's minimum width.
+        WrapRow stepButtons = new WrapRow(6, 6, addCmd, addText, new HBox(6, stepUp, stepDown), stepRemove);
 
         javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
         form.setHgap(8);
@@ -2085,6 +2313,8 @@ public class SettingsWindow {
         VBox stepEditor = new VBox(6, stepsLabel, steps, new HBox(8, stepKind, stepValue), stepButtons);
         VBox.setVgrow(steps, Priority.ALWAYS);
         form.setDisable(true);
+        // No macro selected, no steps to edit: Add Command used to add a step that belonged to nothing.
+        stepEditor.disableProperty().bind(form.disabledProperty());
         HBox.setHgrow(form, Priority.ALWAYS);
 
         // Repopulates the inline keybinding row for the selected macro's command id.
@@ -2106,11 +2336,21 @@ public class SettingsWindow {
                     shortcutActions.reset(cmdId);
                 }
                 rebuildKeybindingFor(keybinding, m, steps);
+                refreshShortcuts();
             });
             record.setOnAction(e -> startMacroCapture(keybinding, cmdId, m, steps));
             keybinding.getChildren().addAll(chordLbl, record, clear);
         };
         macroKeybindingRebuilders.put(keybinding, rebuildKeybinding);
+        // The row shows a chord of the live keymap, like the Keymaps list: a keymap switch or a rebind made
+        // elsewhere changes it. Left alone while the user is recording a chord in it.
+        refreshMacroKeybinding = () -> {
+            boolean recording = !keybinding.getChildren().isEmpty()
+                    && keybinding.getChildren().get(0) instanceof TextField;
+            if (!recording) {
+                rebuildKeybinding.accept(list.getSelectionModel().getSelectedItem());
+            }
+        };
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             loadingMacro = true;
@@ -2140,6 +2380,7 @@ public class SettingsWindow {
         VBox.setVgrow(stepEditor, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
         VBox left = new VBox(6, list);
+        keepWidth(left);
         VBox.setVgrow(list, Priority.ALWAYS);
 
         if (!macroItems.isEmpty()) {
@@ -2149,6 +2390,9 @@ public class SettingsWindow {
         box.setAlignment(Pos.TOP_LEFT);
         return box;
     }
+
+    /** Re-reads the Macros page's key-binding row from the live keymap (set once that page is built). */
+    private Runnable refreshMacroKeybinding;
 
     /** Maps a keybinding HBox to its rebuilder so {@code reset}/capture can repopulate it. */
     private final java.util.Map<HBox, java.util.function.Consumer<com.editora.macro.Macro>> macroKeybindingRebuilders =
@@ -2166,35 +2410,20 @@ public class SettingsWindow {
     private void startMacroCapture(
             HBox keybinding, String commandId, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
         keybinding.getChildren().clear();
-        TextField capture = new TextField();
-        capture.setEditable(false);
-        capture.setPromptText(tr("settings.shortcuts.recording"));
-        capture.setPrefWidth(180);
-        StringBuilder seq = new StringBuilder();
-        capture.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
-            e.consume();
-            if (e.getCode() == javafx.scene.input.KeyCode.ESCAPE) {
-                rebuildKeybindingFor(keybinding, m, steps);
-                return;
-            }
-            String token = com.editora.command.KeyDispatcher.chord(e);
-            if (token == null) {
-                return; // modifier-only press
-            }
-            if (seq.length() > 0) {
-                seq.append(' ');
-            }
-            seq.append(token);
-            capture.setText(seq.toString());
-        });
+        Runnable done = () -> {
+            rebuildKeybindingFor(keybinding, m, steps);
+            refreshShortcuts(); // the Keymaps list and the chord chips show this binding too
+        };
+        java.util.function.Consumer<String> commit = seq -> {
+            rebindWithConflictCheck(commandId, seq);
+            done.run();
+        };
+        TextField capture = ShortcutCapture.field(commit, done);
         Button save = new Button(tr("settings.shortcuts.save"));
         save.getStyleClass().add("success");
-        save.setOnAction(e -> {
-            rebindWithConflictCheck(commandId, seq.toString());
-            rebuildKeybindingFor(keybinding, m, steps);
-        });
+        save.setOnAction(e -> commit.accept(capture.getText()));
         Button cancel = new Button(tr("settings.shortcuts.cancel"));
-        cancel.setOnAction(e -> rebuildKeybindingFor(keybinding, m, steps));
+        cancel.setOnAction(e -> done.run());
         keybinding.getChildren().addAll(capture, save, cancel);
         javafx.application.Platform.runLater(capture::requestFocus);
     }
@@ -2231,7 +2460,7 @@ public class SettingsWindow {
     }
 
     private void macroWarn(String message) {
-        Alert a = new Alert(Alert.AlertType.WARNING, message, ButtonType.OK);
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.WARNING, message, ButtonType.OK));
         a.initOwner(stage);
         a.setHeaderText(null);
         a.showAndWait();
@@ -2299,11 +2528,11 @@ public class SettingsWindow {
         if (sel == null) {
             return;
         }
-        Alert confirm = new Alert(
+        Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION,
                 tr("settings.macro.deleteConfirm", sel.name()),
                 ButtonType.OK,
-                ButtonType.CANCEL);
+                ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
         confirm.setHeaderText(null);
@@ -2471,7 +2700,8 @@ public class SettingsWindow {
                 null,
                 "maven pom xml preview dependencies plugins properties versions summary");
         Card saving = card(p, tr("settings.section.saving"));
-        Label delayLabel = note("delay (seconds)");
+        Label delayLabel = note(tr("settings.autoSave.delay"));
+        delayLabel.setLabelFor(autoSaveDelaySpinner);
         HBox autoSaveBox = new HBox(8, autoSaveCombo, autoSaveDelaySpinner, delayLabel);
         autoSaveBox.setAlignment(Pos.CENTER_LEFT);
         controlRow(
@@ -2564,6 +2794,7 @@ public class SettingsWindow {
 
             CheckBox cb = new CheckBox();
             cb.setGraphic(label);
+            cb.setAccessibleText(code + " " + desc.getText()); // its visible name is a graphic, not text
             cb.setSelected(!disabled.contains(code));
             cb.selectedProperty().addListener((o, was, on) -> {
                 java.util.List<String> list =
@@ -2621,6 +2852,7 @@ public class SettingsWindow {
         CheckBox enabled = new CheckBox();
         enabled.setSelected(p.isEnabled());
         enabled.setTooltip(new Tooltip(tr("settings.todo.enabledTip")));
+        enabled.setAccessibleText(tr("settings.todo.enabledTip") + " — " + p.getName());
         TextField name = new TextField(p.getName());
         name.setPromptText(tr("settings.todo.namePrompt"));
         name.setPrefWidth(110);
@@ -2634,6 +2866,7 @@ public class SettingsWindow {
         caseSensitive.setSelected(p.isCaseSensitive());
         Button remove = new Button("✕");
         remove.setTooltip(new Tooltip(tr("settings.todo.removeTip")));
+        remove.setAccessibleText(tr("settings.todo.removeTip") + " — " + p.getName());
 
         Runnable commit = () -> {
             java.util.List<com.editora.todo.TodoPattern> cur = mutableTodoPatterns();
@@ -2643,7 +2876,14 @@ public class SettingsWindow {
             com.editora.todo.TodoPattern up = cur.get(index);
             up.setEnabled(enabled.isSelected());
             up.setName(name.getText());
-            up.setPattern(regex.getText());
+            // A malformed expression is skipped by TodoPatterns.compile, so saving it silently switched the
+            // keyword off. Flag the field and keep the stored pattern until the expression is valid.
+            String problem = com.editora.todo.TodoPatterns.syntaxProblem(regex.getText());
+            regex.pseudoClassStateChanged(atlantafx.base.theme.Styles.STATE_DANGER, problem != null);
+            regex.setTooltip(problem == null ? null : new Tooltip(tr("settings.todo.regexInvalid", problem)));
+            if (problem == null) {
+                up.setPattern(regex.getText());
+            }
             up.setColor(toHex(color.getValue()));
             up.setCaseSensitive(caseSensitive.isSelected());
             config.getSettings().setTodoPatterns(cur);
@@ -2804,14 +3044,25 @@ public class SettingsWindow {
     /** Re-syncs the "Enable personal dictionary" checkbox after a palette toggle. */
     public void syncPersonalDictionaryCheck() {
         if (dictEnableCheck != null) {
-            dictEnableCheck.setSelected(config.getSettings().isPersonalDictionary());
+            quietly(() -> dictEnableCheck.setSelected(config.getSettings().isPersonalDictionary()));
         }
     }
 
     /** Re-syncs the "Enable technical dictionary" checkbox after a palette toggle. */
     public void syncTechnicalDictionaryCheck() {
         if (techDictEnableCheck != null) {
-            techDictEnableCheck.setSelected(config.getSettings().isTechnicalDictionary());
+            quietly(() -> techDictEnableCheck.setSelected(config.getSettings().isTechnicalDictionary()));
+        }
+    }
+
+    /** Runs a control re-sync without its listeners treating it as a user edit (no write, no save, no apply). */
+    private void quietly(Runnable sync) {
+        boolean prev = loading;
+        loading = true;
+        try {
+            sync.run();
+        } finally {
+            loading = prev;
         }
     }
 
@@ -3095,11 +3346,13 @@ public class SettingsWindow {
     /** Re-reads the five TODO part-color pickers from settings (after a palette color change). */
     public void syncTodoPartColors() {
         Settings s = config.getSettings();
-        setPicker(todoTagColorPicker, s.getTodoTagColor());
-        setPicker(todoCriticalColorPicker, s.getTodoPriorityCriticalColor());
-        setPicker(todoHighColorPicker, s.getTodoPriorityHighColor());
-        setPicker(todoMediumColorPicker, s.getTodoPriorityMediumColor());
-        setPicker(todoLowColorPicker, s.getTodoPriorityLowColor());
+        quietly(() -> {
+            setPicker(todoTagColorPicker, s.getTodoTagColor());
+            setPicker(todoCriticalColorPicker, s.getTodoPriorityCriticalColor());
+            setPicker(todoHighColorPicker, s.getTodoPriorityHighColor());
+            setPicker(todoMediumColorPicker, s.getTodoPriorityMediumColor());
+            setPicker(todoLowColorPicker, s.getTodoPriorityLowColor());
+        });
     }
 
     private static void setPicker(javafx.scene.control.ColorPicker picker, String web) {
@@ -3145,7 +3398,7 @@ public class SettingsWindow {
                 settingRow(tr("settings.enableGit"), tr("settings.git.hint"), switchFor(gitCheck)),
                 "git version control vcs enable");
         Button gitBrowse = browseButton(tr("settings.git.command"), gitPathField);
-        gitPathField.setPrefWidth(180);
+        gitPathField.setPrefWidth(PATH_FIELD_WIDTH);
         cardRow(
                 c,
                 Category.GIT,
@@ -3183,7 +3436,7 @@ public class SettingsWindow {
         githubStatusLabel.setMaxWidth(340);
         checkRow(c, Category.GITHUB, githubCheck, tr("settings.github.hint"), "github gh pull request pr enable");
         Button ghBrowse = browseButton(tr("settings.github.ghPath"), ghPathField);
-        ghPathField.setPrefWidth(180);
+        ghPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.GITHUB,
@@ -3211,7 +3464,7 @@ public class SettingsWindow {
         ripgrepStatusLabel.setMaxWidth(340);
         checkRow(c, Category.SEARCH, ripgrepCheck, tr("settings.search.hint"), "search ripgrep rg find in files fast");
         Button rgBrowse = browseButton(tr("settings.search.ripgrepPath"), ripgrepCommandField);
-        ripgrepCommandField.setPrefWidth(180);
+        ripgrepCommandField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.SEARCH,
@@ -3249,7 +3502,7 @@ public class SettingsWindow {
                 mermaidCheck,
                 tr("settings.mermaid.hint"),
                 "mermaid diagram enable mmdc render mmd");
-        mmdcPathField.setPrefWidth(180);
+        mmdcPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.MERMAID,
@@ -3257,7 +3510,7 @@ public class SettingsWindow {
                 null,
                 new HBox(6, mmdcPathField, browseButton(tr("settings.mermaid.mmdcPath"), mmdcPathField)),
                 "mermaid mmdc path executable render");
-        maidPathField.setPrefWidth(180);
+        maidPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.MERMAID,
@@ -3289,7 +3542,7 @@ public class SettingsWindow {
                 diagramCheck,
                 tr("settings.diagram.hint"),
                 "diagram dot graphviz plantuml enable render preview puml gv");
-        dotPathField.setPrefWidth(180);
+        dotPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.DIAGRAMS,
@@ -3297,7 +3550,7 @@ public class SettingsWindow {
                 null,
                 new HBox(6, dotPathField, browseButton(tr("settings.diagram.dotPath"), dotPathField)),
                 "diagram dot graphviz path executable render");
-        plantumlPathField.setPrefWidth(180);
+        plantumlPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.DIAGRAMS,
@@ -3348,7 +3601,7 @@ public class SettingsWindow {
                 typstCheck,
                 tr("settings.typst.hint"),
                 "typst document enable render preview typ pdf");
-        typstPathField.setPrefWidth(180);
+        typstPathField.setPrefWidth(PATH_FIELD_WIDTH);
         controlRow(
                 c,
                 Category.TYPST,
@@ -3401,7 +3654,7 @@ public class SettingsWindow {
             String kw = bt.id() + " build tool project detected enable command override toolbar";
             checkRow(c, Category.BUILD_TOOLS, buildToolChecks.get(bt), tr("settings." + bt.id() + ".hint"), kw);
             TextField field = buildToolCommandFields.get(bt);
-            field.setPrefWidth(180);
+            field.setPrefWidth(PATH_FIELD_WIDTH);
             controlRow(
                     c,
                     Category.BUILD_TOOLS,
@@ -3510,6 +3763,7 @@ public class SettingsWindow {
                 if (!snippetUserNames.contains(s.name())) { // a read-only bundled snippet (until edited)
                     Label tag = new Label(tr("settings.snippet.bundledTag"));
                     tag.getStyleClass().add("snippet-bundled-tag");
+                    tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
                     cell.getChildren().add(tag);
                 }
                 setText(null);
@@ -3540,18 +3794,61 @@ public class SettingsWindow {
         javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
         HBox.setHgrow(form, Priority.ALWAYS);
+        Label problem = note("");
+        problem.setWrapText(true);
+        problem.setVisible(false);
+        problem.setManaged(false);
 
+        // The form's texts now, and as they were when the selected row was loaded (or last committed).
+        java.util.function.Supplier<java.util.List<String>> snippetFormText =
+                () -> java.util.Arrays.asList(name.getText(), prefix.getText(), description.getText(), body.getText());
+        java.util.concurrent.atomic.AtomicReference<java.util.List<String>> snippetFormLoaded =
+                new java.util.concurrent.atomic.AtomicReference<>(snippetFormText.get());
         Runnable commit = () -> {
             int i = list.getSelectionModel().getSelectedIndex();
-            if (i < 0 || loadingSnippet) {
+            if (i < 0 || loadingSnippet || snippetFileProblem != null) {
                 return;
             }
+            // "Nothing was edited" is judged against what the form was loaded with, not against the model:
+            // a single-line field drops the line breaks of a bundled multi-line description, so a rebuilt
+            // snippet never equalled the original and a mere focus loss wrote a user override.
+            if (snippetFormText.get().equals(snippetFormLoaded.get())) {
+                return; // a field merely lost focus — never rewrite the file for that
+            }
+            com.editora.snippet.Snippet cur = snippetItems.get(i);
+            String newName = name.getText().trim();
+            if (newName.isEmpty()) {
+                // The file is keyed by name and the save skips a blank one: committing it deleted the
+                // snippet. Keep the name it has; the other fields still save.
+                newName = cur.name();
+                name.setText(newName);
+                if (newName == null || newName.isBlank()) {
+                    return;
+                }
+            }
+            if (!newName.equals(cur.name())) {
+                for (com.editora.snippet.Snippet other : snippetItems) {
+                    if (other != cur && newName.equals(other.name())) {
+                        // Two rows with one name collapse to a single entry on disk — refuse, as the
+                        // External Tools page does for a colliding command id.
+                        name.setText(cur.name());
+                        macroWarn(tr("settings.snippet.nameExists", newName));
+                        return;
+                    }
+                }
+            }
+            boolean descriptionEdited =
+                    !description.getText().equals(snippetFormLoaded.get().get(2));
             com.editora.snippet.Snippet updated = new com.editora.snippet.Snippet(
-                    name.getText().trim(),
+                    newName,
                     prefix.getText().trim(),
                     body.getText(),
-                    description.getText().trim(),
+                    descriptionEdited ? description.getText().trim() : cur.description(),
                     currentSnippetLang);
+            snippetFormLoaded.set(snippetFormText.get());
+            if (updated.equals(cur)) {
+                return; // only whitespace the commit trims away
+            }
             snippetUserNames.add(updated.name()); // editing a bundled snippet makes it a user override
             loadingSnippet = true; // replacing at the same index keeps selection; don't reload the fields
             try {
@@ -3586,11 +3883,12 @@ public class SettingsWindow {
             com.editora.snippet.Snippet s = i >= 0 && i < snippetItems.size() ? snippetItems.get(i) : null;
             loadingSnippet = true;
             try {
-                form.setDisable(s == null);
+                form.setDisable(s == null || snippetFileProblem != null);
                 name.setText(s == null ? "" : s.name());
                 prefix.setText(s == null ? "" : s.prefix());
                 description.setText(s == null ? "" : s.description());
                 body.replaceText(s == null ? "" : s.body()); // CodeArea has no setText
+                snippetFormLoaded.set(snippetFormText.get());
             } finally {
                 loadingSnippet = false;
             }
@@ -3599,6 +3897,16 @@ public class SettingsWindow {
         Runnable loadLang = () -> {
             String v = language.getValue();
             currentSnippetLang = v == null || v.isBlank() ? "global" : v.trim();
+            snippetFileProblem = snippetManager == null ? null : snippetManager.userFileProblem(currentSnippetLang);
+            problem.setText(
+                    snippetFileProblem == null
+                            ? ""
+                            : tr(
+                                    "settings.snippet.unreadable",
+                                    snippetManager.userFile(currentSnippetLang).getFileName(),
+                                    snippetFileProblem));
+            problem.setVisible(snippetFileProblem != null);
+            problem.setManaged(snippetFileProblem != null);
             loadingSnippet = true;
             try {
                 snippetItems.setAll(mergedSnippetsForCurrentLang());
@@ -3613,11 +3921,32 @@ public class SettingsWindow {
             }
         };
         language.valueProperty().addListener((o, a, b) -> loadLang.run());
+        reloadSnippets = () -> { // another window's Settings may have rewritten this language's file
+            com.editora.snippet.Snippet sel = list.getSelectionModel().getSelectedItem();
+            loadLang.run();
+            for (int k = 0; sel != null && k < snippetItems.size(); k++) {
+                if (java.util.Objects.equals(sel.name(), snippetItems.get(k).name())) {
+                    list.getSelectionModel().select(k);
+                    break;
+                }
+            }
+        };
 
         Button add = new Button(tr("settings.snippet.add"));
         add.setOnAction(e -> {
-            com.editora.snippet.Snippet s =
-                    new com.editora.snippet.Snippet(tr("settings.snippet.newName"), "", "", "", currentSnippetLang);
+            if (snippetFileProblem != null) {
+                return;
+            }
+            // The file is keyed by name: a second "New Snippet" would replace the first on disk.
+            java.util.Set<String> taken = new java.util.HashSet<>();
+            for (com.editora.snippet.Snippet other : snippetItems) {
+                taken.add(other.name());
+            }
+            String newName = tr("settings.snippet.newName");
+            for (int n = 2; taken.contains(newName); n++) {
+                newName = tr("settings.snippet.newName") + " " + n;
+            }
+            com.editora.snippet.Snippet s = new com.editora.snippet.Snippet(newName, "", "", "", currentSnippetLang);
             snippetUserNames.add(s.name());
             snippetItems.add(s);
             saveSnippets();
@@ -3646,7 +3975,15 @@ public class SettingsWindow {
             loadLang.run(); // re-derive: a removed override reverts to its bundled snippet
         });
         HBox buttons = new HBox(6, add, remove);
-        VBox left = new VBox(6, labeled(tr("settings.snippet.language"), language), list, buttons);
+        // The picker shares the list's width: boxed with a 130px label column it was squeezed to an arrow.
+        Label languageLabel = new Label(tr("settings.snippet.language"));
+        languageLabel.setLabelFor(language);
+        language.setMaxWidth(Double.MAX_VALUE);
+        HBox.setHgrow(language, Priority.ALWAYS);
+        HBox languageRow = new HBox(10, languageLabel, language);
+        languageRow.setAlignment(Pos.CENTER_LEFT);
+        VBox left = new VBox(6, languageRow, list, buttons);
+        keepWidth(languageLabel, add, remove, left);
         VBox.setVgrow(left, Priority.ALWAYS);
 
         // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
@@ -3657,7 +3994,7 @@ public class SettingsWindow {
         save.setOnAction(e -> commit.run());
         HBox saveRow = new HBox(save);
         saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, form, saveRow);
+        VBox right = new VBox(8, problem, form, saveRow);
         VBox.setVgrow(form, Priority.ALWAYS);
         HBox.setHgrow(right, Priority.ALWAYS);
 
@@ -3697,8 +4034,8 @@ public class SettingsWindow {
     }
 
     private void saveSnippets() {
-        if (snippetManager == null) {
-            return;
+        if (snippetManager == null || snippetFileProblem != null) {
+            return; // never write back over a file that could not be parsed
         }
         // Persist only user-owned snippets (overrides + net-new) — never copy the shipped bundled ones.
         java.util.List<com.editora.snippet.Snippet> userOnly = new java.util.ArrayList<>();
@@ -3710,7 +4047,8 @@ public class SettingsWindow {
         try {
             snippetManager.saveUserSnippets(currentSnippetLang, userOnly);
         } catch (java.io.IOException e) {
-            new Alert(Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK)
+            Dialogs.styled(new Alert(
+                            Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK))
                     .showAndWait();
         }
     }
@@ -3737,7 +4075,7 @@ public class SettingsWindow {
     /** Master-detail editor: the templates (bundled + user) on the left, a form for the selected one. */
     private javafx.scene.Node templatesEditor() {
         ListView<com.editora.template.Template> list = new ListView<>(templateItems);
-        list.setPrefSize(220, 420);
+        list.setPrefSize(250, 420); // "Java Compact Source" + the bundled tag
         VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
         list.setCellFactory(lv -> new ListCell<>() {
             {
@@ -3765,6 +4103,7 @@ public class SettingsWindow {
                 if (!templateUserIds.contains(t.id())) {
                     Label tag = new Label(tr("settings.template.bundledTag"));
                     tag.getStyleClass().add("snippet-bundled-tag");
+                    tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
                     cell.getChildren().add(tag);
                 }
                 setText(null);
@@ -3810,6 +4149,16 @@ public class SettingsWindow {
         VBox right = new VBox(6, form, multiFileNote);
         HBox.setHgrow(right, Priority.ALWAYS);
 
+        // The form's texts now, and as they were when the selected row was loaded (or last committed).
+        java.util.function.Supplier<java.util.List<String>> templateFormText = () -> java.util.Arrays.asList(
+                id.getText(),
+                name.getText(),
+                description.getText(),
+                language.getText(),
+                fileName.getText(),
+                body.getText());
+        java.util.concurrent.atomic.AtomicReference<java.util.List<String>> templateFormLoaded =
+                new java.util.concurrent.atomic.AtomicReference<>(templateFormText.get());
         Runnable commit = () -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i < 0 || loadingTemplate) {
@@ -3819,15 +4168,51 @@ public class SettingsWindow {
             if (cur.isMultiFile() || id.getText().trim().isEmpty()) {
                 return; // multi-file templates are read-only here; an id is required
             }
+            if (templateFormText.get().equals(templateFormLoaded.get())) {
+                return; // a field merely lost focus — a bundled template must not become a user override for that
+            }
             String newId = id.getText().trim();
+            if (!newId.equals(cur.id())) {
+                // The id is the file stem: one that is not a plain file name would write outside the
+                // templates folder, and one another row uses would overwrite that template's file.
+                String problem = null;
+                if (!com.editora.template.TemplateRegistry.isValidId(newId)) {
+                    problem = tr("settings.template.idInvalid", newId);
+                } else {
+                    for (com.editora.template.Template other : templateItems) {
+                        if (other != cur && newId.equals(other.id())) {
+                            problem = tr("settings.template.idExists", newId);
+                            break;
+                        }
+                    }
+                }
+                if (problem != null) {
+                    id.setText(cur.id()); // put the field back
+                    macroWarn(problem);
+                    return;
+                }
+            }
+            // A field the user did not touch keeps the template's own value: the single-line description field
+            // shows a multi-line bundled description flattened, and saving that back would flatten the file.
+            java.util.List<String> loaded = templateFormLoaded.get();
+            java.util.List<String> typed = templateFormText.get();
+            java.util.function.BiFunction<Integer, String, String> value =
+                    (k, original) -> typed.get(k).equals(loaded.get(k)) && original != null
+                            ? original
+                            : typed.get(k).trim();
+            templateFormLoaded.set(typed);
             com.editora.template.Template updated = new com.editora.template.Template(
                     newId,
-                    name.getText().trim(),
-                    description.getText().trim(),
-                    language.getText().trim(),
-                    fileName.getText().trim(),
+                    value.apply(1, cur.name()),
+                    value.apply(2, cur.description()),
+                    value.apply(3, cur.language()),
+                    value.apply(4, cur.fileName()),
                     body.getText(),
                     null);
+            if (updated.equals(new com.editora.template.Template(
+                    cur.id(), cur.name(), cur.description(), cur.language(), cur.fileName(), cur.body(), null))) {
+                return; // only whitespace the commit trims away: not an edit, so not a user override either
+            }
             String oldId = cur.id();
             if (!oldId.equals(newId) && templateUserIds.contains(oldId)) {
                 try {
@@ -3881,6 +4266,7 @@ public class SettingsWindow {
                 body.replaceText(t == null || multi ? "" : t.body()); // CodeArea has no setText
                 multiFileNote.setVisible(multi);
                 multiFileNote.setManaged(multi);
+                templateFormLoaded.set(templateFormText.get());
             } finally {
                 loadingTemplate = false;
             }
@@ -3898,6 +4284,17 @@ public class SettingsWindow {
                 list.getSelectionModel().select(0);
             } else {
                 form.setDisable(true);
+            }
+        };
+
+        reloadTemplates = () -> { // another window's Settings may have added or removed a template
+            com.editora.template.Template sel = list.getSelectionModel().getSelectedItem();
+            loadTemplates.run();
+            for (int k = 0; sel != null && k < templateItems.size(); k++) {
+                if (java.util.Objects.equals(sel.id(), templateItems.get(k).id())) {
+                    list.getSelectionModel().select(k);
+                    break;
+                }
             }
         };
 
@@ -3939,7 +4336,10 @@ public class SettingsWindow {
             try {
                 templateRegistry.deleteUserTemplate(t.id());
             } catch (java.io.IOException ex) {
-                new Alert(Alert.AlertType.ERROR, tr("settings.template.saveFailed", ex.getMessage()), ButtonType.OK)
+                Dialogs.styled(new Alert(
+                                Alert.AlertType.ERROR,
+                                tr("settings.template.saveFailed", ex.getMessage()),
+                                ButtonType.OK))
                         .showAndWait();
                 return;
             }
@@ -3949,6 +4349,7 @@ public class SettingsWindow {
         });
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, list, buttons);
+        keepWidth(add, remove, left);
         VBox.setVgrow(left, Priority.ALWAYS);
 
         // Explicit Save (edits also auto-save on Enter / focus-loss); disabled for a read-only row.
@@ -4002,7 +4403,8 @@ public class SettingsWindow {
         try {
             templateRegistry.saveUserTemplate(t);
         } catch (java.io.IOException e) {
-            new Alert(Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK)
+            Dialogs.styled(new Alert(
+                            Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK))
                     .showAndWait();
         }
     }
@@ -4027,6 +4429,7 @@ public class SettingsWindow {
         remoteItems.setAll(config.getConnections());
 
         ListView<com.editora.vfs.RemoteConnection> list = new ListView<>(remoteItems);
+        remoteList = list;
         list.setPrefSize(210, 380);
         list.setCellFactory(lv -> new ListCell<>() {
             @Override
@@ -4051,7 +4454,7 @@ public class SettingsWindow {
         }));
         TextField keyPath = new TextField();
         keyPath.setPromptText(tr("remote.keyPrompt"));
-        HBox.setHgrow(keyPath, Priority.ALWAYS);
+        keyPath.setMinWidth(160);
         Button keyBrowse = new Button(tr("dialog.clone.browse"));
         keyBrowse.setOnAction(e -> {
             javafx.stage.FileChooser fc = new javafx.stage.FileChooser();
@@ -4061,7 +4464,9 @@ public class SettingsWindow {
                 keyPath.setText(f.getAbsolutePath());
             }
         });
-        HBox keyRow = new HBox(6, keyPath, keyBrowse);
+        // Wraps: beside a wide (German) Browse button the field was left about 60px in a narrow window. The
+        // button now moves below the field instead, which then has the row to itself.
+        WrapRow keyRow = new WrapRow(6, 6, WrapRow.setGrow(keyPath), keyBrowse);
         // The key-file row only applies to "Private key file" auth.
         auth.valueProperty()
                 .addListener((o, a, b) -> keyRow.setDisable(b != com.editora.vfs.RemoteConnection.AuthMethod.KEY));
@@ -4150,6 +4555,8 @@ public class SettingsWindow {
             list.getSelectionModel().select(c);
         });
         Button remove = new Button(tr("settings.remote.remove"));
+        remove.disableProperty()
+                .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
@@ -4159,6 +4566,7 @@ public class SettingsWindow {
         });
         HBox buttons = new HBox(6, add, remove);
         VBox left = new VBox(6, list, buttons);
+        keepWidth(add, remove, left, keyBrowse);
 
         // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
         Button save = new Button(tr("settings.save"));
@@ -4184,6 +4592,25 @@ public class SettingsWindow {
         apply();
     }
 
+    /** Re-reads the saved sites (Connect remembers one; the Remote Sites panel removes one), keeping the selection. */
+    private void reloadRemote() {
+        if (remoteItems.equals(config.getConnections())) {
+            return;
+        }
+        var selected =
+                remoteList == null ? null : remoteList.getSelectionModel().getSelectedItem();
+        String selectedId = selected == null ? null : selected.id();
+        remoteItems.setAll(config.getConnections());
+        if (remoteList != null && selectedId != null) {
+            for (var c : remoteItems) {
+                if (selectedId.equals(c.id())) {
+                    remoteList.getSelectionModel().select(c);
+                    break;
+                }
+            }
+        }
+    }
+
     private static String nullToEmpty(String s) {
         return s == null ? "" : s;
     }
@@ -4192,7 +4619,6 @@ public class SettingsWindow {
     public void showRemote(Window owner) {
         show(owner);
         sidebar.getSelectionModel().select(Category.REMOTE);
-        remoteItems.setAll(config.getConnections());
     }
 
     private VBox externalToolsPage() {
@@ -4270,6 +4696,11 @@ public class SettingsWindow {
                 name.setText(t.getName()); // put the field back
                 return;
             }
+            // The command id is derived from the name, so a rename is a new command: carry the key binding
+            // across (as saveMacro does) instead of leaving a chord bound to an id nothing registers.
+            String oldId = com.editora.externaltool.ExternalTool.commandIdFor(t.getName());
+            String newId = com.editora.externaltool.ExternalTool.commandIdFor(name.getText());
+            String oldChord = newId.equals(oldId) ? null : currentChordFor(oldId);
             t.setName(name.getText());
             t.setCommand(command.getText());
             t.setArguments(arguments.getText());
@@ -4282,7 +4713,13 @@ public class SettingsWindow {
             }
             t.setEnabled(enabled.isSelected());
             list.refresh();
-            persistExternalTools();
+            persistExternalTools(); // re-registers externalTool.run.* (incl. the renamed id)
+            if (!newId.equals(oldId) && shortcutActions != null) {
+                shortcutActions.reset(oldId); // drop the old id's override BEFORE binding the new one
+                if (oldChord != null && !oldChord.isBlank()) {
+                    shortcutActions.rebind(newId, oldChord);
+                }
+            }
         };
         // Combos + checkbox apply immediately; text fields commit on Enter / focus-loss (the todoRow idiom).
         stdin.valueProperty().addListener((o, a, b) -> commit.run());
@@ -4319,8 +4756,14 @@ public class SettingsWindow {
 
         Button add = new Button(tr("settings.externalTool.add"));
         add.setOnAction(e -> {
+            // Two tools named "New Tool" share one externalTool.run.<slug> command: only one would run, and
+            // commit then refuses every edit to the other until it is renamed.
+            String newName = tr("settings.externalTool.newName");
+            for (int n = 2; slugTaken(null, newName); n++) {
+                newName = tr("settings.externalTool.newName") + " " + n;
+            }
             com.editora.externaltool.ExternalTool t = new com.editora.externaltool.ExternalTool(
-                    tr("settings.externalTool.newName"),
+                    newName,
                     "",
                     "",
                     "",
@@ -4332,11 +4775,18 @@ public class SettingsWindow {
             list.getSelectionModel().select(t);
         });
         Button remove = new Button(tr("settings.externalTool.remove"));
+        remove.disableProperty()
+                .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
+                String id = com.editora.externaltool.ExternalTool.commandIdFor(
+                        externalToolItems.get(i).getName());
                 externalToolItems.remove(i);
                 persistExternalTools();
+                if (shortcutActions != null) {
+                    shortcutActions.reset(id); // drop its key binding, as deleting a macro does
+                }
             }
         });
         // Explicit Save (edits also auto-save on Enter / focus-loss + combo/checkbox change).
@@ -4381,6 +4831,14 @@ public class SettingsWindow {
     private VBox abbreviationsPage() {
         VBox p = page(tr("settings.cat.abbreviations"));
         Card mainCard = card(p, null);
+        abbrevModeCheck = viewCheck(tr("settings.abbrevMode"), Settings::setAbbrevMode);
+        abbrevModeCheck.setSelected(config.getSettings().isAbbrevMode());
+        checkRow(
+                mainCard,
+                Category.ABBREVIATIONS,
+                abbrevModeCheck,
+                tr("settings.abbrev.note"),
+                "abbrev abbreviation expand as you type automatic mode");
         cardRow(
                 mainCard,
                 Category.ABBREVIATIONS,
@@ -4389,15 +4847,9 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Master-detail editor for the user abbreviation dictionary (abbrev → expansion), plus the auto-expand toggle. */
+    /** Master-detail editor for the user abbreviation dictionary (abbrev → expansion). */
     private javafx.scene.Node abbreviationsEditor() {
         reloadAbbrevs();
-
-        abbrevModeCheck = viewCheck(tr("settings.abbrevMode"), Settings::setAbbrevMode);
-        abbrevModeCheck.setSelected(config.getSettings().isAbbrevMode());
-        Label note = new Label(tr("settings.abbrev.note"));
-        note.getStyleClass().add("settings-note");
-        note.setWrapText(true);
 
         ListView<com.editora.config.Abbreviation> list = new ListView<>(abbrevItems);
         abbrevList = list;
@@ -4464,6 +4916,8 @@ public class SettingsWindow {
             abbrev.requestFocus();
         });
         Button remove = new Button(tr("settings.abbrev.remove"));
+        remove.disableProperty()
+                .bind(list.getSelectionModel().selectedItemProperty().isNull());
         remove.setOnAction(e -> {
             int i = list.getSelectionModel().getSelectedIndex();
             if (i >= 0) {
@@ -4489,15 +4943,19 @@ public class SettingsWindow {
         VBox.setVgrow(top, Priority.ALWAYS);
         HBox buttons = new HBox(6, add, remove, spacer(), save);
         buttons.setAlignment(Pos.CENTER_LEFT);
-        return new VBox(8, abbrevModeCheck, note, top, buttons);
+        return new VBox(8, top, buttons);
     }
 
     private void persistAbbrevs() {
         config.setAbbreviations(new java.util.ArrayList<>(abbrevItems));
         config.saveAbbreviations();
+        apply(); // buffers hold a copy of the table: push the new one to every window's open buffers
     }
 
     private void reloadAbbrevs() {
+        if (sameAbbrevs(abbrevItems, config.getAbbreviations())) {
+            return;
+        }
         var selected =
                 abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
         String selectedKey = selected == null ? null : selected.getAbbreviation();
@@ -4564,7 +5022,7 @@ public class SettingsWindow {
         form.add(l, 0, rowIndex);
         form.add(field, 1, rowIndex);
         if (field instanceof javafx.scene.layout.Region r) {
-            r.setMinWidth(220);
+            r.setMinWidth(180);
         }
         // A tall multi-line body would otherwise centre its label; align it to the top of the field instead.
         if (field instanceof CodeArea) {
@@ -4600,6 +5058,7 @@ public class SettingsWindow {
      *  Uses absolute-offset {@code moveTo}/{@code deleteText} (robust across RichTextFX versions); each action is
      *  guarded so the key is always consumed (no fall-through to the default behaviour) even at a boundary. */
     private static void installEmacsKeys(CodeArea area) {
+        installFocusEscape(area);
         area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
             boolean alt = e.isAltDown() && !e.isControlDown() && !e.isMetaDown() && !e.isShiftDown();
@@ -4648,6 +5107,31 @@ public class SettingsWindow {
                 }
             }
         });
+    }
+
+    /**
+     * Lets the keyboard leave a body editor. Tab types a tab there (a snippet body needs it), which made
+     * the editor a trap: nothing moved focus on, so the Save button after it was out of reach. As in a
+     * JavaFX {@code TextArea}: Shift+Tab goes back, Ctrl+Tab goes on (Ctrl+Shift+Tab back).
+     */
+    private static void installFocusEscape(CodeArea area) {
+        area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            javafx.scene.TraversalDirection direction =
+                    focusEscape(e.getCode(), e.isShiftDown(), e.isControlDown(), e.isAltDown() || e.isMetaDown());
+            if (direction != null) {
+                e.consume();
+                area.requestFocusTraversal(direction);
+            }
+        });
+    }
+
+    /** Where a key takes the focus out of a body editor, or {@code null} when the editor keeps the key. Pure. */
+    static javafx.scene.TraversalDirection focusEscape(
+            javafx.scene.input.KeyCode code, boolean shift, boolean ctrl, boolean otherModifier) {
+        if (code != javafx.scene.input.KeyCode.TAB || otherModifier || (!shift && !ctrl)) {
+            return null;
+        }
+        return shift ? javafx.scene.TraversalDirection.PREVIOUS : javafx.scene.TraversalDirection.NEXT;
     }
 
     private static void consume(javafx.scene.input.KeyEvent e, Runnable action) {
@@ -4761,7 +5245,7 @@ public class SettingsWindow {
             status.setMaxWidth(340);
             agentStatusLabels.put(a.id(), status);
             TextField field = agentCommandFields.get(a.id());
-            field.setPrefWidth(180);
+            field.setPrefWidth(PATH_FIELD_WIDTH);
             controlRow(
                     c,
                     Category.AGENT,
@@ -4927,6 +5411,17 @@ public class SettingsWindow {
     }
 
     /** Reload together: switching providers must not write the previous provider's fields back. */
+    /** Stores what the four per-provider fields show under {@code provider} (the caller saves and applies). */
+    private void commitAiFieldsFor(com.editora.ai.AiProvider provider) {
+        Settings settings = config.getSettings();
+        if (provider != com.editora.ai.AiProvider.CODEX) { // disabled for Codex, which owns its own login
+            settings.setAiEndpointFor(provider, aiEndpointField.getText());
+            settings.setApiKeyFor(provider, aiApiKeyField.getText());
+            settings.setAiCompletionModelFor(provider, aiCompletionModelField.getText());
+        }
+        settings.setAiModelFor(provider, aiModelField.getText());
+    }
+
     private void syncAiProviderFields() {
         boolean previous = loading;
         loading = true;
@@ -4970,12 +5465,13 @@ public class SettingsWindow {
     private VBox aiPage() {
         VBox p = page(tr("settings.cat.ai"));
         Card mainCard = card(p, null);
-        HBox aiEnableRow = new HBox(6, aiCheck, infoIcon(tr("settings.ai.actionsTooltip")));
-        aiEnableRow.setAlignment(Pos.CENTER_LEFT);
+        // A switch row like every other page's enable toggle; what it turns on stays in the (i) tooltip.
+        HBox aiEnable = new HBox(8, infoIcon(tr("settings.ai.actionsTooltip")), switchFor(aiCheck));
+        aiEnable.setAlignment(Pos.CENTER_RIGHT);
         cardRow(
                 mainCard,
                 Category.AI,
-                aiEnableRow,
+                settingRow(aiCheck.getText(), null, aiEnable),
                 "ai actions anthropic claude commit message explain rewrite enable");
         aiStatusLabel = new Label(tr("settings.ai.statusUnknown"));
         aiStatusLabel.getStyleClass().add("settings-git-status");
@@ -5082,11 +5578,17 @@ public class SettingsWindow {
         pluginRegistryWarn.getStyleClass().add("settings-git-missing"); // amber/red "caution" styling
         pluginRegistryWarn.setWrapText(true);
         pluginRegistryWarn.setMaxWidth(440);
-        pluginRegistryField.textProperty().addListener((obs, was, now) -> {
-            config.getSettings().setPluginRegistryUrl(now);
-            apply();
-            updateRegistryWarn();
-        });
+        commitOnEnterOrBlur(
+                pluginRegistryField,
+                () -> shownOrBlank(
+                        pluginRegistryField,
+                        config.getSettings().getPluginRegistryUrl(),
+                        config.getSettings().getPluginRegistryUrlRaw()),
+                now -> {
+                    config.getSettings().setPluginRegistryUrl(now);
+                    apply();
+                    updateRegistryWarn();
+                });
         Label regNote = note(tr("settings.plugins.registryNote"));
         regNote.setWrapText(true);
         regNote.setMaxWidth(440);
@@ -5098,11 +5600,12 @@ public class SettingsWindow {
                 null,
                 regBox,
                 "plugins registry url index marketplace github browse");
-        Label sigNote = note(tr("settings.plugins.requireSignatureNote"));
-        sigNote.setWrapText(true);
-        sigNote.setMaxWidth(440);
-        VBox sigBox = new VBox(2, pluginRequireSigCheck, sigNote);
-        cardRow(market, Category.PLUGINS, sigBox, "plugins signature signed verify registry security trust");
+        checkRow(
+                market,
+                Category.PLUGINS,
+                pluginRequireSigCheck,
+                tr("settings.plugins.requireSignatureNote"),
+                "plugins signature signed verify registry security trust");
         Button browse = new Button(tr("settings.plugins.browse"));
         browse.setOnAction(e -> {
             if (onBrowsePlugins != null) {
@@ -5217,7 +5720,7 @@ public class SettingsWindow {
                 name,
                 d.manifest().version == null ? "" : d.manifest().version,
                 PluginCoordinator.pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("dialog.plugins.enableTitle"));
         confirm.setHeaderText(tr("dialog.plugins.enableHeader"));
@@ -5253,7 +5756,7 @@ public class SettingsWindow {
             status.setMaxWidth(340);
             debugStatusLabels.put(dbg.id(), status);
             TextField field = debugCommandFields.get(dbg.id());
-            field.setPrefWidth(180);
+            field.setPrefWidth(PATH_FIELD_WIDTH);
             controlRow(
                     c,
                     Category.DEBUG,
@@ -5679,6 +6182,62 @@ public class SettingsWindow {
     }
 
     /** The Browse… half of {@link #exePathRow}, for card rows whose title already names the field. */
+    private static final Object COMMIT_KEY = new Object();
+
+    /**
+     * Wires a text field to take effect on Enter or when focus leaves it (or the window closes), and only if
+     * the text differs from the stored value. Applying per keystroke reconfigured the language servers / debug
+     * adapters with every half-typed prefix: the running server was shut down on the first key, and a prefix
+     * that happened to resolve was launched and killed by the next. For the other fields it saved the settings
+     * file, re-applied every window and probed a half-typed executable or URL on each key.
+     */
+    private void commitOnEnterOrBlur(
+            TextField field, java.util.function.Supplier<String> stored, Consumer<String> commit) {
+        Runnable run = () -> {
+            String text = field.getText() == null ? "" : field.getText();
+            String current = stored.get();
+            if (!loading && !text.equals(current == null ? "" : current)) {
+                commit.accept(text);
+            }
+        };
+        commitFields.add(field);
+        field.setOnAction(e -> run.run());
+        field.focusedProperty().addListener((obs, was, focused) -> {
+            if (!focused) {
+                run.run();
+            }
+        });
+        field.getProperties().put(COMMIT_KEY, run);
+    }
+
+    /** Every {@link #commitOnEnterOrBlur} field, so closing the window can commit the one being typed in. */
+    private final List<TextField> commitFields = new ArrayList<>();
+
+    /**
+     * Commits whatever is typed but not yet committed. A field commits when focus leaves it, and closing the
+     * window (Esc, the title bar, the owner closing) is not a focus change the toolkit reliably reports first.
+     */
+    private void commitPendingFields() {
+        List.copyOf(commitFields).forEach(SettingsWindow::commitNow);
+    }
+
+    /**
+     * The stored value to compare a URL field against. Such a field shows the URL in force, so an untouched
+     * field equals {@code resolved}; once the user empties it to go back to the built-in URL it must be
+     * compared with what is stored ({@code raw}), or every later focus loss would save and apply again.
+     */
+    private static String shownOrBlank(TextField field, String resolved, String raw) {
+        String text = field.getText();
+        return text == null || text.isBlank() ? raw : resolved;
+    }
+
+    /** Commits a {@link #commitOnEnterOrBlur} field whose text was just set for the user (Browse…). */
+    private static void commitNow(TextField field) {
+        if (field.getProperties().get(COMMIT_KEY) instanceof Runnable run) {
+            run.run();
+        }
+    }
+
     private Button browseButton(String title, TextField field) {
         Button browse = new Button(tr("settings.mermaid.browse"));
         browse.setOnAction(e -> {
@@ -5687,9 +6246,29 @@ public class SettingsWindow {
             java.io.File f = fc.showOpenDialog(stage);
             if (f != null) {
                 field.setText(f.getAbsolutePath());
+                commitNow(field);
             }
         });
+        keepWidth(browse);
         return browse;
+    }
+
+    /**
+     * Pins each control's minimum width to its preferred one, so a narrow window cannot squeeze it: a
+     * Labeled's own minimum is the width of an ellipsis, which is how buttons ended up reading "…".
+     */
+    /** Names a ▲/▼ pair for a screen reader (and a tooltip): on their own they announce as the glyphs. */
+    private static void nameReorderButtons(Button up, Button down) {
+        up.setAccessibleText(tr("bookmarks.moveUp"));
+        up.setTooltip(new Tooltip(tr("bookmarks.moveUp")));
+        down.setAccessibleText(tr("bookmarks.moveDown"));
+        down.setTooltip(new Tooltip(tr("bookmarks.moveDown")));
+    }
+
+    private static void keepWidth(Region... controls) {
+        for (Region control : controls) {
+            control.setMinWidth(Region.USE_PREF_SIZE);
+        }
     }
 
     private HBox exePathRow(String label, TextField field) {
@@ -5700,10 +6279,14 @@ public class SettingsWindow {
             java.io.File f = fc.showOpenDialog(stage);
             if (f != null) {
                 field.setText(f.getAbsolutePath());
+                commitNow(field);
             }
         });
         HBox.setHgrow(field, Priority.ALWAYS);
-        HBox box = new HBox(6, new Label(label), field, browse);
+        Label name = new Label(label);
+        name.setLabelFor(field);
+        keepWidth(name, browse); // the field gives way, not the label or the button
+        HBox box = new HBox(6, name, field, browse);
         box.setAlignment(Pos.CENTER_LEFT);
         return box;
     }
@@ -5764,7 +6347,8 @@ public class SettingsWindow {
                 continue;
             }
             boolean found = c.isDetected();
-            label.getStyleClass().setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
+            // "This file is not in a Maven project" is a neutral fact, not a broken tool: no danger pill.
+            label.getStyleClass().setAll("settings-git-status", buildToolStatusClass(found));
             String detected = c.detectedLabel();
             label.setText(
                     found
@@ -5775,6 +6359,12 @@ public class SettingsWindow {
                                     : tr("settings.buildTools.found", detected))
                             : tr("settings.buildTools.notFound", c.tool().displayName()));
         }
+    }
+
+    /** Pill style for a build tool's detection row: green when detected, the neutral pill when it simply
+     *  does not apply to the active file (red is reserved for something broken). Pure. */
+    static String buildToolStatusClass(boolean detected) {
+        return detected ? "settings-git-found" : "settings-git-neutral";
     }
 
     /** Injected by MainController: probes {@code rg} off-thread, delivering found/not-found on the FX thread. */
@@ -5848,33 +6438,10 @@ public class SettingsWindow {
         if (lspManager == null || lspStatusLabels.isEmpty()) {
             return;
         }
-        // The manager caches its probe per command; configure it with the current commands first.
-        Settings cs = config.getSettings();
-        lspManager.configure(
-                cs.isLspSupport(),
-                java.util.Map.ofEntries(
-                        java.util.Map.entry("java", cs.getJavaLspCommand()),
-                        java.util.Map.entry("typescript", cs.getTypescriptLspCommand()),
-                        java.util.Map.entry("python", cs.getPythonLspCommand()),
-                        java.util.Map.entry("xml", cs.getXmlLspCommand()),
-                        java.util.Map.entry("json", cs.getJsonLspCommand()),
-                        java.util.Map.entry("bash", cs.getBashLspCommand()),
-                        java.util.Map.entry("yaml", cs.getYamlLspCommand()),
-                        java.util.Map.entry("go", cs.getGoLspCommand()),
-                        java.util.Map.entry("rust", cs.getRustLspCommand()),
-                        java.util.Map.entry("php", cs.getPhpLspCommand()),
-                        java.util.Map.entry("ruby", cs.getRubyLspCommand()),
-                        java.util.Map.entry("clangd", cs.getClangdLspCommand()),
-                        java.util.Map.entry("html", cs.getHtmlLspCommand()),
-                        java.util.Map.entry("css", cs.getCssLspCommand()),
-                        java.util.Map.entry("kotlin", cs.getKotlinLspCommand()),
-                        java.util.Map.entry("lua", cs.getLuaLspCommand()),
-                        java.util.Map.entry("dockerfile", cs.getDockerfileLspCommand()),
-                        java.util.Map.entry("sql", cs.getSqlLspCommand()),
-                        java.util.Map.entry("terraform", cs.getTerraformLspCommand()),
-                        java.util.Map.entry("toml", cs.getTomlLspCommand()),
-                        java.util.Map.entry("csharp", cs.getCsharpLspCommand()),
-                        java.util.Map.entry("typst", cs.getTypstLspCommand())));
+        // Probe the commands this page shows, without configuring the manager. This window must not
+        // (re)configure it: doing so with the global commands replaced a trusted project's override and
+        // shut its running server down every time Settings was merely opened.
+        java.util.Map<String, String> shown = LspCoordinator.commandsForAllServers(config.getSettings());
         for (LspServerUi srv : lspServerUis()) {
             Label status = lspStatusLabels.get(srv.id());
             if (status == null) {
@@ -5884,7 +6451,7 @@ public class SettingsWindow {
             status.getStyleClass().setAll("settings-git-status");
             status.setText(tr("settings.lsp.checking"));
             String langKey = installLangForServer(srv.id());
-            lspManager.detect(srv.id(), found -> {
+            lspManager.detectCommand(srv.id(), shown.get(srv.id()), found -> {
                 status.getStyleClass()
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
@@ -5914,6 +6481,18 @@ public class SettingsWindow {
         });
     }
 
+    /** A stripe side in the UI language (it used to be the enum constant's name, English in every locale). */
+    static String sideName(ToolWindow.Side side) {
+        if (side == null) {
+            return "";
+        }
+        return switch (side) {
+            case LEFT -> tr("settings.toolWindows.side.left");
+            case RIGHT -> tr("settings.toolWindows.side.right");
+            case BOTTOM -> tr("settings.toolWindows.side.bottom");
+        };
+    }
+
     /** The tool-window placement page: one row per registered tool window (Show / Side / ▲▼ reorder). */
     private VBox toolWindowsPage() {
         // The page hint reads as the subtitle, like the other pages.
@@ -5932,14 +6511,17 @@ public class SettingsWindow {
             sideCombo.setConverter(new StringConverter<>() {
                 @Override
                 public String toString(ToolWindow.Side side) {
-                    return side == null
-                            ? ""
-                            : side.name().charAt(0) + side.name().substring(1).toLowerCase();
+                    return sideName(side);
                 }
 
                 @Override
                 public ToolWindow.Side fromString(String s) {
-                    return ToolWindow.Side.valueOf(s.toUpperCase());
+                    for (ToolWindow.Side side : ToolWindow.Side.values()) {
+                        if (sideName(side).equals(s)) {
+                            return side;
+                        }
+                    }
+                    return null; // the combo is not editable: nothing types a name into it
                 }
             });
             sideCombo.setValue(toolWindows.currentSide(tw));
@@ -5951,12 +6533,21 @@ public class SettingsWindow {
             moveDown.getStyleClass().addAll("flat", "reorder-button");
             moveUp.setTooltip(new Tooltip(tr("settings.moveEarlier")));
             moveDown.setTooltip(new Tooltip(tr("settings.moveLater")));
+            moveUp.setAccessibleText(tr("settings.moveEarlier") + " — " + tw.getTitle());
+            moveDown.setAccessibleText(tr("settings.moveLater") + " — " + tw.getTitle());
             Runnable refreshThisRow = () -> {
                 boolean shown = showCheck.isSelected();
                 moveUp.setDisable(!shown || !toolWindows.canMove(tw, -1));
                 moveDown.setDisable(!shown || !toolWindows.canMove(tw, 1));
             };
             moveRefreshers.add(refreshThisRow);
+            // The row is built once, but the window can be moved or hidden from the main window meanwhile.
+            toolWindowRowSyncs.add(() -> {
+                showCheck.setSelected(toolWindows.isVisible(tw));
+                sideCombo.setValue(toolWindows.currentSide(tw));
+                sideCombo.setDisable(!showCheck.isSelected());
+                refreshThisRow.run();
+            });
             moveUp.setOnAction(e -> {
                 toolWindows.move(tw, -1);
                 refreshMoves.run();
@@ -5967,12 +6558,15 @@ public class SettingsWindow {
             });
 
             showCheck.selectedProperty().addListener((obs, was, visible) -> {
+                if (syncingToolWindowRows) {
+                    return;
+                }
                 toolWindows.setVisible(tw, visible);
                 sideCombo.setDisable(!visible);
                 refreshMoves.run();
             });
             sideCombo.valueProperty().addListener((obs, old, now) -> {
-                if (now != null) {
+                if (now != null && !syncingToolWindowRows) {
                     toolWindows.setSide(tw, now);
                     refreshMoves.run();
                 }
@@ -6020,7 +6614,11 @@ public class SettingsWindow {
             VBox main = new VBox(2, title);
             HBox.setHgrow(main, Priority.ALWAYS);
             HBox reorder = new HBox(2, moveUp, moveDown);
-            HBox controls = new HBox(8, switchFor(showCheck), sideCombo, reorder);
+            SettingSwitch show = switchFor(showCheck);
+            show.setAccessibleText(tw.getTitle()); // this row is hand-built, so name its controls here
+            sideCombo.setAccessibleText(tw.getTitle());
+            title.setLabelFor(show);
+            HBox controls = new HBox(8, show, sideCombo, reorder);
             controls.setAlignment(Pos.CENTER_RIGHT);
             controls.setMinWidth(Region.USE_PREF_SIZE);
             HBox rowBox = new HBox(16, main, controls);
@@ -6073,7 +6671,10 @@ public class SettingsWindow {
                 onOpenFile.accept(config.getSettingsFile());
             }
         });
-        HBox fileRow = new HBox(6, new Label(tr("settings.path")), link);
+        Label pathLabel = new Label(tr("settings.path"));
+        Label sessionLabel = new Label(tr("settings.sessionLog"));
+        keepWidth(pathLabel, sessionLabel); // a long path gives way, not its label
+        HBox fileRow = new HBox(6, pathLabel, link);
         fileRow.setAlignment(Pos.CENTER_LEFT);
         cardRow(fileSection, Category.ADVANCED, fileRow, "settings file path toml config location");
 
@@ -6085,7 +6686,7 @@ public class SettingsWindow {
                 onOpenFile.accept(sessionLog);
             }
         });
-        HBox sessionRow = new HBox(6, new Label(tr("settings.sessionLog")), sessionLink);
+        HBox sessionRow = new HBox(6, sessionLabel, sessionLink);
         sessionRow.setAlignment(Pos.CENTER_LEFT);
         cardRow(
                 fileSection,
@@ -6106,6 +6707,7 @@ public class SettingsWindow {
             }
         });
         Label exportHint = note(tr("settings.exportConfig.hint"));
+        exportHint.setWrapText(true);
         VBox exportBox = new VBox(4, exportConfig, exportHint);
         cardRow(ioSection, Category.ADVANCED, exportBox, "import export backup settings config zip archive");
 
@@ -6117,6 +6719,7 @@ public class SettingsWindow {
             }
         });
         Label debugHint = note(tr("settings.debugLog.hint"));
+        debugHint.setWrapText(true);
         VBox debugBox = new VBox(4, debugLog, debugHint);
         cardRow(
                 debugSection,
@@ -6161,6 +6764,7 @@ public class SettingsWindow {
         Button remove = new Button(tr("settings.toolbar.remove"));
         Button up = new Button("▲");
         Button down = new Button("▼");
+        nameReorderButtons(up, down);
         up.getStyleClass().addAll("flat", "reorder-button");
         down.getStyleClass().addAll("flat", "reorder-button");
         add.setMaxWidth(Double.MAX_VALUE);
@@ -6169,7 +6773,8 @@ public class SettingsWindow {
         javafx.scene.layout.VBox.setVgrow(midGap, Priority.ALWAYS);
         VBox mid = new VBox(6, add, remove, midGap, up, down);
         mid.setAlignment(Pos.CENTER);
-        mid.setMinWidth(104);
+        mid.setMinWidth(Region.USE_PREF_SIZE); // as wide as its (translated) buttons, never "Hinzufüg…"
+        keepWidth(availLabel, curLabel);
 
         HBox lists = new HBox(10, availBox, mid, curBox);
         HBox.setHgrow(availBox, Priority.ALWAYS);
@@ -6386,10 +6991,15 @@ public class SettingsWindow {
         cardRow(card, cat, settingRow(title, description, control), keywords);
     }
 
-    /** A card row: title + optional description on the left, the control on the right. */
-    private static Node settingRow(String title, String description, Node control) {
+    /**
+     * A card row: title + optional description on the left, the control on the right (below the text when
+     * the control is too wide to leave the description a readable column — see {@link SettingRowPane}).
+     * The title is the control's label for assistive technology, and names an on/off switch outright.
+     */
+    static Node settingRow(String title, String description, Node control) {
         Label t = new Label(title);
         t.getStyleClass().add("settings-row-title");
+        t.setWrapText(true); // a long (translated) title beside a switch wraps; it used to end in "…"
         VBox main = new VBox(2, t);
         if (description != null && !description.isBlank()) {
             Label d = new Label(description);
@@ -6397,17 +7007,28 @@ public class SettingsWindow {
             d.setWrapText(true);
             main.getChildren().add(d);
         }
-        HBox.setHgrow(main, Priority.ALWAYS);
-        HBox row = new HBox(16, main);
         if (control != null) {
-            HBox side = new HBox(8, control);
-            side.setAlignment(Pos.CENTER_RIGHT);
-            side.setMinWidth(Region.USE_PREF_SIZE); // the control must never be squeezed by a long description
-            row.getChildren().add(side);
+            List<SettingSwitch> switches = switchesIn(control);
+            t.setLabelFor(switches.isEmpty() ? control : switches.get(0));
+            for (SettingSwitch sw : switches) {
+                sw.setAccessibleText(title);
+                sw.setAccessibleHelp(description);
+            }
         }
-        row.setAlignment(Pos.CENTER_LEFT);
+        SettingRowPane row = new SettingRowPane(main, control);
         row.getStyleClass().add("settings-row");
         return row;
+    }
+
+    /** The on/off switches a row's control holds: the control itself, or switches nested in its box. */
+    private static List<SettingSwitch> switchesIn(Node control) {
+        List<SettingSwitch> found = new ArrayList<>();
+        if (control instanceof SettingSwitch sw) {
+            found.add(sw);
+        } else if (control instanceof javafx.scene.layout.Pane pane) {
+            pane.getChildren().forEach(child -> found.addAll(switchesIn(child)));
+        }
+        return found;
     }
 
     /**
@@ -6415,13 +7036,11 @@ public class SettingsWindow {
      * setting state lives on {@link CheckBox}es (listeners, {@code syncAll}, palette toggles), so rather
      * than rewire any of that, the switch is a <em>view</em>: bidirectionally bound to the checkbox's
      * {@code selectedProperty} (and following its {@code disableProperty}), while the checkbox itself
-     * stays out of the scene graph. Every existing writer keeps working untouched.
+     * stays out of the scene graph. Every existing writer keeps working untouched. {@link SettingSwitch}
+     * is what makes it operable from the keyboard and visible to a screen reader.
      */
-    private static atlantafx.base.controls.ToggleSwitch switchFor(CheckBox check) {
-        var sw = new atlantafx.base.controls.ToggleSwitch();
-        sw.selectedProperty().bindBidirectional(check.selectedProperty());
-        sw.disableProperty().bind(check.disableProperty());
-        return sw;
+    private static SettingSwitch switchFor(CheckBox check) {
+        return SettingSwitch.boundTo(check);
     }
 
     private Region labeled(String label, Node control) {
@@ -6431,6 +7050,7 @@ public class SettingsWindow {
         // longer translation. (Previously a fixed prefWidth(130) clamped + truncated the longer ones.)
         l.setMinWidth(130);
         l.setMaxWidth(Region.USE_PREF_SIZE);
+        l.setLabelFor(control);
         HBox h = new HBox(10, l, control);
         h.setAlignment(Pos.CENTER_LEFT);
         return h;
@@ -6471,14 +7091,78 @@ public class SettingsWindow {
 
     // --- search ----------------------------------------------------------------------------------
 
-    /** Whether {@code keywords} matches the search {@code query} (case-insensitive substring). Pure. */
-    static boolean matches(String query, String keywords) {
+    /**
+     * Whether {@code text} matches the search {@code query}: every whitespace-separated word of the query
+     * must occur in it, in any order, case-insensitively ("size font" finds "Font size"). Pure.
+     */
+    static boolean matches(String query, String text) {
         if (query == null || query.isBlank()) {
             return true;
         }
-        return keywords != null
-                && keywords.toLowerCase(Locale.ROOT)
-                        .contains(query.toLowerCase(Locale.ROOT).strip());
+        if (text == null) {
+            return false;
+        }
+        String haystack = text.toLowerCase(Locale.ROOT);
+        for (String word : query.strip().toLowerCase(Locale.ROOT).split("\\s+")) {
+            if (!haystack.contains(word)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Everything a row can be found by: its (English) keywords plus the text it actually shows — title,
+     * description, checkbox and button captions, field prompts — so a search in the UI language works.
+     */
+    static String searchText(String keywords, Node... shown) {
+        StringBuilder out = new StringBuilder(keywords == null ? "" : keywords);
+        for (Node node : shown) {
+            collectText(node, out);
+        }
+        return out.toString();
+    }
+
+    private static void collectText(Node node, StringBuilder out) {
+        if (node == null) {
+            return;
+        }
+        if (node instanceof javafx.scene.control.Labeled labeled && labeled.getText() != null) {
+            out.append(' ').append(labeled.getText());
+        }
+        if (node instanceof javafx.scene.control.TextInputControl input && input.getPromptText() != null) {
+            out.append(' ').append(input.getPromptText());
+        }
+        if (node instanceof javafx.scene.Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                collectText(child, out);
+            }
+        }
+    }
+
+    /** A row's search text, built on first use (pages are built once; titles never change afterwards). */
+    private String searchTextOf(SettingRow r) {
+        return searchIndex.computeIfAbsent(r, row -> {
+            // A row is also found by the heading it sits under: its card's title or its section label.
+            Node cardTitle = row.card() != null
+                            && !row.card().getChildren().isEmpty()
+                            && row.card().getChildren().get(0) instanceof Label title
+                    ? title
+                    : null;
+            // ... and by the name of its page: typing "Keymaps" or "Build Tools" used to say that no
+            // setting matches, because no row on those pages happens to repeat the sidebar's name.
+            return searchText(row.keywords(), row.node(), cardTitle, row.section()) + ' ' + row.category().display;
+        });
+    }
+
+    /** Shows the selected category's page, or the "no settings match" note while a search has no hits. */
+    private void showContent() {
+        Node content = searchEmpty != null && searchEmpty.isVisible()
+                ? searchEmpty
+                : sidebar.getSelectionModel().getSelectedItem() instanceof Category cat ? pages.get(cat) : null;
+        if (content != null && contentScroll.getContent() != content) {
+            contentScroll.setContent(content);
+        }
     }
 
     /** The sidebar's row model: each group's header followed by its categories, in declaration order. */
@@ -6503,6 +7187,8 @@ public class SettingsWindow {
             rows.forEach(r -> setShown(r.node(), true));
             sectionLabels.forEach(s -> setShown(s, true));
             cards.forEach(c -> setShown(c, true));
+            searchEmpty.setVisible(false);
+            showContent();
             sidebar.refresh();
             return;
         }
@@ -6510,7 +7196,7 @@ public class SettingsWindow {
         Set<Label> visibleSections = new HashSet<>();
         Set<VBox> visibleCards = new HashSet<>();
         for (SettingRow r : rows) {
-            boolean m = matches(query, r.keywords());
+            boolean m = matches(query, searchTextOf(r));
             setShown(r.node(), m);
             if (m) {
                 matched.add(r.category());
@@ -6536,16 +7222,44 @@ public class SettingsWindow {
             }
         }
         sidebar.refresh();
+        // No hit anywhere: say so, instead of a blank page beside a fully greyed-out sidebar.
+        searchEmpty.setText(tr("settings.search.empty", query.strip()));
+        searchEmpty.setVisible(matched.isEmpty());
+        showContent();
         Object selObj = sidebar.getSelectionModel().getSelectedItem();
         Category sel = (selObj instanceof Category c) ? c : null;
-        if (!matched.isEmpty() && (sel == null || !matched.contains(sel))) {
-            for (Category c : Category.values()) {
-                if (matched.contains(c)) {
-                    sidebar.getSelectionModel().select(c);
-                    break;
+        Category best = bestMatch(query, matched);
+        // A page named by the query wins even over a matching current page: "tool windows" typed on the
+        // Interface page (which mentions them) means the Tool Windows page.
+        boolean named = best != null && namesPage(query, best.display);
+        if (best != null && (sel == null || !matched.contains(sel) || (named && !namesPage(query, sel.display)))) {
+            sidebar.getSelectionModel().select(best);
+        }
+    }
+
+    /**
+     * Whether {@code query} is (the start of) a page's sidebar name. Three characters at least: a page is
+     * not "named" by the first letter of a word that merely happens to begin like it. Pure.
+     */
+    static boolean namesPage(String query, String pageName) {
+        String q = query == null ? "" : query.strip().toLowerCase(Locale.ROOT);
+        return q.length() >= 3
+                && pageName != null
+                && pageName.toLowerCase(Locale.ROOT).startsWith(q);
+    }
+
+    /** The page a search opens: the first matching one named by the query, else the first with a hit. */
+    private static Category bestMatch(String query, Set<Category> matched) {
+        Category first = null;
+        for (Category c : Category.values()) {
+            if (matched.contains(c)) {
+                if (namesPage(query, c.display)) {
+                    return c;
                 }
+                first = first == null ? c : first;
             }
         }
+        return first;
     }
 
     private static void setShown(Node node, boolean shown) {
@@ -6598,7 +7312,8 @@ public class SettingsWindow {
         preview.getStyleClass().addAll("editor-area", "settings-preview");
         preview.setEditable(false);
         preview.setFocusTraversable(false);
-        preview.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         preview.setPrefHeight(170);
         preview.setMinHeight(170);
         preview.setWrapText(false);
@@ -6639,8 +7354,8 @@ public class SettingsWindow {
     // --- reset -----------------------------------------------------------------------------------
 
     private void resetAll() {
-        Alert confirm =
-                new Alert(Alert.AlertType.CONFIRMATION, tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL);
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION, tr("settings.reset.confirm"), ButtonType.OK, ButtonType.CANCEL));
         confirm.initOwner(stage);
         confirm.setTitle(tr("settings.reset.title"));
         confirm.setHeaderText(null);
@@ -6658,6 +7373,12 @@ public class SettingsWindow {
         javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor(s.getTheme()));
         onApply.accept(s);
         load();
+        // load() sets the keymap combo under `loading`, so its listener never fires: without this the
+        // settings file says "default keymap" while every window keeps dispatching the old one.
+        if (onKeymapChanged != null) {
+            onKeymapChanged.run();
+        }
+        refreshShortcuts();
     }
 
     // --- load + sync (unchanged behavior) --------------------------------------------------------
@@ -6668,6 +7389,9 @@ public class SettingsWindow {
      * added a tool — and this window's next save wrote its snapshot back, deleting the other's tool.
      */
     private void reloadExternalTools() {
+        if (sameTools(externalToolItems, config.getSettings().getExternalTools())) {
+            return; // nothing changed behind the page: keep the rows (and the form's caret) as they are
+        }
         var selected = externalToolList == null
                 ? null
                 : externalToolList.getSelectionModel().getSelectedItem();
@@ -6683,10 +7407,73 @@ public class SettingsWindow {
         }
     }
 
+    /**
+     * Re-reads every list editor whose working copy is written back whole (External Tools, Abbreviations,
+     * Remote sites). Each is a snapshot of a shared store that a command, a tool window or another window's
+     * Settings can change; saving a stale snapshot deleted whatever had been added since. Runs whenever the
+     * window is (re)loaded and whenever it regains focus — the two moments an edit can follow a change made
+     * elsewhere. Field edits commit on focus loss, so nothing typed is pending when it runs.
+     */
+    private void reloadStoreBackedEditors() {
+        reloadExternalTools();
+        reloadAbbrevs();
+        reloadRemote();
+    }
+
+    /** The Snippets and Templates pages read files; refreshed when Settings is opened, not on every load. */
+    private void reloadFileBackedEditors() {
+        if (reloadSnippets != null) {
+            reloadSnippets.run();
+        }
+        if (reloadTemplates != null) {
+            reloadTemplates.run();
+        }
+    }
+
+    private static boolean sameTools(
+            java.util.List<com.editora.externaltool.ExternalTool> a,
+            java.util.List<com.editora.externaltool.ExternalTool> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            com.editora.externaltool.ExternalTool x = a.get(i);
+            com.editora.externaltool.ExternalTool y = b.get(i);
+            if (x != y
+                    && !(java.util.Objects.equals(x.getName(), y.getName())
+                            && java.util.Objects.equals(x.getCommand(), y.getCommand())
+                            && java.util.Objects.equals(x.getArguments(), y.getArguments())
+                            && java.util.Objects.equals(x.getWorkingDir(), y.getWorkingDir())
+                            && x.getStdin() == y.getStdin()
+                            && x.getOutput() == y.getOutput()
+                            && x.isEnabled() == y.isEnabled())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean sameAbbrevs(
+            java.util.List<com.editora.config.Abbreviation> a, java.util.List<com.editora.config.Abbreviation> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            com.editora.config.Abbreviation x = a.get(i);
+            com.editora.config.Abbreviation y = b.get(i);
+            if (x != y
+                    && !(java.util.Objects.equals(x.getAbbreviation(), y.getAbbreviation())
+                            && java.util.Objects.equals(x.getExpansion(), y.getExpansion()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     private void load() {
         loading = true;
         try {
-            reloadExternalTools(); // another window may have added/removed a tool since this page was built
+            reloadStoreBackedEditors(); // a command or another window may have changed a store since the build
             refreshDictionaryList(); // pick up words added elsewhere (e.g. "Add to Dictionary") since last open
             if (refreshToolbarLists != null) {
                 refreshToolbarLists.run(); // reflect any on-bar drag customization since the page was built
@@ -6790,12 +7577,17 @@ public class SettingsWindow {
             copyLineNoSelectionCheck.setSelected(settings.isCopyLineWhenNoSelection());
             copyWithHighlightingCheck.setSelected(settings.isCopyWithSyntaxHighlighting());
             projectsCheck.setSelected(settings.isProjectSupport());
+            syncingToolWindowRows = true;
+            try {
+                toolWindowRowSyncs.forEach(Runnable::run);
+            } finally {
+                syncingToolWindowRows = false;
+            }
             updateProjectRowEnabled();
             gitCheck.setSelected(settings.isGitSupport());
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
             gitPathField.setText(settings.getGitPath());
-            gitPathField.setDisable(!settings.isGitSupport());
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());
@@ -7116,9 +7908,28 @@ public class SettingsWindow {
     /** Injects the keybinding-editor backend (→ MainController); enables the shortcuts list. */
     public void setShortcutActions(ShortcutActions actions) {
         this.shortcutActions = actions;
-        refreshChordChips();
-        if (built) {
-            refreshShortcuts();
+        refreshShortcuts();
+    }
+
+    /**
+     * Brings an open Settings window in line with the shared keymap after it was reloaded — by this window or
+     * by another one, whose keymap switch or rebind this window's combo, shortcut list, chord chips and Macros
+     * key-binding row would otherwise keep showing the old state of.
+     */
+    public void syncKeymap() {
+        if (built && stage.isShowing()) {
+            syncKeymapCombo();
+        }
+    }
+
+    /**
+     * Re-reads the list editors backed by a shared store if the window is showing: a store changed (a Connect
+     * finished, an abbreviation was defined, another window's Settings saved) — possibly while this window has
+     * focus, which the focus listener cannot notice.
+     */
+    public void syncStoreBackedEditors() {
+        if (built && stage.isShowing() && !loading) {
+            reloadStoreBackedEditors();
         }
     }
 
@@ -7134,6 +7945,7 @@ public class SettingsWindow {
         } finally {
             loading = prev;
         }
+        refreshShortcuts();
     }
 
     /** Re-reads the inline-blame checkbox from settings (used after the {@code git.toggleBlame} command). */
@@ -7374,7 +8186,21 @@ public class SettingsWindow {
         applyPreviewTheme(EditorThemes.normalize(config.getSettings().getEditorTheme()));
     }
 
+    /** Re-reads the Zen and Expert switches: entering one leaves the other, and both have palette commands. */
+    void syncFocusModeChecks() {
+        if (!built) {
+            return;
+        }
+        quietly(() -> {
+            zenCheck.setSelected(config.getWorkspaceState().isZenMode());
+            expertCheck.setSelected(config.getWorkspaceState().isExpertMode());
+        });
+    }
+
     void syncViewChecks() {
+        if (!built) {
+            return;
+        }
         boolean prev = loading;
         loading = true;
         try {
@@ -7473,28 +8299,14 @@ public class SettingsWindow {
         return choices;
     }
 
-    private void commitFontSize() {
-        try {
-            int value = Math.max(
-                    8,
-                    Math.min(48, Integer.parseInt(fontSize.getEditor().getText().trim())));
-            fontSize.getValueFactory().setValue(value);
-            fontSize.getEditor().setText(String.valueOf(value));
-        } catch (NumberFormatException e) {
-            fontSize.getEditor().setText(String.valueOf(fontSize.getValue()));
-        }
-    }
-
     private void apply() {
         if (loading) {
             return;
         }
-        if (fontFamily.getValue() == null || fontSize.getValue() == null) {
-            return;
-        }
+        // Each control writes its own setting before calling this. Copying the font controls in here made every
+        // unrelated change write back whatever they happened to show — a stale value in a window that had not
+        // been re-synced, or nothing at all (no save) once the size field had been emptied.
         Settings settings = config.getSettings();
-        settings.setFontFamily(fontFamily.getValue());
-        settings.setFontSize(fontSize.getValue());
         config.save();
         onApply.accept(settings);
         updatePreviewFont();
@@ -7511,7 +8323,7 @@ public class SettingsWindow {
             Consumer<String> openUrl,
             String commit,
             com.editora.update.ReleaseInfo update) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        Alert alert = Dialogs.styled(new Alert(Alert.AlertType.INFORMATION));
         alert.initOwner(owner);
         alert.setTitle(tr("dialog.about.title", com.editora.AppInfo.NAME));
         // The whole dialog is the content: no Alert header band or graphic, so the icon, name, version and
@@ -7519,13 +8331,7 @@ public class SettingsWindow {
         alert.setHeaderText(null);
         alert.setGraphic(null);
         alert.getDialogPane().getStyleClass().add("about-dialog");
-        // A Dialog lives in its own scene, so it does NOT inherit the main window's app.css — the panel's
-        // .about-* rules have to be attached here or they never apply. (The AtlantaFX -color-* tokens do
-        // resolve: those come from the application-wide user-agent stylesheet.)
-        var appCss = SettingsWindow.class.getResource("/com/editora/styles/app.css");
-        if (appCss != null) {
-            alert.getDialogPane().getStylesheets().add(appCss.toExternalForm());
-        }
+        // Dialogs.styled above attaches app.css: without it the panel's .about-* rules never apply.
 
         // For a snapshot build, append the git branch to the version string so a build made from a
         // worktree/feature branch can be told apart from one made off master. Empty for release builds

@@ -41,6 +41,14 @@ public final class DeclarationScanner {
     /** Cap on symbols from one file, so a generated monster cannot dominate the index. */
     public static final int MAX_SYMBOLS = 5_000;
 
+    /**
+     * Whether {@code language} has declaration rules at all. A caller walking a project asks this before it
+     * reads a file, so it does not pull megabytes off disk only for {@link #scan} to return nothing.
+     */
+    public static boolean supports(String language) {
+        return !DeclarationRules.forLanguage(language).isEmpty();
+    }
+
     /** The declarations in {@code text}, in document order; empty for an unsupported or oversized file. */
     public static List<Symbol> scan(String text, String language) {
         if (text == null || text.isEmpty() || text.length() > MAX_CHARS) {
@@ -109,7 +117,14 @@ public final class DeclarationScanner {
                 continue;
             }
             String name = m.group("n");
-            if (name == null || name.isEmpty() || DeclarationRules.CONTROL_KEYWORDS.contains(name)) {
+            if (name == null || name.isEmpty()) {
+                continue;
+            }
+            // Only a keyword-less pattern can mistake `if (` or `new (` for a declaration; behind a
+            // declaring keyword the name is whatever follows it — Rust's `fn new`, Python's `def match`.
+            if (rule.needsSignatureShape()
+                    && (DeclarationRules.CONTROL_KEYWORDS.contains(name)
+                            || startsWithStatementKeyword(lineText, m.start("n")))) {
                 continue;
             }
             SymbolKind kind = rule.kind();
@@ -125,6 +140,16 @@ public final class DeclarationScanner {
             return new Symbol(name, kind, line, m.start("n"), container);
         }
         return null;
+    }
+
+    /** Whether any word before the name (what the pattern took for modifiers and a type) starts a statement. */
+    private static boolean startsWithStatementKeyword(String lineText, int nameStart) {
+        for (String word : lineText.substring(0, nameStart).strip().split("\\s+")) {
+            if (DeclarationRules.STATEMENT_KEYWORDS.contains(word)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

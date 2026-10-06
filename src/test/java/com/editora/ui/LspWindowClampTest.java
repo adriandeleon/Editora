@@ -63,4 +63,17 @@ class LspWindowClampTest {
             }
         }
     }
+
+    /**
+     * A server's refresh re-requests semantic tokens and inlay hints for the active buffer only — their
+     * replies are applied to no other — while diagnostics and folding are refreshed for every managed buffer.
+     */
+    @Test
+    void aRefreshReRequestsPerBufferOnlyWhatThatBufferWouldUse() {
+        assertTrue(LspCoordinator.refreshAppliesTo("semanticTokens", true));
+        assertTrue(!LspCoordinator.refreshAppliesTo("semanticTokens", false));
+        assertTrue(!LspCoordinator.refreshAppliesTo("inlayHints", false));
+        assertTrue(LspCoordinator.refreshAppliesTo("diagnostics", false));
+        assertTrue(LspCoordinator.refreshAppliesTo("foldingRanges", false));
+    }
 }

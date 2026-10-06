@@ -23,8 +23,8 @@ import org.reactfx.Subscription;
  * live, and steps through the stops with {@link #next()}/{@link #previous()} until {@code $0}.
  *
  * <p>Field offsets are kept in sync with edits via a {@code plainTextChanges} subscription using the
- * pure {@link #shift} arithmetic (mirrors {@code BookmarkManager.shift}); programmatic mirror edits
- * are guarded by {@link #applying} to avoid reentrancy.
+ * pure {@link #shift} arithmetic; programmatic mirror edits are guarded by {@link #applying} to avoid
+ * reentrancy.
  */
 public final class SnippetSession {
 
@@ -39,6 +39,7 @@ public final class SnippetSession {
     private boolean suspended;
     private boolean externalEdit;
     private Runnable onEnd = () -> {};
+    private java.util.function.Function<CodeArea, Runnable> undoJoin = a -> () -> {};
     private ContextMenu choiceMenu;
 
     /**
@@ -53,6 +54,8 @@ public final class SnippetSession {
         final List<String> choices;
         final List<SnippetTransform> transforms;
         final int primaryIdx;
+        /** Set once the field's text was deleted with an enclosing field's: there is nothing left to visit. */
+        boolean retired;
 
         Field(int number, List<int[]> ranges, List<String> choices, List<SnippetTransform> transforms, int primaryIdx) {
             this.number = number;
@@ -88,16 +91,33 @@ public final class SnippetSession {
      * places the caret and ends.
      */
     public SnippetSession(CodeArea area, ParsedSnippet parsed, int from, int to, String indent) {
+        this(area, parsed, from, to, indent, null);
+    }
+
+    /**
+     * As above, converting the snippet's own indentation to {@code indentUnit} (the buffer's unit — a run of
+     * spaces or a tab) first; {@code null} keeps the body's tabs. Line endings are always normalised: the
+     * area stores a CRLF as one character, so offsets taken from text that still holds one would be late.
+     */
+    public SnippetSession(CodeArea area, ParsedSnippet parsed, int from, int to, String indent, String indentUnit) {
         this.area = area;
-        ParsedSnippet p = reindent(parsed, indent == null ? "" : indent);
+        ParsedSnippet p = reindent(normalize(parsed, indentUnit), indent == null ? "" : indent);
         area.replaceText(from, to, p.text());
 
         int end = from + p.text().length();
-        int[] dollarZero = {end, end};
+        // Each tracked range is {start, end, open, close}: the offsets, then the parser's nesting order
+        // (TabStop.spans). An implicit $0 at the end of the insert comes after everything.
+        int[] dollarZero = {end, end, Integer.MAX_VALUE - 1, Integer.MAX_VALUE};
+        boolean structured = true;
         for (TabStop s : p.stops()) {
+            List<int[]> spans =
+                    s.spans() != null && s.spans().size() == s.ranges().size() ? s.spans() : null;
+            structured &= spans != null;
             List<int[]> abs = new ArrayList<>();
-            for (int[] r : s.ranges()) {
-                abs.add(new int[] {from + r[0], from + r[1]});
+            for (int k = 0; k < s.ranges().size(); k++) {
+                int[] r = s.ranges().get(k);
+                int[] span = spans == null ? new int[2] : spans.get(k);
+                abs.add(new int[] {from + r[0], from + r[1], span[0], span[1]});
             }
             if (s.isFinal()) {
                 dollarZero = abs.get(0);
@@ -106,6 +126,14 @@ public final class SnippetSession {
             }
         }
         this.finalRange = dollarZero;
+        if (!structured) { // stops not built by the parser: infer the nesting from where they start out
+            List<int[]> all = allRanges();
+            int[][] inferred = inferSpans(all);
+            for (int k = 0; k < all.size(); k++) {
+                all.get(k)[2] = inferred[k][0];
+                all.get(k)[3] = inferred[k][1];
+            }
+        }
 
         if (fields.isEmpty()) {
             placeFinalCaret();
@@ -119,6 +147,11 @@ public final class SnippetSession {
 
     public void setOnEnd(Runnable onEnd) {
         this.onEnd = onEnd == null ? () -> {} : onEnd;
+    }
+
+    /** See {@link SnippetSessions#SnippetSessions(java.util.function.Function)}. */
+    void setUndoJoin(java.util.function.Function<CodeArea, Runnable> undoJoin) {
+        this.undoJoin = undoJoin == null ? a -> () -> {} : undoJoin;
     }
 
     boolean completed() {
@@ -155,8 +188,12 @@ public final class SnippetSession {
         if (ended) {
             return;
         }
-        if (active + 1 < fields.size()) {
-            active++;
+        int target = active + 1;
+        while (target < fields.size() && fields.get(target).retired) {
+            target++;
+        }
+        if (target < fields.size()) {
+            active = target;
             selectActive();
         } else {
             finish();
@@ -165,11 +202,17 @@ public final class SnippetSession {
 
     /** Goes back to the previous stop (no-op at the first). */
     public void previous() {
-        if (ended || active <= 0) {
+        if (ended) {
             return;
         }
-        active--;
-        selectActive();
+        int target = active - 1;
+        while (target >= 0 && fields.get(target).retired) {
+            target--;
+        }
+        if (target >= 0) {
+            active = target;
+            selectActive();
+        }
     }
 
     /** Ends the session, placing the caret at {@code $0}. */
@@ -225,7 +268,9 @@ public final class SnippetSession {
         hideChoiceMenu();
         Field f = fields.get(active);
         int[] r = f.primary();
-        area.selectRange(r[0], r[1]);
+        // Clamped like placeFinalCaret: an out-of-range selection is stored before RichTextFX rejects it.
+        int len = area.getLength();
+        area.selectRange(Math.max(0, Math.min(r[0], len)), Math.max(0, Math.min(r[1], len)));
         area.requestFollowCaret();
         if (!f.choices.isEmpty()) {
             showChoices(f);
@@ -359,9 +404,33 @@ public final class SnippetSession {
             cancel();
             return;
         }
+        retireSwallowed(primary, pos, removed);
         // Grow/shrink the active field and shift everything after the edit.
-        shift(allRanges(), indexOf(primary), pos, delta);
+        shift(allRanges(), indexOf(primary), pos, removed, inserted);
         if (!suspended) mirrorActive();
+    }
+
+    /**
+     * Retires every field whose whole text an edit of the active field ({@code primary}) just deleted: typing
+     * over {@code ${2: ${3:Exception} as ${4:e}}} removes {@code $3} and {@code $4} with it, and there is
+     * nothing left for Tab to visit. Only a field nested <em>in</em> the active one can be swallowed: a field
+     * that contains it ({@code ${2:${1:foo}}}, the same offsets) just shrinks with the edit. An empty stop
+     * sitting exactly at the edit position is left alone too.
+     */
+    private void retireSwallowed(int[] primary, int pos, int removed) {
+        if (removed <= 0) {
+            return;
+        }
+        for (Field f : fields) {
+            int[] r = f.primary();
+            if (r != primary
+                    && r[2] > primary[2]
+                    && r[3] < primary[3]
+                    && swallowed(r, pos, removed)
+                    && (r[1] > r[0] || r[0] > pos)) {
+                f.retired = true;
+            }
+        }
     }
 
     /**
@@ -427,11 +496,22 @@ public final class SnippetSession {
         // Re-derive every tracked range: each occurrence (in document order) changes from its old length to its
         // derived text's length. shift() mutates the arrays in place, so by the time we reach a later occurrence
         // its start is already in current coordinates — read o[0] directly (no cumulative-delta double-count).
+        // The primary is described by the edit the user actually made inside it, so ranges nested in the
+        // untouched part of the field keep their place; a mirror is rewritten whole.
+        retireSwallowed(p, from, to - from);
         List<int[]> all = allRanges();
         for (int i : order) {
             int[] o = f.ranges.get(i);
-            int newLen = f.textFor(i, newPrimary).length();
-            shift(all, all.indexOf(o), o[0], newLen - (o[1] - o[0]));
+            if (o == p) {
+                shift(all, all.indexOf(o), o[0] + relFrom, to - from, replacement.length());
+            } else {
+                shift(
+                        all,
+                        all.indexOf(o),
+                        o[0],
+                        o[1] - o[0],
+                        f.textFor(i, newPrimary).length());
+            }
         }
         int caret = p[0] + relFrom + replacement.length(); // p[0] was shifted in place by the loop above
         area.moveTo(Math.min(caret, area.getLength()));
@@ -496,6 +576,9 @@ public final class SnippetSession {
         int caretInField = restoreCaret ? clamp(area.getCaretPosition() - primary[0], 0, primary[1] - primary[0]) : 0;
         int anchorInField = restoreCaret ? clamp(area.getAnchor() - primary[0], 0, primary[1] - primary[0]) : 0;
         applying = true;
+        // The mirrors belong to the edit that changed the field (a Backspace, a paste): one undo step, or the
+        // first Ctrl-Z reverts a mirror only and leaves the document half-reverted.
+        Runnable endUndoJoin = null;
         try {
             if (restoreCaret) {
                 area.moveTo(0);
@@ -510,24 +593,17 @@ public final class SnippetSession {
                 if (oldLen == text.length() && area.getText(m[0], m[1]).equals(text)) {
                     continue;
                 }
-                area.replaceText(m[0], m[1], text);
-                int mdelta = text.length() - oldLen;
-                int editEnd = m[0] + oldLen;
-                m[1] = m[0] + text.length();
-                for (int[] r : allRanges()) {
-                    if (r == m) {
-                        continue;
-                    }
-                    if (r[0] >= editEnd) {
-                        r[0] += mdelta;
-                    }
-                    if (r[1] >= editEnd) {
-                        r[1] += mdelta;
-                    }
+                if (endUndoJoin == null) {
+                    endUndoJoin = undoJoin.apply(area);
                 }
+                area.replaceText(m[0], m[1], text);
+                shift(allRanges(), indexOf(m), m[0], oldLen, text.length());
             }
         } finally {
             applying = false;
+            if (endUndoJoin != null) {
+                endUndoJoin.run();
+            }
         }
         if (restoreCaret) {
             int[] pr = f.primary(); // offsets may have shifted if a mirror before it changed length
@@ -561,23 +637,171 @@ public final class SnippetSession {
     }
 
     /**
-     * Pure offset arithmetic for an edit replacing text at {@code editPos} with a net {@code delta}
-     * length change: every range after the edit shifts by {@code delta}, and the active primary
-     * (at {@code activePrimaryIdx}) grows even when the edit is at its end. A range's start moves only
-     * when strictly after the edit; its end moves when after the edit, or when it is the active
-     * primary's end exactly at the edit position (so typing at the field end extends it).
+     * Pure offset arithmetic for an edit inside the range at {@code activePrimaryIdx} (the active field, or a
+     * mirror being rewritten) that replaced {@code removed} characters at {@code editPos} with
+     * {@code inserted} characters.
+     *
+     * <p>What happens to another range depends on where it stands relative to the edited one, which offsets
+     * alone cannot say once ranges touch or coincide — {@code ${2:${1}foo}} and {@code ${1}${2:foo}} start
+     * out with identical offsets. So each range may carry the parser's nesting order in slots 2 and 3
+     * ({@link TabStop#spans()}); for plain {@code {start, end}} ranges it is inferred from the offsets.
+     *
+     * <ul>
+     *   <li>The <b>edited range</b> keeps its start and its end follows the edit — including an insertion
+     *       exactly at its end, which extends it.</li>
+     *   <li>A range that <b>contains</b> it keeps its start and its end moves by the net change, so a parent
+     *       placeholder still covers what was typed in a stop nested at its very start, and a stop whose
+     *       default is a mirror ({@code ${4:$1}}) follows that mirror instead of collapsing.</li>
+     *   <li>A range <b>before</b> it stays; one <b>after</b> it moves by the net change — which is what keeps
+     *       the next field, or {@code $0}, behind text typed at the end of the one before it.</li>
+     *   <li>A range <b>nested in</b> it: an offset before the edit stays, one at or after the end of the
+     *       removed text moves by the net change, and one inside the removed text collapses to the edit
+     *       position; a range the removal swallowed whole becomes empty there. An empty stop at the very end
+     *       is pushed by text typed at that end.</li>
+     * </ul>
      */
-    public static void shift(List<int[]> ranges, int activePrimaryIdx, int editPos, int delta) {
+    public static void shift(List<int[]> ranges, int activePrimaryIdx, int editPos, int removed, int inserted) {
+        int removedEnd = editPos + removed;
+        int delta = inserted - removed;
+        boolean hasActive = activePrimaryIdx >= 0 && activePrimaryIdx < ranges.size();
+        boolean atActiveEnd = removed == 0 && hasActive && ranges.get(activePrimaryIdx)[1] == editPos;
+        int[][] spans = spansOf(ranges);
+        int[] active = hasActive ? spans[activePrimaryIdx] : null;
         for (int i = 0; i < ranges.size(); i++) {
             int[] r = ranges.get(i);
-            if (r[0] > editPos) {
-                r[0] += delta;
-            }
-            boolean activePrimary = i == activePrimaryIdx;
-            if (r[1] > editPos || (activePrimary && r[1] == editPos)) {
+            int[] span = spans[i];
+            if (i == activePrimaryIdx) {
+                r[0] = moved(r[0], editPos, removedEnd, delta);
+                r[1] = r[1] == editPos ? editPos + inserted : moved(r[1], editPos, removedEnd, delta);
+            } else if (active != null && span[0] < active[0] && span[1] > active[1]) {
+                r[1] += delta; // contains the edited range
+            } else if (active != null && span[1] < active[0]) {
+                continue; // before it
+            } else if (active != null && span[0] > active[1]) {
+                r[0] += delta; // after it
                 r[1] += delta;
+            } else if (atActiveEnd && r[0] == editPos) {
+                r[0] += inserted;
+                r[1] += inserted;
+            } else if (swallowed(r, editPos, removed)) {
+                r[0] = editPos;
+                r[1] = editPos;
+            } else {
+                r[0] = moved(r[0], editPos, removedEnd, delta);
+                r[1] = moved(r[1], editPos, removedEnd, delta);
             }
         }
+    }
+
+    /** Each range's {@code {open, close}} nesting order: slots 2 and 3 when every range has them, else inferred. */
+    private static int[][] spansOf(List<int[]> ranges) {
+        for (int[] r : ranges) {
+            if (r.length < 4) {
+                return inferSpans(ranges);
+            }
+        }
+        int[][] out = new int[ranges.size()][];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = new int[] {ranges.get(i)[2], ranges.get(i)[3]};
+        }
+        return out;
+    }
+
+    /**
+     * Nesting order read off the offsets, for ranges that did not come from the parser: a non-empty range
+     * contains every later-listed range lying within it; everything else is ordered by position, ties by
+     * list order.
+     */
+    static int[][] inferSpans(List<int[]> ranges) {
+        List<Integer> order = new ArrayList<>();
+        for (int i = 0; i < ranges.size(); i++) {
+            order.add(i);
+        }
+        order.sort((x, y) -> {
+            int[] a = ranges.get(x);
+            int[] b = ranges.get(y);
+            if (a[0] != b[0]) {
+                return Integer.compare(a[0], b[0]);
+            }
+            return a[1] != b[1] ? Integer.compare(b[1], a[1]) : Integer.compare(x, y);
+        });
+        int[][] out = new int[ranges.size()][2];
+        java.util.ArrayDeque<Integer> open = new java.util.ArrayDeque<>();
+        int seq = 0;
+        for (int i : order) {
+            int[] r = ranges.get(i);
+            while (!open.isEmpty()) {
+                int[] top = ranges.get(open.peek());
+                if (top[1] > top[0] && r[1] <= top[1]) {
+                    break; // still inside the innermost open range
+                }
+                out[open.pop()][1] = seq++;
+            }
+            out[i][0] = seq++;
+            open.push(i);
+        }
+        while (!open.isEmpty()) {
+            out[open.pop()][1] = seq++;
+        }
+        return out;
+    }
+
+    /** Where {@code offset} lands: unchanged up to the edit, collapsed inside the removal, shifted after it. */
+    private static int moved(int offset, int editPos, int removedEnd, int delta) {
+        if (offset <= editPos) {
+            return offset;
+        }
+        return offset >= removedEnd ? offset + delta : editPos;
+    }
+
+    /** True when {@code range} lies wholly inside the {@code removed} characters at {@code editPos}. */
+    private static boolean swallowed(int[] range, int editPos, int removed) {
+        return removed > 0 && range[0] >= editPos && range[0] < editPos + removed && range[1] <= editPos + removed;
+    }
+
+    /**
+     * Makes a parsed snippet fit the buffer it is going into, shifting stop ranges: {@code \r\n} and a lone
+     * {@code \r} become {@code \n} (wherever they came from — the body, a {@code $CLIPBOARD} value, a
+     * server's text), and, when {@code indentUnit} is given and is not a tab, each tab that indents a line is
+     * replaced by that unit — in the snippet format a leading tab means "one indent level", not a tab
+     * character. Tabs after the first non-tab character of a line are text and are kept. Pure.
+     */
+    public static ParsedSnippet normalize(ParsedSnippet parsed, String indentUnit) {
+        String t = parsed.text();
+        boolean tabs = indentUnit != null && !indentUnit.isEmpty() && !indentUnit.equals("\t") && t.indexOf('\t') >= 0;
+        if (!tabs && t.indexOf('\r') < 0) {
+            return parsed;
+        }
+        int[] map = new int[t.length() + 1]; // old offset → new offset
+        StringBuilder sb = new StringBuilder(t.length() + 16);
+        boolean lineStart = true;
+        for (int k = 0; k < t.length(); k++) {
+            map[k] = sb.length();
+            char c = t.charAt(k);
+            if (c == '\r') {
+                if (k + 1 < t.length() && t.charAt(k + 1) == '\n') {
+                    continue; // the '\n' that follows is the line break
+                }
+                c = '\n';
+            }
+            if (c == '\t' && tabs && lineStart) {
+                sb.append(indentUnit);
+                continue;
+            }
+            sb.append(c);
+            lineStart = c == '\n';
+        }
+        map[t.length()] = sb.length();
+        List<TabStop> stops = new ArrayList<>();
+        for (TabStop s : parsed.stops()) {
+            List<int[]> rs = new ArrayList<>();
+            for (int[] r : s.ranges()) {
+                rs.add(new int[] {map[r[0]], map[r[1]]});
+            }
+            stops.add(new TabStop(
+                    s.number(), rs, s.placeholder(), s.choices(), s.transforms(), s.primaryIndex(), s.spans()));
+        }
+        return new ParsedSnippet(sb.toString(), stops);
     }
 
     /** Re-indents continuation lines of a parsed snippet to {@code indent}, shifting stop ranges. Pure. */
@@ -608,7 +832,8 @@ public final class SnippetSession {
             // Keep choices, transforms AND primaryIndex through re-indent: the 3-/4-arg ctors drop them, which
             // would lose a multi-line choice field's dropdown or a transform occurrence's derivation. Range
             // order is unchanged (offsets only shift), so primaryIndex still points at the same occurrence.
-            stops.add(new TabStop(s.number(), rs, s.placeholder(), s.choices(), s.transforms(), s.primaryIndex()));
+            stops.add(new TabStop(
+                    s.number(), rs, s.placeholder(), s.choices(), s.transforms(), s.primaryIndex(), s.spans()));
         }
         return new ParsedSnippet(sb.toString(), stops);
     }

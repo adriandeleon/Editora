@@ -514,6 +514,32 @@ class ChromeTest {
     }
 
     /**
+     * Restart on a debugger attached to a build or test run only reported that it could not be done; the
+     * command stayed lit. It is now grayed for such a session — and only it: Stop and Pause still apply.
+     */
+    @Test
+    void restartIsGrayedWithItsReasonForASessionThatCannotBeRestarted() {
+        Chrome.PaletteContext attached =
+                new Chrome.PaletteContext(true, true, true, true, true, true, true, true, false, false);
+        assertFalse(Chrome.contextEnabled("debug.restart", attached));
+        assertEquals(
+                "status.debug.cannotRestartAttached",
+                Chrome.disabledReason("debug.restart", allOn(), attached).messageKey());
+        assertTrue(Chrome.contextEnabled("debug.stop", attached));
+        assertTrue(Chrome.contextEnabled("debug.pause", attached));
+
+        Chrome.PaletteContext launched =
+                new Chrome.PaletteContext(true, true, true, true, true, true, true, true, false, true);
+        assertTrue(Chrome.contextEnabled("debug.restart", launched));
+        // With no session at all the more basic reason is given, whatever the last session was.
+        Chrome.PaletteContext ended =
+                new Chrome.PaletteContext(true, true, true, true, true, true, true, false, false, false);
+        assertEquals(
+                "palette.disabled.needsDebugSession",
+                Chrome.disabledReason("debug.restart", allOn(), ended).messageKey());
+    }
+
+    /**
      * A switched-off feature outranks a missing context: telling someone to open a Markdown file when the
      * Markdown-lint feature itself is off would send them nowhere.
      */

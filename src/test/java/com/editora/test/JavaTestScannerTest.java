@@ -133,4 +133,29 @@ class JavaTestScannerTest {
         assertTrue(JavaTestScanner.scan("").isEmpty());
         assertTrue(JavaTestScanner.scan(null).isEmpty());
     }
+
+    @Test
+    void nonAsciiTestAndClassNamesAreFound() {
+        String src = """
+                package demo;
+                class GrößeTest {
+                    @Test
+                    void plainAscii() {}
+                    @Test
+                    void größeIstKorrekt() {}
+                    @Test
+                    void 正常系_ログインできる() {}
+                    @Test
+                    void test_ログイン() {}
+                }
+                """;
+        java.util.List<JavaTestScanner.TestTarget> targets = JavaTestScanner.scan(src);
+        assertEquals("demo.GrößeTest", targets.get(0).className());
+        assertEquals(
+                java.util.List.of("plainAscii", "größeIstKorrekt", "正常系_ログインできる", "test_ログイン"),
+                targets.stream()
+                        .skip(1)
+                        .map(JavaTestScanner.TestTarget::methodName)
+                        .toList());
+    }
 }

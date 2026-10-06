@@ -103,4 +103,14 @@ class HistoryQueriesTest {
         HistoryRevision named = rev("/a.txt", 1, HistoryRevision.REASON_LABEL, "v1.0");
         assertEquals("v1.0", named.label());
     }
+
+    @Test
+    void everythingIsUnderTheFilesystemRoot() {
+        assertTrue(HistoryQueries.isUnder("/a.txt", "/"));
+        assertTrue(HistoryQueries.isUnder("/foo/a.txt", "/"));
+        assertFalse(HistoryQueries.isUnder("/", "/"));
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        bucket.put("/foo/a.txt", List.of(rev("/foo/a.txt", 1, HistoryRevision.REASON_SAVE, "")));
+        assertEquals(bucket, HistoryQueries.folderRevisions(bucket, "/"));
+    }
 }

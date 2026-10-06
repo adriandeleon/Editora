@@ -63,17 +63,58 @@ final class DeclarationRules {
             "defer",
             "go");
 
+    /**
+     * Words that begin a statement, never a declaration. The keyword-less member pattern reads the text
+     * before the name as a return type, and {@code return compute();}, {@code throw new Failure(…);},
+     * {@code else doIt();} or {@code await FooAsync();} all fit that shape — each used to be indexed as
+     * a method, against this scanner's own rule that it may miss a declaration but never invent one.
+     */
+    static final java.util.Set<String> STATEMENT_KEYWORDS = java.util.Set.of(
+            "return",
+            "throw",
+            "new",
+            "else",
+            "yield",
+            "await",
+            "case",
+            "goto",
+            "delete",
+            "using",
+            "do",
+            "assert",
+            "typeof",
+            "sizeof",
+            "in",
+            "instanceof");
+
     private static Rule rule(String regex, SymbolKind kind) {
-        return new Rule(Pattern.compile(regex), kind, false);
+        return new Rule(Pattern.compile(unicodeWords(regex)), kind, false);
     }
 
     /** A rule whose pattern has no declaring keyword, so the line's shape must confirm it. */
     private static Rule signatureRule(String regex, SymbolKind kind) {
-        return new Rule(Pattern.compile(regex), kind, true);
+        return new Rule(Pattern.compile(unicodeWords(regex)), kind, true);
     }
 
-    /** An identifier as most C-family languages spell it. */
-    private static final String ID = "[A-Za-z_$][A-Za-z0-9_$]*";
+    /**
+     * {@code \w} is ASCII-only in {@code java.util.regex}, so a name was cut at its first non-ASCII letter
+     * ({@code def größe} indexed as {@code gr}). Widened here, for every rule at once, to any letter or digit.
+     */
+    private static String unicodeWords(String regex) {
+        return regex.replace("\\w", "[\\p{L}\\p{N}_]");
+    }
+
+    /** An identifier as most C-family languages spell it (any letter, not just ASCII: {@code class Café}). */
+    private static final String ID = "[\\p{L}_$][\\p{L}\\p{N}_$]*";
+
+    /**
+     * A type as it appears before a declared name: one or more whitespace-separated runs of type
+     * characters ({@code Map<String, Integer>}, {@code int[]}, {@code ? extends T}), starting with a
+     * letter. The runs and the gaps are possessive: a blanked string literal leaves a line that is mostly
+     * spaces, and a single greedy class that also contained the space backtracked quadratically over it —
+     * 2.5 s for one 20 KB literal, on the index thread and on the FX thread at every save.
+     */
+    private static final String TYPE = "(?=[A-Za-z_$])(?:[A-Za-z0-9_$.<>\\[\\],?]++\\s++)+";
 
     /**
      * A Java/C-family member declaration. Conservative by construction: the line must look like a
@@ -84,7 +125,7 @@ final class DeclarationRules {
     private static final String JAVA_MEMBER = "^\\s*(?:@" + ID + "(?:\\([^)]*\\))?\\s+)*"
             + "(?:(?:public|protected|private|static|final|abstract|synchronized|native|strictfp|default|transient|volatile)\\s+)*"
             + "(?:<[^>]*>\\s*)?"
-            + "[A-Za-z_$][A-Za-z0-9_$.<>\\[\\], ?]*\\s+"
+            + TYPE
             + "(?<n>" + ID + ")\\s*\\(";
 
     /**
@@ -105,8 +146,8 @@ final class DeclarationRules {
             // A field: a typed name that is assigned or declared, with a modifier to keep it off local
             // variables inside method bodies (which brace depth alone cannot distinguish cheaply).
             rule(
-                    "^\\s*(?:(?:public|protected|private|static|final|transient|volatile)\\s+)+"
-                            + "[A-Za-z_$][A-Za-z0-9_$.<>\\[\\], ?]*\\s+(?<n>" + ID + ")\\s*(?:=|;)",
+                    "^\\s*(?:(?:public|protected|private|static|final|transient|volatile)\\s+)+" + TYPE + "(?<n>" + ID
+                            + ")\\s*(?:=|;)",
                     SymbolKind.FIELD));
 
     private static final List<Rule> KOTLIN = List.of(
@@ -155,8 +196,9 @@ final class DeclarationRules {
 
     private static final List<Rule> C = List.of(
             rule("(?:^|\\s)(?:struct|union|class)\\s+(?<n>" + ID + ")\\s*[{:]", SymbolKind.TYPE),
-            rule("(?:^|\\s)enum\\s+(?:class\\s+)?(?<n>" + ID + ")", SymbolKind.ENUM),
-            rule("(?:^|\\s)namespace\\s+(?<n>" + ID + ")", SymbolKind.MODULE),
+            // `enum Color c = RED;` uses the enum and `using namespace std;` imports one: neither declares.
+            rule("(?:^|\\s)enum\\s+(?:class\\s+)?(?<n>" + ID + ")\\s*(?:[{:]|$)", SymbolKind.ENUM),
+            rule("(?:^|\\s)(?<!using\\s)namespace\\s+(?<n>" + ID + ")", SymbolKind.MODULE),
             rule("^\\s*typedef\\s+.*\\s(?<n>" + ID + ")\\s*;", SymbolKind.TYPE),
             signatureRule(JAVA_MEMBER, SymbolKind.FUNCTION));
 

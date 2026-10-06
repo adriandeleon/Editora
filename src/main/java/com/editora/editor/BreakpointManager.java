@@ -20,7 +20,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * <p>The line-shift arithmetic ({@link #shift}) and re-anchoring ({@link #reanchor}) are pure static
  * methods so they can be unit-tested without a JavaFX toolkit.
  */
-public final class BreakpointManager {
+public final class BreakpointManager implements LineMarks.Carrier {
 
     public static final int MAX_REANCHOR_SCAN = 2000;
 
@@ -31,13 +31,46 @@ public final class BreakpointManager {
     private Runnable onChanged = () -> {};
     private java.util.function.Consumer<java.util.Collection<Integer>> onLinesRepaint = c -> {};
     private boolean restoring;
+    /** The change being reported came from a text edit moving / re-texting marks, not from the user's own action. */
+    private boolean editDriven;
+    /** True while a narrow/widen text swap runs: the swap is not an edit, so nothing is shifted through it. */
+    private boolean swapping;
+    /** A marked line's text changed since the last {@link #snapshot()} (reported once, not per keystroke). */
+    private boolean textStale;
+    /** While narrowed, the breakpoints outside the region (in whole-document lines); {@code null} otherwise. */
+    private LineMarks.Held<Breakpoint> held;
+
+    private static final LineMarks.Kind<Breakpoint> KIND = new LineMarks.Kind<>() {
+        @Override
+        public int line(Breakpoint mark) {
+            return mark.line();
+        }
+
+        @Override
+        public String lineText(Breakpoint mark) {
+            return mark.lineText();
+        }
+
+        @Override
+        public Breakpoint withLine(Breakpoint mark, int line) {
+            return mark.withLine(line);
+        }
+
+        @Override
+        public Breakpoint withLineText(Breakpoint mark, String lineText) {
+            return mark.withLineText(lineText);
+        }
+    };
 
     public BreakpointManager(CodeArea area) {
         this.area = area;
-        area.plainTextChanges().subscribe(this::onTextChange);
+        area.multiPlainChanges().subscribe(this::onTextChanges);
     }
 
     /** Notified after any change (toggle/edit-driven shift) for persistence + live re-send to a session. */
+    /** See {@link #setLive}. */
+    private java.util.Map<Integer, Live> live;
+
     public void setOnChanged(Runnable onChanged) {
         this.onChanged = onChanged == null ? () -> {} : onChanged;
     }
@@ -49,6 +82,90 @@ public final class BreakpointManager {
 
     public boolean isBreakpoint(int line) {
         return byLine.containsKey(line);
+    }
+
+    /** How a live debug session regards a breakpoint — the gutter draws anything but {@link #VERIFIED} hollow. */
+    public enum LiveState {
+        /** The adapter bound it: it will stop here. */
+        VERIFIED,
+        /** Not bound (yet): its code is not loaded, or the adapter has not answered. */
+        PENDING,
+        /** The adapter refused it, or could not evaluate its condition. */
+        REJECTED
+    }
+
+    /** A breakpoint's {@link LiveState} with the text to show on hover (may be empty). */
+    public record Live(LiveState state, String tooltip) {}
+
+    /**
+     * What the live debug session says about this buffer's breakpoints, by <em>whole-document</em> line
+     * (as {@link #documentSnapshot()} numbers them); {@code null} when no session is live, which is when a
+     * breakpoint simply looks like itself. An enabled breakpoint with no entry is {@link LiveState#PENDING}.
+     */
+    public void setLive(java.util.Map<Integer, Live> byDocumentLine) {
+        java.util.Map<Integer, Live> next = byDocumentLine == null ? null : java.util.Map.copyOf(byDocumentLine);
+        if (!java.util.Objects.equals(live, next)) {
+            live = next;
+            onLinesRepaint.accept(new ArrayList<>(byLine.keySet()));
+        }
+    }
+
+    /** The live-session state of the breakpoint on (view) {@code line}; null with no session or none to tell. */
+    public Live live(int line) {
+        Breakpoint bp = byLine.get(line);
+        if (live == null || bp == null || !bp.enabled()) {
+            return null; // a disabled breakpoint is never sent to the adapter
+        }
+        Live known = live.get(line + regionFirstLine());
+        return known == null ? UNANSWERED : known;
+    }
+
+    private static final Live UNANSWERED = new Live(LiveState.PENDING, "");
+
+    /**
+     * The gutter glyph's extra CSS classes for the breakpoint on {@code line}, space-separated and without
+     * the {@code breakpoint-} prefix: its kind (disabled / logpoint / conditional) and, while a session is
+     * live, {@code unverified} or {@code unverified rejected}. Null for a plain breakpoint.
+     */
+    public String styleClasses(int line) {
+        Breakpoint bp = byLine.get(line);
+        if (bp == null) {
+            return null;
+        }
+        String kind =
+                !bp.enabled() ? "disabled" : bp.isLogpoint() ? "logpoint" : bp.isConditional() ? "conditional" : null;
+        Live state = live(line);
+        if (state == null || state.state() == LiveState.VERIFIED) {
+            return kind;
+        }
+        String unverified = state.state() == LiveState.REJECTED ? "unverified rejected" : "unverified";
+        return kind == null ? unverified : kind + " " + unverified;
+    }
+
+    /** The hover text of the breakpoint on {@code line}: what the debug session says about it, else null. */
+    public String tooltip(int line) {
+        Live state = live(line);
+        return state == null || state.tooltip() == null || state.tooltip().isBlank() ? null : state.tooltip();
+    }
+
+    /**
+     * Moves the breakpoint on document line {@code from} to {@code to} — the line the debug adapter actually
+     * bound it to. Returns false (and changes nothing) when there is none to move, {@code to} already has
+     * one, or either line is outside the narrowed region.
+     */
+    public boolean moveDocumentLine(int from, int to) {
+        int first = regionFirstLine();
+        int viewFrom = from - first;
+        int viewTo = to - first;
+        Breakpoint bp = byLine.get(viewFrom);
+        if (bp == null || viewTo < 0 || viewTo >= area.getParagraphs().size() || byLine.containsKey(viewTo)) {
+            return false;
+        }
+        byLine.remove(viewFrom);
+        byLine.put(viewTo, bp.withLine(viewTo).withLineText(captureLineText(viewTo)));
+        onLinesRepaint.accept(List.of(viewFrom, viewTo));
+        fireChanged();
+        return true;
     }
 
     public Breakpoint get(int line) {
@@ -112,15 +229,39 @@ public final class BreakpointManager {
     }
 
     public void clear() {
-        if (!byLine.isEmpty()) {
+        boolean heldAny =
+                held != null && !(held.before().isEmpty() && held.after().isEmpty());
+        if (!byLine.isEmpty() || heldAny) {
             byLine = new TreeMap<>();
+            held = held == null ? null : held.emptied();
             fireChanged();
         }
     }
 
     /** A sorted snapshot of this buffer's breakpoints (for persistence + sending to a DAP session). */
     public List<Breakpoint> snapshot() {
+        textStale = false;
         return new ArrayList<>(byLine.values());
+    }
+
+    /**
+     * The breakpoints in <em>whole-document</em> lines, whether or not the buffer is narrowed — what a debug
+     * adapter needs. While narrowed, {@link #snapshot()} holds only the region's breakpoints with
+     * region-relative lines; sending those armed the wrong lines and dropped every breakpoint outside the
+     * region.
+     */
+    public List<Breakpoint> documentSnapshot() {
+        if (held == null) {
+            return snapshot();
+        }
+        return new ArrayList<>(LineMarks.release(
+                        held, byLine.values(), KIND, area.getParagraphs().size())
+                .values());
+    }
+
+    /** The whole-document line of the narrowed region's first line (0 when not narrowed). */
+    public int regionFirstLine() {
+        return held == null ? 0 : held.firstLine();
     }
 
     /**
@@ -131,6 +272,7 @@ public final class BreakpointManager {
      */
     public boolean restore(List<Breakpoint> saved) {
         restoring = true;
+        dropped.clear();
         try {
             byLine = reanchor(
                     saved,
@@ -257,43 +399,63 @@ public final class BreakpointManager {
     }
 
     private static String textAt(java.util.function.IntFunction<String> lineTextAt, int line) {
-        String t = lineTextAt.apply(line);
-        return t == null ? "" : t.strip();
+        return LineMarks.snapshotText(lineTextAt.apply(line));
     }
 
-    private void onTextChange(PlainTextChange change) {
-        if (byLine.isEmpty()) {
-            return; // hot-path early-out
+    /**
+     * Whether the change now being reported through {@link #setOnChanged} was caused by a text edit (lines
+     * shifting under the breakpoints, a marked line retyped) rather than by a toggle / edit of a breakpoint.
+     * Edits arrive per keystroke and may be persisted lazily; a user's own change must not wait.
+     */
+    public boolean isEditDriven() {
+        return editDriven;
+    }
+
+    private void onTextChanges(List<PlainTextChange> changes) {
+        if (swapping || (byLine.isEmpty() && dropped.isEmpty())) {
+            return; // hot-path early-out: nothing to track
         }
-        var pos = area.offsetToPosition(change.getPosition(), Bias.Forward);
-        int startLine = pos.getMajor();
-        boolean atLineStart = pos.getMinor() == 0;
-        int removedNL = countNewlines(change.getRemoved());
-        int insertedNL = countNewlines(change.getInserted());
-        if (removedNL == 0 && insertedNL == 0) {
-            return; // intra-line edit
+        editDriven = true;
+        try {
+            trackEdit(changes);
+        } finally {
+            editDriven = false;
         }
-        NavigableMap<Integer, Breakpoint> shifted = shift(
-                byLine,
-                startLine,
-                atLineStart,
-                removedNL,
-                insertedNL,
-                area.getParagraphs().size());
-        if (!shifted.equals(byLine)) {
+    }
+
+    private void trackEdit(List<PlainTextChange> changes) {
+        LineMarkTracker.Result<Breakpoint> result = LineMarkTracker.apply(byLine, KIND, changes, area);
+        if (result.moved()) {
+            rememberDropped(byLine, result.marks());
+        }
+        NavigableMap<Integer, Breakpoint> revived = revive(result.marks(), changes);
+        if (revived != null) {
+            result = new LineMarkTracker.Result<>(revived, true, result.retexted());
+        }
+        if (result.moved()) {
+            // Both the vacated and the new lines need their gutter markers repainted: the document edit
+            // already rebuilds those graphics, but with the pre-shift set, so the moved marker would
+            // otherwise vanish until the next manual refresh.
             java.util.Set<Integer> affected = new java.util.HashSet<>(byLine.keySet());
-            affected.addAll(shifted.keySet());
-            byLine = shifted;
+            affected.addAll(result.marks().keySet());
+            byLine = result.marks();
             fireChanged();
             onLinesRepaint.accept(affected);
+        } else if (result.retexted()) {
+            // Only a marked line's own text changed. Typing on such a line does this per keystroke, so the
+            // change is reported once and the fresh text is picked up by the next snapshot().
+            byLine = result.marks();
+            if (!textStale) {
+                textStale = true;
+                fireChanged();
+            }
         }
     }
 
     /**
-     * Pure line-shift arithmetic (no toolkit). Breakpoints follow their content (forward gravity): an
-     * edit at {@code startLine} that adds/removes newlines moves breakpoints below it by the net line
-     * delta, a breakpoint on the edited line moves when the edit is at the line start, and breakpoints in
-     * a deleted line span are dropped. Mirrors {@link BookmarkManager#shift}.
+     * Pure line-shift arithmetic (no toolkit): breakpoints follow their content as lines are inserted, deleted,
+     * joined or rewritten. The rules live in {@link LineMarks#shift}, shared with the other line-pinned
+     * marks; this overload has no document text, so a rewritten span of a different length only clamps.
      */
     public static NavigableMap<Integer, Breakpoint> shift(
             NavigableMap<Integer, Breakpoint> current,
@@ -302,30 +464,117 @@ public final class BreakpointManager {
             int removedNL,
             int insertedNL,
             int paragraphCount) {
-        int delta = insertedNL - removedNL;
-        int pivot = atLineStart ? startLine - 1 : startLine;
-        int removedEndLine = pivot + removedNL;
-        // When the deletion starts MID-line (not at column 0), the last line it touches isn't fully deleted —
-        // its trailing content merges onto the edit, i.e. a line-join (Backspace at column 0, or Delete at a
-        // line's end). A breakpoint on that join line must follow its surviving content to pivot+insertedNL,
-        // not vanish — otherwise you'd set a breakpoint, join the line above, and silently debug without it.
-        // (For an at-line-start deletion the last removed line's content really is gone; its successor is the
-        // survivor and the shift branch below already handles that, so this only applies when !atLineStart.)
-        boolean joinSurvives = !atLineStart && removedNL > 0;
-        int maxLine = Math.max(0, paragraphCount - 1);
-        NavigableMap<Integer, Breakpoint> out = new TreeMap<>();
-        for (Breakpoint bp : current.values()) {
-            int line = bp.line();
-            if (line <= pivot) {
-                out.put(line, bp);
-            } else if (line == removedEndLine && joinSurvives) {
-                int moved = Math.min(Math.max(pivot + insertedNL, 0), maxLine);
-                out.put(moved, bp.withLine(moved));
-            } else if (line <= removedEndLine) {
-                continue; // inside the deleted span
-            } else {
-                int moved = Math.min(Math.max(line + delta, 0), maxLine);
-                out.put(moved, bp.withLine(moved));
+        return LineMarks.shift(current, KIND, startLine, atLineStart, removedNL, insertedNL, paragraphCount, null);
+    }
+
+    /**
+     * Carries the breakpoints across the narrowing swap: those in the region are rebased onto it, the rest are
+     * held aside in whole-document lines until {@link #widen}. Nothing is reported as changed — the
+     * breakpoints have not moved in the file, and their region-relative lines must not be persisted.
+     */
+    @Override
+    public void narrow(int start, int end, Runnable swap) {
+        int firstLine = area.offsetToPosition(start, Bias.Forward).getMajor();
+        int lastLine = area.offsetToPosition(end, Bias.Forward).getMajor();
+        java.util.Set<Integer> affected = new java.util.HashSet<>(byLine.keySet());
+        NavigableMap<Integer, Breakpoint> inside = new TreeMap<>();
+        LineMarks.Held<Breakpoint> outside = LineMarks.hold(byLine.values(), KIND, firstLine, lastLine, inside);
+        runSwap(swap);
+        held = outside;
+        byLine = inside;
+        affected.addAll(byLine.keySet());
+        onLinesRepaint.accept(affected);
+    }
+
+    /** Puts the held breakpoints back around the region's own, in whole-document lines, and reports the change. */
+    @Override
+    public void widen(Runnable swap) {
+        int regionLines = area.getParagraphs().size();
+        java.util.Set<Integer> affected = new java.util.HashSet<>(byLine.keySet());
+        runSwap(swap);
+        if (held == null) {
+            return;
+        }
+        byLine = LineMarks.release(held, byLine.values(), KIND, regionLines);
+        held = null;
+        affected.addAll(byLine.keySet());
+        fireChanged();
+        onLinesRepaint.accept(affected);
+    }
+
+    private void runSwap(Runnable swap) {
+        swapping = true;
+        try {
+            swap.run();
+        } finally {
+            swapping = false;
+        }
+    }
+
+    /** How many deleted lines' breakpoints are remembered for an undo / a paste to bring back. */
+    private static final int MAX_DROPPED = 32;
+
+    /**
+     * Breakpoints whose line was deleted, newest last. Deleting the line drops the breakpoint — but Undo, or
+     * pasting a line that was cut to move it, puts the very same text back, and the breakpoint (with its
+     * condition and log message) belongs to that text. See {@link #revive}.
+     */
+    private final java.util.ArrayDeque<Breakpoint> dropped = new java.util.ArrayDeque<>();
+
+    private void rememberDropped(NavigableMap<Integer, Breakpoint> before, NavigableMap<Integer, Breakpoint> after) {
+        if (after.size() >= before.size()) {
+            return;
+        }
+        List<Breakpoint> left = new ArrayList<>(after.values());
+        for (Breakpoint was : before.values()) {
+            boolean kept = left.removeIf(now -> now.lineText().equals(was.lineText())
+                    && now.condition().equals(was.condition())
+                    && now.logMessage().equals(was.logMessage()));
+            if (!kept && !was.lineText().isEmpty()) {
+                dropped.addLast(was);
+                if (dropped.size() > MAX_DROPPED) {
+                    dropped.removeFirst();
+                }
+            }
+        }
+    }
+
+    /**
+     * Puts back the breakpoints of deleted lines that this edit re-inserted: an insertion whose text contains
+     * a dropped breakpoint's line, landing on a line that now reads exactly that. Returns the marks with them
+     * added, or {@code null} when nothing came back. Typing never matches — the inserted text itself must
+     * hold the whole line, which only an undo, a redo or a paste does.
+     */
+    private NavigableMap<Integer, Breakpoint> revive(
+            NavigableMap<Integer, Breakpoint> marks, List<PlainTextChange> changes) {
+        if (dropped.isEmpty() || changes.size() != 1) {
+            return null;
+        }
+        String inserted = changes.get(0).getInserted();
+        if (inserted.indexOf('\n') < 0) {
+            return null;
+        }
+        int first = area.offsetToPosition(Math.min(changes.get(0).getPosition(), area.getLength()), Bias.Forward)
+                .getMajor();
+        int last = Math.min(area.getParagraphs().size() - 1, first + LineMarks.countNewlines(inserted));
+        NavigableMap<Integer, Breakpoint> out = null;
+        for (var it = dropped.iterator(); it.hasNext(); ) {
+            Breakpoint was = it.next();
+            if (!inserted.contains(was.lineText())) {
+                continue;
+            }
+            for (int line = first; line <= last; line++) {
+                NavigableMap<Integer, Breakpoint> current = out == null ? marks : out;
+                if (!current.containsKey(line)
+                        && LineMarks.snapshotText(area.getParagraph(line).getText())
+                                .equals(was.lineText())) {
+                    if (out == null) {
+                        out = new TreeMap<>(marks);
+                    }
+                    out.put(line, was.withLine(line));
+                    it.remove();
+                    break;
+                }
             }
         }
         return out;
@@ -342,15 +591,5 @@ public final class BreakpointManager {
             return "";
         }
         return area.getParagraph(line).getText().strip();
-    }
-
-    private static int countNewlines(String s) {
-        int n = 0;
-        for (int i = 0; i < s.length(); i++) {
-            if (s.charAt(i) == '\n') {
-                n++;
-            }
-        }
-        return n;
     }
 }

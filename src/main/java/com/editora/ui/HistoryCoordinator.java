@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -9,6 +8,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,6 +29,8 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.PathKeys;
 import com.editora.config.SharedConfig;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.LineEndings;
+import com.editora.editorconfig.EditorConfigCharset;
 import com.editora.history.HistoryQueries;
 import com.editora.history.HistoryRetention;
 import com.editora.history.HistoryService;
@@ -232,13 +234,19 @@ final class HistoryCoordinator {
             }
 
             @Override
-            public void revert(HistoryRevision revision) {
-                restoreHistory(revision);
+            public void revert(HistoryRevision revision, Runnable done) {
+                restoreHistory(revision).whenComplete((result, failure) -> onFx(done));
             }
 
             @Override
-            public void applyToLocal(Path target, String newText) {
-                diff.applyToLocal(target, newText);
+            public void applyToLocalIfUnchanged(
+                    Path target, String expectedText, String newText, Consumer<Boolean> done) {
+                diff.applyToLocalIfUnchangedAsync(target, expectedText, newText, applied -> {
+                    if (!applied) {
+                        host.setStatus(tr("status.diff.localStale"));
+                    }
+                    done.accept(applied);
+                });
             }
 
             @Override
@@ -281,6 +289,148 @@ final class HistoryCoordinator {
      */
     void applySupport() {
         refresh();
+        sweepIfDue();
+    }
+
+    private HistoryRetention.RetentionPolicy retentionPolicy() {
+        var s = host.settings();
+        long maxAgeMillis = s.getHistoryMaxAgeDays() > 0 ? s.getHistoryMaxAgeDays() * 86_400_000L : 0;
+        return new HistoryRetention.RetentionPolicy(
+                s.getHistoryMaxPerFile(), maxAgeMillis, (long) Math.max(0, s.getHistoryMaxTotalMb()) * 1024L * 1024L);
+    }
+
+    /**
+     * Applies the retention limits to the <em>whole</em> index once per application start (and again when
+     * the limits change). Recording a revision only prunes that one file, so without this a file that is
+     * never saved again kept its history — and its content on disk — indefinitely. The policy is evaluated
+     * on the history worker over a private copy of the index; only the removal of what it evicted happens
+     * here on the FX thread, against the index as it is by then.
+     */
+    void sweepIfDue() {
+        HistoryRetention.RetentionPolicy policy = retentionPolicy();
+        if (!isEnabled() || !historyService.claimSweep(policy)) {
+            return;
+        }
+        Map<String, Map<String, List<HistoryRevision>>> snapshot = new LinkedHashMap<>();
+        ops.historyByProject().forEach((project, files) -> {
+            Map<String, List<HistoryRevision>> copy = new LinkedHashMap<>();
+            files.forEach((file, revisions) -> copy.put(file, List.copyOf(revisions)));
+            snapshot.put(project, copy);
+        });
+        historyService.sweep(snapshot, policy, System.currentTimeMillis(), this::removeEvicted);
+    }
+
+    /** Subtracts swept-out revisions from the live index, drops emptied files, persists, and refreshes. */
+    private void removeEvicted(Map<String, Map<String, List<HistoryRevision>>> evicted) {
+        boolean changed = false;
+        for (var project : evicted.entrySet()) {
+            Map<String, List<HistoryRevision>> bucket = ops.historyByProject().get(project.getKey());
+            if (bucket == null) {
+                continue;
+            }
+            for (var file : project.getValue().entrySet()) {
+                List<HistoryRevision> current = bucket.get(file.getKey());
+                if (current == null) {
+                    continue;
+                }
+                List<HistoryRevision> kept = new ArrayList<>(current);
+                for (HistoryRevision gone : file.getValue()) {
+                    changed |= kept.remove(gone);
+                }
+                if (kept.isEmpty()) {
+                    bucket.remove(file.getKey());
+                } else {
+                    bucket.put(file.getKey(), kept);
+                }
+            }
+        }
+        if (changed) {
+            ops.saveHistory();
+            refresh();
+        }
+    }
+
+    // --- purge ---------------------------------------------------------------------------------------
+
+    /**
+     * Deletes every recorded revision of the active file after a danger-styled confirmation. Local History
+     * keeps copies of what was saved — including a secret pasted into a file and then removed — so there has
+     * to be a way to make it forget. Works while the feature is switched off: turning history off must not
+     * strand what it already stored.
+     */
+    void purgeActiveFile() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || b.getPath() == null || !host.isLocalBuffer(b)) {
+            host.setStatus(tr("status.history.noFile"));
+            return;
+        }
+        String key = historyKey(b.getPath());
+        int count = revisionsInEveryProject(key);
+        if (count == 0) {
+            host.setStatus(tr("status.history.nothingToPurge"));
+            return;
+        }
+        if (!confirmPurge(
+                tr("dialog.history.purgeFile.confirm", count, b.getPath().getFileName()))) {
+            return;
+        }
+        // Re-read after the modal dialog: revisions recorded while it was open are purged too. Every
+        // project's bucket, not only this window's: the same file recorded from a No-Project window or an
+        // overlapping project kept its revisions (and its content on disk) while the status said "purged".
+        int removed = revisionsInEveryProject(key);
+        ops.historyMap().remove(key);
+        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
+            bucket.remove(key);
+        }
+        finishPurge(removed);
+    }
+
+    /** How many revisions of {@code key} are recorded, in this window's bucket and every other project's. */
+    private int revisionsInEveryProject(String key) {
+        Map<String, List<HistoryRevision>> own = ops.historyMap();
+        int count = own.getOrDefault(key, List.of()).size();
+        for (Map<String, List<HistoryRevision>> bucket : ops.historyByProject().values()) {
+            if (bucket != own) {
+                count += bucket.getOrDefault(key, List.of()).size();
+            }
+        }
+        return count;
+    }
+
+    /** Deletes every recorded revision of every file in the active project's history, after confirmation. */
+    void purgeProject() {
+        int files = ops.historyMap().size();
+        int count = ops.historyMap().values().stream().mapToInt(List::size).sum();
+        if (count == 0) {
+            host.setStatus(tr("status.history.nothingToPurge"));
+            return;
+        }
+        if (!confirmPurge(tr("dialog.history.purgeProject.confirm", count, files))) {
+            return;
+        }
+        Map<String, List<HistoryRevision>> bucket = ops.historyMap();
+        int removed = bucket.values().stream().mapToInt(List::size).sum();
+        bucket.clear();
+        finishPurge(removed);
+    }
+
+    private void finishPurge(int removed) {
+        // The content must leave the disk now, not at the next throttled collection.
+        historyService.requestGc();
+        ops.saveHistory();
+        refresh();
+        host.setStatus(tr("status.history.purged", removed));
+    }
+
+    private boolean confirmPurge(String message) {
+        javafx.scene.control.ButtonType delete = new javafx.scene.control.ButtonType(
+                tr("dialog.history.purge.button"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, delete, ButtonType.CANCEL);
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.history.purge.title"));
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().lookupButton(delete).getStyleClass().add("danger");
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == delete;
     }
 
     /** Sets the history tool window's availability (local file + feature on) and reloads its list. */
@@ -348,10 +498,7 @@ final class HistoryCoordinator {
         }
         String key = historyKey(file);
         List<HistoryRevision> existing = ops.historyMap().getOrDefault(key, List.of());
-        var s = host.settings();
-        long maxAgeMillis = s.getHistoryMaxAgeDays() > 0 ? s.getHistoryMaxAgeDays() * 86_400_000L : 0;
-        var policy = new HistoryRetention.RetentionPolicy(
-                s.getHistoryMaxPerFile(), maxAgeMillis, (long) Math.max(0, s.getHistoryMaxTotalMb()) * 1024L * 1024L);
+        var policy = retentionPolicy();
         long now = System.currentTimeMillis();
         historyService.snapshotWithOutcome(file, content, reason, label, force, existing, policy, now, outcome -> {
             HistoryRevision rev = outcome.revision();
@@ -591,7 +738,8 @@ final class HistoryCoordinator {
                                     finishDiskRestore(file, completion, RestoreResult.CONTENT_UNAVAILABLE);
                                     return;
                                 }
-                                byte[] replacement = text.getBytes(StandardCharsets.UTF_8);
+                                recordBeforeOverwrite(file, target);
+                                byte[] replacement = restoredBytes(text, target.expectedBytes(), charsetRuleFor(file));
                                 if (!submitRestoreWork(
                                         completion,
                                         () -> commitDiskRestore(file, target, replacement, ticket, completion))) {
@@ -602,6 +750,20 @@ final class HistoryCoordinator {
             ticket.close();
             finishDiskRestore(file, completion, RestoreResult.CONTENT_UNAVAILABLE);
         }
+    }
+
+    /**
+     * Records the file a disk restore is about to replace, as delete and replace-in-files do. Without it,
+     * content changed outside the editor since the last recorded save was gone once the user confirmed the
+     * overwrite. The text is captured here, from the bytes the write is conditional on.
+     */
+    private void recordBeforeOverwrite(Path file, TargetState target) {
+        byte[] current = target.existed() ? target.expectedBytes() : null;
+        if (current == null || com.editora.diff.BinaryDiff.isProbablyBinary(current)) {
+            return;
+        }
+        String text = LineEndings.toLf(decodeCaptured(current, charsetRuleFor(file)));
+        recordFor(file, text, HistoryRevision.REASON_EXTERNAL, "", false, null);
     }
 
     private void commitDiskRestore(
@@ -641,6 +803,50 @@ final class HistoryCoordinator {
             }
             completion.complete(result);
         });
+    }
+
+    /** The {@code .editorconfig} charset the editor would use for {@code file}, or {@code null}. */
+    private String charsetRuleFor(Path file) {
+        return diff == null ? null : diff.editorConfigCharset(file);
+    }
+
+    /**
+     * The bytes a restored revision is written as: the encoding of the file being replaced, read the way
+     * the editor reads it — its byte-order mark, else its {@code .editorconfig} charset, else UTF-8, else
+     * the lossless stand-in for bytes that charset cannot decode — and that file's line ending. Revisions
+     * hold the editor's {@code \n}-only text, so writing one verbatim turned a CRLF file into an LF one, and
+     * choosing the charset without looking at the bytes rewrote a BOM-less Windows-1252 file as UTF-8.
+     * A file that no longer exists (or has no line break to learn from) keeps the revision's own
+     * terminators, which a pre-delete capture preserves. UTF-8 is used only when the text has a character
+     * the charset cannot hold.
+     *
+     * @param existing the bytes currently at the path, or {@code null} when the file no longer exists
+     */
+    static byte[] restoredBytes(String text, byte[] existing, String editorConfigCharset) {
+        String name = EditorConfigCharset.resolveName(existing, editorConfigCharset);
+        String body = text;
+        if (existing != null) {
+            EditorConfigCharset.Decoded current = DiffSideText.decodeRaw(existing, editorConfigCharset, null);
+            name = current.charset();
+            if (current.text().indexOf('\n') >= 0 || current.text().indexOf('\r') >= 0) {
+                body = LineEndings.apply(LineEndings.toLf(text), LineEndings.dominant(current.text()));
+            }
+        }
+        if (!EditorConfigCharset.canEncode(body, name)) {
+            name = EditorConfigCharset.UTF_8;
+        }
+        return EditorConfigCharset.encode(body, name);
+    }
+
+    /**
+     * Decodes a file captured just before deletion the way the editor would have read it (BOM, then the
+     * {@code .editorconfig} charset, then UTF-8, then the editor's lossless stand-in when the bytes are not
+     * valid in that charset). The history store keeps text, so a decode that substitutes U+FFFD destroyed
+     * every non-ASCII character in what may be the only copy left. Line terminators are kept as they were:
+     * nothing else records them once the file is gone.
+     */
+    static String decodeCaptured(byte[] bytes, String editorConfigCharset) {
+        return DiffSideText.decodeRaw(bytes, editorConfigCharset, null).text();
     }
 
     private boolean confirmRestoreOverwrite(Path file) {
@@ -696,8 +902,11 @@ final class HistoryCoordinator {
                 return;
             }
             byte[] bytes = Files.readAllBytes(file);
+            String charsetRule = charsetRuleFor(file);
+            // A NUL byte marks a binary file — except in UTF-16 text, where every ASCII character has one.
+            boolean utf16 = EditorConfigCharset.resolveName(bytes, charsetRule).startsWith("utf-16");
             for (byte b : bytes) {
-                if (b == 0) {
+                if (b == 0 && !utf16) {
                     completion.accept(new DeleteCapture(true, bytes));
                     return;
                 }
@@ -706,7 +915,7 @@ final class HistoryCoordinator {
                 completion.accept(new DeleteCapture(true, bytes));
                 return;
             }
-            String content = new String(bytes, StandardCharsets.UTF_8);
+            String content = decodeCaptured(bytes, charsetRule);
             recordFor(
                     file,
                     content,

@@ -171,7 +171,29 @@ public enum ConfigSchema {
                     Map.entry(101, (Migration) ConfigMigrations::identity), // v101→102: + Astro LSP
                     Map.entry(102, (Migration) ConfigMigrations::identity), // v102→103: + Maven JDK
                     Map.entry(103, (Migration)
-                            ConfigMigrations::identity))), // v103→104: Codex + LM Studio providers; preserve choices
+                            ConfigMigrations::identity), // v103→104: Codex + LM Studio providers; preserve choices
+                    // v104→105: authorName/pluginRegistryUrl persist their raw (blank = follow the default)
+                    // value; drop the accidental authorNameRaw key and the never-read ijhttpCommand.
+                    Map.entry(104, (Migration) ConfigMigrations::retireUnusedSettingsKeys),
+                    // v105→106: key-binding overrides belong to a keymap. keybindings/keybindingsMac stay where
+                    // they are and now mean "the active keymap's" — which is the keymap every existing user's
+                    // overrides were in force under — and the maps for the other keymaps start empty.
+                    Map.entry(105, (Migration) ConfigMigrations::identity),
+                    // v106→107: mavenArchetypeCatalogUrl persists its raw value too; a file that froze either
+                    // built-in URL goes back to blank ("follow the default").
+                    Map.entry(106, (Migration) ConfigMigrations::blankFrozenDefaultUrls)),
+            // Keys that first appear in a settings file of the given version. Each one sits just after a
+            // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
+            // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
+            // a schemaVersion resumes after those steps instead of replaying all of them from v1.
+            Map.of(
+                    "autoRenameTag", 51,
+                    "aiApiKeyOpenai", 78,
+                    "keybindingsMac", 81,
+                    "bracketColors", 90,
+                    "astroLspEnabled", 102,
+                    "mavenJdkHome", 103,
+                    "aiApiKeyLmstudio", 104)),
     // v1 → v2 added the editor-group layout + OpenFile.group. Both default to the old single-group
     // behaviour, so the step is identity.
     // v1→v2 editor-group layout, v2→v3 RunConfiguration type/target, v3→v4 selectedRunConfig — all additive
@@ -221,11 +243,22 @@ public enum ConfigSchema {
     private final int currentVersion;
     private final int assumedLegacyVersion;
     private final Map<Integer, Migration> steps;
+    /** Top-level key → the first schema version whose files contain it (see {@link #versionWithoutMarker}). */
+    private final Map<String, Integer> versionEvidence;
 
     ConfigSchema(int currentVersion, int assumedLegacyVersion, Map<Integer, Migration> steps) {
+        this(currentVersion, assumedLegacyVersion, steps, Map.of());
+    }
+
+    ConfigSchema(
+            int currentVersion,
+            int assumedLegacyVersion,
+            Map<Integer, Migration> steps,
+            Map<String, Integer> versionEvidence) {
         this.currentVersion = currentVersion;
         this.assumedLegacyVersion = assumedLegacyVersion;
         this.steps = steps;
+        this.versionEvidence = versionEvidence;
     }
 
     public int currentVersion() {
@@ -234,6 +267,38 @@ public enum ConfigSchema {
 
     public int assumedLegacyVersion() {
         return assumedLegacyVersion;
+    }
+
+    /**
+     * The version to assume for {@code tree} when it carries no {@code schemaVersion}: the newest version one
+     * of its keys proves it has reached, else {@link #assumedLegacyVersion()}.
+     *
+     * <p>A file loses its marker through a hand edit, not through age, so it is usually in the current shape.
+     * Replaying every migration from the baseline over such a file undid the user's choices: it turned
+     * Projects back on, re-added removed TODO keywords and toolbar items, and on macOS replaced the Cmd
+     * key-binding overrides. A key can only be in the file if a build that knew it wrote the file, so it is
+     * safe evidence that the steps before it have already run. Never more than the current version.
+     */
+    public int versionWithoutMarker(com.fasterxml.jackson.databind.JsonNode tree) {
+        int version = assumedLegacyVersion;
+        if (tree != null && tree.isObject()) {
+            for (Map.Entry<String, Integer> evidence : versionEvidence.entrySet()) {
+                if (tree.has(evidence.getKey())) {
+                    version = Math.max(version, evidence.getValue());
+                }
+            }
+        }
+        return Math.min(version, currentVersion);
+    }
+
+    /**
+     * Whether a file of this kind that is not valid UTF-8 gets a {@code .corrupt.bak} copy of its original
+     * bytes when it is loaded with replacements. Not the Local History index: a backup beside it stops
+     * revision bodies from being collected for as long as it exists, and the index that was read still lists
+     * every revision (only a path can hold a replaced character).
+     */
+    public boolean keepsCopyOfUndecodableFile() {
+        return this != HISTORY;
     }
 
     /** The step that upgrades {@code fromVersion → fromVersion+1}, or {@code null} if none is registered. */

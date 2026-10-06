@@ -20,7 +20,6 @@ import com.editora.build.OutputStyle;
 import com.editora.run.ConsoleUrls;
 import com.editora.run.StackTraceLinks;
 import org.fxmisc.flowless.VirtualizedScrollPane;
-import org.fxmisc.richtext.Caret;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
@@ -83,7 +82,8 @@ public final class RunPanel extends VBox implements ToolWindowContent {
         output.setEditable(false);
         output.setWrapText(false);
         output.setFocusTraversable(true);
-        output.setShowCaret(Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         output.getStyleClass().addAll("editor-area", "run-output");
         installLinkClicks(output, () -> onLink);
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_CLICKED, e -> {

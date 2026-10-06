@@ -4,7 +4,9 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /** User preferences, (de)serialized to {@code settings.json}. Session/state lives in {@link WorkspaceState}. */
@@ -16,7 +18,9 @@ public class Settings {
      * every window holds, so it must be mutated, not replaced. Backs Settings → Advanced → "Reset to
      * Defaults". Deliberately preserves the two things that page doesn't own: {@link #getFontZoom() fontZoom}
      * (the editor's Ctrl-+/- text zoom) and {@link #getKeybindings() keybindings} (the Keymaps page's own
-     * "Reset all").
+     * "Reset all"). The reset does put the keymap back to the default, and key-binding overrides belong to the
+     * keymap they were made in — so the preserved overrides are parked under the old keymap, not applied to
+     * the default one.
      *
      * <p>Driven off the serialized form rather than a hand-written list of setters. The list version had gone
      * stale: it restored <b>23 of 181</b> fields, so "Reset to Defaults" silently left ~87% of preferences
@@ -26,8 +30,11 @@ public class Settings {
      */
     public static void resetToDefaults(Settings live) {
         double fontZoom = live.getFontZoom();
+        String keymap = live.getKeymap();
         Map<String, String> keybindings = live.getKeybindings();
         Map<String, String> keybindingsMac = live.getKeybindingsMac();
+        Map<String, Map<String, String>> parked = live.getKeymapKeybindings();
+        Map<String, Map<String, String>> parkedMac = live.getKeymapKeybindingsMac();
         ObjectMapper mapper = new ObjectMapper();
         try {
             mapper.readerForUpdating(live).readValue(mapper.writeValueAsBytes(new Settings()));
@@ -35,18 +42,51 @@ public class Settings {
             throw new IllegalStateException("Could not reset settings to their defaults", e);
         }
         live.setFontZoom(fontZoom);
+        String defaultKeymap = live.getKeymap();
+        live.setKeymap(keymap);
         live.setKeybindings(keybindings);
         live.setKeybindingsMac(keybindingsMac);
+        live.setKeymapKeybindings(parked);
+        live.setKeymapKeybindingsMac(parkedMac);
+        live.switchKeymap(defaultKeymap);
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 104;
+    public static final int SCHEMA_VERSION = 107;
 
     private int schemaVersion = SCHEMA_VERSION;
 
     /** Default plugin-registry index URL (a curated {@code index.json} on GitHub); user-overridable. */
     public static final String DEFAULT_PLUGIN_REGISTRY =
             "https://raw.githubusercontent.com/adriandeleon/editora-plugins/main/index.json";
+
+    /** Default Maven archetype catalog (Maven Central's); user-overridable. */
+    public static final String DEFAULT_MAVEN_ARCHETYPE_CATALOG =
+            "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
+
+    /**
+     * Bounds applied by the numeric setters, so a hand-edited {@code settings.json} cannot load a value the
+     * editor's arithmetic cannot use ({@code "tabSize": 0} divided by zero in the indent helpers). Each range
+     * is the widest one any UI path offers: the Settings spinners and the palette prompts.
+     */
+    public static final int MIN_FONT_SIZE = 6;
+
+    public static final int MAX_FONT_SIZE = 72;
+    public static final double MIN_FONT_ZOOM = 0.5;
+    public static final double MAX_FONT_ZOOM = 3.0;
+    public static final int MIN_TAB_SIZE = 1;
+    public static final int MAX_TAB_SIZE = 16;
+
+    // One range per numeric preference, shared by its Settings spinner and its palette prompt: a control with
+    // a narrower range than the command shows a value that is not the one in force.
+    public static final int MIN_FILL_COLUMN = 1;
+    public static final int MAX_FILL_COLUMN = 1000;
+    public static final int MIN_AUTO_SAVE_DELAY_SECONDS = 1;
+    public static final int MAX_AUTO_SAVE_DELAY_SECONDS = 3600;
+    public static final int MAX_HISTORY_PER_FILE = 1000;
+    public static final int MAX_HISTORY_AGE_DAYS = 3650;
+    public static final int MAX_HISTORY_TOTAL_MB = 10_000;
+    public static final int MAX_LARGE_FILE_THRESHOLD = 10_000_000;
 
     /** Author name used by file templates' {@code ${author}}; blank = the OS user (see getter). */
     private String authorName = "";
@@ -241,7 +281,7 @@ public class Settings {
     private boolean pluginSupport = false;
     /** Registry index URL for browsing/installing plugins (HTTPS); overridable, defaults to
      *  {@link #DEFAULT_PLUGIN_REGISTRY}. */
-    private String pluginRegistryUrl = DEFAULT_PLUGIN_REGISTRY;
+    private String pluginRegistryUrl = "";
     /** Require the registry index to be signed by the bundled key before installing (default on; turn off
      *  to use an unsigned or custom registry). */
     private boolean pluginRequireSignature = true;
@@ -278,8 +318,9 @@ public class Settings {
     /** JDK home used by Maven project runs/debugs and Maven invocations; blank = system/default Java. */
     private String mavenJdkHome = "";
 
-    /** Where "Load full catalog…" in the New Maven Project wizard fetches archetypes from. */
-    private String mavenArchetypeCatalogUrl = "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
+    /** Where "Load full catalog…" in the New Maven Project wizard fetches archetypes from; blank =
+     *  {@link #DEFAULT_MAVEN_ARCHETYPE_CATALOG}. */
+    private String mavenArchetypeCatalogUrl = "";
     /** npm support (a toolbar icon + actions popup of package.json scripts, streaming runs to a console): on
      *  by default — self-gates on detection, so the toolbar button stays hidden until a package.json is
      *  actually found for the current project/file. */
@@ -314,8 +355,6 @@ public class Settings {
     private boolean searchRespectGitignore = true;
     /** HTTP Client support (run {@code .http} requests via the built-in JDK HTTP client): on by default. */
     private boolean httpClientSupport = true;
-    /** The {@code ijhttp} command/path; blank = resolve {@code ijhttp} on PATH. */
-    private String ijhttpCommand = "";
     /** HTML Live Preview (serve an HTML file over a loopback HttpServer + open it in a browser): on by default. */
     private boolean htmlPreviewSupport = true;
     /** The last-used browser id for the HTML preview ({@code ""} until the user picks one). */
@@ -529,10 +568,22 @@ public class Settings {
      * live alongside the new chord). {@link #keybindings} holds the Ctrl-based (Windows/Linux) overrides;
      * {@link #keybindingsMac} the Cmd-based (macOS) ones. Read the running platform's via {@link #keybindingsFor}
      * (#439).
+     *
+     * <p>Both maps are the overrides of the <b>active</b> {@link #keymap} only. A rebind also stores a blank
+     * suppressor for each chord the keymap bound to that command by default, and the same chord means something
+     * else in another keymap (CUA's {@code C-f} is Find, Emacs' is forward-char) — so overrides carried across a
+     * keymap switch unbound unrelated keys. {@link #switchKeymap} parks them in {@link #keymapKeybindings} /
+     * {@link #keymapKeybindingsMac} (keymap id -&gt; overrides) and brings back the ones made in the keymap
+     * being switched to.
      */
     private Map<String, String> keybindings = new LinkedHashMap<>();
 
     private Map<String, String> keybindingsMac = new LinkedHashMap<>();
+
+    /** Overrides parked for the keymaps that are not active (see {@link #keybindings}); never the active one. */
+    private Map<String, Map<String, String>> keymapKeybindings = new LinkedHashMap<>();
+
+    private Map<String, Map<String, String>> keymapKeybindingsMac = new LinkedHashMap<>();
 
     public int getSchemaVersion() {
         return schemaVersion;
@@ -555,7 +606,7 @@ public class Settings {
     }
 
     public void setFontSize(int fontSize) {
-        this.fontSize = fontSize;
+        this.fontSize = Math.clamp(fontSize, MIN_FONT_SIZE, MAX_FONT_SIZE);
     }
 
     public double getFontZoom() {
@@ -563,7 +614,7 @@ public class Settings {
     }
 
     public void setFontZoom(double fontZoom) {
-        this.fontZoom = fontZoom;
+        this.fontZoom = Double.isNaN(fontZoom) ? 1.0 : Math.clamp(fontZoom, MIN_FONT_ZOOM, MAX_FONT_ZOOM);
     }
 
     public String getTheme() {
@@ -603,7 +654,7 @@ public class Settings {
     }
 
     public void setTabSize(int tabSize) {
-        this.tabSize = tabSize;
+        this.tabSize = Math.clamp(tabSize, MIN_TAB_SIZE, MAX_TAB_SIZE);
     }
 
     /** {@code "detect"} (default), {@code "space"}, or {@code "tab"}. */
@@ -620,7 +671,7 @@ public class Settings {
     }
 
     public void setFillColumn(int fillColumn) {
-        this.fillColumn = fillColumn;
+        this.fillColumn = Math.min(fillColumn, MAX_FILL_COLUMN); // below 1 still reads back as the default
     }
 
     public String getKeymap() {
@@ -639,16 +690,25 @@ public class Settings {
         this.uiLanguage = uiLanguage == null ? "" : uiLanguage;
     }
 
-    /** The configured author name, or the OS user name when blank (used by template {@code ${author}}). */
+    /**
+     * The configured author name, or the OS user name when blank (used by template {@code ${author}}).
+     *
+     * <p>Not serialized: Jackson writes through getters, so persisting this resolved value stored the OS user
+     * name on the first save and ended the "blank = follow the OS user" mode. {@link #getAuthorNameRaw()} is
+     * the persisted form.
+     */
+    @JsonIgnore
     public String getAuthorName() {
         return authorName == null || authorName.isBlank() ? System.getProperty("user.name", "") : authorName;
     }
 
     /** The raw configured author name (may be blank, meaning "follow the OS user"). */
+    @JsonProperty("authorName")
     public String getAuthorNameRaw() {
         return authorName == null ? "" : authorName;
     }
 
+    @JsonProperty("authorName")
     public void setAuthorName(String authorName) {
         this.authorName = authorName == null ? "" : authorName;
     }
@@ -1092,14 +1152,6 @@ public class Settings {
         } else {
             setAiCompletionModel(value);
         }
-    }
-
-    public String getIjhttpCommand() {
-        return ijhttpCommand == null ? "" : ijhttpCommand;
-    }
-
-    public void setIjhttpCommand(String ijhttpCommand) {
-        this.ijhttpCommand = ijhttpCommand == null ? "" : ijhttpCommand;
     }
 
     public boolean isShowColumnRuler() {
@@ -1650,12 +1702,28 @@ public class Settings {
     }
 
     /** The plugin-registry index URL; falls back to {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
+    /** The registry index URL in force: the configured one, or {@link #DEFAULT_PLUGIN_REGISTRY} when blank. */
+    @JsonIgnore
     public String getPluginRegistryUrl() {
         return pluginRegistryUrl == null || pluginRegistryUrl.isBlank() ? DEFAULT_PLUGIN_REGISTRY : pluginRegistryUrl;
     }
 
+    /** The persisted form: the URL as configured, blank meaning "use the built-in registry". */
+    @JsonProperty("pluginRegistryUrl")
+    public String getPluginRegistryUrlRaw() {
+        return pluginRegistryUrl == null ? "" : pluginRegistryUrl;
+    }
+
+    /**
+     * Sets the registry URL. The built-in URL is stored as blank ("follow the default"), whether it comes
+     * from the Settings field (which shows the URL in force and hands it back) or from a file an earlier
+     * build froze it into — otherwise such an install would keep the old address after the default moves.
+     */
+    @JsonProperty("pluginRegistryUrl")
     public void setPluginRegistryUrl(String pluginRegistryUrl) {
-        this.pluginRegistryUrl = pluginRegistryUrl;
+        this.pluginRegistryUrl = pluginRegistryUrl != null && DEFAULT_PLUGIN_REGISTRY.equals(pluginRegistryUrl.strip())
+                ? ""
+                : pluginRegistryUrl;
     }
 
     public boolean isPluginRequireSignature() {
@@ -1762,12 +1830,30 @@ public class Settings {
         this.mavenJdkHome = mavenJdkHome == null ? "" : mavenJdkHome;
     }
 
+    /** The catalog URL in force: the configured one, or {@link #DEFAULT_MAVEN_ARCHETYPE_CATALOG} when blank. */
+    @JsonIgnore
     public String getMavenArchetypeCatalogUrl() {
+        return mavenArchetypeCatalogUrl == null || mavenArchetypeCatalogUrl.isBlank()
+                ? DEFAULT_MAVEN_ARCHETYPE_CATALOG
+                : mavenArchetypeCatalogUrl;
+    }
+
+    /** The persisted form: the URL as configured, blank meaning "use the built-in catalog". */
+    @JsonProperty("mavenArchetypeCatalogUrl")
+    public String getMavenArchetypeCatalogUrlRaw() {
         return mavenArchetypeCatalogUrl == null ? "" : mavenArchetypeCatalogUrl;
     }
 
+    /**
+     * Sets the catalog URL. The built-in URL is stored as blank ("follow the default"), as for
+     * {@link #setPluginRegistryUrl}: the Settings field shows the URL in force and hands it back.
+     */
+    @JsonProperty("mavenArchetypeCatalogUrl")
     public void setMavenArchetypeCatalogUrl(String mavenArchetypeCatalogUrl) {
-        this.mavenArchetypeCatalogUrl = mavenArchetypeCatalogUrl == null ? "" : mavenArchetypeCatalogUrl;
+        this.mavenArchetypeCatalogUrl = mavenArchetypeCatalogUrl == null
+                        || DEFAULT_MAVEN_ARCHETYPE_CATALOG.equals(mavenArchetypeCatalogUrl.strip())
+                ? ""
+                : mavenArchetypeCatalogUrl;
     }
 
     public boolean isNpmSupport() {
@@ -2345,6 +2431,47 @@ public class Settings {
 
     public void setKeybindingsMac(Map<String, String> keybindingsMac) {
         this.keybindingsMac = keybindingsMac;
+    }
+
+    public Map<String, Map<String, String>> getKeymapKeybindings() {
+        return keymapKeybindings;
+    }
+
+    public void setKeymapKeybindings(Map<String, Map<String, String>> keymapKeybindings) {
+        this.keymapKeybindings = keymapKeybindings == null ? new LinkedHashMap<>() : keymapKeybindings;
+    }
+
+    public Map<String, Map<String, String>> getKeymapKeybindingsMac() {
+        return keymapKeybindingsMac;
+    }
+
+    public void setKeymapKeybindingsMac(Map<String, Map<String, String>> keymapKeybindingsMac) {
+        this.keymapKeybindingsMac = keymapKeybindingsMac == null ? new LinkedHashMap<>() : keymapKeybindingsMac;
+    }
+
+    /**
+     * Changes the keymap, taking the key-binding overrides with it: the current ones (both platforms) are
+     * parked under the keymap being left, and those made earlier in {@code next} become the active ones.
+     * {@link #setKeymap} is the plain property setter (it is what loading a file calls) and moves nothing.
+     */
+    public void switchKeymap(String next) {
+        if (java.util.Objects.equals(next, keymap)) {
+            return;
+        }
+        keybindings = swapOverrides(keymapKeybindings, keymap, keybindings, next);
+        keybindingsMac = swapOverrides(keymapKeybindingsMac, keymap, keybindingsMac, next);
+        keymap = next;
+    }
+
+    private static Map<String, String> swapOverrides(
+            Map<String, Map<String, String>> parked, String from, Map<String, String> active, String to) {
+        if (active != null && !active.isEmpty()) {
+            parked.put(String.valueOf(from), active);
+        } else {
+            parked.remove(String.valueOf(from));
+        }
+        Map<String, String> restored = parked.remove(String.valueOf(to));
+        return restored == null ? new LinkedHashMap<>() : new LinkedHashMap<>(restored);
     }
 
     /** The keybinding overrides for the running platform (Cmd map on macOS, Ctrl map elsewhere); never null. */

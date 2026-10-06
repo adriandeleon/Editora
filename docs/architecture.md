@@ -79,7 +79,9 @@ Config is split:
 
 So a `config.save()` from any window writes `settings.json` + that window's session file
 without clobbering another window's in-memory copy. A settings change in one window
-broadcasts to all via `WindowManager.broadcastSettingsApplied()`. See
+reaches all of them: the Settings window broadcasts via `WindowManager.broadcastSettingsApplied()`,
+and a change made by any other command is detected at the shared save and re-applied in the other
+windows. See
 [config-and-schema](conventions.md#config-and-schema) for the storage details, and the
 [config subsystem deep-dive](subsystems/config-and-migrations.md) for the full model.
 
@@ -109,10 +111,12 @@ flowchart LR
 wraps the `CodeArea` and owns everything per-file: highlighting, the line-number gutter and
 fold chevrons (`FoldManager`), the minimap, the overlays (whitespace, spell-check, search,
 TODO, lint, diagnostics, …), bookmarks, notes, and the per-feature hooks (LSP, DAP, Mermaid,
-completion, snippets). Features are injected rather than imported so the `editor` package
-stays free of `ui`, `config`, and the feature packages — e.g. `setSnippetProvider`,
-`setCompletionProvider`, `setMarkdownLintValidator`, `setLspCompletionProvider`. When you add
-an editor feature, follow that injection pattern.
+completion, snippets). Anything with behaviour, state or I/O is injected rather than imported
+— e.g. `setSnippetProvider`, `setCompletionProvider`, `setMarkdownLintValidator`,
+`setLspCompletionProvider` — which is what keeps the `editor` package free of `ui`, `lsp`,
+`dap`, `git` and `process`. When you add an editor feature, follow that injection pattern. The
+`editor` package does import `config` and a set of pure parsers directly; the exact list is
+pinned by a test — see the [package map](#package-map) below.
 
 A buffer's lifecycle, and why `dispose()` matters (it shuts the per-buffer daemon executors so
 they don't accumulate one pair per opened file):
@@ -154,7 +158,7 @@ save of an older snapshot therefore never authorizes disposal of newer text type
 | `command/` | The keyboard core: `Command`/`CommandRegistry`, `KeymapManager`, `KeyDispatcher`. Every action is a registered command. |
 | `editor/` | `EditorBuffer` + the editor surface: highlighting, gutter, minimap, overlays, indentation, brackets, snippets/completion, the pure editing helpers (`Indenter`, `Commenter`, `Transposer`, `MarkdownLint`, …). |
 | `ui/` | `MainController`, `WindowManager`, `SettingsWindow`, tool-window panels, the in-scene overlays (`OverlayHost`), status bar. |
-| `config/` | `ConfigManager`/`SharedConfig`, `Settings` (TOML), `WorkspaceState` (JSON), the stores, and `config/migration/` (schema versioning). |
+| `config/` | `ConfigManager`/`SharedConfig`, `Settings` (JSON — `settings.json`, see ADR 0011), `WorkspaceState` (JSON), the stores, and `config/migration/` (schema versioning). |
 | `i18n/` | `Messages` — the localized catalog (six languages). |
 | `lsp/` `dap/` | Language Server / Debug Adapter Protocol integration (lsp4j). |
 | `git/` `diff/` | Native-CLI git, the diff/merge viewer. |
@@ -162,9 +166,25 @@ save of an older snapshot therefore never authorizes disposal of newer text type
 | `process/` | `ProcessRunner` (the only place a subprocess is spawned) + `ProcessRegistry` (lifecycle of spawned servers). |
 
 Dependency direction (arrows point at what a package depends on). The key invariants: `ui`
-depends on everything and wires it together; `editor` and `completion` depend on **neither** `ui`
-nor the feature packages — features reach the editor through injected hooks; every subprocess
-goes through `process`.
+depends on everything and wires it together; `editor` and `completion` **never** depend on `ui`;
+every subprocess goes through `process`.
+
+Features *mostly* reach the editor through injected hooks, and every feature with behaviour,
+state or I/O does (LSP, DAP, Git, search, AI, the linters' services, …). The known exceptions are
+compile-time references from `editor` to:
+
+- shared foundations — `config`, `i18n`, `editops`, `editorconfig`, `completion`, `snippet`,
+  `markdown`, `structured`;
+- pure, toolkit-free parsers and detectors that `EditorBuffer` calls for the gutter Run/Test markers
+  and the per-format previews — `run`, `test`, `maven`, `http`, `macro`, `csv`, `logviewer`, `cron`,
+  `systemd`, `sshconfig`, `fstab`, `dockerfile`, `ghactions`, `typst`, `mermaid`, `diagram`,
+  `markwhen`.
+
+`completion` references only `snippet`. Both lists are an explicit allowlist in
+[`PackageDependencyTest`](../src/test/java/com/editora/PackageDependencyTest.java), which fails
+when a new `com.editora.*` package is referenced from `editor` or `completion`, and whenever either
+references `ui`. Treat the second group as debt to move behind providers, not as a pattern to
+extend.
 
 ```mermaid
 flowchart TD
@@ -184,7 +204,8 @@ flowchart TD
     features --> process
     features --> config
     editor -. "feature hooks injected by ui<br/>(setXxxProvider) — no compile dep" .-> features
-    editor --> command
+    editor -->|"pure parsers only<br/>(allowlisted)"| features
+    editor --> config
     editor --> i18n
 ```
 
@@ -221,7 +242,8 @@ You will see these everywhere; learn them once:
   The full ownership map is in [window coordinators](subsystems/window-coordinators.md), including
   the buffer completion boundary and lifecycle constraints.
 - **Injected hooks** keep `editor`/`completion` free of `ui`. Don't add a `ui` import to
-  `editor`; inject a `Supplier`/`Consumer`/small interface instead.
+  `editor`; inject a `Supplier`/`Consumer`/small interface instead. `PackageDependencyTest`
+  enforces it, and fails on any other new package dependency of those two packages.
 
 ## Where to start reading
 

@@ -79,9 +79,10 @@ one-command check.
 
 `mvn test` runs the JaCoCo agent and writes `target/site/jacoco/index.html` (+ `jacoco.xml`).
 `mvn verify` additionally runs a JaCoCo **`check`** that enforces a per-package **line-coverage
-floor** on the well-covered pure packages (e.g. `config`/`migration`/`diff` ≥ 0.85/0.80,
-`template`/`editorconfig` ≥ 0.80, `completion`/`http`/`pdf` ≥ 0.68 — see the `jacoco-check`
-execution in `pom.xml`).
+floor** on the well-covered packages — `config.migration` and `diff` ≥ 0.90, `config` ≥ 0.86,
+`template`/`editorconfig` ≥ 0.82, `completion`/`http`/`pdf` ≥ 0.70, `lsp` ≥ 0.58 — plus a
+class-level floor on `ui.LspCoordinator` ≥ 0.34. The `jacoco-check` execution in `pom.xml` is the
+source of truth; `BuildHygieneTest` fails when these numbers and the pom disagree.
 
 - The floors sit **below** current levels — they're a regression net, not a target. **When you
   raise a package's coverage, ratchet its floor up.**
@@ -89,8 +90,28 @@ execution in `pom.xml`).
   so far). Add a floor for them only once coverage is meaningful — and the cheapest way to get
   there is still to extract pure helpers.
 
-The dev loop (`mvn javafx:run`/`compile`) is unaffected; the check runs only at
-`verify`/`package`.
+The dev loop (`mvn javafx:run`/`compile`) is unaffected; the check runs only at `verify`.
+
+## Script tests
+
+The release and packaging scripts have their own tests — Python `unittest` files beside the scripts,
+run by the `scripts` CI job (not by Maven):
+
+```
+for d in scripts scripts/release scripts/packaging scripts/native; do
+  python3 -m unittest discover -s "$d" -p 'test_*.py'
+done
+```
+
+They run the real shell scripts against throwaway directories: the tarball installer in user mode and,
+through `--destdir`, in system mode; the `.deb` `postinst`/`postrm` against a scratch root
+(`DPKG_ROOT`); `build-appimage.sh` with a stand-in `curl` (so the verify-before-run logic is tested
+without the network); and the release-asset manifest. The Java side has matching guards in
+`com.editora.packaging` (`ReleaseSupplyChainTest`, `BuildHygieneTest`, `NoticeCoverageTest`,
+`SshdModuleDescriptorTest`, `WindowsFileAssociationsTest`) that read the workflows, the pom and the
+packaging files as text.
+
+CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`.
 
 ## What to test for a typical change
 

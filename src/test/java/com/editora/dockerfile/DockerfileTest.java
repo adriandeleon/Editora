@@ -59,4 +59,19 @@ class DockerfileTest {
         assertEquals(1, d.stages().size());
         assertEquals(1, d.stages().get(0).instructions().size()); // the two physical lines are one RUN
     }
+
+    @Test
+    void fromFlagsAreNotTheBaseImage() {
+        Dockerfile d = Dockerfile.parse("""
+                FROM --platform=$BUILDPLATFORM node:20 AS build
+                RUN npm ci
+                FROM --platform=linux/amd64 alpine:3.20
+                FROM scratch
+                """);
+        assertEquals("node:20", d.stages().get(0).baseImage());
+        assertEquals("build", d.stages().get(0).name());
+        assertEquals("alpine:3.20", d.stages().get(1).baseImage());
+        assertEquals(null, d.stages().get(1).name());
+        assertEquals("scratch", d.stages().get(2).baseImage());
+    }
 }

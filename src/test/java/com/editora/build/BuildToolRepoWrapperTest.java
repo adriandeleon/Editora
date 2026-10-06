@@ -125,4 +125,80 @@ class BuildToolRepoWrapperTest {
         Files.createDirectory(root.resolve(WINDOWS ? "mvnw.cmd" : "mvnw"));
         assertNull(BuildTool.MAVEN.repoWrapper(root, WINDOWS));
     }
+
+    // --- a wrapper above the nearest marker directory (multi-module builds) ---------------------------
+
+    /**
+     * A module of a multi-module build has its own pom.xml but not its own wrapper: {@code mvnw} sits once,
+     * at the project root. Looking only in the module fell back to whatever {@code mvn} was on PATH.
+     */
+    @Test
+    void aWrapperInAnAncestorIsFoundUpToTheProjectRoot(@TempDir Path project) throws Exception {
+        Path module = Files.createDirectories(project.resolve("services").resolve("billing"));
+        Path mvnw = wrapper(project, "mvnw", "mvnw.cmd");
+        Path gradlew = wrapper(project, "gradlew", "gradlew.bat");
+
+        assertEquals(mvnw, BuildTool.MAVEN.repoWrapper(module, project, WINDOWS));
+        assertEquals(gradlew, BuildTool.GRADLE.repoWrapper(module, project, WINDOWS));
+        // Launched by absolute path: "./mvnw" would be resolved against the module, where it does not exist.
+        assertEquals(
+                List.of(mvnw.toAbsolutePath().normalize().toString()),
+                BuildTool.MAVEN.executable(module, project, WINDOWS, ""));
+        assertEquals(
+                List.of(gradlew.toAbsolutePath().normalize().toString()),
+                BuildTool.GRADLE.executable(module, project, WINDOWS, ""));
+
+        assertNull(BuildTool.MAVEN.repoWrapper(module, WINDOWS), "the module-only form still looks nowhere else");
+        assertEquals(List.of("mvn"), BuildTool.MAVEN.executable(module, WINDOWS, ""));
+    }
+
+    @Test
+    void theNearestWrapperWinsAndTheSearchStopsAtTheProjectRoot(@TempDir Path outside) throws Exception {
+        Path project = Files.createDirectories(outside.resolve("project"));
+        Path module = Files.createDirectories(project.resolve("module"));
+        wrapper(outside, "mvnw", "mvnw.cmd"); // above the project: a folder the user never opened
+
+        assertNull(BuildTool.MAVEN.repoWrapper(module, project, WINDOWS), "never a wrapper from above the project");
+        assertEquals(List.of("mvn"), BuildTool.MAVEN.executable(module, project, WINDOWS, ""));
+
+        Path own = wrapper(module, "mvnw", "mvnw.cmd");
+        wrapper(project, "mvnw", "mvnw.cmd");
+        assertEquals(own, BuildTool.MAVEN.repoWrapper(module, project, WINDOWS), "the module's own wrapper is nearer");
+        if (!WINDOWS) {
+            assertEquals(List.of("./mvnw"), BuildTool.MAVEN.executable(module, project, false, ""));
+        }
+    }
+
+    /** A marker root that is not inside the open project (a file opened from elsewhere) is not searched upward. */
+    @Test
+    void aRootOutsideTheProjectIsNotSearchedUpward(@TempDir Path base) throws Exception {
+        Path project = Files.createDirectories(base.resolve("project"));
+        Path elsewhere = Files.createDirectories(base.resolve("elsewhere").resolve("module"));
+        wrapper(base.resolve("elsewhere"), "mvnw", "mvnw.cmd");
+
+        assertNull(BuildTool.MAVEN.repoWrapper(elsewhere, project, WINDOWS));
+        assertNull(BuildTool.MAVEN.repoWrapper(elsewhere, null, WINDOWS));
+    }
+
+    /** The invariant, restated for the ancestor search: the gate and the launch name the same file. */
+    @Test
+    void theAncestorSearchKeepsRepoWrapperAndExecutableInAgreement(@TempDir Path project) throws Exception {
+        Path module = Files.createDirectories(project.resolve("a").resolve("b"));
+        if (!WINDOWS) {
+            Path notExecutable = Files.writeString(project.resolve("a").resolve("gradlew"), "#!/bin/sh\n");
+            notExecutable.toFile().setExecutable(false); // skipped, so the search goes on to the root's
+        }
+        wrapper(project, "gradlew", "gradlew.bat");
+        for (BuildTool tool : BuildTool.values()) {
+            Path reported = tool.repoWrapper(module, project, WINDOWS);
+            String argv0 = tool.executable(module, project, WINDOWS, "").get(0);
+            if (tool == BuildTool.GRADLE) {
+                assertNotNull(reported);
+                assertEquals(reported.toAbsolutePath().normalize().toString(), argv0);
+                assertEquals(project, reported.getParent(), "the non-executable one in a/ was passed over");
+            } else {
+                assertNull(reported, tool + " ships no wrapper here");
+            }
+        }
+    }
 }

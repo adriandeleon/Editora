@@ -89,19 +89,23 @@ public final class TestRun {
         }
         return switch (tool) {
             case MAVEN -> {
+                // Parameterized invocations (isOdd(int)[1], isOdd(int)[2]) collapse to one isOdd filter:
+                // Surefire accepts neither the parameter list nor the index, and a duplicate adds nothing.
                 Set<String> filters = new LinkedHashSet<>();
                 for (TestNode t : failed) {
-                    filters.add(TestSourceLocator.simpleName(t.className()) + "#" + t.methodName());
+                    filters.add(TestSourceLocator.filterClassName(t.className()) + "#"
+                            + TestSourceLocator.mavenMethodFilter(t.methodName()));
                 }
-                yield List.of("test", "-Dtest=" + String.join(",", filters));
+                yield TestRunRecognizer.mavenTestFilter(String.join(",", filters));
             }
             case GRADLE -> {
                 List<String> args = new ArrayList<>(List.of("test"));
                 Set<String> seen = new LinkedHashSet<>();
                 for (TestNode t : failed) {
-                    if (seen.add(t.className() + "." + t.methodName())) {
+                    String filter = t.className() + "." + TestSourceLocator.filterMethodName(t.methodName());
+                    if (seen.add(filter)) {
                         args.add("--tests");
-                        args.add(t.className() + "." + t.methodName());
+                        args.add(filter);
                     }
                 }
                 yield List.copyOf(args);
@@ -109,9 +113,14 @@ public final class TestRun {
             case GO -> {
                 Set<String> names = new LinkedHashSet<>();
                 for (TestNode t : failed) {
-                    names.add(t.methodName());
+                    if (!GoTestJsonParser.isSynthetic(t.methodName())) { // "[build failed]" is not a -run target
+                        names.add(t.methodName());
+                    }
                 }
-                yield List.of("test", "-run", "^(" + String.join("|", names) + ")$", "./...");
+                if (names.isEmpty()) {
+                    yield List.of(); // only a package/build failure — the caller does a full rerun
+                }
+                yield List.of("test", "-run", TestSourceLocator.goRunPattern(names), "./...");
             }
             case CARGO -> {
                 List<String> args = new ArrayList<>(List.of("test", "--"));

@@ -25,13 +25,25 @@ import com.sun.net.httpserver.HttpServer;
  * without saving. The script long-polls {@code /__editora_livereload}; {@link #bumpVersion()} (called on the
  * debounced edit pulse) releases the held request and the page reloads.
  *
+ * <p>Loopback binding is not a boundary on its own: any local process can reach the port, a web page can
+ * reach it through DNS rebinding (its own hostname re-pointed at 127.0.0.1), and everything under the doc
+ * root is readable. So every request must (1) carry a {@code Host} header naming this loopback listener
+ * ({@link #isAllowedHost}) and (2) present the per-server random {@link #token} as its first path segment
+ * ({@link #route}); and a doc root that would expose the home directory or a filesystem root is refused
+ * outright ({@link #isUnsafeDocRoot}).
+ *
  * <p>Lifecycle is owned by {@code HtmlPreviewService} (one server per window). The pure helpers
- * ({@link #injectReloadScript}, {@link #contentType}, {@link #safeResolve}) are unit-tested.
+ * ({@link #injectReloadScript}, {@link #contentType}, {@link #safeResolve}, {@link #isAllowedHost},
+ * {@link #route}, {@link #isUnsafeDocRoot}) are unit-tested.
  */
 public final class LivePreviewServer {
 
-    /** The long-poll endpoint the injected script hits; held until the version advances or the timeout. */
+    /** The long-poll endpoint the injected script hits (under the token prefix); held until the version
+     *  advances or the timeout. */
     static final String LR_PATH = "/__editora_livereload";
+
+    /** The unguessable first path segment every request must carry (128 random bits, per server instance). */
+    private final String token = newToken();
 
     private static final long POLL_TIMEOUT_MS = 25_000;
 
@@ -74,9 +86,13 @@ public final class LivePreviewServer {
     }
 
     /** Points the server at {@code file}: doc root becomes its parent and the file is served from {@code text}. */
-    public synchronized void setPreview(Path file, Supplier<String> text) {
+    public synchronized void setPreview(Path file, Supplier<String> text) throws IOException {
         Path abs = file.toAbsolutePath().normalize();
         Path parent = abs.getParent();
+        if (isUnsafeDocRoot(parent, userHome())) {
+            this.docRoot = null; // serve nothing rather than the previous (or an over-broad) folder
+            throw new IOException("refusing to serve " + parent + " (home directory or filesystem root)");
+        }
         this.docRoot = parent;
         this.previewRelPath = parent == null
                 ? abs.getFileName().toString()
@@ -85,10 +101,10 @@ public final class LivePreviewServer {
         bumpVersion(); // a new preview target ⇒ reload any open browser
     }
 
-    /** The URL that renders the current preview file (loopback + the previewed relative path). */
+    /** The URL that renders the current preview file (loopback + the token prefix + the relative path). */
     public synchronized String previewUrl() {
         String rel = previewRelPath == null ? "" : encodePath(previewRelPath);
-        return "http://127.0.0.1:" + port() + "/" + rel;
+        return "http://127.0.0.1:" + port() + "/" + token + "/" + rel;
     }
 
     /** Advances the version and wakes every held long-poll so open browsers reload. */
@@ -116,10 +132,28 @@ public final class LivePreviewServer {
 
     private void handle(HttpExchange ex) throws IOException {
         try {
-            if (LR_PATH.equals(ex.getRequestURI().getPath())) {
+            int port = ex.getLocalAddress().getPort();
+            if (!isAllowedHost(ex.getRequestHeaders().getFirst("Host"), port)) {
+                sendStatus(ex, 403); // DNS rebinding / a foreign origin: not addressed to this loopback listener
+                return;
+            }
+            String path = ex.getRequestURI().getPath();
+            String inner = route(path, token);
+            if (inner == null) {
+                // A root-absolute asset reference (<link href="/app.css">) from a page we served: the browser's
+                // Referer proves it already holds the token, so bounce it under the prefix. Anything else 404s.
+                if (refererHasToken(ex.getRequestHeaders().getFirst("Referer"), port, token)) {
+                    String query = ex.getRequestURI().getRawQuery();
+                    String to = "/" + token + ex.getRequestURI().getRawPath() + (query == null ? "" : "?" + query);
+                    ex.getResponseHeaders().set("Location", to);
+                    sendStatus(ex, 307);
+                } else {
+                    sendStatus(ex, 404);
+                }
+            } else if (LR_PATH.equals(inner)) {
                 handleLiveReload(ex);
             } else {
-                serveFile(ex, ex.getRequestURI().getPath());
+                serveFile(ex, inner);
             }
         } catch (RuntimeException e) {
             sendStatus(ex, 500);
@@ -179,7 +213,8 @@ public final class LivePreviewServer {
         }
         // The previewed file is served from the live buffer text (so unsaved edits show).
         if (previewRelPath != null && resolved.equals(safeResolve(root, previewRelPath))) {
-            byte[] body = injectReloadScript(liveText.get(), version.get()).getBytes(StandardCharsets.UTF_8);
+            byte[] body =
+                    injectReloadScript(liveText.get(), version.get(), token).getBytes(StandardCharsets.UTF_8);
             writeBody(ex, 200, "text/html; charset=utf-8", body);
             return;
         }
@@ -191,7 +226,7 @@ public final class LivePreviewServer {
         String ct = contentType(resolved.getFileName().toString());
         if (ct.startsWith("text/html")) {
             // Other HTML pages under the root also get the script, so navigating to them live-reloads too.
-            bytes = injectReloadScript(new String(bytes, StandardCharsets.UTF_8), version.get())
+            bytes = injectReloadScript(new String(bytes, StandardCharsets.UTF_8), version.get(), token)
                     .getBytes(StandardCharsets.UTF_8);
         }
         writeBody(ex, 200, ct, bytes);
@@ -232,6 +267,102 @@ public final class LivePreviewServer {
 
     // --- pure helpers (unit-tested) ---------------------------------------------------------------
 
+    private static String newToken() {
+        byte[] bytes = new byte[16];
+        new java.security.SecureRandom().nextBytes(bytes);
+        return java.util.HexFormat.of().formatHex(bytes);
+    }
+
+    /** The preview token, for tests in this package. */
+    String token() {
+        return token;
+    }
+
+    private static Path userHome() {
+        String home = System.getProperty("user.home");
+        return home == null || home.isBlank() ? null : Path.of(home);
+    }
+
+    /**
+     * Whether a request's {@code Host} header names this listener: exactly {@code 127.0.0.1:<port>},
+     * {@code localhost:<port>} or {@code [::1]:<port>}. A page on {@code evil.example} whose DNS was re-pointed
+     * at 127.0.0.1 still sends {@code Host: evil.example:<port>}, which is how rebinding is told apart from the
+     * browser tab we opened. A missing header (HTTP/1.0, a raw socket) is refused too.
+     */
+    static boolean isAllowedHost(String hostHeader, int port) {
+        if (hostHeader == null) {
+            return false;
+        }
+        String h = hostHeader.strip().toLowerCase(Locale.ROOT);
+        return h.equals("127.0.0.1:" + port) || h.equals("localhost:" + port) || h.equals("[::1]:" + port);
+    }
+
+    /**
+     * Strips the required {@code /<token>} prefix from a request path, returning the rest (always starting
+     * with {@code /}), or {@code null} when the prefix is absent or wrong — the caller answers 404 without
+     * touching the doc root. Compared in constant time so the token cannot be recovered byte-by-byte.
+     */
+    static String route(String path, String token) {
+        if (path == null || token == null || token.isEmpty() || !path.startsWith("/")) {
+            return null;
+        }
+        int end = path.indexOf('/', 1);
+        String first = end < 0 ? path.substring(1) : path.substring(1, end);
+        boolean same = java.security.MessageDigest.isEqual(
+                first.getBytes(StandardCharsets.UTF_8), token.getBytes(StandardCharsets.UTF_8));
+        if (!same) {
+            return null;
+        }
+        return end < 0 ? "/" : path.substring(end);
+    }
+
+    /** Whether {@code referer} is a page this server itself served under the token (same listener + prefix). */
+    static boolean refererHasToken(String referer, int port, String token) {
+        if (referer == null) {
+            return false;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(referer.strip());
+            String host = uri.getRawAuthority();
+            return "http".equalsIgnoreCase(uri.getScheme())
+                    && isAllowedHost(host, port)
+                    && route(uri.getPath(), token) != null;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Whether serving {@code docRoot} would expose far more than a web page's folder: a filesystem root, the
+     * user's home directory, or any ancestor of it ({@code /home}, {@code /Users}). An HTML file saved straight
+     * into the home folder would otherwise publish {@code ~/.ssh}, browser profiles and every dotfile to
+     * whatever can reach the port. {@code home} may be null (unknown) — then only a filesystem root is refused.
+     */
+    public static boolean isUnsafeDocRoot(Path docRoot, Path home) {
+        if (docRoot == null) {
+            return true;
+        }
+        Path root = real(docRoot);
+        if (root.getParent() == null) {
+            return true;
+        }
+        return home != null && real(home).startsWith(root);
+    }
+
+    /** {@link #isUnsafeDocRoot(Path, Path)} for the folder of {@code file}, against the current user's home. */
+    public static boolean isUnsafeDocRootFor(Path file) {
+        return isUnsafeDocRoot(file.toAbsolutePath().normalize().getParent(), userHome());
+    }
+
+    private static Path real(Path p) {
+        Path abs = p.toAbsolutePath().normalize();
+        try {
+            return abs.toRealPath();
+        } catch (IOException e) {
+            return abs;
+        }
+    }
+
     /**
      * Resolves {@code rel} against {@code root} and rejects anything that escapes the doc root (path
      * traversal), returning {@code null} when unsafe. {@code root} must be absolute + normalized.
@@ -255,17 +386,17 @@ public final class LivePreviewServer {
     }
 
     /** Splices the live-reload {@code <script>} before {@code </body>} (appends when there is no body tag). */
-    static String injectReloadScript(String html, long version) {
-        String script = reloadScript(version);
+    static String injectReloadScript(String html, long version, String token) {
+        String script = reloadScript(version, token);
         int idx = indexOfIgnoreCase(html, "</body>");
         return idx >= 0 ? html.substring(0, idx) + script + html.substring(idx) : html + script;
     }
 
-    private static String reloadScript(long version) {
+    private static String reloadScript(long version, String token) {
         // Long-poll: 200 ⇒ a newer version is up, reload (the new page embeds the new version); 204 ⇒ no
         // change within the server's timeout, re-poll immediately; network error ⇒ back off 1s then retry.
         return "\n<script>(function(){var v=" + version + ";function poll(){"
-                + "fetch('" + LR_PATH + "?v='+v).then(function(r){return r.status===200?r.text():null;})"
+                + "fetch('/" + token + LR_PATH + "?v='+v).then(function(r){return r.status===200?r.text():null;})"
                 + ".then(function(t){if(t){location.reload();}else{poll();}})"
                 + ".catch(function(){setTimeout(poll,1000);});}poll();})();</script>\n";
     }

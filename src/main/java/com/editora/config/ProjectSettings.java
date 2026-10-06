@@ -128,6 +128,51 @@ public class ProjectSettings {
         return override == null ? global : override;
     }
 
+    /**
+     * The command to <b>launch</b> for {@code serverId}. A project-supplied command is a program a checkout
+     * chooses to run with the user's privileges, so it is honoured only for a trusted folder; in an
+     * untrusted one the user's own {@code global} command runs, exactly as if the file were absent.
+     */
+    public String commandFor(String serverId, String global, boolean trusted) {
+        return trusted ? commandFor(serverId, global) : global;
+    }
+
+    /**
+     * Whether {@code serverId} runs, honouring trust. A project may always switch a server <em>off</em> —
+     * that only ever runs less. Switching one <em>on</em> that the user disabled globally starts a program
+     * the user chose not to run, so it needs a trusted folder.
+     */
+    public boolean enabledFor(String serverId, boolean global, boolean trusted) {
+        boolean wanted = enabledFor(serverId, global);
+        return wanted && !global && !trusted ? false : wanted;
+    }
+
+    /**
+     * What this file asks for that only a trusted folder is given: one line per server whose command it
+     * replaces ({@code "java: /opt/jdtls/bin/jdtls"}) or that it switches on against the user's global
+     * setting ({@code "rust"}). Empty when it asks for nothing that needs trust. Sorted by server id.
+     */
+    public java.util.List<String> trustRequests(
+            java.util.function.Function<String, String> globalCommand,
+            java.util.function.Predicate<String> globalEnabled) {
+        java.util.Map<String, String> requests = new java.util.TreeMap<>();
+        lspEnabled.forEach((serverId, on) -> {
+            if (serverId != null && Boolean.TRUE.equals(on) && !globalEnabled.test(serverId)) {
+                requests.put(serverId, serverId);
+            }
+        });
+        lspCommands.forEach((serverId, command) -> {
+            if (serverId == null || command == null || command.isBlank()) {
+                return;
+            }
+            String global = globalCommand.apply(serverId);
+            if (!command.equals(global)) {
+                requests.put(serverId, serverId + ": " + command.strip());
+            }
+        });
+        return java.util.List.copyOf(requests.values());
+    }
+
     public Map<String, String> getLspCommands() {
         return lspCommands;
     }

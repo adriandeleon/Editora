@@ -94,6 +94,25 @@ final class FxWindowFixture implements AutoCloseable {
         });
     }
 
+    /**
+     * Boot a default window after {@code beforeWindows} has prepared the shared config — the place where
+     * {@code App.start} does its own pre-window wiring (claiming the config dir, for one).
+     */
+    static FxWindowFixture create(Path dir, Consumer<SharedConfig> beforeWindows) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            ConfigManager bootstrap = new ConfigManager(dir);
+            bootstrap.load();
+            SharedConfig shared = bootstrap.shared();
+            beforeWindows.accept(shared);
+            KeymapManager keymap = new KeymapManager();
+            keymap.loadNamed(shared.getSettings().getKeymap());
+            keymap.applyOverrides(shared.getSettings().keybindingsFor(KeymapManager.isMac()));
+            WindowManager wm = new WindowManager(shared, keymap, null);
+            MainController controller = wm.buildWindowForTest();
+            return new FxWindowFixture(dir, shared, wm, controller);
+        });
+    }
+
     /** Boots the production {@code --diff-ui LEFT RIGHT} path against an isolated config directory. */
     static FxWindowFixture createDiff(Path dir, Path left, Path right, Consumer<MainController> onBuilt)
             throws Exception {

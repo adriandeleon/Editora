@@ -110,7 +110,8 @@ public final class DiagramRenderer {
             Path in = dir.resolve("diagram." + kind.sourceExtension());
             Path out = dir.resolve("diagram.png");
             Files.writeString(in, source);
-            ProcessRunner.Result r = ProcessRunner.run(dir, RENDER_TIMEOUT, kind.args(cmd, in, out, "png", dark));
+            ProcessRunner.Result r = ProcessRunner.runScrubbed(
+                    dir, RENDER_TIMEOUT, kind.args(cmd, in, out, "png", dark), kind.environment());
             if (!r.ok()) {
                 return Render.fail(r.message());
             }
@@ -143,7 +144,8 @@ public final class DiagramRenderer {
             Path in = dir.resolve("diagram." + kind.sourceExtension());
             Path out = dir.resolve("diagram." + fmt);
             Files.writeString(in, source);
-            ProcessRunner.Result r = ProcessRunner.run(dir, RENDER_TIMEOUT, kind.args(cmd, in, out, fmt, dark));
+            ProcessRunner.Result r = ProcessRunner.runScrubbed(
+                    dir, RENDER_TIMEOUT, kind.args(cmd, in, out, fmt, dark), kind.environment());
             if (!r.ok()) {
                 return r;
             }

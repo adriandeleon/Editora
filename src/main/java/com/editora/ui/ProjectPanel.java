@@ -354,6 +354,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         // file manager. Keyboard nav (onKey) uses clearAndSelect, so arrows still move a single selection.
         tree.getSelectionModel().setSelectionMode(SelectionMode.MULTIPLE);
         tree.setCellFactory(t -> new PathCell());
+        RowContextMenu.install(tree); // Menu key / Shift+F10 open the selected row's menu (cells are not focusable)
+        // F2 / Delete are row actions here (see onKey), even in keymaps that bind F2 to a global command.
+        tree.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("f2", "delete"));
         VBox.setVgrow(tree, Priority.ALWAYS);
         tree.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY && e.getClickCount() == 2) {
@@ -493,7 +496,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Updates the active-file marker used for current-file emphasis in the tree. */
     public void setActiveFile(Path file) {
         Path next = file == null ? null : file.toAbsolutePath().normalize();
-        if (Objects.equals(activeFile, next)) {
+        if (com.editora.config.PathKeys.samePath(activeFile, next)) {
             return;
         }
         activeFile = next;
@@ -1014,6 +1017,26 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (mapMode) {
             return; // the Canvas surface owns its arrows/C-n/C-p/Enter in Map mode
         }
+        // F2 renames and Delete deletes the selected row — the row actions that were reachable only from
+        // the right-click menu. Only while the tree itself has the key: in the filter field they are text
+        // editing keys.
+        boolean rowActionKey = rowKey(e.getCode(), true, true) != RowKey.NONE; // else: no lookups
+        TreeItem<Path> selected = rowActionKey ? tree.getSelectionModel().getSelectedItem() : null;
+        switch (rowKey(e.getCode(), rowActionKey && inTree(e), selected != null && selected.getValue() != null)) {
+            case RENAME -> {
+                if (!selected.getValue().equals(root)) { // as the menu: the project root is never renamed
+                    renameItem(selected);
+                }
+                e.consume();
+                return;
+            }
+            case DELETE -> {
+                deleteSelected(selected); // the menu's confirmed flow: files only, the whole multi-selection
+                e.consume();
+                return;
+            }
+            default -> {}
+        }
         switch (e.getCode()) {
             case ENTER -> {
                 openSelected();
@@ -1056,6 +1079,39 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 }
             }
         }
+    }
+
+    /** A row action a bare key triggers in the file tree. */
+    enum RowKey {
+        NONE,
+        RENAME,
+        DELETE
+    }
+
+    /**
+     * Which row action a key press means: F2 renames, Delete deletes — but only for a press aimed at the tree
+     * with a row selected. Anywhere else in the panel (the filter field) those keys keep their own meaning.
+     * Pure — tested.
+     */
+    static RowKey rowKey(javafx.scene.input.KeyCode code, boolean inTree, boolean hasSelection) {
+        if (!inTree || !hasSelection) {
+            return RowKey.NONE;
+        }
+        return switch (code) {
+            case F2 -> RowKey.RENAME;
+            case DELETE -> RowKey.DELETE;
+            default -> RowKey.NONE;
+        };
+    }
+
+    /** Whether a key event is aimed at the file tree (or one of its cells) rather than the filter field. */
+    private boolean inTree(KeyEvent e) {
+        for (Node n = e.getTarget() instanceof Node t ? t : null; n != null; n = n.getParent()) {
+            if (n == tree) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
@@ -1759,6 +1815,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         "git-status-deleted",
         "git-status-renamed",
         "git-status-untracked",
+        "git-status-conflict",
         "git-status-dir-changed"
     };
 
@@ -1865,7 +1922,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             boolean dirty = !isDir && isModified != null && isModified.test(item);
             Path absolute = item.toAbsolutePath().normalize();
             boolean open = !isDir && ProjectPanel.this.isOpen.test(absolute);
-            boolean active = !isDir && open && activeFile != null && absolute.equals(activeFile);
+            boolean active =
+                    !isDir && open && activeFile != null && com.editora.config.PathKeys.samePath(absolute, activeFile);
             // Mark the cell so the stylesheet can theme the folder vs. file icon color.
             getStyleClass().removeAll(CELL_CLASSES);
             getStyleClass().add(isDir ? "folder-cell" : "file-cell");

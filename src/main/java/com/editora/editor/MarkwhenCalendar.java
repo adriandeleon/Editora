@@ -19,6 +19,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 
+import com.editora.i18n.Messages;
 import com.editora.markwhen.MwNode;
 import com.editora.markwhen.Timeline;
 
@@ -50,7 +51,7 @@ public final class MarkwhenCalendar {
         collect(model.nodes(), model, events);
         String title = model.title();
         if (events.isEmpty()) {
-            return placeholder(title, "No dated events to show on a calendar yet.");
+            return placeholder(title, Messages.tr("markwhen.calendar.empty"));
         }
 
         long minDay = Long.MAX_VALUE;
@@ -63,8 +64,7 @@ public final class MarkwhenCalendar {
         YearMonth last = YearMonth.from(LocalDate.ofEpochDay(maxDay));
         long months = ChronoUnit.MONTHS.between(first, last) + 1;
         if (months > MAX_MONTHS) {
-            return placeholder(
-                    title, "Date range too large for the calendar (" + months + " months) — use the timeline view.");
+            return placeholder(title, Messages.tr("markwhen.calendar.tooLarge", months));
         }
 
         Map<Long, List<Ev>> byDay = new HashMap<>();
@@ -168,7 +168,7 @@ public final class MarkwhenCalendar {
             } else if (n instanceof MwNode.Event e) {
                 long s = e.start().startEpochDay();
                 long en = (e.end() != null ? e.end() : e.start()).endEpochDayExclusive();
-                String label = e.label().isBlank() ? "(untitled)" : e.label();
+                String label = e.label().isBlank() ? Messages.tr("common.untitled") : e.label();
                 out.add(new Ev(s, en, label, MarkwhenPaint.colorFor(e, model), tooltip(e, label)));
             }
         }

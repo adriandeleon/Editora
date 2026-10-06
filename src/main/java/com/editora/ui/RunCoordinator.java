@@ -111,10 +111,18 @@ final class RunCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final RunService service = new RunService();
+    private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(service, true); // the console can answer it
     private final RunPanel panel;
 
-    /** The most recent launch, for {@code run.rerun} and the shared stack-trace link resolver. */
+    /**
+     * The most recent launch, for {@code run.rerun}. Assigned only by {@link #streamRun}, all four together:
+     * the before-launch console once set {@code lastRunDir} on its own, and Rerun then replayed the previous
+     * program in the before-launch step's directory.
+     */
     private Path lastRunDir;
+
+    /** Where the console's current output came from — a run or a before-launch step — for its file links. */
+    private Path consoleDir;
 
     private java.util.Map<String, String> lastRunEnv = java.util.Map.of();
     private String lastRunLabel;
@@ -135,7 +143,7 @@ final class RunCoordinator {
 
     /** Working directory of the most recent run, or {@code null} — used by the shared link resolver. */
     Path lastRunDir() {
-        return lastRunDir;
+        return consoleDir;
     }
 
     void runActiveFile() {
@@ -153,7 +161,7 @@ final class RunCoordinator {
             host.setStatus(tr("status.run.noRerun"));
             return;
         }
-        if (!beginRunRequest()) {
+        if (!beginRunRequest() || !saveActiveBuffer()) {
             return;
         }
         streamRun(lastRunLabel, lastRunDir, lastRunCommand, lastRunEnv);
@@ -241,17 +249,32 @@ final class RunCoordinator {
         ops.editConfiguration(cfg.name());
     }
 
-    /** A before-launch step is usually a build, so it gets a generous ceiling rather than a quick-probe one. */
-    private static final java.time.Duration BEFORE_LAUNCH_TIMEOUT = java.time.Duration.ofMinutes(10);
-
     /** Whether a program is currently running, so the toolbar Stop button can reflect it. */
     boolean isRunning() {
-        return service.isRunning();
+        return service.isRunning() || beforeLaunch.isActive();
+    }
+
+    /** Set by the first launch (or before-launch step) that reaches the console; never cleared. */
+    private boolean consoleUsed;
+
+    /**
+     * Whether the Run console has something to show: a live process, or the output of one that ran in this
+     * window. Availability must not fall back to "the active tab is runnable" when a run exits — that closed
+     * the console on the very output it was opened for, and an instant-exit program never appeared at all.
+     */
+    boolean consoleInUse() {
+        return consoleUsed || isRunning();
     }
 
     /** Runs a saved {@link RunConfiguration}: its main class with its own program/VM args + working dir. */
     void runConfig(RunConfiguration cfg) {
         if (!beginRunRequest()) {
+            return;
+        }
+        // Save first, as Debug and the gutter marker do. The save used to sit inside the Java launch, after
+        // the before-launch build — which therefore compiled the file as it was on disk, and the program ran
+        // without the edit on screen; a script configuration never saved at all.
+        if (!saveActiveBuffer()) {
             return;
         }
         // A before-launch step gates everything after it: if the build fails there is nothing worth running,
@@ -265,71 +288,52 @@ final class RunCoordinator {
         });
     }
 
-    /** {@link #withBeforeLaunch(CoordinatorHost, RunConfiguration, Path, Runnable)} at this coordinator's own
-     *  working directory. */
+    /** Saves the active buffer if it is a dirty local file; false when that save was refused or failed. */
+    private boolean saveActiveBuffer() {
+        EditorBuffer b = host.activeBuffer();
+        return b == null || b.getPath() == null || !b.isDirty() || !host.isLocalBuffer(b) || ops.saveBuffer(b);
+    }
+
+    /**
+     * Runs {@code cfg}'s before-launch command in the Run console, then {@code then} — see
+     * {@link BeforeLaunchStep}. On this coordinator's own {@link RunService}, so the step and a program
+     * exclude each other and {@link #stopRun} reaches whichever is alive.
+     */
     private void withBeforeLaunch(RunConfiguration cfg, Runnable then) {
         Path cwd = beforeLaunchDir(cfg);
         Path routing = routingFor(host, cfg);
         Path project = routing == null ? ops.projectRoot() : ops.javaProjectRoot(routing);
         String jdkHome = effectiveMavenJdk(project, cfg);
-        withBeforeLaunch(host, cfg, cwd, JdkToolchain.environment(jdkHome, processPath()), then);
-    }
+        beforeLaunch.run(
+                host,
+                cfg,
+                cwd,
+                JdkToolchain.environment(jdkHome, processPath()),
+                new BeforeLaunchStep.Console() {
+                    @Override
+                    public void started(String commandLine) {
+                        consoleDir = cwd; // so a compiler error's file link in the build output resolves
+                        consoleUsed = true;
+                        panel.started(commandLine);
+                    }
 
-    /**
-     * Runs {@code cfg}'s before-launch command, if it has one, then {@code then} — or reports the failure and
-     * runs nothing.
-     *
-     * <p>The command runs <b>off the FX thread</b> (it is a build; it can take minutes) and {@code then} is
-     * marshalled back on, so everything after it keeps the single-threaded UI assumption the rest of this
-     * class is written against. With no before-launch step this is a straight call, not a thread hop, so the
-     * common case is unchanged.
-     *
-     * <p>Static and package-visible so {@link DebugCoordinator} launches through the same gate. It used to be
-     * private, and the debug path simply had no before-launch step — so a configuration whose build was
-     * {@code mvn -q compile} compiled when you pressed Run and silently debugged the previous class files
-     * when you pressed Debug, which is the exact failure the step exists to prevent, in the one mode where a
-     * stale line number is most confusing. The caller supplies {@code cwd} because each coordinator resolves
-     * the project root its own way.
-     */
-    static void withBeforeLaunch(CoordinatorHost host, RunConfiguration cfg, Path cwd, Runnable then) {
-        withBeforeLaunch(host, cfg, cwd, java.util.Map.of(), then);
-    }
+                    @Override
+                    public void output(String line, boolean stderr) {
+                        panel.appendOutput(line, stderr);
+                    }
 
-    /** As above, with a selected toolchain environment for Maven/JDK-aware build steps. */
-    static void withBeforeLaunch(
-            CoordinatorHost host,
-            RunConfiguration cfg,
-            Path cwd,
-            java.util.Map<String, String> environment,
-            Runnable then) {
-        String command = cfg.beforeLaunch();
-        if (command == null || command.isBlank()) {
-            then.run();
-            return;
-        }
-        List<String> argv = ProgramArgs.tokenize(command);
-        if (argv.isEmpty()) {
-            then.run();
-            return;
-        }
-        host.setStatus(tr("status.run.beforeLaunch", cfg.name()));
-        Thread worker = new Thread(
-                () -> {
-                    com.editora.process.ProcessRunner.Result r =
-                            com.editora.process.ProcessRunner.run(cwd, BEFORE_LAUNCH_TIMEOUT, argv, environment);
-                    javafx.application.Platform.runLater(() -> {
-                        if (r.ok()) {
-                            then.run();
+                    @Override
+                    public void ended(int code, String launchError) {
+                        if (launchError != null) {
+                            panel.failed(launchError);
                         } else {
-                            // Surface the tool's own output: "before-launch failed" alone tells the user
-                            // nothing about which step or why.
-                            host.setStatus(tr("status.run.beforeLaunchFailed", cfg.name(), firstLine(r)));
+                            panel.finished(code);
                         }
-                    });
+                        ops.onRunStateChanged();
+                    }
                 },
-                "run-before-launch");
-        worker.setDaemon(true);
-        worker.start();
+                then);
+        ops.onRunStateChanged(); // the step is running now: the toolbar's Stop button applies to it
     }
 
     /** Where a before-launch command runs: the configuration's working directory, else the project root. */
@@ -341,16 +345,6 @@ final class RunCoordinator {
         Path routing = routingFor(host, cfg);
         Path root = routing == null ? null : ops.javaProjectRoot(routing);
         return root != null ? root : Path.of(System.getProperty("user.dir"));
-    }
-
-    /** The most useful single line of a failed command's output — stderr if it said anything, else stdout. */
-    private static String firstLine(com.editora.process.ProcessRunner.Result r) {
-        String text = r.err() == null || r.err().isBlank() ? r.out() : r.err();
-        if (text == null || text.isBlank()) {
-            return "exit " + r.exit();
-        }
-        String[] lines = text.strip().split("\\R");
-        return lines[lines.length - 1]; // the last line: a build tool's summary, not its banner
     }
 
     /** The Java half of {@link #runConfig}, after any before-launch step has succeeded. */
@@ -409,7 +403,7 @@ final class RunCoordinator {
             // project jdtls cannot enumerate still gets its previous behaviour rather than nothing.
             ops.resolveJavaMainClasses(routing, options -> {
                 JavaMainClass mc = options.stream()
-                        .filter(o -> cfg.mainClass().equals(o.fqn()))
+                        .filter(o -> cfg.mainClass().equals(o.className()))
                         .findFirst()
                         .orElseGet(() -> new JavaMainClass(cfg.mainClass(), cfg.projectName(), routing.toString()));
                 ops.resolveJavaLaunch(routing, mc, info -> {
@@ -425,7 +419,7 @@ final class RunCoordinator {
                                     info.modulePaths(),
                                     info.classPaths(),
                                     cfg.mainClass(),
-                                    vm,
+                                    info.vmArgs(vm),
                                     args),
                             launchEnv);
                 });
@@ -545,7 +539,7 @@ final class RunCoordinator {
             }
             if (targetFqn != null) {
                 JavaMainClass match = list.stream()
-                        .filter(mc -> targetFqn.equals(mc.fqn()))
+                        .filter(mc -> targetFqn.equals(mc.className()))
                         .findFirst()
                         .orElse(null);
                 if (match == null) {
@@ -633,10 +627,10 @@ final class RunCoordinator {
                     info.modulePaths(),
                     info.classPaths(),
                     mc.fqn(),
-                    List.of(),
+                    info.vmArgs(List.of()),
                     args);
             String jdkHome = effectiveMavenJdk(root, null);
-            streamRun(shortName(mc.fqn()), root, command, JdkToolchain.environment(jdkHome, processPath()));
+            streamRun(shortName(mc.className()), root, command, JdkToolchain.environment(jdkHome, processPath()));
         });
     }
 
@@ -834,7 +828,7 @@ final class RunCoordinator {
      */
     private boolean beginRunRequest() {
         ops.openToolWindow();
-        if (!service.isRunning()) {
+        if (!isRunning()) { // a before-launch build counts: a second Run must not start a second build
             return true;
         }
         host.setStatus(tr("status.run.busy"));
@@ -850,9 +844,11 @@ final class RunCoordinator {
     /** As above, plus {@code env} — a saved run configuration's environment variables. */
     private void streamRun(String label, Path workingDir, List<String> command, java.util.Map<String, String> env) {
         lastRunDir = workingDir;
+        consoleDir = workingDir;
         lastRunLabel = label;
         lastRunCommand = command;
         lastRunEnv = env;
+        consoleUsed = true;
         ops.openToolWindow();
         panel.started(label);
         host.setStatus(tr("status.run.started", label));
@@ -893,6 +889,10 @@ final class RunCoordinator {
 
     /** Stops the currently running program (Run tool window Stop button / {@code run.stop} command). */
     void stopRun() {
+        if (beforeLaunch.isActive()) {
+            beforeLaunch.stop(); // its exit reports "stopped" and the launch it gated never happens
+            return;
+        }
         if (service.isRunning()) {
             service.stop();
             host.setStatus(tr("status.run.stopped"));

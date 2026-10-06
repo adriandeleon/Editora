@@ -58,7 +58,10 @@ final class SearchEverywherePopup {
 
         List<Item> symbols(String query);
 
-        /** Ensures the project corpus exists, then runs the callback — may be asynchronous. */
+        /**
+         * Ensures the project corpus exists as far as it can, then runs the callback — always, exactly once,
+         * possibly later (a walk in flight) and also when there is no corpus to build.
+         */
         void ensureIndex(Runnable then);
 
         /** Acts on the chosen result: run the command, open the file, jump to the symbol. */
@@ -83,6 +86,11 @@ final class SearchEverywherePopup {
 
     private final TextField input = new TextField();
     private final ListView<Row> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the popup is shown. */
+    private final Label hint = new Label();
+    /** The raw chord token that opens the highlighted row's docs, or null if the keymap leaves none free. */
+    private String docsChord;
+
     private final ObservableList<Row> rows = FXCollections.observableArrayList();
     private final Label status = new Label();
     /** The highlighted row's longer explanation — one fixed line, so the card cannot jitter. */
@@ -122,7 +130,6 @@ final class SearchEverywherePopup {
         desc.setMaxWidth(Double.MAX_VALUE);
         desc.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> updateDescription(now));
-        Label hint = new Label(tr("searchEverywhere.hint"));
         hint.getStyleClass().add("palette-hint");
 
         VBox box = new VBox(6, input, list, status, desc, hint);
@@ -143,6 +150,11 @@ final class SearchEverywherePopup {
     }
 
     void show(String seed) {
+        var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+        docsChord = PickerKeys.freeChord(keymap, "C-h", "f1", "S-f1"); // as the command palette
+        hint.setText(PickerKeys.legend(
+                PickerKeys.hint("open", "↵"),
+                PickerKeys.hint("docs", keymap == null ? docsChord : keymap.display(docsChord))));
         input.setText(seed == null ? "" : seed);
         showing = true;
         overlayHost.show(
@@ -181,60 +193,18 @@ final class SearchEverywherePopup {
     }
 
     private void onKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
-                }
-            }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case ENTER -> {
-                chooseSelected();
-                e.consume();
-            }
-            case H -> {
-                if (e.isControlDown()) {
-                    openDocs();
-                    e.consume();
-                }
-            }
-            default -> {}
-            // Escape and C-g belong to the host, as with every other in-scene overlay.
+        PickerKeys.Action action = PickerKeys.action(e);
+        if (action == PickerKeys.Action.ACCEPT) {
+            chooseSelected();
+        } else if (PickerKeys.navigate(list, action, SearchEverywherePopup::isSelectable)) {
+            // Stepped over group headers and rows that are listed but cannot be run, so the cursor never
+            // rests somewhere Enter would do nothing.
+        } else if (docsChord != null && docsChord.equals(com.editora.command.KeyDispatcher.chord(e))) {
+            openDocs();
+        } else {
+            return; // cancel (Esc / the keymap's cancel chord) belongs to the host, as with every overlay
         }
-    }
-
-    /**
-     * Moves to the next <em>selectable</em> row, stepping over group headers and over rows that are
-     * listed but cannot be run, so the cursor never rests somewhere Enter would do nothing.
-     */
-    private void move(int delta) {
-        int size = rows.size();
-        if (size == 0) {
-            return;
-        }
-        int cur = list.getSelectionModel().getSelectedIndex();
-        for (int step = 1; step <= size; step++) {
-            int idx = Math.floorMod((cur < 0 ? 0 : cur) + delta * step, size);
-            if (isSelectable(rows.get(idx))) {
-                list.getSelectionModel().select(idx);
-                list.scrollTo(idx);
-                return;
-            }
-        }
+        e.consume();
     }
 
     private static boolean isSelectable(Row row) {
@@ -249,7 +219,7 @@ final class SearchEverywherePopup {
         }
     }
 
-    /** C-h: the highlighted row's online documentation, mirroring the command palette. */
+    /** The docs key: the highlighted row's online documentation, mirroring the command palette. */
     private void openDocs() {
         if (list.getSelectionModel().getSelectedItem() instanceof ItemRow row) {
             overlayHost.hide();
@@ -277,16 +247,28 @@ final class SearchEverywherePopup {
         // An empty query lists every command and touches no corpus. That is what lets this stand in for
         // the command palette: opening it shows the same browsable list rather than a blank box.
         // Otherwise: files and symbols need the corpus, so a command-scoped query must not trigger a walk.
-        if (currentQuery.isEmpty() || scope.kind() == Kind.COMMAND) {
+        if (currentQuery.isEmpty() || scope.kind() == Kind.COMMAND || awaitingIndex) {
+            populate(scope); // while a walk is in flight: what needs no corpus, now; the rest when it lands
+            return;
+        }
+        boolean[] inline = {true};
+        awaitingIndex = true;
+        ops.ensureIndex(() -> {
+            awaitingIndex = false;
+            if (inline[0]) {
+                populate(scope);
+            } else if (showing) {
+                refresh(); // from the live field: the query has usually moved on since this was parked
+            }
+        });
+        if (awaitingIndex) {
+            inline[0] = false;
             populate(scope);
-        } else {
-            ops.ensureIndex(() -> {
-                if (showing) {
-                    populate(scope);
-                }
-            });
         }
     }
+
+    /** True while a {@link Ops#ensureIndex} callback is parked on a project walk that has not landed. */
+    private boolean awaitingIndex;
 
     private void populate(Scope scope) {
         // The corpus sources answer nothing useful for an empty query, and asking would build the index.

@@ -70,7 +70,13 @@ public final class SnippetParser {
                     List<SnippetTransform> ts = c.transforms.get(n);
                     int primary = c.primaryIndex.getOrDefault(n, firstNonTransform(ts));
                     stops.add(new TabStop(
-                            n, rs, c.values.getOrDefault(n, ""), c.choices.getOrDefault(n, List.of()), ts, primary));
+                            n,
+                            rs,
+                            c.values.getOrDefault(n, ""),
+                            c.choices.getOrDefault(n, List.of()),
+                            ts,
+                            primary,
+                            c.spans.get(n)));
                 });
         return new ParsedSnippet(c.out.toString(), stops);
     }
@@ -85,6 +91,8 @@ public final class SnippetParser {
         StringBuilder out = new StringBuilder();
         final Map<Integer, List<int[]>> ranges = new LinkedHashMap<>();
         final Map<Integer, List<SnippetTransform>> transforms = new LinkedHashMap<>();
+        final Map<Integer, List<int[]>> spans = new HashMap<>(); // parallel to ranges: {open, close} order
+        int seq; // hands out the open/close numbers, so nesting survives ranges that touch or coincide
         final Map<Integer, List<String>> choices = new LinkedHashMap<>();
         final Map<Integer, Integer> primaryIndex = new HashMap<>();
         final Set<Integer> definerSeen = new HashSet<>(); // stops whose value-defining occurrence was handled
@@ -250,10 +258,11 @@ public final class SnippetParser {
         if (definer) {
             c.pos = colon + 1; // past ':'
             int start = c.out.length();
+            int open = c.seq++; // before the default, so the stops inside it are numbered within this one
             parseSeq(c, true); // render the default (registers nested definers + values)
             c.values.putIfAbsent(num, c.out.substring(start));
             if (!c.pass1) {
-                record(c, num, start, c.out.length(), null);
+                record(c, num, start, c.out.length(), null, open);
                 markPrimary(c, num);
             }
             if (c.pos < c.s.length() && c.s.charAt(c.pos) == '}') {
@@ -301,7 +310,14 @@ public final class SnippetParser {
         c.pos = p.end();
     }
 
-    /** {@code ${VAR}} / {@code ${VAR:default}} (unchanged behaviour; resolver is memoized). */
+    /**
+     * {@code ${VAR}}, {@code ${VAR:default}} or {@code ${VAR/re/fmt/flags}} (the resolver is memoized).
+     *
+     * <p>The default stands in for a variable that is unknown <em>or empty</em>: an untitled buffer has no
+     * file name and Tab expansion has no selection, and {@code class ${TM_FILENAME_BASE:MyClass}} must not
+     * come out as {@code class }. A transform rewrites the value; without this branch the text after the
+     * name was read on as snippet body, leaving the regex in the document and its {@code $1} as tab stops.
+     */
     private static boolean parseVariable(Ctx c, int i) {
         String s = c.s;
         int j = i;
@@ -310,9 +326,21 @@ public final class SnippetParser {
         }
         String name = s.substring(i, j);
         String value = c.vars.resolve(name);
+        if (j < s.length() && s.charAt(j) == '/') {
+            SnippetTransform.Parsed p = SnippetTransform.parseAt(s, j + 1);
+            if (p != null) {
+                c.out.append(p.transform().apply(value == null ? "" : value));
+                c.pos = p.end();
+            } else { // malformed: the plain value, and the rest of the construct is dropped rather than typed
+                c.out.append(value == null ? "" : value);
+                int close = findBraceClose(s, i);
+                c.pos = close < 0 ? s.length() : close + 1;
+            }
+            return true;
+        }
         if (j < s.length() && s.charAt(j) == ':') {
             c.pos = j + 1;
-            if (value != null) {
+            if (value != null && !value.isEmpty()) {
                 c.out.append(value);
                 int close = findBraceClose(s, j); // skip the default
                 c.pos = close < 0 ? s.length() : close + 1;
@@ -337,13 +365,15 @@ public final class SnippetParser {
         int start = c.out.length();
         c.out.append(text);
         if (!c.pass1) {
-            record(c, num, start, c.out.length(), transform);
+            record(c, num, start, c.out.length(), transform, c.seq++);
         }
     }
 
-    private static void record(Ctx c, int num, int start, int end, SnippetTransform t) {
+    /** Records an occurrence that was entered at sequence number {@code open} and is being left now. */
+    private static void record(Ctx c, int num, int start, int end, SnippetTransform t, int open) {
         c.ranges.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {start, end});
         c.transforms.computeIfAbsent(num, k -> new ArrayList<>()).add(t);
+        c.spans.computeIfAbsent(num, k -> new ArrayList<>()).add(new int[] {open, c.seq++});
     }
 
     /** Marks the range just recorded for {@code num} as the editable field (the value-defining one). */

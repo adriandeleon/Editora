@@ -56,7 +56,7 @@ final class DocumentSymbolMapper {
         String kind = kindName(s.getKind());
         // Methods/constructors are leaves in the outline: some servers (e.g. jdtls) report a method's body
         // internals (local variables, lambdas, nested calls) as children, which clutter a class outline with
-        // "methods inside methods". Type-like containers (class/interface/enum/…) keep their members.
+        // "methods inside methods". Every other symbol keeps its children.
         List<SymbolNode> children = new ArrayList<>();
         if (descendInto(kind) && s.getChildren() != null) {
             for (DocumentSymbol c : s.getChildren()) {
@@ -87,15 +87,17 @@ final class DocumentSymbolMapper {
     }
 
     /**
-     * Whether to keep a symbol's children in the outline. Only <b>type-like containers</b> (class, interface,
-     * enum, struct, namespace, module, package, object) keep their members; every callable (method, function,
-     * constructor — including lambdas/anonymous classes a server reports as their children) is a leaf, so the
-     * outline never shows "methods inside methods". (Nested functions in Python/JS therefore appear flat.)
+     * Whether to keep a symbol's children in the outline. Every <b>callable</b> (method, function,
+     * constructor) is a leaf: servers such as jdtls report a body's locals, lambdas and anonymous classes as
+     * its children, and the outline must not show "methods inside methods". (Nested functions in Python/JS
+     * therefore appear flat.) Everything else keeps its children — not only type-like containers: lemminx
+     * reports XML elements as {@code Field}, and the JSON/YAML servers nest under {@code Array} and
+     * property kinds, so a whitelist of type kinds collapsed those documents to their root.
      */
     static boolean descendInto(String kind) {
         return switch (kind == null ? "" : kind) {
-            case "class", "interface", "enum", "struct", "namespace", "module", "package", "object" -> true;
-            default -> false;
+            case "method", "function", "constructor" -> false;
+            default -> true;
         };
     }
 }

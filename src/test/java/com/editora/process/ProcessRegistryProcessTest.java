@@ -99,4 +99,39 @@ class ProcessRegistryProcessTest {
             helper.destroyForcibly();
         }
     }
+
+    /**
+     * A server that was just sent {@code shutdown}/{@code exit} is waited for (bounded) by the shutdown
+     * hook instead of being force-killed in the middle of saving its state.
+     */
+    @Test
+    void anExpectedExitIsAwaitedWithinABound() throws Exception {
+        Process reader = new ProcessBuilder("/usr/bin/python3", "-c", "import sys; sys.stdin.read()").start();
+        try {
+            ProcessRegistry.expectExit(reader);
+            assertFalse(
+                    ProcessRegistry.awaitExpectedExits(50),
+                    "a process that is still running must not be waited on forever");
+
+            reader.getOutputStream().close(); // its own way out: end of input
+            assertTrue(ProcessRegistry.awaitExpectedExits(10_000), "an exiting process should be awaited");
+            assertTrue(reader.waitFor(5, TimeUnit.SECONDS));
+            org.junit.jupiter.api.Assertions.assertEquals(0, reader.exitValue(), "it left by itself, not by a kill");
+        } finally {
+            reader.destroyForcibly();
+        }
+    }
+
+    /** Once its owner gives up and kills it, a process is no longer something the hook waits for. */
+    @Test
+    void killTreeEndsTheWaitForAnExpectedExit() throws Exception {
+        Process reader = new ProcessBuilder("/usr/bin/python3", "-c", "import sys; sys.stdin.read()").start();
+        try {
+            ProcessRegistry.expectExit(reader);
+            ProcessRegistry.killTree(reader);
+            assertTrue(ProcessRegistry.awaitExpectedExits(0), "a killed process must not hold the shutdown hook");
+        } finally {
+            reader.destroyForcibly();
+        }
+    }
 }

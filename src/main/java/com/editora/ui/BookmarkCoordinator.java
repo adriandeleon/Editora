@@ -76,7 +76,10 @@ final class BookmarkCoordinator {
     // user actions (toggle/add/reorder) still persist immediately via persistBookmarks. (#551)
     private final javafx.animation.PauseTransition persistDebounce =
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(300));
-    private EditorBuffer pendingPersist;
+    /** Every buffer with a debounced persist outstanding. One slot lost the first buffer's line shifts
+     *  whenever a second buffer was edited inside the same debounce window. */
+    private final java.util.Set<EditorBuffer> pendingPersist =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
     BookmarkCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -115,8 +118,8 @@ final class BookmarkCoordinator {
         });
         panel.setPrompt(ops::promptText); // in-scene bookmark-note prompt
         this.jumpPalette = new QuickOpen<>(
-                "Jump to Bookmark",
-                "Type to filter bookmarks…",
+                tr("nav.bookmarks.title"),
+                tr("nav.bookmarks.prompt"),
                 this::allBookmarkEntries,
                 e -> bookmarkLabel(e.bm()),
                 e -> e.bm().isFolder() ? e.file().toString() : e.file().getFileName() + ":" + (e.bm().line() + 1),
@@ -233,17 +236,18 @@ final class BookmarkCoordinator {
      * only line-shift indices, which reanchor-on-open recovers. (#551)
      */
     void schedulePersistBookmarks(EditorBuffer buffer) {
-        pendingPersist = buffer;
+        pendingPersist.add(buffer);
         persistDebounce.playFromStart();
         onChanged.run();
     }
 
-    private void flushPendingPersist() {
-        EditorBuffer b = pendingPersist;
-        pendingPersist = null;
-        if (b != null) {
-            persistBookmarks(b);
-        }
+    /** Writes every outstanding debounced persist now. Also called when the session is saved and when the
+     *  window closes, so a close inside the debounce window does not drop the shifted positions. */
+    void flushPendingPersist() {
+        persistDebounce.stop();
+        java.util.List<EditorBuffer> pending = java.util.List.copyOf(pendingPersist);
+        pendingPersist.clear();
+        pending.forEach(this::persistBookmarks);
     }
 
     void persistBookmarks(EditorBuffer buffer) {
@@ -283,17 +287,41 @@ final class BookmarkCoordinator {
         }
     }
 
-    /** Moves a file's bookmarks from {@code oldKey} to {@code newKey} (used by in-app rename). */
-    void migrateKey(String oldKey, String newKey) {
-        if (oldKey == null || oldKey.equals(newKey)) {
-            return;
-        }
-        var map = ops.bookmarks();
-        List<Bookmark> moved = map.remove(oldKey);
-        if (moved != null) {
-            map.put(newKey, moved);
+    /**
+     * A rename or move ({@code old → target}, a file or a folder): the bookmarks stored for it, and for every
+     * file below it, move to the new path. Only the tab menu's Rename used to do this, for its one file.
+     */
+    void pathRenamed(Path old, Path target) {
+        String sep = old.getFileSystem().getSeparator();
+        if (RenamedFileState.rekey(ops.bookmarks(), old.toString(), target.toString(), sep)) {
             ops.saveBookmarks();
             refreshViews();
+        }
+    }
+
+    /**
+     * Save As re-pointed {@code buffer} from {@code oldPath}: its bookmarks are stored under the new path as
+     * well. The file it left keeps its own while it is still on disk; an entry for a path that is not (a
+     * Save As rolled back after a failed write) is dropped.
+     */
+    void bufferPathChanged(EditorBuffer buffer, Path oldPath) {
+        Path now = buffer.getPath();
+        var map = ops.bookmarks();
+        String oldKey = oldPath == null ? null : oldPath.toString();
+        if (oldKey != null && now != null && buffer.isNarrowed() && map.get(oldKey) != null) {
+            map.put(now.toString(), new ArrayList<>(map.get(oldKey))); // region-relative lines can't be snapshotted
+            ops.saveBookmarks();
+        }
+        if (oldKey != null
+                && com.editora.vfs.Vfs.isLocal(oldPath)
+                && !java.nio.file.Files.exists(oldPath)
+                && map.remove(oldKey) != null) {
+            ops.saveBookmarks();
+        }
+        boolean any = !buffer.getBookmarkManager().snapshot().isEmpty();
+        if (now != null && !now.equals(oldPath) && (any || map.containsKey(now.toString()))) {
+            pendingPersist.remove(buffer);
+            persistBookmarks(buffer); // also when it has none: bookmarks of a file it overwrote are gone
         }
     }
 
@@ -326,7 +354,7 @@ final class BookmarkCoordinator {
     void toggleAtCaret() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.getPath() != null) {
-            b.toggleBookmark(b.getArea().getCurrentParagraph());
+            b.toggleBookmark(b.getFocusedArea().getCurrentParagraph());
         } else if (b != null) {
             host.setStatus(tr("status.saveBeforeBookmark"));
         }
@@ -338,7 +366,7 @@ final class BookmarkCoordinator {
         if (b == null || b.getPath() == null) {
             return;
         }
-        int line = b.getArea().getCurrentParagraph();
+        int line = b.getFocusedArea().getCurrentParagraph();
         var mgr = b.getBookmarkManager();
         String current = "";
         for (Bookmark bm : mgr.snapshot()) {
@@ -363,7 +391,7 @@ final class BookmarkCoordinator {
         if (b == null) {
             return;
         }
-        int from = b.getArea().getCurrentParagraph();
+        int from = b.getFocusedArea().getCurrentParagraph();
         Integer target = forward
                 ? b.getBookmarkManager().next(from)
                 : b.getBookmarkManager().previous(from);
@@ -396,7 +424,7 @@ final class BookmarkCoordinator {
             host.setStatus(tr("status.bookmarks.noFile"));
             return;
         }
-        int line = b.getArea().getCurrentParagraph();
+        int line = b.getFocusedArea().getCurrentParagraph();
         Path file = b.getPath();
         ops.promptText(tr("dialog.bookmarkMnemonic.title"), tr("dialog.bookmarkMnemonic.content"), "", typed -> {
             String m = BookmarkMnemonics.normalize(typed);
@@ -430,9 +458,10 @@ final class BookmarkCoordinator {
             host.setStatus(tr("status.bookmarks.noMnemonic", mnemonic.toUpperCase(java.util.Locale.ROOT)));
             return;
         }
-        ops.openPath(Path.of(found.file()));
-        javafx.application.Platform.runLater(
-                () -> ops.navigateToLine(found.bookmark().line()));
+        // In place, through the load-aware open: a bare runLater(navigateToLine) ran against the still-empty
+        // loading shell of a file that had no tab and left the caret on line 1.
+        ops.openInProjectWindow(
+                ops.currentProjectKey(), Path.of(found.file()), found.bookmark().line());
     }
 
     void openJumpPalette() {

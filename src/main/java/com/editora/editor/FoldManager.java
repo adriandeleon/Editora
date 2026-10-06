@@ -53,6 +53,8 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
 public final class FoldManager {
 
     private final CodeArea area;
+    private java.util.function.IntSupplier caretLine;
+    private Supplier<CodeArea> secondView = () -> null;
     /** Full-text source; EditorBuffer supplies its per-version shared snapshot. */
     private final Supplier<String> textSnapshot;
 
@@ -116,6 +118,8 @@ public final class FoldManager {
     /** Extra CSS class for a line's breakpoint glyph (e.g. {@code conditional}/{@code logpoint}/disabled),
      *  or {@code null} for a plain breakpoint. */
     private IntFunction<String> breakpointClass = i -> null;
+    /** Hover text for a line's breakpoint glyph (what a live debug session says about it), or {@code null}. */
+    private IntFunction<String> breakpointTooltip = i -> null;
     /** Invoked when the user clicks the breakpoint strip on a line (toggles the breakpoint). */
     private IntConsumer onBreakpointToggle = i -> {};
 
@@ -146,12 +150,36 @@ public final class FoldManager {
     /** Current preview foreground, also exposed as a looked-up color to plain styled-text runs. */
     private Color previewForeground = Color.web("#24292f");
 
+    /**
+     * A split shows the document in two views, each with its own caret. The "at caret" commands then mean the
+     * caret of the view the user is in ({@code focused}); left alone it is the primary view's. A fold is made
+     * through the primary view, so RichTextFX moves only that view's caret off a line it hides: the
+     * {@code second} view's (null while there is none) is put on the fold's header here.
+     */
+    void setSplitViews(Supplier<CodeArea> focused, Supplier<CodeArea> second) {
+        this.caretLine = () -> focused.get().getCurrentParagraph();
+        this.secondView = second;
+    }
+
+    private void foldStateChanged() {
+        CodeArea view = secondView.get();
+        int line = view == null ? -1 : view.getCurrentParagraph();
+        if (line > 0 && view.isFolded(line)) {
+            while (line > 0 && view.isFolded(line)) {
+                line--;
+            }
+            view.moveTo(line, view.getParagraphLength(line));
+        }
+        onFoldStateChanged.run();
+    }
+
     public FoldManager(CodeArea area) {
         this(area, area::getText);
     }
 
     FoldManager(CodeArea area, Supplier<String> textSnapshot) {
         this.area = area;
+        this.caretLine = area::getCurrentParagraph;
         this.textSnapshot = textSnapshot;
         area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
             if (heuristicEnabled) {
@@ -164,6 +192,7 @@ public final class FoldManager {
         // without manual folds, i.e. almost all of them.
         area.plainTextChanges().subscribe(ch -> {
             recomputeGeneration++;
+            noteEditNearFold(ch.getPosition(), ch.getInserted(), ch.getRemoved());
             if (manualRegions.isEmpty()) {
                 return;
             }
@@ -413,6 +442,10 @@ public final class FoldManager {
         changed.addAll(map.keySet());
         changed.removeIf(line -> oldStarts.contains(line) && map.containsKey(line));
         byStart = map;
+        if (orphanCheckPending) {
+            orphanCheckPending = false;
+            expandOrphanRuns();
+        }
         int total = area.getParagraphs().size();
         // Only recreate the gutter graphics for changed fold-start lines that are *currently visible*; the
         // graphic factory reads the (now-updated) byStart when it lazily builds offscreen rows on scroll,
@@ -425,18 +458,10 @@ public final class FoldManager {
         // untouched (this runs on every 250 ms settle), and at startup the recompute that setLanguage
         // triggers runs against a still-empty document, measured at ~10 ms of pure forced layout.
         if (!changed.isEmpty()) {
-            int first = 0;
-            int last = -1;
-            try {
-                first = Math.max(0, area.firstVisibleParToAllParIndex());
-                last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            } catch (RuntimeException notLaidOutYet) {
-                last = -1; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
-            }
-            for (int line : changed) {
-                if (line >= first && line <= last) {
-                    area.recreateParagraphGraphic(line);
-                }
+            recreateVisibleGutter(area, changed, total);
+            CodeArea second = secondView.get();
+            if (second != null && second.getScene() != null) { // a split's second view shows the same chevrons
+                recreateVisibleGutter(second, changed, total);
             }
         }
         // The line-number gutter pads to the digit width of the line count (see formatLineNo). Since the
@@ -451,16 +476,35 @@ public final class FoldManager {
         onRegionsChanged.run();
     }
 
+    /** Recreates the gutter graphics of those of {@code lines} (null = all) that {@code view} is showing. */
+    private static void recreateVisibleGutter(CodeArea view, java.util.Collection<Integer> lines, int total) {
+        int first;
+        int last;
+        try {
+            first = Math.max(0, view.firstVisibleParToAllParIndex());
+            last = Math.min(total - 1, view.lastVisibleParToAllParIndex());
+        } catch (RuntimeException notLaidOutYet) {
+            return; // no viewport yet (e.g. during open) — the factory builds correct graphics on layout
+        }
+        if (lines == null) {
+            for (int i = first; i <= last; i++) {
+                view.recreateParagraphGraphic(i);
+            }
+            return;
+        }
+        for (int line : lines) {
+            if (line >= first && line <= last) {
+                view.recreateParagraphGraphic(line);
+            }
+        }
+    }
+
     /** Recreates the visible rows' gutter graphics so their line numbers re-pad to a new digit width. */
     private void repadVisibleLineNumbers(int total) {
-        try {
-            int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            for (int i = first; i <= last; i++) {
-                area.recreateParagraphGraphic(i);
-            }
-        } catch (RuntimeException ignored) {
-            // viewport mid-layout — the next build picks up the new width anyway
+        recreateVisibleGutter(area, null, total);
+        CodeArea second = secondView.get();
+        if (second != null && second.getScene() != null) {
+            recreateVisibleGutter(second, null, total);
         }
     }
 
@@ -518,6 +562,11 @@ public final class FoldManager {
         this.onBreakpointToggle = onToggle == null ? i -> {} : onToggle;
     }
 
+    /** Supplies the hover text of a line's breakpoint glyph ({@code null} = none). */
+    public void setBreakpointTooltip(IntFunction<String> tooltipFor) {
+        this.breakpointTooltip = tooltipFor == null ? i -> null : tooltipFor;
+    }
+
     /**
      * Wires the Git change-bar gutter column: {@code enabled} decides whether the (fixed-width) slot is
      * reserved on every row, and {@code classFor} returns the CSS style class for a line's bar
@@ -553,6 +602,169 @@ public final class FoldManager {
         return regions;
     }
 
+    // --- keeping a collapsed fold whole through edits ----------------------------------------------
+    //
+    // A fold is nothing but the `collapse` paragraph style on its body, and "collapsed" is inferred from the
+    // paragraph after the header. So an edit that separates the header from its hidden run — a line break
+    // typed at the header's end, the header line deleted or joined, a visible line joined INTO the run —
+    // left text in the document that was not drawn and that no chevron or fold command could reveal.
+    // Two rules keep that from happening: an edit that adds or removes a line break on a collapsed header
+    // or in its hidden run expands that fold, and after the next region detection any hidden run whose
+    // header no longer starts a region is expanded too (the header was edited into something else).
+
+    /** Stands in for a line break inside a collapsed fold in {@link #linesAsUnits}. Never typed; a document
+     *  that contains it is simply not masked. */
+    static final char HIDDEN_BREAK = '\u0000';
+
+    private boolean orphanCheckPending;
+
+    /**
+     * The last paragraph of the hidden run under the collapsed header {@code par}, or {@code par} itself
+     * when nothing is hidden under it — so a line command can take the header together with its body.
+     */
+    public int hiddenRunEnd(int par) {
+        int n = area.getParagraphs().size();
+        int q = par;
+        if (par >= 0 && par < n && !area.isFolded(par)) {
+            while (q + 1 < n && area.isFolded(q + 1)) {
+                q++;
+            }
+        }
+        return q;
+    }
+
+    /**
+     * {@code text} as the pure line commands (kill line, duplicate, move, transpose) should see it: a
+     * collapsed header and its hidden body are ONE line, as they are on screen. The line breaks inside a
+     * fold become {@link #HIDDEN_BREAK}, which keeps every offset unchanged; pass the edit's replacement
+     * through {@link #unmask}. Returns {@code text} itself when no collapsed fold is at, directly above or
+     * directly below the caret's line {@code par} — the only folds such a command can reach.
+     */
+    public String linesAsUnits(String text, int par) {
+        int n = area.getParagraphs().size();
+        boolean near = false;
+        for (int p = Math.max(0, par - 1); p <= par + 2 && p < n && !near; p++) {
+            near = area.isFolded(p);
+        }
+        if (!near || text.indexOf(HIDDEN_BREAK) >= 0) {
+            return text;
+        }
+        char[] chars = text.toCharArray();
+        int line = 0;
+        for (int i = 0; i < chars.length; i++) {
+            if (chars[i] == '\n' && ++line < n && area.isFolded(line)) {
+                chars[i] = HIDDEN_BREAK;
+            }
+        }
+        return new String(chars);
+    }
+
+    /** Undoes {@link #linesAsUnits} on an edit's replacement text. */
+    public static String unmask(String replacement) {
+        return replacement.indexOf(HIDDEN_BREAK) < 0 ? replacement : replacement.replace(HIDDEN_BREAK, '\n');
+    }
+
+    /**
+     * Expands the collapsed fold headed by the paragraph containing {@code offset} (if any) and returns
+     * the end offset of what was its last hidden line; {@code offset} itself when that paragraph heads no
+     * collapsed fold. For a line command that rewrites every line of the unit in place (comment).
+     */
+    public int expandHeaderAt(int offset) {
+        int par = area.offsetToPosition(offset, Bias.Forward).getMajor();
+        int end = hiddenRunEnd(par);
+        if (end == par) {
+            return offset;
+        }
+        unfold(par);
+        return area.getAbsolutePosition(end, area.getParagraphLength(end));
+    }
+
+    /**
+     * The span a whole-line rewrite (comment) should cover for the selection {@code [selStart, selEnd]}:
+     * unchanged, unless the selection ends on a collapsed header — then that fold is expanded and the span
+     * runs from the start of the selection's first line to the end of the fold's last line. A non-empty
+     * selection that ends at the very start of a line does not include that line.
+     */
+    public int[] expandHeaderSpan(int selStart, int selEnd) {
+        var pos = area.offsetToPosition(selEnd, Bias.Forward);
+        int end = selEnd > selStart && pos.getMinor() == 0 ? selEnd : expandHeaderAt(selEnd);
+        if (end == selEnd) {
+            return new int[] {selStart, selEnd};
+        }
+        return new int[] {
+            selStart - area.offsetToPosition(selStart, Bias.Forward).getMinor(), end
+        };
+    }
+
+    /** Per text change (so: per keystroke) — one position lookup and at most three paragraph-style reads. */
+    private void noteEditNearFold(int position, String inserted, String removed) {
+        int n = area.getParagraphs().size();
+        var at = area.offsetToPosition(Math.min(position, area.getLength()), Bias.Forward);
+        int first = at.getMajor();
+        boolean insertedBreak = inserted.indexOf('\n') >= 0;
+        int last = insertedBreak
+                ? area.offsetToPosition(Math.min(position + inserted.length(), area.getLength()), Bias.Forward)
+                        .getMajor()
+                : first;
+        if (!area.isFolded(first) && !area.isFolded(last) && !(last + 1 < n && area.isFolded(last + 1))) {
+            return;
+        }
+        orphanCheckPending = true; // a same-line edit: the header may stop being a region start
+        // Lines inserted in front of a header (at its column 0) push it down whole, body attached.
+        boolean pushedDown = removed.isEmpty() && at.getMinor() == 0 && !area.isFolded(first) && !area.isFolded(last);
+        if ((insertedBreak || removed.indexOf('\n') >= 0) && !pushedDown) {
+            // Deferred: changing paragraph styles from inside the change notification would re-enter the
+            // document (and, during an undo, the undo manager).
+            Platform.runLater(() -> expandRunsAt(first, last, last + 1));
+        }
+    }
+
+    private void expandRunsAt(int... pars) {
+        boolean changed = false;
+        for (int par : pars) {
+            if (par >= 0 && par < area.getParagraphs().size() && area.isFolded(par)) {
+                expandRun(par);
+                changed = true;
+            }
+        }
+        if (changed && !restoring) {
+            foldStateChanged();
+        }
+    }
+
+    /** Reveals the run of hidden paragraphs containing {@code par}, whether or not anything heads it. */
+    private void expandRun(int par) {
+        int start = par;
+        while (start > 0 && area.isFolded(start - 1)) {
+            start--;
+        }
+        if (start > 0) {
+            area.unfoldParagraphs(start - 1);
+            shadeHeader(start - 1, false);
+            return;
+        }
+        // A run that begins the document has no paragraph above it to unfold from.
+        for (int p = 0; p < area.getParagraphs().size() && area.isFolded(p); p++) {
+            List<String> style = new ArrayList<>(area.getParagraph(p).getParagraphStyle());
+            style.remove("collapse");
+            area.setParagraphStyle(p, style);
+        }
+    }
+
+    /** Expands every hidden run whose header is not (any longer) the start of a region. */
+    private void expandOrphanRuns() {
+        boolean changed = false;
+        for (int p = 0; p < area.getParagraphs().size(); p++) {
+            if (area.isFolded(p) && (p == 0 || (!area.isFolded(p - 1) && !byStart.containsKey(p - 1)))) {
+                expandRun(p);
+                changed = true;
+            }
+        }
+        if (changed && !restoring) {
+            foldStateChanged();
+        }
+    }
+
     /** True if the region whose header is {@code startLine} is currently collapsed. */
     public boolean isCollapsed(int startLine) {
         int next = startLine + 1;
@@ -563,6 +775,7 @@ public final class FoldManager {
         hidePreview();
         int topPar = firstVisiblePar();
         int caret = area.getCaretPosition();
+        int anchor = area.getAnchor();
         int bodyStart = area.getAbsolutePosition(region.startLine(), area.getParagraphLength(region.startLine()));
         int bodyEnd = area.getAbsolutePosition(region.endLine(), area.getParagraphLength(region.endLine()));
 
@@ -570,24 +783,31 @@ public final class FoldManager {
         shadeHeader(region.startLine(), true);
 
         // foldParagraphs() moves the caret to the fold header; restore it unless it was in the
-        // now-hidden body, so folding a block elsewhere doesn't relocate the user's cursor.
+        // now-hidden body, so folding a block elsewhere doesn't relocate the user's cursor — nor drop the
+        // selection it ends, unless that started in the body.
         if (caret <= bodyStart || caret > bodyEnd) {
-            area.moveTo(Math.min(caret, area.getLength()));
+            int to = Math.min(caret, area.getLength());
+            area.selectRange(anchor <= bodyStart || anchor > bodyEnd ? Math.min(anchor, area.getLength()) : to, to);
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
     public void unfold(int startLine) {
         hidePreview();
         int topPar = firstVisiblePar();
+        int anchor = area.getAnchor();
+        int caret = area.getCaretPosition();
         area.unfoldParagraphs(startLine);
+        if (anchor != caret) {
+            area.selectRange(anchor, caret); // unfoldParagraphs() collapses the selection, as folding does
+        }
         shadeHeader(startLine, false);
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -614,7 +834,7 @@ public final class FoldManager {
             changed = true;
         }
         if (changed && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -628,7 +848,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -648,7 +868,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -695,7 +915,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -725,18 +945,18 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (changed && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
     /** {@link #foldAllExcept(int)} at the caret's line. */
     public void foldAllExceptCaret() {
-        foldAllExcept(area.getCurrentParagraph());
+        foldAllExcept(caretLine.getAsInt());
     }
 
     /** {@link #unfoldAllExcept(int)} at the caret's line. */
     public void unfoldAllExceptCaret() {
-        unfoldAllExcept(area.getCurrentParagraph());
+        unfoldAllExcept(caretLine.getAsInt());
     }
 
     /** Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}). Returns the count. */
@@ -764,7 +984,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (n > 0 && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
         return n;
     }
@@ -782,14 +1002,14 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (n > 0 && !restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
         return n;
     }
 
     /** Collapses the innermost expanded foldable region around the caret; no-op if none applies. */
     public void foldAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         Region target = null; // innermost (largest startLine) containing, expanded region
         for (Region r : regions) {
             if (r.startLine() <= line
@@ -806,7 +1026,7 @@ public final class FoldManager {
 
     /** Expands the collapsed region at the caret (its header line, or the innermost containing it). */
     public void unfoldAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         Region atHeader = byStart.get(line);
         if (atHeader != null && isCollapsed(atHeader.startLine())) {
             unfold(atHeader.startLine());
@@ -828,7 +1048,7 @@ public final class FoldManager {
 
     /** Toggles the region at the caret: expands it if collapsed, otherwise collapses it. */
     public void toggleFoldAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         boolean collapsedHere = false;
         for (Region r : regions) {
             if (r.startLine() <= line && line <= r.endLine() && isCollapsed(r.startLine())) {
@@ -857,13 +1077,13 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
     /** Collapses the innermost region around the caret <b>and</b> every region nested inside it. */
     public void foldRecursivelyAtCaret() {
-        Region target = FoldTree.innermostContaining(regions, area.getCurrentParagraph());
+        Region target = FoldTree.innermostContaining(regions, caretLine.getAsInt());
         if (target == null) {
             return;
         }
@@ -881,13 +1101,13 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
     /** Expands the collapsed region around the caret <b>and</b> every region nested inside it. */
     public void unfoldRecursivelyAtCaret() {
-        int line = area.getCurrentParagraph();
+        int line = caretLine.getAsInt();
         Region target = byStart.get(line);
         if (target == null || !isCollapsed(target.startLine())) {
             target = null;
@@ -918,7 +1138,7 @@ public final class FoldManager {
         }
         restoreViewport(topPar);
         if (!restoring) {
-            onFoldStateChanged.run();
+            foldStateChanged();
         }
     }
 
@@ -1048,6 +1268,36 @@ public final class FoldManager {
         return idx -> buildGutter(idx, showLineNumbers);
     }
 
+    /**
+     * Keeps a press on a gutter control from also being a press on the text. The gutter is a paragraph
+     * graphic <em>inside</em> the area, so a press that bubbles out of it reaches the area's own handlers,
+     * which move the caret to that row and drop the selection and any extra carets — toggling a breakpoint
+     * or a fold must not cost you your place. The click itself is a separate event and still arrives. One
+     * shared handler: gutter rows are rebuilt as cells recycle.
+     */
+    private static final javafx.event.EventHandler<javafx.scene.input.MouseEvent> OWN_POINTER = e -> {
+        var type = e.getEventType();
+        if (type == javafx.scene.input.MouseEvent.MOUSE_PRESSED) {
+            // The press it swallows was also what focused the editor; keep that, in whichever view this is.
+            for (Node n = (Node) e.getSource(); n != null; n = n.getParent()) {
+                if (n instanceof CodeArea view) {
+                    view.requestFocus();
+                    break;
+                }
+            }
+        }
+        if (type == javafx.scene.input.MouseEvent.MOUSE_PRESSED
+                || type == javafx.scene.input.MouseEvent.MOUSE_DRAGGED
+                || type == javafx.scene.input.MouseEvent.MOUSE_RELEASED
+                || type == javafx.scene.input.MouseEvent.DRAG_DETECTED) {
+            e.consume();
+        }
+    };
+
+    private static void ownPointer(Node control) {
+        control.addEventHandler(javafx.scene.input.MouseEvent.ANY, OWN_POINTER);
+    }
+
     private Node buildGutter(int idx, boolean showLineNumbers) {
         HBox box = new HBox();
         box.getStyleClass().add("fold-gutter");
@@ -1085,7 +1335,12 @@ public final class FoldManager {
             bpSlot.setCursor(Cursor.HAND);
             if (isBreakpoint.test(idx)) {
                 bpSlot.getChildren().add(breakpointMarker(breakpointClass.apply(idx)));
+                String bpTip = breakpointTooltip.apply(idx);
+                if (bpTip != null && !bpTip.isEmpty()) {
+                    Tooltip.install(bpSlot, new Tooltip(bpTip));
+                }
             }
+            ownPointer(bpSlot);
             bpSlot.setOnMouseClicked(e -> {
                 if (e.getButton() == MouseButton.PRIMARY) {
                     onBreakpointToggle.accept(idx);
@@ -1133,6 +1388,7 @@ public final class FoldManager {
                     Tooltip.install(marker, tip);
                 }
                 final int runIdx = idx;
+                ownPointer(marker);
                 marker.setOnMouseClicked(e -> {
                     if (e.getButton() == MouseButton.PRIMARY) {
                         onRun.accept(runIdx);
@@ -1159,16 +1415,18 @@ public final class FoldManager {
 
         Label chevron = new Label(" ");
         chevron.getStyleClass().add("fold-chevron");
-        Optional<Region> region = regionStartingAt(idx);
-        if (region.isPresent()) {
+        if (regionStartingAt(idx).isPresent()) {
             boolean collapsed = isCollapsed(idx);
             chevron.setText(collapsed ? "▸" : "▾"); // ▸ / ▾
             chevron.setCursor(Cursor.HAND);
+            ownPointer(chevron);
             chevron.setOnMouseClicked(e -> {
                 if (isCollapsed(idx)) {
                     unfold(idx);
                 } else {
-                    fold(region.get());
+                    // Resolved now, not when this row was built: a header's graphic is only rebuilt when its
+                    // fold-START status changes, so a block that grew since would fold at its old extent.
+                    regionStartingAt(idx).ifPresent(this::fold);
                 }
                 e.consume(); // a fold click is not a text click
             });
@@ -1238,6 +1496,7 @@ public final class FoldManager {
         }
         slot.setCursor(Cursor.HAND);
         final int blameIdx = idx;
+        ownPointer(slot);
         slot.setOnMouseClicked(e -> {
             if (e.getButton() == MouseButton.PRIMARY) {
                 onBlameClick.accept(blameIdx);
@@ -1279,13 +1538,16 @@ public final class FoldManager {
     }
 
     /** A small filled red dot for the gutter breakpoint marker; colored via {@code .breakpoint-marker}.
-     *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}) tweaks the look. */
+     *  {@code extraClass} (e.g. {@code conditional}/{@code logpoint}/{@code disabled}, space-separated when
+     *  there are several) tweaks the look. */
     private Node breakpointMarker(String extraClass) {
         SVGPath svg = new SVGPath();
         svg.setContent(BREAKPOINT_GLYPH_PATH);
         svg.getStyleClass().add("breakpoint-marker");
         if (extraClass != null && !extraClass.isEmpty()) {
-            svg.getStyleClass().add("breakpoint-" + extraClass);
+            for (String one : extraClass.split(" ")) { // a kind and/or the live-session state
+                svg.getStyleClass().add("breakpoint-" + one);
+            }
         }
         svg.setScaleX(0.5);
         svg.setScaleY(0.5);

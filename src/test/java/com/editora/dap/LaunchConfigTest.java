@@ -54,22 +54,51 @@ class LaunchConfigTest {
         assertEquals(List.of("/mp/m.jar"), m.get("modulePaths"));
         assertEquals("/usr/bin/java", m.get("javaExec"));
         assertEquals("/work", m.get("cwd"));
-        assertEquals(List.of("--flag", "x"), m.get("args")); // the argv, not a joined string
+        assertEquals("--flag x", m.get("args")); // java-debug's args is ONE string (an array is never answered)
         assertEquals(true, m.get("stopOnEntry"));
     }
 
+    /**
+     * java-debug declares {@code LaunchArguments.args} as a String: a JSON array makes it throw while decoding
+     * the launch request, which it never answers. This test used to pin the array (on the false premise that
+     * the adapter accepts one). The string must still keep an argument with spaces as one argument — a bare
+     * space-join would not: [hello world, second] and [hello, world, second] join to the same text.
+     */
     @Test
-    void javaLaunchPassesArgvSoAnArgumentWithSpacesStaysOneArgument() {
-        // `"hello world" second` — ProgramArgs.tokenize already resolved the quoting into 2 arguments, and
-        // Run passes exactly those. Joining them back on a space is lossy: main() would receive 3. The
-        // collision is the proof — [hello world, second] and [hello, world, second] join to one same string.
+    void javaLaunchSendsArgsAsOneQuotedStringSoAnArgumentWithSpacesStaysOneArgument() {
         List<String> argv = List.of("hello world", "second");
         Map<String, Object> m = LaunchConfig.launch("A", "", List.of(), List.of(), "", "", argv, "", false);
-        assertEquals(argv, m.get("args"), "the debuggee must get the same argv the Run feature passes");
+        assertEquals("\"hello world\" second", m.get("args"), "one string, quoted — same on every OS for this argv");
 
-        // The same argv reaches debugpy/node the same way (this sibling was always correct).
+        // debugpy / js-debug take a real argv array; that sibling is unchanged.
         Map<String, Object> p = LaunchConfig.program("python", "/x/s.py", "/x", "python3", argv, false);
-        assertEquals(argv, p.get("args"), "java and program(...) must agree");
+        assertEquals(argv, p.get("args"));
+    }
+
+    /** The encodings checked against java-debug 0.53.2's own tokenizer (non-Windows branch). */
+    @Test
+    void javaArgsQuotingForTheAdaptersPosixTokenizer() {
+        assertEquals("--name \"hello world\"", LaunchConfig.javaArgs(List.of("--name", "hello world"), false));
+        assertEquals("plain --flag=x", LaunchConfig.javaArgs(List.of("plain", "--flag=x"), false));
+        assertEquals(
+                "\"C:\\\\dir\\\\file.txt\" \"C:\\\\Program Files\\\\x\\\\\"",
+                LaunchConfig.javaArgs(List.of("C:\\dir\\file.txt", "C:\\Program Files\\x\\"), false));
+        assertEquals("\"\" last", LaunchConfig.javaArgs(List.of("", "last"), false));
+        assertEquals(
+                "\"it's\" \"say \\\"hi\\\"\" -Dk=v",
+                LaunchConfig.javaArgs(List.of("it's", "say \"hi\"", "-Dk=v"), false));
+        assertEquals("\"tab\there\"", LaunchConfig.javaArgs(List.of("tab\there"), false));
+    }
+
+    /** The adapter's Windows branch follows CommandLineToArgvW: backslashes are literal unless before a quote. */
+    @Test
+    void javaArgsQuotingForTheAdaptersWindowsTokenizer() {
+        assertEquals("--name \"hello world\"", LaunchConfig.javaArgs(List.of("--name", "hello world"), true));
+        assertEquals(
+                "C:\\dir\\file.txt \"C:\\Program Files\\x\\\\\"",
+                LaunchConfig.javaArgs(List.of("C:\\dir\\file.txt", "C:\\Program Files\\x\\"), true));
+        assertEquals(
+                "it's \"say \\\"hi\\\"\" -Dk=v", LaunchConfig.javaArgs(List.of("it's", "say \"hi\"", "-Dk=v"), true));
     }
 
     @Test
@@ -119,5 +148,34 @@ class LaunchConfigTest {
         assertFalse(m.containsKey("cwd"));
         assertFalse(m.containsKey("python"));
         assertFalse(m.containsKey("runtimeExecutable"));
+    }
+
+    /** An attach names no main class, so the project is the only way java-debug can evaluate anything. */
+    @Test
+    void attachCarriesTheProjectNameWhenKnown() {
+        assertEquals("myproj", LaunchConfig.attach("localhost", 5005, "myproj").get("projectName"));
+        assertFalse(LaunchConfig.attach("localhost", 5005, " ").containsKey("projectName"));
+        assertFalse(LaunchConfig.attach("localhost", 5005, null).containsKey("projectName"));
+        assertFalse(LaunchConfig.attach("localhost", 5005).containsKey("projectName"));
+    }
+
+    /** The usual launch fits on a command line: nothing is sent and java-debug keeps its default. */
+    @Test
+    void anOrdinaryLaunchDoesNotShortenTheCommandLine() {
+        Map<String, Object> m = LaunchConfig.launch(
+                "com.app.Main", "p", List.of("/a.jar", "/classes"), List.of(), "", "/proj", List.of(), "", false);
+        assertFalse(m.containsKey("shortenCommandLine"));
+    }
+
+    /** A class path too long for one argument (any OS) is moved into an argfile instead of failing to start. */
+    @Test
+    void aClassPathLongerThanTheArgumentLimitIsShortened() {
+        List<String> jars = new java.util.ArrayList<>();
+        for (int i = 0; i < 2000; i++) {
+            jars.add("/home/user/.m2/repository/org/example/some-library/1.0." + i + "/some-library-1.0." + i + ".jar");
+        }
+        Map<String, Object> m =
+                LaunchConfig.launch("com.app.Main", "p", jars, List.of(), "", "/proj", List.of(), "", false);
+        assertEquals("argfile", m.get("shortenCommandLine"));
     }
 }

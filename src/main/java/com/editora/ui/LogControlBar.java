@@ -70,6 +70,8 @@ public class LogControlBar extends HBox {
         level.setOnAction(e -> fireFilter());
 
         regex.setPromptText(tr("log.filter.prompt"));
+        // The configured keymap's caret/editing chords act on this field (the KeyDispatcher leaves them to it).
+        com.editora.command.TextInputKeymap.installShared(regex);
         regex.getStyleClass().add("log-filter-field");
         regex.setPrefColumnCount(12);
         regex.setFocusTraversable(false);

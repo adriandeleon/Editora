@@ -304,6 +304,433 @@ class GitDestructiveOperationsFxTest {
         }
     }
 
+    // --- confirmation before history is thrown away ----------------------------------------------------
+
+    @Test
+    void hardResetIsConfirmedAndCancellingKeepsUncommittedWork(@TempDir Path dir) throws Exception {
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("work.txt"), "first\n");
+        commitAll(repo, "first");
+        String first = git(repo, "rev-parse", "HEAD").out().strip();
+        Files.writeString(file, "second\n");
+        commitAll(repo, "second");
+        String second = git(repo, "rev-parse", "HEAD").out().strip();
+        Files.writeString(file, "uncommitted work\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            applyRepo(fx, repo, "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            String shortFirst = com.editora.git.GitFormat.shortHash(first);
+
+            // Reset ▸ Hard sits directly under Soft and Mixed: it must ask, and Cancel must change nothing.
+            CountDownLatch cancelled = new CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> {
+                    assertDialogSays(tr(
+                            "dialog.gitReset.hardConfirm",
+                            shortFirst,
+                            "main",
+                            repo.toAbsolutePath().normalize()));
+                    pressDialog(ButtonBar.ButtonData.CANCEL_CLOSE, cancelled);
+                });
+                windows.gitLogActions().reset(first, "hard");
+            });
+            async.await(cancelled, "hard reset cancellation");
+            async.awaitWorker(FxTestSupport.field(coordinatorOf(fx).service(), "exec"));
+            async.awaitFx();
+            assertEquals(second, git(repo, "rev-parse", "HEAD").out().strip());
+            assertEquals("uncommitted work\n", Files.readString(file));
+
+            // Confirmed, it runs.
+            CountDownLatch confirmed = new CountDownLatch(1);
+            CountDownLatch done = watchStatus(fx, tr("status.git.reset", "hard", shortFirst)::equals);
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed));
+                windows.gitLogActions().reset(first, "hard");
+            });
+            async.await(confirmed, "hard reset confirmation");
+            async.await(done, "hard reset completion");
+            assertEquals(first, git(repo, "rev-parse", "HEAD").out().strip());
+            assertEquals("first\n", Files.readString(file));
+        }
+    }
+
+    @Test
+    void softResetKeepsItsNoPromptBehaviour(@TempDir Path dir) throws Exception {
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("work.txt"), "first\n");
+        commitAll(repo, "first");
+        String first = git(repo, "rev-parse", "HEAD").out().strip();
+        Files.writeString(file, "second\n");
+        commitAll(repo, "second");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            applyRepo(fx, repo, "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            CountDownLatch done =
+                    watchStatus(fx, tr("status.git.reset", "soft", com.editora.git.GitFormat.shortHash(first))::equals);
+
+            FxTestSupport.runOnFx(() -> windows.gitLogActions().reset(first, "soft"));
+            async.await(done, "soft reset completion without a dialog");
+
+            assertEquals(first, git(repo, "rev-parse", "HEAD").out().strip());
+            assertEquals("second\n", Files.readString(file), "soft keeps the changes");
+        }
+    }
+
+    @Test
+    void dropStashIsConfirmedAndActsOnTheRepositoryItWasListedFrom(@TempDir Path dir) throws Exception {
+        Path repo = initRepo(Files.createDirectory(dir.resolve("a")));
+        Path other = initRepo(Files.createDirectory(dir.resolve("b")));
+        for (Path r : List.of(repo, other)) {
+            Path file = Files.writeString(r.resolve("story.txt"), "base\n");
+            commitAll(r, "base");
+            Files.writeString(file, "stashed\n");
+            git(r, "stash", "push", "-q", "-m", "work in progress");
+        }
+        var entry = new com.editora.git.StashParser.StashEntry(0, "stash@{0}", "main", "work in progress");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, repo, "main");
+            Path root = repo.toAbsolutePath().normalize();
+
+            CountDownLatch cancelled = new CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> pressDialog(ButtonBar.ButtonData.CANCEL_CLOSE, cancelled));
+                coordinator.dropStash(root, entry);
+            });
+            async.await(cancelled, "drop stash cancellation");
+            async.awaitWorker(FxTestSupport.field(coordinator.service(), "exec"));
+            assertEquals(1, git(repo, "stash", "list").out().lines().count(), "Cancel keeps the stash");
+
+            // While the confirmation is up the window moves to another repository (a tab switch): stash@{0}
+            // means something else there, and must not be the one that is dropped.
+            CountDownLatch confirmed = new CountDownLatch(1);
+            CountDownLatch done = watchStatus(fx, tr("stash.dropped")::equals);
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> {
+                    coordinator.applyState(repoState(other, "main"));
+                    pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed);
+                });
+                coordinator.dropStash(root, entry);
+            });
+            async.await(confirmed, "drop stash confirmation");
+            async.await(done, "drop stash completion");
+
+            assertEquals(0, git(repo, "stash", "list").out().lines().count());
+            assertEquals(1, git(other, "stash", "list").out().lines().count(), "the other repository is untouched");
+        }
+    }
+
+    // --- the Git Log acts on the repository it listed ---------------------------------------------------
+
+    /** {@code repo} with commits first/second/third on main, and a linked worktree on {@code task} at "second". */
+    private record TwoWorktrees(Path repo, Path worktree, String first, String second, String third, String task) {}
+
+    private static TwoWorktrees twoWorktrees(Path dir) throws Exception {
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("work.txt"), "first\n");
+        commitAll(repo, "first");
+        String first = git(repo, "rev-parse", "HEAD").out().strip();
+        Files.writeString(file, "second\n");
+        commitAll(repo, "second");
+        String second = git(repo, "rev-parse", "HEAD").out().strip();
+        Files.writeString(file, "third\n");
+        commitAll(repo, "third");
+        String third = git(repo, "rev-parse", "HEAD").out().strip();
+        Path worktree = dir.resolve("task");
+        git(repo, "worktree", "add", "-q", "-b", "task", worktree.toString(), second);
+        Files.writeString(worktree.resolve("task-only.txt"), "committed on task\n");
+        commitAll(worktree, "task work");
+        String task = git(worktree, "rev-parse", "HEAD").out().strip();
+        Files.writeString(worktree.resolve("work.txt"), "uncommitted work in the task worktree\n");
+        return new TwoWorktrees(repo, worktree, first, second, third, task);
+    }
+
+    private static void assertWorktreeUntouched(TwoWorktrees t) throws Exception {
+        assertEquals(t.task(), git(t.worktree(), "rev-parse", "HEAD").out().strip(), "the task branch did not move");
+        assertEquals("task", git(t.worktree(), "branch", "--show-current").out().strip());
+        assertEquals(
+                "uncommitted work in the task worktree\n",
+                Files.readString(t.worktree().resolve("work.txt")));
+        assertTrue(Files.exists(t.worktree().resolve("task-only.txt")));
+    }
+
+    private static List<String> logRows(FxWindowFixture fx) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
+            List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
+            return rows.stream().map(GitService.Commit::hash).toList();
+        });
+    }
+
+    private static void awaitLogRows(FxWindowFixture fx, List<String> expected) throws Exception {
+        for (int i = 0; i < 100 && !expected.equals(logRows(fx)); i++) {
+            Thread.sleep(50);
+        }
+        assertEquals(expected, logRows(fx));
+    }
+
+    @Test
+    void theGitLogDropsItsRowsAndReloadsWhenTheActiveRepositoryChanges(@TempDir Path dir) throws Exception {
+        TwoWorktrees t = twoWorktrees(dir);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            open(fx.controller, t.repo().resolve("work.txt"));
+            GitCoordinator coordinator = applyRepo(fx, t.repo(), "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            FxTestSupport.runOnFx(() -> {
+                windows.showGitLog();
+                windows.loadGitLog(null);
+            });
+            awaitLogRows(fx, List.of(t.third(), t.second(), t.first()));
+            async.awaitWorker(FxTestSupport.field(coordinator.service(), "exec"));
+            async.awaitFx();
+            GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
+            FxTestSupport.runOnFx(() -> {
+                javafx.scene.control.ListView<GitService.Commit> commits = FxTestSupport.field(panel, "commits");
+                commits.getSelectionModel().select(0);
+                assertEquals(t.third(), panel.selectedHash());
+
+                // A tab of the other worktree is activated. Its hashes are shared with this one, so a row left
+                // on screen could be checked out or reset there: the old rows go at once…
+                coordinator.applyState(repoState(t.worktree(), "task"));
+                assertEquals(null, panel.selectedHash(), "no commit of the previous repository stays selected");
+                List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
+                assertTrue(rows.isEmpty(), "the previous repository's commits are no longer listed");
+            });
+            // …and the log, still open, lists the repository its actions now run in.
+            awaitLogRows(fx, List.of(t.task(), t.second(), t.first()));
+        }
+    }
+
+    @Test
+    void hardResetFromTheLogRunsInTheRepositoryItWasConfirmedFor(@TempDir Path dir) throws Exception {
+        TwoWorktrees t = twoWorktrees(dir);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, t.repo(), "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            String shortFirst = com.editora.git.GitFormat.shortHash(t.first());
+            CountDownLatch confirmed = new CountDownLatch(1);
+            CountDownLatch done = watchStatus(fx, tr("status.git.reset", "hard", shortFirst)::equals);
+
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> {
+                    // The confirmation says which repository and branch are about to lose work.
+                    assertDialogSays(tr(
+                            "dialog.gitReset.hardConfirm",
+                            shortFirst,
+                            "main",
+                            t.repo().toAbsolutePath().normalize()));
+                    coordinator.applyState(repoState(t.worktree(), "task")); // the active repository changes
+                    pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed);
+                });
+                windows.gitLogActions().reset(t.first(), "hard");
+            });
+            async.await(confirmed, "hard reset confirmation");
+            async.await(done, "hard reset completion");
+
+            assertEquals(t.first(), git(t.repo(), "rev-parse", "HEAD").out().strip());
+            assertWorktreeUntouched(t);
+        }
+    }
+
+    @Test
+    void resetChosenFromThePaletteRunsInTheRepositoryTheCommitWasSelectedIn(@TempDir Path dir) throws Exception {
+        TwoWorktrees t = twoWorktrees(dir);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, t.repo(), "main");
+            GitWindowCoordinator windows = FxTestSupport.field(fx.controller, "gitWindows");
+            CountDownLatch chosen = new CountDownLatch(1);
+            CountDownLatch done = watchStatus(
+                    fx, tr("status.git.reset", "mixed", com.editora.git.GitFormat.shortHash(t.first()))::equals);
+
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> {
+                    coordinator.applyState(repoState(t.worktree(), "task")); // while the mode prompt is up
+                    pressDialog(ButtonBar.ButtonData.OK_DONE, chosen); // accepts the default, "mixed"
+                });
+                windows.promptGitReset(t.first());
+            });
+            async.await(chosen, "reset mode choice");
+            async.await(done, "mixed reset completion");
+
+            assertEquals(t.first(), git(t.repo(), "rev-parse", "HEAD").out().strip());
+            assertWorktreeUntouched(t);
+        }
+    }
+
+    @Test
+    void discardRunsInTheRepositoryItWasConfirmedFor(@TempDir Path dir) throws Exception {
+        Path repo = initRepo(Files.createDirectory(dir.resolve("a")));
+        Path other = initRepo(Files.createDirectory(dir.resolve("b")));
+        for (Path r : List.of(repo, other)) {
+            Path file = Files.writeString(r.resolve("same.txt"), "committed\n");
+            commitAll(r, "base");
+            Files.writeString(file, "local edit\n");
+        }
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, repo, "main");
+            CountDownLatch confirmed = new CountDownLatch(1);
+            CountDownLatch done = watchStatus(fx, tr("status.git.discarded", "same.txt")::equals);
+
+            FxTestSupport.runOnFx(() -> {
+                Platform.runLater(() -> {
+                    coordinator.applyState(repoState(other, "main")); // the active repository changes mid-dialog
+                    pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed);
+                });
+                coordinator.discardChanges(List.of("same.txt"), List.of());
+            });
+            async.await(confirmed, "discard confirmation");
+            async.await(done, "discard completion");
+
+            assertEquals("committed\n", Files.readString(repo.resolve("same.txt")), "the confirmed repository");
+            assertEquals("local edit\n", Files.readString(other.resolve("same.txt")), "a same-named file elsewhere");
+        }
+    }
+
+    @Test
+    void aBranchNamedLikeAnOptionIsRefusedInsteadOfBecomingAForcedCheckout(@TempDir Path dir) throws Exception {
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("work.txt"), "committed\n");
+        commitAll(repo, "base");
+        Files.writeString(file, "uncommitted work\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, repo, "main");
+            CountDownLatch refused = watchStatus(fx, tr("status.git.unsafeRef", "-f")::equals);
+
+            // `git checkout -f` would silently discard the working tree.
+            FxTestSupport.runOnFx(() -> coordinator.checkoutBranch("-f"));
+            async.await(refused, "unsafe branch name refusal");
+            async.awaitWorker(FxTestSupport.field(coordinator.service(), "exec"));
+
+            assertEquals("uncommitted work\n", Files.readString(file));
+        }
+    }
+
+    // --- long-running commands are visible ---------------------------------------------------------------
+
+    @Test
+    void aRunningCommitIsShownAsBackgroundWorkUntilItFinishes(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(GitTestRepo.windows(), "uses a /bin/sh hook and named pipes");
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("work.txt"), "first\n");
+        commitAll(repo, "first");
+        Path started = GitTestRepo.fifo(dir.resolve("hook-started"));
+        Path release = GitTestRepo.fifo(dir.resolve("hook-release"));
+        GitTestRepo.script(
+                repo.resolve(".git/hooks/pre-commit"),
+                "echo started > '" + started + "'\nread go < '" + release + "'\nexit 0");
+        Files.writeString(file, "second\n");
+        git(repo, "add", "work.txt");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, repo, "main");
+            BackgroundTasks tasks = FxTestSupport.field(fx.controller, "backgroundTasks");
+            CountDownLatch committed = watchStatus(fx, tr("status.committed")::equals);
+
+            FxTestSupport.runOnFx(() -> coordinator.gitCommit("second"));
+            assertEquals(List.of("started"), Files.readAllLines(started), "the commit is inside its hook");
+            List<String> running = FxTestSupport.callOnFx(() ->
+                    tasks.running().stream().map(BackgroundTasks.Task::label).toList());
+            assertTrue(running.contains(tr("status.gitRunning", "git commit")), running.toString());
+
+            async.start("release-hook", () -> Files.writeString(release, "go\n"));
+            async.await(committed, "commit completion");
+            async.awaitFx();
+            List<String> after = FxTestSupport.callOnFx(() ->
+                    tasks.running().stream().map(BackgroundTasks.Task::label).toList());
+            assertFalse(after.contains(tr("status.gitRunning", "git commit")), after.toString());
+        }
+    }
+
+    // --- gh pr checkout uses the same boundary as git checkout -------------------------------------------
+
+    @Test
+    void pullRequestCheckoutSupersedesAPendingEditorSave(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(GitTestRepo.windows(), "uses a /bin/sh stand-in for gh");
+        Path repo = initRepo(dir);
+        Path file = Files.writeString(repo.resolve("pending.txt"), "main baseline\n");
+        commitAll(repo, "main");
+        git(repo, "checkout", "-q", "-b", "other");
+        Files.writeString(file, "other branch result\n");
+        commitAll(repo, "other");
+        git(repo, "checkout", "-q", "main");
+        // A stand-in gh: `pr checkout N` switches to the PR branch, exactly what the real one does.
+        Path gh = GitTestRepo.script(
+                dir.resolve("fake-gh"),
+                "if [ \"$1\" = pr ] && [ \"$2\" = checkout ]; then exec git checkout -q other; fi\necho '[]'");
+        org.junit.jupiter.api.Assumptions.assumeFalse(gh.toString().matches(".*\\s.*"), "the gh command is tokenized");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx.controller, file);
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            ExecutorService saveWorker = FxTestSupport.field(workflows, "autoSaveExecutor");
+            applyRepo(fx, repo, "main");
+            GitHubCoordinator github = FxTestSupport.field(fx.controller, "github");
+            com.editora.github.GitHubService ghService = FxTestSupport.field(github, "service");
+            ghService.setCommand(gh.toString());
+            CountDownLatch staged = new CountDownLatch(1);
+            CountDownLatch releaseSave = new CountDownLatch(1);
+            async.onClose(releaseSave::countDown);
+            workflows.setDocumentWriter(blockingStagedWriter(staged, releaseSave));
+            CountDownLatch checkedOut = watchStatus(fx, tr("status.github.checkedOut", 7)::equals);
+
+            startPendingSave(buffer, workflows);
+            async.await(staged, "save staged before the PR checkout");
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    github, "doCheckout", new Class<?>[] {Path.class, int.class}, repo.toAbsolutePath(), 7));
+            async.await(checkedOut, "gh pr checkout");
+            releaseSave.countDown();
+            async.awaitWorker(saveWorker);
+            async.awaitFx();
+
+            assertEquals("other", git(repo, "branch", "--show-current").out().strip());
+            assertEquals(
+                    "other branch result\n",
+                    Files.readString(file),
+                    "the stale save must not overwrite the checked-out file");
+            assertFalse(FxTestSupport.callOnFx(() -> workflows.hasPendingSave(buffer)));
+        }
+    }
+
+    private static GitCoordinator coordinatorOf(FxWindowFixture fx) {
+        return FxTestSupport.field(fx.controller, "git");
+    }
+
+    private static GitService.RepoState repoState(Path repo, String branch) {
+        return new GitService.RepoState(
+                repo.toAbsolutePath().normalize(),
+                new GitStatus(true, branch, null, 0, 0, List.of()),
+                Map.of(),
+                Map.of());
+    }
+
+    /** Asserts that the confirmation on screen names the consequence the caller expects. */
+    private static void assertDialogSays(String expected) {
+        for (Window window : new ArrayList<>(Window.getWindows())) {
+            if (window.getScene() != null && window.getScene().getRoot() instanceof DialogPane pane) {
+                assertEquals(expected, pane.getContentText());
+                return;
+            }
+        }
+        throw new AssertionError("no confirmation dialog is showing");
+    }
+
     private static void awaitBufferContent(EditorBuffer buffer, String expected) throws Exception {
         for (int i = 0; i < 100; i++) {
             if (expected.equals(FxTestSupport.callOnFx(buffer::getContent))) {
@@ -414,7 +841,8 @@ class GitDestructiveOperationsFxTest {
                     .ifPresent(type -> {
                         pressed.countDown();
                         Button button = (Button) pane.lookupButton(type);
-                        if (tr("dialog.discard").equals(type.getText())) {
+                        if (List.of(tr("dialog.discard"), tr("dialog.gitReset.hard"), tr("dialog.stashDrop"))
+                                .contains(type.getText())) {
                             assertTrue(button.getStyleClass().contains("danger"));
                         }
                         button.fire();

@@ -165,9 +165,17 @@ public final class SmartSelect {
         out.add(new int[] {ls, le}); // whole line
     }
 
+    /**
+     * The definition <em>containing</em> the selection, without the blank lines after it. A selection that
+     * starts at a definition's first column is in that definition ({@code beginning-of-defun} would step to
+     * the previous one), and one that ends at the start of the next header ends before it.
+     */
     private static void addDefun(String text, int s, int e, List<int[]> out) {
-        int a = SexpNav.beginningOfDefun(text, s);
-        int b = SexpNav.endOfDefun(text, e);
+        int a = s == lineStart(text, s) && SexpNav.isDefunStart(text, s) ? s : SexpNav.beginningOfDefun(text, s);
+        int b = SexpNav.endOfDefun(text, e > s && text.charAt(e - 1) == '\n' ? e - 1 : e);
+        while (b > a && Character.isWhitespace(text.charAt(b - 1))) {
+            b--;
+        }
         if (a <= s && b >= e) {
             out.add(new int[] {a, b});
         }

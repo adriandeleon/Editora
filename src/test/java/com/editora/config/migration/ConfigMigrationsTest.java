@@ -355,4 +355,151 @@ class ConfigMigrationsTest {
                         .get("toolbarLayout")
                         .asText());
     }
+    // --- a settings file without a schemaVersion marker ------------------------------------------------
+
+    /**
+     * A current-shape file whose marker was deleted by hand used to be treated as v1 and have every
+     * migration replayed over it, which undid the user's own choices.
+     */
+    @Test
+    void aCurrentShapeFileWithoutAMarkerIsNotMigratedFromTheBaseline() throws Exception {
+        ObjectNode current = mapper.valueToTree(new com.editora.config.Settings());
+        current.remove("schemaVersion");
+        current.put("projectSupport", false); // Projects deliberately turned off
+        current.putArray("toolbarLayout").add("file.new").add("file.saveAs"); // Recent deliberately removed
+        current.putArray("todoPatterns"); // every TODO keyword deliberately removed
+        current.putObject("keybindings").put("C-k", "file.save");
+        current.putObject("keybindingsMac").put("Cmd-k", "file.save");
+        ObjectNode expected = current.deepCopy();
+        expected.put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
+
+        assertEquals(104, ConfigSchema.SETTINGS.versionWithoutMarker(current), "its newest key dates it");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, current.deepCopy(), mapper);
+
+        assertEquals(expected, out, "nothing but the marker changes");
+    }
+
+    /** v106→107: a built-in URL frozen into the file goes back to blank; a URL the user chose is kept. */
+    @Test
+    void frozenDefaultUrlsAreBlankedButChosenOnesAreKept() throws Exception {
+        JsonNode frozen = mapper.readTree("{\"schemaVersion\":106,"
+                + "\"pluginRegistryUrl\":\" " + ConfigMigrations.FROZEN_PLUGIN_REGISTRY + "\","
+                + "\"mavenArchetypeCatalogUrl\":\"" + ConfigMigrations.FROZEN_MAVEN_ARCHETYPE_CATALOG + "\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, frozen, mapper);
+        assertEquals(107, out.get("schemaVersion").asInt());
+        assertEquals("", out.get("pluginRegistryUrl").asText());
+        assertEquals("", out.get("mavenArchetypeCatalogUrl").asText());
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":106,"
+                + "\"pluginRegistryUrl\":\"https://plugins.example/index.json\","
+                + "\"mavenArchetypeCatalogUrl\":\"https://nexus.example/archetype-catalog.xml\"}");
+        ObjectNode kept = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, chosen.deepCopy(), mapper);
+        assertEquals(
+                "https://plugins.example/index.json",
+                kept.get("pluginRegistryUrl").asText());
+        assertEquals(
+                "https://nexus.example/archetype-catalog.xml",
+                kept.get("mavenArchetypeCatalogUrl").asText());
+
+        // Neither key present (a hand-trimmed file), or not a string: left exactly as it is.
+        JsonNode bare = mapper.readTree("{\"schemaVersion\":106,\"pluginRegistryUrl\":7}");
+        ObjectNode same = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, bare.deepCopy(), mapper);
+        assertEquals(7, same.get("pluginRegistryUrl").asInt());
+        assertFalse(same.has("mavenArchetypeCatalogUrl"));
+    }
+
+    /** v105→106: overrides became per-keymap; an existing file's stay in place, under the keymap it names. */
+    @Test
+    void perKeymapOverridesStepKeepsExistingKeybindingsWhereTheyAre() throws Exception {
+        JsonNode stored = mapper.readTree(
+                "{\"schemaVersion\":105,\"keymap\":\"cua\","
+                        + "\"keybindings\":{\"C-f\":\"\",\"<f7>\":\"find.show\"},\"keybindingsMac\":{\"Cmd-k\":\"file.save\"}}");
+
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
+
+        assertEquals(
+                ConfigSchema.SETTINGS.currentVersion(), out.get("schemaVersion").asInt());
+        assertEquals("cua", out.get("keymap").asText());
+        assertEquals(stored.get("keybindings"), out.get("keybindings"));
+        assertEquals(stored.get("keybindingsMac"), out.get("keybindingsMac"));
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertEquals("find.show", loaded.keybindingsFor(false).get("<f7>"));
+        assertTrue(loaded.getKeymapKeybindings().isEmpty(), "nothing is parked for the other keymaps yet");
+    }
+
+    @Test
+    void aFileWithoutAMarkerResumesAfterTheNewestStepItsKeysProve() throws Exception {
+        // bracketColors first appeared in v90, so the v88→89 "turn Projects on" step has already run for
+        // this file — but the later v100→101 toolbar step has not.
+        JsonNode stored = mapper.readTree(
+                "{\"bracketColors\":true,\"projectSupport\":false,\"toolbarLayout\":[\"file.saveAs\"]}");
+        assertEquals(90, ConfigSchema.SETTINGS.versionWithoutMarker(stored));
+
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
+
+        assertFalse(out.get("projectSupport").asBoolean(), "an explicit off is not flipped back on");
+        assertEquals(
+                "[\"file.saveAs\",\"toolbar.recent\"]", out.get("toolbarLayout").toString());
+    }
+
+    @Test
+    void aFileWithNoDatingKeysIsStillAssumedToBeTheBaseline() throws Exception {
+        JsonNode legacy = mapper.readTree("{\"fontSize\":20,\"projectSupport\":false}");
+        assertEquals(1, ConfigSchema.SETTINGS.versionWithoutMarker(legacy));
+        assertTrue(ConfigMigrations.upgrade(ConfigSchema.SETTINGS, legacy, mapper)
+                .get("projectSupport")
+                .asBoolean());
+        // Files with no evidence table keep the plain assumed-legacy rule.
+        assertEquals(1, ConfigSchema.WORKSPACE.versionWithoutMarker(mapper.readTree("{\"x\":1}")));
+    }
+
+    @Test
+    void splitKeybindingsLeavesAnAlreadySplitFileAlone() throws Exception {
+        JsonNode in = mapper.readTree(
+                "{\"keybindings\":{\"C-k\":\"file.save\"},\"keybindingsMac\":{\"Cmd-k\":\"edit.cut\"}}");
+        ObjectNode out = ConfigMigrations.splitKeybindings((ObjectNode) in, true);
+        assertEquals("edit.cut", out.get("keybindingsMac").get("Cmd-k").asText(), "the Cmd overrides are kept");
+        assertEquals("file.save", out.get("keybindings").get("C-k").asText(), "and the Ctrl map is not emptied");
+    }
+
+    // --- v104→105: authorName persists its raw value; dead keys dropped ---------------------------------
+
+    @Test
+    void retireUnusedSettingsKeysRestoresABlankAuthorNameTheOldBuildFroze() throws Exception {
+        // Written by the first save of a v104 build: authorName is the resolved OS user, the junk key still
+        // records that the configured value was blank.
+        JsonNode in = mapper.readTree(
+                "{\"authorName\":\"adl\",\"authorNameRaw\":\"\",\"ijhttpCommand\":\"ijhttp\",\"tabSize\":4}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.retireUnusedSettingsKeys(in);
+        assertEquals("", out.get("authorName").asText(), "blank = follow the OS user again");
+        assertFalse(out.has("authorNameRaw"));
+        assertFalse(out.has("ijhttpCommand"));
+        assertEquals(4, out.get("tabSize").asInt());
+    }
+
+    @Test
+    void retireUnusedSettingsKeysDoesNotGuessAtAnAuthorNameThatWasConfigured() throws Exception {
+        // Both keys carry a name: the file cannot say whether it was typed or frozen, so it is kept.
+        JsonNode in = mapper.readTree("{\"authorName\":\"adl\",\"authorNameRaw\":\"adl\"}");
+        ObjectNode out = (ObjectNode) ConfigMigrations.retireUnusedSettingsKeys(in);
+        assertEquals("adl", out.get("authorName").asText());
+        assertFalse(out.has("authorNameRaw"));
+        // And a file that never had the junk key is untouched.
+        assertEquals(
+                "x",
+                ((ObjectNode) ConfigMigrations.retireUnusedSettingsKeys(mapper.readTree("{\"authorName\":\"x\"}")))
+                        .get("authorName")
+                        .asText());
+    }
+
+    @Test
+    void upgradingASettingsFileFromV104DropsTheRetiredKeys() throws Exception {
+        JsonNode stored = mapper.readTree("{\"schemaVersion\":104,\"authorName\":\"adl\",\"authorNameRaw\":\"\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
+        assertEquals("", out.get("authorName").asText());
+        assertFalse(out.has("authorNameRaw"));
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
+    }
 }

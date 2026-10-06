@@ -10,12 +10,27 @@ while all `CodeArea` and scene-graph mutations belong on it.
 line separator and final-newline state. Apply operations compose through the editable side's `DiffText`, so
 an accepted hunk does not silently normalize CRLF or add/remove the final newline. `DiffModel` carries both
 EOF states and the viewer presents an explicit final-newline action when they differ. `PatchWriter` and
-`PatchParser` preserve standard `\ No newline at end of file` markers.
+`PatchParser` preserve standard `\ No newline at end of file` markers. `PatchWriter` gives the unterminated
+last line of each side a distinct identity before diffing, so the engine itself emits it as marked context
+when both sides end with it and as a `-line`/`+line` pair otherwise; its EOF shapes are tested by feeding
+every combination to real `git apply`.
 
-Git blobs and closed files are decoded through the editor's charset rules (BOM, then EditorConfig, then
-UTF-8). `BinaryDiff` sniffs bytes before decoding and renders stable type/size/hash metadata rather than
+Every side is held in the form an editor buffer of the same bytes holds. `DiffSideText` decodes Git blobs,
+closed files, merge stages and Local History's pre-delete capture exactly as the editor loads a file: the
+open buffer's effective charset when the file is open, else BOM, then EditorConfig, then UTF-8, with the
+editor's lossless fallback (`EditorConfigCharset.decodeLossless`) instead of U+FFFD substitution. Diff sides
+and merge stages are also reduced to bare `\n`, as a buffer is, so a hunk can be applied to a closed CRLF
+file (the buffer re-applies the file's line ending on save) and `BlobRewrite` compares the displayed text
+with a blob line by line rather than terminator by terminator. An open buffer contributes its whole
+document (`getContent()`), never just a narrowed region. `BinaryDiff` sniffs bytes before decoding and renders stable type/size/hash metadata rather than
 mojibake. Equal binary hashes therefore compare as equal; different binaries remain inspectable without
-pretending they are text.
+pretending they are text. A Git blob or closed working file over 10 MB is likewise replaced by a short
+surrogate: the side always completes (a review never waits on it) and, like a binary side, it disables
+every mutation. The surrogate names what it stands for — a file's size and SHA-256 prefix, a blob's spec —
+so two oversized sides do not compare as identical merely for both being too large. `DiffEngine` abandons
+the Myers search beyond 20,000 line edits for the linear coarse alignment (and `InlineDiff` beyond 1,000
+token edits for one changed-middle span), so one rewritten file or minified line cannot hold the window's
+single diff worker; a comparison that fails on the worker still calls back, with no model.
 
 ## Computation and refresh
 
@@ -63,13 +78,14 @@ the `diff.reviewStaged` / `diff.reviewUnstaged` commands open index-vs-HEAD or w
 untracked files compare against an empty index side, and rename/copy entries fetch their original path on the
 left. Active-diff commands route through the currently selected file.
 
-`DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` walks without following
-symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
+`DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` resolves each root (which may
+itself be a symbolic link) and walks below it without following symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
 20,000 files, compares candidates with `Files.mismatch`, counts identical files, and returns only modified
 and one-sided paths. The scan and review-entry conversion run on the file-read executor; the scanner reuses
 the walk's file attributes and one sorted path index to avoid duplicate filesystem reads and collections.
 Selecting an entry loads its two sides and builds a normal `DiffViewerPane` on demand; an access-ordered cache
-retains at most 32 visited panes. `diff.compareDirectories` opens the two-folder picker. Project-tree Git comparisons
+retains at most 32 visited panes (a pane holding an unapplied Result draft is never evicted, and evicted
+panes are disposed). `diff.compareDirectories` opens the two-folder picker. Project-tree Git comparisons
 reuse this surface for a selected subtree against HEAD, a branch, tag, or revision. `GitService` obtains a
 NUL-safe, rename-disabled changed-path list plus non-ignored untracked files; each selected entry lazily reads
 the ref blob and current working file instead of materializing a temporary snapshot tree.
@@ -96,34 +112,67 @@ or overwrite the normal workspace session.
 ## Applying and Git mutations
 
 Local apply actions reconstruct the full editable document, check that its live text still matches the
-displayed baseline, and then use the normal undoable `EditorBuffer` replacement path. Apply-all confirms;
-Undo and Save enable only after an accepted operation. Line apply is deliberately secondary to hunk apply.
+displayed baseline, and then use the normal undoable `EditorBuffer` replacement path. The baseline is the
+pane's own displayed text (`DiffViewerPane.editableBaselineText()`), never the coordinator's record of the
+last text it wrote: that record runs ahead of the pane until the re-diff lands, and a second hunk applied in
+that window would be built from the old rows and revert the first. The Local File History panel's per-hunk
+restore goes through the same guarded path. Apply-all confirms; Undo and Save enable only after an accepted
+operation. Line apply is deliberately secondary to hunk apply.
 
 Git-panel diffs add Stage/Unstage/Revert for the current hunk and line. The view derives the desired full
-index or worktree text, and `PatchWriter` produces a scoped patch. Working-tree application validates the
-displayed preimage. Index application holds Git's conventional index lock, applies to a private index, and
-atomically publishes only when both the complete index bytes and displayed path blob still match. A stale
-comparison therefore fails without mutation, including when repeated blocks would let a patch apply at a
-different location. Copy hunk and open-changed-line are available from the context menu and command palette.
+index or worktree text. Working-tree application validates the displayed preimage; Revert goes through
+the pane's own apply path, so it counts for Undo and Save like an apply chevron. For the index there is
+no separate final-newline action, so `HunkText` gives the result the end-of-file state of the side that
+supplies its last line (and an empty file when no line is left); when the hunk is everything that differs,
+the result is the other side as it stands. Three such whole-file results are not a rewrite of the entry's
+blob: unstaging a path HEAD does not have, and staging a file that is gone from the working tree, remove the
+index entry (`GitService.removeIndexEntry`, `update-index --force-remove` under the same compare-and-swap);
+unstaging a path HEAD has restores HEAD's own bytes. A path not yet in the index takes its charset,
+byte-order mark and line terminators from the working file, and its bytes are hashed with the path's Git
+filters (`hash-object --path`) as `git add` would. Index application does
+not use a text patch: `BlobRewrite` turns the desired text back into blob **bytes** — untouched lines keep
+their own terminators, new lines take the blob's dominant one, the blob's charset and byte-order mark are
+kept — and refuses when that cannot be done losslessly. `GitService.stageBlob` then holds Git's conventional
+index lock, writes the bytes with `hash-object --no-filters`, points the entry at them in a private index
+with `update-index --cacheinfo` (keeping its file mode), and atomically publishes only when both the complete
+index bytes and the displayed path blob still match. A stale comparison therefore fails without mutation,
+and an `index.lock` held by another Git process is reported as busy and left in place. Copy hunk and
+open-changed-line are available from the context menu and command palette.
 
 ## Three-way merge
 
 `merge.resolve` first asks Git for the conflicted path's `:1`, `:2`, and `:3` index blobs: the common
 ancestor, ours, and theirs. `GitService.BlobResult` distinguishes a valid empty blob from a missing stage.
-Blob reads stay on the Git executor, charset decoding follows the editor's BOM/EditorConfig rules, and the
-pure `ThreeWayMerge` computation runs away from the FX thread.
+Blob reads stay on the Git executor, the stages are decoded into the buffer's own form (see Text fidelity),
+and the pure `ThreeWayMerge` computation runs away from the FX thread. The source text, both staleness checks
+and Apply all work on the buffer's whole document, so resolving inside a narrowed buffer keeps the text outside
+the region.
 
-`ThreeWayMerge` diffs both sides against the ancestor. It automatically composes disjoint changes and
+`ThreeWayMerge` diffs both sides against the ancestor and first compacts each side's deltas the way Git's
+xdiff does (`xdl_change_compact`, without the indent heuristic): a run of changed lines is slid across the
+equal lines beside it until it joins a neighbouring run or lines up with the other file's change. Raw
+java-diff-utils deltas describe a line replaced inside a run of identical lines as an insertion plus a
+deletion of the run's last line, and that detached deletion was unified with the other side's real one,
+dropping an edit. Touching (adjacent) changes are still merged independently, which Git reports as a
+conflict; that divergence is deliberate. It automatically composes disjoint changes and
 overlapping changes that produce identical text; only divergent overlapping regions become conflicts. Each
 conflict retains an explicit base-presence bit, because two competing insertions have a real but empty
 ancestor region. If all three Git stages are not available, `ConflictParser` remains the fallback for files
-that already contain standard merge/diff3 markers.
+that already contain standard merge/diff3 markers. It recognises a marker only as Git writes it — a run of
+marker characters followed by a space or the end of the line, and the `=` separator only as a whole line.
+The run is seven long, or longer when the file's `conflict-marker-size` attribute says so: the opening
+marker fixes the size for its conflict, and a longer opening run counts only when its separator and closing
+marker follow. A run of any other length — a Markdown or reStructuredText heading underline inside a
+conflict — stays content, and an unresolved conflict is written back with the marker size it came with.
 
 `MergeViewerPane` shows Base/Ours/Theirs for each conflict and a lower editable Result. Acceptance actions
 recompute the Result until the user edits it manually; later acceptance actions are then refused so they
 cannot regenerate and erase custom work. The apply path restores the
 source document's line separator, preserves the edited final-newline state, uses the normal undoable
-whole-document replacement, and refuses to overwrite a buffer that changed after the resolver opened.
+whole-document replacement, and refuses to overwrite a buffer that changed after the resolver opened. The
+target is resolved by path at apply time rather than captured when the resolver opened: if the source tab
+was closed meanwhile, the file is reopened in the background and its current text checked, so a resolution
+is never written into a disposed buffer and reported as applied.
 
 ## Accessibility
 

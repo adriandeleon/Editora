@@ -61,8 +61,13 @@ class LinuxAppStreamMetadataTest {
     void theLaunchableNamesTheDesktopFileThePostinstActuallyInstalls() throws Exception {
         String declared = text(parse(), "launchable");
         String postinst = Files.readString(POSTINST);
+        // The postinst addresses every path under $root (DPKG_ROOT) so it can run against a scratch tree;
+        // $apps is its name for the applications directory.
         assertTrue(
-                postinst.contains("/usr/share/applications/" + declared),
+                postinst.contains("apps=\"$root/usr/share/applications\""),
+                "the postinst no longer installs into /usr/share/applications");
+        assertTrue(
+                postinst.contains("\"$apps/" + declared + "\""),
                 "the metainfo points at '" + declared + "' but the postinst installs no such .desktop file — "
                         + "the software centre would silently keep showing the dpkg fallback");
     }

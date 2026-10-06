@@ -160,7 +160,13 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public record GitHunkRequest(
-            GitHunkAction action, int startRow, int endRow, String beforeText, String afterText, int targetLine) {}
+            GitHunkAction action,
+            int startRow,
+            int endRow,
+            String beforeText,
+            String afterText,
+            int targetLine,
+            boolean wholeFile) {}
 
     /**
      * Width of the side-by-side view's left pane, or 0 in unified view. The toolbar's right-hand cluster
@@ -197,6 +203,9 @@ public final class DiffViewerPane implements TabContent {
     private boolean updatingResult;
     private String resultBaselineText;
     private boolean syncing; // re-entrancy guard for scroll sync
+    /** The side-by-side pane the user is scrolling; only it drives the other (see {@link #syncScroll}). */
+    private CodeArea scrollLeader;
+
     private int[] sideSourceRows = new int[0];
     private int[] unifiedSourceRows = new int[0];
 
@@ -482,10 +491,20 @@ public final class DiffViewerPane implements TabContent {
     }
 
     public boolean matchesEditableText(String text) {
-        String baseline = resultEditing && resultBaselineText != null
+        return java.util.Objects.equals(editableBaselineText(), text);
+    }
+
+    /**
+     * The exact editable-side text every apply this pane delivers was computed from: the displayed side's
+     * text, or the Result draft's baseline while the Result editor is open. A hunk or line apply rebuilds the
+     * whole document from the displayed rows, so it is only valid while the local file still equals this —
+     * which is what the controller must compare against, not its own record of the last text it wrote (that
+     * runs ahead of the pane until the re-diff lands).
+     */
+    public String editableBaselineText() {
+        return resultEditing && resultBaselineText != null
                 ? resultBaselineText
                 : editableSide == EditableSide.RIGHT ? rightText : leftText;
-        return java.util.Objects.equals(baseline, text);
     }
 
     public boolean hasDirtyResult() {
@@ -988,12 +1007,8 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private Button iconButton(Node icon, String tip, Runnable action) {
-        Button b = new Button();
-        b.setGraphic(icon);
-        b.getStyleClass().addAll("flat", "diff-toolbar-button");
-        b.setFocusTraversable(false);
-        b.setTooltip(descriptiveTooltip(tip));
-        b.setOnAction(e -> action.run());
+        Button b = Icons.toolbarButton(icon, tip, action, "flat", "diff-toolbar-button");
+        b.setTooltip(descriptiveTooltip(tip)); // same text as the accessible name, in the diff's tooltip style
         return b;
     }
 
@@ -1116,6 +1131,8 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void closeResultEditor() {
+        boolean wasEditing = resultEditing;
+        String baseline = resultBaselineText;
         resultDiffDelay.stop();
         resultHighlightGeneration.incrementAndGet();
         resultEditing = false;
@@ -1124,10 +1141,35 @@ public final class DiffViewerPane implements TabContent {
         editResultButton.setSelected(false);
         resultSplit = null;
         updateResultControls();
-        if (unified) {
-            showUnified();
-        } else {
-            showSideBySide();
+        if (!wasEditing) {
+            if (unified) {
+                showUnified();
+            } else {
+                showSideBySide();
+            }
+            return;
+        }
+        // The comparison was built for edit mode, without apply chevrons: build it again for the closed state.
+        rebuildCurrentView();
+        // A draft comparison may still be installed — the re-diff that would have put the real text back was
+        // debounced or in flight and has just been cancelled. Showing it as the working side made the next
+        // apply stale and exported a change that does not exist, so fetch the real sides again.
+        if (baseline != null && !baseline.equals(editableSide == EditableSide.RIGHT ? rightText : leftText)) {
+            refresh();
+        }
+    }
+
+    /**
+     * Releases the Result editor when the pane's tab or window goes. A focused editable RichTextFX area
+     * runs a caret blink timer — a GC root — that only {@code dispose()} stops, so a window closed with the
+     * Result editor focused stayed reachable (see docs/gotchas.md). The pane must not be shown again.
+     */
+    public void dispose() {
+        resultDiffDelay.stop();
+        highlightGeneration.incrementAndGet();
+        resultHighlightGeneration.incrementAndGet();
+        if (resultArea != null) {
+            resultArea.dispose();
         }
     }
 
@@ -1342,13 +1384,14 @@ public final class DiffViewerPane implements TabContent {
         installGutter(rightArea, rightNos, sideSourceRows, canMutate() && !resultEditing);
         installContextMenu(leftArea, sideSourceRows);
         installContextMenu(rightArea, sideSourceRows);
-        installScrollFocus(leftArea);
-        installScrollFocus(rightArea);
+        scrollLeader = null;
         syncScroll(leftArea, rightArea);
         syncScroll(rightArea, leftArea);
 
         var leftScroll = new org.fxmisc.flowless.VirtualizedScrollPane<>(leftArea);
         var rightScroll = new org.fxmisc.flowless.VirtualizedScrollPane<>(rightArea);
+        installScrollLeader(leftArea, leftScroll);
+        installScrollLeader(rightArea, rightScroll);
         Label leftHeader = paneHeader(headerLeft);
         Label rightHeader = paneHeader(headerRight);
         javafx.scene.layout.VBox leftBox = new javafx.scene.layout.VBox(leftHeader, leftScroll);
@@ -1614,14 +1657,38 @@ public final class DiffViewerPane implements TabContent {
             leftTarget = !leftTarget;
         }
         String before = leftTarget ? leftText : rightText;
+        String other = leftTarget ? rightText : leftText;
+        // Stage and Unstage rewrite the index side. When the rows are everything that differs, the result is
+        // the other side as it stands (its end of file included), which lets the handler stage the file's
+        // own bytes or drop the entry; otherwise the end of the result follows the side supplying its last
+        // line. Revert edits the local file and keeps the documented local-apply rule.
+        boolean indexAction = action == GitHunkAction.STAGE || action == GitHunkAction.UNSTAGE;
+        boolean wholeFile = indexAction && com.editora.diff.HunkText.coversEveryChange(model.rows(), start, end);
         String after = action == GitHunkAction.OPEN
                 ? before
-                : computeAppliedFor(leftTarget ? EditableSide.LEFT : EditableSide.RIGHT, start, end);
+                : wholeFile
+                        ? other
+                        : indexAction
+                                ? com.editora.diff.HunkText.apply(
+                                        model.rows(),
+                                        start,
+                                        end,
+                                        !leftTarget,
+                                        DiffText.parse(before),
+                                        DiffText.parse(other))
+                                : computeAppliedFor(leftTarget ? EditableSide.LEFT : EditableSide.RIGHT, start, end);
         Row target = model.rows().get(row);
         int preferredLine = leftTarget ? target.leftLine() : target.rightLine();
         int fallbackLine = leftTarget ? target.rightLine() : target.leftLine();
         int line = preferredLine >= 0 ? preferredLine : fallbackLine;
-        onGitHunkAction.accept(new GitHunkRequest(action, start, end, before, after, Math.max(1, line)));
+        if (action == GitHunkAction.REVERT && (leftTarget ? EditableSide.LEFT : EditableSide.RIGHT) == editableSide) {
+            // Revert edits the editable local file, so it is an apply like the chevrons': going through the
+            // same path counts it for Undo and Save. Handed to the Git handler it changed an (often
+            // background) buffer while both buttons stayed disabled and the file on disk kept the hunk.
+            deliverApply(after);
+            return;
+        }
+        onGitHunkAction.accept(new GitHunkRequest(action, start, end, before, after, Math.max(1, line), wholeFile));
     }
 
     private void copyHunk(int row) {
@@ -1696,20 +1763,22 @@ public final class DiffViewerPane implements TabContent {
     }
 
     /**
-     * Keeps the two side-by-side panes aligned: copies the scroll position of the <b>focused</b> pane to
-     * the other. The rows are 1:1 aligned (filler lines), so the absolute scroll offsets match.
+     * Keeps the two side-by-side panes aligned: copies the scroll position of the pane the user is
+     * scrolling (the <b>leader</b>) to the other. The rows are 1:1 aligned (filler lines), so the absolute
+     * scroll offsets match.
      *
-     * <p>Only the focused pane drives, which makes the sync strictly one-directional at any moment and so
+     * <p>Only the leader drives, which makes the sync strictly one-directional at any moment and so
      * <b>cannot oscillate</b>. (A naïve bidirectional copy fed back: RichTextFX refines {@code estimatedScrollY}
      * as paragraphs are measured, so the follower settled to a slightly different value and pushed the leader
-     * back — a feedback loop, worst on a navigation jump into an unmeasured region.) A scroll gesture focuses
-     * its pane (see {@code installScrollFocus}), so the other pane follows it. This governs only interactive
-     * scrolling — next/prev navigation pins both panes explicitly (see {@link #scrollToRow(int)}).
+     * back — a feedback loop, worst on a navigation jump into an unmeasured region.) The leader is chosen by
+     * the gesture itself (see {@link #installScrollLeader}), not by keyboard focus: a scroll-bar drag moves
+     * no focus, so with a focus rule it scrolled one side alone. This governs only interactive scrolling —
+     * next/prev navigation pins both panes explicitly (see {@link #scrollToRow(int)}).
      */
     private void syncScroll(CodeArea from, CodeArea to) {
         from.estimatedScrollYProperty().addListener((o, ov, nv) -> {
-            if (syncing || nv == null || !from.isFocused()) {
-                return; // only the focused (actively scrolled) pane drives the other — no feedback loop
+            if (syncing || nv == null || scrollLeader != from) {
+                return; // only the actively scrolled pane drives the other — no feedback loop
             }
             syncing = true;
             try {
@@ -1720,11 +1789,22 @@ public final class DiffViewerPane implements TabContent {
         });
     }
 
-    /** A scroll gesture on a pane focuses it, so it becomes the one that drives the other (see syncScroll). */
-    private static void installScrollFocus(CodeArea area) {
+    /**
+     * Makes {@code area} the scroll leader whenever the user starts scrolling it: a wheel/touch gesture over
+     * it (which also focuses it), a press anywhere in its scroll pane — the scroll-bar thumb and track
+     * included — or it gaining focus, which is where key scrolling goes.
+     */
+    private void installScrollLeader(CodeArea area, Node scrollPane) {
         area.addEventFilter(javafx.scene.input.ScrollEvent.SCROLL, e -> {
+            scrollLeader = area;
             if (!area.isFocused()) {
                 area.requestFocus();
+            }
+        });
+        scrollPane.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> scrollLeader = area);
+        area.focusedProperty().addListener((o, was, focused) -> {
+            if (focused) {
+                scrollLeader = area;
             }
         });
     }
@@ -1882,7 +1962,8 @@ public final class DiffViewerPane implements TabContent {
                                 : tr("diff.accessibleUnified"));
         area.setEditable(false);
         area.setFocusTraversable(true);
-        area.setShowCaret(org.fxmisc.richtext.Caret.CaretVisibility.OFF);
+        // No setShowCaret(OFF): a read-only area already hides its caret under the default AUTO, and OFF/ON
+        // subscribe the caret to a static RichTextFX stream that then pins the area (and its window) forever.
         area.setWrapText(wrapLines);
         area.setStyle(fontStyle);
         return area;

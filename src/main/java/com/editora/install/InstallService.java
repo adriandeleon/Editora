@@ -206,7 +206,8 @@ public final class InstallService {
             Path tmp = Files.createTempFile("editora-dl", ".tar.gz");
             try {
                 Files.write(tmp, data);
-                ProcessRunner.Result r = ProcessRunner.run(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgv(tmp, dest));
+                ProcessRunner.Result r =
+                        ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgv(tmp, dest));
                 if (!r.ok()) {
                     throw new InstallException(s.id() + ": tar failed — " + r.message());
                 }
@@ -220,7 +221,7 @@ public final class InstallService {
             try {
                 Files.write(tmp, data);
                 ProcessRunner.Result r =
-                        ProcessRunner.run(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgvAuto(tmp, dest));
+                        ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgvAuto(tmp, dest));
                 if (!r.ok()) {
                     throw new InstallException(s.id() + ": tar failed — " + r.message());
                 }
@@ -240,14 +241,20 @@ public final class InstallService {
             throw new InstallException(s.id() + ": '" + spec.binaryName() + "' not found after extraction");
         }
         makeExecutable(binary);
-        return binary.toString() + spec.commandSuffix();
+        return InstallCatalog.binaryCommand(binary, spec.commandSuffix());
     }
 
-    /** The first archive URL (.zip/.tar.gz/.tgz) in {@code json} that contains {@code substr} — skips the
-     *  sibling {@code .sha256}/{@code .sig} checksum URLs that also contain the per-platform substring. */
+    /** Every archive suffix {@link #installArchive} can extract. The {@code .tar.xz}/{@code .txz} pair was
+     *  missing here although its extraction branch existed, so the Typst CLI — published only as
+     *  {@code .tar.xz} for Linux and macOS — never matched and "no download asset" was all an install said. */
+    private static final java.util.regex.Pattern ARCHIVE_URL =
+            java.util.regex.Pattern.compile("https://[^\"\\s]+?(?:\\.zip|\\.tar\\.gz|\\.tgz|\\.tar\\.xz|\\.txz)");
+
+    /** The first archive URL (.zip/.tar.gz/.tgz/.tar.xz/.txz) in {@code json} that contains {@code substr} —
+     *  skips the sibling {@code .sha256}/{@code .sig} checksum URLs that also contain the per-platform
+     *  substring. */
     static String pickArchiveUrl(String json, String substr) {
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("https://[^\"\\s]+?(?:\\.zip|\\.tar\\.gz|\\.tgz)")
-                .matcher(json == null ? "" : json);
+        java.util.regex.Matcher m = ARCHIVE_URL.matcher(json == null ? "" : json);
         while (m.find()) {
             if (m.group().contains(substr)) {
                 return m.group();
@@ -285,8 +292,13 @@ public final class InstallService {
         }
     }
 
+    /**
+     * Runs one package-manager command (npm/pip/gem/go/dotnet/rustup/composer). In the user's locale, not the
+     * parse-stable C one: the output is only ever shown, and several of these (RubyGems, a JVM-based tool)
+     * fail on non-ASCII package metadata or install paths when forced to ASCII.
+     */
     private void runCommand(List<String> argv, String id) throws InstallException {
-        ProcessRunner.Result r = ProcessRunner.run(null, CMD_TIMEOUT, argv);
+        ProcessRunner.Result r = ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, argv);
         if (!r.ok()) {
             throw new InstallException(id + ": " + (r.message().isBlank() ? "command failed" : r.message()));
         }
@@ -311,7 +323,7 @@ public final class InstallService {
         } catch (Exception ignore) {
             // fall back to the default working dir (npx fetches its own puppeteer)
         }
-        ProcessRunner.Result r = ProcessRunner.run(cwd, CMD_TIMEOUT, s.npmPackages());
+        ProcessRunner.Result r = ProcessRunner.runInUserLocale(cwd, CMD_TIMEOUT, s.npmPackages());
         if (!r.ok()) {
             throw new InstallException(s.id() + ": " + (r.message().isBlank() ? "command failed" : r.message()));
         }
@@ -353,7 +365,8 @@ public final class InstallService {
             // Replace any previous copy so a re-install is clean and the newest version wins.
             deleteRecursively(dest);
             Files.createDirectories(dest);
-            ProcessRunner.Result r = ProcessRunner.run(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgv(tmpFile, dest));
+            ProcessRunner.Result r =
+                    ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgv(tmpFile, dest));
             if (!r.ok()) {
                 throw new InstallException(s.id() + ": tar failed — " + r.message());
             }
@@ -381,6 +394,9 @@ public final class InstallService {
     private byte[] download(String url) throws Exception {
         if (!PluginRegistry.isHttps(url)) {
             throw new InstallException("download url must be https: " + url);
+        }
+        if (!InstallCatalog.isTrustedDownloadUrl(url)) {
+            throw new InstallException("download host is not one the install catalog uses: " + url);
         }
         HttpRequest req = HttpRequest.newBuilder(URI.create(url))
                 .timeout(NET_TIMEOUT)

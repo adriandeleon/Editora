@@ -93,12 +93,14 @@ public final class DiffParser {
             }
             int newStart = Integer.parseInt(m.group(3));
             int newCount = m.group(4) == null ? 1 : Integer.parseInt(m.group(4));
-            // The hunk body is the contiguous run of -/+ lines after the header (no context with -U0).
-            // File headers (---/+++) only precede the first hunk, so they never enter the body here.
+            // The hunk body is the contiguous run of -/+ lines after the header (no context with -U0). File
+            // headers (---/+++) only precede a file's first hunk, behind a "diff --git" line that ends the
+            // run, so inside a body "--- x" is a removed "-- x" (an SQL/Lua comment, a Markdown rule) and
+            // "+++i;" an added "++i;" — not headers.
             StringBuilder body = new StringBuilder();
             for (int j = i + 1; j < lines.length; j++) {
                 String l = lines[j];
-                if ((l.startsWith("-") && !l.startsWith("---")) || (l.startsWith("+") && !l.startsWith("+++"))) {
+                if (l.startsWith("-") || l.startsWith("+")) {
                     body.append(l).append('\n');
                 } else if (l.startsWith("\\")) {
                     // "\ No newline at end of file" — skip, not part of the shown diff.

@@ -119,73 +119,165 @@ public final class AppInfo {
         return NAME + " " + VERSION + " (built " + buildTime() + ")";
     }
 
-    /** {@code null} until first computed (then cached, possibly to {@code ""} when unavailable). */
-    private static String gitCommit;
+    // --- git identity of a development build ----------------------------------------------------------
+
+    /** Hard cap on one {@code git rev-parse}; a wedged git must not stall the lookup thread for long. */
+    private static final java.time.Duration GIT_TIMEOUT = java.time.Duration.ofSeconds(2);
+
+    private static final Object GIT_LOCK = new Object();
+    private static java.util.concurrent.CompletableFuture<String> gitCommit;
+    private static java.util.concurrent.CompletableFuture<String> gitBranch;
 
     /**
-     * The short git commit of the working tree, or {@code ""} when it can't be determined (no {@code git}
-     * on PATH, not a checkout, etc.). Read once at runtime via {@code git rev-parse}, then cached. Only
-     * meant for dev builds (which run from the repo): it's surfaced in About/Welcome under {@code --dev}
-     * only. Never throws.
+     * The short git commit this build was made from, or {@code ""} when it can't be determined (no
+     * {@code git}, not a checkout, a packaged install) <b>or is not known yet</b>. Only meant for dev builds
+     * (which run from the repo): it's surfaced in About/Welcome under {@code --dev} only.
+     *
+     * <p><b>Never blocks and never throws</b>, so it is safe on the FX thread: the first call starts a
+     * background lookup (see {@link #gitCommitAsync()}) and returns {@code ""}; later calls return the cached
+     * answer. A caller that must show the value as soon as it exists takes the future instead.
      */
     public static String gitCommit() {
-        if (gitCommit == null) {
-            gitCommit = computeGitCommit();
-        }
-        return gitCommit;
+        return gitCommitAsync().getNow("");
     }
 
-    private static String computeGitCommit() {
-        try {
-            Process p = new ProcessBuilder("git", "rev-parse", "--short", "HEAD")
-                    .redirectErrorStream(true)
-                    .start();
-            String out = new String(p.getInputStream().readAllBytes()).trim();
-            if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                p.destroyForcibly();
-                return "";
+    /** The lookup behind {@link #gitCommit()}: started once, on a daemon thread, and cached. Never fails. */
+    public static java.util.concurrent.CompletableFuture<String> gitCommitAsync() {
+        synchronized (GIT_LOCK) {
+            if (gitCommit == null) {
+                gitCommit = lookup(() -> commitFrom(git("rev-parse", "--short", "HEAD")));
             }
-            // A valid short hash is hex; anything else (e.g. "fatal: not a git repository") → none.
-            return p.exitValue() == 0 && out.matches("[0-9a-f]{4,40}") ? out : "";
-        } catch (Exception e) {
-            return "";
+            return gitCommit;
         }
     }
-
-    /** {@code null} until first computed (then cached, possibly to {@code ""} when unavailable). */
-    private static String gitBranch;
 
     /**
-     * The current git branch of the working tree, or {@code ""} when it can't be determined (no {@code git}
-     * on PATH, not a checkout, or a detached HEAD). Read once at runtime via {@code git rev-parse}, then
-     * cached. Surfaced in About/Welcome for <b>snapshot</b> builds so a build made from a worktree/feature
-     * branch can be told apart from one made off {@code master}. Never throws.
+     * The git branch this build was made from, or {@code ""} when it can't be determined (no {@code git}, not
+     * a checkout, a detached HEAD) or is not known yet. Surfaced in About for <b>snapshot</b> builds so a
+     * build made from a worktree/feature branch can be told apart from one made off {@code master}.
+     * Non-blocking, exactly like {@link #gitCommit()}.
      */
     public static String gitBranch() {
-        if (gitBranch == null) {
-            gitBranch = computeGitBranch();
-        }
-        return gitBranch;
+        return gitBranchAsync().getNow("");
     }
 
-    private static String computeGitBranch() {
+    /** The lookup behind {@link #gitBranch()}: started once, on a daemon thread, and cached. Never fails. */
+    public static java.util.concurrent.CompletableFuture<String> gitBranchAsync() {
+        synchronized (GIT_LOCK) {
+            if (gitBranch == null) {
+                gitBranch = lookup(() -> branchFrom(git("rev-parse", "--abbrev-ref", "HEAD")));
+            }
+            return gitBranch;
+        }
+    }
+
+    /**
+     * Runs {@code query} on a daemon thread and completes with its answer, or {@code ""} if it throws.
+     *
+     * <p>The query spawns a process — and the first {@code ProcessRunner} call may also run the login-shell
+     * PATH probe, which can take seconds — so it must not run on the thread that asks. The old code ran
+     * {@code git} inline on the FX thread, and read its output to EOF <em>before</em> the {@code waitFor}
+     * that carried the timeout, so a git that never exited froze the window for good.
+     */
+    static java.util.concurrent.CompletableFuture<String> lookup(java.util.function.Supplier<String> query) {
+        java.util.concurrent.CompletableFuture<String> future = new java.util.concurrent.CompletableFuture<>();
+        Thread t = new Thread(
+                () -> {
+                    try {
+                        String value = query.get();
+                        future.complete(value == null ? "" : value);
+                    } catch (Throwable e) { // NOSONAR: a display-only nicety must never surface a failure
+                        future.complete("");
+                    }
+                },
+                "app-git-info");
+        t.setDaemon(true);
+        t.start();
+        return future;
+    }
+
+    /**
+     * One bounded {@code git} query in this build's own checkout, through {@link
+     * com.editora.process.ProcessRunner} (augmented PATH, parse-stable locale, closed stdin, an enforced
+     * timeout). {@code null} when the build has no directory to ask about.
+     */
+    private static com.editora.process.ProcessRunner.Result git(String... args) {
+        java.nio.file.Path dir = checkoutDir(codeSource(), System.getProperty("java.home"));
+        if (dir == null) {
+            return null;
+        }
+        java.util.List<String> argv = new java.util.ArrayList<>();
+        argv.add("git");
+        argv.addAll(java.util.List.of(args));
+        return com.editora.process.ProcessRunner.run(dir, GIT_TIMEOUT, argv);
+    }
+
+    private static java.net.URL codeSource() {
         try {
-            Process p = new ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
-                    .redirectErrorStream(true)
-                    .start();
-            String out = new String(p.getInputStream().readAllBytes()).trim();
-            if (!p.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
-                p.destroyForcibly();
-                return "";
+            java.security.CodeSource source =
+                    AppInfo.class.getProtectionDomain().getCodeSource();
+            return source == null ? null : source.getLocation();
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * The directory whose git checkout describes <em>this build</em>: the classes directory of a dev run
+     * ({@code target/classes}), the folder holding the jar, or — for a jlinked image, whose classes live in
+     * {@code jrt:} — the bundled runtime ({@code javaHome}), which sits inside the checkout when the image
+     * was built there. {@code null} when none exists.
+     *
+     * <p>Not the launch working directory, which is what the old code used implicitly: an editor started
+     * from inside some other repository reported <em>that</em> repository's commit and branch as its own.
+     * Pure apart from the existence checks; unit-tested.
+     */
+    static java.nio.file.Path checkoutDir(java.net.URL codeSource, String javaHome) {
+        if (codeSource != null && "file".equalsIgnoreCase(codeSource.getProtocol())) {
+            try {
+                java.nio.file.Path location = java.nio.file.Path.of(codeSource.toURI());
+                if (java.nio.file.Files.isDirectory(location)) {
+                    return location;
+                }
+                java.nio.file.Path parent = location.toAbsolutePath().getParent();
+                if (parent != null && java.nio.file.Files.isDirectory(parent)) {
+                    return parent;
+                }
+            } catch (java.net.URISyntaxException | RuntimeException e) {
+                // fall through to the runtime directory
             }
-            // "HEAD" means a detached checkout (no branch); a git error line contains whitespace. Keep only a
-            // plausible single-token ref name.
-            if (p.exitValue() != 0 || out.isEmpty() || out.equals("HEAD") || out.matches(".*\\s.*")) {
-                return "";
+        }
+        if (javaHome != null && !javaHome.isBlank()) {
+            try {
+                java.nio.file.Path home = java.nio.file.Path.of(javaHome);
+                if (java.nio.file.Files.isDirectory(home)) {
+                    return home;
+                }
+            } catch (RuntimeException e) {
+                // an unusable java.home just means there is nothing to ask about
             }
-            return out;
-        } catch (Exception e) {
+        }
+        return null;
+    }
+
+    /** The short hash in a {@code git rev-parse --short HEAD} result, or {@code ""}. Pure; unit-tested. */
+    static String commitFrom(com.editora.process.ProcessRunner.Result result) {
+        if (result == null || !result.ok() || result.out() == null) {
             return "";
         }
+        String out = result.out().strip();
+        // A valid short hash is hex; anything else (e.g. "fatal: not a git repository") → none.
+        return out.matches("[0-9a-f]{4,40}") ? out : "";
+    }
+
+    /** The branch in a {@code git rev-parse --abbrev-ref HEAD} result, or {@code ""}. Pure; unit-tested. */
+    static String branchFrom(com.editora.process.ProcessRunner.Result result) {
+        if (result == null || !result.ok() || result.out() == null) {
+            return "";
+        }
+        String out = result.out().strip();
+        // "HEAD" means a detached checkout (no branch); a git error line contains whitespace. Keep only a
+        // plausible single-token ref name.
+        return out.isEmpty() || out.equals("HEAD") || out.matches(".*\\s.*") ? "" : out;
     }
 }

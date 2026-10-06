@@ -35,12 +35,11 @@ import static com.editora.i18n.Messages.tr;
  * Emacs {@code find-file}-style keyboard file opener: a path field with a live, prefix-autocompleted
  * listing of the current directory. Type to filter, {@code Tab} to complete the common prefix, Enter
  * to descend into a folder or open a file (a non-existent path opens a new buffer to be written on
- * save), {@code C-n}/{@code C-p} or ↑/↓ to move, {@code Esc}/{@code C-g} to cancel. Keyboard-only.
+ * save), ↑/↓ (or the keymap's line-up/down chords) to move, {@code Esc} (or the keymap's cancel) to cancel.
+ * Keyboard-only; see {@link PickerKeys}.
  */
 public class FileFinder {
 
-    private static final boolean IS_MAC =
-            System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
     private static final String SEP = File.separator;
 
     private final Supplier<Path> startDir;
@@ -52,6 +51,9 @@ public class FileFinder {
 
     private final TextField input = new TextField();
     private final ListView<Path> list = new ListView<>();
+    /** The key legend under the list; rebuilt from the live keymap each time the finder is shown. */
+    private final Label hint = new Label();
+
     private final ObservableList<Path> items = FXCollections.observableArrayList();
 
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
@@ -88,19 +90,8 @@ public class FileFinder {
         // Emacs caret movement + basic editing in the path field. Registered after onKey so the finder's own
         // list navigation (C-n/C-p/C-g) consumes those chords first and the keymap yields to it (isConsumed).
         TextInputKeymap.installShared(input);
-        // macOS Option-composed chars while a chord modifier is held are swallowed; the opening chord's
-        // trailing KEY_TYPED is already swallowed by the global KeyDispatcher (card is in the main scene).
-        if (IS_MAC) {
-            input.addEventFilter(KeyEvent.KEY_TYPED, e -> {
-                if (e.isAltDown() || e.isMetaDown() || e.isControlDown() || e.isShortcutDown()) {
-                    e.consume();
-                }
-            });
-        }
-
         Label header = new Label(title);
         header.getStyleClass().add("palette-title");
-        Label hint = new Label("↑↓ / C-n C-p move  ·  tab complete  ·  ↵ open  ·  esc / C-g cancel");
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, input, list, hint);
         content.getStyleClass().add("command-palette");
@@ -123,6 +114,7 @@ public class FileFinder {
         Path dir = startDir.get();
         currentDir = null;
         dirEntries = List.of();
+        hint.setText(PickerKeys.legend(PickerKeys.hint("complete", "tab"), PickerKeys.hint("open", "↵")));
         // Pre-fill with the start directory + separator so the user types a name straight away.
         input.setText(dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP);
         input.positionCaret(input.getText().length());
@@ -218,57 +210,19 @@ public class FileFinder {
     }
 
     private void onKey(KeyEvent e) {
-        switch (e.getCode()) {
-            case ESCAPE -> {
-                hide();
-                e.consume();
-            }
-            case ENTER -> {
-                chooseSelected();
-                e.consume();
-            }
-            case TAB -> {
-                autocomplete();
-                e.consume();
-            }
-            case DOWN -> {
-                move(1);
-                e.consume();
-            }
-            case UP -> {
-                move(-1);
-                e.consume();
-            }
-            case N -> {
-                if (e.isControlDown()) {
-                    move(1);
-                    e.consume();
+        PickerKeys.Action action = PickerKeys.action(e);
+        switch (action) {
+            case CANCEL -> hide();
+            case ACCEPT -> chooseSelected();
+            default -> {
+                if (e.getCode() == javafx.scene.input.KeyCode.TAB) {
+                    autocomplete();
+                } else if (!PickerKeys.navigate(list, action)) {
+                    return;
                 }
             }
-            case P -> {
-                if (e.isControlDown()) {
-                    move(-1);
-                    e.consume();
-                }
-            }
-            case G -> {
-                if (e.isControlDown()) {
-                    hide();
-                    e.consume();
-                }
-            }
-            default -> {}
         }
-    }
-
-    private void move(int delta) {
-        int size = items.size();
-        if (size == 0) {
-            return;
-        }
-        int idx = Math.floorMod(list.getSelectionModel().getSelectedIndex() + delta, size);
-        list.getSelectionModel().select(idx);
-        list.scrollTo(idx);
+        e.consume();
     }
 
     /**
@@ -301,8 +255,20 @@ public class FileFinder {
         if (selected != null) {
             return selected;
         }
-        String text = input.getText();
-        return text.isBlank() ? null : Path.of(text);
+        return typedPath(input.getText(), currentDir);
+    }
+
+    /**
+     * The path a typed text names: a bare name belongs to the directory being listed, exactly as the list
+     * shows it filtered — not to the process working directory, where {@code Path.of("notes.txt")} put a new
+     * buffer and its first save.
+     */
+    static Path typedPath(String text, Path currentDir) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Path typed = Path.of(text);
+        return typed.isAbsolute() || currentDir == null ? typed : currentDir.resolve(typed);
     }
 
     private void descendInto(Path dir) {

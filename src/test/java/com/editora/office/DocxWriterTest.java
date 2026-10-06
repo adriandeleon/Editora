@@ -39,6 +39,80 @@ class DocxWriterTest {
         }
     }
 
+    /** Markdown whose every visible piece of text must survive an office export. */
+    static final String EVERYTHING = """
+            # Setup
+
+            1. Install the tools:
+
+               ```sh
+               npm ci --prefer-offline
+               ```
+
+               > quoted inside the item
+
+            2. Then run `make`.
+
+            - [x] done task
+            - [ ] open task
+
+            A claim[^src] and more.
+
+            <details>
+            <summary>Raw html block</summary>
+            </details>
+
+            <!-- an invisible comment -->
+
+            [^src]: The footnote body, with **bold**.
+
+                Second footnote paragraph.
+
+            After the footnote.
+            """;
+
+    private static String docxText(String md) throws Exception {
+        Path out = Files.createTempFile("editora-docx-content", ".docx");
+        try {
+            DocxWriter.write(md, null, null, out);
+            try (InputStream in = Files.newInputStream(out);
+                    XWPFDocument doc = new XWPFDocument(in);
+                    org.apache.poi.xwpf.extractor.XWPFWordExtractor extractor =
+                            new org.apache.poi.xwpf.extractor.XWPFWordExtractor(doc)) {
+                return extractor.getText();
+            }
+        } finally {
+            Files.deleteIfExists(out);
+        }
+    }
+
+    @Test
+    void nothingWithTextIsDroppedFromTheDocument() throws Exception {
+        String text = docxText(EVERYTHING);
+        assertTrue(text.contains("1. Install the tools:"), text);
+        assertTrue(text.contains("npm ci --prefer-offline"), "the fenced block inside the list item was lost: " + text);
+        assertTrue(text.contains("quoted inside the item"), text);
+        assertTrue(text.contains("2. Then run make."), text);
+        assertTrue(text.contains("☑ done task") && text.contains("☐ open task"), "task state survives: " + text);
+        assertTrue(text.contains("A claim[src] and more."), "the footnote reference is visible: " + text);
+        assertTrue(text.contains("<summary>Raw html block</summary>"), "raw HTML is shown as source: " + text);
+        assertTrue(!text.contains("invisible comment"), text);
+        assertTrue(text.contains("[src] The footnote body, with bold."), text);
+        assertTrue(text.contains("Second footnote paragraph."), text);
+        assertTrue(
+                text.indexOf("After the footnote.") < text.indexOf("[src] The footnote body"),
+                "footnotes are written at the end: " + text);
+    }
+
+    @Test
+    void aListItemThatStartsWithACodeBlockStillGetsItsMarker() throws Exception {
+        String text = docxText("1. ```\n   first\n   ```\n2. plain\n");
+        assertTrue(text.contains("1. "), text);
+        assertTrue(text.contains("first"), text);
+        assertTrue(
+                text.indexOf("1. ") < text.indexOf("first") && text.indexOf("first") < text.indexOf("2. plain"), text);
+    }
+
     @Test
     void soleDisplayMathSpansMultipleLines() {
         // $$ on its own line, body, then $$ — commonmark inserts SoftLineBreaks; the detector must span them

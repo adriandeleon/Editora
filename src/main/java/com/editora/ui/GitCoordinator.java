@@ -6,7 +6,9 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.beans.property.BooleanProperty;
@@ -30,6 +32,7 @@ import com.editora.git.BlameHeatmap;
 import com.editora.git.BlameParser;
 import com.editora.git.GitChangeBars;
 import com.editora.git.GitFormat;
+import com.editora.git.GitSafety;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.git.RelativeTime;
@@ -109,12 +112,15 @@ final class GitCoordinator {
 
         /** Opens a read-only diff of {@code repoRel} at {@code hash} vs its parent (a blame-annotation click).
          *  Routed through the window to reach {@code DiffCoordinator} without a circular dependency. */
-        void openCommitFileDiff(String hash, String repoRel);
+        void openCommitFileDiff(String hash, String repoRel, String origRepoRel);
     }
 
     private final CoordinatorHost host;
     private final WindowOps ops;
     private final GitService service = new GitService();
+
+    /** Per buffer: commit hash → {the file's path in that commit, its path in the parent} (from blame). */
+    private final Map<EditorBuffer, Map<String, String[]>> blamePaths = new java.util.WeakHashMap<>();
 
     private Path repoRoot;
     /** Complete status snapshot paired with {@link #repoRoot}; consumed by repository-wide diff review. */
@@ -124,6 +130,7 @@ final class GitCoordinator {
     private java.util.Map<Path, com.editora.git.GitFileStatus> lastStatusByPath = java.util.Map.of();
 
     private String branchName = "";
+    private java.util.function.BiConsumer<Path, String> repositoryListener = (root, branch) -> {};
     private String upstream = "";
     private boolean supportApplied;
 
@@ -182,6 +189,14 @@ final class GitCoordinator {
      * "not a repo" / "git not installed" status and returns {@code true} so the caller early-returns.
      * Returns {@code false} (no echo) when a repo is present.
      */
+    /**
+     * Told (on the FX thread) whenever a refresh has applied the active repository root and branch — the
+     * Git Log uses it to stop listing the commits of a repository that is no longer the active one.
+     */
+    void onRepositoryChanged(java.util.function.BiConsumer<Path, String> listener) {
+        repositoryListener = listener;
+    }
+
     boolean reportIfNoRepo() {
         if (repoRoot != null) {
             return false;
@@ -220,6 +235,7 @@ final class GitCoordinator {
             lastStatus = GitStatus.NOT_A_REPO;
             branchName = "";
             upstream = "";
+            repositoryListener.accept(null, "");
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // Git turned off → clear the Project tree coloring
@@ -258,8 +274,9 @@ final class GitCoordinator {
             applyState(GitService.RepoState.NONE);
             return;
         }
-        // Only diff a real, non-huge file (huge files disable the gutter anyway).
-        Path diffFile = (file != null && !b.isLargeFile()) ? file : null;
+        // Only diff a real, non-huge file (huge files disable the gutter anyway). A narrowed buffer shows
+        // region-relative lines, so whole-file change bars would land on the wrong ones: it gets none.
+        Path diffFile = (file != null && !b.isLargeFile() && !b.isNarrowed()) ? file : null;
         service.refresh(context, diffFile, this::applyState);
     }
 
@@ -275,6 +292,7 @@ final class GitCoordinator {
         if (!state.isRepo()) {
             branchName = "";
             upstream = "";
+            repositoryListener.accept(null, "");
             ops.setStatusBarBranch(null, 0, 0);
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
@@ -288,11 +306,14 @@ final class GitCoordinator {
         var status = state.status();
         branchName = status.branch();
         upstream = status.upstream();
+        repositoryListener.accept(repoRoot, branchName);
         ops.setStatusBarBranch(status.branch(), status.ahead(), status.behind());
         ops.setGitPanelStatus(status);
         lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, state.root());
         ops.setProjectGitStatus(lastStatusByPath); // color the tree
-        if (b != null
+        if (b != null && b.isNarrowed()) {
+            b.setChangeBars(null, null); // line numbers refer to the whole file, the view to the region
+        } else if (b != null
                 && b.getPath() != null
                 && (state.diffFile() == null
                         || com.editora.config.PathKeys.sameNormalized(b.getPath(), state.diffFile()))) {
@@ -319,12 +340,14 @@ final class GitCoordinator {
         EditorBuffer active = host.activeBuffer();
         host.forEachBuffer(buf -> {
             // The active buffer is handled by refresh(); skip non-file/huge buffers + files outside this repo.
-            if (!GitChangeBars.shouldRediff(buf.getPath(), root, buf == active, buf.isLargeFile())) {
+            if (buf.isNarrowed()
+                    || !GitChangeBars.shouldRediff(buf.getPath(), root, buf == active, buf.isLargeFile())) {
                 return;
             }
             Path path = buf.getPath().toAbsolutePath();
             service.diff(root, path, diff -> {
                 if (!buf.isDisposed()
+                        && !buf.isNarrowed()
                         && buf.getPath() != null
                         && com.editora.config.PathKeys.sameNormalized(buf.getPath(), path)) {
                     buf.setChangeBars(GitChangeBars.cssClassesByLine(diff.changes()), diff.hunks());
@@ -409,7 +432,10 @@ final class GitCoordinator {
         }
         String rel = GitService.repoRelative(repoRoot, b.getPath());
         if (rel != null) {
-            ops.openCommitFileDiff(hash, rel);
+            // Blame follows renames: a line older than a move belongs to the file's OLD path in its commit.
+            String[] blamed = blamePaths.getOrDefault(b, Map.of()).get(hash);
+            String at = blamed == null || blamed[0] == null ? rel : blamed[0];
+            ops.openCommitFileDiff(hash, at, blamed == null ? null : blamed[1]);
         }
     }
 
@@ -427,6 +453,11 @@ final class GitCoordinator {
             if (host.activeBuffer() != b) {
                 return; // the user switched tabs while blame ran
             }
+            Map<String, String[]> paths = new HashMap<>();
+            for (BlameParser.BlameLine line : lines) {
+                paths.putIfAbsent(line.hash(), new String[] {line.path(), line.previousPath()});
+            }
+            blamePaths.put(b, paths);
             b.setBlame(toBlameInfos(lines));
         });
     }
@@ -504,15 +535,57 @@ final class GitCoordinator {
         }
         service.runWorktreeMutation(
                 repoRoot,
-                r -> {
+                running(args, r -> {
                     if (r.ok()) {
                         host.setStatus(successMessage);
                     } else {
                         gitError("Git command failed", r.message());
                     }
                     afterMutation();
-                },
+                }),
                 args);
+    }
+
+    /**
+     * Shows {@code git <subcommand>…} in the status bar's background-task segment until the command reports
+     * back. A commit inside slow hooks, a checkout of a large tree or a push to a slow remote can run for
+     * minutes; without this the editor looked idle (or hung) for the whole of it.
+     */
+    private Consumer<ProcessRunner.Result> running(String[] args, Consumer<ProcessRunner.Result> onResult) {
+        AutoCloseable task = host.startBackgroundTask(tr("status.gitRunning", "git " + subcommand(args)));
+        return result -> {
+            try {
+                task.close();
+            } catch (Exception ignored) {
+                // the indicator handle has nothing to fail with; never let it swallow the result
+            }
+            onResult.accept(result);
+        };
+    }
+
+    /** The git subcommand in {@code args}: the first argument that is not a global option. */
+    static String subcommand(String... args) {
+        for (String arg : args) {
+            if (!arg.startsWith("-")) {
+                return arg;
+            }
+        }
+        return "";
+    }
+
+    /**
+     * The danger-styled confirmation every destructive Git action shows before it runs: the message names
+     * what will be lost, the confirming button is labelled with the action and styled {@code danger}, and
+     * Cancel is the safe default.
+     */
+    boolean confirmDestructive(String title, String message, String actionLabel) {
+        ButtonType action = new ButtonType(actionLabel, ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, action, ButtonType.CANCEL);
+        confirm.initOwner(host.window());
+        confirm.setTitle(title);
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().lookupButton(action).getStyleClass().add("danger");
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == action;
     }
 
     /**
@@ -533,11 +606,31 @@ final class GitCoordinator {
         if (paths.isEmpty()) {
             return;
         }
+        // "Unstaging" an unmerged path would drop its merge stages 1/2/3: Git would no longer know the file
+        // is conflicted and would let the merge be committed with one side's change silently missing.
+        String conflicted = firstUnmergedUnder(lastStatus, paths);
+        if (conflicted != null) {
+            host.setStatus(tr("status.git.unstageConflict", conflicted));
+            return;
+        }
         gitOp(
                 paths.size() == 1
                         ? tr("status.git.unstaged", paths.get(0))
                         : tr("status.git.unstagedMany", paths.size()),
                 argv(paths, "reset", "-q", "HEAD", "--"));
+    }
+
+    /** The first unmerged path one of {@code pathspecs} (a file or a folder) selects, or {@code null}. */
+    static String firstUnmergedUnder(GitStatus status, List<String> pathspecs) {
+        if (status == null) {
+            return null;
+        }
+        for (GitStatus.FileEntry entry : status.files()) {
+            if (entry.unmerged() && pathspecs.stream().anyMatch(spec -> selects(spec, entry.path()))) {
+                return entry.path();
+            }
+        }
+        return null;
     }
 
     /** {@code prefix} followed by {@code paths} — the argv for a git command over a pathspec list. */
@@ -562,28 +655,25 @@ final class GitCoordinator {
      * in the prompt and then runs both commands (each over its whole list, so at most two invocations).
      */
     void discardChanges(List<String> tracked, List<String> untracked) {
-        if (repoRoot == null || (tracked.isEmpty() && untracked.isEmpty())) {
+        // The paths are relative to the repository shown when the user chose them. The modal dialog below
+        // runs a nested event loop in which a tab switch or a refresh can move repoRoot to another repository
+        // (one worktree per task makes that ordinary), so the root is captured first and passed through.
+        Path root = repoRoot;
+        if (root == null || (tracked.isEmpty() && untracked.isEmpty())) {
             return;
         }
-        ButtonType discard = new ButtonType(tr("dialog.discard"), ButtonBar.ButtonData.OK_DONE);
-        Alert confirm =
-                new Alert(Alert.AlertType.CONFIRMATION, discardPrompt(tracked, untracked), discard, ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.discard.title"));
-        confirm.setHeaderText(null);
-        confirm.getDialogPane().lookupButton(discard).getStyleClass().add("danger");
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != discard) {
+        if (!confirmDestructive(tr("dialog.discard.title"), discardPrompt(tracked, untracked), tr("dialog.discard"))) {
             return;
         }
         List<String> affected = new ArrayList<>(tracked.size() + untracked.size());
         affected.addAll(tracked);
         affected.addAll(untracked);
-        invalidatePendingWrites(affected);
-        runDiscardCommands(tracked, untracked, affected);
+        invalidatePendingWrites(root, affected);
+        runDiscardCommands(root, tracked, untracked, affected);
     }
 
     /** Runs a mixed discard in order and refreshes/reloads once, after every requested path was attempted. */
-    private void runDiscardCommands(List<String> tracked, List<String> untracked, List<String> affected) {
+    private void runDiscardCommands(Path root, List<String> tracked, List<String> untracked, List<String> affected) {
         List<String[]> commands = new ArrayList<>(2);
         if (!tracked.isEmpty()) {
             commands.add(argv(tracked, "checkout", "--"));
@@ -591,12 +681,19 @@ final class GitCoordinator {
         if (!untracked.isEmpty()) {
             commands.add(argv(untracked, "clean", "-f", "--"));
         }
-        service.runWorktreeMutation(repoRoot, commands, result -> finishDiscard(result, tracked, untracked, affected));
+        service.runWorktreeMutation(
+                root,
+                commands,
+                running(commands.get(0), result -> finishDiscard(root, result, tracked, untracked, affected)));
     }
 
     private void finishDiscard(
-            ProcessRunner.Result result, List<String> tracked, List<String> untracked, List<String> affected) {
-        invalidatePendingWrites(affected);
+            Path root,
+            ProcessRunner.Result result,
+            List<String> tracked,
+            List<String> untracked,
+            List<String> affected) {
+        invalidatePendingWrites(root, affected);
         if (result != null && result.ok()) {
             host.setStatus(discardSuccessMessage(tracked, untracked));
         } else {
@@ -636,9 +733,10 @@ final class GitCoordinator {
         if (repoRoot == null) {
             return;
         }
+        String[] args = {"commit", "-m", message};
         service.runWorktreeMutation(
                 repoRoot,
-                r -> {
+                running(args, r -> {
                     if (r.ok()) {
                         ops.clearCommitMessage();
                         host.setStatus(tr("status.committed"));
@@ -646,31 +744,76 @@ final class GitCoordinator {
                         gitError("Commit failed", r.message());
                     }
                     afterMutation();
-                },
-                "commit",
-                "-m",
-                message);
+                }),
+                args);
     }
 
     void checkoutBranch(String name) {
         if (repoRoot == null || name == null || name.isBlank()) {
             return;
         }
-        invalidatePendingWrites(List.of());
-        service.runWorktreeMutation(
-                repoRoot,
-                r -> {
-                    invalidatePendingWrites(List.of());
-                    if (r.ok()) {
-                        host.setStatus(tr("status.switchedBranch", name));
-                    } else {
-                        gitError("Couldn't switch to " + name, r.message());
-                    }
-                    afterMutation();
-                    ops.reloadAllFromDiskSilently();
-                },
-                "checkout",
-                name);
+        if (rejectUnsafeRevision(name)) {
+            return;
+        }
+        Path root = repoRoot;
+        String[] args = {"checkout", name};
+        aroundWorkingTreeMutation(done -> service.runWorktreeMutation(root, running(args, done), args), r -> {
+            if (r.ok()) {
+                host.setStatus(tr("status.switchedBranch", name));
+            } else {
+                gitError("Couldn't switch to " + name, r.message());
+            }
+        });
+    }
+
+    /**
+     * Refuses a branch/tag name that Git would parse as an option. Names come from repository data, and a
+     * ref called {@code -f} turns {@code git checkout <name>} into a forced checkout that discards local
+     * changes. Returns {@code true} (after reporting) when the name was refused.
+     */
+    private boolean rejectUnsafeRevision(String name) {
+        if (GitSafety.isSafeRevision(name)) {
+            return false;
+        }
+        host.setError(tr("status.git.unsafeRef", name));
+        return true;
+    }
+
+    /**
+     * The completion boundary for <em>any</em> operation that may rewrite working-tree files — a git command
+     * or another tool that drives git ({@code gh pr checkout}). Pending editor saves for the repository are
+     * superseded before the operation starts and again when it ends (a save queued in between must not
+     * overwrite what the operation wrote), then the Git UI is refreshed and clean buffers reload from disk.
+     * {@code operation} receives the callback it must invoke, on the FX thread, with the result;
+     * {@code report} then tells the user the outcome.
+     */
+    void aroundWorkingTreeMutation(
+            Consumer<Consumer<ProcessRunner.Result>> operation, Consumer<ProcessRunner.Result> report) {
+        aroundWorkingTreeMutation(operation, report, null);
+    }
+
+    private void aroundWorkingTreeMutation(
+            Consumer<Consumer<ProcessRunner.Result>> operation,
+            Consumer<ProcessRunner.Result> report,
+            Runnable afterReload) {
+        aroundWorkingTreeMutation(repoRoot, operation, report, afterReload);
+    }
+
+    private void aroundWorkingTreeMutation(
+            Path root,
+            Consumer<Consumer<ProcessRunner.Result>> operation,
+            Consumer<ProcessRunner.Result> report,
+            Runnable afterReload) {
+        invalidatePendingWrites(root, List.of());
+        operation.accept(result -> {
+            invalidatePendingWrites(root, List.of());
+            report.accept(result);
+            afterMutation();
+            ops.reloadAllFromDiskSilently();
+            if (afterReload != null) {
+                afterReload.run();
+            }
+        });
     }
 
     /** Shared completion boundary for every Git operation that may rewrite working-tree files. */
@@ -678,24 +821,29 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
-        invalidatePendingWrites(List.of());
-        Path root = repoRoot;
-        service.runWorktreeMutation(
+        mutateWorkingTree(repoRoot, successMessage, afterCompletion, args);
+    }
+
+    /**
+     * {@link #mutateWorkingTree(String, Runnable, String...)} in the repository the caller chose its
+     * arguments from. A commit hash listed for one repository must not run in whichever repository is active
+     * by the time a confirmation has been answered, so the Git Log passes the root it listed.
+     */
+    void mutateWorkingTree(Path root, String successMessage, Runnable afterCompletion, String... args) {
+        if (root == null) {
+            return;
+        }
+        aroundWorkingTreeMutation(
                 root,
+                done -> service.runWorktreeMutation(root, running(args, done), args),
                 result -> {
-                    invalidatePendingWrites(List.of());
                     if (result.ok()) {
                         host.setStatus(successMessage);
                     } else {
                         gitError(tr("status.git.opFailed"), result.message());
                     }
-                    afterMutation();
-                    ops.reloadAllFromDiskSilently();
-                    if (afterCompletion != null) {
-                        afterCompletion.run();
-                    }
                 },
-                args);
+                afterCompletion);
     }
 
     /** Checks out a remote branch (e.g. {@code origin/foo}), creating a local tracking branch. */
@@ -703,46 +851,42 @@ final class GitCoordinator {
         if (repoRoot == null || remote == null || remote.isBlank()) {
             return;
         }
-        invalidatePendingWrites(List.of());
-        service.runWorktreeMutation(
-                repoRoot,
-                r -> {
-                    invalidatePendingWrites(List.of());
-                    if (r.ok()) {
-                        host.setStatus(tr("status.checkedOut", remote));
-                    } else {
-                        gitError("Couldn't check out " + remote, r.message());
-                    }
-                    afterMutation();
-                    ops.reloadAllFromDiskSilently();
-                },
-                "checkout",
-                "--track",
-                remote);
+        if (rejectUnsafeRevision(remote)) {
+            return;
+        }
+        Path root = repoRoot;
+        String[] args = {"checkout", "--track", remote};
+        aroundWorkingTreeMutation(done -> service.runWorktreeMutation(root, running(args, done), args), r -> {
+            if (r.ok()) {
+                host.setStatus(tr("status.checkedOut", remote));
+            } else {
+                gitError("Couldn't check out " + remote, r.message());
+            }
+        });
     }
 
     void newBranch() {
         if (reportIfNoRepo()) {
             return;
         }
+        Path root = repoRoot; // the repository the prompt was opened for, not whichever is active on accept
         host.promptText(tr("dialog.newBranch.title"), tr("dialog.newBranch.content"), "", input -> {
             String name = input.strip();
-            if (name.isEmpty()) {
+            if (name.isEmpty() || rejectUnsafeRevision(name)) {
                 return;
             }
+            String[] args = {"checkout", "-b", name};
             service.runWorktreeMutation(
-                    repoRoot,
-                    r -> {
+                    root,
+                    running(args, r -> {
                         if (r.ok()) {
                             host.setStatus(tr("status.createdBranch", name));
                         } else {
                             gitError("Couldn't create branch " + name, r.message());
                         }
                         afterMutation();
-                    },
-                    "checkout",
-                    "-b",
-                    name);
+                    }),
+                    args);
         });
     }
 
@@ -750,14 +894,15 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
+        Path root = repoRoot;
         host.setStatus(tr("status.gitRunning", label));
         boolean changesWorkingTree = args.length > 0 && "pull".equals(args[0]);
         if (changesWorkingTree) {
-            invalidatePendingWrites(List.of());
+            invalidatePendingWrites(root, List.of());
         }
-        Consumer<ProcessRunner.Result> finished = r -> {
+        Consumer<ProcessRunner.Result> finished = running(args, r -> {
             if (changesWorkingTree) {
-                invalidatePendingWrites(List.of());
+                invalidatePendingWrites(root, List.of());
             }
             if (r.ok()) {
                 host.setStatus(tr("status.gitDone", label));
@@ -768,11 +913,11 @@ final class GitCoordinator {
                 gitError(label + " failed", r.message());
             }
             afterMutation();
-        };
+        });
         if (changesWorkingTree) {
-            service.runNetworkWorktreeMutation(repoRoot, finished, args);
+            service.runNetworkWorktreeMutation(root, finished, args);
         } else {
-            service.runNetwork(repoRoot, finished, args);
+            service.runNetwork(root, finished, args);
         }
     }
 
@@ -808,16 +953,17 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
+        String[] args = GitService.pushArgs(branchName, upstream);
         service.runNetwork(
                 repoRoot,
-                r -> {
+                running(args, r -> {
                     if (r.ok()) {
                         ops.reloadAllFromDiskSilently();
                     }
                     afterMutation();
                     onDone.accept(r);
-                },
-                GitService.pushArgs(branchName, upstream));
+                }),
+                args);
     }
 
     /** Opens the Git tool window and focuses the commit message box. */
@@ -944,14 +1090,15 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
+        Path root = repoRoot; // the repository the prompt was opened for, not whichever is active on accept
         host.promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
             String m = msg.strip();
             String[] args = m.isEmpty() ? new String[] {"stash", "push"} : new String[] {"stash", "push", "-m", m};
-            invalidatePendingWrites(List.of());
+            invalidatePendingWrites(root, List.of());
             service.runWorktreeMutation(
-                    repoRoot,
-                    r -> {
-                        invalidatePendingWrites(List.of());
+                    root,
+                    running(args, r -> {
+                        invalidatePendingWrites(root, List.of());
                         if (r.ok()) {
                             host.setStatus(tr("stash.pushed"));
                         } else {
@@ -959,35 +1106,56 @@ final class GitCoordinator {
                         }
                         afterMutation();
                         ops.reloadAllFromDiskSilently();
-                    },
+                    }),
                     args);
         });
     }
 
     /** Pops the most recent stash. */
     void gitStashPop() {
-        gitMutateStash(tr("stash.popped"), "stash", "pop");
+        if (reportIfNoRepo()) {
+            return;
+        }
+        gitMutateStash(repoRoot, tr("stash.popped"), "stash", "pop");
     }
 
     /** Opens a picker over the stash list to apply a chosen entry. */
     void gitUnstash() {
         chooseStash(
                 tr("stash.picker.applyTitle"),
-                entry -> gitMutateStash(tr("stash.applied"), "stash", "apply", entry.ref()));
+                (root, entry) -> gitMutateStash(root, tr("stash.applied"), "stash", "apply", entry.ref()));
     }
 
-    /** Opens a picker over the stash list to drop a chosen entry. */
+    /**
+     * Opens a picker over the stash list to drop a chosen entry. Dropping deletes the stashed changes for
+     * good — there is no undo short of digging the commit out of the object store — so it is confirmed with
+     * the same danger-styled dialog a file discard uses.
+     */
     void gitStashDrop() {
-        chooseStash(
-                tr("stash.picker.dropTitle"),
-                entry -> gitMutateStash(tr("stash.dropped"), "stash", "drop", entry.ref()));
+        chooseStash(tr("stash.picker.dropTitle"), this::dropStash);
     }
 
-    private void chooseStash(String title, Consumer<com.editora.git.StashParser.StashEntry> onPick) {
+    /** Confirms, then drops {@code entry} from the repository at {@code root} (the one it was listed from). */
+    void dropStash(Path root, com.editora.git.StashParser.StashEntry entry) {
+        String described = entry.subject().isBlank() ? entry.ref() : entry.ref() + " — " + entry.subject();
+        if (confirmDestructive(
+                tr("stash.picker.dropTitle"), tr("dialog.stashDrop.confirm", described), tr("dialog.stashDrop"))) {
+            gitMutateStash(root, tr("stash.dropped"), "stash", "drop", entry.ref());
+        }
+    }
+
+    /**
+     * Lists the stashes of the repository that is active <em>now</em> and hands the pick back together with
+     * that root: {@code stash@{0}} names a different stash in every repository, so the mutation must not
+     * re-read {@code repoRoot} after the picker (or a confirmation) has been on screen.
+     */
+    private void chooseStash(
+            String title, java.util.function.BiConsumer<Path, com.editora.git.StashParser.StashEntry> onPick) {
         if (reportIfNoRepo()) {
             return;
         }
-        service.stashList(repoRoot, stashes -> {
+        Path root = repoRoot;
+        service.stashList(root, stashes -> {
             if (stashes.isEmpty()) {
                 host.setStatus(tr("stash.empty"));
                 return;
@@ -999,25 +1167,25 @@ final class GitCoordinator {
                     e -> e.ref() + "  " + e.subject(),
                     e -> e.branch(),
                     e -> e.ref() + " " + e.subject() + " " + e.branch(),
-                    onPick);
+                    entry -> onPick.accept(root, entry));
             picker.setOverlayHost(host.overlayHost());
             picker.show(host.window());
         });
     }
 
-    private void gitMutateStash(String successMessage, String... args) {
-        if (reportIfNoRepo()) {
+    private void gitMutateStash(Path root, String successMessage, String... args) {
+        if (root == null) {
             return;
         }
         boolean changesWorkingTree = args.length < 2 || !"drop".equals(args[1]);
         if (changesWorkingTree) {
-            invalidatePendingWrites(List.of());
+            invalidatePendingWrites(root, List.of());
         }
         service.runWorktreeMutation(
-                repoRoot,
-                r -> {
+                root,
+                running(args, r -> {
                     if (changesWorkingTree) {
-                        invalidatePendingWrites(List.of());
+                        invalidatePendingWrites(root, List.of());
                     }
                     if (r.ok()) {
                         host.setStatus(successMessage);
@@ -1028,18 +1196,25 @@ final class GitCoordinator {
                     if (changesWorkingTree) {
                         ops.reloadAllFromDiskSilently();
                     }
-                },
+                }),
                 args);
     }
 
     /** Supersedes pending saves for open files selected by the working-tree mutation. Empty means the repo. */
     private void invalidatePendingWrites(List<String> pathspecs) {
-        Path root = repoRoot;
+        invalidatePendingWrites(repoRoot, pathspecs);
+    }
+
+    /** As above, for the repository {@code root} captured when the action began. */
+    private void invalidatePendingWrites(Path root, List<String> pathspecs) {
         if (root == null) {
             return;
         }
         host.forEachBuffer(buffer -> {
             Path file = buffer.getPath();
+            if (!Vfs.isLocal(file)) {
+                return; // a remote tab is never in a local repository; resolving it would be a network round trip
+            }
             String relative = GitService.repoRelative(root, file);
             if (relative != null && (pathspecs.isEmpty() || pathspecs.stream().anyMatch(p -> selects(p, relative)))) {
                 ops.invalidatePendingWrite(file);
@@ -1210,14 +1385,14 @@ final class GitCoordinator {
                         return;
                     }
                     host.setStatus(tr("status.cloning", url));
-                    service.clone(url, destination, r -> {
+                    service.clone(url, destination, running(new String[] {"clone"}, r -> {
                         if (r.ok()) {
                             host.setStatus(tr("status.clonedInto", destination));
                             openClonedEntry(destination);
                         } else {
                             gitError("Clone failed", r.message());
                         }
-                    });
+                    }));
                 },
                 null,
                 false);
