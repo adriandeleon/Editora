@@ -16,40 +16,48 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ProjectPanelMoveTest {
 
+    /**
+     * An absolute path on every platform. {@code /proj/a.txt} is absolute on Unix; on Windows a leading slash
+     * alone names no drive, and the code under test works with (and returns) absolute paths.
+     */
+    private static Path p(String path) {
+        return Path.of(path).toAbsolutePath();
+    }
+
     @Test
     void movingAFileIntoADifferentFolderIsAllowed() {
-        assertTrue(ProjectPanel.canMoveInto(Path.of("/proj/a.txt"), Path.of("/proj/sub")));
-        assertTrue(ProjectPanel.canMoveInto(Path.of("/proj/sub/a.txt"), Path.of("/proj")));
+        assertTrue(ProjectPanel.canMoveInto(p("/proj/a.txt"), p("/proj/sub")));
+        assertTrue(ProjectPanel.canMoveInto(p("/proj/sub/a.txt"), p("/proj")));
     }
 
     @Test
     void movingIntoTheCurrentParentIsANoOp() {
-        assertFalse(ProjectPanel.canMoveInto(Path.of("/proj/a.txt"), Path.of("/proj")));
-        assertFalse(ProjectPanel.canMoveInto(Path.of("/proj/sub/a.txt"), Path.of("/proj/sub")));
+        assertFalse(ProjectPanel.canMoveInto(p("/proj/a.txt"), p("/proj")));
+        assertFalse(ProjectPanel.canMoveInto(p("/proj/sub/a.txt"), p("/proj/sub")));
     }
 
     @Test
     void aFolderCannotMoveIntoItselfOrItsSubtree() {
-        assertFalse(ProjectPanel.canMoveInto(Path.of("/proj/dir"), Path.of("/proj/dir")));
-        assertFalse(ProjectPanel.canMoveInto(Path.of("/proj/dir"), Path.of("/proj/dir/sub")));
-        assertFalse(ProjectPanel.canMoveInto(Path.of("/proj/dir"), Path.of("/proj/dir/sub/deep")));
+        assertFalse(ProjectPanel.canMoveInto(p("/proj/dir"), p("/proj/dir")));
+        assertFalse(ProjectPanel.canMoveInto(p("/proj/dir"), p("/proj/dir/sub")));
+        assertFalse(ProjectPanel.canMoveInto(p("/proj/dir"), p("/proj/dir/sub/deep")));
         // A sibling folder is fine.
-        assertTrue(ProjectPanel.canMoveInto(Path.of("/proj/dir"), Path.of("/proj/other")));
+        assertTrue(ProjectPanel.canMoveInto(p("/proj/dir"), p("/proj/other")));
     }
 
     @Test
     void nullsAreRejected() {
-        assertFalse(ProjectPanel.canMoveInto(null, Path.of("/proj")));
-        assertFalse(ProjectPanel.canMoveInto(Path.of("/proj/a.txt"), null));
+        assertFalse(ProjectPanel.canMoveInto(null, p("/proj")));
+        assertFalse(ProjectPanel.canMoveInto(p("/proj/a.txt"), null));
     }
 
     @Test
     void canDropIntoIsTrueWhenAnySourceCanMove() {
-        Path target = Path.of("/proj/sub");
+        Path target = p("/proj/sub");
         // b.txt is already in the target (no-op), but a.txt can move → the drop is accepted.
-        assertTrue(ProjectPanel.canDropInto(List.of(Path.of("/proj/a.txt"), Path.of("/proj/sub/b.txt")), target));
+        assertTrue(ProjectPanel.canDropInto(List.of(p("/proj/a.txt"), p("/proj/sub/b.txt")), target));
         // Both already in the target → nothing to do.
-        assertFalse(ProjectPanel.canDropInto(List.of(Path.of("/proj/sub/b.txt"), Path.of("/proj/sub/c.txt")), target));
+        assertFalse(ProjectPanel.canDropInto(List.of(p("/proj/sub/b.txt"), p("/proj/sub/c.txt")), target));
         assertFalse(ProjectPanel.canDropInto(List.of(), target));
     }
 
@@ -59,27 +67,27 @@ class ProjectPanelMoveTest {
         // TreeView hands the selection back in row order, so the parent goes first and the child's own
         // move would then fail on a path that no longer exists (a NoSuchFileException → error dialog).
         List<Path> pruned = ProjectPanel.pruneNestedSources(
-                List.of(Path.of("/proj/dir"), Path.of("/proj/dir/a.txt"), Path.of("/proj/dir/sub/b.txt")));
-        assertEquals(List.of(Path.of("/proj/dir")), pruned);
+                List.of(p("/proj/dir"), p("/proj/dir/a.txt"), p("/proj/dir/sub/b.txt")));
+        assertEquals(List.of(p("/proj/dir")), pruned);
 
         // Order-independent: the child listed first is still dropped.
         assertEquals(
-                List.of(Path.of("/proj/dir")),
-                ProjectPanel.pruneNestedSources(List.of(Path.of("/proj/dir/a.txt"), Path.of("/proj/dir"))));
+                List.of(p("/proj/dir")),
+                ProjectPanel.pruneNestedSources(List.of(p("/proj/dir/a.txt"), p("/proj/dir"))));
     }
 
     @Test
     void unrelatedSourcesAreAllKept() {
-        List<Path> sources = List.of(Path.of("/proj/a.txt"), Path.of("/proj/dir"), Path.of("/proj/other/b.txt"));
+        List<Path> sources = List.of(p("/proj/a.txt"), p("/proj/dir"), p("/proj/other/b.txt"));
         assertEquals(sources, ProjectPanel.pruneNestedSources(sources));
         // A sibling whose name merely prefixes another's isn't "nested" (dir2 is not under dir).
-        List<Path> siblings = List.of(Path.of("/proj/dir"), Path.of("/proj/dir2"));
+        List<Path> siblings = List.of(p("/proj/dir"), p("/proj/dir2"));
         assertEquals(siblings, ProjectPanel.pruneNestedSources(siblings));
     }
 
     @Test
     void pruningIsNullSafeAndTrivialForASingleSource() {
         assertEquals(List.of(), ProjectPanel.pruneNestedSources(null));
-        assertEquals(List.of(Path.of("/proj/a.txt")), ProjectPanel.pruneNestedSources(List.of(Path.of("/proj/a.txt"))));
+        assertEquals(List.of(p("/proj/a.txt")), ProjectPanel.pruneNestedSources(List.of(p("/proj/a.txt"))));
     }
 }
