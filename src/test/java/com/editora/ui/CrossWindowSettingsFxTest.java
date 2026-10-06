@@ -67,6 +67,10 @@ class CrossWindowSettingsFxTest {
     private void runInWindowA(String commandId) throws Exception {
         CommandRegistry registry = FxTestSupport.field(a, "registry");
         assertTrue(FxTestSupport.callOnFx(() -> registry.run(commandId)), commandId + " is registered");
+        deliverPendingReapply();
+    }
+
+    private void deliverPendingReapply() throws Exception {
         // The save requested by the command runs on a later pulse, and that save is where the other windows
         // learn of the change. One drain is not guaranteed to span that pulse on a slow machine, so give it a
         // few frames: flushing with nothing pending is a no-op.
@@ -107,6 +111,33 @@ class CrossWindowSettingsFxTest {
 
         assertEquals(!before, settings.isStickyScroll());
         assertEquals(!before, FxTestSupport.callOnFx(bufferB::isStickyScrollEnabled));
+    }
+
+    /**
+     * Preferences are serialized at save time, so the first save after a change carries it whichever window
+     * saves. Here window B already has a save waiting when the command runs in A, so B's save goes first — and
+     * B used to be taken for the window that made the change and skipped, staying on the old view for good.
+     * (A second window that is still starting up queues such saves, which made the tests above fail at random.)
+     */
+    @Test
+    void aWindowWhoseOwnSaveCarriesTheChangeStillAppliesIt() throws Exception {
+        Settings settings = fx.shared.getSettings();
+        boolean before = settings.isShowLineNumbers();
+        assertEquals(before, lineNumbers(bufferB), "window B starts in step with the setting");
+        CommandRegistry registry = FxTestSupport.field(a, "registry");
+
+        FxTestSupport.runOnFx(() -> {
+            FxTestSupport.call(b, "requestSave", new Class<?>[] {}); // queued ahead of the save A's command requests
+            registry.run("view.toggleLineNumbers");
+        });
+        deliverPendingReapply();
+
+        assertEquals(!before, settings.isShowLineNumbers());
+        assertEquals(!before, lineNumbers(bufferA), "the invoking window applied it itself");
+        assertEquals(!before, lineNumbers(bufferB), "and window B re-applied it although its own save carried it");
+
+        runInWindowA("view.toggleLineNumbers"); // and back, so the class's other tests start from defaults
+        assertEquals(before, lineNumbers(bufferB));
     }
 
     @Test

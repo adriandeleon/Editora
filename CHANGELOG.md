@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- A setting toggled from the command palette or a key binding now always reaches the other open windows.
+  When another window happened to save just before the window you toggled it in, that window was taken for
+  the one that made the change and kept the old view until restart or its next settings change.
 - Follow-ups to the Settings, Java debugging and editing review, plus a review of mouse editing, tab dragging
   and remote (SFTP) saves. Lines marked 'Changed' are behaviour you will notice as different rather than
   fixed:
