@@ -1,10 +1,12 @@
 package com.editora.doctor;
 
+import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import com.editora.process.ProcessRunner;
 
@@ -67,8 +69,25 @@ public final class DoctorProbes {
 
     /** Whether {@code argv} runs and exits 0 (e.g. {@code gh auth status}). */
     public static boolean succeeds(List<String> argv) {
-        ProcessRunner.Result r = runSafe(argv);
+        return succeeds(argv, Map.of());
+    }
+
+    /** As {@link #succeeds(List)} with {@code extraEnv} merged into the child's environment. */
+    public static boolean succeeds(List<String> argv, Map<String, String> extraEnv) {
+        ProcessRunner.Result r = runSafe(argv, extraEnv);
         return r != null && r.ok();
+    }
+
+    /**
+     * The environment that puts {@code dir} ahead of any inherited {@code PYTHONPATH} — what the debugger
+     * does with a located debugpy bundle ({@code DapManager.prependPythonPath}); empty for a null dir.
+     */
+    public static Map<String, String> pythonPathWith(Path dir) {
+        if (dir == null) {
+            return Map.of();
+        }
+        String existing = System.getenv().getOrDefault("PYTHONPATH", "");
+        return Map.of("PYTHONPATH", existing.isEmpty() ? dir.toString() : dir + File.pathSeparator + existing);
     }
 
     /**
@@ -107,8 +126,12 @@ public final class DoctorProbes {
     }
 
     private static ProcessRunner.Result runSafe(List<String> argv) {
+        return runSafe(argv, Map.of());
+    }
+
+    private static ProcessRunner.Result runSafe(List<String> argv, Map<String, String> extraEnv) {
         try {
-            return ProcessRunner.run(null, TIMEOUT, argv);
+            return ProcessRunner.run(null, TIMEOUT, argv, extraEnv);
         } catch (RuntimeException e) {
             return null;
         }
