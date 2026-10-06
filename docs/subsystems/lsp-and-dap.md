@@ -236,7 +236,9 @@ keeping that typing separate. Overlapping or unavailable history retains ordinar
 Signature help retains a manually selected overload
 across multiline refreshes and sends `activeSignatureHelp` with retriggers.
 
-Java launches enable JDT's `java.lsp.joinOnCompletion` through `JDK_JAVA_OPTIONS`, unless the command
+Java launches enable JDT's `java.lsp.joinOnCompletion` on the server's command line (`--jvm-arg=` for
+the jdtls launcher script, `-D` for a direct `java`; `JDK_JAVA_OPTIONS` only as the fallback for an
+unrecognized wrapper, because a debuggee started inside jdtls inherits the environment), unless the command
 or inherited JVM environment explicitly sets it. Wire ordering alone does not await JDT lifecycle
 jobs; the option prevents completion/resolve from reading an older working copy. The server waits
 internally while FX remains asynchronous. The [review](java-editing-review.md) records the measured
@@ -540,6 +542,35 @@ Editora's plugin dir), `dapDebugServer.js`, and a `debugpy` package dir for `PYT
 exposed to the UI are in [`dap/DapModels`](../../src/main/java/com/editora/dap/DapModels.java)
 (`ThreadInfo`, `StackFrameInfo`, `ScopeInfo`, `VariableInfo`, `EvalResult`, `LineBreakpoint`,
 `FileBreakpoints`).
+
+### The debugged Java program is Editora's child (program input)
+
+java-debug's `internalConsole` starts the program inside jdtls with no standard input: anything reading
+`System.in` waits forever. With the `debugProgramConsole` setting on (the default; palette
+`debug.toggleProgramConsole`, Settings ▸ Debugging ▸ Java) a Java **launch** instead says
+`console: integratedTerminal` (`LaunchConfig.inClientConsole`) on a `DapClient` that offered
+`supportsRunInTerminalRequest` (`setRunsDebuggee`). The adapter then sends the `runInTerminal` reverse
+request — an argv array (the `java` executable, `-agentlib:jdwp=…server=n…address=localhost:<port>`, class
+path, main class, arguments), the `cwd`, and the launch's own `env` — and `DapManager.startDebuggee` starts
+exactly that through [`dap/Debuggee`](../../src/main/java/com/editora/dap/Debuggee.java), a per-session
+`RunService`: the user's environment with the augmented PATH and the launch's variables on top (what Run
+gives a program; not jdtls's environment), tracked by `ProcessRegistry`, stdout/stderr through the Run
+console's bounded pump into `Listener.onOutput` as `stdout`/`stderr`. What follows from owning the process
+(all measured against java-debug 0.53.2):
+
+- the adapter sends **no `output` events** for it — the pump above is the only source of program output;
+- `disconnect(terminateDebuggee)` does **not** end it — `DapManager` kills it on `stop()` (Stop, Restart,
+  a new launch, a failed launch, window close/`shutdown()`), and the registry's shutdown hook covers app exit;
+- **its exit ends the session** (`Listener.onProgramExit`, then INACTIVE), after its last output. An adapter
+  `terminated` (or a lost transport) that arrives while the process is still there waits for that exit, and
+  ends the process after a 3 s grace period.
+
+`DapManager.sendProgramInput` / `closeProgramInput` write to its stdin. The Debug console has one input
+field: while the session is RUNNING and the program takes input, Enter sends the line (echoed, an empty line
+included); while SUSPENDED it evaluates, as before — a paused program reads nothing, so resume to type to
+it. The prompt text says which it is. `debug.endProgramInput` (Ctrl+D in the field, or the console's
+context menu) closes stdin. Attach (Debug Test, Debug via build tool, manual attach) launches nothing and is
+unchanged; Python and JavaScript keep their adapters' own consoles.
 
 ### Breakpoints
 

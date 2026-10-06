@@ -118,6 +118,15 @@ public final class DapClient implements IDebugProtocolClient {
         /** Something the adapter wants the user told that is not program output (java-debug's
          *  {@code usernotification}: a breakpoint condition or log message it could not evaluate). */
         default void onNotice(String message, boolean error) {}
+
+        /**
+         * The adapter asks the client to start the debuggee itself ({@code runInTerminal}): {@code argv} in
+         * {@code cwd} with {@code env} on top of the client's environment (a null value unsets a variable).
+         * Completes with the process id. Only asked of a session that {@link #setRunsDebuggee offered} it.
+         */
+        default CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
+            return CompletableFuture.failedFuture(new UnsupportedOperationException("runInTerminal"));
+        }
     }
 
     private final Host host;
@@ -153,9 +162,22 @@ public final class DapClient implements IDebugProtocolClient {
      *  will read it. After it, a change must be sent on the wire itself. */
     private volatile boolean configured;
 
+    /** Whether this session offers {@code runInTerminal} — see {@link #setRunsDebuggee}. */
+    private volatile boolean runsDebuggee;
+
     public DapClient(Host host) {
         this.host = host;
         this.root = null;
+    }
+
+    /**
+     * Offers the adapter {@code runInTerminal} (call before {@link #connect}): a launch with
+     * {@code console: integratedTerminal} then has the {@link Host} start the debuggee, which is what gives
+     * it a standard input. The adapter sends no {@code output} events for such a process and does not end
+     * it on {@code disconnect} (measured against java-debug 0.53.2) — both become the host's job.
+     */
+    public void setRunsDebuggee(boolean runsDebuggee) {
+        this.runsDebuggee = runsDebuggee;
     }
 
     /** A child session of {@code root}; its events are folded into the root's host. */
@@ -256,10 +278,11 @@ public final class DapClient implements IDebugProtocolClient {
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
             // A socket adapter can be joined by a second connection, so child sessions are possible here.
-            return timed(server.initialize(initArgs(adapterId, true))).thenApply(c -> {
-                this.capabilities = c;
-                return c;
-            });
+            return timed(server.initialize(initArgs(adapterId, true, runsDebuggee)))
+                    .thenApply(c -> {
+                        this.capabilities = c;
+                        return c;
+                    });
         } catch (Exception e) {
             LOG.log(Level.WARNING, "Failed to connect to debug adapter on port " + port, e);
             return CompletableFuture.failedFuture(e);
@@ -290,7 +313,7 @@ public final class DapClient implements IDebugProtocolClient {
                     this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
-            return timed(server.initialize(initArgs(adapterId, false))).thenApply(c -> {
+            return timed(server.initialize(initArgs(adapterId, false, false))).thenApply(c -> {
                 this.capabilities = c;
                 return c;
             });
@@ -345,7 +368,8 @@ public final class DapClient implements IDebugProtocolClient {
      * transports, where a child can connect to the same port; a stdio adapter has no second connection to
      * offer, and declaring it would make debugpy route subprocesses through a request we could not serve.
      */
-    private static InitializeRequestArguments initArgs(String adapterId, boolean startDebugging) {
+    private static InitializeRequestArguments initArgs(
+            String adapterId, boolean startDebugging, boolean runInTerminal) {
         InitializeRequestArguments a = new InitializeRequestArguments();
         a.setSupportsStartDebuggingRequest(startDebugging);
         a.setClientID("editora");
@@ -354,7 +378,7 @@ public final class DapClient implements IDebugProtocolClient {
         a.setPathFormat("path");
         a.setLinesStartAt1(true);
         a.setColumnsStartAt1(true);
-        a.setSupportsRunInTerminalRequest(false);
+        a.setSupportsRunInTerminalRequest(runInTerminal);
         // Lets the adapter report indexedVariables/namedVariables, so a huge array is fetched page by page.
         a.setSupportsVariablePaging(true);
         return a;
@@ -522,6 +546,41 @@ public final class DapClient implements IDebugProtocolClient {
     @Override
     public void exited(org.eclipse.lsp4j.debug.ExitedEventArguments args) {
         // The debuggee process exited; the session ends on the following `terminated` event.
+    }
+
+    /**
+     * The adapter asks the client to start the debuggee (see {@link #setRunsDebuggee}). A session that did
+     * not offer this — and a request naming no command — gets lsp4j's default answer, an error, as before.
+     */
+    @Override
+    public CompletableFuture<org.eclipse.lsp4j.debug.RunInTerminalResponse> runInTerminal(
+            org.eclipse.lsp4j.debug.RunInTerminalRequestArguments args) {
+        String[] argv = args == null ? null : args.getArgs();
+        if (!runsDebuggee || disposed || root != null || argv == null || argv.length == 0) {
+            return IDebugProtocolClient.super.runInTerminal(args);
+        }
+        // A plain HashMap: the adapter may send a null value, which unsets the variable.
+        Map<String, String> env = new java.util.HashMap<>();
+        if (args.getEnv() != null) {
+            env.putAll(args.getEnv());
+        }
+        return host.onRunInTerminal(args.getCwd(), List.of(argv), env).handle((pid, error) -> {
+            if (error != null) {
+                // Answered with the reason, which the adapter puts in its launch failure; a bare exception
+                // would reach it as "Internal error.".
+                Throwable cause = error instanceof java.util.concurrent.CompletionException && error.getCause() != null
+                        ? error.getCause()
+                        : error;
+                String reason = cause.getMessage() == null ? cause.toString() : cause.getMessage();
+                throw new org.eclipse.lsp4j.jsonrpc.ResponseErrorException(
+                        new org.eclipse.lsp4j.jsonrpc.messages.ResponseError(
+                                org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode.RequestFailed, reason, null));
+            }
+            org.eclipse.lsp4j.debug.RunInTerminalResponse response =
+                    new org.eclipse.lsp4j.debug.RunInTerminalResponse();
+            response.setProcessId(pid == null || pid > Integer.MAX_VALUE ? null : pid.intValue());
+            return response;
+        });
     }
 
     /**

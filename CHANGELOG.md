@@ -7,6 +7,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Third round of review follow-ups: standard input for debugged Java programs, the rest of the split view's
+  second pane, remote (SFTP) files on closed connections and beside local tabs, and Local History across
+  renames. Lines marked 'Changed' are behaviour you will notice as different rather than fixed:
+  - Java debugging:
+    - Changed: the Debug console now feeds the running program's standard input for Java launches; a debugged
+      program that read `System.in` used to wait forever. While the program runs, Enter sends the line to it
+      (an empty line counts); while it is paused, Enter evaluates an expression as before, and the prompt says
+      which of the two the field does. Ctrl+D in the field, 'Debug: End Program Input (EOF)' or the console's
+      context menu ends the input. This is on by default; the switch is under Settings > Debugging > Java
+      (also 'Debug: Toggle Program Input in the Debug Console') and takes effect at the next launch. Attached
+      sessions, Python and JavaScript work as before. Not yet confirmed on Windows.
+    - Changed: in that mode Editora starts the Java program itself instead of leaving it to the debugger, and
+      kills it on Stop, Restart, a new launch, a failed launch and closing the window. The session ends when
+      the program exits, after its last output, and the console reports the exit code. Lines the program
+      writes to stdout and to stderr at almost the same moment can appear in either order.
+    - Changed: the Java language server (jdtls) gets its JVM option on its command line instead of through
+      `JDK_JAVA_OPTIONS`, so debugged programs no longer inherit the variable and no longer print 'NOTE:
+      Picked up JDK_JAVA_OPTIONS'. The environment variable remains the fallback for a jdtls command that is
+      neither the launcher script jdtls ships nor a direct `java` (a wrapper script, for example); there the
+      note still appears when the Debug console switch above is off.
+  - Split view:
+    - Changed: both panes share one undo history. Undo in one pane no longer re-applies what the other pane
+      just undid, an edit made in one pane is undone once from the other, and undo moves the caret of the pane
+      it was issued in. Typing is grouped into the same undo steps in both panes; the second pane used to
+      group a word and the space after it differently.
+    - The second pane shows everything the first does: language-server squiggles, search and occurrence
+      highlights, TODO highlights, Markdown and Mermaid lint marks, inline debug values, log colouring, the
+      column ruler, and the scrollbar stripes and minimap marks. Its stripes have their hover tooltips, and a
+      click on one moves the pane that was clicked.
+    - Hover popups (diagnostics, debug values, Markdown and Mermaid lint, personal notes) open in the second
+      pane too, at the pointer.
+    - AceJump started in the second pane labels and moves that pane instead of the first; toolbar Cut and Copy
+      follow the selection of the pane in use.
+    - An abbreviation expanding, or a line auto-filling, while typing in the second pane no longer leaves the
+      caret in front of the character just typed.
+    - Narrowing and widening keep the second pane's caret instead of sending it to the start of the buffer.
+  - Remote (SFTP) files:
+    - Changed: personal notes on a remote file are stored under the path it was opened by, not the target of
+      a symlink; notes made earlier on a remote file opened through a symlink may no longer be found.
+    - Saving a remote file with other hard links keeps them in more cases: on protocol 3 (OpenSSH) through the
+      directory listing as before, on protocol 6 when the server reports a link count, and on a server
+      speaking protocol 4 to 6 without a count when it also accepts a protocol 3 channel. On other servers the
+      links cannot be detected and are still broken. The protocol 6 case is not yet confirmed against a
+      third-party server.
+    - A temporary file left on the server by a dropped connection is remembered across restarts of Editora and
+      removed by the next save to that server (a few internal save paths still remember theirs only until
+      Editora exits).
+    - Opening, restoring or reloading a file on a closed SFTP connection says that the connection is closed
+      and how to reconnect; the Project tree, the Project map and search say that the folder cannot be read
+      instead of showing an empty folder or 'No results'.
+    - Reload on a closed connection no longer stays unfinished, and the Project map no longer stops updating.
+    - A remote file that is read-only on the server shows the 'read-only on disk' note in View mode, as a
+      local one does. The state is read when the file is opened.
+    - With a remote tab open beside local ones, these no longer fail: diff and history look-ups, editing a
+      TODO line, MCP file look-ups and diagnostics, renaming a local folder (it stopped at the first remote
+      tab), Reveal in Project, the Bookmarks window, the Project map's history and breadcrumb, and Go to
+      Definition in the split.
+  - Local History and renames:
+    - Changed: a file created with Save As starts with a copy of the Local History of the file it was saved
+      from, once its first save is recorded; the original keeps its own. The copied revisions count towards
+      the project's history size limit, so old revisions can be dropped sooner. A Save As that fails copies
+      nothing.
+    - Local File History follows a file that is renamed or moved, also inside a renamed or moved folder and
+      for files that are not open, in every project that has history for it. History already at the new path
+      is merged with it.
+    - A revision still being stored when its file is renamed lands under the new name instead of bringing the
+      old one back.
+    - The history follows renames while Local History is switched off, too.
+  - Settings:
+    - Changed: settings schema 108, for the Debug console switch above; the migration changes nothing else.
+    - Remote and Abbreviations: a site or abbreviation changed elsewhere no longer discards what is being
+      typed into the form. The typed fields keep their text, caret and focus and the others follow the change;
+      when the entry itself was removed or re-identified elsewhere, the form reloads.
+  - Stability:
+    - Changed: lines typed quickly into a running program's input (Run and Debug consoles) reach it in the
+      order they were sent, and end of input arrives after the last line; they could arrive swapped.
+    - Changed: a git refresh no longer rebuilds the gutter of a file whose blame did not change; it did so on
+      every refresh, also for a file outside a repository or with blame off.
+    - The column ruler no longer stays left of its column after the gutter is rebuilt twice in quick
+      succession.
+    - Quitting waits (up to 5 seconds) for a Local History write that is still running before it releases the
+      configuration lock.
+    - AceJump line mode no longer throws on every repaint in a file that ends in an empty line.
 - Doctor reports Python debugging as healthy only when the configured interpreter can import debugpy,
   the same check the debugger uses, so a found debugpy bundle no longer hides a missing or misconfigured
   Python. A missing Mermaid linter is now a warning rather than a problem, since diagrams still render

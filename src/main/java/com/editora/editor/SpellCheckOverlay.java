@@ -23,7 +23,7 @@ import org.fxmisc.richtext.CodeArea;
  * paragraphs. Word eligibility: in prose buffers every word is checked (except Markdown inline/fenced
  * {@code code}); in code buffers only words styled {@code comment} or {@code string}.
  */
-final class SpellCheckOverlay extends Region {
+final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
 
     private static final Color SQUIGGLE = Color.web("#e5484d");
     private static final double AMP = 1.6; // squiggle peak-to-baseline amplitude (px)
@@ -137,7 +137,8 @@ final class SpellCheckOverlay extends Region {
      * The same squiggles for a split's second {@code view}: an overlay for that view's pane, from then on
      * given every setting this one is given (checker, mode, on/off, refresh).
      */
-    SpellCheckOverlay follower(CodeArea view) {
+    @Override
+    public SpellCheckOverlay follower(CodeArea view) {
         SpellCheckOverlay second = new SpellCheckOverlay(view);
         second.checker = checker;
         second.proseMode = proseMode;

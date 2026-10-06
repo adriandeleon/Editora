@@ -323,6 +323,10 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
+    /** The uncommitted text in the Remote / Abbreviations form, asked for before the list is re-read. */
+    private java.util.function.Supplier<PendingFormEdit> remoteFormEdit = PendingFormEdit::none;
+
+    private java.util.function.Supplier<PendingFormEdit> abbrevFormEdit = PendingFormEdit::none;
     /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
     private ListView<com.editora.vfs.RemoteConnection> remoteList;
 
@@ -414,6 +418,7 @@ public class SettingsWindow {
 
     private TextField mmdcPathField;
     private CheckBox debugCheck;
+    private CheckBox debugProgramConsoleCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -1674,6 +1679,11 @@ public class SettingsWindow {
             updateDebugRowsEnabled();
             updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Debug row
             refreshDebugStatus();
+        });
+        debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
+        debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugProgramConsole(now);
+            apply();
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             if (dbg.setEnabled() != null) {
@@ -4523,6 +4533,19 @@ public class SettingsWindow {
         wire.accept(port);
         wire.accept(user);
         wire.accept(keyPath);
+        remoteFormEdit = () -> {
+            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
+            return cur == null
+                    ? PendingFormEdit.none()
+                    : PendingFormEdit.capture(
+                            List.of(label, host, port, user, keyPath),
+                            List.of(
+                                    nullToEmpty(cur.label()),
+                                    nullToEmpty(cur.host()),
+                                    String.valueOf(cur.port()),
+                                    nullToEmpty(cur.user()),
+                                    nullToEmpty(cur.keyPath())));
+        };
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             loadingRemote = true;
@@ -4600,11 +4623,13 @@ public class SettingsWindow {
         var selected =
                 remoteList == null ? null : remoteList.getSelectionModel().getSelectedItem();
         String selectedId = selected == null ? null : selected.id();
+        PendingFormEdit typing = remoteFormEdit.get(); // before the items change: that reloads the form
         remoteItems.setAll(config.getConnections());
         if (remoteList != null && selectedId != null) {
             for (var c : remoteItems) {
                 if (selectedId.equals(c.id())) {
                     remoteList.getSelectionModel().select(c);
+                    typing.restore(); // the site being edited is still there: what was typed stays typed
                     break;
                 }
             }
@@ -4895,6 +4920,13 @@ public class SettingsWindow {
         };
         wire.accept(abbrev);
         wire.accept(expansion);
+        abbrevFormEdit = () -> {
+            com.editora.config.Abbreviation cur = list.getSelectionModel().getSelectedItem();
+            return cur == null
+                    ? PendingFormEdit.none()
+                    : PendingFormEdit.capture(
+                            List.of(abbrev, expansion), List.of(cur.getAbbreviation(), cur.getExpansion()));
+        };
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             loadingAbbrev = true;
@@ -4959,11 +4991,13 @@ public class SettingsWindow {
         var selected =
                 abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
         String selectedKey = selected == null ? null : selected.getAbbreviation();
+        PendingFormEdit typing = abbrevFormEdit.get(); // before the items change: that reloads the form
         abbrevItems.setAll(copyAbbrevs(config.getAbbreviations()));
         if (abbrevList != null && selectedKey != null) {
             for (var a : abbrevItems) {
                 if (selectedKey.equals(a.getAbbreviation())) {
                     abbrevList.getSelectionModel().select(a);
+                    typing.restore(); // the entry being edited is still there: what was typed stays typed
                     break;
                 }
             }
@@ -5750,6 +5784,14 @@ public class SettingsWindow {
             if (enable != null) {
                 checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
             }
+            if ("java".equals(dbg.id())) {
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugProgramConsoleCheck,
+                        tr("settings.debug.programConsole.hint"),
+                        "debug java console input stdin standard input program terminal type");
+            }
             Label status = new Label(tr("settings.debug.checking"));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
@@ -6423,6 +6465,9 @@ public class SettingsWindow {
         }
         for (TextField f : debugCommandFields.values()) {
             f.setDisable(!on);
+        }
+        if (debugProgramConsoleCheck != null) {
+            debugProgramConsoleCheck.setDisable(!on);
         }
     }
 
@@ -7657,6 +7702,7 @@ public class SettingsWindow {
             }
             refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());
+            debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {

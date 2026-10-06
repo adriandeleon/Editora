@@ -22,7 +22,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * visible paragraphs. Driven by {@link #setMatches}: it activates when there are matches and clears
  * when empty.
  */
-final class SearchHighlightOverlay extends Region {
+final class SearchHighlightOverlay extends Region implements SecondaryPane.Followed {
 
     /** Amber wash for all matches, a deeper one + border for the current match (see OverlayPalette). */
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
@@ -33,6 +33,8 @@ final class SearchHighlightOverlay extends Region {
     private int activeIndex = -1;
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private SearchHighlightOverlay follower;
 
     SearchHighlightOverlay(CodeArea area) {
         this.area = area;
@@ -52,8 +54,20 @@ final class SearchHighlightOverlay extends Region {
         });
     }
 
+    /** The same highlights for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public SearchHighlightOverlay follower(CodeArea view) {
+        SearchHighlightOverlay second = new SearchHighlightOverlay(view);
+        second.setMatches(matches, activeIndex);
+        follower = second;
+        return second;
+    }
+
     /** Sets the matches (offset pairs) to highlight and which is the current one (-1 for none). */
     void setMatches(List<int[]> matches, int activeIndex) {
+        if (follower != null) {
+            follower.setMatches(matches, activeIndex);
+        }
         this.matches = matches == null ? List.of() : matches;
         this.activeIndex = activeIndex;
         boolean show = !this.matches.isEmpty();

@@ -19,7 +19,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * mouse-transparent {@link Canvas} sized to the viewport, redrawn coalesced (one per pulse) on
  * scroll/edit/resize/fold, only for visible spans. Off in large-file mode / when indicators are hidden.
  */
-final class NoteHighlightOverlay extends Region {
+final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed {
 
     // A soft amber wash painted like a text selection: a flat, contiguous fill (no per-line outline or
     // rounded corners) so a multi-line note traces the same shape as the editor's selection.
@@ -62,7 +62,8 @@ final class NoteHighlightOverlay extends Region {
     }
 
     /** The same highlights and markers for a split's second {@code view}, kept in step with this one. */
-    NoteHighlightOverlay follower(CodeArea view) {
+    @Override
+    public NoteHighlightOverlay follower(CodeArea view) {
         NoteHighlightOverlay second = new NoteHighlightOverlay(view);
         second.spans = spans;
         second.setRenderingActive(rendering);

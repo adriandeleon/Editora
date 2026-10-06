@@ -20,7 +20,7 @@ import org.fxmisc.richtext.CodeArea;
  * visible paragraphs. The diagnostics come from maid (1-based line/column + char length) and are pushed in
  * by {@link EditorBuffer}; this class only renders them.
  */
-final class MermaidLintOverlay extends Region {
+final class MermaidLintOverlay extends Region implements SecondaryPane.Followed {
 
     private static final Color SQUIGGLE = Color.web("#e5484d");
     private static final double AMP = 1.6;
@@ -31,6 +31,8 @@ final class MermaidLintOverlay extends Region {
     private List<MaidOutput.Diagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private MermaidLintOverlay follower;
 
     MermaidLintOverlay(CodeArea area) {
         this.area = area;
@@ -46,7 +48,20 @@ final class MermaidLintOverlay extends Region {
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
 
+    /** The same squiggles for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public MermaidLintOverlay follower(CodeArea view) {
+        MermaidLintOverlay second = new MermaidLintOverlay(view);
+        second.setActive(active);
+        second.setDiagnostics(diagnostics);
+        follower = second;
+        return second;
+    }
+
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -64,6 +79,9 @@ final class MermaidLintOverlay extends Region {
     }
 
     void setDiagnostics(List<MaidOutput.Diagnostic> diagnostics) {
+        if (follower != null) {
+            follower.setDiagnostics(diagnostics);
+        }
         this.diagnostics = diagnostics == null ? List.of() : diagnostics;
         scheduleRedraw();
     }

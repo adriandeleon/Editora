@@ -26,7 +26,7 @@ import org.fxmisc.richtext.CodeArea;
  * inactive — the same {@link CanvasGuards}/overlay discipline as {@link LspDiagnosticOverlay}. Diagnostics
  * use 0-based lines (LSP convention) and are pushed in by {@link EditorBuffer}.
  */
-final class DiagnosticStripe extends Region {
+final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
 
     /** Width of the stripe column, in pixels (sits over the right edge of the scrollbar). */
     static final double WIDTH = 6;
@@ -42,6 +42,9 @@ final class DiagnosticStripe extends Region {
     private List<LspDiagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private DiagnosticStripe follower;
+
     private Tooltip tooltip;
     /** The message currently shown by {@link #tooltip}; lets a repeated hover over the same mark skip a
      *  re-{@code show()} that would otherwise re-position the popup on every mouse-move (flicker). */
@@ -71,8 +74,22 @@ final class DiagnosticStripe extends Region {
         addEventHandler(MouseEvent.MOUSE_CLICKED, this::onClick);
     }
 
+    /** The same marks beside a split's second {@code view}; a click there moves that view. */
+    @Override
+    public DiagnosticStripe follower(CodeArea view) {
+        DiagnosticStripe second = new DiagnosticStripe(view);
+        second.onActivate = line -> SecondaryPane.jumpToLine(view, line);
+        second.setDiagnostics(diagnostics);
+        second.setActive(active);
+        follower = second;
+        return second;
+    }
+
     /** Shows/hides the stripe and draws, or releases its texture. */
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -90,6 +107,9 @@ final class DiagnosticStripe extends Region {
     }
 
     void setDiagnostics(List<LspDiagnostic> diagnostics) {
+        if (follower != null) {
+            follower.setDiagnostics(diagnostics);
+        }
         this.diagnostics = diagnostics == null ? List.of() : diagnostics;
         // Only intercept mouse events (over the scrollbar) when there are marks to hover/click.
         setMouseTransparent(!active || this.diagnostics.isEmpty());

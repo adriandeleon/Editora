@@ -571,6 +571,13 @@ final class ProjectMapView extends VBox {
         exportPdfButton.setDisable(!enabled);
     }
 
+    private java.util.function.Consumer<String> onStatus = message -> {};
+
+    /** Where a folder that could not be read is reported (the window's status bar). */
+    void setOnStatus(java.util.function.Consumer<String> onStatus) {
+        this.onStatus = onStatus == null ? message -> {} : onStatus;
+    }
+
     private void reload() {
         long requested = generation.incrementAndGet();
         Path requestedRoot = root;
@@ -580,10 +587,19 @@ final class ProjectMapView extends VBox {
             return;
         }
         loader.submit(() -> {
-            List<ProjectMapModel.Entry> entries = ProjectMapModel.loadVisible(requestedRoot, requestedExpanded, true);
+            List<ProjectMapModel.Entry> loaded;
+            try {
+                loaded = ProjectMapModel.loadVisible(requestedRoot, requestedExpanded, true);
+            } catch (RuntimeException unreadable) {
+                loaded = List.of(); // a closed SFTP file system throws unchecked; the map must still hear back
+            }
+            List<ProjectMapModel.Entry> entries = loaded;
             Platform.runLater(() -> {
                 if (disposed || requested != generation.get()) {
                     return;
+                }
+                if (RemoteReadFailure.connectionClosed(requestedRoot)) {
+                    onStatus.accept(RemoteReadFailure.unreadable(requestedRoot)); // not "an empty project"
                 }
                 surface.setEntries(entries, requestedExpanded);
                 setOutputEnabled(!entries.isEmpty());
@@ -932,7 +948,8 @@ final class ProjectMapView extends VBox {
     private void recordSelection(Path path) {
         Path normalized = ProjectMapModel.normalize(path);
         if (normalized == null
-                || historyIndex >= 0 && selectionHistory.get(historyIndex).equals(normalized)) {
+                || historyIndex >= 0
+                        && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex), normalized)) {
             return;
         }
         if (historyIndex + 1 < selectionHistory.size()) {
@@ -1009,7 +1026,7 @@ final class ProjectMapView extends VBox {
             crumb.setTooltip(new Tooltip(path.toString()));
             crumb.setOnAction(event -> revealPath(path));
             nodes.add(crumb);
-            if (!path.equals(selected)) {
+            if (!com.editora.config.PathKeys.samePath(path, selected)) {
                 Label separator = new Label("›");
                 separator.getStyleClass().add("project-map-breadcrumb-separator");
                 nodes.add(separator);

@@ -1715,6 +1715,19 @@ final class WindowCommandRegistrar {
                         () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::focusEvaluate)));
         host.registry()
                 .register(Command.of(
+                        "debug.endProgramInput",
+                        () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::endProgramInput)));
+        host.registry()
+                .register(Command.of(
+                        "debug.toggleProgramConsole",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "debug.toggleProgramConsole",
+                                        () -> host.config().getSettings().isDebugProgramConsole(),
+                                        v -> host.config().getSettings().setDebugProgramConsole(v),
+                                        host.debugCoordinator()::applySupport)));
+        host.registry()
+                .register(Command.of(
                         "debug.addWatch", () -> host.debugCoordinator().ifDebug(host.debugCoordinator()::addWatch)));
         host.registry()
                 .register(Command.of(

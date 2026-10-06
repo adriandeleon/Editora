@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("fx")
@@ -40,6 +41,65 @@ class RunServiceBackpressureFxTest {
             System.out.flush();
             String name = new BufferedReader(new InputStreamReader(System.in)).readLine();
             System.out.println("Hello " + name);
+        }
+    }
+
+    public static final class CatMain {
+        public static void main(String[] args) throws Exception {
+            BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+            for (String line = in.readLine(); line != null; line = in.readLine()) {
+                System.out.println(line);
+            }
+            System.out.println("eof");
+        }
+    }
+
+    /**
+     * Each line used to be written by a thread of its own, so two lines sent in quick succession could reach
+     * the program swapped — and an end-of-input could overtake the line before it.
+     */
+    @Test
+    void linesReachTheProgramInTheOrderTheyWereSentAndEndOfInputComesLast() throws Exception {
+        RunService service = new RunService();
+        CountDownLatch exited = new CountDownLatch(1);
+        List<String> output = Collections.synchronizedList(new ArrayList<>());
+        String java = Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java")
+                .toString();
+        List<String> command = List.of(java, "-cp", System.getProperty("java.class.path"), CatMain.class.getName());
+        List<String> sent = new ArrayList<>();
+        for (int i = 0; i < 300; i++) {
+            sent.add("line " + i);
+        }
+        try {
+            FxTestSupport.runOnFx(() -> {
+                service.runInDir(Path.of("."), command, new RunService.Listener() {
+                    @Override
+                    public void onStart(String commandLine) {}
+
+                    @Override
+                    public void onOutput(String line, boolean stderr) {
+                        output.add(line);
+                    }
+
+                    @Override
+                    public void onExit(int code) {
+                        exited.countDown();
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        throw new AssertionError(message);
+                    }
+                });
+                sent.forEach(service::sendInput);
+                service.closeInput();
+            });
+            assertTrue(exited.await(30, TimeUnit.SECONDS), "the program saw the end of its input");
+            List<String> expected = new ArrayList<>(sent);
+            expected.add("eof");
+            assertEquals(expected, new ArrayList<>(output));
+        } finally {
+            service.stop();
         }
     }
 
@@ -116,9 +176,29 @@ class RunServiceBackpressureFxTest {
         }));
 
         assertTrue(exited.await(10, TimeUnit.SECONDS));
-        assertEquals(1, output.size());
-        assertTrue(output.get(0).length() < 70_000, "the reader must not retain the complete giant line");
-        assertTrue(output.get(0).endsWith("[line truncated]"));
+        // The line usually arrives as one piece. It need not: the pump hands over what it holds whenever the
+        // child has written nothing for 75 ms (so a prompt shows), and a child starved of CPU can pause that
+        // long in the middle of its one print — the line then arrives as "what there was" plus the capped
+        // rest. Counting pieces was a bet on the scheduler; what the cap promises holds for every piece.
+        List<String> pieces = List.copyOf(output);
+        assertFalse(pieces.isEmpty());
+        for (String piece : pieces) {
+            assertTrue(piece.length() < 70_000, "the reader must not retain the complete giant line");
+        }
+        assertTrue(
+                pieces.stream().anyMatch(piece -> piece.endsWith("[line truncated]")),
+                "the piece that reached the cap says the line was cut");
+        long delivered = pieces.stream()
+                .mapToLong(piece -> piece.replace(com.editora.process.OutputPump.LINE_TRUNCATED, "")
+                        .length())
+                .sum();
+        assertTrue(delivered < 2_000_000 / 2, "the excess is dropped, not delivered in slices: " + delivered);
+        assertTrue(
+                pieces.stream()
+                        .allMatch(piece -> piece.replace(com.editora.process.OutputPump.LINE_TRUNCATED, "")
+                                .chars()
+                                .allMatch(c -> c == 'x')),
+                "nothing but the program's own output and the marker");
     }
 
     private static List<String> javaCommand(String... args) {

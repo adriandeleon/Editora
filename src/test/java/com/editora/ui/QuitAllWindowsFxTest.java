@@ -59,21 +59,10 @@ class QuitAllWindowsFxTest {
         });
         assertTrue(b != fx.controller, "a genuinely second window");
 
-        // Open a file in window B only.
         Path file = tmp.resolve("in-window-b.txt");
         Files.writeString(file, "work in the other window\n");
         ConfigManager configB = FxTestSupport.field(b, "config");
         WorkspaceState stateB = configB.getWorkspaceState();
-        // Adding a tab schedules a session capture for the next FX pulse, so "not persisted yet" only holds
-        // until then: read it in the same FX task as the add, not from this thread racing that pulse.
-        boolean unpersistedAfterAdd = FxTestSupport.callOnFx(() -> {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(file);
-            buffer.setContent("work in the other window\n");
-            FxTestSupport.call(b, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
-            return stateB.getOpenFiles().isEmpty();
-        });
-        assertTrue(unpersistedAfterAdd, "B's session hasn't been persisted yet");
 
         // Stand in for a discovered plugin loader. Quit must close the shared manager after stopping every
         // window's plugin instances; Platform.exit() does not run the ordinary Stage close handlers.
@@ -93,22 +82,35 @@ class QuitAllWindowsFxTest {
         addStartedPlugin(fx.controller, spy);
         addStartedPlugin(b, spy);
 
+        // Open a file in window B only, then quit — in ONE turn of the FX thread. Adding a tab asks for a
+        // session save, which the window performs on its next turn (requestSave is coalesced through
+        // Platform.runLater). Checking "not persisted yet" from the test thread raced that turn, and when it
+        // lost, the save it lost to had also done the persisting this test is about. Here nothing can run
+        // between the tab being added, the check, and the quit: what is persisted afterwards is the quit's work.
+        boolean[] persistedBeforeQuit = new boolean[1];
+        List<String> persistedByQuit = new java.util.ArrayList<>();
         // Quit. (onQuit() itself opens a confirm dialog, which a headless test can't answer — this is the
         // step it performs once confirmed, and the step that was missing.)
-        boolean ok = FxTestSupport.callOnFx(
-                () -> (Boolean) FxTestSupport.call(wm, "confirmCloseAllWindows", new Class<?>[] {}));
+        boolean ok = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setPath(file);
+            buffer.setContent("work in the other window\n");
+            FxTestSupport.call(b, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
+            persistedBeforeQuit[0] = !stateB.getOpenFiles().isEmpty();
+            boolean confirmed = (Boolean) FxTestSupport.call(wm, "confirmCloseAllWindows", new Class<?>[] {});
+            stateB.getOpenFiles().forEach(open -> persistedByQuit.add(open.getPath())); // before any later turn
+            return confirmed;
+        });
+        assertTrue(!persistedBeforeQuit[0], "B's session hasn't been persisted yet");
         assertTrue(ok, "nothing was dirty, so nothing cancelled the quit");
         assertEquals(2, stopped.get(), "each window's successfully started plugin instance must be stopped");
         assertTrue(live.isEmpty(), "application Quit must release shared plugin class loaders");
 
         assertEquals(
                 1,
-                stateB.getOpenFiles().size(),
+                persistedByQuit.size(),
                 "window B's session must be persisted on quit — it used to be silently dropped");
-        assertEquals(
-                file.toAbsolutePath().toString(),
-                stateB.getOpenFiles().get(0).getPath(),
-                "and it must be B's own file");
+        assertEquals(file.toAbsolutePath().toString(), persistedByQuit.get(0), "and it must be B's own file");
     }
 
     private static void addStartedPlugin(MainController controller, com.editora.plugin.Plugin plugin) {

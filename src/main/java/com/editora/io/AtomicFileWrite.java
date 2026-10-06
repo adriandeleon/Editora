@@ -320,7 +320,7 @@ public final class AtomicFileWrite {
             return writeInPlace(target, bytes, commit, files, backupDir, null);
         }
         if (remote) {
-            SftpFiles.sweepOrphans(target);
+            SftpFiles.sweepOrphans(target, backupDir);
         }
         Path tmp;
         try {
@@ -369,7 +369,7 @@ public final class AtomicFileWrite {
             }
         } finally {
             if (!replaced) {
-                discardStaged(files, tmp);
+                discardStaged(files, tmp, backupDir);
             }
         }
         return writeInPlace(target, bytes, commit, files, backupDir, cannotReplace);
@@ -400,9 +400,9 @@ public final class AtomicFileWrite {
     }
 
     /** Removes an unused staging file; over SFTP that can fail with the connection, and must not mask why. */
-    private static void discardStaged(FileOperations files, Path tmp) throws IOException {
+    private static void discardStaged(FileOperations files, Path tmp, Path ledgerDir) throws IOException {
         if (isRemote(tmp)) {
-            SftpFiles.discardStaged(tmp);
+            SftpFiles.discardStaged(tmp, ledgerDir);
         } else {
             files.deleteIfExists(tmp);
         }
@@ -595,7 +595,7 @@ public final class AtomicFileWrite {
             return true;
         } finally {
             if (!replaced) {
-                discardStaged(files, tmp);
+                discardStaged(files, tmp, null);
             }
         }
     }

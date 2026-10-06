@@ -19,7 +19,7 @@ import org.fxmisc.richtext.CodeArea;
  * {@link MermaidLintOverlay}: a mouse-transparent {@link Canvas} sized to the viewport, redrawn
  * coalesced (one per pulse) on scroll / edit / resize, only for the currently visible paragraphs.
  */
-final class MarkdownLintOverlay extends Region {
+final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
@@ -30,6 +30,8 @@ final class MarkdownLintOverlay extends Region {
     private List<MarkdownLint.Diagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private MarkdownLintOverlay follower;
 
     MarkdownLintOverlay(CodeArea area) {
         this.area = area;
@@ -47,7 +49,20 @@ final class MarkdownLintOverlay extends Region {
         });
     }
 
+    /** The same squiggles for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public MarkdownLintOverlay follower(CodeArea view) {
+        MarkdownLintOverlay second = new MarkdownLintOverlay(view);
+        second.setActive(active);
+        second.setDiagnostics(diagnostics);
+        follower = second;
+        return second;
+    }
+
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -65,6 +80,9 @@ final class MarkdownLintOverlay extends Region {
     }
 
     void setDiagnostics(List<MarkdownLint.Diagnostic> diagnostics) {
+        if (follower != null) {
+            follower.setDiagnostics(diagnostics);
+        }
         this.diagnostics = diagnostics == null ? List.of() : diagnostics;
         scheduleRedraw();
     }

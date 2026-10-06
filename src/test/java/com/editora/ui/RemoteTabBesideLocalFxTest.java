@@ -51,6 +51,27 @@ class RemoteTabBesideLocalFxTest {
             assertFalse(PathKeys.samePath(remote, null));
             assertNull(GitService.repoRelative(dir, remote), "a remote file is never inside a local repository");
             assertFalse(GitChangeBars.shouldRediff(remote, dir, false, false));
+
+            assertFalse(PathKeys.isAtOrUnder(remote, dir), "a remote path is not inside a local folder");
+            assertFalse(PathKeys.isAtOrUnder(local, remote.getParent()));
+            assertTrue(PathKeys.isAtOrUnder(remote, remote.getParent()));
+            assertTrue(PathKeys.isAtOrUnder(remote, remote));
+            assertTrue(PathKeys.isUnder(remote, remote.getParent()));
+            assertFalse(PathKeys.isUnder(remote, remote));
+            assertFalse(PathKeys.isUnder(remote, null));
+
+            // The server's /remote.txt and a local /remote.txt are spelled alike. The canonical-path cache is
+            // keyed by that spelling: one must never be answered with the other.
+            Path sameSpelling = Path.of(remote.toString());
+            PathKeys.invalidateCanonicalCache();
+            assertEquals(remote.getFileSystem(), PathKeys.canonical(remote).getFileSystem());
+            assertEquals(
+                    sameSpelling.getFileSystem(),
+                    PathKeys.canonical(sameSpelling).getFileSystem());
+            Path cached = Files.writeString(dir.resolve("cached.txt"), "x");
+            PathKeys.canonical(cached); // now cached under its spelling
+            Path remoteTwin = remote.getFileSystem().getPath(cached.toRealPath().toString());
+            assertEquals(remote.getFileSystem(), PathKeys.canonical(remoteTwin).getFileSystem());
         }
     }
 
@@ -97,6 +118,68 @@ class RemoteTabBesideLocalFxTest {
                         List.of());
             });
             async.awaitFx();
+        }
+    }
+
+    /**
+     * The look-ups and walks that take a local path and visit every open tab: each used to stop at the first
+     * remote tab with a {@code ProviderMismatchException}, so here the remote tab is opened FIRST.
+     */
+    @Test
+    void lookingUpALocalFileWalksPastARemoteTab(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.start(dir));
+            Files.writeString(sftp.serverPath("remote.txt"), "remote\n");
+            Path project = Files.createDirectories(dir.resolve("project"));
+            Path folder = Files.createDirectories(project.resolve("old"));
+            Path inside = Files.writeString(folder.resolve("inside.txt"), "inside\n");
+            Path alpha = Files.writeString(project.resolve("alpha.txt"), "alpha\n");
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorArea area = FxTestSupport.field(fx.controller, "editorArea");
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            ProjectPanel panel = FxTestSupport.field(fx.controller, "projectPanel");
+            Path remote = sftp.remotePath("remote.txt");
+
+            EditorBuffer r = open(async, workflows, area, remote);
+            EditorBuffer a = open(async, workflows, area, alpha);
+            EditorBuffer in = open(async, workflows, area, inside);
+
+            // Diff / history / MCP: "the open buffer for this local file".
+            assertEquals(
+                    a,
+                    FxTestSupport.callOnFx(() ->
+                            FxTestSupport.call(fx.controller, "openBufferFor", new Class<?>[] {Path.class}, alpha)));
+            assertEquals(
+                    r,
+                    FxTestSupport.callOnFx(() ->
+                            FxTestSupport.call(fx.controller, "openBufferFor", new Class<?>[] {Path.class}, remote)));
+            Object mcp = FxTestSupport.field(fx.controller, "mcpBridge");
+            assertEquals(
+                    a,
+                    FxTestSupport.callOnFx(() -> FxTestSupport.call(
+                            mcp, "openBufferForPath", new Class<?>[] {String.class}, alpha.toString())));
+
+            // Project tree: revealing the remote tab's file in a local project is a no-op, not an exception.
+            FxTestSupport.runOnFx(() -> {
+                panel.setRoot(project);
+                panel.revealPath(remote);
+            });
+            async.awaitFx();
+
+            // A local folder renamed in the Project tree: the tabs below it follow, the remote tab is passed over.
+            Path renamed = project.resolve("new");
+            Files.move(folder, renamed);
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    fx.controller,
+                    "remapProjectFileLocal",
+                    new Class<?>[] {Path.class, Path.class, boolean.class},
+                    folder,
+                    renamed,
+                    false));
+            async.awaitFx();
+            assertEquals(renamed.resolve("inside.txt"), FxTestSupport.callOnFx(in::getPath));
+            assertEquals(remote, FxTestSupport.callOnFx(r::getPath));
+            assertEquals(alpha, FxTestSupport.callOnFx(a::getPath));
         }
     }
 

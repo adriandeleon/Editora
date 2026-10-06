@@ -293,6 +293,22 @@ public final class FakeDebugAdapter implements AutoCloseable {
             client.terminated(new TerminatedEventArguments());
         }
 
+        /**
+         * The reverse request java-debug sends for a launch with {@code console: integratedTerminal}: the
+         * client is to start {@code argv} itself. Completes with the client's answer (the process id).
+         */
+        public CompletableFuture<org.eclipse.lsp4j.debug.RunInTerminalResponse> runInTerminal(
+                String cwd, List<String> argv, Map<String, String> env) {
+            org.eclipse.lsp4j.debug.RunInTerminalRequestArguments request =
+                    new org.eclipse.lsp4j.debug.RunInTerminalRequestArguments();
+            request.setKind(org.eclipse.lsp4j.debug.RunInTerminalRequestArgumentsKind.INTEGRATED);
+            request.setTitle("Debug: Echo");
+            request.setCwd(cwd);
+            request.setArgs(argv.toArray(new String[0]));
+            request.setEnv(env);
+            return client.runInTerminal(request);
+        }
+
         // --- IDebugProtocolServer -------------------------------------------------------------------
 
         @Override
