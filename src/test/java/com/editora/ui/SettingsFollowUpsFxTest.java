@@ -269,6 +269,114 @@ class SettingsFollowUpsFxTest {
         }
     }
 
+    /**
+     * The same change, landing while the user is in the middle of a field of that very form. Re-reading the
+     * list re-selects the row and reloads the form, which used to throw away the half-typed text.
+     */
+    @Test
+    void aStoreChangeKeepsWhatIsBeingTypedIntoTheForm() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            FxTestSupport.runOnFx(() -> {
+                RemoteConnection example = new RemoteConnection(
+                        "example.org", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Example", "/srv");
+                fx.shared.putConnection(example);
+                Object editing = FxTestSupport.field(fx.controller, "editing");
+                FxTestSupport.call(
+                        editing, "addAbbreviation", new Class<?>[] {String.class, String.class}, "btw", "by the way");
+                SettingsWindow w = shown(fx.controller);
+                try {
+                    // --- Remote sites ---
+                    ObservableList<RemoteConnection> sites = FxTestSupport.field(w, "remoteItems");
+                    ListView<RemoteConnection> siteList = FxTestSupport.field(w, "remoteList");
+                    siteList.getSelectionModel().select(0);
+                    List<TextField> remote = all(
+                            all(page(w, "REMOTE"), javafx.scene.layout.GridPane.class, new ArrayList<>())
+                                    .get(0),
+                            TextField.class,
+                            new ArrayList<>());
+                    TextField label = remote.get(0);
+                    TextField host = remote.get(1);
+                    assertEquals("example.org", host.getText(), "precondition: the form shows the selected site");
+                    host.setText("staging.example.or"); // typing; not committed (no Enter, focus not moved)
+                    host.positionCaret(7);
+
+                    // A Connect that finishes elsewhere remembers another site.
+                    fx.shared.putConnection(new RemoteConnection(
+                            "other.org", 22, "me", RemoteConnection.AuthMethod.DEFAULT_KEYS, "", "Other", "/"));
+                    assertEquals(2, sites.size(), "the list is refreshed");
+                    assertEquals(
+                            "example.org",
+                            siteList.getSelectionModel().getSelectedItem().host());
+                    assertEquals("staging.example.or", host.getText(), "what was being typed is still there");
+                    assertEquals(7, host.getCaretPosition(), "with the caret where it was");
+                    assertEquals("Example", label.getText(), "and the fields that were not touched follow the store");
+
+                    // The site being edited is itself updated elsewhere (Connect remembers its last folder):
+                    // the typed text stays, and committing it keeps what the other change wrote.
+                    fx.shared.putConnection(new RemoteConnection(
+                            "example.org",
+                            22,
+                            "me",
+                            RemoteConnection.AuthMethod.DEFAULT_KEYS,
+                            "",
+                            "Example",
+                            "/var/www"));
+                    assertEquals("staging.example.or", host.getText());
+                    host.setText("staging.example.org");
+                    host.getOnAction().handle(new javafx.event.ActionEvent());
+                    RemoteConnection saved = fx.shared.getConnections().stream()
+                            .filter(c -> "staging.example.org".equals(c.host()))
+                            .findFirst()
+                            .orElseThrow();
+                    assertEquals("/var/www", saved.lastPath(), "merged: the typed host and the newer remembered path");
+                    assertTrue(fx.shared.getConnections().stream().anyMatch(c -> "other.org".equals(c.host())));
+
+                    // Removed elsewhere: there is nothing left to attach the typed text to.
+                    host.setText("gone.example.org");
+                    fx.shared.removeConnection(saved.id());
+                    assertFalse("gone.example.org".equals(host.getText()), "the form follows the new selection");
+
+                    // --- Abbreviations ---
+                    ObservableList<Abbreviation> abbrevs = FxTestSupport.field(w, "abbrevItems");
+                    ListView<Abbreviation> abbrevList = FxTestSupport.field(w, "abbrevList");
+                    abbrevList.getSelectionModel().select(0);
+                    List<TextField> fields = all(
+                            all(page(w, "ABBREVIATIONS"), javafx.scene.layout.GridPane.class, new ArrayList<>())
+                                    .get(0),
+                            TextField.class,
+                            new ArrayList<>());
+                    TextField expansion = fields.get(1);
+                    assertEquals("by the way", expansion.getText(), "precondition");
+                    expansion.setText("by the way, ");
+                    expansion.positionCaret(12);
+
+                    FxTestSupport.call(
+                            editing,
+                            "addAbbreviation",
+                            new Class<?>[] {String.class, String.class},
+                            "afaik",
+                            "as far as I know");
+                    assertEquals(2, abbrevs.size(), "the list is refreshed");
+                    assertEquals(
+                            "btw",
+                            abbrevList.getSelectionModel().getSelectedItem().getAbbreviation());
+                    assertEquals("by the way, ", expansion.getText(), "what was being typed is still there");
+                    assertEquals(12, expansion.getCaretPosition());
+                    expansion.getOnAction().handle(new javafx.event.ActionEvent());
+                    assertTrue(fx.shared.getAbbreviations().stream()
+                            .anyMatch(a -> a.getAbbreviation().equals("btw")
+                                    && a.getExpansion().equals("by the way, ")));
+                    assertTrue(
+                            fx.shared.getAbbreviations().stream()
+                                    .anyMatch(a -> a.getAbbreviation().equals("afaik")),
+                            "and committing it does not undo the abbreviation that was added meanwhile");
+                } finally {
+                    hide(w);
+                }
+            });
+        }
+    }
+
     // --- 6: templates ------------------------------------------------------------------------------
 
     @Test

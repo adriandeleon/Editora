@@ -323,6 +323,10 @@ public class SettingsWindow {
             javafx.collections.FXCollections.observableArrayList();
 
     private boolean loadingRemote = false;
+    /** The uncommitted text in the Remote / Abbreviations form, asked for before the list is re-read. */
+    private java.util.function.Supplier<PendingFormEdit> remoteFormEdit = PendingFormEdit::none;
+
+    private java.util.function.Supplier<PendingFormEdit> abbrevFormEdit = PendingFormEdit::none;
     /** The Remote ListView, so {@link #reloadRemote} can restore the selection. */
     private ListView<com.editora.vfs.RemoteConnection> remoteList;
 
@@ -4523,6 +4527,19 @@ public class SettingsWindow {
         wire.accept(port);
         wire.accept(user);
         wire.accept(keyPath);
+        remoteFormEdit = () -> {
+            com.editora.vfs.RemoteConnection cur = list.getSelectionModel().getSelectedItem();
+            return cur == null
+                    ? PendingFormEdit.none()
+                    : PendingFormEdit.capture(
+                            List.of(label, host, port, user, keyPath),
+                            List.of(
+                                    nullToEmpty(cur.label()),
+                                    nullToEmpty(cur.host()),
+                                    String.valueOf(cur.port()),
+                                    nullToEmpty(cur.user()),
+                                    nullToEmpty(cur.keyPath())));
+        };
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             loadingRemote = true;
@@ -4600,11 +4617,13 @@ public class SettingsWindow {
         var selected =
                 remoteList == null ? null : remoteList.getSelectionModel().getSelectedItem();
         String selectedId = selected == null ? null : selected.id();
+        PendingFormEdit typing = remoteFormEdit.get(); // before the items change: that reloads the form
         remoteItems.setAll(config.getConnections());
         if (remoteList != null && selectedId != null) {
             for (var c : remoteItems) {
                 if (selectedId.equals(c.id())) {
                     remoteList.getSelectionModel().select(c);
+                    typing.restore(); // the site being edited is still there: what was typed stays typed
                     break;
                 }
             }
@@ -4895,6 +4914,13 @@ public class SettingsWindow {
         };
         wire.accept(abbrev);
         wire.accept(expansion);
+        abbrevFormEdit = () -> {
+            com.editora.config.Abbreviation cur = list.getSelectionModel().getSelectedItem();
+            return cur == null
+                    ? PendingFormEdit.none()
+                    : PendingFormEdit.capture(
+                            List.of(abbrev, expansion), List.of(cur.getAbbreviation(), cur.getExpansion()));
+        };
 
         list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
             loadingAbbrev = true;
@@ -4959,11 +4985,13 @@ public class SettingsWindow {
         var selected =
                 abbrevList == null ? null : abbrevList.getSelectionModel().getSelectedItem();
         String selectedKey = selected == null ? null : selected.getAbbreviation();
+        PendingFormEdit typing = abbrevFormEdit.get(); // before the items change: that reloads the form
         abbrevItems.setAll(copyAbbrevs(config.getAbbreviations()));
         if (abbrevList != null && selectedKey != null) {
             for (var a : abbrevItems) {
                 if (selectedKey.equals(a.getAbbreviation())) {
                     abbrevList.getSelectionModel().select(a);
+                    typing.restore(); // the entry being edited is still there: what was typed stays typed
                     break;
                 }
             }
