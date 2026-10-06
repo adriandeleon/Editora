@@ -106,8 +106,11 @@ completion; those remain on the settled 300 ms milestone. Versioned push diagnos
 again at FX delivery, including the raw context retained for quick fixes, and pull diagnostics retain
 their requested session/version.
 
-`JavaServerEnvironment` adds `-Djava.lsp.joinOnCompletion=true` to the Java server process's
-`JDK_JAVA_OPTIONS`, preserving existing options and explicit command/environment overrides. Both
+`JavaServerEnvironment` starts the Java server with `-Djava.lsp.joinOnCompletion=true`: on its command
+line when it knows the launcher (`--jvm-arg=…` for the jdtls launcher script, `-D…` after a direct
+`java`), and through `JDK_JAVA_OPTIONS` only for a wrapper command it cannot extend — the environment
+is inherited by every JVM jdtls starts, a debugged program included. Existing options and explicit
+command/environment overrides are preserved. Both
 installed JDT bytecode and [JDT's implementation](https://github.com/eclipse-jdtls/eclipse.jdt.ls/blob/main/org.eclipse.jdt.ls.core/src/org/eclipse/jdt/ls/core/internal/handlers/JDTLanguageServer.java)
 confirm that completion and resolve use this option to await document lifecycle work. Waiting occurs
 inside the server, never on FX. Other language server processes are unaffected.

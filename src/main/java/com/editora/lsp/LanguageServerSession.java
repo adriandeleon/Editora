@@ -312,7 +312,7 @@ final class LanguageServerSession implements LanguageClient {
             ProcessBuilder pb = new ProcessBuilder(ProcessRunner.resolveExecutable(command));
             pb.directory(root.toFile());
             ProcessRunner.applyUserEnv(pb); // the user's locale: under LC_ALL=C jdtls cannot index non-ASCII paths
-            JavaServerEnvironment.configure(serverId, command, pb.environment());
+            pb.command(JavaServerEnvironment.configure(serverId, pb.command(), pb.environment()));
             process = pb.start();
             if (disposed) {
                 // The session was disposed while we were forking (e.g. the window closed) — kill the just-forked
