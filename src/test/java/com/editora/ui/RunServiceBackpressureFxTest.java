@@ -43,6 +43,65 @@ class RunServiceBackpressureFxTest {
         }
     }
 
+    public static final class CatMain {
+        public static void main(String[] args) throws Exception {
+            BufferedReader in = new BufferedReader(new InputStreamReader(System.in));
+            for (String line = in.readLine(); line != null; line = in.readLine()) {
+                System.out.println(line);
+            }
+            System.out.println("eof");
+        }
+    }
+
+    /**
+     * Each line used to be written by a thread of its own, so two lines sent in quick succession could reach
+     * the program swapped — and an end-of-input could overtake the line before it.
+     */
+    @Test
+    void linesReachTheProgramInTheOrderTheyWereSentAndEndOfInputComesLast() throws Exception {
+        RunService service = new RunService();
+        CountDownLatch exited = new CountDownLatch(1);
+        List<String> output = Collections.synchronizedList(new ArrayList<>());
+        String java = Path.of(System.getProperty("java.home"), "bin", isWindows() ? "java.exe" : "java")
+                .toString();
+        List<String> command = List.of(java, "-cp", System.getProperty("java.class.path"), CatMain.class.getName());
+        List<String> sent = new ArrayList<>();
+        for (int i = 0; i < 300; i++) {
+            sent.add("line " + i);
+        }
+        try {
+            FxTestSupport.runOnFx(() -> {
+                service.runInDir(Path.of("."), command, new RunService.Listener() {
+                    @Override
+                    public void onStart(String commandLine) {}
+
+                    @Override
+                    public void onOutput(String line, boolean stderr) {
+                        output.add(line);
+                    }
+
+                    @Override
+                    public void onExit(int code) {
+                        exited.countDown();
+                    }
+
+                    @Override
+                    public void onError(String message) {
+                        throw new AssertionError(message);
+                    }
+                });
+                sent.forEach(service::sendInput);
+                service.closeInput();
+            });
+            assertTrue(exited.await(30, TimeUnit.SECONDS), "the program saw the end of its input");
+            List<String> expected = new ArrayList<>(sent);
+            expected.add("eof");
+            assertEquals(expected, new ArrayList<>(output));
+        } finally {
+            service.stop();
+        }
+    }
+
     @Test
     void promptIsDeliveredBeforeTheProgramReceivesInput() throws Exception {
         RunService service = new RunService();

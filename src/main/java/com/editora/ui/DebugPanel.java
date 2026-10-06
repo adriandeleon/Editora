@@ -102,6 +102,12 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
         /** Set a variable's value (DAP setVariable on its container reference); delivers the new value. */
         void setVariable(int parentRef, String name, String value, Consumer<String> cb);
+
+        /** Send a line typed in the console to the running program's standard input. */
+        default void sendInput(String line) {}
+
+        /** End the running program's standard input (end of file). */
+        default void endInput() {}
     }
 
     private final Actions actions;
@@ -169,6 +175,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** The "evaluates only while paused" console hint was shown since the program last resumed. */
     private boolean evalHintShown;
+    /** The session's program takes typed lines on its standard input (see {@link #setProgramInput}). */
+    private boolean programInput;
 
     /** A before-launch build is in flight — see {@link #setPreparing}. */
     private boolean preparing;
@@ -367,6 +375,18 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         evalInput.getStyleClass().add("debug-eval");
         evalInput.setPromptText(tr("debugpanel.evalPrompt"));
         evalInput.setOnAction(e -> runEval());
+        // Ctrl+D ends the program's input, as in a terminal — only while the field is the program's input.
+        evalInput.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
+            if (e.getCode() == javafx.scene.input.KeyCode.D
+                    && e.isControlDown()
+                    && !e.isAltDown()
+                    && !e.isMetaDown()
+                    && !e.isShiftDown()
+                    && inputMode()) {
+                e.consume();
+                actions.endInput();
+            }
+        });
 
         // The thread selector shares the header's row: on its own row it took a third of the default strip.
         HBox stackHeader = new HBox(6, sectionLabel("debugpanel.callStack"), threads);
@@ -385,7 +405,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         javafx.scene.control.MenuItem clear = new javafx.scene.control.MenuItem(tr("debugpanel.clearConsole"));
         clear.setGraphic(Icons.remove());
         clear.setOnAction(e -> clearConsole());
-        consoleMenu.getItems().add(clear);
+        javafx.scene.control.MenuItem endInput = new javafx.scene.control.MenuItem(tr("debugpanel.endInput"));
+        endInput.setOnAction(e -> actions.endInput());
+        consoleMenu.setOnShowing(e -> endInput.setDisable(!inputMode()));
+        consoleMenu.getItems().addAll(clear, endInput);
         console.setContextMenu(consoleMenu);
 
         // Call stack | variables | console. Stacked on top of each other they shared the height of the
@@ -552,6 +575,10 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         // disabling the field on every Step/Continue made JavaFX move focus out of the panel, the next stop
         // then handed focus to the editor, and the expression being typed went into the source file.
         evalInput.setDisable(!(suspended || running));
+        if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
+            programInput = false; // the program of the session that ended; the next one says so itself
+        }
+        refreshInputPrompt();
         threads.setDisable(!suspended);
         if (!active) {
             sessionFile = "";
@@ -993,8 +1020,52 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
         ConsoleNav.afterAppend(console, caretBefore, follow, MAX_CONSOLE_CHARS);
     }
 
+    /**
+     * Whether the debugged program can be typed to: Editora started it itself and its input is still open.
+     * The one field below the console then does two jobs, told apart by the session state alone — while the
+     * program <em>runs</em> a line goes to its standard input, while it is <em>paused</em> the line is an
+     * expression to evaluate (a paused program reads nothing; resume it to type to it). The prompt text says
+     * which of the two the field is at the moment.
+     */
+    public void setProgramInput(boolean available) {
+        programInput = available;
+        refreshInputPrompt();
+    }
+
+    /** The field is the program's standard input right now (see {@link #setProgramInput}). */
+    private boolean inputMode() {
+        return programInput && lastState == DapManager.State.RUNNING;
+    }
+
+    private void refreshInputPrompt() {
+        evalInput.setPromptText(tr(inputMode() ? "debugpanel.inputPrompt" : "debugpanel.evalPrompt"));
+    }
+
+    /** The program's input was ended (end of file): said in the console, where the typed lines are echoed. */
+    public void showInputEnded() {
+        appendNotice(tr("debugpanel.inputEnded"));
+    }
+
+    /**
+     * Appends a line of Editora's own to the console, on a line of its own: a program's output often stops
+     * short of a newline (a prompt), and the notice must not read as part of it.
+     */
+    public void appendNotice(String line) {
+        int length = console.getLength();
+        boolean midLine = length > 0 && !"\n".equals(console.getText(length - 1, length));
+        appendOutput((midLine ? "\n" : "") + line + "\n", "console");
+    }
+
     private void runEval() {
         String expr = evalInput.getText();
+        if (inputMode()) {
+            // Standard input: every line counts, an empty one included, and the program does not echo it.
+            String line = expr == null ? "" : expr;
+            appendOutput(line + "\n", "console");
+            evalInput.clear();
+            actions.sendInput(line);
+            return;
+        }
         if (expr == null || expr.isBlank()) {
             return;
         }

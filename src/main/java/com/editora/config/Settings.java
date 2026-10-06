@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 107;
+    public static final int SCHEMA_VERSION = 108;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -478,6 +478,13 @@ public class Settings {
      *  Microsoft java-debug plugin; effective only when LSP is on, the java server is enabled/detected,
      *  and the plugin jar is found. */
     private boolean debugSupport = false;
+    /**
+     * Java debugging: Editora starts the debugged program itself (as the Run console does) instead of
+     * leaving that to the debug adapter inside jdtls, so the program has a standard input — lines typed in
+     * the Debug console reach it. On by default; off restores the adapter-started program, which cannot be
+     * typed to. Only a launch is affected, not an attach, and not the Python/JavaScript adapters.
+     */
+    private boolean debugProgramConsole = true;
     /** Path to the {@code com.microsoft.java.debug.plugin-*.jar} (a jar, or a dir to scan); blank =
      *  auto-detect common install locations (VS Code java extension, mason, …). */
     private String javaDebugPluginPath = "";
@@ -1966,6 +1973,14 @@ public class Settings {
 
     public void setDebugSupport(boolean debugSupport) {
         this.debugSupport = debugSupport;
+    }
+
+    public boolean isDebugProgramConsole() {
+        return debugProgramConsole;
+    }
+
+    public void setDebugProgramConsole(boolean debugProgramConsole) {
+        this.debugProgramConsole = debugProgramConsole;
     }
 
     public String getJavaDebugPluginPath() {

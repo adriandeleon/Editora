@@ -366,6 +366,7 @@ final class DebugCoordinator {
                 s.getPythonDebugCommand(),
                 s.isJsDebugEnabled(),
                 s.getJsDebugPath());
+        dapManager.setProgramConsole(s.isDebugProgramConsole()); // takes effect at the next launch
         List<String> bundles = on ? dapManager.bundlePaths() : List.of();
         boolean changed = !bundles.equals(appliedDebugBundles);
         lspManager.setDebugBundles(bundles); // set before sessions start — jdtls always gets the bundle
@@ -875,6 +876,16 @@ final class DebugCoordinator {
             }
 
             @Override
+            public void onProgramInput(boolean available) {
+                debugPanel.setProgramInput(available);
+            }
+
+            @Override
+            public void onProgramExit(int code) {
+                debugPanel.appendNotice(tr("run.exited", code));
+            }
+
+            @Override
             public void onError(String message) {
                 host.setStatus(tr("status.debug.error", message));
             }
@@ -1006,6 +1017,16 @@ final class DebugCoordinator {
             @Override
             public void evaluateWatch(String expr, int frameId, Consumer<DapModels.EvalResult> cb) {
                 dapManager.evaluateFull(expr, frameId, "watch", cb);
+            }
+
+            @Override
+            public void sendInput(String line) {
+                dapManager.sendProgramInput(line);
+            }
+
+            @Override
+            public void endInput() {
+                endProgramInput();
             }
 
             @Override
@@ -1791,6 +1812,19 @@ final class DebugCoordinator {
     void focusEvaluate() {
         ops.openToolWindow();
         debugPanel.focusEvaluate();
+    }
+
+    /**
+     * Ends the debugged program's standard input ({@code debug.endProgramInput}, and Ctrl+D in the console's
+     * input field): whatever reads it sees end of file. Only a program Editora started itself has an input
+     * to end — see {@link DapManager#setProgramConsole}.
+     */
+    void endProgramInput() {
+        if (dapManager.closeProgramInput()) {
+            debugPanel.showInputEnded();
+        } else {
+            host.setStatus(tr("status.debug.noProgramInput"));
+        }
     }
 
     void addWatch() {

@@ -68,46 +68,70 @@ public final class RunService {
         return current != null;
     }
 
+    /** The running process's id, or {@code -1} when nothing is running. */
+    public long pid() {
+        Process p = current;
+        return p == null ? -1 : p.pid();
+    }
+
+    /**
+     * Writes to the child's stdin, off the FX thread (a full pipe buffer must never block the UI) and
+     * <b>one at a time, in the order asked</b>: a thread per line let two lines sent in quick succession —
+     * a paste, a script — reach the program swapped, and let end-of-input overtake the last line.
+     * The single worker goes away when idle.
+     */
+    private final java.util.concurrent.ExecutorService stdinWriter = stdinWriter();
+
+    private static java.util.concurrent.ExecutorService stdinWriter() {
+        java.util.concurrent.ThreadPoolExecutor writer = new java.util.concurrent.ThreadPoolExecutor(
+                1, 1, 5, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(), r -> {
+                    Thread t = new Thread(r, "run-stdin");
+                    t.setDaemon(true);
+                    return t;
+                });
+        writer.allowCoreThreadTimeOut(true);
+        return writer;
+    }
+
     /**
      * Writes one line to the running process's stdin (for programs reading the console, e.g. a compact
-     * source file calling {@code IO.readln}). The write happens off the FX thread — a full pipe buffer
-     * must never block the UI. No-op when nothing is running.
+     * source file calling {@code IO.readln}). Lines arrive in the order they were sent. No-op when nothing
+     * is running.
      */
     public void sendInput(String line) {
         Process p = current;
         if (p == null || !p.isAlive() || line == null) {
             return;
         }
-        Thread t = new Thread(
-                () -> {
-                    try {
-                        // In the encoding the child reads stdin in (see ChildText), not a fixed UTF-8.
-                        p.getOutputStream().write(ChildText.encodeInput(line + System.lineSeparator()));
-                        p.getOutputStream().flush();
-                    } catch (IOException ignored) {
-                        // Process exited between the check and the write — nothing to report.
-                    }
-                },
-                "run-stdin");
-        t.setDaemon(true);
-        t.start();
+        stdinWriter.execute(() -> {
+            try {
+                // In the encoding the child reads stdin in (see ChildText), not a fixed UTF-8.
+                p.getOutputStream().write(ChildText.encodeInput(line + System.lineSeparator()));
+                p.getOutputStream().flush();
+            } catch (IOException ignored) {
+                // Process exited between the check and the write — nothing to report.
+            }
+        });
     }
 
     /**
      * Closes the running process's stdin, so anything that reads it sees end of input instead of waiting for
      * text nobody can type — for a child started where there is no console input field (a debug session's
-     * before-launch step). No-op when nothing is running.
+     * before-launch step), or when the user ends the input. Lines already sent are written first. No-op
+     * when nothing is running.
      */
     public void closeInput() {
         Process p = current;
         if (p == null) {
             return;
         }
-        try {
-            p.getOutputStream().close();
-        } catch (IOException ignored) {
-            // already gone
-        }
+        stdinWriter.execute(() -> {
+            try {
+                p.getOutputStream().close();
+            } catch (IOException ignored) {
+                // already gone
+            }
+        });
     }
 
     /**
@@ -192,7 +216,19 @@ public final class RunService {
         if (workingDir != null) {
             pb.directory(workingDir.toAbsolutePath().toFile());
         }
-        ProcessRunner.applyUserEnv(pb.environment(), env);
+        if (env == null || env.values().stream().noneMatch(java.util.Objects::isNull)) {
+            ProcessRunner.applyUserEnv(pb.environment(), env);
+            return pb;
+        }
+        // A null value removes the variable (the debug protocol's runInTerminal spells "unset" that way).
+        java.util.Map<String, String> set = new java.util.LinkedHashMap<>(env);
+        set.values().removeIf(java.util.Objects::isNull);
+        ProcessRunner.applyUserEnv(pb.environment(), set);
+        env.forEach((key, value) -> {
+            if (value == null) {
+                pb.environment().remove(key);
+            }
+        });
         return pb;
     }
 

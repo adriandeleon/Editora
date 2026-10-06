@@ -414,6 +414,7 @@ public class SettingsWindow {
 
     private TextField mmdcPathField;
     private CheckBox debugCheck;
+    private CheckBox debugProgramConsoleCheck;
     /** Per-language debug-adapter controls, keyed by language id (java/python/javascript). */
     private final java.util.Map<String, CheckBox> debugEnableChecks = new java.util.LinkedHashMap<>();
 
@@ -1674,6 +1675,11 @@ public class SettingsWindow {
             updateDebugRowsEnabled();
             updateLspToolRowsEnabled(); // reflect on the Tool Windows page's Debug row
             refreshDebugStatus();
+        });
+        debugProgramConsoleCheck = new CheckBox(tr("settings.debug.programConsole"));
+        debugProgramConsoleCheck.selectedProperty().addListener((obs, was, now) -> {
+            config.getSettings().setDebugProgramConsole(now);
+            apply();
         });
         for (DebugAdapterUi dbg : debugAdapterUis()) {
             if (dbg.setEnabled() != null) {
@@ -5750,6 +5756,14 @@ public class SettingsWindow {
             if (enable != null) {
                 checkRow(c, Category.DEBUG, enable, null, dbg.keywords());
             }
+            if ("java".equals(dbg.id())) {
+                checkRow(
+                        c,
+                        Category.DEBUG,
+                        debugProgramConsoleCheck,
+                        tr("settings.debug.programConsole.hint"),
+                        "debug java console input stdin standard input program terminal type");
+            }
             Label status = new Label(tr("settings.debug.checking"));
             status.getStyleClass().add("settings-git-status");
             status.setWrapText(true);
@@ -6423,6 +6437,9 @@ public class SettingsWindow {
         }
         for (TextField f : debugCommandFields.values()) {
             f.setDisable(!on);
+        }
+        if (debugProgramConsoleCheck != null) {
+            debugProgramConsoleCheck.setDisable(!on);
         }
     }
 
@@ -7657,6 +7674,7 @@ public class SettingsWindow {
             }
             refreshPluginList(); // re-read enabled state + reflect the master gate
             debugCheck.setSelected(settings.isDebugSupport());
+            debugProgramConsoleCheck.setSelected(settings.isDebugProgramConsole());
             for (DebugAdapterUi dbg : debugAdapterUis()) {
                 CheckBox enable = debugEnableChecks.get(dbg.id());
                 if (enable != null && dbg.getEnabled() != null) {
