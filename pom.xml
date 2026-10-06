@@ -1153,6 +1153,47 @@
     </build>
 
     <profiles>
+        <!-- Palantir Java Format reads javac's JCCompilationUnit.endPositions, which JDK 27 removed
+             (JDK-8372948), and Spotless runs it inside Maven's own JVM. On JDK 26+ fail fast at validate
+             with a clear message instead of a NoSuchFieldError per file. Skipped whenever the format check
+             is (the CI JDK 27 lane passes -Dspotless.check.skip=true). `mvn spotless:apply` is a direct goal
+             that never reaches validate, so it still needs JDK 25 by hand (see docs/conventions.md). Remove
+             once a Palantir release fixes both palantir/palantir-java-format#1785 (this field; PR #1786)
+             and #1799 (JDK 27 also breaks formatting local `var` declarations). -->
+        <profile>
+            <id>formatter-needs-jdk25</id>
+            <activation>
+                <jdk>[26,)</jdk>
+            </activation>
+            <properties>
+                <spotless.check.skip>false</spotless.check.skip>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>enforce-formatter-jdk</id>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <skip>${spotless.check.skip}</skip>
+                                    <rules>
+                                        <requireJavaVersion>
+                                            <version>[25,26)</version>
+                                            <message>Palantir Java Format (Spotless) does not run on JDK 26+ yet: JDK 27 removed the javac field it reads (JDK-8372948). Run Maven on JDK 25 (e.g. `sdk env` with the repo's .sdkmanrc), or pass -Dspotless.check.skip=true to build without the format check.</message>
+                                        </requireJavaVersion>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Experimental only: neither the normal JVM nor the dist/AOT path uses these artifacts.
              Keep the JavaFX static archives at EXACTLY the version of the OpenJFX class files. -->
         <profile>
