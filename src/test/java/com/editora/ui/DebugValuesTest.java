@@ -1,6 +1,8 @@
 package com.editora.ui;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
@@ -58,12 +60,20 @@ class DebugValuesTest {
     @Test
     void sourceNameOfAUriIsItsClassFile() {
         assertEquals("util.py", DebugValues.sourceName(java.nio.file.Path.of("/proj/util.py")));
+        assertEquals("", DebugValues.sourceName(null));
+    }
+
+    /** As above, for a source that is a URI rather than a file. */
+    @Test
+    @DisabledOnOs(
+            value = OS.WINDOWS,
+            disabledReason = "a jdt: URI is not a legal Windows path; DapClient.sourcePath yields no file for it there")
+    void sourceNameOfAJdtUriDropsItsQuery() {
         assertEquals(
                 "Thread.java",
                 DebugValues.sourceName(
                         java.nio.file.Path.of(
                                 "jdt:/contents/java.base/java.lang/Thread.java?=myapp/%5C/usr%5C/lib%5C/jvm%3Cjava.lang(Thread.class")));
-        assertEquals("", DebugValues.sourceName(null));
     }
 
     /** D2-16: colour codes in program output are not text. */

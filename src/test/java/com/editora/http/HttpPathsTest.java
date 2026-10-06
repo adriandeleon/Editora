@@ -14,7 +14,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 /** Unit tests for the {@code .http} file-reference containment rule. */
 class HttpPathsTest {
 
-    private static final Path BASE = Path.of("/home/u/repo/api");
+    /** Absolute on every platform: on Windows a leading slash alone names no drive, and the rule resolves one. */
+    private static final Path BASE = Path.of("/home/u/repo/api").toAbsolutePath();
 
     @Test
     void resolvesAPlainRelativeReference() {

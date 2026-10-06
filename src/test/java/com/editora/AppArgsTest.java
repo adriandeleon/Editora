@@ -7,6 +7,8 @@ import java.util.function.Predicate;
 
 import com.editora.ui.MainController.OpenTarget;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -294,6 +296,7 @@ class AppArgsTest {
     }
 
     @Test
+    @DisabledOnOs(value = OS.WINDOWS, disabledReason = "a colon is not a legal filename character on Windows")
     void aFileThatReallyIsCalledThatOpensAsItself() {
         // A colon is a legal character in a macOS filename, so existence has to be asked first: a file
         // named "notes:1" is itself, not line 1 of "notes". Guessing the other way loses a real file.

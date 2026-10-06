@@ -95,7 +95,10 @@ public class WindowManager {
     private final PauseTransition settingsRebroadcast = new PauseTransition(Duration.millis(200));
     /** True from a reported change until the windows it must reach have re-applied. */
     private boolean settingsChangePending;
-    /** The window whose save started the pending re-apply; it applied the change itself and is skipped. */
+    /**
+     * The window that made the pending change; it applied the change itself and is skipped. Known only when
+     * its own save carried the change with no other window's save waiting — see {@link #changerOf}.
+     */
     private ConfigManager settingsChangeOrigin;
     /** Set when the pending changes came from different (or unknown) windows: then none can be skipped. */
     private boolean settingsChangeFromSeveral;
@@ -860,11 +863,13 @@ public class WindowManager {
      * A window saved preferences that the other windows have not applied — the change came from a palette
      * command or key binding, which applies it only in its own window. Schedules the others to catch up.
      */
-    private void onSharedSettingsChanged(ConfigManager origin) {
+    private void onSharedSettingsChanged(ConfigManager saver) {
         if (!javafx.application.Platform.isFxApplicationThread()) {
-            javafx.application.Platform.runLater(() -> onSharedSettingsChanged(origin));
+            // By the time this runs the saves around the change are over, so who made it can't be told.
+            javafx.application.Platform.runLater(() -> onSharedSettingsChanged(null));
             return;
         }
+        ConfigManager origin = changerOf(saver);
         if (!settingsChangePending) {
             settingsChangePending = true;
             settingsChangeOrigin = origin;
@@ -873,6 +878,26 @@ public class WindowManager {
             settingsChangeFromSeveral = true;
         }
         settingsRebroadcast.playFromStart();
+    }
+
+    /**
+     * The window that made the change a save by {@code saver} just carried, or {@code null} when that can't
+     * be told. Preferences are one shared object serialized at save time, so the first save after a change
+     * carries it <em>whichever</em> window saves. The window that made the change always requests a save in
+     * the same step, so the saver is that window only if no other window has a save waiting: with one
+     * waiting, the saver may merely have saved first (its own save was queued before the command ran in the
+     * other window), and skipping it would leave it on the old preferences for good.
+     */
+    private ConfigManager changerOf(ConfigManager saver) {
+        if (saver == null) {
+            return null;
+        }
+        for (Holder h : windows) {
+            if (h.config() != saver && h.controller().saveRequestPending()) {
+                return null;
+            }
+        }
+        return saver;
     }
 
     /**

@@ -145,8 +145,9 @@ public final class GitService {
      * Settings has a Browse… button that writes the raw absolute path, and
      * {@code C:\Program Files\Git\cmd\git.exe} split at the space could never start. Anything else is
      * tokenized quote-aware, so a wrapper command with arguments (or a hand-quoted path) still works.
+     * Public so the Doctor screen checks exactly the command this service runs.
      */
-    static List<String> commandTokens(String command) {
+    public static List<String> commandTokens(String command) {
         if (command == null || command.isBlank()) {
             return List.of("git");
         }

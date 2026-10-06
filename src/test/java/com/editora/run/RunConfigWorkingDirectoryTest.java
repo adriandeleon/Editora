@@ -38,7 +38,7 @@ class RunConfigWorkingDirectoryTest {
 
     @Test
     void aStandaloneFileBackedScriptStillDefaultsToItsOwnFolder() {
-        Path script = Path.of("/work/tools/deploy.sh");
+        Path script = Path.of("/work/tools/deploy.sh").toAbsolutePath(); // a drive too, on Windows
 
         assertEquals(
                 script.getParent(), RunConfigWorkingDirectory.resolve(config("shell", script.toString(), ""), null));

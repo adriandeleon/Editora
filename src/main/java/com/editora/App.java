@@ -788,7 +788,13 @@ public class App extends Application {
         try {
             literal = java.nio.file.Path.of(arg);
         } catch (java.nio.file.InvalidPathException e) {
-            return null;
+            // Not a legal filename on this platform (a colon, on Windows), so no file is called that: the
+            // suffix can only be a position.
+            try {
+                return parseTarget(arg);
+            } catch (java.nio.file.InvalidPathException stillNotAPath) {
+                return null;
+            }
         }
         if (exists.test(literal)) {
             return new com.editora.ui.MainController.OpenTarget(literal, 0, 0);
