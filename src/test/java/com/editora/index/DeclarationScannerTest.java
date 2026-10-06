@@ -343,4 +343,19 @@ class DeclarationScannerTest {
             }
         }
     }
+
+    /** {@code \\w} is ASCII-only: a name used to be cut at its first non-ASCII letter, or not seen at all. */
+    @Test
+    void nonAsciiNamesAreIndexedWhole() {
+        assertEquals(List.of("Größe", "größe", "naïve_sum"), names("""
+                class Größe:
+                    def größe(self):
+                        pass
+
+                def naïve_sum(xs):
+                    pass
+                """, "python"));
+        assertTrue(names("package demo;\n\npublic class Café {\n    void größe() {\n    }\n}\n", "java")
+                .containsAll(List.of("Café", "größe")));
+    }
 }

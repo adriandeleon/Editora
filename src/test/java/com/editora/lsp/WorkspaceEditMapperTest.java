@@ -31,6 +31,14 @@ class WorkspaceEditMapperTest {
         return new TextEdit(new Range(new Position(sl, sc), new Position(el, ec)), text);
     }
 
+    /**
+     * An absolute path on every platform. {@code /proj/a.txt} is absolute on Unix; on Windows a leading slash
+     * alone names no drive, and the code under test works with (and returns) absolute paths.
+     */
+    private static Path p(String path) {
+        return Path.of(path).toAbsolutePath();
+    }
+
     private static String uri(String name) {
         return Path.of(name).toUri().toString();
     }
@@ -47,7 +55,7 @@ class WorkspaceEditMapperTest {
         WorkspaceEdit we = new WorkspaceEdit(Map.of(uri("/tmp/A.java"), List.of(edit(0, 0, 0, 1, "x"))));
         var files = WorkspaceEditMapper.map(we).edits();
         assertEquals(1, files.size());
-        assertEquals(Path.of("/tmp/A.java"), files.get(0).file());
+        assertEquals(p("/tmp/A.java"), files.get(0).file());
         assertEquals(1, files.get(0).edits().size());
         var e = files.get(0).edits().get(0);
         assertEquals(0, e.startLine());
@@ -82,7 +90,7 @@ class WorkspaceEditMapperTest {
     void requestSnapshotIsAttachedToAnUnversionedEdit() {
         WorkspaceEdit mappedFrom = new WorkspaceEdit(Map.of(uri("/tmp/A.java"), List.of(edit(0, 0, 0, 1, "x"))));
         var mapped = WorkspaceEditMapper.withExpectedText(
-                WorkspaceEditMapper.map(mappedFrom), Map.of(Path.of("/tmp/A.java"), "class A {}"));
+                WorkspaceEditMapper.map(mappedFrom), Map.of(p("/tmp/A.java"), "class A {}"));
 
         assertEquals("class A {}", mapped.edits().get(0).expectedText());
     }
@@ -102,8 +110,8 @@ class WorkspaceEditMapperTest {
                 Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/New.java"))),
                 Either.<TextDocumentEdit, ResourceOperation>forRight(new DeleteFile(uri("/tmp/Old.java")))));
         var mapped = WorkspaceEditMapper.map(we);
-        assertEquals(Path.of("/tmp/New.java"), mapped.creates().get(0).file());
-        assertEquals(Path.of("/tmp/Old.java"), mapped.deletes().get(0).file());
+        assertEquals(p("/tmp/New.java"), mapped.creates().get(0).file());
+        assertEquals(p("/tmp/Old.java"), mapped.deletes().get(0).file());
     }
 
     @Test
@@ -130,11 +138,34 @@ class WorkspaceEditMapperTest {
                         new org.eclipse.lsp4j.RenameFile(uri("/tmp/B.java"), uri("/tmp/C.java")))));
         var textThenCreate = new WorkspaceEdit(List.of(
                 Either.<TextDocumentEdit, ResourceOperation>forLeft(docEdit("/tmp/A.java", edit(0, 0, 0, 0, "text"))),
-                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/B.java")))));
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/A.java")))));
 
         assertNull(WorkspaceEditMapper.map(deleteThenCreate));
         assertNull(WorkspaceEditMapper.map(deleteThenRename));
-        assertNull(WorkspaceEditMapper.map(textThenCreate));
+        assertNull(WorkspaceEditMapper.map(textThenCreate), "a create cannot be hoisted over an edit to its own path");
+    }
+
+    /**
+     * jdtls answers a package rename with [edits…, CreateFile(placeholder), RenameFile…, DeleteFile]. The
+     * create touches a path no earlier edit addressed, so staging it first changes nothing — refusing the
+     * order made a Java package impossible to rename.
+     */
+    @Test
+    void aCreateAfterEditsToOtherFilesIsHoisted() {
+        var packageRename = new WorkspaceEdit(List.of(
+                Either.<TextDocumentEdit, ResourceOperation>forLeft(
+                        docEdit("/tmp/old/A.java", edit(0, 8, 0, 11, "neu"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new CreateFile(uri("/tmp/neu/.placeholder"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(
+                        new org.eclipse.lsp4j.RenameFile(uri("/tmp/old/A.java"), uri("/tmp/neu/A.java"))),
+                Either.<TextDocumentEdit, ResourceOperation>forRight(new DeleteFile(uri("/tmp/neu/.placeholder")))));
+
+        WorkspaceEditMapper.Mapped mapped = WorkspaceEditMapper.map(packageRename);
+
+        assertEquals(1, mapped.edits().size());
+        assertEquals(1, mapped.creates().size());
+        assertEquals(1, mapped.renames().size());
+        assertEquals(1, mapped.deletes().size());
     }
 
     // --- RenameFile resource operations (#676) -------------------------------------------------
@@ -149,8 +180,8 @@ class WorkspaceEditMapperTest {
         var mapped = WorkspaceEditMapper.map(we);
         assertEquals(1, mapped.edits().size());
         assertEquals(1, mapped.renames().size());
-        assertEquals(Path.of("/tmp/A.java"), mapped.renames().get(0).from());
-        assertEquals(Path.of("/tmp/B.java"), mapped.renames().get(0).to());
+        assertEquals(p("/tmp/A.java"), mapped.renames().get(0).from());
+        assertEquals(p("/tmp/B.java"), mapped.renames().get(0).to());
     }
 
     @Test

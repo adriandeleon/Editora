@@ -48,6 +48,34 @@ public final class LineEndings {
         };
     }
 
+    /**
+     * Whether {@code text} uses more than one kind of line ending. A save writes one kind on every line
+     * ({@link #dominant}), so such a file is rewritten throughout by its first save — and a lone {@code \r}
+     * inside an LF file becomes a line break. The loader says so rather than let it happen unannounced.
+     */
+    public static boolean mixed(String text) {
+        if (text == null || text.indexOf('\r') < 0) {
+            return false;
+        }
+        boolean lf = false;
+        boolean crlf = false;
+        boolean cr = false;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                lf = true;
+            } else if (c == '\r') {
+                if (i + 1 < text.length() && text.charAt(i + 1) == '\n') {
+                    crlf = true;
+                    i++;
+                } else {
+                    cr = true;
+                }
+            }
+        }
+        return (lf ? 1 : 0) + (crlf ? 1 : 0) + (cr ? 1 : 0) > 1;
+    }
+
     /** {@code text} with every {@code \r\n} and lone {@code \r} replaced by {@code \n}; {@code ""} for null. */
     public static String toLf(String text) {
         if (text == null) {

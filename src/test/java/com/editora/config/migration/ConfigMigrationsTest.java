@@ -379,6 +379,73 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v107→108: debugProgramConsole is new — nothing else in the file changes, and it starts at its default. */
+    @Test
+    void theProgramConsoleSettingArrivesWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v107 = mapper.readTree("{\"schemaVersion\":107,\"debugSupport\":true,\"javaDebugPluginPath\":\"/x\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v107.deepCopy(), mapper);
+        assertEquals(108, out.get("schemaVersion").asInt());
+        assertTrue(out.get("debugSupport").asBoolean());
+        assertEquals("/x", out.get("javaDebugPluginPath").asText());
+        assertFalse(out.has("debugProgramConsole"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertTrue(loaded.isDebugProgramConsole(), "on for everyone who never chose");
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":108,\"debugProgramConsole\":false}");
+        assertFalse(
+                mapper.treeToValue(chosen, com.editora.config.Settings.class).isDebugProgramConsole());
+    }
+
+    /** v106→107: a built-in URL frozen into the file goes back to blank; a URL the user chose is kept. */
+    @Test
+    void frozenDefaultUrlsAreBlankedButChosenOnesAreKept() throws Exception {
+        JsonNode frozen = mapper.readTree("{\"schemaVersion\":106,"
+                + "\"pluginRegistryUrl\":\" " + ConfigMigrations.FROZEN_PLUGIN_REGISTRY + "\","
+                + "\"mavenArchetypeCatalogUrl\":\"" + ConfigMigrations.FROZEN_MAVEN_ARCHETYPE_CATALOG + "\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, frozen, mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
+        assertEquals("", out.get("pluginRegistryUrl").asText());
+        assertEquals("", out.get("mavenArchetypeCatalogUrl").asText());
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":106,"
+                + "\"pluginRegistryUrl\":\"https://plugins.example/index.json\","
+                + "\"mavenArchetypeCatalogUrl\":\"https://nexus.example/archetype-catalog.xml\"}");
+        ObjectNode kept = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, chosen.deepCopy(), mapper);
+        assertEquals(
+                "https://plugins.example/index.json",
+                kept.get("pluginRegistryUrl").asText());
+        assertEquals(
+                "https://nexus.example/archetype-catalog.xml",
+                kept.get("mavenArchetypeCatalogUrl").asText());
+
+        // Neither key present (a hand-trimmed file), or not a string: left exactly as it is.
+        JsonNode bare = mapper.readTree("{\"schemaVersion\":106,\"pluginRegistryUrl\":7}");
+        ObjectNode same = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, bare.deepCopy(), mapper);
+        assertEquals(7, same.get("pluginRegistryUrl").asInt());
+        assertFalse(same.has("mavenArchetypeCatalogUrl"));
+    }
+
+    /** v105→106: overrides became per-keymap; an existing file's stay in place, under the keymap it names. */
+    @Test
+    void perKeymapOverridesStepKeepsExistingKeybindingsWhereTheyAre() throws Exception {
+        JsonNode stored = mapper.readTree(
+                "{\"schemaVersion\":105,\"keymap\":\"cua\","
+                        + "\"keybindings\":{\"C-f\":\"\",\"<f7>\":\"find.show\"},\"keybindingsMac\":{\"Cmd-k\":\"file.save\"}}");
+
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored, mapper);
+
+        assertEquals(
+                ConfigSchema.SETTINGS.currentVersion(), out.get("schemaVersion").asInt());
+        assertEquals("cua", out.get("keymap").asText());
+        assertEquals(stored.get("keybindings"), out.get("keybindings"));
+        assertEquals(stored.get("keybindingsMac"), out.get("keybindingsMac"));
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertEquals("find.show", loaded.keybindingsFor(false).get("<f7>"));
+        assertTrue(loaded.getKeymapKeybindings().isEmpty(), "nothing is parked for the other keymaps yet");
+    }
+
     @Test
     void aFileWithoutAMarkerResumesAfterTheNewestStepItsKeysProve() throws Exception {
         // bracketColors first appeared in v90, so the v88→89 "turn Projects on" step has already run for

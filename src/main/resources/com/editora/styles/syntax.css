@@ -59,7 +59,11 @@
 
 /* Run console (com.editora.ui.RunPanel): stderr lines are tinted so error output — e.g. a Python
    traceback — stands out from normal stdout. Applied via setStyleSpans, not a grammar. */
-.text.run-stderr { -fx-fill: -color-danger-fg; }
+/* `.editor-area` in front: these consoles carry that class, and every editor theme's
+   `.editor-area .text { -fx-fill }` has the same 0,2,0 specificity as a bare `.text.run-stderr` and loads
+   later — so the theme won and stderr was drawn in the default ink. */
+.text.run-stderr,
+.editor-area .text.run-stderr { -fx-fill: -color-danger-fg; }
 
 /* Git/GitHub CLI transcript (com.editora.process.CommandLogFormat, shown in the Build Output
    console's Git / GitHub tabs): the echoed "$ git push …" line and the "exit 0 · 120 ms" footer that

@@ -6,7 +6,9 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.beans.property.BooleanProperty;
@@ -110,12 +112,15 @@ final class GitCoordinator {
 
         /** Opens a read-only diff of {@code repoRel} at {@code hash} vs its parent (a blame-annotation click).
          *  Routed through the window to reach {@code DiffCoordinator} without a circular dependency. */
-        void openCommitFileDiff(String hash, String repoRel);
+        void openCommitFileDiff(String hash, String repoRel, String origRepoRel);
     }
 
     private final CoordinatorHost host;
     private final WindowOps ops;
     private final GitService service = new GitService();
+
+    /** Per buffer: commit hash → {the file's path in that commit, its path in the parent} (from blame). */
+    private final Map<EditorBuffer, Map<String, String[]>> blamePaths = new java.util.WeakHashMap<>();
 
     private Path repoRoot;
     /** Complete status snapshot paired with {@link #repoRoot}; consumed by repository-wide diff review. */
@@ -125,6 +130,7 @@ final class GitCoordinator {
     private java.util.Map<Path, com.editora.git.GitFileStatus> lastStatusByPath = java.util.Map.of();
 
     private String branchName = "";
+    private java.util.function.BiConsumer<Path, String> repositoryListener = (root, branch) -> {};
     private String upstream = "";
     private boolean supportApplied;
 
@@ -183,6 +189,14 @@ final class GitCoordinator {
      * "not a repo" / "git not installed" status and returns {@code true} so the caller early-returns.
      * Returns {@code false} (no echo) when a repo is present.
      */
+    /**
+     * Told (on the FX thread) whenever a refresh has applied the active repository root and branch — the
+     * Git Log uses it to stop listing the commits of a repository that is no longer the active one.
+     */
+    void onRepositoryChanged(java.util.function.BiConsumer<Path, String> listener) {
+        repositoryListener = listener;
+    }
+
     boolean reportIfNoRepo() {
         if (repoRoot != null) {
             return false;
@@ -221,6 +235,7 @@ final class GitCoordinator {
             lastStatus = GitStatus.NOT_A_REPO;
             branchName = "";
             upstream = "";
+            repositoryListener.accept(null, "");
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // Git turned off → clear the Project tree coloring
@@ -259,8 +274,9 @@ final class GitCoordinator {
             applyState(GitService.RepoState.NONE);
             return;
         }
-        // Only diff a real, non-huge file (huge files disable the gutter anyway).
-        Path diffFile = (file != null && !b.isLargeFile()) ? file : null;
+        // Only diff a real, non-huge file (huge files disable the gutter anyway). A narrowed buffer shows
+        // region-relative lines, so whole-file change bars would land on the wrong ones: it gets none.
+        Path diffFile = (file != null && !b.isLargeFile() && !b.isNarrowed()) ? file : null;
         service.refresh(context, diffFile, this::applyState);
     }
 
@@ -276,6 +292,7 @@ final class GitCoordinator {
         if (!state.isRepo()) {
             branchName = "";
             upstream = "";
+            repositoryListener.accept(null, "");
             ops.setStatusBarBranch(null, 0, 0);
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
@@ -289,11 +306,14 @@ final class GitCoordinator {
         var status = state.status();
         branchName = status.branch();
         upstream = status.upstream();
+        repositoryListener.accept(repoRoot, branchName);
         ops.setStatusBarBranch(status.branch(), status.ahead(), status.behind());
         ops.setGitPanelStatus(status);
         lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, state.root());
         ops.setProjectGitStatus(lastStatusByPath); // color the tree
-        if (b != null
+        if (b != null && b.isNarrowed()) {
+            b.setChangeBars(null, null); // line numbers refer to the whole file, the view to the region
+        } else if (b != null
                 && b.getPath() != null
                 && (state.diffFile() == null
                         || com.editora.config.PathKeys.sameNormalized(b.getPath(), state.diffFile()))) {
@@ -320,12 +340,14 @@ final class GitCoordinator {
         EditorBuffer active = host.activeBuffer();
         host.forEachBuffer(buf -> {
             // The active buffer is handled by refresh(); skip non-file/huge buffers + files outside this repo.
-            if (!GitChangeBars.shouldRediff(buf.getPath(), root, buf == active, buf.isLargeFile())) {
+            if (buf.isNarrowed()
+                    || !GitChangeBars.shouldRediff(buf.getPath(), root, buf == active, buf.isLargeFile())) {
                 return;
             }
             Path path = buf.getPath().toAbsolutePath();
             service.diff(root, path, diff -> {
                 if (!buf.isDisposed()
+                        && !buf.isNarrowed()
                         && buf.getPath() != null
                         && com.editora.config.PathKeys.sameNormalized(buf.getPath(), path)) {
                     buf.setChangeBars(GitChangeBars.cssClassesByLine(diff.changes()), diff.hunks());
@@ -410,7 +432,10 @@ final class GitCoordinator {
         }
         String rel = GitService.repoRelative(repoRoot, b.getPath());
         if (rel != null) {
-            ops.openCommitFileDiff(hash, rel);
+            // Blame follows renames: a line older than a move belongs to the file's OLD path in its commit.
+            String[] blamed = blamePaths.getOrDefault(b, Map.of()).get(hash);
+            String at = blamed == null || blamed[0] == null ? rel : blamed[0];
+            ops.openCommitFileDiff(hash, at, blamed == null ? null : blamed[1]);
         }
     }
 
@@ -428,6 +453,11 @@ final class GitCoordinator {
             if (host.activeBuffer() != b) {
                 return; // the user switched tabs while blame ran
             }
+            Map<String, String[]> paths = new HashMap<>();
+            for (BlameParser.BlameLine line : lines) {
+                paths.putIfAbsent(line.hash(), new String[] {line.path(), line.previousPath()});
+            }
+            blamePaths.put(b, paths);
             b.setBlame(toBlameInfos(lines));
         });
     }
@@ -576,11 +606,31 @@ final class GitCoordinator {
         if (paths.isEmpty()) {
             return;
         }
+        // "Unstaging" an unmerged path would drop its merge stages 1/2/3: Git would no longer know the file
+        // is conflicted and would let the merge be committed with one side's change silently missing.
+        String conflicted = firstUnmergedUnder(lastStatus, paths);
+        if (conflicted != null) {
+            host.setStatus(tr("status.git.unstageConflict", conflicted));
+            return;
+        }
         gitOp(
                 paths.size() == 1
                         ? tr("status.git.unstaged", paths.get(0))
                         : tr("status.git.unstagedMany", paths.size()),
                 argv(paths, "reset", "-q", "HEAD", "--"));
+    }
+
+    /** The first unmerged path one of {@code pathspecs} (a file or a folder) selects, or {@code null}. */
+    static String firstUnmergedUnder(GitStatus status, List<String> pathspecs) {
+        if (status == null) {
+            return null;
+        }
+        for (GitStatus.FileEntry entry : status.files()) {
+            if (entry.unmerged() && pathspecs.stream().anyMatch(spec -> selects(spec, entry.path()))) {
+                return entry.path();
+            }
+        }
+        return null;
     }
 
     /** {@code prefix} followed by {@code paths} — the argv for a git command over a pathspec list. */
@@ -746,7 +796,14 @@ final class GitCoordinator {
             Consumer<Consumer<ProcessRunner.Result>> operation,
             Consumer<ProcessRunner.Result> report,
             Runnable afterReload) {
-        Path root = repoRoot;
+        aroundWorkingTreeMutation(repoRoot, operation, report, afterReload);
+    }
+
+    private void aroundWorkingTreeMutation(
+            Path root,
+            Consumer<Consumer<ProcessRunner.Result>> operation,
+            Consumer<ProcessRunner.Result> report,
+            Runnable afterReload) {
         invalidatePendingWrites(root, List.of());
         operation.accept(result -> {
             invalidatePendingWrites(root, List.of());
@@ -764,8 +821,20 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
-        Path root = repoRoot;
+        mutateWorkingTree(repoRoot, successMessage, afterCompletion, args);
+    }
+
+    /**
+     * {@link #mutateWorkingTree(String, Runnable, String...)} in the repository the caller chose its
+     * arguments from. A commit hash listed for one repository must not run in whichever repository is active
+     * by the time a confirmation has been answered, so the Git Log passes the root it listed.
+     */
+    void mutateWorkingTree(Path root, String successMessage, Runnable afterCompletion, String... args) {
+        if (root == null) {
+            return;
+        }
         aroundWorkingTreeMutation(
+                root,
                 done -> service.runWorktreeMutation(root, running(args, done), args),
                 result -> {
                     if (result.ok()) {
@@ -1143,6 +1212,9 @@ final class GitCoordinator {
         }
         host.forEachBuffer(buffer -> {
             Path file = buffer.getPath();
+            if (!Vfs.isLocal(file)) {
+                return; // a remote tab is never in a local repository; resolving it would be a network round trip
+            }
             String relative = GitService.repoRelative(root, file);
             if (relative != null && (pathspecs.isEmpty() || pathspecs.stream().anyMatch(p -> selects(p, relative)))) {
                 ops.invalidatePendingWrite(file);

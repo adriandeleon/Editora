@@ -13,7 +13,21 @@ in-project `m2-repo/`** (source: github.com/adriandeleon/RichTextFX). It adds VS
 `InputMap`, gated on `MultiCaretManager.hasExtras()` so it's transparent with one caret).
 
 - `EditorBuffer` installs it on `area`/`area2` via `setMultiCaretEnabled(...)`
-  (`Settings.multiCaret`, default on).
+  (`Settings.multiCaret`, default on), wrapped in `editor/MultiCarets` — the Editora-side guards for
+  four things the fork's `MultiCaretManager` gets wrong on its own (each is also a proposed fork fix):
+  - **Stale anchors.** The manager keeps each extra caret's selection anchor as a plain `int` that only
+    its own edits rewrite. After any other edit (Undo, a primary-caret command, an LSP edit, a reload)
+    the next key typed over a phantom selection. `MultiCarets` notices an edit that did not come from the
+    manager and rebuilds the extra carets from the caret/selection positions RichTextFX did keep right,
+    before the manager is used again. **Go through `MultiCarets` for edits and moves, not the manager.**
+  - **UTF-16 steps.** The manager moves and deletes one `char` at a time; `MultiCarets` takes
+    Backspace/Delete/Left/Right and steps by code point.
+  - **Add caret above/below** measured from the primary caret, so it never reached a third line;
+    `MultiCarets.addCaretOnNextLine` starts from the outermost caret.
+  - **Tab** typed a literal `\t` at every caret and Shift-Tab did nothing. `MultiCarets.tab` takes the key
+    and applies the buffer's own single-caret Tab edit at each caret (planned by the pure
+    `editops/MultiTab`, committed as one multi-change): block indent of selected lines, indent/dedent of
+    the caret's line, or one indent unit.
 - Editora's area-level KEY filters (auto-indent/close, snippets, completion, view paging) are
   capture-phase filters that early-return (no consume) via `multiCaretActiveOn(a)` when an area
   has extra carets, so editing fans out to all carets.

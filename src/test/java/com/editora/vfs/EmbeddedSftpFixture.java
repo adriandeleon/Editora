@@ -11,12 +11,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.sshd.common.file.virtualfs.VirtualFileSystemFactory;
+import org.apache.sshd.common.util.buffer.Buffer;
+import org.apache.sshd.common.util.buffer.BufferUtils;
 import org.apache.sshd.server.SshServer;
 import org.apache.sshd.server.auth.password.AcceptAllPasswordAuthenticator;
+import org.apache.sshd.server.channel.ChannelSession;
+import org.apache.sshd.server.command.Command;
 import org.apache.sshd.server.keyprovider.SimpleGeneratorHostKeyProvider;
 import org.apache.sshd.server.session.ServerSession;
+import org.apache.sshd.sftp.common.SftpConstants;
 import org.apache.sshd.sftp.server.FileHandle;
 import org.apache.sshd.sftp.server.SftpEventListener;
+import org.apache.sshd.sftp.server.SftpSubsystem;
 import org.apache.sshd.sftp.server.SftpSubsystemFactory;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -42,11 +48,13 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     private final AtomicReference<StageBlock> stageBlock = new AtomicReference<>();
     private final AtomicBoolean stageHeld = new AtomicBoolean();
 
+    private final AtomicBoolean reportLinkCounts = new AtomicBoolean();
+
     private volatile Path remoteRoot;
 
     private EmbeddedSftpFixture(Path base) throws Exception {
         serverRoot = Files.createDirectories(base.resolve("remote-root"));
-        SftpSubsystemFactory sftp = new SftpSubsystemFactory();
+        SftpSubsystemFactory sftp = new LinkCountingSubsystemFactory();
         sftp.addSftpEventListener(new FaultListener());
         server = SshServer.setUpDefaultServer();
         server.setHost("127.0.0.1");
@@ -94,6 +102,25 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
         return block;
     }
 
+    /**
+     * Makes the server speak SFTP protocol {@code version} and reconnects. The embedded server and client
+     * agree on version 6 by default; OpenSSH — what a real connection almost always reaches — speaks 3, whose
+     * attributes and directory listings differ (numeric owners, {@code ls -l} long names).
+     */
+    public Path speakProtocolVersion(int version) throws Exception {
+        org.apache.sshd.sftp.SftpModuleProperties.SFTP_VERSION.set(server, version);
+        disconnect();
+        return reconnect();
+    }
+
+    /**
+     * Makes the server send {@code SSH_FILEXFER_ATTR_LINK_COUNT} in its protocol-6 attributes, as the
+     * protocol allows and other servers do. MINA's own server never sends it.
+     */
+    public void reportLinkCounts() {
+        reportLinkCounts.set(true);
+    }
+
     public void disconnect() {
         fileSystems.disconnect(connection.id());
     }
@@ -130,6 +157,36 @@ public final class EmbeddedSftpFixture implements AutoCloseable {
     private static boolean staged(Path path) {
         Path name = path == null ? null : path.getFileName();
         return name != null && name.toString().endsWith(".editora-tmp");
+    }
+
+    /** The stock subsystem, plus the protocol-6 link-count field when {@link #reportLinkCounts()} asked. */
+    private final class LinkCountingSubsystemFactory extends SftpSubsystemFactory {
+
+        @Override
+        public Command createSubsystem(ChannelSession channel) throws IOException {
+            SftpSubsystem subsystem = new SftpSubsystem(channel, this) {
+                @Override
+                protected void writeAttrs(Buffer buffer, Map<String, ?> attributes) {
+                    int start = buffer.wpos();
+                    super.writeAttrs(buffer, attributes);
+                    int flags = (int) BufferUtils.getUInt(buffer.array(), start, Integer.BYTES);
+                    if (reportLinkCounts.get()
+                            && getVersion() >= SftpConstants.SFTP_V6
+                            && (flags & SftpConstants.SSH_FILEXFER_ATTR_EXTENDED) == 0
+                            && attributes.get("nlink") instanceof Number links) {
+                        // link-count follows every field the stock writer emits (it has no extended ones here).
+                        BufferUtils.putUInt(
+                                (flags | SftpConstants.SSH_FILEXFER_ATTR_LINK_COUNT) & 0xFFFFFFFFL,
+                                buffer.array(),
+                                start,
+                                Integer.BYTES);
+                        buffer.putInt(links.intValue());
+                    }
+                }
+            };
+            getRegisteredListeners().forEach(subsystem::addSftpEventListener);
+            return subsystem;
+        }
     }
 
     private final class FaultListener implements SftpEventListener {

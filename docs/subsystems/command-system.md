@@ -229,8 +229,16 @@ A focused component (e.g. a tool window) can opt out of global dispatch by setti
 (`ownsKeys(target)`) and, for such a window, leaves only the **editor-context** chords to it — the
 caret/text chords it repurposes for local navigation, identified by id prefix in `isEditorContext`
 (`nav.*` and `edit.*`). Jump/window/view commands (`M-x`, `M-1`, `M-g`, …) and prefixes (`C-x …`)
-stay global so they work even while a tool window is focused. The completion popup uses the same
-property so its `C-n`/`C-p`/arrows aren't hijacked.
+stay global so they work even while a tool window is focused.
+
+The completion popup and the quick-fix list are different: they float over the *editor*, whose
+caret and editing chords must keep working. Marking the area `ownsKeys` took every `nav.*`/`edit.*`
+chord off the keymap and left it to RichTextFX's built-ins (`C-a` selected the whole document, `M-f`
+typed an `f`). They set `editora.ownsChords` (`KeyDispatcher.OWNED_CHORDS`) instead: a
+`Map` of chord token → the command the list stands in for (`C-n`→`nav.lineDown`, `C-p`→`nav.lineUp`,
+`C-g`/`escape`→`edit.cancel`). A chord is left to the list only while the keymap binds it to exactly
+that command; everything else is dispatched, and the caret move or edit it causes closes or refreshes
+the list.
 
 `ownsKeys` only yields editor-context chords. A component that needs a bare key which a keymap binds
 to a *global* command sets the `editora.claimsKeys` property (`KeyDispatcher.CLAIMED_KEYS`) to the
@@ -322,7 +330,7 @@ lets the user rebind, reset, or reset-all. The mutation logic is the pure, toolk
   — the defaults to rebind/reset against.
 - `rebindShortcut`/`resetShortcut`/`resetAllShortcuts` call the `KeybindingEdits` helpers, persist
   the result to `Settings.keybindings`, and call `reloadKeymap()` so the change is live across all
-  windows (overrides are global and layer on the active keymap).
+  windows (overrides are shared by every window and belong to the active keymap).
 
 The **recorder** turns a row into a live capture field that calls `KeyDispatcher.chord(e)`
 (space-joining a multi-key sequence; Esc cancels) — it runs in the Settings window's own scene, so
@@ -332,7 +340,12 @@ there's no global dispatcher to interfere. The **conflict check** lives in
 warns before stealing it. The same path serves the inline Macros keybinding row.
 
 User overrides persist in `Settings.keybindings` (a `Map<String,String>` of chord → id, with blank
-values meaning UNBIND), serialized with the rest of `settings.json`.
+values meaning UNBIND), serialized with the rest of `settings.json`. That map is the **active keymap's**
+overrides: a rebind stores UNBIND suppressors for the keymap's default chords, and the same chord is a
+different command in another keymap, so overrides must not follow a keymap switch. Change the keymap through
+`KeymapLayers.switchKeymap` → `Settings.switchKeymap`, which parks the current overrides in
+`Settings.keymapKeybindings` (keymap id → overrides; `…Mac` for the Cmd-based map) and restores the ones made
+earlier in the keymap being switched to. `Settings.setKeymap` is the bare property setter and moves nothing.
 
 ## Pickers, input cards and row menus
 

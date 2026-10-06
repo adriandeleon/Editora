@@ -1,5 +1,9 @@
 package com.editora.diff;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
@@ -32,6 +36,29 @@ public final class BinaryDiff {
         return "⟦Binary " + formatSize(safe.length) + " · " + format(safe) + " · SHA-256 " + digest(safe) + "⟧";
     }
 
+    /**
+     * An identity for a file too large to load as a diff side: its size and a streamed SHA-256 prefix. Two
+     * oversized sides shown with the same constant text compared as "no differences" whatever they held;
+     * with this, equal files still compare equal and different ones do not.
+     */
+    public static String describeLarge(Path file) throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException impossible) {
+            return formatSize(Files.size(file));
+        }
+        long size = 0;
+        byte[] buffer = new byte[1 << 16];
+        try (InputStream in = Files.newInputStream(file)) {
+            for (int n = in.read(buffer); n >= 0; n = in.read(buffer)) {
+                digest.update(buffer, 0, n);
+                size += n;
+            }
+        }
+        return formatSize(size) + " · SHA-256 " + HexFormat.of().formatHex(digest.digest(), 0, 6);
+    }
+
     private static boolean hasUnicodeBom(byte[] b) {
         return b.length >= 2
                         && ((b[0] == (byte) 0xff && b[1] == (byte) 0xfe)
@@ -56,7 +83,7 @@ public final class BinaryDiff {
         return true;
     }
 
-    private static String formatSize(int bytes) {
+    private static String formatSize(long bytes) {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format(java.util.Locale.ROOT, "%.1f KiB", bytes / 1024.0);
         return String.format(java.util.Locale.ROOT, "%.1f MiB", bytes / (1024.0 * 1024.0));

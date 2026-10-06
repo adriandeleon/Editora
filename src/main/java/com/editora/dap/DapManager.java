@@ -10,7 +10,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -52,16 +52,26 @@ public final class DapManager implements DapClient.Host {
     }
 
     /** A candidate main class returned by jdtls's {@code vscode.java.resolveMainClass}. */
-    public record MainClassOption(String mainClass, String projectName, String filePath) {}
+    public record MainClassOption(String mainClass, String projectName, String filePath) {
+        /**
+         * The plain fully-qualified class name. For a class of a named module jdtls answers {@code
+         * <module>/<class>} in {@link #mainClass} (what the launch needs); a saved configuration and the
+         * gutter name the class alone, so that is what a main class is matched by.
+         */
+        public String className() {
+            return JavaLaunchSupport.className(mainClass);
+        }
+    }
 
     /**
      * The resolved launch inputs for a main class (from jdtls {@code resolveClasspath}/{@code
      * resolveJavaExecutable}): the java executable and the module/class paths, or an {@code error} message
      * when resolution failed. Reused by the non-debug Run path (which turns it into a {@code java} argv).
      */
-    public record ResolvedLaunch(String javaExec, List<String> modulePaths, List<String> classPaths, String error) {
+    public record ResolvedLaunch(
+            String javaExec, List<String> modulePaths, List<String> classPaths, String error, boolean enablePreview) {
         static ResolvedLaunch failed(String error) {
-            return new ResolvedLaunch(null, List.of(), List.of(), error);
+            return new ResolvedLaunch(null, List.of(), List.of(), error, false);
         }
 
         public boolean ok() {
@@ -84,6 +94,31 @@ public final class DapManager implements DapClient.Host {
         void onOutput(String text, String category);
 
         void onError(String message);
+
+        /**
+         * What the adapter says about {@code file}'s breakpoints (see {@link DapModels.BreakpointStatus}):
+         * with {@code whole}, its answer for all of them — a breakpoint it does not list has no answer yet;
+         * otherwise a later change to the ones listed. Only arrives while a session is live.
+         */
+        default void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {}
+
+        /** The exception {@code threadId} is stopped on; follows the {@link #onStopped} of an exception stop. */
+        default void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {}
+
+        /** A message from the adapter for the user that is not program output — java-debug reports a
+         *  breakpoint condition or logpoint message it could not evaluate this way. */
+        default void onNotice(String message, boolean error) {}
+
+        /**
+         * Whether lines can be typed to the debugged program's standard input changed: true once a program
+         * Editora started itself is running (see {@link #setProgramConsole}), false when it has ended or its
+         * input was closed. A session that ends says nothing — no session, no input.
+         */
+        default void onProgramInput(boolean available) {}
+
+        /** The program Editora started for this session ended by itself with {@code code}; the session
+         *  ends right after. Not reported for a program that was stopped. */
+        default void onProgramExit(int code) {}
     }
 
     private final LspManager lsp;
@@ -116,6 +151,19 @@ public final class DapManager implements DapClient.Host {
     private final Object sessionLock = new Object();
     private State state = State.INACTIVE;
     private int currentThreadId;
+    /**
+     * The threads known to be stopped, with each one's stop reason, oldest first (FX thread). java-debug
+     * suspends and resumes <em>per thread</em>: two workers can sit on the same breakpoint, and resuming the
+     * one on screen leaves the other suspended with no further event to say so.
+     */
+    private final java.util.LinkedHashMap<Integer, String> stoppedThreads = new java.util.LinkedHashMap<>();
+    /** Counts stops shown, so a late step acknowledgement can tell the step has already ended. */
+    private int stopCount;
+    /** A step was acknowledged and its stop has not arrived yet (FX thread). */
+    private boolean stepInFlight;
+    /** The session epoch of a step request the adapter has not answered yet, else -1 (FX thread). */
+    private long stepPendingEpoch = -1;
+
     private Path debugFile;
     /** Temporary .java copy used to compile an extensionless shebang, scoped to its launch epoch. */
     private volatile SourceAlias sourceAlias;
@@ -123,6 +171,13 @@ public final class DapManager implements DapClient.Host {
     private volatile Path compilationDirectory;
 
     private record SourceAlias(long epoch, Path original, Path compiled) {}
+
+    /** Whether a Java launch asks the adapter to let Editora start the program (see {@link #setProgramConsole}). */
+    private boolean programConsole;
+    /** The program of the current session when Editora started it, else null (FX thread). */
+    private Debuggee debuggee;
+    /** How long a program may take to exit once the adapter has reported the session over, before it is killed. */
+    private static final long DEBUGGEE_EXIT_GRACE_MILLIS = 3_000;
 
     private Supplier<List<DapModels.FileBreakpoints>> breakpointsSupplier = List::of;
     private List<String> exceptionFilters = List.of();
@@ -146,6 +201,44 @@ public final class DapManager implements DapClient.Host {
         if (client != null) {
             client.setExceptionFilters(this.exceptionFilters);
         }
+    }
+
+    /**
+     * Whether the next Java <em>launch</em> runs the program as Editora's own child process, so that it has
+     * a standard input ({@link #sendProgramInput}): the launch says {@code console: integratedTerminal} and
+     * the adapter hands the command line back ({@code runInTerminal}) instead of starting it inside jdtls,
+     * where nothing can be typed to it. Editora then owns the process: it pumps its output to
+     * {@link Listener#onOutput}, kills it whenever the session ends, and ends the session when it exits. Off
+     * (the default here; the window turns it on from the setting), the adapter starts the program as before.
+     * An attach, and the Python and JavaScript adapters, are not affected either way.
+     */
+    public void setProgramConsole(boolean programConsole) {
+        this.programConsole = programConsole;
+    }
+
+    /** Whether a line typed now would reach the debugged program's standard input. */
+    public boolean programInputAvailable() {
+        return debuggee != null && debuggee.acceptsInput();
+    }
+
+    /** Sends {@code line} (a line terminator is added) to the debugged program's standard input; false when
+     *  there is no such program to send it to. */
+    public boolean sendProgramInput(String line) {
+        if (!programInputAvailable() || line == null) {
+            return false;
+        }
+        debuggee.sendInput(line);
+        return true;
+    }
+
+    /** Ends the debugged program's standard input (end of file); false when there is none to end. */
+    public boolean closeProgramInput() {
+        if (!programInputAvailable()) {
+            return false;
+        }
+        debuggee.closeInput();
+        listener.onProgramInput(false);
+        return true;
     }
 
     /** Java-only configure (kept for back-compat); delegates with python/js disabled. */
@@ -344,6 +437,15 @@ public final class DapManager implements DapClient.Host {
         return currentThreadId;
     }
 
+    /**
+     * Whether a Step Over/Into/Out is under way: requested, and its stop not yet reported. The session reads
+     * RUNNING for most of that time, but to the user it is still the paused session they are stepping
+     * through — not one to be replaced by a new launch.
+     */
+    public boolean isStepping() {
+        return stepInFlight || (client != null && stepPendingEpoch == sessionEpoch);
+    }
+
     // --- Start (launch / attach) ----------------------------------------------------------------
 
     /**
@@ -358,8 +460,18 @@ public final class DapManager implements DapClient.Host {
 
     /** As above, with an explicit Java executable for Maven-project toolchain selection. */
     public void startLaunch(Path file, String language, MainClassPicker picker, String javaExecOverride) {
+        startLaunch(file, language, picker, javaExecOverride, null);
+    }
+
+    /**
+     * As above, with the Maven/Gradle project {@code file} belongs to ({@code null} for a loose file). A
+     * project's main class runs in the project root, like Run and the gutter; a loose file runs in its own
+     * folder and is compiled here when jdtls has no class file for it.
+     */
+    public void startLaunch(
+            Path file, String language, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
         if ("java".equals(language)) {
-            startLaunch(file, picker, javaExecOverride);
+            startLaunch(file, picker, javaExecOverride, projectRoot);
         } else if (DapServerRegistry.isDebuggable(language)) {
             startProgram(file, language);
         } else {
@@ -403,10 +515,15 @@ public final class DapManager implements DapClient.Host {
 
     /** Java launch with an optional selected-JDK executable overriding jdtls's resolved executable. */
     public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride) {
+        startLaunch(file, picker, javaExecOverride, null);
+    }
+
+    /** Java launch for a file of the build project at {@code projectRoot} ({@code null}: a loose file). */
+    public void startLaunch(Path file, MainClassPicker picker, String javaExecOverride, Path projectRoot) {
         if (!ready(file)) {
             return;
         }
-        restartAction = () -> startLaunch(file, picker, javaExecOverride);
+        restartAction = () -> startLaunch(file, picker, javaExecOverride, projectRoot);
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
@@ -432,17 +549,27 @@ public final class DapManager implements DapClient.Host {
                 return;
             }
             MainClassOption match = options.stream()
-                    .filter(o -> sameFile(o.filePath(), file))
+                    .filter(o -> JavaLaunchSupport.sameFile(o.filePath(), file))
                     .findFirst()
                     .orElse(null);
-            if (match != null) {
-                resolveAndLaunch(file, match, javaExecOverride, epoch);
+            // A project's main class runs in the project root — what Run, the gutter and a saved
+            // configuration use — and only a loose file in its own folder.
+            Path dir = projectRoot != null ? projectRoot : file.getParent();
+            String cwd = dir == null ? null : dir.toString();
+            if (match != null && projectRoot == null) {
+                // The file's own main class, in no build project: jdtls lists it from an "invisible
+                // project" whose output folder nothing ever compiles into (autobuild is off), so the
+                // resolved classpath holds no class file to run. Compile the file ourselves then.
+                Runnable compile = () -> compileAndLaunch(file, match.className(), javaExecOverride, epoch, null);
+                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch, compile);
+            } else if (match != null) {
+                resolveAndLaunch(file, match, cwd, javaExecOverride, epoch);
             } else if (options.size() == 1) {
-                resolveAndLaunch(file, options.get(0), javaExecOverride, epoch);
+                resolveAndLaunch(file, options.get(0), cwd, javaExecOverride, epoch);
             } else {
                 picker.pick(options, chosen -> {
                     if (chosen != null) {
-                        resolveAndLaunch(file, chosen, javaExecOverride, epoch);
+                        resolveAndLaunch(file, chosen, cwd, javaExecOverride, epoch);
                     } else {
                         if (isCurrent(epoch)) {
                             setState(State.INACTIVE);
@@ -492,7 +619,37 @@ public final class DapManager implements DapClient.Host {
         debugFile = file;
         long epoch = beginSession();
         setState(State.STARTING);
-        startDebugSessionAndConnect(file, LaunchConfig.attach(host, port), true, epoch);
+        // java-debug compiles conditions, logpoints and evaluated expressions against a JDT project and an
+        // attach names no main class to infer one from: without the name every evaluation fails, and a
+        // condition that cannot be evaluated counts as a hit.
+        projectNameOf(file, project -> {
+            if (isCurrent(epoch)) {
+                startDebugSessionAndConnect(file, LaunchConfig.attach(host, port, project), true, epoch);
+            }
+        });
+    }
+
+    /**
+     * Names the jdtls project {@code file} belongs to (null when jdtls cannot say), on the FX thread. Asks
+     * for the file's main method first — the only form that covers a compact source, which declares no type
+     * — then for the element at its first type declaration, which covers a class with no {@code main} (a
+     * test class, the anchor of Debug Test).
+     */
+    private void projectNameOf(Path file, Consumer<String> cb) {
+        String uri = file.toUri().toString();
+        lsp.executeCommand(file, "vscode.java.resolveMainMethod", List.of(uri), (res, err) -> {
+            String name = err == null ? JavaLaunchSupport.projectName(res) : null;
+            int[] at = name == null ? JavaLaunchSupport.typeNamePosition(file) : null;
+            if (at == null) {
+                cb.accept(name);
+                return;
+            }
+            lsp.executeCommand(
+                    file,
+                    "vscode.java.resolveElementAtSelection",
+                    List.of(uri, at[0], at[1]),
+                    (el, e2) -> cb.accept(e2 == null ? JavaLaunchSupport.projectName(el) : null));
+        });
     }
 
     private boolean ready(Path file) {
@@ -513,21 +670,28 @@ public final class DapManager implements DapClient.Host {
         return true;
     }
 
-    private void resolveAndLaunch(Path file, MainClassOption opt, String javaExecOverride, long epoch) {
-        resolveAndLaunch(
-                file, opt, file.getParent() == null ? null : file.getParent().toString(), javaExecOverride, epoch);
+    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch) {
+        resolveAndLaunch(file, opt, cwd, javaExecOverride, epoch, null);
     }
 
     /**
      * Resolves {@code opt}'s classpath + java executable via jdtls, then launches the debug session with the
      * given working directory. {@code file} routes the jdtls {@code executeCommand}s (must be an open,
      * LSP-managed document in the same project); {@code cwd} is the debuggee's working directory (the project
-     * root for a project main class, else the file's own folder).
+     * root for a project main class, else the file's own folder). {@code ifNoClassFile}, when given, runs
+     * instead of the launch if jdtls's classpath does not hold the main class's class file.
      */
-    private void resolveAndLaunch(Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch) {
+    private void resolveAndLaunch(
+            Path file, MainClassOption opt, String cwd, String javaExecOverride, long epoch, Runnable ifNoClassFile) {
         String proj = opt.projectName() == null ? "" : opt.projectName();
         resolveLaunch(file, opt, r -> {
             if (!isCurrent(epoch)) {
+                return;
+            }
+            if (ifNoClassFile != null
+                    && !(JavaLaunchSupport.classFilePresent(r.classPaths(), opt.mainClass())
+                            || JavaLaunchSupport.classFilePresent(r.modulePaths(), opt.mainClass()))) {
+                ifNoClassFile.run();
                 return;
             }
             if (!r.ok()) {
@@ -544,7 +708,7 @@ public final class DapManager implements DapClient.Host {
                             javaExecOverride == null || javaExecOverride.isBlank() ? r.javaExec() : javaExecOverride,
                             cwd,
                             programArgs,
-                            vmArgs,
+                            JavaLaunchSupport.withPreview(vmArgs, r.enablePreview()),
                             env,
                             false),
                     false,
@@ -597,7 +761,18 @@ public final class DapManager implements DapClient.Host {
                     routingFile,
                     "vscode.java.resolveJavaExecutable",
                     List.of(opt.mainClass(), proj),
-                    (jx, e2) -> cb.accept(new ResolvedLaunch(asString(jx), modulepaths, classpaths, null)));
+                    (jx, e2) -> lsp.executeCommand(
+                            routingFile,
+                            "vscode.java.checkProjectSettings",
+                            List.of(JavaLaunchSupport.previewSettingsQuery(opt.mainClass(), proj)),
+                            // A project compiled with --enable-preview needs the flag to load its classes;
+                            // a failed check (an older java-debug) leaves the launch as it was.
+                            (preview, e3) -> cb.accept(new ResolvedLaunch(
+                                    asString(jx),
+                                    modulepaths,
+                                    classpaths,
+                                    null,
+                                    e3 == null && JavaLaunchSupport.isTrue(preview)))));
         });
     }
 
@@ -689,21 +864,26 @@ public final class DapManager implements DapClient.Host {
                 }
                 String cwd = file.getParent() == null ? null : file.getParent().toString();
                 Path classes = out;
-                Platform.runLater(() -> startDebugSessionAndConnect(
+                // The classes come from a temp dir, so java-debug cannot infer the project it compiles
+                // conditions, logpoints and evaluated expressions against: name the one jdtls keeps the
+                // source in (its invisible project for a loose file).
+                Platform.runLater(() -> projectNameOf(
                         file,
-                        LaunchConfig.launch(
-                                fqn,
-                                null,
-                                List.of(classes.toString()),
-                                List.of(),
-                                javaExec,
-                                cwd,
-                                programArgs,
-                                vmArgs,
-                                launchEnvironment,
-                                false),
-                        false,
-                        epoch));
+                        project -> startDebugSessionAndConnect(
+                                file,
+                                LaunchConfig.launch(
+                                        fqn,
+                                        project,
+                                        List.of(classes.toString()),
+                                        List.of(),
+                                        javaExec,
+                                        cwd,
+                                        programArgs,
+                                        vmArgs,
+                                        launchEnvironment,
+                                        false),
+                                false,
+                                epoch)));
             } catch (Exception e) {
                 fail(epoch, "Could not compile/launch " + fqn + ": " + msg(e));
             } finally {
@@ -835,7 +1015,8 @@ public final class DapManager implements DapClient.Host {
     /** Matches a top-level type declaration, capturing its name (e.g. {@code public final class Foo}). */
     private static final java.util.regex.Pattern TYPE_DECL =
             java.util.regex.Pattern.compile("\\b(?:public\\s+)?(?:final\\s+|abstract\\s+|sealed\\s+|non-sealed\\s+)*"
-                    + "(?:class|record|enum|interface)\\s+(\\w+)");
+                    + "(?:class|record|enum|interface)\\s+([\\p{L}_$][\\p{L}\\p{N}_$]*)"); // not \\w: ASCII-only, cut
+    // Café to Caf
 
     /**
      * Derives the fully-qualified main-class name from a {@code .java} file: its {@code package}
@@ -904,7 +1085,14 @@ public final class DapManager implements DapClient.Host {
                 fail(epoch, "The debug adapter did not return a port.");
                 return;
             }
+            // The adapter (and the debuggee it launches) live inside that jdtls: pin it for this session.
+            lspLease.run();
+            lspLease = lsp.retain(file);
             DapClient c = new DapClient(sessionHost(epoch));
+            if (!attach && programConsole) {
+                c.setRunsDebuggee(true);
+                LaunchConfig.inClientConsole(args);
+            }
             c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(exceptionFilters);
             if (!publishClient(epoch, c)) {
@@ -1123,10 +1311,38 @@ public final class DapManager implements DapClient.Host {
     // --- Controls -------------------------------------------------------------------------------
 
     public void resume() {
-        if (client != null) {
-            client.resume(currentThreadId);
-            setState(State.RUNNING);
+        DapClient c = client;
+        if (c == null) {
+            return;
         }
+        long epoch = sessionEpoch;
+        int threadId = currentThreadId;
+        stepInFlight = false;
+        stoppedThreads.remove(threadId);
+        c.resume(threadId)
+                .whenComplete((all, e) -> Platform.runLater(() -> {
+                    if (e == null && isCurrent(epoch, c)) {
+                        afterThreadResumed(epoch, c, all == null || all);
+                    }
+                }));
+        setState(State.RUNNING);
+    }
+
+    /**
+     * One thread was resumed. When the adapter says the others were not ({@code allThreadsContinued=false})
+     * and one of them is still stopped, show that one instead of reporting a running session: nothing else
+     * would ever bring it back, and the program waits on it for good.
+     */
+    private void afterThreadResumed(long epoch, DapClient c, boolean allThreads) {
+        if (allThreads) {
+            stoppedThreads.clear();
+            return;
+        }
+        if (state != State.RUNNING || stoppedThreads.isEmpty()) {
+            return;
+        }
+        var next = stoppedThreads.entrySet().iterator().next();
+        presentStop(epoch, c, next.getKey(), next.getValue(), false, false);
     }
 
     /** Pauses a running session: targets the current thread if the adapter reports it, else the first.
@@ -1271,40 +1487,60 @@ public final class DapManager implements DapClient.Host {
     }
 
     public void stepOver() {
-        DapClient c = client;
-        if (c != null) {
-            c.next(currentThreadId);
-            stepping();
-        }
+        step(DapClient::next);
     }
 
     public void stepInto() {
-        DapClient c = client;
-        if (c != null) {
-            c.stepIn(currentThreadId);
-            stepping();
-        }
+        step(DapClient::stepIn);
     }
 
     public void stepOut() {
-        DapClient c = client;
-        if (c != null) {
-            c.stepOut(currentThreadId);
-            stepping();
-        }
+        step(DapClient::stepOut);
     }
 
     /**
-     * A step was sent: the thread is running again until the adapter reports the next stop, exactly as
-     * after {@link #resume()}. Leaving the state SUSPENDED kept the execution line, inline values and frame
-     * list of the previous stop on screen — and offered Step/Evaluate against frames that no longer exist —
-     * for as long as the step took, which for a step over a blocking call is indefinitely. It also made
-     * {@link #pause()} a no-op during that time, since it only acts while RUNNING.
+     * Sends a step for the current thread. Once the adapter <em>acknowledges</em> it the thread is running
+     * again until the next stop, exactly as after {@link #resume()}: leaving the state SUSPENDED kept the
+     * execution line, inline values and frame list of the previous stop on screen — and offered
+     * Step/Evaluate against frames that no longer exist — for as long as the step took, which for a step
+     * over a blocking call is indefinitely. It also made {@link #pause()} a no-op during that time.
+     *
+     * <p>A step the adapter <em>refuses</em> (java-debug: "the thread is not suspended", when another thread
+     * was picked in the selector) changes nothing: the debuggee is still where it was, so the session stays
+     * SUSPENDED with its controls usable and the adapter's message is reported.
      */
-    private void stepping() {
-        if (state == State.SUSPENDED) {
-            setState(State.RUNNING);
+    private void step(
+            java.util.function.BiFunction<DapClient, Integer, java.util.concurrent.CompletableFuture<Void>> request) {
+        DapClient c = client;
+        if (c == null || state != State.SUSPENDED || stepPendingEpoch == sessionEpoch) {
+            return;
         }
+        long epoch = sessionEpoch;
+        int threadId = currentThreadId;
+        int stops = stopCount;
+        stepPendingEpoch = epoch;
+        request.apply(c, threadId)
+                .whenComplete((v, e) -> Platform.runLater(() -> {
+                    if (stepPendingEpoch == epoch) {
+                        stepPendingEpoch = -1;
+                    }
+                    if (!isCurrent(epoch, c)) {
+                        return;
+                    }
+                    if (e != null) {
+                        listener.onError(msg(
+                                e instanceof java.util.concurrent.CompletionException && e.getCause() != null
+                                        ? e.getCause()
+                                        : e));
+                        return;
+                    }
+                    if (stopCount != stops || state != State.SUSPENDED) {
+                        return; // the step has already ended in a new stop (or the session moved on)
+                    }
+                    stoppedThreads.remove(threadId);
+                    stepInFlight = true;
+                    setState(State.RUNNING);
+                }));
     }
 
     public void stop() {
@@ -1319,6 +1555,7 @@ public final class DapManager implements DapClient.Host {
             c = client;
             client = null;
         }
+        killDebuggee(); // disconnect(terminateDebuggee) does not end a program the adapter did not start
         if (c != null) {
             c.dispose();
         }
@@ -1376,12 +1613,17 @@ public final class DapManager implements DapClient.Host {
     }
 
     public void variables(int ref, Consumer<List<DapModels.VariableInfo>> cb) {
+        variables(ref, null, 0, 0, cb);
+    }
+
+    /** One page of a container's children — see {@link DapClient#variables(int, String, int, int)}. */
+    public void variables(int ref, String filter, int start, int count, Consumer<List<DapModels.VariableInfo>> cb) {
         DapClient c = client;
         if (c == null) {
             cb.accept(List.of());
             return;
         }
-        c.variables(ref)
+        c.variables(ref, filter, start, count)
                 .whenComplete((vars, e) -> Platform.runLater(() -> {
                     if (client == c) {
                         cb.accept(vars == null ? List.of() : vars);
@@ -1416,7 +1658,7 @@ public final class DapManager implements DapClient.Host {
                     if (client == c) {
                         cb.accept(
                                 e != null
-                                        ? new DapModels.EvalResult(msg(e), 0, null)
+                                        ? DapModels.EvalResult.failure(msg(e))
                                         : (r == null ? new DapModels.EvalResult("", 0, null) : r));
                     }
                 }));
@@ -1438,15 +1680,24 @@ public final class DapManager implements DapClient.Host {
                 }));
     }
 
+    /**
+     * Sets a variable. {@code cb} gets the value the adapter reports back — only when the adapter accepted it;
+     * a refusal (wrong type, a final field, an unparsable value) goes to {@link Listener#onError} and leaves
+     * {@code cb} uncalled, so the caller never shows the typed text as if it were the variable's new value.
+     */
     public void setVariable(int ref, String name, String value, Consumer<String> cb) {
-        if (client == null) {
-            cb.accept(value);
-            return;
-        }
         DapClient c = client;
+        if (c == null) {
+            return; // no session: nothing was set
+        }
         c.setVariable(ref, name, value)
                 .whenComplete((r, e) -> Platform.runLater(() -> {
-                    if (client == c) {
+                    if (client != c) {
+                        return;
+                    }
+                    if (e != null) {
+                        listener.onError(msg(e));
+                    } else {
                         cb.accept(r == null ? value : r);
                     }
                 }));
@@ -1463,37 +1714,118 @@ public final class DapManager implements DapClient.Host {
 
     @Override
     public void onStopped(int threadId, String reason) {
-        onStopped(sessionEpoch, threadId, reason);
+        onStopped(sessionEpoch, threadId, reason, false);
     }
 
-    private void onStopped(long epoch, int threadId, String reason) {
+    @Override
+    public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
+        onStopped(sessionEpoch, threadId, reason, allThreadsStopped);
+    }
+
+    private void onStopped(long epoch, int threadId, String reason, boolean allThreadsStopped) {
         DapClient c = client;
         if (!isCurrent(epoch, c)) {
             return;
         }
+        presentStop(epoch, c, threadId, reason, true, allThreadsStopped);
+    }
+
+    /**
+     * Shows {@code threadId} as the stopped thread. {@code event} is a stop the adapter just reported;
+     * otherwise it is a thread that was already stopped and is being brought forward because the one on
+     * screen was resumed — which is dropped if a real stop arrives first, and must not consume a
+     * run-to-cursor temp breakpoint that the resumed thread has yet to reach.
+     */
+    private void presentStop(
+            long epoch, DapClient c, int threadId, String reason, boolean event, boolean allThreadsStopped) {
         c.stackTrace(threadId)
                 .whenComplete((frames, e) -> Platform.runLater(() -> {
                     if (!isCurrent(epoch, c)) {
                         return;
                     }
+                    if (e != null) {
+                        LOG.log(Level.WARNING, "stackTrace failed for thread " + threadId, e);
+                    }
+                    if (event) {
+                        if (allThreadsStopped) {
+                            stoppedThreads.clear(); // one stop stands for all of them, and so will one continue
+                        }
+                        stoppedThreads.put(threadId, reason == null ? "" : reason);
+                        clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
+                    } else if (state != State.RUNNING || !stoppedThreads.containsKey(threadId)) {
+                        return;
+                    }
+                    stopCount++;
+                    stepInFlight = false;
                     currentThreadId = threadId;
-                    clearTempBreakpoint(); // a run-to-cursor temp breakpoint is one-shot
                     state = State.SUSPENDED;
                     listener.onState(State.SUSPENDED);
                     listener.onStopped(threadId, reason, originalFrames(frames));
+                    if ("exception".equals(reason)) {
+                        reportException(epoch, c, threadId, stopCount);
+                    }
                 }));
+    }
+
+    /** Asks which exception {@code threadId} stopped on and reports it, unless the stop has ended meanwhile. */
+    private void reportException(long epoch, DapClient c, int threadId, int stop) {
+        c.exceptionInfo(threadId)
+                .whenComplete((info, e) -> Platform.runLater(() -> {
+                    if (info != null
+                            && !info.isEmpty()
+                            && isCurrent(epoch, c)
+                            && state == State.SUSPENDED
+                            && stopCount == stop
+                            && currentThreadId == threadId) {
+                        listener.onExceptionInfo(threadId, info);
+                    }
+                }));
+    }
+
+    private void onBreakpointStatus(long epoch, Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+        Platform.runLater(() -> {
+            if (!isCurrent(epoch) || file == null) {
+                return;
+            }
+            SourceAlias alias = activeSourceAlias(); // a compiled copy stands in for the file the user sees
+            listener.onBreakpointStatus(
+                    alias != null && alias.compiled().equals(file) ? alias.original() : file, statuses, whole);
+        });
+    }
+
+    private void onNotice(long epoch, String message, boolean error) {
+        Platform.runLater(() -> {
+            if (isCurrent(epoch)) {
+                outputPump.flush(); // keep it after the program output that preceded it
+                listener.onNotice(message, error);
+            }
+        });
     }
 
     @Override
     public void onContinued() {
-        onContinued(sessionEpoch);
+        onContinued(sessionEpoch, 0, true);
     }
 
-    private void onContinued(long epoch) {
+    @Override
+    public void onContinued(int threadId, boolean allThreadsContinued) {
+        onContinued(sessionEpoch, threadId, allThreadsContinued);
+    }
+
+    private void onContinued(long epoch, int threadId, boolean allThreads) {
         Platform.runLater(() -> {
-            if (isCurrent(epoch)) {
-                setState(State.RUNNING);
+            if (!isCurrent(epoch)) {
+                return;
             }
+            if (allThreads) {
+                stoppedThreads.clear();
+            } else {
+                stoppedThreads.remove(threadId);
+                if (state == State.SUSPENDED && threadId != currentThreadId) {
+                    return; // another thread resumed; the one on screen is still stopped
+                }
+            }
+            setState(State.RUNNING);
         });
     }
 
@@ -1520,26 +1852,101 @@ public final class DapManager implements DapClient.Host {
 
     private void onTerminated(long epoch) {
         Platform.runLater(() -> {
+            Debuggee program = debuggee;
+            if (isCurrent(epoch) && program != null && program.isRunning()) {
+                // The adapter is done with a program Editora started. Its last output is still in our pipe
+                // and the process may not be gone yet: the session ends when its exit is delivered
+                // (startDebuggee's sink), and a program that outlives its debugger is ended, not left running.
+                CompletableFuture.delayedExecutor(DEBUGGEE_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
+                        .execute(() -> Platform.runLater(() -> {
+                            if (debuggee == program) {
+                                program.terminate();
+                            }
+                        }));
+                return;
+            }
+            endSession(epoch);
+        });
+    }
+
+    /** Ends the session of {@code epoch}, if it is still the current one (FX thread). */
+    private void endSession(long epoch) {
+        if (!isCurrent(epoch)) {
+            return;
+        }
+        outputPump.flush(); // the program's last lines arrived before this event — show them first
+        tempBreakpointFile = null; // session over — nothing to restore
+        DapClient c;
+        synchronized (sessionLock) {
             if (!isCurrent(epoch)) {
                 return;
             }
-            outputPump.flush(); // the program's last lines arrived before this event — show them first
-            tempBreakpointFile = null; // session over — nothing to restore
-            DapClient c;
-            synchronized (sessionLock) {
-                if (!isCurrent(epoch)) {
-                    return;
+            sessionEpoch++;
+            c = client;
+            client = null;
+        }
+        killDebuggee();
+        if (c != null) {
+            c.dispose();
+        }
+        releaseCompilationDirectory();
+        setState(State.INACTIVE);
+    }
+
+    /**
+     * The adapter's {@code runInTerminal}: starts the program of session {@code epoch} as Editora's child and
+     * completes {@code started} with its process id. The command, working directory and environment are the
+     * adapter's, untouched; the environment goes over the user's own with the augmented PATH, as for Run.
+     */
+    private void startDebuggee(
+            long epoch, String cwd, List<String> argv, Map<String, String> env, CompletableFuture<Long> started) {
+        if (!isCurrent(epoch)) {
+            started.completeExceptionally(new java.util.concurrent.CancellationException("the session has ended"));
+            return;
+        }
+        killDebuggee(); // a session has one program
+        Debuggee program = new Debuggee();
+        try {
+            long pid = program.start(cwd, argv, env, new Debuggee.Sink() {
+                @Override
+                public void output(String text, boolean stderr) {
+                    if (debuggee == program && isCurrent(epoch)) {
+                        listener.onOutput(text, stderr ? "stderr" : "stdout");
+                    }
                 }
-                sessionEpoch++;
-                c = client;
-                client = null;
-            }
-            if (c != null) {
-                c.dispose();
-            }
-            releaseCompilationDirectory();
-            setState(State.INACTIVE);
-        });
+
+                @Override
+                public void exited(int code) {
+                    if (debuggee != program) {
+                        return; // stopped: whoever stopped it has ended, or is ending, the session
+                    }
+                    boolean inputWasOpen = program.inputOpen();
+                    debuggee = null;
+                    if (isCurrent(epoch)) {
+                        if (inputWasOpen) {
+                            listener.onProgramInput(false);
+                        }
+                        listener.onProgramExit(code);
+                        endSession(epoch);
+                    }
+                }
+            });
+            debuggee = program;
+            started.complete(pid);
+            listener.onProgramInput(true);
+        } catch (java.io.IOException | RuntimeException e) {
+            program.kill();
+            started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
+        }
+    }
+
+    /** Ends the session's own program, if it has one, and stops listening to it (FX thread). */
+    private void killDebuggee() {
+        Debuggee program = debuggee;
+        debuggee = null;
+        if (program != null) {
+            program.kill();
+        }
     }
 
     @Override
@@ -1557,7 +1964,20 @@ public final class DapManager implements DapClient.Host {
 
     // --- Internals ------------------------------------------------------------------------------
 
+    /** Keeps the jdtls hosting a Java debug session from being evicted as idle; released when it ends. */
+    private Runnable lspLease = () -> {};
+
     private void setState(State s) {
+        if (s == State.INACTIVE) {
+            lspLease.run();
+            lspLease = () -> {};
+        }
+        if (s != State.RUNNING) {
+            stepInFlight = false;
+        }
+        if (s == State.INACTIVE || s == State.STARTING) {
+            stoppedThreads.clear();
+        }
         this.state = s;
         listener.onState(s);
     }
@@ -1568,6 +1988,7 @@ public final class DapManager implements DapClient.Host {
         if (startup != null) {
             startup.cancel(true);
         }
+        killDebuggee();
         synchronized (sessionLock) {
             return ++sessionEpoch;
         }
@@ -1596,12 +2017,22 @@ public final class DapManager implements DapClient.Host {
         return new DapClient.Host() {
             @Override
             public void onStopped(int threadId, String reason) {
-                DapManager.this.onStopped(epoch, threadId, reason);
+                DapManager.this.onStopped(epoch, threadId, reason, false);
+            }
+
+            @Override
+            public void onStopped(int threadId, String reason, boolean allThreadsStopped) {
+                DapManager.this.onStopped(epoch, threadId, reason, allThreadsStopped);
             }
 
             @Override
             public void onContinued() {
-                DapManager.this.onContinued(epoch);
+                DapManager.this.onContinued(epoch, 0, true);
+            }
+
+            @Override
+            public void onContinued(int threadId, boolean allThreadsContinued) {
+                DapManager.this.onContinued(epoch, threadId, allThreadsContinued);
             }
 
             @Override
@@ -1617,6 +2048,23 @@ public final class DapManager implements DapClient.Host {
             @Override
             public void onError(String message) {
                 DapManager.this.onError(epoch, message);
+            }
+
+            @Override
+            public void onBreakpointStatus(Path file, List<DapModels.BreakpointStatus> statuses, boolean whole) {
+                DapManager.this.onBreakpointStatus(epoch, file, statuses, whole);
+            }
+
+            @Override
+            public void onNotice(String message, boolean error) {
+                DapManager.this.onNotice(epoch, message, error);
+            }
+
+            @Override
+            public CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
+                CompletableFuture<Long> started = new CompletableFuture<>();
+                Platform.runLater(() -> startDebuggee(epoch, cwd, argv, env, started));
+                return started;
             }
 
             @Override
@@ -1640,19 +2088,14 @@ public final class DapManager implements DapClient.Host {
     }
 
     private static String msg(Throwable t) {
+        // A failed request arrives wrapped (CompletionException / ExecutionException), whose own message is
+        // "<exception class>: <adapter message>" — show what the adapter said, not the Java class name.
+        while ((t instanceof java.util.concurrent.CompletionException
+                        || t instanceof java.util.concurrent.ExecutionException)
+                && t.getCause() != null) {
+            t = t.getCause();
+        }
         return t == null ? "" : (t.getMessage() == null ? t.toString() : t.getMessage());
-    }
-
-    private static boolean sameFile(String a, Path b) {
-        if (a == null || b == null) {
-            return false;
-        }
-        try {
-            return Objects.equals(
-                    Path.of(a).toAbsolutePath().normalize(), b.toAbsolutePath().normalize());
-        } catch (RuntimeException e) {
-            return false;
-        }
     }
 
     // --- gson result parsing (jdtls executeCommand returns untyped JsonElements) -----------------

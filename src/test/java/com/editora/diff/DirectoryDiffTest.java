@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -93,5 +94,53 @@ class DirectoryDiffTest {
         assertEquals(
                 List.of(".gitignore", "kept.txt"),
                 result.entries().stream().map(DirectoryDiff.Entry::relativePath).toList());
+    }
+
+    @Test
+    void comparesTheTargetsOfSymlinkedRoots() throws Exception {
+        Path v1 = Files.createDirectories(temp.resolve("v1"));
+        Path v2 = Files.createDirectories(temp.resolve("v2"));
+        Files.writeString(v1.resolve("app.conf"), "port=1\n");
+        Files.writeString(v2.resolve("app.conf"), "port=2\n");
+        Files.writeString(v2.resolve("new.conf"), "new\n");
+        Path previous = temp.resolve("previous");
+        Path current = temp.resolve("current");
+        try {
+            Files.createSymbolicLink(previous, v1);
+            Files.createSymbolicLink(current, v2);
+        } catch (UnsupportedOperationException | java.io.IOException e) {
+            Assumptions.abort("symbolic links are not available here");
+        }
+
+        List<DirectoryDiff.Entry> expected = List.of(
+                new DirectoryDiff.Entry("app.conf", DirectoryDiff.Kind.MODIFIED, 7, 7),
+                new DirectoryDiff.Entry("new.conf", DirectoryDiff.Kind.RIGHT_ONLY, -1, 4));
+        assertEquals(expected, DirectoryDiff.compare(previous, current).entries());
+        assertEquals(expected, DirectoryDiff.compare(previous, v2).entries());
+        assertEquals(expected, DirectoryDiff.compare(v1, current).entries());
+    }
+
+    /** A capped scan must not report a file as one-sided only because the other side's scan stopped early. */
+    @Test
+    void aTruncatedScanDoesNotInventOneSidedFiles() throws Exception {
+        Path left = Files.createDirectories(temp.resolve("cap-left"));
+        Path right = Files.createDirectories(temp.resolve("cap-right"));
+        for (int i = 0; i < 5; i++) {
+            Files.writeString(left.resolve("a-shared-" + i + ".txt"), "same");
+            Files.writeString(right.resolve("a-shared-" + i + ".txt"), "same");
+        }
+        // The right scan stops after five of these 205 files, so it cannot have reached every shared one.
+        for (int i = 0; i < 200; i++) {
+            Files.writeString(right.resolve(String.format("z-extra-%03d.txt", i)), "extra");
+        }
+
+        DirectoryDiff.Result result = DirectoryDiff.compare(left, right, 5);
+
+        assertTrue(result.truncated());
+        assertEquals(
+                List.of(),
+                result.entries().stream()
+                        .filter(e -> e.kind() != DirectoryDiff.Kind.RIGHT_ONLY)
+                        .toList());
     }
 }

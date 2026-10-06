@@ -95,7 +95,8 @@ public final class WorkspaceEditMapper {
     /**
      * See the class doc: insertion-ordered per-file batches plus create/rename/delete operations, or
      * {@code null} for a non-file URI, snippet edit, or text edit after a rename/delete. Create may precede
-     * edits to the newly created file, which is the standard LSP shape. An empty edit is a valid no-op.
+     * edits to the newly created file, which is the standard LSP shape, or follow edits to other files.
+     * An empty edit is a valid no-op.
      */
     public static Mapped map(WorkspaceEdit edit) {
         if (edit == null) {
@@ -147,11 +148,18 @@ public final class WorkspaceEditMapper {
                     renames.add(new FileRename(from, to, overwrite));
                     terminalResourceOperation = true;
                 } else if (change.getRight() instanceof org.eclipse.lsp4j.CreateFile cf) {
-                    if (sawTextEdit || resourcePhase > 0) {
-                        return null; // grouped staging applies every create before every text/rename/delete
+                    if (resourcePhase > 0) {
+                        return null; // grouped staging applies every create before every rename/delete
                     }
                     Path file = filePath(cf.getUri());
                     if (file == null) {
+                        return null;
+                    }
+                    // Staging applies every create before every text edit. A create that follows text edits
+                    // can be hoisted there without changing meaning unless one of those edits already
+                    // addressed this path. jdtls's package rename is [edits…, CreateFile, RenameFile…,
+                    // DeleteFile]; refusing the order outright made a Java package impossible to rename.
+                    if (sawTextEdit && byFile.containsKey(file)) {
                         return null;
                     }
                     boolean overwrite = cf.getOptions() != null

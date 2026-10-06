@@ -31,8 +31,6 @@ class AutoRenameTagFxTest {
             b.setContent(text);
             b.setAutoRenameTag(true);
             b.getNode();
-            CodeArea area = FxTestSupport.field(b, "area");
-            area.getUndoManager().forgetHistory(); // the initial setContent must not be undoable in tests
             return b;
         });
     }
@@ -194,8 +192,11 @@ class AutoRenameTagFxTest {
             b.setMultiCaretEnabled(true);
             CodeArea area = FxTestSupport.field(b, "area");
             area.moveTo(2); // <a|>
-            org.fxmisc.richtext.multi.MultiCaretController<?, ?, ?> multi = FxTestSupport.field(b, "multiCaret");
-            multi.getManager().addCaretAt(10); // <b|>
+            Object multi = FxTestSupport.field(b, "multiCaret");
+            org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?> manager =
+                    (org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?>)
+                            FxTestSupport.call(multi, "getManager", new Class<?>[] {});
+            manager.addCaretAt(10); // <b|>
             area.requestFocus();
             type(area, "z");
         });
@@ -222,6 +223,39 @@ class AutoRenameTagFxTest {
     }
 
     @Test
+    void oneUndoRevertsTheKeystrokeAndItsMirrorTogether() throws Exception {
+        EditorBuffer b = htmlBuffer("<div>text</div>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.moveTo(4);
+            area.replaceText(4, 4, "x");
+            area.replaceText(5, 5, "y");
+        });
+        assertEquals("<divxy>text</divxy>", FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> ((CodeArea) FxTestSupport.field(b, "area")).undo());
+        assertEquals("<divx>text</divx>", FxTestSupport.callOnFx(b::getContent), "never <divx>…</divxy>");
+        FxTestSupport.runOnFx(() -> ((CodeArea) FxTestSupport.field(b, "area")).undo());
+        assertEquals("<div>text</div>", FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> ((CodeArea) FxTestSupport.field(b, "area")).redo());
+        assertEquals("<divx>text</divx>", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void typingANewTagDoesNotRenameTheEnclosingElementsCloser() throws Exception {
+        // <p … <pr| <em>: the half-typed <pr is a new tag on its way to <pre>, not a rename of <p>.
+        EditorBuffer b = htmlBuffer("<p>Intro <em>x</em> and code: done.</p>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.moveTo(9);
+            for (String ch : new String[] {"<", "p", "r", "e", ">"}) {
+                int at = area.getCaretPosition();
+                area.replaceText(at, at, ch);
+            }
+        });
+        assertEquals("<p>Intro <pre><em>x</em> and code: done.</p>", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
     void disabledSettingLeavesTheCloserAlone() throws Exception {
         EditorBuffer b = htmlBuffer("<div>text</div>");
         FxTestSupport.runOnFx(() -> {
@@ -231,5 +265,46 @@ class AutoRenameTagFxTest {
             area.replaceText(4, 4, "x");
         });
         assertEquals("<divx>text</div>", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void clearingANameWithBackspaceAndRetypingRenamesBothTags() throws Exception {
+        // Backspace x3 over "div", then "span": the name passes through empty on the way. The closing tag
+        // used to be mirrored down to </d> and then abandoned, leaving <span>x</d>.
+        EditorBuffer b = htmlBuffer("<div>x</div>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.moveTo(4);
+            area.requestFocus();
+            for (int i = 0; i < 3; i++) {
+                javafx.event.Event.fireEvent(
+                        area,
+                        new javafx.scene.input.KeyEvent(
+                                javafx.scene.input.KeyEvent.KEY_PRESSED,
+                                "",
+                                "",
+                                javafx.scene.input.KeyCode.BACK_SPACE,
+                                false,
+                                false,
+                                false,
+                                false));
+            }
+        });
+        assertEquals("<>x</>", FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> type(FxTestSupport.field(b, "area"), "span"));
+        assertEquals("<span>x</span>", FxTestSupport.callOnFx(b::getContent));
+    }
+
+    @Test
+    void deletingASelectedNameAndRetypingRenamesBothTags() throws Exception {
+        EditorBuffer b = htmlBuffer("<div>x</div>");
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.requestFocus();
+            area.selectRange(1, 4);
+            area.replaceSelection(""); // Delete over the selected name
+            type(area, "ul");
+        });
+        assertEquals("<ul>x</ul>", FxTestSupport.callOnFx(b::getContent));
     }
 }

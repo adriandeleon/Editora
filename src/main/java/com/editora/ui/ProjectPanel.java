@@ -496,7 +496,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Updates the active-file marker used for current-file emphasis in the tree. */
     public void setActiveFile(Path file) {
         Path next = file == null ? null : file.toAbsolutePath().normalize();
-        if (Objects.equals(activeFile, next)) {
+        if (com.editora.config.PathKeys.samePath(activeFile, next)) {
             return;
         }
         activeFile = next;
@@ -515,7 +515,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (!(tree.getRoot() instanceof PathItem item)
-                || !target.startsWith(root.toAbsolutePath().normalize())) {
+                || !com.editora.config.PathKeys.isAtOrUnder(
+                        target, root.toAbsolutePath().normalize())) {
             return;
         }
         pendingTreeReveal = target;
@@ -625,7 +626,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Finds a (visible) tree item for {@code target} among the expanded items, or null if gone. */
     private static TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
-        if (target.equals(item.getValue())) {
+        if (com.editora.config.PathKeys.samePath(target, item.getValue())) {
             return item;
         }
         if (!item.isExpanded()) {
@@ -1202,6 +1203,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
     public void setOnStatus(Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
+        mapView.setOnStatus(this.onStatus);
     }
 
     /** Restores and persists the Project Map's directional layout in workspace state. */
@@ -1726,6 +1728,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                                     || treeGeneration != searchGen.get()) {
                                 return;
                             }
+                            if (entries.isEmpty() && RemoteReadFailure.connectionClosed(parent)) {
+                                onStatus.accept(RemoteReadFailure.unreadable(parent)); // not "an empty folder"
+                            }
                             List<TreeItem<Path>> kids = new ArrayList<>(entries.size());
                             for (PathEntry child : entries) {
                                 kids.add(new PathItem(child.path(), showHidden, child.directory()));
@@ -1815,6 +1820,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         "git-status-deleted",
         "git-status-renamed",
         "git-status-untracked",
+        "git-status-conflict",
         "git-status-dir-changed"
     };
 
@@ -1921,7 +1927,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             boolean dirty = !isDir && isModified != null && isModified.test(item);
             Path absolute = item.toAbsolutePath().normalize();
             boolean open = !isDir && ProjectPanel.this.isOpen.test(absolute);
-            boolean active = !isDir && open && activeFile != null && absolute.equals(activeFile);
+            boolean active =
+                    !isDir && open && activeFile != null && com.editora.config.PathKeys.samePath(absolute, activeFile);
             // Mark the cell so the stylesheet can theme the folder vs. file icon color.
             getStyleClass().removeAll(CELL_CLASSES);
             getStyleClass().add(isDir ? "folder-cell" : "file-cell");

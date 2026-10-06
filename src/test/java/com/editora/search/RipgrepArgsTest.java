@@ -68,4 +68,16 @@ class RipgrepArgsTest {
         assertTrue(a.contains("!**/test/**"), "exclude is negated");
         assertEquals("-g", a.get(a.indexOf("!**/test/**") - 1));
     }
+
+    // --- A12-9 / A12-21: the flags that keep ripgrep and the Java matcher on the same lines and files ------
+
+    @Test
+    void crlfIsALineTerminatorAndGitignoreAppliesOutsideARepository() {
+        List<String> a = RipgrepArgs.build(new SearchQuery(";$", true, true, false), NONE, NONE, true, TWO_MB);
+        assertTrue(a.contains("--crlf"), "$ must match before \\r\\n, as it does for the Java matcher");
+        assertTrue(a.contains("--no-require-git"), "the walker applies .gitignore without a .git too");
+        List<String> off = RipgrepArgs.build(new SearchQuery("x", true, false, false), NONE, NONE, false, TWO_MB);
+        assertTrue(off.contains("--no-ignore"));
+        assertFalse(off.contains("--no-require-git"));
+    }
 }

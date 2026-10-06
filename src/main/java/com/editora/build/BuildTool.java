@@ -348,6 +348,15 @@ public enum BuildTool {
     }
 
     /** The user's home directory — where Maven's {@code ~/.m2} local repository lives. */
+    /**
+     * {@code text} without a leading UTF-8 byte-order mark. {@code Files.readString} keeps it, and the JSON,
+     * TOML and go.mod readers reject or mis-anchor on it — while npm, cargo and go accept such a manifest
+     * (Visual Studio and Windows PowerShell 5 write one). {@code PomParser} does the same for a pom.
+     */
+    static String withoutBom(String text) {
+        return text != null && !text.isEmpty() && text.charAt(0) == '\uFEFF' ? text.substring(1) : text;
+    }
+
     private static Path userHome() {
         return Path.of(System.getProperty("user.home", "."));
     }

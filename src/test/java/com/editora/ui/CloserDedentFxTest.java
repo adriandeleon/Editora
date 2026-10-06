@@ -61,6 +61,55 @@ class CloserDedentFxTest {
                 type("shell", "case x in\n    a)\n        echo\n        ", ";; # done"));
     }
 
+    /** As {@link #type}, but with the caret directly after the first occurrence of {@code after}. */
+    private static String typeAfter(String language, String content, String after, String keys) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride(language);
+            b.setContent(content);
+            b.getNode();
+            b.getArea().moveTo(content.indexOf(after) + after.length());
+            b.typeString(keys);
+            return b.getArea().getText();
+        });
+    }
+
+    @Test
+    void enterAfterAnAlreadyAlignedNestedCloserLeavesItWhereItIs() throws Exception {
+        // The re-align is relative ("nearest shallower line"), so an aligned closer used to be stepped out
+        // to the ENCLOSING block on every Enter — the ordinary way to start the next method.
+        assertEquals(
+                "class Foo\n  def bar\n    x = 1\n  end\n  \nend\n",
+                typeAfter("ruby", "class Foo\n  def bar\n    x = 1\n  end\nend\n", "  end", "\n"));
+        String sh = "deploy() {\n    if [ -n \"$1\" ]; then\n        echo go\n    else\n        echo stop\n    fi\n}\n";
+        assertEquals(sh.replace("    fi\n", "    fi\n    \n"), typeAfter("shell", sh, "    fi", "\n"));
+        assertEquals(sh.replace("    else\n", "    else\n        \n"), typeAfter("shell", sh, "    else", "\n"));
+        String lua = "function f()\n    if x then\n        y()\n    end\nend\n";
+        assertEquals(lua.replace("    end\n", "    end\n    \n"), typeAfter("lua", lua, "    end", "\n"));
+        // Tab-indented, and pressed twice: it must not walk out a level per press either.
+        String tabs = "f() {\n\tif a; then\n\t\tb\n\tfi\n}\n";
+        assertEquals(tabs.replace("\tfi\n", "\tfi\n\t\n\t\n"), typeAfter("shell", tabs, "\tfi", "\n\n"));
+    }
+
+    @Test
+    void aTerminatorAfterAnAlreadyAlignedNestedCloserLeavesItWhereItIs() throws Exception {
+        String sh = "deploy() {\n    if a; then\n        b\n    fi\n}\n";
+        assertEquals(sh.replace("    fi", "    fi # end"), typeAfter("shell", sh, "    fi", " # end"));
+        assertEquals(sh.replace("    fi", "    fi;"), typeAfter("shell", sh, "    fi", ";"));
+        String rb = "class Foo\n  def bar\n    x = 1\n  end\nend\n";
+        assertEquals(rb.replace("  end\n", "  end.compact\n"), typeAfter("ruby", rb, "  end", ".compact"));
+        // An empty block: the closer sits directly under its opener, at the opener's indent.
+        String empty = "f() {\n    if a; then\n    fi\n}\n";
+        assertEquals(empty.replace("    fi", "    fi "), typeAfter("shell", empty, "    fi", " "));
+    }
+
+    @Test
+    void aControlCharacterIsNotATerminator() throws Exception {
+        // Backspace/Escape deliver a KEY_TYPED control character; `fix` + Backspace is on its way to `find`.
+        assertEquals("if x; then\n    fi\b", typeAfter("shell", "if x; then\n    fi", "    fi", "\b"));
+        assertEquals("if x; then\n    fi\u001b", typeAfter("shell", "if x; then\n    fi", "    fi", "\u001b"));
+    }
+
     @Test
     void enterAtColumnZeroOfAnIndentedLineDoesNotIndentItFurther() throws Exception {
         String text = FxTestSupport.callOnFx(() -> {

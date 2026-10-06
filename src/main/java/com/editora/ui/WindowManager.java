@@ -95,7 +95,10 @@ public class WindowManager {
     private final PauseTransition settingsRebroadcast = new PauseTransition(Duration.millis(200));
     /** True from a reported change until the windows it must reach have re-applied. */
     private boolean settingsChangePending;
-    /** The window whose save started the pending re-apply; it applied the change itself and is skipped. */
+    /**
+     * The window that made the pending change; it applied the change itself and is skipped. Known only when
+     * its own save carried the change with no other window's save waiting — see {@link #changerOf}.
+     */
     private ConfigManager settingsChangeOrigin;
     /** Set when the pending changes came from different (or unknown) windows: then none can be skipped. */
     private boolean settingsChangeFromSeveral;
@@ -135,6 +138,7 @@ public class WindowManager {
         // Preferences are one object shared by every window, but each window applies them to its own buffers
         // and services. A save that carries a change no other window has applied yet re-applies it there.
         shared.setOnSettingsChanged(this::onSharedSettingsChanged);
+        shared.setOnStoreChanged(this::onSharedStoreChanged);
         settingsRebroadcast.setOnFinished(e -> flushPendingSettingsBroadcast());
         // The recent-files and search-history lists are single shared instances; a change made through any
         // window refreshes what every window shows. Registered once here (not per window) so a closed window
@@ -163,7 +167,7 @@ public class WindowManager {
      */
     private void reportConfigLoadProblems(MainController controller) {
         List<com.editora.config.migration.ConfigLoadProblem> problems = shared.takeLoadProblems();
-        if (problems.isEmpty()) {
+        if (problems.isEmpty() && unshownWriteErrors.isEmpty()) {
             return;
         }
         // Deferred past startup's own status messages, so the report is the line left showing.
@@ -171,8 +175,21 @@ public class WindowManager {
             for (com.editora.config.migration.ConfigLoadProblem problem : problems) {
                 controller.setError(ConfigLoadMessages.describe(problem, shared.isWriteProtected(problem.file())));
             }
+            List<Path> failed = new ArrayList<>(unshownWriteErrors);
+            unshownWriteErrors.clear();
+            for (Path file : failed) {
+                controller.setError(com.editora.i18n.Messages.tr(
+                        "status.config.saveFailed", file.getFileName().toString()));
+            }
         });
     }
+
+    /**
+     * Config files whose write failed before any window existed to say so (FX thread only). A read-only or
+     * full config folder fails its first write while the config is still loading; the first window reports
+     * these with the load problems.
+     */
+    private final java.util.Set<Path> unshownWriteErrors = new java.util.LinkedHashSet<>();
 
     /** Shows a config-write failure in the focused window's status bar (best-effort; logged regardless). */
     private void notifyConfigWriteError(Path file) {
@@ -183,6 +200,22 @@ public class WindowManager {
             h.controller()
                     .setError(com.editora.i18n.Messages.tr(
                             "status.config.saveFailed", file.getFileName().toString()));
+        } else {
+            unshownWriteErrors.add(file); // no window yet: the first one reports it
+        }
+    }
+
+    /**
+     * The abbreviations or the saved SFTP sites changed: every open Settings window re-reads them now. Each
+     * edits them as a whole list, so one left showing the old list would write it back over the change.
+     */
+    private void onSharedStoreChanged() {
+        if (!javafx.application.Platform.isFxApplicationThread()) {
+            javafx.application.Platform.runLater(this::onSharedStoreChanged);
+            return;
+        }
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncStoreBackedEditors();
         }
     }
 
@@ -528,6 +561,24 @@ public class WindowManager {
         return List.copyOf(out);
     }
 
+    /** Whether a window other than {@code asking} has {@code file} open in a tab. */
+    boolean openInAnotherWindow(MainController asking, Path file) {
+        for (Holder holder : windows) {
+            if (holder.controller() != asking
+                    && !holder.controller().buffersAtOrUnderLocal(file).isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** A saved {@code .editorconfig} governs files in every window, not only the one it was saved from. */
+    void editorConfigSavedAcrossWindows() {
+        for (Holder holder : List.copyOf(windows)) {
+            holder.controller().applyEditorConfigLocal();
+        }
+    }
+
     void fileRenamedAcrossWindows(MainController initiator, Path from, Path to, boolean initiatorAlreadyClosed) {
         for (Holder holder : List.copyOf(windows)) {
             holder.controller()
@@ -787,11 +838,23 @@ public class WindowManager {
 
     /** Re-applies view settings + the editor theme to every open window (after a Settings change). */
     public void broadcastSettingsApplied() {
+        broadcastSettingsApplied(null);
+    }
+
+    /**
+     * As {@link #broadcastSettingsApplied()}, for a change made in {@code origin}'s Settings window: every
+     * other window's Settings window, if open, re-reads its controls too. Left showing the old values, its
+     * next edit of any stale control would write that value back over this change.
+     */
+    public void broadcastSettingsApplied(MainController origin) {
         settingsRebroadcast.stop(); // every window is about to apply everything, pending changes included
         settingsChangePending = false;
         Settings settings = shared.getSettings();
         for (Holder h : new ArrayList<>(windows)) {
             h.controller.reapplyAfterSharedSettingsChange(settings);
+            if (origin != null && h.controller != origin) {
+                h.controller.settingsWindow().syncAll();
+            }
         }
         shared.markSettingsApplied();
     }
@@ -800,11 +863,13 @@ public class WindowManager {
      * A window saved preferences that the other windows have not applied — the change came from a palette
      * command or key binding, which applies it only in its own window. Schedules the others to catch up.
      */
-    private void onSharedSettingsChanged(ConfigManager origin) {
+    private void onSharedSettingsChanged(ConfigManager saver) {
         if (!javafx.application.Platform.isFxApplicationThread()) {
-            javafx.application.Platform.runLater(() -> onSharedSettingsChanged(origin));
+            // By the time this runs the saves around the change are over, so who made it can't be told.
+            javafx.application.Platform.runLater(() -> onSharedSettingsChanged(null));
             return;
         }
+        ConfigManager origin = changerOf(saver);
         if (!settingsChangePending) {
             settingsChangePending = true;
             settingsChangeOrigin = origin;
@@ -813,6 +878,26 @@ public class WindowManager {
             settingsChangeFromSeveral = true;
         }
         settingsRebroadcast.playFromStart();
+    }
+
+    /**
+     * The window that made the change a save by {@code saver} just carried, or {@code null} when that can't
+     * be told. Preferences are one shared object serialized at save time, so the first save after a change
+     * carries it <em>whichever</em> window saves. The window that made the change always requests a save in
+     * the same step, so the saver is that window only if no other window has a save waiting: with one
+     * waiting, the saver may merely have saved first (its own save was queued before the command ran in the
+     * other window), and skipping it would leave it on the old preferences for good.
+     */
+    private ConfigManager changerOf(ConfigManager saver) {
+        if (saver == null) {
+            return null;
+        }
+        for (Holder h : windows) {
+            if (h.config() != saver && h.controller().saveRequestPending()) {
+                return null;
+            }
+        }
+        return saver;
     }
 
     /**
@@ -832,7 +917,7 @@ public class WindowManager {
         for (Holder h : new ArrayList<>(windows)) {
             if (h.config() != skip && h.stage().isShowing()) { // a window closed while this was pending is left alone
                 h.controller().reapplyAfterSharedSettingsChange(settings);
-                h.controller().syncSettingsWindow();
+                h.controller().settingsWindow().syncAll();
             }
         }
     }
@@ -872,6 +957,17 @@ public class WindowManager {
         }
     }
 
+    /**
+     * A folder-trust decision changed (granted or revoked, here or in Settings). Each window re-resolves the
+     * project overrides it may honour: revoking only edited the trust store, so a manager configured while
+     * the folder was trusted kept launching the project-supplied command.
+     */
+    public void broadcastTrustChanged() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller.trustChanged();
+        }
+    }
+
     /** Re-registers the synthetic {@code externalTool.run.*} commands in every window after the set changed. */
     public void broadcastExternalToolsChanged() {
         for (Holder h : new ArrayList<>(windows)) {
@@ -904,6 +1000,11 @@ public class WindowManager {
                 pluginKeymaps,
                 settings.keybindingsFor(com.editora.command.KeymapManager.isMac()));
         broadcastSettingsApplied();
+        // Every open Settings window shows the keymap: its combo, the shortcut list, the chord chips and the
+        // Macros key-binding row. The window that made the change refreshes itself; the others are told here.
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncKeymap();
+        }
         Holder focused = focusedHolder();
         reportUnknownKeymap(focused != null ? focused.controller() : null);
     }

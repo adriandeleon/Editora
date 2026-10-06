@@ -459,11 +459,65 @@ class JavaTypingCompletionFxTest {
         String accepted = FxTestSupport.callOnFx(buffer::text);
         FxTestSupport.runOnFx(() -> {
             org.fxmisc.richtext.CodeArea second = FxTestSupport.field(buffer, "area2");
-            second.undo(); // the passive view records this typing burst as one existing undo step
+            // The views share one history, so this one undoes what the other would: the word, then the space.
+            second.undo();
+            assertEquals("import java.util.ArrayList;\nclass A { ArrayList ", buffer.text());
+            second.undo();
             assertEquals("import java.util.ArrayList;\nclass A { ArrayList", buffer.text());
             second.undo();
             assertEquals("class A { Arr", buffer.text());
             second.redo();
+            second.redo();
+            second.redo();
+            assertEquals(accepted, buffer.text());
+        });
+    }
+
+    @Test
+    void aCompletionAcceptedInTheSecondSplitViewUndoesWithItsImportFromTheFirst() throws Exception {
+        org.fxmisc.richtext.CodeArea second = FxTestSupport.callOnFx(() -> {
+            buffer.setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
+            buffer.cancelCompletion();
+            buffer.setContent("class A { Arr");
+            org.fxmisc.richtext.CodeArea view = FxTestSupport.field(buffer, "area2");
+            view.requestFocus();
+            view.moveTo(13);
+            return view;
+        });
+        scope.awaitFx();
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                FxTestSupport.callOnFx(() -> buffer.getFocusedArea() == second), "headless focus");
+        var apply = new java.util.concurrent.atomic.AtomicReference<Consumer<List<LspTextEdit>>>();
+        invoke();
+        respond(
+                requests.size() - 1,
+                false,
+                Completion.lsp(
+                        "ArrayList",
+                        "ArrayList",
+                        "java.util",
+                        () -> apply.set(buffer.trackCompletionAdditionalEdits())));
+        expectCompletion("ArrayList");
+        press("ENTER");
+        assertEquals("class A { ArrayList", FxTestSupport.callOnFx(buffer::text));
+        assertEquals(19, FxTestSupport.callOnFx(second::getCaretPosition), "accepted at the second view's caret");
+        type(" values");
+        FxTestSupport.runOnFx(() -> apply.get().accept(arrayListImport()));
+        String accepted = FxTestSupport.callOnFx(buffer::text);
+        assertEquals("import java.util.ArrayList;\nclass A { ArrayList values", accepted);
+        assertEquals(accepted.length(), FxTestSupport.callOnFx(second::getCaretPosition), "the import moved it along");
+        FxTestSupport.runOnFx(() -> {
+            org.fxmisc.richtext.CodeArea first = buffer.getArea();
+            first.undo(); // the word
+            first.undo(); // the space
+            assertEquals("import java.util.ArrayList;\nclass A { ArrayList", buffer.text());
+            first.undo(); // the completion and its import, together
+            assertEquals("class A { Arr", buffer.text());
+            second.redo();
+            assertEquals("import java.util.ArrayList;\nclass A { ArrayList", buffer.text());
+            first.redo();
             second.redo();
             assertEquals(accepted, buffer.text());
         });
@@ -665,5 +719,26 @@ class JavaTypingCompletionFxTest {
         expectCompletion("println");
         press("ENTER");
         assertEquals("System.out.println()", FxTestSupport.callOnFx(buffer::text));
+    }
+
+    /** A commit character on a plain item typed inside another snippet's field must leave that session alone. */
+    @Test
+    void aCommitCharacterOnAPlainItemKeepsTheEnclosingSnippet() throws Exception {
+        invoke();
+        respond(0, false, method("println(String)", "println(${1:value})", 11, 11));
+        expectCompletion("println");
+        press("ENTER");
+        type("us");
+        invoke();
+        respond(
+                requests.size() - 1,
+                false,
+                Completion.lsp("user", "user", "").withProtocol(new Completion.Protocol("user", null, List.of("."))));
+        expectCompletion("user");
+        FxTestSupport.runOnFx(() -> buffer.getArea()
+                .fireEvent(new KeyEvent(KeyEvent.KEY_TYPED, ".", ".", KeyCode.UNDEFINED, false, false, false, false)));
+        scope.awaitFx();
+        assertEquals("System.out.println(user.)", FxTestSupport.callOnFx(buffer::text));
+        assertTrue(FxTestSupport.callOnFx(buffer::hasActiveSnippet), "the argument's session is still running");
     }
 }

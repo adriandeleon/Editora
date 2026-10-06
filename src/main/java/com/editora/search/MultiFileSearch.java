@@ -149,6 +149,44 @@ public final class MultiFileSearch {
     }
 
     /**
+     * Why {@code replacement} cannot be applied to matches of {@code q}, or {@code null} when it can. Only a
+     * regex replacement can be wrong: a reference to a group the pattern does not have ({@code $9}), a
+     * {@code $} that starts no reference ({@code $cost}), a trailing {@code \} or {@code $}.
+     *
+     * <p>{@link #replaceAll} answers such a replacement with "nothing replaced", which Replace in Files
+     * reported as "Replaced 0 occurrences in 0 files" under a panel full of matches. Checked up front, the
+     * user is told instead. The check needs no real match: the pattern is given an empty alternative, which
+     * keeps its groups and matches the empty string, and the replacement is expanded against that.
+     */
+    public static String replacementError(SearchQuery q, String replacement) {
+        if (q == null || !q.regex() || q.text() == null || q.text().isEmpty() || replacement == null) {
+            return null;
+        }
+        Pattern base = SearchMatcher.compileRegex(q.text(), q.caseSensitive(), q.wholeWord());
+        if (base == null) {
+            return null; // a bad pattern is reported as such, not as a bad replacement
+        }
+        Matcher probe;
+        try {
+            // The line break ends a trailing `#` comment when the pattern was compiled with (?x).
+            probe = Pattern.compile("(?:" + base.pattern() + "\n)|", base.flags())
+                    .matcher("");
+        } catch (PatternSyntaxException e) {
+            return null;
+        }
+        if (!probe.find()) {
+            return null;
+        }
+        try {
+            probe.appendReplacement(new StringBuilder(), replacement);
+            return null;
+        } catch (RuntimeException bad) {
+            String message = bad.getMessage();
+            return message == null || message.isBlank() ? bad.getClass().getSimpleName() : message;
+        }
+    }
+
+    /**
      * {@link SearchMatcher}'s own pattern — same whole-word wrapping, same flags — plus
      * {@link Pattern#UNICODE_CHARACTER_CLASS}, or {@code null} for a bad pattern. Derived from the compiled
      * pattern rather than rebuilt, so whatever flags the shared compile uses carry over.

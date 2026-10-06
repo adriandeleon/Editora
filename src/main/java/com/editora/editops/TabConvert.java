@@ -43,7 +43,9 @@ public final class TabConvert {
     /**
      * Converts each maximal run of whitespace to the tabs (plus trailing spaces) that reach the same
      * column. Only runs of <b>two or more</b> whitespace characters are touched — matching Emacs'
-     * {@code tabify-regexp} {@code "[ \t][ \t]+"} — so a lone space or tab is left exactly as it is.
+     * {@code tabify-regexp} {@code "[ \t][ \t]+"} — so a lone space or tab is left exactly as it is. From
+     * the first quote character on a line onwards nothing is converted: a run of spaces there may be the
+     * content of a string literal, and turning it into a tab would change the program's data.
      */
     public static String tabify(String text, int tabWidth) {
         if (text == null || text.isEmpty() || tabWidth < 1) {
@@ -53,15 +55,18 @@ public final class TabConvert {
         int col = 0;
         int i = 0;
         int n = text.length();
+        boolean quoted = false; // a quote has been seen on this line
         while (i < n) {
             char c = text.charAt(i);
             if (c == '\n') {
                 sb.append(c);
                 col = 0;
+                quoted = false;
                 i++;
                 continue;
             }
-            if (c != ' ' && c != '\t') {
+            if (quoted || (c != ' ' && c != '\t')) {
+                quoted |= c == '"' || c == '\'' || c == '`';
                 sb.append(c);
                 col++;
                 i++;

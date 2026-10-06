@@ -65,10 +65,13 @@ public final class HistoryBlobStore {
     /** Writes the gzip'd blob for {@code sha} if it does not already exist (idempotent). */
     public void put(String content, String sha) {
         Path file = pathFor(sha);
-        if (Files.exists(file)) {
+        if (Files.exists(file) && get(sha) != null) {
             harden(file, OWNER_FILE);
             return;
         }
+        // Absent — or present but unreadable (truncated by a crash before the data reached the disk): the
+        // correct content is in hand, so write it again. Returning on mere existence left every revision
+        // with this sha "unavailable" for good.
         try {
             createPrivateDirectories(file.getParent());
             harden(blobsDir, OWNER_DIRECTORY);

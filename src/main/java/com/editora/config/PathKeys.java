@@ -80,6 +80,12 @@ public final class PathKeys {
      * exact identity mismatch that silently dropped diagnostics (#470).
      */
     public static Path canonical(Path p) {
+        if (Vfs.isRemote(p)) {
+            // Not asked of the server (a round trip per lookup, often on the FX thread) and never cached: the
+            // cache is keyed by the path's text, which a remote /etc/hosts shares with the local one — the
+            // local file would then be answered with a path on the server, and the other way round.
+            return p.toAbsolutePath().normalize();
+        }
         String cacheKey = p.toString();
         Path hit = CANONICAL_CACHE.get(cacheKey);
         if (hit != null) {
@@ -120,16 +126,58 @@ public final class PathKeys {
         return p == null ? "" : canonical(p).toString();
     }
 
-    /** Whether two paths are the same file by absolute-normalized form, with a defensive equality fallback. */
+    /**
+     * Whether two paths are the same file by absolute-normalized form. Paths on different file systems are
+     * never the same file — and must not be handed to {@code Path.equals}, which a MINA SFTP path answers
+     * with {@link java.nio.file.ProviderMismatchException} when the other side is a local path.
+     */
     public static boolean sameNormalized(Path a, Path b) {
-        if (a == null || b == null) {
+        if (a == null || b == null || !sameFileSystem(a, b)) {
             return false;
         }
         try {
             return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
         } catch (RuntimeException e) {
-            return a.equals(b);
+            return samePath(a, b);
         }
+    }
+
+    /** Whether both paths belong to the same {@code FileSystem} (so they may be compared or relativized). */
+    public static boolean sameFileSystem(Path a, Path b) {
+        return a != null && b != null && a.getFileSystem() == b.getFileSystem();
+    }
+
+    /**
+     * A null-safe, provider-safe {@code Path.equals}: {@code Objects.equals(a, b)} that answers {@code false}
+     * instead of throwing when the two paths are on different file systems (a remote tab next to a local one).
+     */
+    public static boolean samePath(Path a, Path b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        try {
+            return sameFileSystem(a, b) && a.equals(b);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * A provider-safe {@code path.startsWith(ancestor)}: whether {@code path} is {@code ancestor} or lies
+     * below it. Paths on different file systems never contain one another; asking {@code startsWith}
+     * directly throws when the receiver is a remote path and the argument a local one.
+     */
+    public static boolean isAtOrUnder(Path path, Path ancestor) {
+        try {
+            return sameFileSystem(path, ancestor) && path.startsWith(ancestor);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** {@link #isAtOrUnder} without the folder itself: {@code path} is somewhere below {@code ancestor}. */
+    public static boolean isUnder(Path path, Path ancestor) {
+        return isAtOrUnder(path, ancestor) && !samePath(path, ancestor);
     }
 
     /**

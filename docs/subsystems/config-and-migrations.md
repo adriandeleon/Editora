@@ -58,6 +58,8 @@ So a `save()` from any window writes `settings.json` plus that window's session 
 
 `Settings` is one object, but each window applies it to its own buffers and services. `SharedConfig.enqueueSettings(origin)` — the single point every save goes through — compares the serialized preferences with what all windows last applied (`markSettingsApplied()`, first called when a second window is built). When they differ it tells `WindowManager`, which re-applies them in every window except the one that saved (that one applied the change itself), after a short coalescing delay so a burst such as a Ctrl+wheel zoom costs the other windows one re-apply. A palette toggle, a key binding or any other command therefore needs no broadcast of its own; `lastUpdateCheckEpoch` and `dismissedUpdateVersion` are bookkeeping and never trigger one. The Settings window still calls `broadcastSettingsApplied()` directly, which applies everywhere at once and resets the baseline.
 
+The abbreviations and the saved SFTP sites are edited as whole lists by each window's Settings page, so a change to either (`SharedConfig.saveAbbreviations` / `saveConnections` → `setOnStoreChanged`) makes `WindowManager` tell every open Settings window to re-read them (`SettingsWindow.syncStoreBackedEditors`) — the change can land while Settings has the focus, so the window's own focus listener is not enough. A keymap reload (`WindowManager.reloadSharedKeymap`) likewise refreshes every open Settings window's keymap combo, shortcut list, chord chips and Macros key-binding row (`SettingsWindow.syncKeymap`).
+
 The recent-files list, search history and agent-session history are single instances too. Windows read and add to the same object, `WindowManager` refreshes every window's recent menu and query dropdown when one changes, and a window never binds a control to the shared list itself (it outlives the window) — `SearchCoordinator` keeps its own copy for the combo.
 
 ### Per-window session and per-project buckets
@@ -76,14 +78,14 @@ Bookmarks were deliberately moved out of `WorkspaceState` into their own `bookma
 
 [`ConfigWriter`](../../src/main/java/com/editora/config/ConfigWriter.java) performs all `settings.json` and session writes off the JavaFX thread on a single `config-writer` daemon thread.
 
-The contract: callers serialize a **consistent snapshot to bytes on their own thread** (the FX thread is single-threaded, so reading the config POJOs needs no locking) and hand the immutable bytes to the writer. Each write is a **temp-file + atomic move** (`writeAtomic`), so a crash mid-write never leaves a half-written config.
+The contract: callers serialize a **consistent snapshot to bytes on their own thread** (the FX thread is single-threaded, so reading the config POJOs needs no locking) and hand the immutable bytes to the writer. Each write is a **temp-file + atomic move** (`writeAtomic`), so a crash mid-write never leaves a half-written config. A config file that is a symlink (a dotfiles repository managed with stow or chezmoi) is written **through** the link: the temp file is staged beside the real file and moved onto it, so the link stays a link.
 
 Two paths:
 
 - `enqueue(file, bytes)` — non-blocking and **coalesced per file** (latest bytes win), via `ConfigManager.saveAsync()` → `SharedConfig.enqueueSettings()`. This backs the frequent in-session save (`MainController.requestSave`).
 - `flush()` — blocks until everything queued has landed, via `ConfigManager.save()` → `SharedConfig.flushWrites()`. This is the durable form used by quit (`persistSession`), one-off actions, and `exportConfig()`. `App.start` registers a JVM-shutdown flush.
 
-`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. The three history lists (`recent-files.json`, `search-history.json`, `agent-sessions.json`) are queued on it as well, as an immutable snapshot serialized on the writer thread. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. That GC is throttled (`HistoryService.gcIfDue`, at most once per ten minutes) so a save does not walk the whole blob store; a skipped pass deletes nothing and the next one uses the live set of its own moment, while a purge (`localHistory.purgeFile` / `localHistory.purgeProject`) requests an immediate pass. Retention is applied to the whole index once per start, off the FX thread (`HistoryRetention.sweep`), not only to the file being saved; a file's newest revision, labelled revisions and pre-delete copies are exempt from the ordinary limits but expire after a longer lease (six times the age limit, at least 180 days). Other stores (`bookmarks.json`, `notes.json`, …) keep direct synchronous writes in `SharedConfig`.
+`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. The three history lists (`recent-files.json`, `search-history.json`, `agent-sessions.json`) are queued on it as well, as an immutable snapshot serialized on the writer thread. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. That GC is throttled (`HistoryService.gcIfDue`, at most once per ten minutes) so a save does not walk the whole blob store; a skipped pass deletes nothing and the next one uses the live set of its own moment, while a purge (`localHistory.purgeFile` / `localHistory.purgeProject`) requests an immediate pass. Retention is applied to the whole index once per start, off the FX thread (`HistoryRetention.sweep`), not only to the file being saved; a file's newest revision, labelled revisions and pre-delete copies are exempt from the ordinary limits but expire after a longer lease (six times the age limit, at least 180 days). Other stores (`bookmarks.json`, `notes.json`, …) and the projects index keep direct synchronous writes (`SharedConfig.writeStore`, `ProjectManager.save`). Those run inside FX event handlers and, for the one-time `bookmarks.json` creation, inside `load()`, so they **never throw**: a failed write is logged and handed to the same `setOnWriteError` handler as a queued one (`ConfigWriter.reportWriteError`), and the change stays in memory. A failure that happens before any handler is installed — the config is loaded before the first window exists — is kept by `ConfigWriter` and handed to the first handler; `WindowManager` in turn holds a failure it has no window to show in, and the first window reports it together with the load problems.
 
 ## More than one process on a config directory
 
@@ -107,6 +109,13 @@ released by the operating system when the holder dies, so a crash never leaves a
 - Local-history blob GC runs only in the primary, and only while no secondary is alive
   (`mayCollectHistoryBlobs`, asked on the history worker right before deleting). GC deletes every blob
   outside *this* process's index, and another process's revisions are not in it.
+- For the same reason GC never runs against an index that is not the one that was written
+  (`HistoryIndexGuard`): when `history/index.json` did not load cleanly (newer schema, unparseable, a
+  skipped value), when it is zero-length or missing while `history/blobs/` still holds bodies, and — in
+  later sessions too — for as long as an `index.json.v<n>.bak` / `index.json.corrupt.bak` sits beside it.
+  The bodies the backup references are kept until the user restores or deletes that backup. A zero-length
+  index beside stored bodies is reported as unreadable (and copied to `.corrupt.bak`) rather than read as
+  "no history yet".
 
 A config that was never claimed (tests, embedders) counts as its own sole user, and a filesystem that
 refuses locks degrades to "primary, alone".
@@ -130,9 +139,14 @@ Every structured config file carries an integer `schemaVersion` field, and its o
 2. The version to **assume when the file has no `schemaVersion` marker** — `1`, the pre-versioning baseline (a bare JSON array is detected as `0` instead, by `ConfigMigrations.versionOf`). `SETTINGS` also carries a small *evidence* table (`versionWithoutMarker`): a key that first appeared in version N proves the file is at least N, so a current-shape file that merely lost its marker resumes after the steps that are not safe to repeat instead of replaying all of them from 1.
 3. An ordered map of **step `Migration`s** keyed by the version they upgrade *from* (`v → v+1`).
 
-For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (105), with an additive identity step for
-the Default JDK at `102 → 103` (also used by standalone Java files) and `104 → 105` as
-`retireUnusedSettingsKeys`; `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
+For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (107), with an additive identity step for
+the Default JDK at `102 → 103` (also used by standalone Java files), `104 → 105` as
+`retireUnusedSettingsKeys`, and an identity step at `105 → 106` for per-keymap key-binding overrides
+(`keybindings`/`keybindingsMac` keep their place and now mean "the active keymap's"; `keymapKeybindings`/
+`keymapKeybindingsMac` hold the other keymaps' and start empty), and `106 → 107` as `blankFrozenDefaultUrls`
+(`pluginRegistryUrl` and `mavenArchetypeCatalogUrl` are stored raw, blank meaning "the built-in default"; a
+file that froze the built-in address goes back to blank, and the step spells those old addresses out so it
+still recognises them after a default moves); `WORKSPACE` uses `11 → 12` for the per-run-configuration JDK
 override; `PROJECTS` registers `1 → 2` as `seedOpenProjectIds`; and `RECENT` registers `0 → 1` as
 `wrapRecentFilesArray`.
 
@@ -141,13 +155,13 @@ override; `PROJECTS` registers `1 → 2` as `seedOpenProjectIds`; and `RECENT` r
 [`ConfigMigrations.readVersioned(file, mapper, defaults, schema)`](../../src/main/java/com/editora/config/migration/ConfigMigrations.java) is the single read path. It is mapper-agnostic, so the same migrations also process the legacy TOML file before conversion because `TomlMapper` produces ordinary Jackson nodes:
 
 1. Missing/unreadable/empty → return `defaults`.
-2. Parse to a Jackson tree.
+2. Decode (`readText`) and parse to a Jackson tree. A leading UTF-8 byte-order mark is dropped and a byte that is not valid UTF-8 becomes U+FFFD (logged), so a file saved by another editor "with BOM" or in a legacy encoding costs at most one character, not every value in it. A file read with replaced bytes is reported as `ConfigLoadProblem.Kind.NOT_UTF8` and its original bytes are copied to `.corrupt.bak`, because the next save makes the replacement permanent; it is never write-protected. The Local History index is the exception: it gets the report but no copy (`ConfigSchema.keepsCopyOfUndecodableFile`), since any backup beside it suspends blob collection, and such an index still counts as intact.
 3. `upgrade(schema, tree, mapper)` — read the stored version (`versionOf`), then `applySteps` runs the `from → to` chain in order (one registered step per version, throwing `IllegalStateException` if a step is missing), and stamps `schemaVersion` to the current version.
 4. Merge the migrated object **onto `defaults`** via `mapper.readerForUpdating(defaults)`. So a purely additive new field just defaults when an old file is read.
 5. A value of the wrong type (a hand edit such as `"showMinimap": "yes"`) costs only that top-level property: the merge is retried one property at a time, the bad one keeps its default, and every other property is still read.
 6. Unparseable content or a misconfigured migration → fall back to `defaults` rather than crash.
 
-Whenever content was not read as written, the original file is copied to `<name>.corrupt.bak` (a counter is appended when the name is taken) and the caller is told through the optional `Consumer<ConfigLoadProblem>`. `SharedConfig` collects these for its own files; the first window built shows each one once as a status-bar error (`ConfigLoadMessages`), so it stays flagged in the message log.
+Whenever content was not read as written, the original file is copied to `<name>.corrupt.bak` (a counter is appended when the name is taken; an existing backup with the same content is reused, so a store that stays damaged across launches is copied once) and the caller is told through the optional `Consumer<ConfigLoadProblem>`. `SharedConfig` collects these for its own files, for `projects.json` (`ProjectManager.loadProblems()`) and for every session file a `ConfigManager` reads; the first window built shows each one once as a status-bar error (`ConfigLoadMessages`), so it stays flagged in the message log.
 
 Numeric setters that feed arithmetic clamp (`Settings.setTabSize`/`setFontSize`/`setFontZoom`), so an out-of-range value in the file loads as the nearest legal one rather than failing later.
 
@@ -159,7 +173,7 @@ A getter that *resolves* a blank value (`getAuthorName()` → the OS user, `getP
 
 If a file's stored `schemaVersion` is **newer** than this build supports (the user downgraded the app), `upgrade` throws [`NewerThanSupportedException`](../../src/main/java/com/editora/config/migration/NewerThanSupportedException.java). `readVersioned` then backs the file up to `<name>.v<n>.bak` (`ConfigMigrations.backup`, preserving any existing backup) and returns `defaults`. An older Editora never overwrites — and silently drops fields from — a newer config.
 
-That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`). The same applies to an unparseable file that could not be copied aside. The Local File History index is the one exception — it is reported but still written, because its publication protocol must keep running.
+That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`) — session files and `projects.json` included. The same applies to an unparseable file that could not be copied aside. The Local File History index is the one exception — it is reported but still written, because its publication protocol must keep running; its revision bodies are protected instead by refusing blob GC (see the instance-lock section above).
 
 ### Worked examples
 

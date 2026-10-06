@@ -166,4 +166,11 @@ class DapManagerTest {
         assertNull(FxlessAccess.asString(null));
         assertNull(FxlessAccess.asString(new com.google.gson.JsonArray())); // not a single value
     }
+
+    @Test
+    void mainClassFromFileKeepsANonAsciiTypeName(@TempDir Path dir) throws IOException {
+        Path f = dir.resolve("Café.java");
+        Files.writeString(f, "package demo;\n\npublic class Café {\n  public static void main(String[] a) {}\n}\n");
+        assertEquals("demo.Café", DapManager.mainClassFromFile(f));
+    }
 }

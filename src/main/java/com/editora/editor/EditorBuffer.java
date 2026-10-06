@@ -38,7 +38,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Line;
 
 import com.editora.completion.Completion;
 import com.editora.completion.CompletionProvider;
@@ -67,16 +66,13 @@ import com.editora.typst.TypstMarkup;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
-import org.fxmisc.richtext.LineNumberFactory;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
 import org.fxmisc.richtext.model.ReadOnlyStyledDocumentBuilder;
 import org.fxmisc.richtext.model.StyleSpans;
 import org.fxmisc.richtext.model.StyleSpansBuilder;
 import org.fxmisc.richtext.model.StyledSegment;
-import org.fxmisc.richtext.multi.MultiCaretController;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
-import org.fxmisc.undo.UndoManagerFactory;
 import org.reactfx.Subscription;
 
 import static com.editora.i18n.Messages.tr;
@@ -201,6 +197,11 @@ public class EditorBuffer implements TabContent {
         }
 
         @Override
+        public int snippetDepth() {
+            return snippetSession.depth();
+        }
+
+        @Override
         public void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
             EditorBuffer.this.startSnippet(a, snippet, from, to, reindent);
         }
@@ -227,6 +228,8 @@ public class EditorBuffer implements TabContent {
     private String cleanText = "";
     /** True when the current content has no durable identity even if it equals the in-memory baseline. */
     private boolean forcedDirty;
+    /** The line ending the file had when loaded or last saved; a different one is an unsaved change. */
+    private String cleanLineEnding = LineEndings.LF;
     /**
      * Emacs narrowing: the document text before/after the accessible region, held aside while the area
      * itself holds only the region. Both null when the buffer is widened (the normal state).
@@ -265,6 +268,8 @@ public class EditorBuffer implements TabContent {
     /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
     private boolean adminEditAvailable;
 
+    private Boolean writableOnDisk; // null: ask Files.isWritable; else what the window found out (remote files)
+
     /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
      *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. Generic (strings + runnables),
      *  so {@code editor} stays decoupled from {@code install}/{@code ui}. */
@@ -286,6 +291,8 @@ public class EditorBuffer implements TabContent {
     /** The secondary view's container (scroll pane + its own minimap), mounted in the SplitPane. */
     private AnchorPane root2;
 
+    private SecondaryPane pane2;
+
     private Minimap minimap2;
     private Split split = Split.NONE;
 
@@ -293,8 +300,8 @@ public class EditorBuffer implements TabContent {
      *  (and {@link #area2} when split) while {@link #multiCaretEnabled}; transparent with one caret. */
     private boolean multiCaretEnabled;
 
-    private MultiCaretController<?, ?, ?> multiCaret;
-    private MultiCaretController<?, ?, ?> multiCaret2;
+    private MultiCarets multiCaret;
+    private MultiCarets multiCaret2;
 
     /** IntelliJ-style Markdown preview modes (only meaningful for Markdown files). */
     public enum MarkdownViewMode {
@@ -461,6 +468,9 @@ public class EditorBuffer implements TabContent {
     private boolean loading;
     /** The most recently focused view (primary or secondary); drives "active area" for commands. */
     private CodeArea focusedArea = area;
+    /** {@link #focusedArea} as a value to observe, for what shows the caret of the view the user is in. */
+    private final javafx.beans.property.ReadOnlyObjectWrapper<CodeArea> focusedView =
+            new javafx.beans.property.ReadOnlyObjectWrapper<>(area);
     /** Floating Markdown format bar (lazily created), shown on a non-empty selection in a Markdown buffer. */
     private MarkdownFormatBar formatBar;
 
@@ -501,7 +511,7 @@ public class EditorBuffer implements TabContent {
     private javafx.scene.control.ContextMenu previewContextMenu;
     private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
-    private final SnippetSessions snippetSession = new SnippetSessions();
+    private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */
@@ -528,7 +538,7 @@ public class EditorBuffer implements TabContent {
     /** True only while {@link #moveLine} is updating the caret, so its own move doesn't reset the goal. */
     private boolean movingByLine;
 
-    private final Line columnRuler = new Line();
+    private final ColumnRuler columnRuler = new ColumnRuler(area);
     private final Minimap minimap = new Minimap(area);
     private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
@@ -845,6 +855,8 @@ public class EditorBuffer implements TabContent {
      *  horizontal scroll — the gutter, the font, wrap, the ruler column. Cleared by the measure. */
     private boolean rulerInputsDirty = true;
 
+    private final ColumnAdvance columnAdvance = new ColumnAdvance();
+
     /** Max undo entries kept per view; caps undo memory (RichTextFX defaults to unlimited). */
     private static final int UNDO_HISTORY = 300;
 
@@ -919,9 +931,11 @@ public class EditorBuffer implements TabContent {
 
     public EditorBuffer() {
         refreshGutter();
+        TabStops.apply(viewHost, tabSize); // JavaFX's own tab stop is 8 columns; ours starts at the default 4
         // Gutter click: route to the injectable handler (the controller adds, or confirms a removal);
         // defaults to a plain toggle so the editor works standalone (and in tests).
         folds.setBookmarkHooks(bookmarks::isBookmarked);
+        folds.setSplitViews(() -> focusedArea, () -> area2);
         // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot).
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
@@ -942,8 +956,9 @@ public class EditorBuffer implements TabContent {
         folds.setBreakpointHooks(
                 () -> debugEnabled,
                 breakpoints::isBreakpoint,
-                this::breakpointStyleClass,
+                breakpoints::styleClasses,
                 line -> gutterBreakpointClick.accept(this, line));
+        folds.setBreakpointTooltip(breakpoints::tooltip);
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
         // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
         folds.setBlameHooks(
@@ -965,7 +980,7 @@ public class EditorBuffer implements TabContent {
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         area.getStyleClass().add("editor-area");
         area.setWrapText(false);
-        area.setUndoManager(boundedUndoManager(area));
+        area.setUndoManager(boundedUndoManager());
         // Word/line-level undo: end the current undo group after an edit that finishes a word or line, so
         // one C-z undoes a word/line rather than the whole typing burst (the idle break is built into the
         // manager via UndoMerge.PAUSE). Subscribe AFTER setUndoManager so the manager records the change
@@ -1047,11 +1062,7 @@ public class EditorBuffer implements TabContent {
         // line, past the line-count heavy-file tier). The cheap getLength() check gates the full-text
         // compare so area.getText() is only built in the rare near-clean state, never while typing.
         // A log filter or followed append rewrites the area without being a user edit: dirty is carried over.
-        area.plainTextChanges()
-                .filter(c -> !logView.adjusting())
-                .subscribe(c -> dirty.set(forcedDirty
-                        || contentLength() != cleanText.length()
-                        || !getContent().equals(cleanText)));
+        area.plainTextChanges().filter(c -> !logView.adjusting()).subscribe(c -> dirty.set(differsFromSaved()));
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -1064,9 +1075,10 @@ public class EditorBuffer implements TabContent {
         area.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area;
+                focusedView.set(area);
             }
         });
-        installContextMenu();
+        installContextMenu(area);
         installFormatBarListeners(area);
         installSplitScrollSync();
         installOverlays();
@@ -1247,6 +1259,7 @@ public class EditorBuffer implements TabContent {
         a.selectionProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
+            selectionChanged.run();
         });
         a.estimatedScrollYProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
@@ -1629,8 +1642,10 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         CodeArea a = focusedArea != null ? focusedArea : area;
-        Commenter.Edit edit = Commenter.toggle(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), Commenter.styleFor(language));
+        // A collapsed header is commented together with its (then expanded) body.
+        int[] span = folds.expandHeaderSpan(
+                a.getSelection().getStart(), a.getSelection().getEnd());
+        Commenter.Edit edit = Commenter.toggle(a.getText(), span[0], span[1], Commenter.styleFor(language));
         if (edit == null) {
             return false;
         }
@@ -1897,7 +1912,9 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         String sel = a.getSelectedText();
         boolean fromSelection = sel != null && !sel.isBlank();
-        String csv = fromSelection ? sel : Clipboard.getSystemClipboard().getString();
+        String csv = fromSelection
+                ? sel
+                : LineEndings.toLf(Clipboard.getSystemClipboard().getString());
         if (csv == null || csv.isBlank()) {
             return false;
         }
@@ -2010,12 +2027,7 @@ public class EditorBuffer implements TabContent {
     }
 
     private void installOverlays() {
-        columnRuler.getStyleClass().add("column-ruler");
-        columnRuler.setManaged(false);
-        columnRuler.setMouseTransparent(true);
-        columnRuler.setStartY(0);
         columnRuler.endYProperty().bind(root.heightProperty());
-        columnRuler.setVisible(false);
         // Re-measure the ruler whenever the rendered text moves: horizontal scroll, and any layout
         // change (first paint, resize, vertical scroll, gutter widening). Always deferred via
         // runLater so we never query character bounds synchronously inside the layout pass — doing
@@ -2067,18 +2079,14 @@ public class EditorBuffer implements TabContent {
         spellOverlay.setChecker(spellChecker);
         spellOverlay.setProseMode(isProse());
         spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
-        installLintHover(area); // hover reads lintOverlay only while mermaid lint is active (lazily attached)
         anchorOverText(mdLintOverlay);
-        installMarkdownLintHover(area);
         installImageDrop(area);
-        installLspHover(area); // hover reads lspOverlay only while LSP is active (lazily attached)
         anchorOverText(inlineValues); // inline debugger values (active only while suspended in this file)
-        installDebugHover(area);
         anchorOverText(todoOverlay);
         anchorOverText(noteOverlay);
         noteOverlay.setSpans(notes::activeSpans);
         noteOverlay.setActive(true);
-        installNoteHover();
+        installPointerHovers(area);
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);
@@ -2112,18 +2120,25 @@ public class EditorBuffer implements TabContent {
     private record SpellHit(String word, int start, int end) {}
 
     private final ContextMenu contextMenu = new ContextMenu();
+    /** The view the context menu was last asked for: its items act where the user clicked, in either pane. */
+    private CodeArea menuView = area;
     /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
     private java.util.function.Supplier<List<MenuItem>> menuContributor;
     /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
     private java.util.function.Supplier<List<MenuItem>> buildMenuContributor;
 
-    private void installContextMenu() {
-        contextMenu.getStyleClass().add("editor-context-menu");
-        area.setOnContextMenuRequested(e -> {
+    private void installContextMenu(CodeArea a) {
+        contextMenu.getStyleClass().setAll("context-menu", "editor-context-menu");
+        a.setOnContextMenuRequested(e -> {
+            menuView = a;
+            a.requestFocus(); // "at the caret" items read the focused view
             List<MenuItem> items = new java.util.ArrayList<>();
-            // A JUnit test file runs/debugs the method at the caret (or the class from its declaration)
+            // First, and for every item below: one position the menu is about (and the caret moved to a
+            // right-click outside the selection), so Paste, Run Test, the LSP items and Add Bookmark agree.
+            ContextMenuTarget at = ContextMenuTarget.resolve(a, e, this::collapseCarets);
+            // A JUnit test file runs/debugs the method there (or the class from its declaration)
             // rather than offering generic "Run File"; anything else runnable keeps that generic action.
-            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAtCaret(false);
+            com.editora.test.JavaTestScanner.TestTarget testTarget = testTargetAt(at.line(), false);
             if (testTarget != null) {
                 boolean method = testTarget.methodName() != null;
                 MenuItem runTests = new MenuItem(tr(method ? "editmenu.runTestMethod" : "editmenu.runTests"));
@@ -2143,7 +2158,7 @@ public class EditorBuffer implements TabContent {
                 items.add(new SeparatorMenuItem());
             } else {
                 // A Java class with a project main() gets Run/Debug Main Class items (green ▶ + bug icon).
-                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAtCaret();
+                com.editora.run.MainMethodScanner.MainMethod mainTarget = mainTargetAt(at.line());
                 if (mainTarget != null) {
                     String simple = com.editora.test.TestSourceLocator.simpleName(mainTarget.fqn());
                     MenuItem runMain = new MenuItem(tr("editmenu.runMainClass", simple));
@@ -2157,11 +2172,9 @@ public class EditorBuffer implements TabContent {
                     items.add(new SeparatorMenuItem());
                 }
             }
-            // LSP navigation (only when this buffer is served by a language server). Move the caret to the
-            // right-clicked position first so go-to-definition/references/hover target that symbol.
+            // LSP navigation (only when this buffer is served by a language server), for the symbol there.
             if (lspActive) {
-                int clickOffset = clickOffsetAt(e.getX(), e.getY());
-                items.add(lspMenu(clickOffset));
+                items.add(lspMenu(at.offset()));
                 items.add(new SeparatorMenuItem());
             }
             // Beside the LSP submenu, not with the plugin-contributed items at the foot of the menu: both
@@ -2181,7 +2194,7 @@ public class EditorBuffer implements TabContent {
                 items.add(aiActionsMenu());
                 items.add(new SeparatorMenuItem());
             }
-            SpellHit hit = spellHitAt(e.getX(), e.getY());
+            SpellHit hit = spellHitAt(at.offset());
             if (hit != null) {
                 items.addAll(spellMenuItems(hit));
                 items.add(new SeparatorMenuItem());
@@ -2213,10 +2226,9 @@ public class EditorBuffer implements TabContent {
                 }
             }
             // Bookmarks: the gutter marker is display-only, so add/remove lives here (and in the palette).
-            // Acts on the right-clicked line, not the caret line, matching the LSP items above.
             if (path != null) {
                 items.add(new SeparatorMenuItem());
-                int clickedLine = clickLineAt(e.getX(), e.getY());
+                int clickedLine = at.line();
                 boolean marked = bookmarks.isBookmarked(clickedLine);
                 MenuItem bookmark = new MenuItem(tr(marked ? "editmenu.removeBookmark" : "editmenu.addBookmark"));
                 bookmark.setGraphic(MenuIcons.bookmark());
@@ -2225,21 +2237,21 @@ public class EditorBuffer implements TabContent {
             }
             if (path != null && notesEnabled) {
                 items.add(new SeparatorMenuItem());
-                boolean hasSelection = area.getSelection().getLength() > 0;
+                boolean hasSelection = a.getSelection().getLength() > 0;
                 MenuItem addNote = new MenuItem(tr(hasSelection ? "editmenu.addNoteSelection" : "editmenu.addNote"));
                 addNote.setGraphic(MenuIcons.note());
                 addNote.setOnAction(ev -> addNoteHandler.accept(this));
                 items.add(addNote);
             }
             contextMenu.getItems().setAll(items);
-            contextMenu.show(area, e.getScreenX(), e.getScreenY());
+            contextMenu.show(a, at.screenX(), at.screenY());
             e.consume();
         });
 
         // A left-click in the editor dismisses an open context menu. RichTextFX consumes the
         // mouse press before the popup's auto-hide fires, so close it explicitly. The event is
         // not consumed, so the click still positions the caret as usual.
-        area.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
+        a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
             if (contextMenu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
                 contextMenu.hide();
             }
@@ -2254,25 +2266,6 @@ public class EditorBuffer implements TabContent {
     /** Items placed immediately after the LSP submenu — see {@code installContextMenu}. */
     public void setBuildMenuContributor(java.util.function.Supplier<List<MenuItem>> contributor) {
         this.buildMenuContributor = contributor;
-    }
-
-    /** The document offset under a context-menu click (for caret-positioning LSP nav); caret if it misses. */
-    private int clickOffsetAt(double x, double y) {
-        try {
-            return area.hit(x, y).getInsertionIndex();
-        } catch (RuntimeException ex) {
-            return area.getCaretPosition();
-        }
-    }
-
-    /** The 0-based paragraph under a context-menu click (for the bookmark item); caret line if it misses. */
-    private int clickLineAt(double x, double y) {
-        try {
-            return area.offsetToPosition(clickOffsetAt(x, y), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
-                    .getMajor();
-        } catch (RuntimeException ex) {
-            return area.getCurrentParagraph();
-        }
     }
 
     /**
@@ -2299,7 +2292,7 @@ public class EditorBuffer implements TabContent {
 
     /** AI selection actions, grouped under one row while the effective enabled-and-connected gate is on. */
     private Menu aiActionsMenu() {
-        boolean hasSelection = area.getSelection().getLength() > 0;
+        boolean hasSelection = menuView.getSelection().getLength() > 0;
         MenuItem explain = new MenuItem(tr("command.ai.explainSelection"), MenuIcons.explain());
         explain.setDisable(!hasSelection);
         explain.setOnAction(e -> requestExplainSelection());
@@ -2320,62 +2313,29 @@ public class EditorBuffer implements TabContent {
     /** Go to Definition / Find References / Show Documentation — each moves the caret to {@code offset}
      *  first so it targets the right-clicked symbol, then runs the controller-supplied action. */
     private List<MenuItem> lspMenuItems(int offset) {
-        MenuItem def = new MenuItem(tr("command.lsp.gotoDefinition"));
-        def.setGraphic(MenuIcons.gotoDefinition());
-        def.setOnAction(e -> {
-            area.moveTo(offset);
-            lspGotoDefinitionAction.run();
-        });
-        MenuItem refs = new MenuItem(tr("command.lsp.findReferences"));
-        refs.setGraphic(MenuIcons.find());
-        refs.setOnAction(e -> {
-            area.moveTo(offset);
-            lspFindReferencesAction.run();
-        });
-        MenuItem hover = new MenuItem(tr("command.lsp.hover"));
-        hover.setGraphic(MenuIcons.about());
-        hover.setOnAction(e -> {
-            area.moveTo(offset);
-            lspHoverAction.run();
-        });
-        List<MenuItem> items = new java.util.ArrayList<>(List.of(def));
+        List<MenuItem> items = new java.util.ArrayList<>();
+        items.add(lspItem("command.lsp.gotoDefinition", MenuIcons.gotoDefinition(), offset, lspGotoDefinitionAction));
         if (lspImplementationAvailable) {
-            MenuItem impl = new MenuItem(tr("command.lsp.gotoImplementation"));
-            impl.setGraphic(MenuIcons.gotoImplementation());
-            impl.setOnAction(e -> {
-                area.moveTo(offset);
-                lspGotoImplementationAction.run();
-            });
-            items.add(impl);
+            items.add(lspItem(
+                    "command.lsp.gotoImplementation",
+                    MenuIcons.gotoImplementation(),
+                    offset,
+                    lspGotoImplementationAction));
         }
         if (lspTypeDefinitionAvailable) {
-            MenuItem typeDef = new MenuItem(tr("command.lsp.gotoTypeDefinition"));
-            typeDef.setGraphic(MenuIcons.gotoTypeDefinition());
-            typeDef.setOnAction(e -> {
-                area.moveTo(offset);
-                lspGotoTypeDefinitionAction.run();
-            });
-            items.add(typeDef);
+            items.add(lspItem(
+                    "command.lsp.gotoTypeDefinition",
+                    MenuIcons.gotoTypeDefinition(),
+                    offset,
+                    lspGotoTypeDefinitionAction));
         }
-        items.add(refs);
-        items.add(hover);
-        if (lspCodeActionsAvailable) {
-            MenuItem actions = new MenuItem(tr("command.lsp.codeActions"));
-            actions.setGraphic(MenuIcons.codeAction());
-            actions.setOnAction(e -> {
-                area.moveTo(offset); // quick fixes target the right-clicked spot
-                lspCodeActionsAction.run();
-            });
-            items.add(actions);
+        items.add(lspItem("command.lsp.findReferences", MenuIcons.find(), offset, lspFindReferencesAction));
+        items.add(lspItem("command.lsp.hover", MenuIcons.about(), offset, lspHoverAction));
+        if (lspCodeActionsAvailable) { // quick fixes target the right-clicked spot
+            items.add(lspItem("command.lsp.codeActions", MenuIcons.codeAction(), offset, lspCodeActionsAction));
         }
-        if (lspRenameAvailable) {
-            MenuItem rename = new MenuItem(tr("command.lsp.rename"));
-            rename.setGraphic(MenuIcons.rename());
-            rename.setOnAction(e -> {
-                area.moveTo(offset); // rename the right-clicked symbol
-                lspRenameAction.run();
-            });
-            items.add(rename);
+        if (lspRenameAvailable) { // rename the right-clicked symbol
+            items.add(lspItem("command.lsp.rename", MenuIcons.rename(), offset, lspRenameAction));
         }
         if (lspFormatAvailable) {
             MenuItem format = new MenuItem(tr("command.lsp.formatDocument"));
@@ -2384,6 +2344,16 @@ public class EditorBuffer implements TabContent {
             items.add(format);
         }
         return items;
+    }
+
+    private MenuItem lspItem(String titleKey, Node icon, int offset, Runnable action) {
+        MenuItem item = new MenuItem(tr(titleKey));
+        item.setGraphic(icon);
+        item.setOnAction(e -> {
+            menuView.moveTo(offset); // in the view that was right-clicked
+            action.run();
+        });
+        return item;
     }
 
     /** Markdown inline-format actions for the right-click menu (markdown buffers only). */
@@ -2494,47 +2464,39 @@ public class EditorBuffer implements TabContent {
     private List<MenuItem> standardMenuItems() {
         // Cut/Copy/Paste route through the multi-caret-aware path first (falling back to the native single-
         // caret op), so a box/column selection copies *every* caret's selection — matching the edit.cut/
-        // copy/paste commands. Without this, area.copy() only grabs the primary caret's row. A box selection
-        // makes copy/cut available even when the primary selection is empty (extra carets carry the rest).
-        boolean hasMulti = hasMultipleCarets();
-        boolean canCopy = area.getSelection().getLength() > 0 || hasMulti;
+        // copy/paste commands. Without this, copy() only grabs the primary caret's row. Like one caret,
+        // several carets with nothing selected at any of them have nothing to cut or copy here: the fork's
+        // multi-caret cut/copy would otherwise take their whole lines, whatever the "copy the line when
+        // nothing is selected" setting says (this menu never did that for a single caret either).
+        CodeArea view = menuView;
+        MultiCarets carets = view == area2 ? multiCaret2 : multiCaret;
+        boolean canCopy =
+                carets != null ? carets.anySelection() : view.getSelection().getLength() > 0;
         boolean editable = isEditable();
         boolean hasClipboardText = Clipboard.getSystemClipboard().hasString();
-        MenuItem cut = new MenuItem(tr("editmenu.cut"));
-        cut.setGraphic(MenuIcons.cut());
-        cut.setOnAction(e -> {
+        MenuItem cut = tableItem("editmenu.cut", MenuIcons.cut(), () -> {
             if (!multiCaretCut()) {
-                area.cut();
+                view.cut();
             }
         });
         cut.setDisable(!canCopy || !editable);
-        MenuItem copy = new MenuItem(tr("editmenu.copy"));
-        copy.setGraphic(MenuIcons.copy());
-        copy.setOnAction(e -> {
+        MenuItem copy = tableItem("editmenu.copy", MenuIcons.copy(), () -> {
             if (!multiCaretCopy()) {
-                area.copy();
+                view.copy();
             }
         });
         copy.setDisable(!canCopy);
-        MenuItem paste = new MenuItem(tr("editmenu.paste"));
-        paste.setGraphic(MenuIcons.paste());
-        paste.setOnAction(e -> {
+        MenuItem paste = tableItem("editmenu.paste", MenuIcons.paste(), () -> {
             if (!multiCaretPaste()) {
-                area.paste();
+                view.paste();
             }
         });
         paste.setDisable(!hasClipboardText || !editable);
-        MenuItem undo = new MenuItem(tr("editmenu.undo"));
-        undo.setGraphic(MenuIcons.undo());
-        undo.setOnAction(e -> area.undo());
-        undo.setDisable(!area.isUndoAvailable());
-        MenuItem redo = new MenuItem(tr("editmenu.redo"));
-        redo.setGraphic(MenuIcons.redo());
-        redo.setOnAction(e -> area.redo());
-        redo.setDisable(!area.isRedoAvailable());
-        MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
-        selectAll.setGraphic(MenuIcons.selectAll());
-        selectAll.setOnAction(e -> area.selectAll());
+        MenuItem undo = tableItem("editmenu.undo", MenuIcons.undo(), () -> undoOrRedo(view, false));
+        undo.setDisable(!view.isUndoAvailable());
+        MenuItem redo = tableItem("editmenu.redo", MenuIcons.redo(), () -> undoOrRedo(view, true));
+        redo.setDisable(!view.isRedoAvailable());
+        MenuItem selectAll = tableItem("editmenu.selectAll", MenuIcons.selectAll(), view::selectAll);
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
     }
 
@@ -2575,18 +2537,9 @@ public class EditorBuffer implements TabContent {
         return items;
     }
 
-    /** The misspelled word at editor coordinates {@code (x, y)}, or {@code null}. */
-    private SpellHit spellHitAt(double x, double y) {
+    /** The misspelled word at document {@code offset}, or {@code null}. */
+    private SpellHit spellHitAt(int offset) {
         if (!spellCheckOn || spellChecker == null || !spellChecker.ready() || largeFile) {
-            return null;
-        }
-        int offset;
-        try {
-            offset = area.hit(x, y).getInsertionIndex();
-        } catch (RuntimeException ex) {
-            return null;
-        }
-        if (offset < 0 || offset > area.getLength()) {
             return null;
         }
         var pos = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
@@ -2649,13 +2602,30 @@ public class EditorBuffer implements TabContent {
         return focusedArea;
     }
 
+    /** The split's second view while the split is shown, else null. */
+    public CodeArea getSplitView() {
+        return split == Split.NONE ? null : area2;
+    }
+
+    public javafx.beans.property.ReadOnlyObjectProperty<CodeArea> focusedAreaProperty() {
+        return focusedView.getReadOnlyProperty();
+    }
+
+    private Runnable selectionChanged = () -> {};
+
+    /** Runs {@code listener} when the selection of either view changes, or the other view comes into use. */
+    public void onSelectionChanged(Runnable listener) {
+        selectionChanged = listener;
+        focusedView.addListener((obs, was, now) -> listener.run());
+    }
+
     // --- Lazily-attached feature overlays --------------------------------------------------------------
     // These overlays are inert for most buffers (LSP off, not a diagram, not a log, never searched/ace-jumped),
     // so they are built + wired only on first activation rather than per buffer. Each is inserted just below a
     // fixed eager sibling to preserve the z-order of the original construction.
 
     /** Marks a node anchored by {@link #anchorOverText}, so {@link #setMinimapVisible} can find them all. */
-    private static final String OVER_TEXT = "editora.overText";
+    private static final String OVER_TEXT = SecondaryPane.OVER_TEXT;
 
     /**
      * Anchors {@code overlay} over the text rectangle — exactly the scroll pane's, whatever the minimap is
@@ -2677,10 +2647,9 @@ public class EditorBuffer implements TabContent {
         if (idx < 0) {
             idx = root.getChildren().indexOf(minimap); // fallback: just under the minimap
         }
-        if (idx < 0) {
-            root.getChildren().add(overlay);
-        } else {
-            root.getChildren().add(idx, overlay);
+        root.getChildren().add(idx < 0 ? root.getChildren().size() : idx, overlay);
+        if (pane2 != null) {
+            pane2.follow(root.getChildren()); // the split's second view gets its twin
         }
         return overlay;
     }
@@ -2962,9 +2931,7 @@ public class EditorBuffer implements TabContent {
     /** Shows or hides a second, synced view of this document beside ({@code SIDE_BY_SIDE}) or below it. */
     public void setSplit(Split orientation) {
         this.split = orientation;
-        if (orientation == Split.NONE) {
-            focusedArea = area;
-        } else {
+        if (orientation != Split.NONE) {
             this.markdownViewMode = MarkdownViewMode.EDITOR; // a code split supersedes the Markdown preview
             ensureSecondaryView();
         }
@@ -3597,6 +3564,7 @@ public class EditorBuffer implements TabContent {
                 java.util.List<java.io.File> images =
                         db.getFiles().stream().filter(EditorBuffer::isImageFile).toList();
                 if (!images.isEmpty()) {
+                    caretToDrop(a, e);
                     imageDropHandler.accept(images);
                     e.setDropCompleted(true);
                     e.consume();
@@ -3607,12 +3575,20 @@ public class EditorBuffer implements TabContent {
                 String url = webImageUrl(db);
                 javafx.scene.image.Image img = db.hasImage() ? db.getImage() : null;
                 if (url != null || img != null) {
+                    caretToDrop(a, e);
                     webImageDropHandler.accept(img, url);
                     e.setDropCompleted(true);
                     e.consume();
                 }
             }
         });
+    }
+
+    /** A drop lands under the pointer, in the view it was dropped on — a window dragged into has no focus yet. */
+    private void caretToDrop(CodeArea a, javafx.scene.input.DragEvent e) {
+        focusedArea = a;
+        focusedView.set(a);
+        EditorMouse.moveCaretToDrop(a, e.getX(), e.getY());
     }
 
     private static boolean hasImageFile(java.util.List<java.io.File> files) {
@@ -3873,10 +3849,13 @@ public class EditorBuffer implements TabContent {
     /** The project {@code main} entry point at (or nearest above) the caret, else the file's first main, else
      *  {@code null} — backs the editor right-click Run/Debug Main Class items. */
     public com.editora.run.MainMethodScanner.MainMethod mainTargetAtCaret() {
+        return mainTargetAt(focusedArea.getCurrentParagraph());
+    }
+
+    private com.editora.run.MainMethodScanner.MainMethod mainTargetAt(int caret) {
         if (mainLines.isEmpty()) {
             return null;
         }
-        int caret = area.getCurrentParagraph();
         com.editora.run.MainMethodScanner.MainMethod best = null;
         for (var e : mainLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
@@ -3905,7 +3884,10 @@ public class EditorBuffer implements TabContent {
      * a test class.
      */
     public com.editora.test.JavaTestScanner.TestTarget testTargetAtCaret(boolean classLevel) {
-        int caret = area.getCurrentParagraph();
+        return testTargetAt(focusedArea.getCurrentParagraph(), classLevel);
+    }
+
+    private com.editora.test.JavaTestScanner.TestTarget testTargetAt(int caret, boolean classLevel) {
         com.editora.test.JavaTestScanner.TestTarget best = null;
         for (var e : testLines.entrySet()) {
             if (e.getKey() <= caret && (best == null || e.getKey() > best.line())) {
@@ -4450,10 +4432,10 @@ public class EditorBuffer implements TabContent {
 
     // --- Debugger editor surfaces: inline values + hover value tooltip --------------------------
 
-    /** While suspended: the frame's variable name → value map painted as grey end-of-line
-     *  annotations on visible lines that mention them; null/empty clears (resume/terminate). */
-    public void setInlineValues(java.util.Map<String, String> values) {
-        inlineValues.setValues(hugeFile ? null : values);
+    /** While suspended: the frame's variable name → value map painted as grey end-of-line annotations on the
+     *  visible lines of the function stopped at {@code frameLine}; null/empty clears (resume/terminate). */
+    public void setInlineValues(java.util.Map<String, String> values, int frameLine) {
+        inlineValues.setValues(hugeFile ? null : values, frameLine);
     }
 
     /** IntelliJ-style blame "Annotate" gutter column: per-0-based-line annotations (null/empty clears it).
@@ -4461,7 +4443,11 @@ public class EditorBuffer implements TabContent {
      *  stays git-free. Off on huge files. Computes the fixed column width from the widest author+date, then
      *  rebuilds the gutter so the column appears/disappears. */
     public void setBlame(java.util.List<BlameInfo> lines) {
-        this.blameLines = (hugeFile || lines == null || lines.isEmpty()) ? null : java.util.List.copyOf(lines);
+        var next = (hugeFile || lines == null || lines.isEmpty()) ? null : java.util.List.copyOf(lines);
+        if (java.util.Objects.equals(next, blameLines)) {
+            return; // every git refresh comes through here, mostly with nothing: no gutter rebuild for that
+        }
+        this.blameLines = next;
         this.blameColumnWidth = blameLines == null ? 0 : measureBlameColumnWidth(blameLines);
         refreshGutter();
     }
@@ -4506,7 +4492,7 @@ public class EditorBuffer implements TabContent {
 
     /** The commit hash that last touched the caret line (for "show this commit"), or null. */
     public String blameHashAtCaret() {
-        return blameHashAt(area.getCurrentParagraph());
+        return blameHashAt(focusedArea.getCurrentParagraph());
     }
 
     /** Async evaluator injected by the controller (DAP {@code evaluate} with context "hover"):
@@ -4807,16 +4793,10 @@ public class EditorBuffer implements TabContent {
         if (!abbrevMode || applyingAbbrev || hugeFile || !isEditable() || abbrevTable.isEmpty()) {
             return;
         }
-        if (!c.getRemoved().isEmpty() || c.getInserted().length() != 1) {
-            return;
+        if (!c.getRemoved().isEmpty() || !com.editora.editops.Abbrev.terminates(c.getInserted())) {
+            return; // not a typed terminator (still inside a word, or a paste)
         }
-        char typed = c.getInserted().charAt(0);
-        if (Character.isLetterOrDigit(typed)) {
-            return; // still inside a word — nothing has terminated yet
-        }
-        if (hasActiveSnippet()
-                || area.getUndoManager().isPerformingAction()
-                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
+        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
             return;
         }
         CodeArea a = getFocusedArea();
@@ -4835,7 +4815,7 @@ public class EditorBuffer implements TabContent {
         }
         int from = windowStart + edit.from();
         int to = windowStart + edit.to();
-        int caret = a.getCaretPosition();
+        int caret = caretPast(a, c);
         int delta = edit.replacement().length() - (to - from);
         applyingAbbrev = true;
         try {
@@ -4846,8 +4826,19 @@ public class EditorBuffer implements TabContent {
         // The edit lies before the caret (the terminator we just typed), so shift the caret by the length
         // change. Deferred for the same reason as auto-fill: RichTextFX re-applies the triggering
         // insertion's caret after this subscriber returns, which would otherwise mis-place it.
-        int restored = caret + delta;
-        javafx.application.Platform.runLater(() -> a.moveTo(Math.max(0, Math.min(restored, a.getLength()))));
+        // Enter-with-indent and an auto-closed pair place their own caret once this returns (after the
+        // indent, between the pair), so for those it is read back then rather than predicted now.
+        boolean oneChar = c.getInserted().length() == 1;
+        javafx.application.Platform.runLater(
+                () -> a.moveTo(Math.clamp((oneChar ? caret : a.getCaretPosition()) + delta, 0, a.getLength())));
+    }
+
+    /**
+     * {@code a}'s caret once it is past the just-typed {@code c}. The split's second view moves its caret
+     * only after this buffer's change listeners have run, so there it is still in front of the character.
+     */
+    private static int caretPast(CodeArea a, org.fxmisc.richtext.model.PlainTextChange c) {
+        return a.getCaretPosition() == c.getPosition() ? c.getInsertionEnd() : a.getCaretPosition();
     }
 
     private void maybeAutoFill(org.fxmisc.richtext.model.PlainTextChange c) {
@@ -4862,9 +4853,7 @@ public class EditorBuffer implements TabContent {
                 || c.getInserted().charAt(0) == '\n') {
             return;
         }
-        if (hasActiveSnippet()
-                || area.getUndoManager().isPerformingAction()
-                || (area2 != null && area2.getUndoManager().isPerformingAction())) {
+        if (hasActiveSnippet() || area.getUndoManager().isPerformingAction()) {
             return;
         }
         CodeArea a = getFocusedArea();
@@ -4876,14 +4865,15 @@ public class EditorBuffer implements TabContent {
         if (line.length() <= fillColumn) {
             return;
         }
-        String prefix = com.editora.editops.Filler.fillPrefix(
-                line, com.editora.editops.Commenter.styleFor(getLanguage()).line());
-        com.editora.editops.AutoFill.Break brk = com.editora.editops.AutoFill.compute(line, fillColumn, prefix);
+        com.editora.editops.AutoFill.Break brk = com.editora.editops.AutoFill.computeProse(
+                line,
+                fillColumn,
+                com.editora.editops.Commenter.styleFor(getLanguage()).line());
         if (brk == null) {
             return;
         }
         int lineStart = a.getAbsolutePosition(par, 0);
-        int caret = a.getCaretPosition();
+        int caret = caretPast(a, c);
         int delta = brk.insert().length() - brk.removeLen();
         int end = lineStart + brk.at() + brk.removeLen();
         int restored = caret >= end ? caret + delta : caret; // the user's caret, shifted past the inserted prefix
@@ -5336,7 +5326,7 @@ public class EditorBuffer implements TabContent {
     // --- Multiple cursors + column/box selection (RichTextFX fork) -------------------------------
 
     /**
-     * Enables/disables the multi-caret add-on. When on, installs {@link MultiCaretController} on the
+     * Enables/disables the multi-caret add-on. When on, installs {@link MultiCarets} on the
      * primary area (and the secondary split view if present); when off, removes it (collapsing to one
      * caret). Skipped for huge files (editing is already inert there). Idempotent.
      */
@@ -5344,10 +5334,10 @@ public class EditorBuffer implements TabContent {
         this.multiCaretEnabled = enabled;
         if (enabled && !hugeFile) {
             if (multiCaret == null) {
-                multiCaret = MultiCaretController.install(area);
+                multiCaret = MultiCarets.install(area, this::tabEdit);
             }
             if (area2 != null && multiCaret2 == null) {
-                multiCaret2 = MultiCaretController.install(area2);
+                multiCaret2 = MultiCarets.install(area2, this::tabEdit);
             }
         } else {
             disposeMultiCaret();
@@ -5365,24 +5355,46 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** The multi-caret manager for the area that currently has focus (secondary split view, else primary),
-     *  or null when the add-on isn't installed. */
-    private org.fxmisc.richtext.multi.MultiCaretManager<?, ?, ?> activeManager() {
-        if (multiCaret2 != null && area2 != null && area2.isFocused()) {
-            return multiCaret2.getManager();
+    /** The multi-caret add-on of the area that has focus (secondary split view, else primary), or null. */
+    private MultiCarets activeCarets() {
+        return multiCaret2 != null && area2 != null && area2.isFocused() ? multiCaret2 : multiCaret;
+    }
+
+    /** Runs {@code op} on {@link #activeCarets()} when it has extra carets; false → the single-caret path. */
+    private boolean withExtras(java.util.function.Consumer<MultiCarets> op) {
+        MultiCarets m = activeCarets();
+        if (m == null || !m.hasExtras()) {
+            return false;
         }
-        return multiCaret == null ? null : multiCaret.getManager();
+        op.accept(m);
+        return true;
     }
 
     /** True while any area of this buffer has more than the primary caret (extra carets / box selection). */
     public boolean hasMultipleCarets() {
-        return (multiCaret != null && multiCaret.getManager().hasExtras())
-                || (multiCaret2 != null && multiCaret2.getManager().hasExtras());
+        return (multiCaret != null && multiCaret.hasExtras()) || (multiCaret2 != null && multiCaret2.hasExtras());
+    }
+
+    /** Whether any caret of the focused area, primary or extra, has text selected. */
+    public boolean anyCaretSelection() {
+        MultiCarets m = activeCarets();
+        return m != null ? m.anySelection() : getFocusedArea().getSelection().getLength() > 0;
+    }
+
+    /** Undo ({@code redo == false}) or Redo on {@code a}; extra carets keep their places and stay usable. */
+    public void undoOrRedo(CodeArea a, boolean redo) {
+        MultiCarets m = a == area2 ? multiCaret2 : multiCaret;
+        Runnable op = redo ? a::redo : a::undo;
+        if (m == null) {
+            op.run();
+        } else {
+            m.keepingPrimary(op);
+        }
     }
 
     /** Selects the next occurrence of the current selection as an additional caret (VS Code Cmd/Ctrl+D). */
     public void addCaretNextOccurrence() {
-        var m = activeManager();
+        MultiCarets m = activeCarets();
         if (m != null) {
             m.addNextOccurrence();
         }
@@ -5403,13 +5415,13 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int primaryIdx = com.editora.editops.SelectOccurrences.primaryIndex(ranges, anchorStart);
         int[] primary = ranges.get(primaryIdx);
-        var mgr = activeManager();
-        if (mgr == null) { // multi-caret unavailable → just select the primary occurrence
+        MultiCarets carets = activeCarets();
+        if (carets == null) { // multi-caret unavailable → just select the primary occurrence
             a.selectRange(primary[0], primary[1]);
             a.requestFollowCaret();
             return 1;
         }
-        mgr.collapseToPrimary();
+        carets.collapse();
         a.selectRange(primary[0], primary[1]);
         int placed = 1;
         for (int i = 0; i < ranges.size() && placed < MAX_OCCURRENCE_CARETS; i++) {
@@ -5417,7 +5429,7 @@ public class EditorBuffer implements TabContent {
                 continue;
             }
             int[] r = ranges.get(i);
-            mgr.addCaretWithSelection(r[0], r[1]);
+            carets.getManager().addCaretWithSelection(r[0], r[1]);
             placed++;
         }
         a.requestFollowCaret();
@@ -5427,7 +5439,7 @@ public class EditorBuffer implements TabContent {
     /**
      * Selects every occurrence of the current selection (or, with none, the word under the caret) as a
      * multi-caret selection — VS Code's {@code selectHighlights} (Ctrl+Shift+L). Case-sensitive literal
-     * matching. Returns the number of carets placed (0 when there's nothing to match).
+     * matching (whole-word when seeded from the caret's word). Returns the number of carets placed (0 when there's nothing to match).
      */
     public int selectAllOccurrences() {
         CodeArea a = focusedArea != null ? focusedArea : area;
@@ -5446,23 +5458,25 @@ public class EditorBuffer implements TabContent {
             query = text.substring(w[0], w[1]);
             anchor = w[0];
         }
-        List<int[]> matches = SearchMatcher.matches(text, query, true, false, false);
+        // A query seeded from the word under a bare caret matches whole words only (id, not valid / width).
+        List<int[]> matches = SearchMatcher.matches(text, query, true, false, sel.isEmpty());
         return placeOccurrenceCarets(matches, anchor);
     }
 
-    /** Adds a caret on the line above the (primary) caret. */
+    /** Adds a caret on the line above the topmost caret. */
     public void addCaretAbove() {
-        var m = activeManager();
-        if (m != null) {
-            m.addCaretLineUpDown(false);
-        }
+        addCaretOnNextLine(false);
     }
 
-    /** Adds a caret on the line below the (primary) caret. */
+    /** Adds a caret on the line below the bottommost caret. */
     public void addCaretBelow() {
-        var m = activeManager();
+        addCaretOnNextLine(true);
+    }
+
+    private void addCaretOnNextLine(boolean down) {
+        MultiCarets m = activeCarets();
         if (m != null) {
-            m.addCaretLineUpDown(true);
+            m.addCaretOnNextLine(down);
         }
     }
 
@@ -5475,32 +5489,17 @@ public class EditorBuffer implements TabContent {
 
     /** Moves every caret horizontally by {@code amount} chars (or words); see {@link #addCaretBelow}. */
     public boolean multiMoveHorizontal(int amount, boolean byWord, boolean select) {
-        var m = activeManager();
-        if (m != null && m.hasExtras()) {
-            m.moveHorizontal(amount, byWord, select);
-            return true;
-        }
-        return false;
+        return withExtras(m -> m.moveHorizontal(amount, byWord, select));
     }
 
     /** Moves every caret one line up ({@code down=false}) or down. */
     public boolean multiMoveVertical(boolean down, boolean select) {
-        var m = activeManager();
-        if (m != null && m.hasExtras()) {
-            m.moveVertical(down, select);
-            return true;
-        }
-        return false;
+        return withExtras(m -> m.moveVertical(down, select));
     }
 
     /** Moves every caret to its line start ({@code toEnd=false}) or line end. */
     public boolean multiMoveLineBoundary(boolean toEnd, boolean select) {
-        var m = activeManager();
-        if (m != null && m.hasExtras()) {
-            m.moveLineBoundary(toEnd, select);
-            return true;
-        }
-        return false;
+        return withExtras(m -> m.moveLineBoundary(toEnd, select));
     }
 
     /** True when {@code a} currently has extra carets, so this buffer's single-caret KEY filters
@@ -5508,10 +5507,10 @@ public class EditorBuffer implements TabContent {
      *  multi-caret input map handle the key for every caret. */
     private boolean multiCaretActiveOn(CodeArea a) {
         if (a == area) {
-            return multiCaret != null && multiCaret.getManager().hasExtras();
+            return multiCaret != null && multiCaret.hasExtras();
         }
         if (a == area2) {
-            return multiCaret2 != null && multiCaret2.getManager().hasExtras();
+            return multiCaret2 != null && multiCaret2.hasExtras();
         }
         return false;
     }
@@ -5519,32 +5518,17 @@ public class EditorBuffer implements TabContent {
     /** Copies every caret's selection to the clipboard (VS Code one-line-per-caret) when extra carets
      *  exist; returns whether it handled it (so the caller can fall back to the single-caret copy). */
     public boolean multiCaretCopy() {
-        var m = activeManager();
-        if (m != null && m.hasExtras()) {
-            m.copy();
-            return true;
-        }
-        return false;
+        return withExtras(m -> m.copy());
     }
 
     /** Cuts every caret's selection (multi-caret aware); returns whether it handled it. */
     public boolean multiCaretCut() {
-        var m = activeManager();
-        if (m != null && m.hasExtras()) {
-            m.cut();
-            return true;
-        }
-        return false;
+        return withExtras(m -> m.cut());
     }
 
     /** Pastes at every caret (distributing clipboard lines one per caret); returns whether it handled it. */
     public boolean multiCaretPaste() {
-        var m = activeManager();
-        if (m != null && m.hasExtras()) {
-            m.paste();
-            return true;
-        }
-        return false;
+        return withExtras(m -> m.paste());
     }
 
     /** Puts the whole current line (including a trailing newline) on the clipboard — the empty-selection
@@ -5552,42 +5536,23 @@ public class EditorBuffer implements TabContent {
     public void copyCurrentLine() {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int p = a.getCurrentParagraph();
-        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(a.getParagraph(p).getText() + "\n");
-        Clipboard.getSystemClipboard().setContent(content);
+        LineClipboard.copy(a, p, folds.hiddenRunEnd(p)); // a collapsed fold's header takes its body along
     }
 
-    /** Cuts the whole current line — copies it (with a trailing newline) then deletes the line as one
-     *  undoable edit (the empty-selection Cut of VS Code's {@code editor.emptySelectionClipboard}). */
+    /** Cuts the whole current line — copies it then deletes the line as one undoable edit. */
     public void cutCurrentLine() {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int p = a.getCurrentParagraph();
-        javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-        content.putString(a.getParagraph(p).getText() + "\n");
-        Clipboard.getSystemClipboard().setContent(content);
-        int total = a.getParagraphs().size();
-        int start;
-        int end;
-        if (p < total - 1) { // not the last line: take this line plus its trailing newline
-            start = a.getAbsolutePosition(p, 0);
-            end = a.getAbsolutePosition(p + 1, 0);
-        } else if (total > 1) { // last line: take the preceding newline plus this line
-            start = a.getAbsolutePosition(p - 1, a.getParagraph(p - 1).length());
-            end = a.getAbsolutePosition(p, a.getParagraph(p).length());
-        } else { // only line in the buffer: clear it
-            start = 0;
-            end = a.getLength();
-        }
-        a.deleteText(start, end);
+        LineClipboard.cut(a, p, folds.hiddenRunEnd(p));
     }
 
     /** Collapses any extra carets / box selection back to a single caret. */
     public void collapseCarets() {
         if (multiCaret != null) {
-            multiCaret.getManager().collapseToPrimary();
+            multiCaret.collapse();
         }
         if (multiCaret2 != null) {
-            multiCaret2.getManager().collapseToPrimary();
+            multiCaret2.collapse();
         }
     }
 
@@ -5959,7 +5924,20 @@ public class EditorBuffer implements TabContent {
             attachControlToCodePane();
             content = root;
         }
+        boolean hadFocus = area2 != null && area2.isFocused(); // leaving a split takes that view off the scene
+        int top2 = hadFocus ? ScrollAnchor.firstVisibleLine(area2) : -1;
         viewHost.getChildren().setAll(content);
+        if (area2 != null && (split == Split.NONE || markdownViewMode != MarkdownViewMode.EDITOR)) {
+            focusedArea = area;
+            focusedView.set(area);
+            if (hadFocus) {
+                // The user was looking at the second view: the one that stays takes over its caret, its
+                // selection and its place in the file, and the keyboard (or JavaFX hands that to the first
+                // control in the window).
+                ScrollAnchor.adopt(area, area2, top2);
+                area.requestFocus();
+            }
+        }
     }
 
     /**
@@ -6530,12 +6508,14 @@ public class EditorBuffer implements TabContent {
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
     private void ensureSecondaryView() {
         if (area2 != null) {
+            refreshGutter(); // marks and folds changed while it was off screen
             return;
         }
         area2 = tagRename.newArea(area.getContent()); // shares the EditableStyledDocument
         area2.getStyleClass().add("editor-area");
-        area2.setWrapText(false);
-        area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
+        area2.wrapTextProperty().bind(area.wrapTextProperty()); // one Word Wrap setting, two views
+        area2.setLineHighlighterOn(area.isLineHighlighterOn());
+        area2.setUndoManager(area.getUndoManager()); // one history for the shared document
         area2.setEditable(area.isEditable());
         addViewModePaging(area2); // same pager keys in the secondary split view
         completionActions.addCompletionKeys(area2);
@@ -6547,10 +6527,10 @@ public class EditorBuffer implements TabContent {
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installImageDrop(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
-            multiCaret2 = MultiCaretController.install(area2); // same multi-caret add-on in the split view
+            multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
         }
         area2.setLineHighlighterFill(lineHighlightColor);
-        area2.setParagraphGraphicFactory(LineNumberFactory.get(area2));
+        refreshGutter();
         area2.setStyle("-fx-font-family: \"" + fontFamily + "\"; -fx-font-size: " + fontSize + "px;");
         area2.caretPositionProperty().addListener((obs, old, now) -> {
             resetGoalColumn();
@@ -6559,21 +6539,18 @@ public class EditorBuffer implements TabContent {
         area2.focusedProperty().addListener((obs, was, now) -> {
             if (now) {
                 focusedArea = area2;
+                focusedView.set(area2);
             }
         });
         installFormatBarListeners(area2);
+        installContextMenu(area2);
         scrollPane2 = new VirtualizedScrollPane<>(area2);
         // Give the secondary view its own minimap (tracks this pane's viewport), docked like the primary.
-        minimap2 = new Minimap(area2);
-        minimap2.setTabSize(tabSize);
-        minimap2.setColors(minimapText, minimapViewport);
-        root2 = new AnchorPane(scrollPane2, minimap2);
-        AnchorPane.setTopAnchor(scrollPane2, 0d);
-        AnchorPane.setBottomAnchor(scrollPane2, 0d);
-        AnchorPane.setLeftAnchor(scrollPane2, 0d);
-        AnchorPane.setTopAnchor(minimap2, 0d);
-        AnchorPane.setBottomAnchor(minimap2, 0d);
-        AnchorPane.setRightAnchor(minimap2, 0d);
+        minimap2 = minimap.follower(area2);
+        pane2 = new SecondaryPane(area2, scrollPane2, minimap2, scrollPane, minimap);
+        root2 = pane2.root();
+        pane2.follow(root.getChildren()); // the same overlays and stripes as pane 1, in the same stack
+        installPointerHovers(area2);
         applyMinimap(scrollPane2, minimap2, minimapVisible && !largeFile && !heavyFile);
     }
 
@@ -6617,28 +6594,19 @@ public class EditorBuffer implements TabContent {
         if (visible) {
             markRulerInputsDirty();
         } else {
-            columnRuler.setVisible(false);
+            columnRuler.place(null, 0);
         }
     }
 
-    /** A fixed-size undo manager so undo history can't grow without bound. */
-    private static UndoManager<?> boundedUndoManager(CodeArea a) {
-        UndoManagerFactory factory = new CompletionUndoFactory(UNDO_HISTORY);
-        // Pass UndoMerge.PAUSE as the preventMergeDelay: edits more than that apart start a new undo
-        // group (idle break), giving word/line-level undo together with the token break below.
-        return a.isPreserveStyle()
-                ? UndoUtils.richTextUndoManager(a, factory, UndoMerge.PAUSE)
-                : UndoUtils.plainTextUndoManager(a, factory, UndoMerge.PAUSE);
+    /** The document's fixed-size undo history (bounded, so it can't grow without limit), shared by both views. */
+    private UndoManager<?> boundedUndoManager() {
+        return CompletionUndoFactory.forDocument(area, () -> focusedArea, UNDO_HISTORY, UndoMerge.PAUSE);
     }
 
     /** Ends the current undo group at a word/line boundary (see {@link UndoMerge}); no-op for huge files. */
     private void breakUndoGroupIfBoundary(String inserted, String removed) {
-        if (largeFile || !UndoMerge.breakAfter(inserted, removed)) {
-            return;
-        }
-        area.getUndoManager().preventMerge();
-        if (area2 != null) {
-            area2.getUndoManager().preventMerge(); // the split views share the document + each record it
+        if (!largeFile && UndoMerge.breakAfter(inserted, removed)) {
+            area.getUndoManager().preventMerge();
         }
     }
 
@@ -6687,6 +6655,9 @@ public class EditorBuffer implements TabContent {
     /** Toggle the highlight on the line containing the caret. */
     public void setLineHighlightOn(boolean on) {
         area.setLineHighlighterOn(on);
+        if (area2 != null) {
+            area2.setLineHighlighterOn(on);
+        }
     }
 
     /** Sets the current-line highlight color (varies per editor theme; not stylable via CSS). */
@@ -6706,9 +6677,6 @@ public class EditorBuffer implements TabContent {
     /** Forces the minimap(s) to re-render (after layout/theme settle; the first render may run early). */
     public void refreshMinimap() {
         minimap.refresh();
-        if (minimap2 != null) {
-            minimap2.refresh();
-        }
     }
 
     /**
@@ -6724,9 +6692,6 @@ public class EditorBuffer implements TabContent {
             scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
         }
         minimap.setRenderingActive(active);
-        if (minimap2 != null) {
-            minimap2.setRenderingActive(active);
-        }
         // The full-viewport overlays that are on by default keep a Canvas + RTTexture alive for a tab the
         // user cannot see; only the minimap used to be released here. The stripes are narrow (small
         // textures) and the remaining overlays are already 1x1 whenever their feature is off, so these
@@ -6759,9 +6724,6 @@ public class EditorBuffer implements TabContent {
         this.minimapText = text;
         this.minimapViewport = viewport;
         minimap.setColors(text, viewport);
-        if (minimap2 != null) {
-            minimap2.setColors(text, viewport);
-        }
     }
 
     /** Show/hide the line-number gutter. The fold-chevron column is always present. */
@@ -6789,18 +6751,18 @@ public class EditorBuffer implements TabContent {
         noteOverlay.refresh();
         area.setParagraphGraphicFactory(gutterVisible ? folds.gutterFactory(lineNumbersVisible) : null);
         applyNoGutterStyle(area);
-        if (area2 != null) {
-            area2.setParagraphGraphicFactory(gutterVisible ? LineNumberFactory.get(area2) : null);
+        if (area2 != null) { // the same gutter: fold chevrons, bookmark, breakpoint and run markers
+            area2.setParagraphGraphicFactory(area.getParagraphGraphicFactory());
             applyNoGutterStyle(area2);
         }
     }
 
-    /** With no gutter (Simple UI mode) the text would sit flush against the editor's left edge; the
-     *  {@code .no-gutter} class adds a small left padding so it doesn't. The gutter itself supplies that
-     *  inset when present, so the class is removed then. */
+    /** With no gutter (Simple UI mode; a second view without line numbers) the text would sit flush against
+     *  the editor's left edge; the {@code .no-gutter} class adds a small left padding so it doesn't. The
+     *  gutter itself supplies that inset when present, so the class is removed then. */
     private void applyNoGutterStyle(CodeArea a) {
         a.getStyleClass().remove("no-gutter");
-        if (!gutterVisible) {
+        if (a.getParagraphGraphicFactory() == null) {
             a.getStyleClass().add("no-gutter");
         }
     }
@@ -6869,6 +6831,9 @@ public class EditorBuffer implements TabContent {
     public void refreshGutterLine(int line) {
         if (line >= 0 && line < area.getParagraphs().size()) {
             area.recreateParagraphGraphic(line);
+            if (area2 != null && split != Split.NONE) {
+                area2.recreateParagraphGraphic(line); // the split's second view shows the same markers
+            }
         }
     }
 
@@ -6940,46 +6905,22 @@ public class EditorBuffer implements TabContent {
         return reanchored;
     }
 
-    /** 0-based line currently highlighted as the debugger's execution point, or -1 when none. */
-    private int executionLine = -1;
+    /** The debugger's execution-point highlight (see {@link ExecutionLine}). */
+    private final ExecutionLine executionLine = new ExecutionLine();
 
     /**
      * Marks {@code line} as the current execution point (a distinct paragraph background) and scrolls/moves
      * the caret there so the built-in current-line highlight reinforces it. Clears any previous mark.
      */
     public void setExecutionLine(int line) {
-        clearExecutionLine();
-        if (line >= 0 && line < area.getParagraphs().size()) {
-            executionLine = line;
-            area.setParagraphStyle(line, java.util.List.of("exec-line"));
+        if (executionLine.set(area, folds, line)) {
             jumpToLine(line);
         }
     }
 
     /** Removes the execution-point highlight (if any). */
     public void clearExecutionLine() {
-        if (executionLine >= 0 && executionLine < area.getParagraphs().size()) {
-            area.setParagraphStyle(executionLine, java.util.Collections.emptyList());
-        }
-        executionLine = -1;
-    }
-
-    /** The extra glyph CSS-class suffix for the breakpoint on {@code line} (disabled/logpoint/conditional). */
-    private String breakpointStyleClass(int line) {
-        com.editora.config.Breakpoint bp = breakpoints.get(line);
-        if (bp == null) {
-            return null;
-        }
-        if (!bp.enabled()) {
-            return "disabled";
-        }
-        if (bp.isLogpoint()) {
-            return "logpoint";
-        }
-        if (bp.isConditional()) {
-            return "conditional";
-        }
-        return null;
+        executionLine.clear(area);
     }
 
     // ---- Personal Notes ----
@@ -7028,23 +6969,24 @@ public class EditorBuffer implements TabContent {
      */
     public NoteDraft captureNoteDraft() {
         org.fxmisc.richtext.model.TwoDimensional.Bias fwd = org.fxmisc.richtext.model.TwoDimensional.Bias.Forward;
-        String doc = area.getText();
-        var sel = area.getSelection();
+        CodeArea a = focusedArea; // the view the user is in
+        String doc = a.getText();
+        var sel = a.getSelection();
         if (sel.getLength() > 0) {
             int start = sel.getStart();
             int end = sel.getEnd();
-            var sp = area.offsetToPosition(start, fwd);
-            var ep = area.offsetToPosition(end, fwd);
+            var sp = a.offsetToPosition(start, fwd);
+            var ep = a.offsetToPosition(end, fwd);
             com.editora.config.NoteScope scope = sp.getMajor() == ep.getMajor()
                     ? com.editora.config.NoteScope.WORD
                     : com.editora.config.NoteScope.RANGE;
             String prefix = doc.substring(Math.max(0, start - CONTEXT_CHARS), start);
             String suffix = doc.substring(end, Math.min(doc.length(), end + CONTEXT_CHARS));
             var anchor = new com.editora.config.TextAnchor(
-                    sp.getMajor(), sp.getMinor(), ep.getMajor(), ep.getMinor(), area.getSelectedText(), prefix, suffix);
+                    sp.getMajor(), sp.getMinor(), ep.getMajor(), ep.getMinor(), a.getSelectedText(), prefix, suffix);
             return new NoteDraft(scope, anchor);
         }
-        return captureLineNoteDraft(area.getCurrentParagraph());
+        return captureLineNoteDraft(a.getCurrentParagraph());
     }
 
     /** Captures a LINE note anchor for a specific line, independent of the current selection/caret. */
@@ -7087,9 +7029,18 @@ public class EditorBuffer implements TabContent {
         refreshGutter();
     }
 
+    /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
+    private void installPointerHovers(CodeArea a) {
+        installLintHover(a); // reads lintOverlay only while mermaid lint is active (lazily attached)
+        installMarkdownLintHover(a);
+        installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
+        installDebugHover(a);
+        installNoteHover(a);
+    }
+
     /** Hover popup over a note's span shows its body (updated only when the hovered note changes). */
-    private void installNoteHover() {
-        area.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
+    private void installNoteHover(CodeArea a) {
+        a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> {
             if (!noteIndicators) {
                 hideNoteTip();
                 return;
@@ -7101,8 +7052,8 @@ public class EditorBuffer implements TabContent {
                 // filter is installed, so feeding them directly to CodeArea.hit() misses the note (and
                 // changes as the pointer crosses child nodes). Screen coordinates are stable across the
                 // dispatch chain; translate those back into the area's coordinate space first.
-                javafx.geometry.Point2D local = area.screenToLocal(e.getScreenX(), e.getScreenY());
-                n = notes.noteAt(area.hit(local.getX(), local.getY()).getInsertionIndex());
+                javafx.geometry.Point2D local = a.screenToLocal(e.getScreenX(), e.getScreenY());
+                n = notes.noteAt(a.hit(local.getX(), local.getY()).getInsertionIndex());
             } catch (RuntimeException ex) {
                 n = null;
             }
@@ -7115,20 +7066,20 @@ public class EditorBuffer implements TabContent {
                 if (noteTip.isShowing()) {
                     noteTip.hide();
                 }
-                noteTip.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
+                noteTip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
             }
         });
-        area.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hideNoteTip());
+        a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hideNoteTip());
         // Clicking the inline note marker (the ~7px amber triangle at a note's start) opens the editor —
         // restoring the click-to-edit the gutter glyph used to give. A click elsewhere is untouched.
-        area.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+        a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
             if (!noteIndicators || e.getButton() != MouseButton.PRIMARY || e.getClickCount() != 1) {
                 return;
             }
             for (int[] span : notes.activeSpans()) {
                 Bounds scr;
                 try {
-                    scr = area.getCharacterBoundsOnScreen(span[0], Math.min(area.getLength(), span[0] + 1))
+                    scr = a.getCharacterBoundsOnScreen(span[0], Math.min(a.getLength(), span[0] + 1))
                             .orElse(null);
                 } catch (RuntimeException ex) {
                     scr = null;
@@ -7293,16 +7244,24 @@ public class EditorBuffer implements TabContent {
         return visible && !largeFile && !heavyFile && mode != MarkdownViewMode.PREVIEW;
     }
 
+    /** A load found a line too long to wrap cheaply: the word-wrap preference is held off for this buffer. */
+    private boolean wrapSuppressed;
+
+    public boolean isWrapSuppressed() {
+        return wrapSuppressed;
+    }
+
+    public void setWrapSuppressed(boolean wrapSuppressed) {
+        this.wrapSuppressed = wrapSuppressed;
+    }
+
     /** Toggles soft word wrap on the editor surface (and the split view); the 80-column ruler stays visible. */
     public void setWordWrap(boolean wrap) {
         boolean changed = wrap != area.isWrapText();
         if (changed) {
-            markRulerInputsDirty(); // wrapping changes how the advance is derived (see columnRulerX)
+            markRulerInputsDirty(); // wrapping re-flows the text and removes the horizontal scroll
         }
-        area.setWrapText(wrap);
-        if (area2 != null) {
-            area2.setWrapText(wrap);
-        }
+        area.setWrapText(wrap); // the split's second view is bound to this
         if (!changed) {
             return;
         }
@@ -7421,8 +7380,8 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Positions the ruler at the 80-column boundary, drawn whether or not any text reaches column 80.
-     * The boundary is found by extrapolating the (monospace) glyph advance from caret positions, so it
-     * is exact regardless of which glyphs are present. The ruler is hidden when column 80 falls outside
+     * The boundary is column 0's on-screen x plus 80 advances of the editor font (see {@link #columnRulerX}),
+     * so it is exact regardless of which glyphs are present. The ruler is hidden when column 80 falls outside
      * the visible text width (e.g. the window is too narrow, or the text is scrolled past it).
      */
     /**
@@ -7441,10 +7400,11 @@ public class EditorBuffer implements TabContent {
         if (!rulerVisible
                 || rulerColumnOverride != null
                         && rulerColumnOverride == com.editora.editorconfig.EditorConfigProperties.OFF) {
-            columnRuler.setVisible(false);
+            columnRuler.place(null, 0);
             rulerInputsDirty = false; // nothing to place; a later show() re-marks via setColumnRulerVisible
             return;
         }
+        boolean inputsChanged = rulerInputsDirty;
         Double x = columnRulerX();
         // Clear the pending flag only on a measure that actually produced a position. Before the area's
         // first layout the geometry is unmeasurable and columnRulerX returns null; clearing the flag there
@@ -7452,66 +7412,69 @@ public class EditorBuffer implements TabContent {
         // stay hidden for the life of the buffer.
         if (x != null) {
             rulerInputsDirty = false;
+            if (inputsChanged) {
+                confirmRulerAfterLayout();
+            }
         }
-        double viewportWidth = scrollPane.getWidth();
-        boolean show = x != null && x >= 0 && x <= viewportWidth;
-        columnRuler.setVisible(show);
-        if (show) {
-            columnRuler.setStartX(x);
-            columnRuler.setEndX(x);
-        }
+        columnRuler.place(x, scrollPane.getWidth());
     }
 
     /**
-     * Root-local x of column 80, extrapolated from the live layout: the caret x at the start of the
-     * longest visible line and at its end give the exact per-column advance (querying caret positions,
-     * a {@code from == to} character-bounds call, avoids any dependence on glyph ink widths). Returns
-     * {@code null} if no visible line has any text to measure from.
+     * Measures once more two frames after a measure that followed a changed input (gutter, font, wrap). That
+     * first measure runs from {@code runLater}, which can land before the pulse that lays the new gutter out;
+     * it then reads column 0 at its old x and nothing else would ever correct it. One-shot, and the second
+     * measure does not re-arm it. A changed input while one is waiting starts the two frames again: the
+     * confirm that was about to fire would otherwise also run before the new layout, and be the last word.
+     */
+    private void confirmRulerAfterLayout() {
+        rulerConfirmFrames = 0;
+        if (rulerConfirm != null) {
+            return;
+        }
+        rulerConfirm = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                if (++rulerConfirmFrames < 2) {
+                    return;
+                }
+                stop();
+                rulerConfirm = null;
+                if (rulerVisible && renderingActive) {
+                    measureAndPlaceRuler();
+                }
+            }
+        };
+        rulerConfirm.start();
+    }
+
+    private javafx.animation.AnimationTimer rulerConfirm;
+    private int rulerConfirmFrames;
+
+    /** Whether a ruler measure is still to come (the deferred one or its confirmation); for tests to wait on. */
+    boolean rulerMeasurePending() {
+        return rulerMeasurePending || rulerConfirm != null;
+    }
+
+    /**
+     * Root-local x of column 80: where column 0 starts on screen (the left edge of the first character of any
+     * visible line — a property of the gutter and the horizontal scroll, not of the text) plus 80 columns of
+     * the editor font's own advance (see {@link ColumnAdvance}; never derived from the visible text, which a
+     * short line, a tab or a wide glyph skewed). Returns {@code null} when no visible line has a character.
      */
     private Double columnRulerX() {
         int col = rulerColumnOverride != null && rulerColumnOverride > 0 ? rulerColumnOverride : 80;
         try {
-            int total = area.getParagraphs().size();
-            if (total == 0) {
-                return null;
-            }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
-            int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            int refPar = -1;
-            int refLen = 0;
+            int last = Math.min(area.getParagraphs().size() - 1, area.lastVisibleParToAllParIndex());
             for (int p = first; p <= last; p++) {
-                if (area.isFolded(p)) {
-                    continue; // collapsed line: its caret bounds would skew the advance measurement
+                if (area.isFolded(p) || area.getParagraphLength(p) == 0) {
+                    continue; // collapsed or empty: no character to take column 0 from
                 }
-                int len = area.getParagraphLength(p);
-                if (len > refLen) {
-                    refLen = len;
-                    refPar = p;
+                Bounds start = caretBounds(p, 0);
+                if (start != null) {
+                    return start.getMinX() + col * columnAdvance.of(fontFamily, fontSize);
                 }
             }
-            if (refPar < 0) {
-                return null; // all visible lines empty; nothing to measure the advance from
-            }
-            Bounds start = caretBounds(refPar, 0);
-            Bounds end = caretBounds(refPar, refLen);
-            if (start == null || end == null) {
-                return null;
-            }
-            // When word wrap is on, a long line spans several visual rows, so column 0 and column refLen
-            // sit on *different* rows and their x-distance is no longer refLen glyph advances (it collapses,
-            // which dropped the ruler near the left edge). Average over the whole line only while it stays on
-            // one row; otherwise fall back to a single adjacent-column advance measured on the first row.
-            double advance;
-            if (Math.abs(end.getMinY() - start.getMinY()) < 1.0) {
-                advance = (end.getMinX() - start.getMinX()) / refLen; // unwrapped: precise, rounding averaged out
-            } else {
-                Bounds next = caretBounds(refPar, 1); // refLen >= 1, so column 1 is on the first visual row
-                if (next == null) {
-                    return null;
-                }
-                advance = next.getMinX() - start.getMinX();
-            }
-            return start.getMinX() + col * advance;
         } catch (RuntimeException ignored) {
             // Viewport mid-layout; a later event will re-measure.
         }
@@ -7592,6 +7555,8 @@ public class EditorBuffer implements TabContent {
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
     public void setPath(Path path) {
         this.path = path;
+        writableOnDisk =
+                path == null || path.getFileSystem() != java.nio.file.FileSystems.getDefault() ? writableOnDisk : null;
         // The full path (not just the basename) so location-based rules resolve — e.g. ~/.ssh/config,
         // /etc/hosts, .git/config (see ConfigFileType). The registries reduce it to the basename for
         // ordinary extension lookups.
@@ -7738,7 +7703,7 @@ public class EditorBuffer implements TabContent {
         String target = crlf ? LineEndings.CRLF : LineEndings.LF;
         if (!target.equals(lineEnding)) {
             lineEnding = target;
-            markUnsaved();
+            dirty.set(differsFromSaved()); // converting back to the file's own ending is no change at all
         }
     }
 
@@ -7757,13 +7722,11 @@ public class EditorBuffer implements TabContent {
         return eolOverride != null;
     }
 
-    /** Sets the visual tab width used by the minimap (and tracked for future use). */
+    /** Sets the visual tab width: how wide a tab is drawn in both panes, and the minimap's. */
     public void setTabSize(int tabSize) {
         this.tabSize = tabSize;
+        TabStops.apply(viewHost, tabSize);
         minimap.setTabSize(tabSize);
-        if (minimap2 != null) {
-            minimap2.setTabSize(tabSize);
-        }
     }
 
     public int getTabSize() {
@@ -7805,6 +7768,11 @@ public class EditorBuffer implements TabContent {
 
     public void setCharsetOverride(String charset) {
         this.charsetOverride = charset;
+    }
+
+    /** True when the text was decoded with a stand-in charset: it is the file's bytes, not its real text. */
+    public boolean isCharsetAssumed() {
+        return charsetAssumed;
     }
 
     /**
@@ -8057,6 +8025,15 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * Whether the file's permissions allow writing it, from the layer that can tell: {@code Files.isWritable}
+     * answers yes for any existing SFTP file. {@code null} (the default) asks the file system directly.
+     */
+    public void setWritableOnDisk(Boolean writable) {
+        writableOnDisk = writable;
+        updateViewModeBar();
+    }
+
+    /**
      * Shows/hides the MS-Word-style "View Mode" banner above the editor: visible only in user View mode
      * (not huge-file mode, which can't be made editable). The "Enable Editing" button appears only when
      * the file is writable; otherwise a "read-only on disk" note replaces it.
@@ -8067,7 +8044,7 @@ public class EditorBuffer implements TabContent {
             if (viewModeBar == null) {
                 viewModeBar = buildViewModeBar();
             }
-            boolean canEdit = path == null || Files.isWritable(path);
+            boolean canEdit = path == null || (writableOnDisk != null ? writableOnDisk : Files.isWritable(path));
             // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
             // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
             // through the elevated write.
@@ -8276,8 +8253,8 @@ public class EditorBuffer implements TabContent {
                     && !e.isMetaDown()
                     && !completionActions.completionShowing()) {
                 // Plain Tab first tries to expand a snippet prefix; otherwise smart-indent (Shift-Tab
-                // always dedents). Only code buffers get smart Tab — prose keeps the default. Skipped
-                // while a completion popup/ghost is showing, so Tab accepts the completion instead.
+                // always dedents). Skipped while a completion popup/ghost is showing, so Tab accepts
+                // the completion instead.
                 if (tryMarkdownTableTab(a, !e.isShiftDown())) {
                     e.consume(); // Tab/Shift-Tab move between table cells (and reflow)
                 } else if (!e.isShiftDown() && expandPrefixAtCaret(a)) {
@@ -8315,30 +8292,42 @@ public class EditorBuffer implements TabContent {
     /**
      * Smart Tab / Shift-Tab via the pure {@link Indenter#smartTab}: block-indent a selection, indent the
      * current line in leading whitespace, insert one indent unit mid-line, and Shift-Tab dedents — using
-     * the file's indent unit. Returns false (leaving the default Tab) for prose / non-code buffers, in
+     * the file's indent unit. Prose and unstyled languages get the same minus the context re-indent
+     * ({@link com.editora.editops.PlainTab}). Returns false (leaving the default Tab) only in
      * read-only/large-file mode.
      */
     private boolean applySmartTab(CodeArea a, boolean shift) {
-        if (!isEditable() || hugeFile) {
-            return false;
-        }
-        Indenter.TabEdit edit = Indenter.smartTab(
-                a.getText(),
-                a.getSelection().getStart(),
-                a.getSelection().getEnd(),
-                language,
-                tabSize,
-                shift,
-                indentInsertSpacesOverride,
-                indentSizeOverride);
+        Indenter.TabEdit edit = tabEdit(
+                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), shift);
         if (edit == null) {
-            return false; // PLAIN (prose/plaintext): keep the editor's default Tab behavior
+            return false;
         }
         if (edit.from() != edit.to() || !edit.replacement().isEmpty()) {
             a.replaceText(edit.from(), edit.to(), edit.replacement());
         }
         a.selectRange(edit.selStart(), edit.selEnd());
         return true;
+    }
+
+    /** The Tab edit for one selection of {@code text} (every caret's, with several); null = leave the key. */
+    private Indenter.TabEdit tabEdit(String text, int selStart, int selEnd, boolean shift) {
+        if (!isEditable() || hugeFile) {
+            return null;
+        }
+        Indenter.TabEdit edit = Indenter.smartTab(
+                text, selStart, selEnd, language, tabSize, shift, indentInsertSpacesOverride, indentSizeOverride);
+        // PLAIN (prose/plaintext): no context re-indent, but still the file's indent unit.
+        return edit != null
+                ? edit
+                : com.editora.editops.PlainTab.edit(
+                        text,
+                        selStart,
+                        selEnd,
+                        language,
+                        tabSize,
+                        shift,
+                        indentInsertSpacesOverride,
+                        indentSizeOverride);
     }
 
     /**
@@ -8497,9 +8486,7 @@ public class EditorBuffer implements TabContent {
             if (!isEditable()
                     || hasActiveSnippet()
                     || e.getCharacter().length() != 1
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()
+                    || !TypedText.isText(e)
                     || a.getSelection().getLength() > 0) {
                 return;
             }
@@ -8508,7 +8495,9 @@ public class EditorBuffer implements TabContent {
             // state the server's answer is expressed in. Never consumes, so the char inserts as normal.
             maybeSmartSemicolon(a, typed); // #746
             applyCloserDedent(a, typed);
-            maybeOnTypeFormat(a, typed); // #740 — after the local assist, which usually already got it right
+            // #740. Deferred: this filter runs BEFORE the character is inserted, and both the request's
+            // position and its staleness baseline must describe the line with the character in it.
+            Platform.runLater(() -> maybeOnTypeFormat(a, typed));
         });
     }
 
@@ -8610,7 +8599,7 @@ public class EditorBuffer implements TabContent {
      * leaves the line already correct.
      */
     private void maybeOnTypeFormat(CodeArea a, char typed) {
-        if (!onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
+        if (disposed || !onTypeFormattingEnabled || !lspActive || lspOnTypeFormatter == null) {
             return;
         }
         if (!lspOnTypeTriggers.contains(typed)) {
@@ -8626,6 +8615,9 @@ public class EditorBuffer implements TabContent {
         int par = a.getCurrentParagraph();
         String line = a.getParagraph(par).getText();
         int caret = a.getCaretPosition();
+        if (a.getCaretColumn() == 0 || line.charAt(a.getCaretColumn() - 1) != typed) {
+            return; // the keystroke did not insert its character after all
+        }
         long gen = ++reindentGen; // shares the Tab re-indent's generation: both adjust the same line's indent
         lspOnTypeFormatter.format(par, a.getCaretColumn(), typed, edits -> {
             if (gen != reindentGen
@@ -8668,7 +8660,9 @@ public class EditorBuffer implements TabContent {
             int par = a.getCurrentParagraph();
             int lineStart = a.getAbsolutePosition(par, 0);
             String line = a.getParagraph(par).getText();
-            int markerLen = isTypst() ? TypstMarkup.markerLength(line) : MarkdownLines.markerLength(line);
+            int markerLen = isTypst()
+                    ? TypstMarkup.markerLength(line)
+                    : MarkdownLines.listMarkerLength(a.getText(), lineStart, line);
             if (markerLen > 0 && caret - lineStart >= markerLen) {
                 boolean empty = isTypst() ? TypstMarkup.isEmptyItem(line) : MarkdownLines.isEmptyItem(line);
                 if (empty) {
@@ -8754,7 +8748,7 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = Indenter.closerAlignIndent(a.getText(), caret, tabSize);
+        String aligned = Indenter.closerAlignIndent(style, a.getText(), caret, tabSize, currentIndent, c);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
@@ -8866,12 +8860,7 @@ public class EditorBuffer implements TabContent {
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (!isEditable()
-                    || hasActiveSnippet()
-                    || e.getCharacter().length() != 1
-                    || e.isControlDown()
-                    || e.isAltDown()
-                    || e.isMetaDown()) {
+            if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
                 return;
             }
             char c = e.getCharacter().charAt(0);
@@ -9030,7 +9019,8 @@ public class EditorBuffer implements TabContent {
                 : path.toAbsolutePath().getParent().toString();
         String filePath = path == null ? "" : path.toAbsolutePath().toString();
         String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
-                ? javafx.scene.input.Clipboard.getSystemClipboard().getString()
+                ? LineEndings.toLf(
+                        javafx.scene.input.Clipboard.getSystemClipboard().getString())
                 : "";
         int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                 .getMajor();
@@ -9039,7 +9029,11 @@ public class EditorBuffer implements TabContent {
                 new VariableResolver(fileName, directory, filePath, a.getSelectedText(), clip, line, currentLine);
         ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
-        snippetSession.start(a, parsed, from, to, indent);
+        // asIs (no reindent) keeps the text untouched; otherwise the body's tabs become the buffer's unit.
+        String unit = reindent
+                ? Indenter.unitFor(a.getText(), tabSize, indentInsertSpacesOverride, indentSizeOverride)
+                : null;
+        snippetSession.start(a, parsed, from, to, indent, unit);
     }
 
     /**
@@ -9211,6 +9205,7 @@ public class EditorBuffer implements TabContent {
         CodeArea a = focusedArea != null ? focusedArea : area;
         int caretBefore = a.getCaretPosition();
         int anchorBefore = a.getAnchor();
+        LspEditView.Before view = preserveCaret ? null : LspEditView.capture(a);
         // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
         // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
         // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
@@ -9246,7 +9241,7 @@ public class EditorBuffer implements TabContent {
         }
         if (ranges.size() == 1) {
             a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
-            restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
+            restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
             return;
         }
         // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
@@ -9261,18 +9256,19 @@ public class EditorBuffer implements TabContent {
             builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
         }
         builder.commit(); // one undo unit for the whole edit set
-        restoreCaretAfterEdits(a, preserveCaret, caretBefore, anchorBefore, ranges, texts);
+        restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
     }
 
     /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
     private static void restoreCaretAfterEdits(
             CodeArea a,
-            boolean preserveCaret,
+            LspEditView.Before view,
             int caretBefore,
             int anchorBefore,
             java.util.List<int[]> ranges,
             java.util.List<String> texts) {
-        if (!preserveCaret) {
+        if (view != null) {
+            LspEditView.restore(a, view, ranges, texts); // format / quick fix / rename: see LspEditView
             return;
         }
         int target = LspEditShift.caretAfterEdits(caretBefore, ranges, texts);
@@ -9326,9 +9322,9 @@ public class EditorBuffer implements TabContent {
 
     /** Picks the undo manager for the current mode: none for large/huge files, bounded otherwise. */
     private void applyUndoMode() {
-        area.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area));
+        area.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager());
         if (area2 != null) {
-            area2.setUndoManager(largeFile ? UndoUtils.noOpUndoManager() : boundedUndoManager(area2));
+            area2.setUndoManager(area.getUndoManager());
         }
     }
 
@@ -9364,6 +9360,7 @@ public class EditorBuffer implements TabContent {
         // The area never holds a '\r', so remember the file's line ending here and keep the baseline in the
         // same normalised form — a CRLF baseline could never equal the document again (edit + undo stayed dirty).
         lineEnding = LineEndings.dominant(content);
+        cleanLineEnding = lineEnding;
         String initial = LineEndings.toLf(content);
         widen(); // a fresh document supersedes any narrowing of the old one
         Runnable refilter = logView.suspendFilter(true);
@@ -9376,6 +9373,8 @@ public class EditorBuffer implements TabContent {
         } else {
             area.replaceText(initial);
         }
+        forgetHistoryAtNarrowBoundary(); // the load is the baseline, not an undo step: undoing it emptied the file
+        captureUndoCheckpoint(); // ...and the Undo History baseline is the loaded text, not the loading shell
         refilter.run();
         dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
@@ -9520,12 +9519,14 @@ public class EditorBuffer implements TabContent {
             return false;
         }
         int caret = area.getCaretPosition();
+        int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = full.substring(0, s);
         narrowSuffix = full.substring(e);
         LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes);
         forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
+        moveSplitCaret(caret2 - s);
         onNarrowChanged.run();
         return true;
     }
@@ -9548,20 +9549,27 @@ public class EditorBuffer implements TabContent {
         String visible = area.getText();
         String suffix = narrowSuffix;
         int caret = area.getCaretPosition();
+        int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
         narrowSuffix = null;
         LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes);
         forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
+        moveSplitCaret(prefix.length() + caret2);
     }
 
-    /** Both views' undo stacks and the Undo History checkpoints: none may be replayed across the boundary. */
+    /** Puts the split's second caret back after the document was replaced under it (narrowing, widening). */
+    private void moveSplitCaret(int to) {
+        if (area2 != null) {
+            area2.moveTo(Math.clamp(to, 0, area2.getLength()));
+            area2.requestFollowCaret();
+        }
+    }
+
+    /** The undo stack and the Undo History checkpoints: neither may be replayed across the boundary. */
     private void forgetHistoryAtNarrowBoundary() {
         area.getUndoManager().forgetHistory();
-        if (area2 != null) {
-            area2.getUndoManager().forgetHistory();
-        }
         undoHistory.clear();
         if (onUndoHistoryChanged != null) {
             onUndoHistoryChanged.run();
@@ -9583,14 +9591,11 @@ public class EditorBuffer implements TabContent {
         refilter.run();
     }
 
-    /** Keeps a programmatic whole-document mutation separate from adjacent user typing in both views. */
-    private void preventUndoMerge() {
-        if (largeFile) {
-            return;
-        }
-        area.getUndoManager().preventMerge();
-        if (area2 != null) {
-            area2.getUndoManager().preventMerge();
+    /** Keeps a programmatic mutation (or a command's edit) separate from adjacent typing (both views share
+     *  one undo history). */
+    public void preventUndoMerge() {
+        if (!largeFile) {
+            area.getUndoManager().preventMerge();
         }
     }
 
@@ -9620,8 +9625,17 @@ public class EditorBuffer implements TabContent {
     /** Marks the current content as the saved baseline (after load/save); clears the dirty flag. */
     public void markClean() {
         cleanText = getContent(); // the whole document, so narrowing never fakes a dirty flag
+        cleanLineEnding = lineEnding;
         forcedDirty = false;
         dirty.set(false);
+    }
+
+    /** Whether the buffer differs from what is on disk: its text, its line ending, or a forced flag. */
+    private boolean differsFromSaved() {
+        return forcedDirty
+                || !lineEnding.equals(cleanLineEnding)
+                || contentLength() != cleanText.length()
+                || !getContent().equals(cleanText);
     }
 
     /** Marks content as not durably saved, even when it still equals its in-memory baseline. */
@@ -9630,11 +9644,16 @@ public class EditorBuffer implements TabContent {
         dirty.set(true);
     }
 
-    /** Acknowledges exactly the content written by an asynchronous save, preserving later edits as dirty. */
-    public void acknowledgeSavedContent(String savedContent) {
+    /**
+     * Acknowledges exactly what an asynchronous save wrote — its text and its line ending — so an edit or a
+     * line-ending conversion made while the write was in flight is still unsaved, and undoing either is clean.
+     */
+    public void acknowledgeSavedContent(String savedContent, String savedLineEnding) {
         cleanText = savedContent == null ? "" : savedContent;
-        forcedDirty = false;
-        dirty.set(contentLength() != cleanText.length() || !getContent().equals(cleanText));
+        boolean current = savedLineEnding == null || savedLineEnding.equals(getLineEnding());
+        cleanLineEnding = current ? lineEnding : savedLineEnding;
+        forcedDirty = !current && eolOverride != null; // a rule that arrived mid-save: no converting back to it
+        dirty.set(differsFromSaved());
     }
 
     public boolean isDisposed() {
@@ -9714,13 +9733,18 @@ public class EditorBuffer implements TabContent {
      * a couple of pulses after the file had already painted at its saved caret. That is what showed as a
      * restored file jumping to line 1 on open. Restoring the scroll only when it actually collapsed to the
      * top keeps this inert for every normal re-highlight (typing, scrolling), where the flow doesn't reset.
+     *
+     * <p>What is put back is the first visible <em>line</em>, not the pixel offset: right after a whole-document
+     * replace (a reload from disk) the offset is an estimate over unmeasured cells, and re-applying it once the
+     * heights are known landed a hundred lines away from where the view had been.
      */
     private void setStyleSpansPreservingScroll(int from, StyleSpans<Collection<String>> spans) {
         Double before = area.estimatedScrollYProperty().getValue();
+        int top = before != null && before > 1 ? ScrollAnchor.firstVisibleLine(area) : -1;
         area.setStyleSpans(from, spans);
         Double after = area.estimatedScrollYProperty().getValue();
         if (before != null && before > 1 && (after == null || after <= 1)) {
-            area.estimatedScrollYProperty().setValue(before);
+            ScrollAnchor.restore(area, top, before);
         }
     }
 

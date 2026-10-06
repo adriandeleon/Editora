@@ -39,30 +39,33 @@ class TypstRendererTest {
 
     @Test
     void renderArgs_useRootPngAndPpiWithPageTemplate() {
-        List<String> a = TypstRenderer.renderArgs(
-                List.of("typst"), Path.of("/proj"), Path.of("/proj/in.typ"), Path.of("/out/page-{p}.png"), 192);
+        Path root = Path.of("/proj");
+        Path in = Path.of("/proj/in.typ");
+        Path out = Path.of("/out/page-{p}.png");
+        List<String> a = TypstRenderer.renderArgs(List.of("typst"), root, in, out, 192);
         assertEquals(
                 List.of(
                         "typst",
                         "compile",
                         "--root",
-                        "/proj",
+                        root.toString(),
                         "-f",
                         "png",
                         "--ppi",
                         "192",
-                        "/proj/in.typ",
-                        "/out/page-{p}.png"),
+                        in.toString(),
+                        out.toString()),
                 a);
     }
 
     @Test
     void exportArgs_pdfOmitsPpi_pngKeepsIt() {
-        List<String> pdf =
-                TypstRenderer.exportArgs(List.of("typst"), Path.of("/proj"), Path.of("/proj/in.typ"), "/o/r.pdf", 192);
-        assertEquals(List.of("typst", "compile", "--root", "/proj", "-f", "pdf", "/proj/in.typ", "/o/r.pdf"), pdf);
-        List<String> png = TypstRenderer.exportArgs(
-                List.of("typst"), Path.of("/proj"), Path.of("/proj/in.typ"), "/o/r-{p}.png", 192);
+        Path root = Path.of("/proj");
+        Path in = Path.of("/proj/in.typ");
+        List<String> pdf = TypstRenderer.exportArgs(List.of("typst"), root, in, "/o/r.pdf", 192);
+        assertEquals(
+                List.of("typst", "compile", "--root", root.toString(), "-f", "pdf", in.toString(), "/o/r.pdf"), pdf);
+        List<String> png = TypstRenderer.exportArgs(List.of("typst"), root, in, "/o/r-{p}.png", 192);
         assertTrue(png.contains("--ppi"));
         assertEquals("png", png.get(png.indexOf("-f") + 1));
     }
@@ -76,10 +79,13 @@ class TypstRendererTest {
 
     @Test
     void effectiveRoot_usesRootWhenItContainsInputDirElseTheInputDir() {
-        Path in = Path.of("/proj/chapters");
-        assertEquals(Path.of("/proj"), TypstRenderer.effectiveRoot(in, Path.of("/proj"))); // root contains input
+        // Absolute on every platform: on Windows a leading slash alone names no drive, and the result has one.
+        Path in = Path.of("/proj/chapters").toAbsolutePath();
+        Path proj = Path.of("/proj").toAbsolutePath();
+        assertEquals(proj, TypstRenderer.effectiveRoot(in, proj)); // root contains input
         assertEquals(in, TypstRenderer.effectiveRoot(in, null)); // no root → the input dir
-        assertEquals(in, TypstRenderer.effectiveRoot(in, Path.of("/other"))); // root doesn't contain → input dir
+        assertEquals(
+                in, TypstRenderer.effectiveRoot(in, Path.of("/other").toAbsolutePath())); // root doesn't contain it
         assertEquals(in, TypstRenderer.effectiveRoot(in, in)); // equal → that dir
     }
 

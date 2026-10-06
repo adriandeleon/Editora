@@ -1,6 +1,7 @@
 package com.editora.config.migration;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -105,8 +106,11 @@ public final class ConfigMigrations {
             return defaults;
         }
         JsonNode tree;
+        boolean bytesReplaced;
         try {
-            tree = mapper.readTree(Files.readString(file));
+            Decoded decoded = decode(file);
+            bytesReplaced = decoded.bytesReplaced();
+            tree = mapper.readTree(decoded.text());
         } catch (IOException e) {
             // Unreadable, or not even valid JSON/TOML. Returning defaults means the next save writes an EMPTY
             // store straight over it — so preserve what's there first (see keepCorrupt).
@@ -128,6 +132,16 @@ public final class ConfigMigrations {
             // because the very next save overwrites the file.
             reportUnreadable(file, problems);
             return defaults;
+        }
+        if (bytesReplaced) {
+            // The file loads, but not as written, and the next save makes the replacement permanent. Say so,
+            // and keep the original bytes — except beside the Local History index, where any backup stops
+            // blob collection (HistoryIndexGuard) although this index still lists every revision.
+            problems.accept(new ConfigLoadProblem(
+                    file,
+                    ConfigLoadProblem.Kind.NOT_UTF8,
+                    List.of(),
+                    schema.keepsCopyOfUndecodableFile() ? keepCorrupt(file) : null));
         }
         try {
             return mapper.readerForUpdating(defaults).readValue(migrated);
@@ -162,6 +176,44 @@ public final class ConfigMigrations {
         return merged;
     }
 
+    /**
+     * The text of a config file, decoded so that an encoding detail does not cost the whole file: a leading
+     * UTF-8 byte-order mark (Windows Notepad's "UTF-8 with BOM", older PowerShell) is dropped, and a byte that
+     * is not valid UTF-8 (a file saved as Windows-1252 with one accented name) becomes U+FFFD in that one value.
+     *
+     * <p>{@code Files.readString} throws on the stray byte, and a parser handed a {@code String} rejects the
+     * BOM as an unexpected character. Either way the file used to read as unparseable, so every value in it
+     * fell back to its default and the next save wrote those defaults over it.
+     */
+    public static String readText(Path file) throws IOException {
+        return decode(file).text();
+    }
+
+    /** A config file's text and whether decoding it had to replace bytes that are not UTF-8. */
+    private record Decoded(String text, boolean bytesReplaced) {}
+
+    private static Decoded decode(Path file) throws IOException {
+        byte[] bytes = Files.readAllBytes(file);
+        String text = new String(bytes, StandardCharsets.UTF_8);
+        boolean replaced = text.indexOf('\uFFFD') >= 0 && !isValidUtf8(bytes);
+        if (replaced) {
+            LOG.log(
+                    java.util.logging.Level.WARNING,
+                    "Config file {0} is not valid UTF-8; the undecodable bytes were replaced",
+                    file);
+        }
+        return new Decoded(!text.isEmpty() && text.charAt(0) == '\uFEFF' ? text.substring(1) : text, replaced);
+    }
+
+    private static boolean isValidUtf8(byte[] bytes) {
+        try {
+            StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes));
+            return true;
+        } catch (java.nio.charset.CharacterCodingException malformed) {
+            return false;
+        }
+    }
+
     private static void reportUnreadable(Path file, Consumer<ConfigLoadProblem> problems) {
         try {
             if (!Files.exists(file) || Files.size(file) == 0) {
@@ -170,7 +222,16 @@ public final class ConfigMigrations {
         } catch (IOException ignored) {
             // cannot tell — treat it as content worth keeping
         }
-        problems.accept(new ConfigLoadProblem(file, ConfigLoadProblem.Kind.UNREADABLE, List.of(), keepCorrupt(file)));
+        problems.accept(unreadable(file));
+    }
+
+    /**
+     * An {@link ConfigLoadProblem.Kind#UNREADABLE} problem for {@code file}, keeping a copy of it beside it
+     * first. For an owner that knows a file is damaged when {@link #readVersioned} cannot — a zero-length
+     * Local History index beside stored revision bodies, which reads as "an empty file".
+     */
+    public static ConfigLoadProblem unreadable(Path file) {
+        return new ConfigLoadProblem(file, ConfigLoadProblem.Kind.UNREADABLE, List.of(), keepCorrupt(file));
     }
 
     /**
@@ -197,6 +258,10 @@ public final class ConfigMigrations {
      */
     private static Path keepCorrupt(Path file) {
         try {
+            Path existing = identicalBackup(file, ".corrupt.bak");
+            if (existing != null) {
+                return existing; // the same damage as last launch: one copy of it is enough
+            }
             Path kept = freeName(file, ".corrupt.bak");
             Files.copy(file, kept);
             LOG.log(
@@ -210,6 +275,28 @@ public final class ConfigMigrations {
             });
             return null;
         }
+    }
+
+    /**
+     * An existing {@code file + suffix[.n]} backup whose content equals {@code file}, or {@code null}.
+     *
+     * <p>A store that is only rewritten when the user changes it (connections, macros, plugins, trusted
+     * folders, abbreviations) stays damaged from one launch to the next. Copying it again each time filled all
+     * {@link #MAX_BACKUPS} names with the same bytes; the next launch could then make no copy, and the file
+     * became write-protected — so saving a connection silently did nothing.
+     */
+    private static Path identicalBackup(Path file, String suffix) throws IOException {
+        Path candidate = file.resolveSibling(file.getFileName() + suffix);
+        for (int i = 2; Files.exists(candidate); i++) {
+            if (Files.isRegularFile(candidate) && Files.mismatch(file, candidate) == -1) {
+                return candidate;
+            }
+            if (i > MAX_BACKUPS) {
+                break;
+            }
+            candidate = file.resolveSibling(file.getFileName() + suffix + "." + i);
+        }
+        return null;
     }
 
     /**
@@ -469,6 +556,41 @@ public final class ConfigMigrations {
         }
         o.remove("ijhttpCommand");
         return o;
+    }
+
+    /** The plugin-registry URL every build up to schema 106 shipped, and froze into a fresh settings file. */
+    static final String FROZEN_PLUGIN_REGISTRY =
+            "https://raw.githubusercontent.com/adriandeleon/editora-plugins/main/index.json";
+    /** The Maven archetype catalog URL every build up to schema 106 shipped and wrote out as a literal. */
+    static final String FROZEN_MAVEN_ARCHETYPE_CATALOG = "https://repo.maven.apache.org/maven2/archetype-catalog.xml";
+
+    /**
+     * v106 → v107 for the settings file: a {@code pluginRegistryUrl} or {@code mavenArchetypeCatalogUrl} that
+     * is the built-in address of the build that wrote it becomes blank, which now means "the built-in
+     * default".
+     *
+     * <p>Both were written as literals by the first save, so every install carries them whether or not the
+     * user ever opened the page. The setters recognise the <em>current</em> default, but once a default
+     * moves they cannot recognise the old one: such a file would keep the stale address for good. The old
+     * addresses are spelled out here for that reason, not read from {@code Settings}.
+     *
+     * <p>Only an exact match is blanked. A URL the user chose is a different string and is left alone; a
+     * user who typed the built-in address chose what blank resolves to. Safe to repeat.
+     */
+    static JsonNode blankFrozenDefaultUrls(JsonNode input) {
+        if (!(input instanceof ObjectNode o)) {
+            return input;
+        }
+        blankIfEqual(o, "pluginRegistryUrl", FROZEN_PLUGIN_REGISTRY);
+        blankIfEqual(o, "mavenArchetypeCatalogUrl", FROZEN_MAVEN_ARCHETYPE_CATALOG);
+        return o;
+    }
+
+    private static void blankIfEqual(ObjectNode o, String key, String frozen) {
+        JsonNode value = o.get(key);
+        if (value != null && value.isTextual() && frozen.equals(value.asText().strip())) {
+            o.put(key, "");
+        }
     }
 
     static JsonNode splitAiApiKeyByProvider(JsonNode input) {

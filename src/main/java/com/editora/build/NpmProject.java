@@ -22,7 +22,7 @@ public record NpmProject(String name, List<String> scripts, String packageManage
     /** Parses {@code package.json} text. Throws if the JSON is malformed (the caller reports it distinctly). */
     public static NpmProject parse(String packageJsonText) {
         try {
-            JsonNode root = MAPPER.readTree(packageJsonText);
+            JsonNode root = MAPPER.readTree(BuildTool.withoutBom(packageJsonText));
             JsonNode nameNode = root == null ? null : root.get("name");
             String name = nameNode != null && nameNode.isTextual() ? nameNode.asText() : null;
             List<String> scripts = new ArrayList<>();

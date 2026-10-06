@@ -26,7 +26,7 @@ import org.fxmisc.richtext.CodeArea;
  * record's level, so an exception's whole trace tints red. Per-line level detection is cached by line
  * text (pure) so a scroll pulse re-tints without re-scanning.
  */
-final class LogHighlightOverlay extends Region {
+final class LogHighlightOverlay extends Region implements SecondaryPane.Followed {
 
     /** Translucent so they read on any editor theme without per-theme overrides (the search-wash convention). */
     private static final Color ERROR_BAR = Color.web("#e5484d", 0.95);
@@ -46,6 +46,8 @@ final class LogHighlightOverlay extends Region {
     private final Canvas canvas = new Canvas(1, 1);
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private LogHighlightOverlay follower;
 
     private final Map<String, LogLevel> levelCache = lru(8000);
 
@@ -69,7 +71,19 @@ final class LogHighlightOverlay extends Region {
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
 
+    /** The same level tints for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public LogHighlightOverlay follower(CodeArea view) {
+        LogHighlightOverlay second = new LogHighlightOverlay(view);
+        second.setActive(active);
+        follower = second;
+        return second;
+    }
+
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }

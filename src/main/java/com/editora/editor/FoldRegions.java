@@ -74,7 +74,7 @@ public final class FoldRegions {
                     "typescript",
                     "javascriptreact",
                     "typescriptreact",
-                    "dot" -> braces(text);
+                    "dot" -> braces(text, Syntax.of(language));
             case "typst" -> typst(text);
             // plaintext and line/indentation-based languages have no delimiter folding.
             default -> List.of();
@@ -129,7 +129,7 @@ public final class FoldRegions {
         int n = text.length();
         boolean inLineComment = false;
         int blockStartLine = -1;
-        char stringQuote = 0;
+        Syntax syntax = Syntax.of(language);
         for (int i = 0; i < n; i++) {
             char c = text.charAt(i);
             if (c == '\n') {
@@ -150,22 +150,15 @@ public final class FoldRegions {
                 }
                 continue;
             }
-            if (stringQuote != 0) {
-                if (c == '\\') {
-                    i++;
-                } else if (c == stringQuote) {
-                    stringQuote = 0;
-                }
-                continue;
-            }
-            if (c == '/' && i + 1 < n && text.charAt(i + 1) == '/') {
+            if (syntax.startsLineComment(text, i)) {
                 inLineComment = true;
-                i++;
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 blockStartLine = line;
                 i++;
-            } else if (c == '"' || c == '\'') {
-                stringQuote = c;
+            } else if (c == '"' || c == '\'' || c == '`') {
+                int end = syntax.literalEnd(text, i);
+                line += newlinesIn(text, i, end);
+                i = end;
             }
         }
         return out;
@@ -255,14 +248,107 @@ public final class FoldRegions {
 
     // --- Brace/bracket matching (java, json, ...) ---
 
-    private static List<Region> braces(String text) {
+    /**
+     * What the brace walker needs to know about a language's literals and comments. Without it every
+     * {@code '} and {@code "} opened a string that ran — across newlines — to the next such character, so
+     * one unpaired quote (a Rust lifetime, an apostrophe in a template literal, a {@code #} comment or JSX
+     * text) swallowed every brace after it and the rest of the file lost its fold regions.
+     *
+     * @param slashSlash      {@code //} starts a line comment (not in CSS, where it is part of a URL)
+     * @param hash            {@code #} starts a line comment
+     * @param backtick        a backtick opens a multi-line literal (template literal, Go raw string)
+     * @param backtickEscapes whether {@code \} escapes inside that literal (not in a Go raw string)
+     * @param tripleQuote     {@code """} opens a multi-line text block / raw string
+     * @param multiLineDouble a {@code "} string may span lines
+     * @param lifetimes       a {@code '} may be a Rust lifetime or loop label rather than a char literal
+     */
+    record Syntax(
+            boolean slashSlash,
+            boolean hash,
+            boolean backtick,
+            boolean backtickEscapes,
+            boolean tripleQuote,
+            boolean multiLineDouble,
+            boolean lifetimes) {
+
+        static Syntax of(String language) {
+            String l = language == null ? "" : language;
+            boolean script = l.startsWith("javascript") || l.startsWith("typescript");
+            return new Syntax(
+                    !l.equals("css"),
+                    l.equals("terraform") || l.equals("php") || l.equals("graphql") || l.equals("caddyfile"),
+                    script || l.equals("go"),
+                    script,
+                    l.equals("java") || l.equals("kotlin") || l.equals("groovy") || l.equals("csharp"),
+                    l.equals("rust") || l.equals("php"),
+                    l.equals("rust"));
+        }
+
+        /** Whether a line comment starts at {@code i}. */
+        boolean startsLineComment(String text, int i) {
+            char c = text.charAt(i);
+            if (c == '/') {
+                return slashSlash && i + 1 < text.length() && text.charAt(i + 1) == '/';
+            }
+            // PHP's #[Attribute] is code, not a comment.
+            return c == '#' && hash && !(i + 1 < text.length() && text.charAt(i + 1) == '[');
+        }
+
+        /**
+         * Index of the last character of the literal opened by the quote at {@code i}; {@code i} itself
+         * when the quote opens nothing (a lifetime, a backtick in a language without backtick literals).
+         * An ordinary string that is not closed on its line ends at the line's end.
+         */
+        int literalEnd(String text, int i) {
+            int n = text.length();
+            char quote = text.charAt(i);
+            if (quote == '`' && !backtick) {
+                return i;
+            }
+            if (quote == '"' && tripleQuote && text.startsWith("\"\"\"", i)) {
+                int close = text.indexOf("\"\"\"", i + 3);
+                return close < 0 ? n - 1 : close + 2;
+            }
+            if (quote == '\'' && lifetimes) {
+                boolean escaped = i + 1 < n && text.charAt(i + 1) == '\\';
+                int close = i + 1 < n ? i + 1 + Character.charCount(text.codePointAt(i + 1)) : n;
+                if (!escaped && !(close < n && text.charAt(close) == '\'')) {
+                    return i; // 'a in <'a> or 'outer: — no closing quote after one character
+                }
+            }
+            boolean multiLine = quote == '`' || (quote == '"' && multiLineDouble);
+            boolean escapes = quote != '`' || backtickEscapes;
+            for (int j = i + 1; j < n; j++) {
+                char c = text.charAt(j);
+                if (c == '\\' && escapes) {
+                    j++; // the escaped character, a line continuation included
+                } else if (c == quote) {
+                    return j;
+                } else if (c == '\n' && !multiLine) {
+                    return j - 1;
+                }
+            }
+            return n - 1;
+        }
+    }
+
+    private static int newlinesIn(String text, int from, int to) {
+        int count = 0;
+        for (int k = from + 1; k <= to && k < text.length(); k++) {
+            if (text.charAt(k) == '\n') {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static List<Region> braces(String text, Syntax syntax) {
         List<Region> out = new ArrayList<>();
         Deque<Integer> stack = new ArrayDeque<>(); // line of each open delimiter
         int line = 0;
         int n = text.length();
         boolean inLineComment = false;
         boolean inBlockComment = false;
-        char stringQuote = 0;
         for (int i = 0; i < n; i++) {
             char c = text.charAt(i);
             if (c == '\n') {
@@ -280,22 +366,15 @@ public final class FoldRegions {
                 }
                 continue;
             }
-            if (stringQuote != 0) {
-                if (c == '\\') {
-                    i++; // skip escaped char
-                } else if (c == stringQuote) {
-                    stringQuote = 0;
-                }
-                continue;
-            }
-            if (c == '/' && i + 1 < n && text.charAt(i + 1) == '/') {
+            if (syntax.startsLineComment(text, i)) {
                 inLineComment = true;
-                i++;
             } else if (c == '/' && i + 1 < n && text.charAt(i + 1) == '*') {
                 inBlockComment = true;
                 i++;
-            } else if (c == '"' || c == '\'') {
-                stringQuote = c;
+            } else if (c == '"' || c == '\'' || c == '`') {
+                int end = syntax.literalEnd(text, i);
+                line += newlinesIn(text, i, end);
+                i = end;
             } else if (c == '{' || c == '[') {
                 stack.push(line);
             } else if (c == '}' || c == ']') {
@@ -419,7 +498,7 @@ public final class FoldRegions {
      */
     private static List<Region> typst(String text) {
         String[] lines = text.split("\n", -1);
-        List<Region> out = new ArrayList<>(braces(text));
+        List<Region> out = new ArrayList<>(braces(text, Syntax.of("typst")));
         TypstOutline.Outline outline = TypstOutline.scan(text);
         // Raw blocks fold like Markdown's fenced code: braces() cannot see them, and a long embedded
         // listing is exactly the thing a reader wants out of the way.

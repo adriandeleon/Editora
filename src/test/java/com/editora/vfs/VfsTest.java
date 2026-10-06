@@ -50,7 +50,7 @@ class VfsTest {
     @Test
     void localPathRoundTripsAsAPlainString() {
         Path p = Path.of("/Users/ada/foo.java");
-        assertEquals("/Users/ada/foo.java", Vfs.toStorableString(p));
+        assertEquals(p.toString(), Vfs.toStorableString(p), "a local path is stored as itself, with no scheme");
         assertEquals(p, Vfs.parseStorable(Vfs.toStorableString(p)));
     }
 
@@ -101,5 +101,16 @@ class VfsTest {
         assertNull(Vfs.parseStorable(""));
         assertNull(Vfs.parseStorable("   "));
         assertNull(Vfs.parseStorable(null));
+    }
+
+    @Test
+    void aLocalFileIsAskedDirectlyWhetherItCanBeWritten(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        Path file = java.nio.file.Files.writeString(dir.resolve("f.txt"), "x");
+        assertTrue(Vfs.isWritableOnDisk(file));
+        assertNull(Vfs.authorityOf(file), "a local path belongs to no connection");
+        assertNull(Vfs.authorityOf(null));
+        org.junit.jupiter.api.Assumptions.assumeTrue(file.toFile().setWritable(false));
+        org.junit.jupiter.api.Assumptions.assumeFalse(java.nio.file.Files.isWritable(file), "running as root");
+        assertFalse(Vfs.isWritableOnDisk(file));
     }
 }

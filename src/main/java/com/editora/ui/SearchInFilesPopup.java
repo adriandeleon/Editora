@@ -228,6 +228,12 @@ final class SearchInFilesPopup {
             return;
         }
         overlayHost.hide();
+        String q = query.getText();
+        if (q != null && !q.isBlank()) {
+            // Here, not in runSearch(): that is the debounce target, so every pause while typing stored
+            // the prefix typed so far (h, ha, han, …) and pushed the real entries out of the shared history.
+            ops.recordSearch(q);
+        }
         if (r.isHeader()) {
             ops.openMatch(r.file(), 1, 0);
         } else {
@@ -256,7 +262,6 @@ final class SearchInFilesPopup {
             status.setText(tr("search.rootNotFound"));
             return;
         }
-        ops.recordSearch(q);
         status.setText(tr("search.searching"));
         SearchQuery sq = new SearchQuery(q, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
         Path scope = root;
@@ -326,6 +331,25 @@ final class SearchInFilesPopup {
         return abs.toString();
     }
 
+    /** Longest preview a row lays out; a match further in is shown in a window around it. */
+    static final int PREVIEW_CHARS = 240;
+
+    /**
+     * The row text for {@code m}: the line, or — for a long one — a window around the match. Setting a whole
+     * minified line (megabytes) as a label's text made every visible row lay all of it out, on each populate
+     * and each scroll step. Pure (unit-tested).
+     */
+    static String previewOf(LineMatch m) {
+        String line = m.lineText() == null ? "" : m.lineText();
+        if (line.length() <= PREVIEW_CHARS) {
+            return line.strip();
+        }
+        int at = Math.max(0, Math.min(m.col() - 1, line.length()));
+        int from = Math.max(0, Math.min(at - PREVIEW_CHARS / 4, line.length() - PREVIEW_CHARS));
+        int to = Math.min(line.length(), from + PREVIEW_CHARS);
+        return (from > 0 ? "…" : "") + line.substring(from, to).strip() + (to < line.length() ? "…" : "");
+    }
+
     private final class ResultCell extends ListCell<Row> {
         private final Label fileName = new Label();
         private final Label count = new Label();
@@ -366,8 +390,7 @@ final class SearchInFilesPopup {
             } else {
                 LineMatch m = item.match();
                 lineNo.setText(String.valueOf(m.line()));
-                String text = m.lineText() == null ? "" : m.lineText().strip();
-                preview.setText(text);
+                preview.setText(previewOf(m));
                 setGraphic(matchRow);
             }
         }

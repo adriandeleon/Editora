@@ -83,4 +83,32 @@ class SourceFileFinderTest {
                 SourceFileFinder.find(root, "foo/Bar.java", () -> true),
                 "a superseded lookup stops walking instead of finishing a search nobody is waiting for");
     }
+
+    // --- B5-6: a class whose file is not in its package's directory, and a module named like build output ---
+
+    @Test
+    void aClassStoredOutsideItsPackageDirectoryIsFoundByNameAndPackage(@TempDir Path root) throws Exception {
+        Path flat = Files.createDirectories(root.resolve("mod/src/test/java")).resolve("FlatTest.java");
+        Files.writeString(flat, "// header\npackage com.acme.flat;\n\nclass FlatTest {}\n");
+        Path other =
+                Files.createDirectories(root.resolve("mod/src/test/java/zzz")).resolve("FlatTest.java");
+        Files.writeString(other, "package zzz;\nclass FlatTest {}\n");
+
+        assertEquals(flat, SourceFileFinder.find(root, "com/acme/flat/FlatTest.java", () -> false));
+        assertNull(
+                SourceFileFinder.find(root, "com/other/FlatTest.java", () -> false),
+                "the name alone is not enough: another package's FlatTest is a different class");
+    }
+
+    @Test
+    void aModuleDirectoryNamedLikeBuildOutputIsStillSearched(@TempDir Path root) throws Exception {
+        Path test = Files.createDirectories(root.resolve("out/src/test/java/com/acme"))
+                .resolve("InOutTest.java");
+        Files.writeString(test, "package com.acme;\nclass InOutTest {}\n");
+        Path built = Files.createDirectories(root.resolve("mod/target/classes/com/acme"))
+                .resolve("InOutTest.java");
+        Files.writeString(built, "package com.acme;\nclass InOutTest {}\n");
+
+        assertEquals(test, SourceFileFinder.find(root, "com/acme/InOutTest.java", () -> false));
+    }
 }

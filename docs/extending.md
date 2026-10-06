@@ -45,7 +45,10 @@ A setting is a `Settings` field **plus** a Settings-window control **plus** a pa
    add an additive-identity step in `ConfigSchema` (see
    [conventions.md](conventions.md#config-and-schema)).
 2. **Settings UI** — a control on the relevant page in `SettingsWindow`, wired through the
-   live-apply path (each control writes the field then `apply()`).
+   live-apply path (each control writes the field then `apply()`). A text field goes through
+   `commitOnEnterOrBlur` (Enter, focus loss or closing the window), never a `textProperty` listener: a
+   save, a re-apply in every window and a probe per keystroke act on half-typed values. An on/off
+   setting is a `checkRow` (a switch row), not a bare `CheckBox`.
 3. **Palette command** — a `view.toggle*` (for a flag) or a prompt/picker (for a value) that
    flips the same field, `requestSave()`s, re-applies the feature, and calls
    `SettingsWindow.syncAll()`. Reuse `toggleSetting`/`promptIntSetting`/`chooseSetting`.
@@ -132,6 +135,12 @@ The discipline that keeps overlays off the hot path (see
 - `setActive(false)` clears and **releases the canvas to 1×1** so it holds no full-viewport
   texture;
 - the data (diagnostics/marks) is **pushed in** by `EditorBuffer`; the overlay only renders.
+- implement `SecondaryPane.Followed`: `follower(view)` returns a twin for a split's second view, and
+  every setter hands its argument to that twin first (before any "unchanged" early return). The twin
+  is created and stacked by `SecondaryPane.follow` — when the split is built, and from
+  `attachLazyOverlay` for a lazily attached overlay — so nothing else needs wiring, and the second
+  pane cannot be left without the overlay. Stripes, the minimap and the column ruler follow the same
+  rule.
 - colours come from `OverlayPalette`, not from a `Color.web("#…")` constant: a Canvas cannot be styled
   from CSS, and one fixed colour is too faint on one editor theme or too loud on the other. Call
   `OverlayPalette.track(area, palette -> { colors = palette; scheduleRedraw(); })` in the constructor —

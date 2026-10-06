@@ -31,8 +31,8 @@ import com.editora.config.HistoryRevision;
 import com.editora.config.RecentFiles;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.TabContent;
+import com.editora.io.AtomicFileWrite;
 import com.editora.io.DocumentWriteSequencer;
-import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -43,6 +43,12 @@ final class FileWorkflowCoordinator {
     interface DocumentWriter {
 
         boolean write(Path target, byte[] bytes, BooleanSupplier commit) throws IOException;
+
+        /** As {@link #write}, also saying whether the file had to be overwritten in place. */
+        default AtomicFileWrite.Outcome writeDocument(Path target, byte[] bytes, BooleanSupplier commit)
+                throws IOException {
+            return write(target, bytes, commit) ? AtomicFileWrite.Outcome.REPLACED : AtomicFileWrite.Outcome.SKIPPED;
+        }
     }
 
     private record SaveRequest(
@@ -56,15 +62,22 @@ final class FileWorkflowCoordinator {
             Set<Long> precedingSaveSequences,
             long sequence,
             DocumentWriteSequencer.Ticket ticket,
-            boolean saveAs) {}
+            boolean saveAs,
+            String lineEnding,
+            String charsetFallback) {}
 
     private record SaveAsOrigin(Path path) {}
 
-    private record SavePayload(String text, byte[] bytes) {}
+    private record SavePayload(String text, SaveEncoding.Plan encoding) {}
 
-    private record DiskWrite(long modifiedMillis, long size) {}
+    private record DiskWrite(long modifiedMillis, long size, boolean inPlace) {
+        DiskWrite(long modifiedMillis, long size) {
+            this(modifiedMillis, size, false);
+        }
+    }
 
-    private record CommittedSave(long sequence, Path target, String content, byte[] bytes, DiskWrite disk) {}
+    private record CommittedSave(
+            long sequence, Path target, String content, byte[] bytes, DiskWrite disk, String lineEnding) {}
 
     private record RemoteWritePlan(boolean proceed, byte[] expectedBytes, boolean expectedAbsent) {}
 
@@ -144,6 +157,12 @@ final class FileWorkflowCoordinator {
 
         Tab tabForPath(Path file);
 
+        /** Whether a tab of <em>another</em> window shows {@code file}. */
+        boolean openInAnotherWindow(Path file);
+
+        /** A {@code .editorconfig} was saved: every window re-resolves the rules of the files it has open. */
+        void editorConfigSaved();
+
         Path tabPath(Tab tab);
 
         void requestSave();
@@ -168,7 +187,28 @@ final class FileWorkflowCoordinator {
     private final AtomicLong saveSequence = new AtomicLong();
 
     /** Local-document persistence boundary. Package-visible replacement supports deterministic faults. */
-    private volatile DocumentWriter documentWriter = com.editora.io.AtomicFileWrite::writeIf;
+    private volatile DocumentWriter documentWriter = new DocumentWriter() {
+        @Override
+        public boolean write(Path target, byte[] bytes, BooleanSupplier commit) throws IOException {
+            return writeDocument(target, bytes, commit) != AtomicFileWrite.Outcome.SKIPPED;
+        }
+
+        @Override
+        public AtomicFileWrite.Outcome writeDocument(Path target, byte[] bytes, BooleanSupplier commit)
+                throws IOException {
+            // A file that cannot be replaced (read-only folder, hard links, another owner) is overwritten in
+            // place; its previous bytes wait here, on a disk that survives a crash, until the write is done.
+            return AtomicFileWrite.writeDocument(
+                    target, bytes, commit, host.config().getConfigDir().resolve("save-backups"));
+        }
+    };
+
+    /** UTF-16 buffers whose file had no byte-order mark, so a save does not add one. FX-thread only. */
+    private final Set<EditorBuffer> bomlessUtf16 = Collections.newSetFromMap(new java.util.WeakHashMap<>());
+    /** Buffers the user agreed to save over a file that is read-only on disk, and that file. FX-thread only. */
+    private final Map<EditorBuffer, Path> readOnlyOverwrites = new java.util.WeakHashMap<>();
+    /** Buffers whose changed disk metadata is being compared by content off the FX thread. FX-thread only. */
+    private final Set<EditorBuffer> verifyingExternalChange = Collections.newSetFromMap(new IdentityHashMap<>());
 
     @FunctionalInterface
     interface ElevatedWriter {
@@ -203,6 +243,28 @@ final class FileWorkflowCoordinator {
         t.setDaemon(true);
         return t;
     });
+
+    /**
+     * One writer per remote connection. A save to a slow or stalled server used to hold the single writer
+     * thread, and with it every other save — local files, auto-save, the synchronous save before Run or
+     * close. Order per file is the {@link DocumentWriteSequencer}'s business, not this thread's.
+     */
+    private final Map<String, ExecutorService> remoteSaveExecutors = new ConcurrentHashMap<>();
+
+    /** The thread {@code target} is written on: the local writer, or its connection's own. */
+    ExecutorService saveExecutor(Path target) {
+        String authority = shutdown ? null : com.editora.vfs.Vfs.authorityOf(target);
+        if (authority == null) {
+            return autoSaveExecutor;
+        }
+        return remoteSaveExecutors.computeIfAbsent(
+                authority,
+                ignored -> Executors.newSingleThreadExecutor(r -> {
+                    Thread t = new Thread(r, "editora-remote-save");
+                    t.setDaemon(true);
+                    return t;
+                }));
+    }
 
     /** Disk reads/charset decoding for file opens. Virtual threads also keep remote-provider waits cheap. */
     final ExecutorService fileLoadExecutor = Executors.newVirtualThreadPerTaskExecutor();
@@ -248,6 +310,12 @@ final class FileWorkflowCoordinator {
             if (!quietIfOpen) {
                 host.setStatus(tr("status.alreadyOpen", file.getFileName()));
             }
+            return;
+        }
+        if (RemoteReadFailure.connectionClosed(file)) {
+            // Said before a tab shell appears and vanishes — and before the viewers below ask the dead
+            // connection about the file on the FX thread, which it answers with an unchecked exception.
+            host.setStatus(tr("status.failedOpen", RemoteReadFailure.reason(file, null)));
             return;
         }
         // A raster image opens in the read-only image viewer instead of dumping its bytes into a text buffer.
@@ -296,6 +364,38 @@ final class FileWorkflowCoordinator {
     }
 
     /**
+     * Opens a new, empty buffer bound to {@code file}, which does not exist yet — what {@code editora
+     * notes/new.txt} means in every editor: the first save creates the file. It used to flash a tab and
+     * report "Failed to open". Only for a path the user typed (the command line, an OS open request): a
+     * session restore or a jump to a file that has since been deleted must keep failing visibly.
+     *
+     * @return false when {@code file} is not a new file in an existing local folder (open it normally)
+     */
+    boolean openNewFileAt(Path file) {
+        Path parent = file.getParent();
+        if (!com.editora.vfs.Vfs.isLocal(file)
+                || parent == null
+                || !Files.isDirectory(parent)
+                || !Files.notExists(file)
+                || host.tabForPath(file) != null) {
+            return false;
+        }
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setPath(file);
+        // "Loaded" as an empty file, so one that appears on disk before the first save is a conflict to ask
+        // about rather than something to overwrite.
+        buffer.setDiskSnapshot(0, 0, fingerprint(new byte[0]));
+        host.addBuffer(buffer, true);
+        buffer.markUnsaved(); // nothing is on disk: closing the tab must offer to save, even while empty
+        Tab tab = host.tabFor(buffer);
+        if (tab != null) {
+            host.updateTabMeta(tab, buffer);
+        }
+        host.setStatus(tr("status.newFileAtPath", com.editora.config.PathDisplay.of(file)));
+        return true;
+    }
+
+    /**
      * Runs a load completion unless the window was disposed while the read was in flight. Its tabs outlive
      * disposal, so the completion would otherwise fill a disposed buffer and start a language server for a
      * window that no longer exists.
@@ -322,6 +422,40 @@ final class FileWorkflowCoordinator {
         } else {
             action.run();
         }
+    }
+
+    /**
+     * Opens {@code file} (or selects its tab) and, a pulse later, runs {@code action} through
+     * {@link #whenLoaded} — the load-aware form of "open, then act on the editor". {@link #openPath} only
+     * starts the read: until it lands the tab is an empty read-only shell, so a bare {@code runLater} acts on
+     * one blank line.
+     */
+    void openThen(Path file, Runnable action) {
+        openPath(file);
+        Platform.runLater(() -> whenLoaded(file, action));
+    }
+
+    /**
+     * Runs {@code action} with {@code file}'s tab selected once its text is in the buffer: now when it is
+     * already loaded, else when the load lands. Never runs when the file has no text tab (an image, a PDF, a
+     * hex view), when its load fails, or when the tab is closed first.
+     */
+    void whenLoaded(Path file, Runnable action) {
+        Tab tab = host.tabForPath(file);
+        EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
+        if (buffer == null) {
+            return;
+        }
+        afterBufferLoad(buffer, () -> {
+            Tab now = host.tabForBuffer(buffer);
+            if (now == null) {
+                return;
+            }
+            if (host.editorArea().selectedTab() != now) {
+                host.editorArea().select(now); // the user looked elsewhere while it loaded
+            }
+            action.run();
+        });
     }
 
     /** Opens {@code file} in a read-only {@link ImageViewerPane} tab (raster images render, not their bytes). */
@@ -562,7 +696,9 @@ final class FileWorkflowCoordinator {
                     null);
         }
         byte[] bytes = Files.readAllBytes(file);
-        if (sniffBinary) {
+        // BOM-less UTF-16 is half NUL bytes; when .editorconfig declares it, it is text, not a hex dump.
+        if (sniffBinary
+                && !com.editora.editorconfig.EditorConfigCharset.isBomlessUtf16(bytes, editorConfig.charset())) {
             byte[] sample = bytes.length <= BinarySniff.SAMPLE_BYTES
                     ? bytes
                     : java.util.Arrays.copyOf(bytes, BinarySniff.SAMPLE_BYTES);
@@ -627,15 +763,26 @@ final class FileWorkflowCoordinator {
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
         buffer.setDetectedCharset(load.charset(), load.charsetAssumed());
+        if (isUtf16(load.charset())
+                && !load.charsetAssumed()
+                && load.sourceBytes() != null
+                && com.editora.editorconfig.EditorConfigCharset.detectByBom(load.sourceBytes()) == null) {
+            bomlessUtf16.add(buffer);
+        } else {
+            bomlessUtf16.remove(buffer);
+        }
         buffer.setLargeFile(load.large() || load.longLine());
         buffer.setHeavyFile(load.heavy());
+        buffer.setWrapSuppressed(load.longLine());
         if (load.longLine()) {
             // Wrapping a giant RichTextFX paragraph multiplies layout work. The user can explicitly turn it
-            // back on after loading, but the first rendered frame must use the safe profile.
+            // back on after loading (Toggle Word Wrap on this buffer), but the first rendered frame must use the
+            // safe profile — and so must every later settings re-apply, hence the flag above.
             buffer.setWordWrap(false);
         }
-        if (load.truncated()) {
-            buffer.setReadOnly(true);
+        if (load.truncated() || buffer.isReadOnly()) {
+            // Also back to editable: a reload of a file that is no longer huge used to stay read-only.
+            buffer.setReadOnly(load.truncated());
         }
         buffer.setInitialContent(load.content(), load.longLine());
         if (load.log()) {
@@ -654,6 +801,9 @@ final class FileWorkflowCoordinator {
                     load.file().getFileName(),
                     com.editora.editorconfig.EditorConfigCharset.displayName(load.declaredCharset()),
                     com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()));
+        }
+        if (com.editora.editor.LineEndings.mixed(load.content())) {
+            return tr("status.mixedLineEndings", load.file().getFileName(), buffer.getLineEnding());
         }
         if (load.large()) {
             return largeFileNote(load.file(), load.size());
@@ -683,8 +833,12 @@ final class FileWorkflowCoordinator {
     }
 
     static String largeFileNote(Path file, long size) {
-        return file.getFileName() + " — large file (" + StatusBar.formatSize(size)
-                + "): syntax highlighting and minimap disabled";
+        return tr("status.largeFileOpened", file.getFileName(), StatusBar.formatSize(size));
+    }
+
+    private static boolean isUtf16(String charset) {
+        return com.editora.editorconfig.EditorConfigCharset.UTF_16LE.equals(charset)
+                || com.editora.editorconfig.EditorConfigCharset.UTF_16BE.equals(charset);
     }
 
     static long fileSize(Path file) {
@@ -726,16 +880,75 @@ final class FileWorkflowCoordinator {
             if (com.editora.vfs.Vfs.isRemote(file)) {
                 return; // remote (SFTP) mtime polling would be a network call per focus — skipped for now
             }
+            if (!loadingBuffers.contains(buffer)) {
+                // A changed .editorconfig (edited here, or by a pull / branch switch) reaches the open file.
+                host.editorSettings().refreshEditorConfig(buffer);
+            }
             if (!Files.exists(file)) {
                 return; // deleted/renamed externally — keep what's open (no prompt)
             }
             long mtime = lastModifiedMillis(file);
             long size = fileSize(file);
-            if (buffer.diskChangedFrom(mtime, size)) {
+            if (!buffer.diskChangedFrom(mtime, size)) {
+                return;
+            }
+            String loaded = buffer.diskSnapshot().fingerprint();
+            if (loaded == null) {
                 promptExternalChange(tab, buffer, mtime, size);
+            } else if (verifyingExternalChange.add(buffer)) {
+                verifyExternalChange(tab, buffer, file, loaded);
             }
         } finally {
             checkingExternalChanges = false;
+        }
+    }
+
+    /**
+     * Metadata changed; compares the bytes before asking. {@code touch}, a build step or a checkout that
+     * rewrites identical content changes the modified time only — the prompt then asked whether to reload a
+     * file that is byte for byte what the editor holds, again on every tab switch. Hashing is disk work, so
+     * it runs off the FX thread and the prompt (or the silent re-baseline) follows.
+     */
+    private void verifyExternalChange(Tab tab, EditorBuffer buffer, Path file, String loaded) {
+        Runnable settle = () -> verifyingExternalChange.remove(buffer);
+        try {
+            fileLoadExecutor.execute(() -> {
+                long mtime = lastModifiedMillis(file);
+                long size = fileSize(file);
+                String current;
+                try {
+                    current = fingerprint(Files.readAllBytes(file));
+                } catch (IOException | RuntimeException | OutOfMemoryError unreadable) {
+                    current = null; // cannot tell: ask, as before
+                }
+                boolean same = loaded.equals(current);
+                Platform.runLater(() -> ifWindowOpen(() -> {
+                    try {
+                        if (buffer.isDisposed()
+                                || host.tabForBuffer(buffer) != tab
+                                || buffer.getPath() == null
+                                || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), file)
+                                || !loaded.equals(buffer.diskSnapshot().fingerprint())
+                                || !buffer.diskChangedFrom(mtime, size)) {
+                            return; // closed, renamed, saved or reloaded while the bytes were being read
+                        }
+                        if (same) {
+                            buffer.setDiskSnapshot(mtime, size, loaded);
+                        } else if (host.editorArea().selectedTab() == tab && !checkingExternalChanges) {
+                            checkingExternalChanges = true; // the prompt steals focus: do not re-enter
+                            try {
+                                promptExternalChange(tab, buffer, mtime, size);
+                            } finally {
+                                checkingExternalChanges = false;
+                            }
+                        }
+                    } finally {
+                        settle.run();
+                    }
+                }));
+            });
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            settle.run();
         }
     }
 
@@ -756,6 +969,10 @@ final class FileWorkflowCoordinator {
             reloadFromDisk(tab, buffer);
         } else {
             buffer.setDiskSnapshot(mtime, size); // keep the editor's version, stop nagging about this change
+            // What was kept is not what is on disk. Left clean, it had no modified marker, auto-save never
+            // wrote it, and closing the tab dropped the version the user had just chosen without a word.
+            buffer.markUnsaved();
+            host.updateTabMeta(tab, buffer);
         }
     }
 
@@ -784,9 +1001,9 @@ final class FileWorkflowCoordinator {
                         onComplete.accept(applied);
                     }
                 });
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) { // a closed SFTP file system may raise either
                 Platform.runLater(() -> {
-                    host.setStatus(tr("status.failedReload", file.getFileName(), e.getMessage()));
+                    host.setStatus(tr("status.failedReload", file.getFileName(), RemoteReadFailure.reason(file, e)));
                     onComplete.accept(false);
                 });
             }
@@ -795,14 +1012,15 @@ final class FileWorkflowCoordinator {
 
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
     private void applyPreparedReload(Tab tab, EditorBuffer buffer, PreparedLoad load) {
-        CodeArea area = buffer.getArea();
-        int caret = area.getCaretPosition();
+        // The whole document is about to be replaced, which resets the viewport and clears the folds: keep
+        // the user's place (caret line/column, scroll position, collapsed folds) rather than the caret alone.
+        ReloadViewState view = ReloadViewState.capture(buffer);
         host.historyCoordinator()
                 .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
         String note = applyPreparedLoad(buffer, load);
         notePerfContentLoaded(buffer);
         buffer.markClean();
-        area.moveTo(Math.min(caret, area.getLength()));
+        view.restore();
         host.updateTabMeta(tab, buffer);
         host.lspCoordinator().watchedFilesReloaded(java.util.List.of(load.file()));
         host.setStatus(note.isEmpty() ? tr("status.reloaded", load.file().getFileName()) : note);
@@ -853,13 +1071,29 @@ final class FileWorkflowCoordinator {
         return adminSaveEnabled() && adminToolAvailable;
     }
 
-    /** True when a plain save of {@code p} would fail for permissions but an elevated save could succeed. */
+    /**
+     * True when a plain save of {@code p} would fail for permissions but an elevated save could succeed. A
+     * read-only file of the user's own, in a folder they can write, is not such a file: an ordinary save
+     * replaces it once the user agrees ({@link #mayReplaceReadOnly}), and asking for root there is wrong.
+     */
     boolean adminSaveApplicable(Path p) {
         return elevationAvailable()
                 && p != null
                 && com.editora.vfs.Vfs.isLocal(p)
                 && Files.exists(p)
-                && !Files.isWritable(p);
+                && !Files.isWritable(p)
+                && !replaceableWithoutElevation(p);
+    }
+
+    private static boolean replaceableWithoutElevation(Path p) {
+        try {
+            Path parent = p.toAbsolutePath().getParent();
+            return parent != null
+                    && Files.isWritable(parent)
+                    && Files.getOwner(p).getName().equals(System.getProperty("user.name"));
+        } catch (IOException | RuntimeException unknownOwner) {
+            return false;
+        }
     }
 
     /**
@@ -1101,16 +1335,14 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return false;
         }
-        if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
-            // A remote buffer always opens with a path, so plain Save writes it back over SFTP; choosing a
-            // new remote destination (an async prompt) isn't supported yet.
-            host.setStatus(tr("status.remote.saveAsUnsupported"));
-            return false;
-        }
+        // A remote buffer may be saved as a LOCAL file (the chooser only offers those): with its connection
+        // gone that is the one way left to keep the text. A new remote destination is still not offered.
         FileChooser chooser = new FileChooser();
         chooser.setTitle(tr("dialog.saveAs.title"));
         if (buffer.getDisplayName() != null) {
             chooser.setInitialFileName(buffer.getDisplayName()); // suggested name from --new-file=NAME
+        } else if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
+            chooser.setInitialFileName(String.valueOf(buffer.getPath().getFileName()));
         }
         Path file = host.pathOf(chooser.showSaveDialog(host.stage()));
         if (file == null) {
@@ -1125,7 +1357,7 @@ final class FileWorkflowCoordinator {
     }
 
     private boolean applySaveAsTarget(EditorBuffer buffer, Path file, boolean synchronous) {
-        if (refuseUnsavable(buffer)) {
+        if (refuseUnsavable(buffer) || refuseTargetOpenElsewhere(buffer, file)) {
             return false; // before the buffer is re-pointed: a refused write must not leave it renamed
         }
         Path previousPath = buffer.getPath();
@@ -1164,16 +1396,15 @@ final class FileWorkflowCoordinator {
         if (buffer == null || refuseUnsavable(buffer)) {
             return;
         }
-        if (buffer.getPath() != null && com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
-            host.setStatus(tr("status.remote.saveAsUnsupported"));
-            return;
-        }
-        Path base = saveAsBaseDir(buffer);
+        Path base = saveAsBaseDir(buffer); // a local folder, also for a remote buffer: its copy is saved locally
         host.promptText(tr("dialog.saveAs.title"), tr("dialog.saveAs.prompt"), saveAsInitial(buffer, base), value -> {
             Path target = com.editora.config.PathKeys.resolveUserInput(value, base, System.getProperty("user.home"));
             if (target == null) {
                 host.setStatus(tr("status.saveAs.invalidPath"));
                 return;
+            }
+            if (refuseTargetOpenElsewhere(buffer, target)) {
+                return; // before asking to overwrite: the answer could not be honoured
             }
             Path current = buffer.getPath();
             boolean overwritingOther = Files.exists(target)
@@ -1183,6 +1414,24 @@ final class FileWorkflowCoordinator {
             }
             applySaveAsTarget(buffer, target);
         });
+    }
+
+    /**
+     * Refuses a Save As whose target is open in another tab — of this window or of any other. Re-pointing this
+     * buffer there left two tabs on one path: the other one kept its stale text (and any unsaved edits), path
+     * lookups found whichever came first, and its next save or "Keep Mine" silently replaced what had just
+     * been written.
+     */
+    private boolean refuseTargetOpenElsewhere(EditorBuffer buffer, Path target) {
+        if (target == null) {
+            return false;
+        }
+        Tab other = host.tabForPath(target);
+        if ((other == null || other == host.tabForBuffer(buffer)) && !host.openInAnotherWindow(target)) {
+            return false;
+        }
+        host.setStatus(tr("status.saveAs.cannotReplaceOpenFile", target.getFileName()));
+        return true;
     }
 
     /** The folder a typed Save-As name resolves against: the current file's folder, else project root/home. */
@@ -1204,7 +1453,9 @@ final class FileWorkflowCoordinator {
         if (p != null && com.editora.vfs.Vfs.isLocal(p)) {
             return p.toString();
         }
-        String name = buffer.getDisplayName() != null ? buffer.getDisplayName() : "untitled.txt";
+        String name = buffer.getDisplayName() != null
+                ? buffer.getDisplayName()
+                : p != null && p.getFileName() != null ? p.getFileName().toString() : "untitled.txt";
         return base.resolve(name).toString();
     }
 
@@ -1225,7 +1476,7 @@ final class FileWorkflowCoordinator {
      * content in the file's own line ending and detected charset.
      */
     byte[] saveBytes(EditorBuffer buffer) {
-        return savePayload(buffer, buffer.getContent()).bytes();
+        return savePayload(buffer, buffer.getContent()).encoding().bytes();
     }
 
     private SavePayload savePayload(EditorBuffer buffer, String content) {
@@ -1239,17 +1490,13 @@ final class FileWorkflowCoordinator {
             // so without this every CRLF file was rewritten as LF by its first save.
             text = com.editora.editor.LineEndings.apply(text, buffer.getLineEnding());
         }
-        String charset = buffer.getEffectiveCharset();
         // A charset that can't represent what the user typed (an em dash / curly quote / emoji under
         // `charset = latin1`) would be written as '?' by String.getBytes — and the editor keeps showing the
         // real character until the file is reopened, so the corruption is invisible until it's permanent.
-        // Fall back to UTF-8 and say so: a changed encoding is recoverable, mangled text is not.
-        if (!com.editora.editorconfig.EditorConfigCharset.canEncode(text, charset)) {
-            host.setStatus(
-                    tr("status.charsetFallback", com.editora.editorconfig.EditorConfigCharset.displayName(charset)));
-            charset = com.editora.editorconfig.EditorConfigCharset.UTF_8;
-        }
-        return new SavePayload(text, com.editora.editorconfig.EditorConfigCharset.encode(text, charset));
+        // SaveEncoding decides what is written instead, and refuses when nothing safe can be.
+        String charset = buffer.getEffectiveCharset();
+        boolean bom = !(isUtf16(charset) && bomlessUtf16.contains(buffer));
+        return new SavePayload(text, SaveEncoding.plan(text, charset, buffer.isCharsetAssumed(), bom));
     }
 
     private static String fingerprint(byte[] bytes) {
@@ -1274,7 +1521,7 @@ final class FileWorkflowCoordinator {
             return false;
         }
         try {
-            autoSaveExecutor.submit(() -> writeAsync(request, false));
+            saveExecutor(file).submit(() -> writeAsync(request, false));
             return true;
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
             finishRequest(request);
@@ -1293,7 +1540,7 @@ final class FileWorkflowCoordinator {
         }
         CompletableFuture<Boolean> completed = new CompletableFuture<>();
         try {
-            autoSaveExecutor.submit(() -> writeAsync(request, false, completed));
+            saveExecutor(file).submit(() -> writeAsync(request, false, completed));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
             finishRequest(request);
             return false;
@@ -1337,7 +1584,7 @@ final class FileWorkflowCoordinator {
             return;
         }
         try {
-            autoSaveExecutor.submit(() -> writeAsync(request, true));
+            saveExecutor(file).submit(() -> writeAsync(request, true));
         } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
             finishRequest(request);
         }
@@ -1356,15 +1603,30 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return null;
         }
+        if (!saveAs) {
+            // The rules were resolved when the file was opened; an .editorconfig edited or pulled since then
+            // must govern this write, not the next session's. (Save As has just re-resolved for its target.)
+            host.editorSettings().refreshEditorConfig(buffer);
+        }
         String content = buffer.getContent();
         SavePayload payload = savePayload(buffer, content);
+        if (payload.encoding().bytes() == null) {
+            SaveEncoding.Unencodable first = payload.encoding().refused();
+            host.setStatus(tr(
+                    "status.save.cannotEncodeAssumed",
+                    buffer.getTitle(),
+                    com.editora.editorconfig.EditorConfigCharset.displayName(buffer.getEffectiveCharset()),
+                    first == null ? "?" : first.character(),
+                    first == null ? "?" : String.valueOf(first.line())));
+            return null;
+        }
         pendingSaves.merge(buffer, 1, Integer::sum);
         SaveRequest request = new SaveRequest(
                 buffer,
                 file,
                 content,
                 payload.text(),
-                payload.bytes(),
+                payload.encoding().bytes(),
                 buffer.docVersion(),
                 buffer.diskSnapshot(),
                 activeSaveRequests.stream()
@@ -1373,7 +1635,9 @@ final class FileWorkflowCoordinator {
                         .collect(java.util.stream.Collectors.toUnmodifiableSet()),
                 saveSequence.incrementAndGet(),
                 host.config().shared().documentWrites().begin(file),
-                saveAs);
+                saveAs,
+                buffer.getLineEnding(),
+                payload.encoding().fallbackFrom());
         activeSaveRequests.add(request);
         return request;
     }
@@ -1387,11 +1651,14 @@ final class FileWorkflowCoordinator {
                 && (plan.expectedAbsent()
                         ? Files.notExists(request.target())
                         : plan.expectedBytes() == null || diskBytesEqual(request.target(), plan.expectedBytes()));
-        boolean written = documentWriter.write(request.target(), request.bytes(), commit);
-        if (!written) {
+        AtomicFileWrite.Outcome written = documentWriter.writeDocument(request.target(), request.bytes(), commit);
+        if (written == AtomicFileWrite.Outcome.SKIPPED) {
             return null;
         }
-        return new DiskWrite(lastModifiedMillis(request.target()), fileSize(request.target()));
+        return new DiskWrite(
+                lastModifiedMillis(request.target()),
+                fileSize(request.target()),
+                written == AtomicFileWrite.Outcome.IN_PLACE);
     }
 
     private static boolean diskBytesEqual(Path target, byte[] expected) {
@@ -1490,6 +1757,60 @@ final class FileWorkflowCoordinator {
         }
     }
 
+    /**
+     * A file that is read-only on disk is still replaceable — a rename needs the directory's permission, not
+     * the file's — so a save used to replace it without a word once View mode was switched off (and a file
+     * owned by someone else became the user's). An explicit save now asks first, once per buffer and file;
+     * a background save never asks and never writes, it says why.
+     */
+    private boolean mayReplaceReadOnly(SaveRequest request, boolean autoSave) throws IOException {
+        Path target = request.target();
+        if (com.editora.vfs.Vfs.isWritableOnDisk(target)) {
+            return true;
+        }
+        CompletableFuture<Boolean> answer = new CompletableFuture<>();
+        Platform.runLater(() -> {
+            try {
+                EditorBuffer buffer = request.buffer();
+                if (buffer.isDisposed() || !request.ticket().isCurrent()) {
+                    answer.complete(false);
+                } else if (target.equals(readOnlyOverwrites.get(buffer))) {
+                    answer.complete(true);
+                } else if (autoSave) {
+                    host.setStatus(tr("status.autoSave.cannotWriteReadOnly", target.getFileName()));
+                    answer.complete(false);
+                } else {
+                    Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+                    alert.initOwner(host.stage());
+                    alert.setTitle(tr("dialog.saveReadOnly.title"));
+                    alert.setHeaderText(tr("dialog.saveReadOnly.header", target.getFileName()));
+                    alert.setContentText(tr("dialog.saveReadOnly.content"));
+                    ButtonType overwrite =
+                            new ButtonType(tr("dialog.saveReadOnly.overwrite"), ButtonBar.ButtonData.OK_DONE);
+                    ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+                    alert.getButtonTypes().setAll(overwrite, cancel);
+                    boolean agreed = Dialogs.styled(alert).showAndWait().orElse(cancel) == overwrite;
+                    if (agreed) {
+                        readOnlyOverwrites.put(buffer, target);
+                    } else {
+                        host.setStatus(tr("status.save.cannotWriteReadOnly", target.getFileName()));
+                    }
+                    answer.complete(agreed);
+                }
+            } catch (Throwable failure) {
+                answer.completeExceptionally(failure);
+            }
+        });
+        try {
+            return answer.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while confirming a save over a read-only file", e);
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new IOException("Failed to confirm a save over a read-only file", e.getCause());
+        }
+    }
+
     /** Invalidates queued or staged writes when a buffer stops representing this path. */
     void invalidatePendingWrite(Path file) {
         host.config().shared().documentWrites().supersede(file);
@@ -1518,6 +1839,9 @@ final class FileWorkflowCoordinator {
         try {
             var outcome = request.ticket().runIfCurrent(() -> {
                 Path target = request.target();
+                if (com.editora.vfs.RemoteFileSystems.isDisconnected(target)) {
+                    throw new IOException(connectionLost(target)); // before a request that can only fail oddly
+                }
                 for (int attempt = 0; request.ticket().isCurrent(); attempt++) {
                     SaveTarget state = SaveTarget.of(Files.exists(target), Files.notExists(target));
                     if (state == SaveTarget.INDETERMINATE) {
@@ -1527,6 +1851,9 @@ final class FileWorkflowCoordinator {
                     }
                     if (attempt >= SaveTarget.MAX_ATTEMPTS) {
                         throw new IOException(tr("status.save.targetKeptChanging", target.getFileName()));
+                    }
+                    if (state == SaveTarget.PRESENT && attempt == 0 && !mayReplaceReadOnly(request, autoSave)) {
+                        return null;
                     }
                     RemoteWritePlan plan = state == SaveTarget.PRESENT
                             ? prepareRemoteWrite(request, autoSave, attempt > 0, autoSaveBlocked)
@@ -1572,7 +1899,11 @@ final class FileWorkflowCoordinator {
             Platform.runLater(() -> {
                 try {
                     if (request.ticket().isCurrent()) {
-                        host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", e.getMessage()));
+                        // A connection that dropped mid-save surfaces as whatever its last request threw.
+                        String why = com.editora.vfs.RemoteFileSystems.isDisconnected(request.target())
+                                ? connectionLost(request.target())
+                                : e.getMessage();
+                        host.setStatus(tr(autoSave ? "status.autoSaveFailed" : "status.failedSave", why));
                     }
                     rollbackFailedSaveAs(request);
                     completeFuture(completed, false);
@@ -1581,6 +1912,15 @@ final class FileWorkflowCoordinator {
                 }
             });
         }
+    }
+
+    /** Why a save to a closed connection failed, and the two ways to keep the text. */
+    private static String connectionLost(Path target) {
+        return tr(
+                "status.remote.connectionLost",
+                com.editora.vfs.Vfs.authorityOf(target),
+                tr("command.remote.connect"),
+                tr("command.file.saveAs"));
     }
 
     private void completeSave(SaveRequest request, DiskWrite disk, boolean autoSave, boolean showFeedback) {
@@ -1595,11 +1935,18 @@ final class FileWorkflowCoordinator {
                 && com.editora.config.PathKeys.sameNormalized(request.buffer().getPath(), request.target())) {
             saveAsOrigins.remove(request.buffer());
         }
+        boolean stillThisFile = !request.buffer().isDisposed()
+                && request.buffer().getPath() != null
+                && com.editora.config.PathKeys.sameNormalized(request.buffer().getPath(), request.target());
+        if (request.charsetFallback() != null && stillThisFile) {
+            // The file on disk is UTF-8 with a BOM now; the status bar and the next save must agree with it.
+            host.editorSettings().charsetFellBackToUtf8(request.buffer());
+        }
+        if (".editorconfig".equals(String.valueOf(request.target().getFileName()))) {
+            host.editorConfigSaved(); // its rules reach the files already open, in every window
+        }
         if (showFeedback && !request.buffer().isDisposed()) {
-            host.setStatus(
-                    autoSave
-                            ? tr("status.autoSaved", request.target().getFileName())
-                            : tr("status.saved", com.editora.config.PathDisplay.of(request.target())));
+            host.setStatus(savedStatus(request, disk, autoSave));
             host.git().refresh();
             host.lspCoordinator().notifyDocumentSaved(request.buffer(), request.savedText());
             if (!autoSave) {
@@ -1607,6 +1954,21 @@ final class FileWorkflowCoordinator {
                 host.indexCoordinator().onBufferSaved(request.buffer());
             }
         }
+    }
+
+    /** What a finished save says: the warnings a plain "Saved" used to overwrite a few milliseconds later. */
+    private static String savedStatus(SaveRequest request, DiskWrite disk, boolean autoSave) {
+        if (request.charsetFallback() != null) {
+            return tr(
+                    "status.charsetFallback",
+                    com.editora.editorconfig.EditorConfigCharset.displayName(request.charsetFallback()));
+        }
+        if (disk.inPlace()) {
+            return tr("status.savedInPlace", com.editora.config.PathDisplay.of(request.target()));
+        }
+        return autoSave
+                ? tr("status.autoSaved", request.target().getFileName())
+                : tr("status.saved", com.editora.config.PathDisplay.of(request.target()));
     }
 
     private void rollbackFailedSaveAs(SaveRequest request) {
@@ -1641,8 +2003,8 @@ final class FileWorkflowCoordinator {
     }
 
     private void publishCommit(SaveRequest request, DiskWrite disk) {
-        CommittedSave committed =
-                new CommittedSave(request.sequence(), request.target(), request.content(), request.bytes(), disk);
+        CommittedSave committed = new CommittedSave(
+                request.sequence(), request.target(), request.content(), request.bytes(), disk, request.lineEnding());
         committedSaves.compute(
                 com.editora.config.PathKeys.key(request.target()),
                 (ignored, previous) ->
@@ -1684,7 +2046,10 @@ final class FileWorkflowCoordinator {
                 || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), committed.target())) {
             return;
         }
-        buffer.acknowledgeSavedContent(committed.content());
+        // With the ending that was written: a line-ending conversion chosen while this write was in flight is
+        // not on disk (the text is the same, so the text alone would call the buffer clean), and converting
+        // back afterwards matches the disk again.
+        buffer.acknowledgeSavedContent(committed.content(), committed.lineEnding());
         buffer.setDiskSnapshot(
                 committed.disk().modifiedMillis(), committed.disk().size(), fingerprint(committed.bytes()));
     }
@@ -1697,6 +2062,7 @@ final class FileWorkflowCoordinator {
         shutdown = true;
         autoSaveIdleTimer.stop();
         autoSaveExecutor.shutdownNow();
+        remoteSaveExecutors.values().forEach(ExecutorService::shutdownNow);
         fileLoadExecutor.shutdownNow();
         List.copyOf(activeSaveRequests).forEach(this::finishRequest);
         committedSaves.clear();

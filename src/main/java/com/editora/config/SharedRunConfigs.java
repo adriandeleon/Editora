@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 
@@ -48,7 +50,11 @@ public final class SharedRunConfigs {
         }
         try {
             Stored stored = mapper.readValue(file.toFile(), Stored.class);
-            return stored == null || stored.configurations == null ? List.of() : stored.configurations;
+            if (stored == null || stored.configurations == null) {
+                return List.of();
+            }
+            // A hand-edited array can hold a null entry ("[{…}, null]"); merge() reads each entry's name.
+            return stored.configurations.stream().filter(Objects::nonNull).toList();
         } catch (IOException | RuntimeException e) {
             return List.of(); // a hand-edited or half-written file must not break opening the project
         }
@@ -86,6 +92,7 @@ public final class SharedRunConfigs {
     }
 
     /** On-disk shape: an object rather than a bare array, so a version or other keys can be added later. */
+    @JsonIgnoreProperties(ignoreUnknown = true) // or one added key reads as "no shared configurations"
     static final class Stored {
         public List<RunConfiguration> configurations = new ArrayList<>();
     }

@@ -103,4 +103,20 @@ class ConsoleNavFxTest {
             assertEquals(output.getLength(), output.getCaretPosition(), "returning to the end resumes the follow");
         });
     }
+
+    /** C-f / C-b stepped one UTF-16 unit, parking the caret between the two halves of an emoji. */
+    @Test
+    void charForwardAndBackwardStepOverAWholeEmoji() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = new CodeArea();
+            area.setEditable(false);
+            area.replaceText("a\uD83D\uDE00b");
+            ConsoleNav.install(area, emacs());
+            area.moveTo(1);
+            press(area, KeyCode.F, true, false, false); // C-f
+            assertEquals(3, area.getCaretPosition(), "past both halves of the surrogate pair");
+            press(area, KeyCode.B, true, false, false); // C-b
+            assertEquals(1, area.getCaretPosition());
+        });
+    }
 }

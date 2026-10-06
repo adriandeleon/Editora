@@ -62,7 +62,11 @@ public final class TextInputKeymap {
         control.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             consumed[0] = false;
             if (e.isConsumed()) {
-                return; // an earlier filter (e.g. a picker's list navigation) already claimed this chord
+                // An earlier filter (e.g. a picker's list navigation) already claimed this chord. Its typed
+                // character is that chord's by-product all the same: on macOS Option-V (page up in a picker)
+                // also emits "√", which would otherwise be typed into the query and re-run the search.
+                consumed[0] = true;
+                return;
             }
             String token = KeyDispatcher.chord(e);
             if (token == null) {
@@ -102,8 +106,9 @@ public final class TextInputKeymap {
 
     private static Map<String, Consumer<TextInputControl>> actions() {
         Map<String, Consumer<TextInputControl>> m = new HashMap<>();
-        m.put("nav.charForward", c -> c.positionCaret(Math.min(c.getLength(), c.getCaretPosition() + 1)));
-        m.put("nav.charBackward", c -> c.positionCaret(Math.max(0, c.getCaretPosition() - 1)));
+        // The control's own motion steps a whole character; caret + 1 stopped inside a surrogate pair.
+        m.put("nav.charForward", TextInputControl::forward);
+        m.put("nav.charBackward", TextInputControl::backward);
         m.put("nav.lineStart", c -> c.positionCaret(lineStart(c.getText(), c.getCaretPosition())));
         m.put("nav.lineEnd", c -> c.positionCaret(lineEnd(c.getText(), c.getCaretPosition())));
         m.put("nav.lineDown", c -> c.positionCaret(lineDown(c.getText(), c.getCaretPosition())));

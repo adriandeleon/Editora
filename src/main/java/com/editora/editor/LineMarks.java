@@ -28,6 +28,79 @@ final class LineMarks {
         String lineText(T mark);
 
         T withLine(T mark, int line);
+
+        /** The mark with a fresh line-text snapshot (its line was edited in place). */
+        default T withLineText(T mark, String lineText) {
+            return mark;
+        }
+    }
+
+    /**
+     * One text change, in the terms {@link #shift} needs.
+     *
+     * @param insertedEndsWithNewline the inserted text ends in a newline, so (for an edit at a line start) the
+     *     line after the inserted ones is an untouched line, not part of the rewritten span
+     * @param removedEndsWithNewline the removed text ends in a newline (whole lines were removed); when it does
+     *     not, a rewrite at a line start also replaced the text of the line its removal ended on
+     * @param lastLineRemoved the last line the removal reached lost <em>all</em> of its text (a selection
+     *     ending at a line's end), so nothing of it survives to be joined onto the edit line
+     */
+    record Edit(
+            int startLine,
+            boolean atLineStart,
+            int removedNL,
+            int insertedNL,
+            boolean insertedEndsWithNewline,
+            boolean removedEndsWithNewline,
+            boolean lastLineRemoved) {
+
+        /**
+         * Describes replacing {@code removed} by {@code inserted} at {@code (startLine, startCol)}.
+         * {@code lineTextAt} reads a line of the document <em>after</em> the edit.
+         */
+        static Edit of(String removed, String inserted, int startLine, int startCol, IntFunction<String> lineTextAt) {
+            int removedNL = countNewlines(removed);
+            int insertedNL = countNewlines(inserted);
+            boolean lastLineRemoved = false;
+            int lastRemovedNL = removed.lastIndexOf('\n');
+            if (startCol > 0
+                    && lastRemovedNL >= 0
+                    && !removed.substring(lastRemovedNL + 1).isBlank()) {
+                // Text of the last removed line was deleted; did any of that line survive after the edit?
+                int endCol = insertedNL == 0
+                        ? startCol + inserted.length()
+                        : inserted.length() - inserted.lastIndexOf('\n') - 1;
+                String endLine = lineTextAt == null ? null : lineTextAt.apply(startLine + insertedNL);
+                lastLineRemoved = endLine != null
+                        && endLine.substring(Math.min(endCol, endLine.length())).isBlank();
+            }
+            return new Edit(
+                    startLine,
+                    startCol == 0,
+                    removedNL,
+                    insertedNL,
+                    inserted.endsWith("\n"),
+                    removed.endsWith("\n"),
+                    lastLineRemoved);
+        }
+    }
+
+    static int countNewlines(String s) {
+        int n = 0;
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) == '\n') {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** A line's text as a mark stores it: stripped, and cut to the stored snapshot length. */
+    static String snapshotText(String raw) {
+        String t = raw == null ? "" : raw.strip();
+        return t.length() > com.editora.config.Bookmark.MAX_LINE_TEXT
+                ? t.substring(0, com.editora.config.Bookmark.MAX_LINE_TEXT)
+                : t;
     }
 
     /**
@@ -78,11 +151,13 @@ final class LineMarks {
      *   <li><b>Deletion</b> (no newline inserted): the lines are gone and so are their marks.</li>
      *   <li><b>Rewrite</b> (newlines removed <em>and</em> inserted — Replace All over several lines, a
      *       formatter's ranged edit, a history restore or diff apply replacing the whole document): the
-     *       lines were replaced, not deleted, so the marks survive. With the same number of lines they map
-     *       line for line. Otherwise each follows its stored line text to the nearest line of the new span
-     *       that still has it ({@code lineTextAt}, when given), and what cannot be matched is clamped to the
-     *       nearest free line of the span. A mark is dropped only when the span has fewer lines than
-     *       marks.</li>
+     *       lines were replaced, not deleted, so the marks survive. Each follows its stored line text to the
+     *       nearest line of the new span that still has it ({@code lineTextAt}, when given) — which is what
+     *       keeps a mark on its statement through Move Line Up/Down, a one-change swap of two lines. What
+     *       cannot be matched stays line for line when the line count is unchanged, and is otherwise clamped
+     *       to the nearest free line of the span. The span is the rewritten lines only: never the untouched
+     *       line that follows an edit ending in a newline. A mark is dropped only when the span has fewer
+     *       lines than marks.</li>
      * </ul>
      *
      * @param lineTextAt the <em>raw</em> text of a 0-based line of the document <em>after</em> the edit, or
@@ -97,6 +172,25 @@ final class LineMarks {
             int insertedNL,
             int paragraphCount,
             IntFunction<String> lineTextAt) {
+        return shift(
+                current,
+                kind,
+                new Edit(startLine, atLineStart, removedNL, insertedNL, false, true, false),
+                paragraphCount,
+                lineTextAt);
+    }
+
+    /** {@link #shift(NavigableMap, Kind, int, boolean, int, int, int, IntFunction)} for a fully described edit. */
+    static <T> NavigableMap<Integer, T> shift(
+            NavigableMap<Integer, T> current,
+            Kind<T> kind,
+            Edit edit,
+            int paragraphCount,
+            IntFunction<String> lineTextAt) {
+        int startLine = edit.startLine();
+        boolean atLineStart = edit.atLineStart();
+        int removedNL = edit.removedNL();
+        int insertedNL = edit.insertedNL();
         int delta = insertedNL - removedNL;
         int pivot = atLineStart ? startLine - 1 : startLine;
         int removedEndLine = pivot + removedNL;
@@ -105,9 +199,15 @@ final class LineMarks {
         // that join line must follow its content to pivot+insertedNL rather than be dropped — otherwise you
         // set a breakpoint, join the line above, and silently debug without it. (An at-line-start deletion
         // genuinely removes that line's content; its successor is the survivor and is handled by the shift
-        // branch, so this only applies when !atLineStart.)
-        boolean joinSurvives = !atLineStart && removedNL > 0;
+        // branch, so this only applies when !atLineStart.) When the removal took ALL of that last line's text
+        // (a selection from the end of one line to the end of a later one), nothing was joined: the line is
+        // as deleted as the ones before it, and its mark must not reappear on the line above.
+        boolean joinSurvives = !atLineStart && removedNL > 0 && !edit.lastLineRemoved();
         boolean rewritten = removedNL > 0 && insertedNL > 0;
+        // A rewrite from a line start that stops inside a later line (Move Line Up/Down swaps two lines this
+        // way) replaced that last line's text too, so its mark is one of the rewritten ones — not a mark
+        // "below the edit" that merely shifts.
+        int rewrittenTail = rewritten && atLineStart && !edit.removedEndsWithNewline() ? removedEndLine + 1 : -1;
         int maxLine = Math.max(0, paragraphCount - 1);
         NavigableMap<Integer, T> out = new TreeMap<>();
         List<T> displaced = null;
@@ -117,23 +217,25 @@ final class LineMarks {
                 out.put(line, mark);
             } else if (line == removedEndLine && joinSurvives) {
                 put(out, kind, mark, clamp(pivot + insertedNL, 0, maxLine));
-            } else if (line > removedEndLine) {
+            } else if (line > removedEndLine && line != rewrittenTail) {
                 put(out, kind, mark, clamp(line + delta, 0, maxLine));
             } else if (!rewritten) {
                 continue; // inside a deleted span: the line is gone, and the mark with it
-            } else if (delta == 0) {
-                out.put(line, mark); // same number of lines: line for line
             } else {
                 if (displaced == null) {
                     displaced = new ArrayList<>();
                 }
-                displaced.add(mark);
+                // The tail line sits below the removed newlines, so its position in the new span is shifted.
+                displaced.add(line == rewrittenTail && delta != 0 ? kind.withLine(mark, line + delta) : mark);
             }
         }
         if (displaced != null) {
             int first = Math.min(pivot + 1, maxLine);
-            int last = clamp(startLine + insertedNL, first, maxLine);
-            placeDisplaced(out, kind, displaced, first, last, lineTextAt);
+            // An edit at a line start whose text ends in a newline inserts whole lines: the line after them
+            // is the untouched one that followed the removed block, and no mark may be planted on it.
+            int lastInserted = startLine + insertedNL - (atLineStart && edit.insertedEndsWithNewline() ? 1 : 0);
+            int last = clamp(lastInserted, first, maxLine);
+            placeDisplaced(out, kind, displaced, first, last, lineTextAt, delta == 0);
         }
         return out;
     }
@@ -149,8 +251,27 @@ final class LineMarks {
             List<T> displaced,
             int first,
             int last,
-            IntFunction<String> lineTextAt) {
+            IntFunction<String> lineTextAt,
+            boolean sameLineCount) {
         List<T> unmatched = new ArrayList<>();
+        if (sameLineCount) {
+            // Same number of lines: a mark whose line still reads the same (or that has no text to go by)
+            // has not moved. Settle those first so a moved line never takes a line that is rightfully kept.
+            List<T> moved = new ArrayList<>();
+            for (T mark : displaced) {
+                int line = kind.line(mark);
+                String text = kind.lineText(mark);
+                if (lineTextAt == null
+                        || text == null
+                        || text.isEmpty()
+                        || text.equals(snapshotText(lineTextAt.apply(line)))) {
+                    out.put(line, mark);
+                } else {
+                    moved.add(mark);
+                }
+            }
+            displaced = moved;
+        }
         for (T mark : displaced) {
             int wanted = clamp(kind.line(mark), first, last);
             int found = lineTextAt == null ? -1 : findText(out, kind.lineText(mark), wanted, first, last, lineTextAt);
@@ -161,7 +282,11 @@ final class LineMarks {
             }
         }
         for (T mark : unmatched) {
-            int free = nearestFree(out, clamp(kind.line(mark), first, last), first, last);
+            int line = kind.line(mark);
+            // With an unchanged line count an unmatched mark keeps its line (the text was edited, not moved).
+            int free = sameLineCount && !out.containsKey(line)
+                    ? line
+                    : nearestFree(out, clamp(line, first, last), first, last);
             if (free >= 0) {
                 put(out, kind, mark, free);
             }
@@ -187,10 +312,10 @@ final class LineMarks {
             if (!downOk && !upOk) {
                 break;
             }
-            if (downOk && !taken.containsKey(down) && text.equals(strip(lineTextAt.apply(down)))) {
+            if (downOk && !taken.containsKey(down) && text.equals(snapshotText(lineTextAt.apply(down)))) {
                 return down;
             }
-            if (upOk && r > 0 && !taken.containsKey(up) && text.equals(strip(lineTextAt.apply(up)))) {
+            if (upOk && r > 0 && !taken.containsKey(up) && text.equals(snapshotText(lineTextAt.apply(up)))) {
                 return up;
             }
         }
@@ -267,10 +392,6 @@ final class LineMarks {
 
     private static <T> void put(NavigableMap<Integer, T> out, Kind<T> kind, T mark, int line) {
         out.put(line, line == kind.line(mark) ? mark : kind.withLine(mark, line));
-    }
-
-    private static String strip(String text) {
-        return text == null ? "" : text.strip();
     }
 
     private static int clamp(int value, int lo, int hi) {

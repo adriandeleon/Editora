@@ -83,4 +83,37 @@ class CompletionAcceptRangeFxTest {
         });
         assertEquals("<?php\n$user\n", result);
     }
+
+    private static String acceptAtEnd(String language, String content, Completion c) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride(language);
+            b.setContent(content);
+            b.getNode();
+            CodeArea area = FxTestSupport.field(b, "area");
+            area.moveTo(content.length());
+            FxTestSupport.call(
+                    FxTestSupport.field(b, "completionActions"),
+                    "acceptCompletion",
+                    new Class<?>[] {CodeArea.class, Completion.class},
+                    area,
+                    c);
+            return area.getText();
+        });
+    }
+
+    /** The sigil overlap also holds once the list has been narrowed: `$us` + `$user` is `$user`, not `$$user`. */
+    @Test
+    void theSigilIsNotDuplicatedAfterNarrowingTheList() throws Exception {
+        assertEquals("<?php\n$user", acceptAtEnd("php", "<?php\n$us", Completion.lsp("$user", "$user", "")));
+    }
+
+    /** A label with a non-identifier character in it (bash-language-server's commands) replaces what was typed of it. */
+    @Test
+    void anInsertWithAHyphenReplacesTheWholeTypedOverlap() throws Exception {
+        assertEquals("sudo apt-get", acceptAtEnd("shell", "sudo apt-g", Completion.lsp("apt-get", "apt-get", "")));
+        assertEquals(
+                "sudo docker-compose",
+                acceptAtEnd("shell", "sudo dock", Completion.lsp("docker-compose", "docker-compose", "")));
+    }
 }

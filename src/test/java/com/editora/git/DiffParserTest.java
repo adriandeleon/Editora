@@ -114,4 +114,31 @@ class DiffParserTest {
         assertEquals("-gone a\n-gone b", hunks.get(4));
         assertEquals(1, hunks.size());
     }
+
+    @Test
+    void bodyLinesThatLookLikeFileHeadersStayInTheHunkText() {
+        // A removed "-- comment" is the diff line "--- comment" and an added "++i;" is "+++i;". Treating
+        // them as file headers ended the body there, so the change bar had no tooltip.
+        String diff = """
+                diff --git a/q.sql b/q.sql
+                index 111..222 100644
+                --- a/q.sql
+                +++ b/q.sql
+                @@ -1 +1 @@
+                --- old comment
+                +-- new comment
+                @@ -3,0 +4 @@
+                +++i;
+                diff --git a/other.sql b/other.sql
+                --- a/other.sql
+                +++ b/other.sql
+                @@ -9 +9 @@
+                -x
+                +y
+                """;
+        Map<Integer, String> hunks = DiffParser.parseToHunkText(diff);
+        assertEquals("--- old comment\n+-- new comment", hunks.get(0));
+        assertEquals("+++i;", hunks.get(3), "the next file's headers are not part of this body");
+        assertEquals("-x\n+y", hunks.get(8));
+    }
 }

@@ -189,4 +189,32 @@ class ClientCapabilitiesTest {
                 java.util.List.of("editRange", "insertTextFormat", "insertTextMode", "data", "commitCharacters"),
                 completion.getCompletionList().getItemDefaults());
     }
+
+    // --- round two: three capabilities that were implemented but never declared ---------------------
+
+    /** Without the flag jdtls, pyright, clangd and lemminx answer with a flat SymbolInformation list. */
+    @Test
+    void documentSymbolDeclaresHierarchicalSupport() {
+        var ds = CAPS.getTextDocument().getDocumentSymbol();
+        assertTrue(Boolean.TRUE.equals(ds.getHierarchicalDocumentSymbolSupport()), "the outline needs the tree");
+        assertTrue(Boolean.TRUE.equals(ds.getDynamicRegistration()));
+    }
+
+    /** Without contentFormat a conforming server sends plaintext, which the popup parsed as Markdown. */
+    @Test
+    void hoverDeclaresMarkdownThenPlaintext() {
+        var hover = CAPS.getTextDocument().getHover();
+        assertEquals(java.util.List.of("markdown", "plaintext"), hover.getContentFormat());
+        assertTrue(Boolean.TRUE.equals(hover.getDynamicRegistration()));
+    }
+
+    /** A server sends workspace/…/refresh only to a client that declares refreshSupport. */
+    @Test
+    void workspaceDeclaresRefreshSupportForEveryRefreshItHandles() {
+        var ws = CAPS.getWorkspace();
+        assertTrue(Boolean.TRUE.equals(ws.getSemanticTokens().getRefreshSupport()));
+        assertTrue(Boolean.TRUE.equals(ws.getInlayHint().getRefreshSupport()));
+        assertTrue(Boolean.TRUE.equals(ws.getDiagnostics().getRefreshSupport()));
+        assertTrue(Boolean.TRUE.equals(ws.getFoldingRange().getRefreshSupport()));
+    }
 }

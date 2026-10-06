@@ -52,6 +52,19 @@ class TestFilterTest {
         }
     }
 
+    /**
+     * A suite with no tests is a message row (the npm "structured results unavailable" banner). It used to be
+     * rejected like an all-filtered class, so the banner was never rendered.
+     */
+    @Test
+    void aSuiteWithNoTestsIsShownUnlessSomethingIsBeingFiltered() {
+        TestNode root = TestNode.root();
+        TestNode banner = root.addChild(new TestNode(TestNodeKind.SUITE, "banner", "banner"));
+        assertTrue(TestFilter.ALL.acceptsSuite(banner));
+        assertFalse(TestFilter.failedOnly().acceptsSuite(banner));
+        assertFalse(TestFilter.ALL.withQuery("x").acceptsSuite(banner));
+    }
+
     @Test
     void errorSharesTheFailedBucket() {
         assertEquals(Bucket.FAILED, TestFilter.bucketOf(TestStatus.FAILED));

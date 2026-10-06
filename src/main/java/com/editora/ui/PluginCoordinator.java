@@ -725,7 +725,8 @@ final class PluginCoordinator {
         public void setText(String text) {
             EditorBuffer b = buf();
             if (b != null && b.isEditable() && text != null) {
-                b.getArea().replaceText(text); // whole-document replace (undoable, marks dirty)
+                // text() is the whole file, so this widens a narrowed buffer first (undoable, marks dirty).
+                b.replaceWholeDocument(text);
             }
         }
 

@@ -110,6 +110,8 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public List<TextEdit> formattingResponse = List.of();
     /** The value {@code workspace/executeCommand} answers with (null unless a test sets it). */
     public Object executeCommandResponse;
+    /** When set, answers {@code workspace/executeCommand} per request instead of the canned value above. */
+    public volatile java.util.function.Function<ExecuteCommandParams, Object> executeCommandHandler;
 
     public List<TextEdit> onTypeFormattingResponse = List.of();
     public List<Location> definitionResponse = List.of();
@@ -324,6 +326,17 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     }
 
     /** A future that completes exceptionally, as a real transport failure would. */
+    public final List<org.eclipse.lsp4j.DocumentDiagnosticParams> diagnosticPulls = new ArrayList<>();
+    /** The report {@code textDocument/diagnostic} answers with (null unless a test sets it). */
+    public org.eclipse.lsp4j.DocumentDiagnosticReport diagnosticResponse;
+
+    @Override
+    public CompletableFuture<org.eclipse.lsp4j.DocumentDiagnosticReport> diagnostic(
+            org.eclipse.lsp4j.DocumentDiagnosticParams params) {
+        diagnosticPulls.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(diagnosticResponse);
+    }
+
     private static <T> CompletableFuture<T> failed() {
         return CompletableFuture.failedFuture(new IllegalStateException("simulated transport failure"));
     }
@@ -356,6 +369,10 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<Object> executeCommand(ExecuteCommandParams params) {
         executedCommands.add(params);
+        var handler = executeCommandHandler;
+        if (handler != null && !failEverything) {
+            return CompletableFuture.completedFuture(handler.apply(params));
+        }
         return failEverything ? failed() : CompletableFuture.completedFuture(executeCommandResponse);
     }
 }

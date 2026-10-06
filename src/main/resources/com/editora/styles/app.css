@@ -1318,6 +1318,9 @@
 .project-tree .git-status-deleted, .project-tree .git-status-deleted .project-file-name,
 .git-tree .git-status-deleted { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-deleted .toolbar-icon, .git-tree .git-status-deleted .toolbar-icon { -fx-fill: -color-fg-muted; }
+.project-tree .git-status-conflict, .project-tree .git-status-conflict .project-file-name,
+.git-tree .git-status-conflict { -fx-text-fill: -color-danger-fg; }
+.project-tree .git-status-conflict .toolbar-icon, .git-tree .git-status-conflict .toolbar-icon { -fx-fill: -color-danger-fg; }
 .project-tree .git-status-dir-changed { -fx-text-fill: -color-accent-fg; }
 /* The M/A/D/R/U indicator (FileIcons.withStatusLetter) is its own Label inside the cell, so that it can
    be bold while the file name beside it is not. Being a child, it does not pick up the cell's
@@ -1333,6 +1336,8 @@
 .git-tree .git-status-renamed .git-status-letter { -fx-text-fill: -state-violet; }
 .project-tree .git-status-deleted .git-status-letter,
 .git-tree .git-status-deleted .git-status-letter { -fx-text-fill: -color-fg-muted; }
+.project-tree .git-status-conflict .git-status-letter,
+.git-tree .git-status-conflict .git-status-letter { -fx-text-fill: -color-danger-fg; }
 /* Git Log commit list: the short hash reads in the accent color, the subject in the default text color. */
 .git-log-panel .git-log-hash { -fx-fill: -color-accent-fg; }
 .git-log-panel .git-log-subject { -fx-fill: -color-fg-default; }
@@ -2471,6 +2476,12 @@
 /* The base rule above would otherwise erase the theme's focused border (author beats user-agent). */
 .settings-search:focused {
     -fx-background-color: -color-input-border-focused, -color-bg-default;
+    /* The theme hides a focused field's prompt, and this field has the focus when the window opens: it
+       was a blank, unlabelled box. The shortcut recorder is focused for as long as it exists. */
+    -fx-prompt-text-fill: -color-fg-muted;
+}
+.shortcut-capture:focused {
+    -fx-prompt-text-fill: -color-fg-muted;
 }
 /* The nav rail (search + sidebar) — kit .set-nav: the DEFAULT surface with a right border, sitting
    beside a SUBTLE page ground so the white cards on it actually read as cards. (This is the inverse
@@ -2500,6 +2511,10 @@
     -fx-background-color: -color-accent-subtle;
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
+}
+/* A category with no search hit is disabled (CategoryCell); say so, or it looks clickable and is not. */
+.settings-sidebar .list-cell.settings-sidebar-item:disabled {
+    -fx-opacity: 0.4;
 }
 .settings-content {
     -fx-background-color: -color-bg-subtle;
@@ -3147,6 +3162,10 @@
     -fx-text-fill: -color-fg-default;
     -fx-padding: 1 4 1 4;
 }
+/* The frame rows as dense as the variable rows beside them: the theme's default list-cell height is twice
+   that, which halved the frames a strip-high list can show. */
+.debug-panel .debug-stack { -fx-fixed-cell-size: 22px; }
+.debug-panel .debug-stack .list-cell { -fx-cell-size: 22px; -fx-alignment: center-left; }
 .debug-panel .split-pane {
     -fx-background-color: transparent;
     -fx-background-insets: 0;
@@ -3179,6 +3198,8 @@
 .debug-panel .debug-val-bool { -fx-fill: -state-amber; }
 .debug-panel .debug-val-null { -fx-fill: -color-fg-muted; }
 .debug-panel .debug-val-other { -fx-fill: -color-fg-default; }
+/* A watch the adapter could not evaluate: its message, not a value. */
+.debug-panel .debug-val-error { -fx-fill: -state-red; -fx-font-style: italic; }
 /* Hover value tooltip in the editor while suspended (IntelliJ's value popup). */
 .debug-value-tooltip {
     -fx-font-size: 12px;
@@ -3267,6 +3288,11 @@
 .breakpoint-marker.breakpoint-conditional { -fx-fill: #d29922; }
 .breakpoint-marker.breakpoint-logpoint { -fx-fill: #1f6feb; }
 .breakpoint-marker.breakpoint-disabled { -fx-fill: -color-fg-muted; -fx-opacity: 0.5; }
+/* While a debug session is live: a breakpoint the adapter has not bound (its class is not loaded yet, or
+   the line has no code) is a hollow ring; one it refused, or whose condition it cannot evaluate, an amber one.
+   The glyph is drawn at half scale, so the stroke is twice the width it shows. */
+.breakpoint-marker.breakpoint-unverified { -fx-fill: transparent; -fx-stroke: -color-fg-muted; -fx-stroke-width: 3.5; }
+.breakpoint-marker.breakpoint-unverified.breakpoint-rejected { -fx-stroke: -state-amber; }
 .fold-gutter .breakpoint-slot:hover { -fx-background-color: rgba(229, 20, 0, 0.12); }
 
 /* Current execution line while the debugger is suspended (a RichTextFX paragraph style). A translucent
@@ -3439,8 +3465,16 @@
    (click to select), so the list stays uncluttered. */
 .shortcut-row-clickable {
     -fx-cursor: hand;
-    -fx-padding: 2 4 2 4;
+    -fx-padding: 0 2 0 2;
     -fx-background-radius: 4;
+    /* The keyboard-focus ring below is this border recoloured, so focusing a row never shifts the list. */
+    -fx-border-color: transparent;
+    -fx-border-width: 2;
+    -fx-border-radius: 4;
+}
+/* :focused, not :focus-visible — the arrow keys move between rows with requestFocus(). */
+.shortcut-row-clickable:focused {
+    -fx-border-color: -color-accent-emphasis;
 }
 .shortcut-row-clickable:hover {
     -fx-background-color: -color-bg-subtle;

@@ -71,7 +71,7 @@ public final class Globs {
             return false;
         }
         for (String ex : exclude) {
-            if (!directoryOnly(ex) && EditorConfigGlob.matches(ex, relPath)) {
+            if (!directoryOnly(ex) && EditorConfigGlob.matches(javaGlob(ex), relPath)) {
                 return false;
             }
         }
@@ -84,7 +84,7 @@ public final class Globs {
             return false;
         }
         for (String ex : exclude) {
-            if (EditorConfigGlob.matches(directoryOnly(ex) ? ex.substring(0, ex.length() - 1) : ex, relDir)) {
+            if (EditorConfigGlob.matches(javaGlob(directoryOnly(ex) ? ex.substring(0, ex.length() - 1) : ex), relDir)) {
                 return true;
             }
         }
@@ -101,11 +101,43 @@ public final class Globs {
             }
         }
         for (String ex : exclude) {
-            if (!directoryOnly(ex) && EditorConfigGlob.matches(ex, relPath)) {
+            if (!directoryOnly(ex) && EditorConfigGlob.matches(javaGlob(ex), relPath)) {
                 return true;
             }
         }
         return false;
+    }
+
+    /**
+     * {@code glob} as the Java matcher must be given it. ripgrep reads {@code \x} as an escaped {@code x}
+     * (everywhere but Windows, where the backslash is a path separator and stays one here too), while
+     * {@link EditorConfigGlob} takes a backslash literally — so {@code we\,ird/*} found the closed file
+     * through ripgrep and lost it again once the file was open. An escaped metacharacter becomes a
+     * one-character class, anything else the character itself.
+     */
+    static String javaGlob(String glob) {
+        return javaGlob(glob, java.io.File.separatorChar != '\\');
+    }
+
+    static String javaGlob(String glob, boolean backslashEscapes) {
+        if (!backslashEscapes || glob.indexOf('\\') < 0) {
+            return glob;
+        }
+        StringBuilder out = new StringBuilder(glob.length() + 4);
+        for (int i = 0; i < glob.length(); i++) {
+            char c = glob.charAt(i);
+            if (c != '\\' || i + 1 == glob.length()) {
+                out.append(c);
+                continue;
+            }
+            char escaped = glob.charAt(++i);
+            if ("*?[{},".indexOf(escaped) >= 0) {
+                out.append('[').append(escaped).append(']');
+            } else {
+                out.append(escaped);
+            }
+        }
+        return out.toString();
     }
 
     /** A trailing slash ({@code target/}) names a directory only, as in a {@code .gitignore}. */
@@ -118,7 +150,7 @@ public final class Globs {
             return true;
         }
         for (String in : include) {
-            if (EditorConfigGlob.matches(in, relPath)) {
+            if (EditorConfigGlob.matches(javaGlob(in), relPath)) {
                 return true;
             }
         }

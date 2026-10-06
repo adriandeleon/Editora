@@ -64,7 +64,7 @@ class DapSessionLifecycleFxTest {
     }
 
     /** Records what the debug UI is told, with a latch per stop so a test can wait for one. */
-    private static final class RecordingListener implements DapManager.Listener {
+    private static class RecordingListener implements DapManager.Listener {
         final List<DapManager.State> states = new java.util.concurrent.CopyOnWriteArrayList<>();
         final List<String> output = new java.util.concurrent.CopyOnWriteArrayList<>();
         final java.util.concurrent.BlockingQueue<Integer> stops = new java.util.concurrent.LinkedBlockingQueue<>();
@@ -125,12 +125,131 @@ class DapSessionLifecycleFxTest {
 
                 FxTestSupport.runOnFx(() -> FxTestSupport.invoke(manager, step[0]));
 
-                assertEquals(
-                        DapManager.State.RUNNING,
-                        FxTestSupport.callOnFx(manager::state),
-                        step[0] + " must leave the suspended state");
                 session.awaitRequest(step[1]);
+                awaitState(manager, DapManager.State.RUNNING, step[0] + " must leave the suspended state");
+                assertTrue(FxTestSupport.callOnFx(manager::isStepping), "a step is in flight until the next stop");
             }
+            session.stop(7, "step");
+            listener.awaitStop();
+            assertFalse(FxTestSupport.callOnFx(manager::isStepping), "the stop ends the step");
+            FxTestSupport.runOnFx(manager::shutdown);
+        }
+    }
+
+    private static void awaitState(DapManager manager, DapManager.State wanted, String why) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (FxTestSupport.callOnFx(manager::state) != wanted) {
+            assertTrue(System.nanoTime() < deadline, why + " (state never became " + wanted + ")");
+            Thread.sleep(10);
+        }
+    }
+
+    /** A manager connected to {@code adapter}, as after a launch; the adapter's side is the returned session. */
+    private static com.editora.dap.FakeDebugAdapter.Session connect(
+            DapManager manager, com.editora.dap.FakeDebugAdapter adapter) throws Exception {
+        long epoch = beginSession(manager);
+        DapClient client = new DapClient(sessionHost(manager, epoch));
+        client.connect(adapter.port(), "java").get(10, java.util.concurrent.TimeUnit.SECONDS);
+        assertTrue((Boolean) FxTestSupport.call(
+                manager, "publishClient", new Class<?>[] {long.class, DapClient.class}, epoch, client));
+        return adapter.awaitSession();
+    }
+
+    /**
+     * A step the adapter refuses — java-debug answers "the thread is not suspended" when another thread was
+     * picked in the selector — moved nothing. The session flipped to RUNNING anyway, with Continue, Step and
+     * the thread selector disabled while the debuggee sat on its breakpoint.
+     */
+    @Test
+    void aStepTheAdapterRefusesLeavesTheSessionSuspended() throws Exception {
+        try (var adapter = new com.editora.dap.FakeDebugAdapter(false)) {
+            DapManager manager = new DapManager(null);
+            List<String> errors = new java.util.concurrent.CopyOnWriteArrayList<>();
+            RecordingListener listener = new RecordingListener() {
+                @Override
+                public void onError(String message) {
+                    errors.add(message);
+                }
+            };
+            manager.setListener(listener);
+            var session = connect(manager, adapter);
+            session.stop(7, "breakpoint");
+            listener.awaitStop();
+
+            session.stepFailure = "Failed to step because the thread 'worker' is not suspended in the target VM.";
+            FxTestSupport.runOnFx(manager::stepOver);
+            session.awaitRequest("next");
+            session.awaitDelivered();
+            FxTestSupport.runOnFx(() -> {});
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+            while (errors.isEmpty() && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+
+            assertEquals(DapManager.State.SUSPENDED, FxTestSupport.callOnFx(manager::state));
+            assertFalse(FxTestSupport.callOnFx(manager::isStepping));
+            assertEquals(1, errors.size(), "the adapter's refusal is reported");
+            assertTrue(errors.get(0).contains("not suspended"), errors.get(0));
+            FxTestSupport.runOnFx(manager::shutdown);
+        }
+    }
+
+    /**
+     * java-debug suspends and resumes per thread. With two workers stopped on one breakpoint, Continue
+     * resumed only the thread on screen and reported a running session; the other thread stayed suspended
+     * with nothing to show it, and Continue kept re-sending the same thread.
+     */
+    @Test
+    void continuingOneOfTwoStoppedThreadsBringsTheOtherForward() throws Exception {
+        try (var adapter = new com.editora.dap.FakeDebugAdapter(false)) {
+            DapManager manager = new DapManager(null);
+            RecordingListener listener = new RecordingListener();
+            manager.setListener(listener);
+            var session = connect(manager, adapter);
+            session.allThreadsContinued = false; // java-debug: only the thread that was asked for
+            session.stop(11, "breakpoint", false);
+            assertEquals(11, listener.stops.poll(10, java.util.concurrent.TimeUnit.SECONDS));
+            session.stop(12, "breakpoint", false);
+            assertEquals(12, listener.stops.poll(10, java.util.concurrent.TimeUnit.SECONDS));
+
+            FxTestSupport.runOnFx(manager::resume);
+            assertEquals(
+                    11,
+                    listener.stops.poll(10, java.util.concurrent.TimeUnit.SECONDS),
+                    "thread 11 is still stopped and must be shown");
+            assertEquals(DapManager.State.SUSPENDED, FxTestSupport.callOnFx(manager::state));
+            assertEquals(11, FxTestSupport.callOnFx(manager::currentThreadId));
+
+            FxTestSupport.runOnFx(manager::resume);
+            session.awaitRequests("continue", 2);
+            session.awaitDelivered();
+            FxTestSupport.runOnFx(() -> {});
+            assertEquals(List.of(12, 11), List.copyOf(session.continuedThreads));
+            awaitState(manager, DapManager.State.RUNNING, "nothing is stopped any more");
+            assertTrue(listener.stops.isEmpty());
+            FxTestSupport.runOnFx(manager::shutdown);
+        }
+    }
+
+    /** An adapter that stops every thread at once is resumed with one Continue, as before. */
+    @Test
+    void continuingAfterAnAllThreadsStopLeavesTheSessionRunning() throws Exception {
+        try (var adapter = new com.editora.dap.FakeDebugAdapter(false)) {
+            DapManager manager = new DapManager(null);
+            RecordingListener listener = new RecordingListener();
+            manager.setListener(listener);
+            var session = connect(manager, adapter);
+            session.stop(1, "breakpoint", true);
+            listener.awaitStop();
+            session.stop(2, "breakpoint", true);
+            listener.awaitStop();
+
+            FxTestSupport.runOnFx(manager::resume);
+            session.awaitRequest("continue");
+            session.awaitDelivered();
+            FxTestSupport.runOnFx(() -> {});
+            assertEquals(DapManager.State.RUNNING, FxTestSupport.callOnFx(manager::state));
+            assertTrue(listener.stops.isEmpty(), "no thread is left to bring forward");
             FxTestSupport.runOnFx(manager::shutdown);
         }
     }

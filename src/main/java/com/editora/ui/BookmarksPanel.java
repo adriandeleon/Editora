@@ -284,7 +284,8 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
         }
         for (TreeItem<Row> projectNode : tree.getRoot().getChildren()) {
             for (TreeItem<Row> fileNode : projectNode.getChildren()) {
-                if (!(fileNode.getValue() instanceof FileRow fr) || !fr.file().equals(reselectFile)) {
+                if (!(fileNode.getValue() instanceof FileRow fr)
+                        || !com.editora.config.PathKeys.samePath(fr.file(), reselectFile)) {
                     continue;
                 }
                 TreeItem<Row> target = fileNode;
@@ -488,7 +489,7 @@ public class BookmarksPanel extends VBox implements ToolWindowContent {
             return false;
         }
         if (src.getValue() instanceof MarkRow sm && target.getValue() instanceof MarkRow tm) {
-            return sm.file().equals(tm.file());
+            return com.editora.config.PathKeys.samePath(sm.file(), tm.file());
         }
         // Two file headers under the same project group.
         return src.getValue() instanceof FileRow

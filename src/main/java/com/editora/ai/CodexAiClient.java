@@ -1,6 +1,7 @@
 package com.editora.ai;
 
 import java.io.IOException;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -73,11 +74,30 @@ final class CodexAiClient {
                 agent.dispose();
             }
             if (cwd != null) {
+                deleteWorkingDirectory(cwd);
+            }
+        }
+    }
+
+    /**
+     * Removes our working directory if it is empty; agent output is never deleted recursively. The agent is
+     * stopped asynchronously, and on Windows a directory cannot be removed while a process still has it as
+     * its working directory, so a refusal is retried for a moment — otherwise every request left its
+     * {@code editora-ai-} folder behind in the temp directory there.
+     */
+    private static void deleteWorkingDirectory(Path cwd) {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            try {
+                Files.deleteIfExists(cwd);
+                return;
+            } catch (DirectoryNotEmptyException e) {
+                return; // an adapter wrote session metadata here; leave it
+            } catch (IOException e) {
                 try {
-                    // Only remove our empty working directory, never recursively delete agent output.
-                    Files.deleteIfExists(cwd);
-                } catch (IOException ignored) {
-                    // An adapter may have written session metadata here.
+                    Thread.sleep(100);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
                 }
             }
         }

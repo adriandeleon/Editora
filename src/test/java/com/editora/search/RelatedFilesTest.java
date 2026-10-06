@@ -86,4 +86,12 @@ class RelatedFilesTest {
         assertEquals(List.of(), RelatedFiles.candidates("  "));
         assertNull(RelatedFiles.testSubject(null));
     }
+
+    // --- A12-20: the leading test_ convention works in both directions --------------------------------------
+
+    @Test
+    void aSubjectOffersItsLeadingTestUnderscoreFile() {
+        assertTrue(RelatedFiles.candidates("parser.py").contains("test_parser.py"));
+        assertEquals(List.of("parser.py"), RelatedFiles.candidates("test_parser.py"));
+    }
 }

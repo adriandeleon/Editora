@@ -73,7 +73,6 @@ class ExternalToolTruncatedOutputFxTest {
         return FxTestSupport.callOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setContent(content);
-            buffer.getArea().getUndoManager().forgetHistory();
             return buffer;
         });
     }

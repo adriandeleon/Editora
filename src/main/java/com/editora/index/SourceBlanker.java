@@ -83,8 +83,9 @@ final class SourceBlanker {
                 return stop;
             }
             // An unterminated single-quoted literal must not swallow the rest of the file; a newline ends
-            // it. A triple-quoted one legitimately spans lines, so it keeps going.
-            if (c == '\n' && !isTriple) {
+            // it. A triple-quoted one legitimately spans lines, so it keeps going — and so does a backtick
+            // literal (a JS template, a Go raw string), whose body was otherwise scanned as code.
+            if (c == '\n' && !isTriple && quote != '`') {
                 blankRange(out, start, i);
                 return i;
             }

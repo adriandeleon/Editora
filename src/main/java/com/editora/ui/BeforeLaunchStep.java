@@ -39,6 +39,9 @@ final class BeforeLaunchStep {
 
     private final RunService service;
 
+    /** Whether the owner has a console input field wired to {@link #service}, so a prompt can be answered. */
+    private final boolean interactive;
+
     /** FX thread: true from the request until the process has exited (or failed to start). */
     private boolean active;
 
@@ -49,7 +52,18 @@ final class BeforeLaunchStep {
      *     step and the program mutually exclusive, which is what a Run console wants.
      */
     BeforeLaunchStep(RunService service) {
+        this(service, false);
+    }
+
+    /**
+     * @param interactive false closes the command's stdin as soon as it has started: with nowhere to type an
+     *     answer (the Debug console), a step that reads stdin would otherwise wait forever and hold the
+     *     launch in "preparing". It sees end of input instead, as it did when steps ran through
+     *     {@code ProcessRunner}.
+     */
+    BeforeLaunchStep(RunService service, boolean interactive) {
         this.service = service;
+        this.interactive = interactive;
     }
 
     /** Whether a before-launch command is in flight — the owner is busy and its Stop control applies. */
@@ -123,6 +137,9 @@ final class BeforeLaunchStep {
                 host.setStatus(tr("status.run.beforeLaunchFailed", cfg.name(), message));
             }
         });
+        if (!interactive) {
+            service.closeInput();
+        }
     }
 
     /** Kills the running step (and its children); the launch it was gating does not happen. */

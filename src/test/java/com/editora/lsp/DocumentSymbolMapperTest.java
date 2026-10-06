@@ -72,6 +72,24 @@ class DocumentSymbolMapperTest {
         assertTrue(DocumentSymbolMapper.descendInto("enum"));
     }
 
+    /** lemminx reports XML elements as Field and the JSON server nests under Array: both must keep children. */
+    @Test
+    void nonTypeContainersKeepTheirChildren() {
+        DocumentSymbol leaf = new DocumentSymbol("leaf", SymbolKind.Field, range(2, 2), range(2, 2));
+        DocumentSymbol child = new DocumentSymbol("child", SymbolKind.Field, range(1, 3), range(1, 1));
+        child.setChildren(List.of(leaf));
+        DocumentSymbol rootElement = new DocumentSymbol("root", SymbolKind.Field, range(0, 4), range(0, 0));
+        rootElement.setChildren(List.of(child));
+        DocumentSymbol item = new DocumentSymbol("0", SymbolKind.String, range(1, 1), range(1, 1));
+        DocumentSymbol array = new DocumentSymbol("contributors", SymbolKind.Array, range(0, 2), range(0, 0));
+        array.setChildren(List.of(item));
+
+        List<SymbolNode> out = DocumentSymbolMapper.map(List.of(Either.forRight(rootElement), Either.forRight(array)));
+
+        assertEquals("leaf", out.get(0).children().get(0).children().get(0).name());
+        assertEquals(1, out.get(1).children().size());
+    }
+
     @Test
     void mapsFlatSymbolInformation() {
         SymbolInformation s =

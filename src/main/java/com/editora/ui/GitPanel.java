@@ -754,7 +754,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         "git-status-modified",
         "git-status-deleted",
         "git-status-renamed",
-        "git-status-untracked"
+        "git-status-untracked",
+        "git-status-conflict"
     };
 
     /** Narrowest the branch label gets in the header (room for the glyph and a short branch name). */

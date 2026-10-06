@@ -120,9 +120,29 @@ public final class Rectangle {
         int s = starts[line];
         int e = lineEnd(text, s);
         int len = e - s;
-        int f = Math.min(from, len);
-        int t = Math.min(to, len);
-        return f >= t ? "" : text.substring(s + f, s + t);
+        String row = text.substring(s, e);
+        int f = cut(row, Math.min(from, len), false);
+        int t = cut(row, Math.min(to, len), true);
+        return f >= t ? "" : row.substring(f, t);
+    }
+
+    /**
+     * {@code col} as a cut position in {@code line}: a column that falls between the two halves of a
+     * surrogate pair moves to the pair's start ({@code rightEdge} false) or its end, so a rectangle edge
+     * crossing a supplementary character takes the whole character instead of leaving a lone surrogate.
+     */
+    static int cut(String line, int col, boolean rightEdge) {
+        int c = Math.max(0, Math.min(col, line.length()));
+        boolean split = c > 0
+                && c < line.length()
+                && Character.isLowSurrogate(line.charAt(c))
+                && Character.isHighSurrogate(line.charAt(c - 1));
+        return split ? (rightEdge ? c + 1 : c - 1) : c;
+    }
+
+    /** The part of {@code line} before column {@code col}, padded with spaces out to that column. */
+    private static String head(String line, int col) {
+        return pad(line.substring(0, cut(line, col, false)), col);
     }
 
     private static String pad(String s, int width) {
@@ -167,7 +187,7 @@ public final class Rectangle {
             if (line.length() <= b.leftCol()) {
                 return line; // line does not reach the rectangle
             }
-            return line.substring(0, b.leftCol()) + line.substring(Math.min(b.rightCol(), line.length()));
+            return line.substring(0, cut(line, b.leftCol(), false)) + line.substring(cut(line, b.rightCol(), true));
         });
     }
 
@@ -180,8 +200,8 @@ public final class Rectangle {
             return null;
         }
         return rewrite(text, b, line -> {
-            String head = pad(line.length() > b.leftCol() ? line.substring(0, b.leftCol()) : line, b.leftCol());
-            String tail = line.length() > b.rightCol() ? line.substring(b.rightCol()) : "";
+            String head = head(line, b.leftCol());
+            String tail = line.substring(cut(line, b.rightCol(), true));
             return head + " ".repeat(b.width()) + tail;
         });
     }
@@ -192,8 +212,8 @@ public final class Rectangle {
             return null;
         }
         return rewrite(text, b, line -> {
-            String head = pad(line.length() > b.leftCol() ? line.substring(0, b.leftCol()) : line, b.leftCol());
-            String tail = line.length() > b.leftCol() ? line.substring(b.leftCol()) : "";
+            String head = head(line, b.leftCol());
+            String tail = line.substring(cut(line, b.leftCol(), false));
             return head + " ".repeat(b.width()) + tail;
         });
     }
@@ -205,8 +225,8 @@ public final class Rectangle {
     public static Edit replace(String text, Bounds b, String s) {
         String insert = s == null ? "" : s;
         return rewrite(text, b, line -> {
-            String head = pad(line.length() > b.leftCol() ? line.substring(0, b.leftCol()) : line, b.leftCol());
-            String tail = line.length() > b.rightCol() ? line.substring(b.rightCol()) : "";
+            String head = head(line, b.leftCol());
+            String tail = line.substring(cut(line, b.rightCol(), true));
             return head + insert + tail;
         });
     }
@@ -221,8 +241,8 @@ public final class Rectangle {
                 String.valueOf(firstNumber + b.lineCount() - 1).length());
         int[] n = {firstNumber};
         return rewrite(text, b, line -> {
-            String head = pad(line.length() > b.leftCol() ? line.substring(0, b.leftCol()) : line, b.leftCol());
-            String tail = line.length() > b.leftCol() ? line.substring(b.leftCol()) : "";
+            String head = head(line, b.leftCol());
+            String tail = line.substring(cut(line, b.leftCol(), false));
             return head + String.format("%" + width + "d ", n[0]++) + tail;
         });
     }
@@ -252,8 +272,8 @@ public final class Rectangle {
             }
             int line = topLine + i;
             String existing = line < starts.length ? text.substring(starts[line], lineEnd(text, starts[line])) : "";
-            String head = pad(existing.length() > col ? existing.substring(0, col) : existing, col);
-            String tail = existing.length() > col ? existing.substring(col) : "";
+            String head = head(existing, col);
+            String tail = existing.substring(cut(existing, col, false));
             sb.append(head).append(lines.get(i)).append(tail);
         }
         return new Edit(from, to, sb.toString(), caretPos);

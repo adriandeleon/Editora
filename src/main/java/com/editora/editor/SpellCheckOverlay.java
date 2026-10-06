@@ -23,7 +23,7 @@ import org.fxmisc.richtext.CodeArea;
  * paragraphs. Word eligibility: in prose buffers every word is checked (except Markdown inline/fenced
  * {@code code}); in code buffers only words styled {@code comment} or {@code string}.
  */
-final class SpellCheckOverlay extends Region {
+final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
 
     private static final Color SQUIGGLE = Color.web("#e5484d");
     private static final double AMP = 1.6; // squiggle peak-to-baseline amplitude (px)
@@ -45,6 +45,8 @@ final class SpellCheckOverlay extends Region {
     private boolean rendering = true;
 
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private SpellCheckOverlay follower;
     // Whether the last redraw actually had visible misspellings to paint. When false the canvas is shrunk
     // to 1x1 to release its (viewport-sized) RTTexture — a spell-checked buffer with no visible squiggles
     // shouldn't pin a full-viewport texture (the convention every other overlay follows). layoutChildren
@@ -94,6 +96,9 @@ final class SpellCheckOverlay extends Region {
 
     /** Whether this is a Markdown buffer (enables fenced-code-block skipping). */
     void setMarkdown(boolean markdown) {
+        if (follower != null) {
+            follower.setMarkdown(markdown);
+        }
         this.markdown = markdown;
         recomputeCodeLines();
         scheduleRedraw();
@@ -128,7 +133,26 @@ final class SpellCheckOverlay extends Region {
         return code;
     }
 
+    /**
+     * The same squiggles for a split's second {@code view}: an overlay for that view's pane, from then on
+     * given every setting this one is given (checker, mode, on/off, refresh).
+     */
+    @Override
+    public SpellCheckOverlay follower(CodeArea view) {
+        SpellCheckOverlay second = new SpellCheckOverlay(view);
+        second.checker = checker;
+        second.proseMode = proseMode;
+        second.setMarkdown(markdown);
+        second.setRenderingActive(rendering);
+        second.setActive(active);
+        follower = second;
+        return second;
+    }
+
     void setChecker(SpellChecker checker) {
+        if (follower != null) {
+            follower.setChecker(checker);
+        }
         this.checker = checker;
         spellCache.clear(); // a different dictionary → re-evaluate misspellings
         scheduleRedraw();
@@ -136,11 +160,17 @@ final class SpellCheckOverlay extends Region {
 
     /** Whether this buffer is prose (check all words) vs code (only comments/strings). */
     void setProseMode(boolean prose) {
+        if (follower != null) {
+            follower.setProseMode(prose);
+        }
         this.proseMode = prose;
         scheduleRedraw();
     }
 
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -160,6 +190,9 @@ final class SpellCheckOverlay extends Region {
 
     /** Re-runs the check + redraw (e.g. after a dictionary finishes loading or the language changes). */
     void refresh() {
+        if (follower != null) {
+            follower.refresh();
+        }
         spellCache.clear(); // dictionary loaded / language / user-word / ignore-set changed
         scheduleRedraw();
     }
@@ -182,6 +215,9 @@ final class SpellCheckOverlay extends Region {
 
     /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
     void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
         if (rendering == on) {
             return;
         }

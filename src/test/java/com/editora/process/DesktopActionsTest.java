@@ -52,7 +52,8 @@ class DesktopActionsTest {
         // A folder named with cmd metacharacters — all legal in a Windows folder name — must not be able to
         // run a command when the user picks "Open Terminal Here". The old `cmd /k "cd /d " + dir` interpolated
         // it into the cmd command line; the fix routes it through the working directory, which no shell parses.
-        Path malicious = Path.of("C:\\repo & calc.exe & rem ");
+        // No trailing space: Windows itself refuses a folder name that ends in one, so it is not a real case.
+        Path malicious = Path.of("C:\\repo & calc.exe & rem");
         DesktopActions.Command cmd = DesktopActions.terminalCommand(Os.WINDOWS, malicious);
 
         assertEquals(malicious, cmd.workingDir(), "the folder is the child's working directory, verbatim");

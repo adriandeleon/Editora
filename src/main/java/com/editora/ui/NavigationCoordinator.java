@@ -243,7 +243,7 @@ final class NavigationCoordinator {
 
     /** Opens an existing file, or creates a new buffer for a not-yet-existing path (written on save). */
     void findFileChosen(Path target) {
-        if (Files.isRegularFile(target)) {
+        if (RemoteReadFailure.connectionClosed(target) || Files.isRegularFile(target)) { // closed: openPath says so
             host.fileWorkflows().openPath(target);
             return;
         }
@@ -293,7 +293,46 @@ final class NavigationCoordinator {
         CodeArea a = b.getArea();
         return a == null
                 ? null
-                : new NavigationHistory.Location(b.getPath(), a.getCurrentParagraph(), a.getCaretColumn());
+                : new NavigationHistory.Location(
+                        b.getPath(), documentLine(b, a.getCurrentParagraph()), a.getCaretColumn());
+    }
+
+    /**
+     * The 0-based <b>document</b> line for a line of {@code buffer}'s text area. They differ only while the
+     * buffer is narrowed: the area then holds just the region, so its line numbers are region-relative.
+     * Everything that names a place in the file — the jump history, a search hit, a Problems entry — is in
+     * document lines, and crosses into area lines through {@link #areaLine} at the moment of the jump.
+     */
+    int documentLine(EditorBuffer buffer, int areaLine) {
+        return buffer.isNarrowed()
+                ? areaLine + com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart())
+                : areaLine;
+    }
+
+    /**
+     * The text-area line to move to for 0-based {@code documentLine} of {@code buffer}. A narrowed buffer is
+     * rebased by its region's first line; when the target lies outside the region the buffer is <b>widened
+     * first</b> (what Emacs does for a jump from outside, {@code widen-automatically}) — the alternative was
+     * landing on whatever region line happened to carry that number, or silently not moving at all.
+     */
+    int areaLine(EditorBuffer buffer, int documentLine) {
+        if (buffer == null || !buffer.isNarrowed()) {
+            return documentLine;
+        }
+        int first = com.editora.editor.NarrowLines.firstLine(buffer.getContent(), buffer.narrowStart());
+        int local = com.editora.editor.NarrowLines.toRegionLine(
+                first, buffer.getArea().getParagraphs().size(), documentLine);
+        if (local >= 0) {
+            return local;
+        }
+        buffer.widen(); // the narrow-changed hook reconciles the status chip, title, LSP and git
+        host.setStatus(tr("status.narrow.widened"));
+        return documentLine;
+    }
+
+    /** Records a jump to the start of {@code areaLine} of {@code buffer} (a file-backed buffer's area line). */
+    void recordJumpToLine(NavigationHistory.Location origin, EditorBuffer buffer, int areaLine) {
+        recordJump(origin, new NavigationHistory.Location(buffer.getPath(), documentLine(buffer, areaLine), 0));
     }
 
     /** Records a jump into the back/forward history: the {@code origin} we left, then the {@code dest}. */
@@ -328,11 +367,37 @@ final class NavigationCoordinator {
         Tab tab = host.tabForPath(path);
         EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
         CodeArea area = buffer == null ? null : buffer.getArea();
+        if (area != null && buffer.isNarrowed()) { // a recorded line is a document line; the area is the region
+            line -= documentLine(buffer, 0);
+        }
         if (area == null || line < 0 || line >= area.getParagraphs().size()) {
             return "";
         }
         String text = area.getParagraph(line).getText().strip();
         return text.length() <= MAX_LOCATION_SNIPPET ? text : text.substring(0, MAX_LOCATION_SNIPPET) + "…";
+    }
+
+    /**
+     * The second half of {@code openAndGoto}, a pulse after its {@code openPath}: moves the caret once the
+     * file's text has landed and records the jump exactly once, from the {@code origin} captured before the
+     * open. Whether to record is decided here, before the wait — a back/forward jump must stay unrecorded
+     * even though {@link #navigating} is released now (a load that fails never runs the continuation, and
+     * must not leave every later jump unrecorded).
+     */
+    void landJump(NavigationHistory.Location origin, Path file, int line0, int col0) {
+        boolean record = !navigating;
+        navigating = false;
+        host.fileWorkflows().whenLoaded(file, () -> {
+            suppressNavRecord = true; // this outer call owns the recording, not the nested gotoInFile
+            try {
+                host.sessions().gotoInFile(file, line0 + 1, col0 + 1);
+            } finally {
+                suppressNavRecord = false;
+            }
+            if (record) {
+                recordJump(origin, new NavigationHistory.Location(file, line0, col0));
+            }
+        });
     }
 
     /** {@code nav.back}: return to the previous location in the jump list. */
@@ -343,7 +408,7 @@ final class NavigationCoordinator {
             return;
         }
         navigating = true;
-        host.openAndGoto(loc.path(), loc.line(), loc.column()); // clears `navigating` in its runLater
+        host.openAndGoto(loc.path(), loc.line(), loc.column()); // landJump clears `navigating`
     }
 
     /** {@code nav.forward}: go to the next location in the jump list (after going back). */
@@ -509,7 +574,7 @@ final class NavigationCoordinator {
         host.lspCoordinator().gotoDefinition(() -> {
             EditorBuffer landed = host.activeBuffer();
             Path landedPath = landed == null ? null : landed.getPath();
-            if (landedPath != null && !landedPath.equals(originPath)) {
+            if (landedPath != null && !com.editora.config.PathKeys.samePath(landedPath, originPath)) {
                 host.splitEditorGroup(Orientation.HORIZONTAL);
             }
         });

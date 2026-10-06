@@ -141,10 +141,11 @@ class ColumnRulerFxTest {
 
     private int countMeasures(Runnable action) throws Exception {
         AtomicInteger counter = counter();
-        settle(10);
+        awaitRulerIdle(); // nothing an earlier step scheduled may land in the window
         counter.set(0);
         action.run();
-        settle(20);
+        settle(20); // real frames, so a measure the action caused has been scheduled...
+        awaitRulerIdle(); // ...and has run, with its confirmation
         return counter.get();
     }
 
@@ -158,6 +159,7 @@ class ColumnRulerFxTest {
     /** Root-local x of the buffer's column ruler, after letting the deferred measure run. */
     private double rulerX() throws Exception {
         settle(20);
+        awaitRulerIdle();
         Line ruler = FxTestSupport.field(buffer, "columnRuler");
         return FxTestSupport.callOnFx(() -> ruler.isVisible() ? ruler.getStartX() : -1);
     }
@@ -174,15 +176,39 @@ class ColumnRulerFxTest {
         });
     }
 
+    /**
+     * Waits real frames, not just FX round-trips: a ruler measure is deferred to a later pulse (and confirmed
+     * two frames after a gutter/font change), so a burst of runLater hops alone can return before it has run
+     * and leave it to land inside the next counted window.
+     */
     private static void settle(int pulses) throws Exception {
         for (int i = 0; i < pulses; i++) {
             FxTestSupport.runOnFx(() -> {});
+            Thread.sleep(10);
         }
     }
 
+    /**
+     * Waits until the buffer has no ruler measure to come — neither the deferred one nor the confirmation two
+     * frames after it — and it stays that way for several frames (a layout pulse can schedule one). A fixed
+     * sleep cannot say that: how long a measure takes to arrive depends on the pulse it waits for.
+     */
+    private void awaitRulerIdle() throws Exception {
+        int quiet = 0;
+        for (int i = 0; i < 1000 && quiet < 8; i++) {
+            boolean pending = FxTestSupport.callOnFx(
+                    () -> (boolean) FxTestSupport.call(buffer, "rulerMeasurePending", new Class<?>[] {}));
+            quiet = pending ? 0 : quiet + 1;
+            Thread.sleep(10);
+        }
+        assertEquals(8, quiet, "the ruler never came to rest");
+    }
+
     private static void settleUnchecked(int pulses) {
-        for (int i = 0; i < pulses; i++) {
-            FxTestSupport.runOnFxUnchecked(() -> {});
+        try {
+            settle(pulses);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
         }
     }
 }

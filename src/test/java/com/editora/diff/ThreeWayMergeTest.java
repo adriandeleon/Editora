@@ -76,4 +76,117 @@ class ThreeWayMergeTest {
         assertFalse(result.file().hasConflicts());
         assertEquals(List.of("ONE", "TWO", "three"), ConflictParser.resolve(result.file(), List.of()));
     }
+
+    // --- runs of identical lines: the raw differ's deltas are not where the edit was made -------------------
+
+    @Test
+    void aReplacedLineInARunOfIdenticalLinesIsNotMistakenForTheOtherSidesDeletion() {
+        // The differ reports theirs as "insert X before the run, delete the run's last line"; that deletion
+        // looked identical to ours and the merge came back clean as theirs, ours' deletion gone.
+        var result = ThreeWayMerge.merge("x\nx\n", "x\n", "X\nx\n");
+
+        List<String> merged = ConflictParser.resolve(result.file(), List.of(Choice.OURS));
+        assertFalse(
+                !result.file().hasConflicts() && merged.equals(List.of("X", "x")),
+                "a clean merge must contain both edits");
+        if (!result.file().hasConflicts()) {
+            assertEquals(List.of("X"), merged, "theirs replaced one line and ours deleted the other");
+        }
+    }
+
+    @Test
+    void aDeletionAndAnEditInOneRunAgreeWithGit() {
+        // git merge-file is clean here: one pop commented, one pop deleted.
+        String base = "stack.pop();\nstack.pop();\nstack.pop();\nreturn stack;\n";
+        String ours = "stack.pop(); // frame marker\nstack.pop();\nstack.pop();\nreturn stack;\n";
+        String theirs = "stack.pop();\nstack.pop();\nreturn stack;\n";
+
+        var result = ThreeWayMerge.merge(base, ours, theirs);
+
+        assertFalse(result.file().hasConflicts());
+        assertEquals(
+                List.of("stack.pop(); // frame marker", "stack.pop();", "return stack;"),
+                ConflictParser.resolve(result.file(), List.of()));
+        assertEquals(
+                List.of("stack.pop(); // frame marker", "stack.pop();", "return stack;"),
+                ConflictParser.resolve(ThreeWayMerge.merge(base, theirs, ours).file(), List.of()),
+                "and with the sides exchanged");
+    }
+
+    @Test
+    void twoEditsInOneRunDoNotDuplicateALine() {
+        String base = "pop\npop\npop\npop\nend\n";
+
+        var result =
+                ThreeWayMerge.merge(base, "pop // ours\npop\npop\npop\nend\n", "pop\npop\npop // theirs\npop\nend\n");
+
+        assertFalse(result.file().hasConflicts());
+        assertEquals(
+                List.of("pop // ours", "pop", "pop // theirs", "pop", "end"),
+                ConflictParser.resolve(result.file(), List.of()));
+    }
+
+    @Test
+    void anInsertionBesideAnEditedLineOfARunStillConflicts() {
+        var result = ThreeWayMerge.merge(
+                "pop\npop\npop\nend\n", "pop\nlog\npop\npop\nend\n", "pop // theirs\npop\npop\nend\n");
+
+        assertEquals(1, result.file().conflictCount());
+        Conflict conflict = ((ConflictSegment) result.file().segments().get(0)).conflict();
+        assertEquals(List.of("pop"), conflict.base());
+        assertEquals(List.of("pop", "log"), conflict.ours());
+        assertEquals(List.of("pop // theirs"), conflict.theirs());
+    }
+
+    @Test
+    void everyCleanMergeOfTwoSingleLineEditsContainsBothEdits() {
+        // Exhaustive over short texts on a two-letter alphabet, where runs of equal lines are the norm. Each
+        // side makes one edit that introduces a line found nowhere else, so a clean result that lacks either
+        // marker has lost that side's edit.
+        List<List<String>> bases = new java.util.ArrayList<>();
+        for (int length = 1; length <= 5; length++) {
+            for (int bits = 0; bits < 1 << length; bits++) {
+                List<String> base = new java.util.ArrayList<>();
+                for (int i = 0; i < length; i++) {
+                    base.add((bits >> i & 1) == 0 ? "a" : "b");
+                }
+                bases.add(base);
+            }
+        }
+        for (List<String> base : bases) {
+            for (List<String> ours : singleEdits(base, "OURS")) {
+                for (List<String> theirs : singleEdits(base, "THEIRS")) {
+                    var result = ThreeWayMerge.merge(
+                            String.join("\n", base), String.join("\n", ours), String.join("\n", theirs));
+                    if (result.file().hasConflicts()) {
+                        continue;
+                    }
+                    List<String> merged = ConflictParser.resolve(result.file(), List.of());
+                    String scenario = base + " ours=" + ours + " theirs=" + theirs + " merged=" + merged;
+                    assertEquals(1, java.util.Collections.frequency(merged, "OURS"), scenario);
+                    assertEquals(1, java.util.Collections.frequency(merged, "THEIRS"), scenario);
+                    assertEquals(
+                            base.size() + (ours.size() - base.size()) + (theirs.size() - base.size()),
+                            merged.size(),
+                            scenario);
+                }
+            }
+        }
+    }
+
+    /** Every text reached from {@code base} by replacing one line with {@code marker} or inserting it. */
+    private static List<List<String>> singleEdits(List<String> base, String marker) {
+        List<List<String>> edits = new java.util.ArrayList<>();
+        for (int i = 0; i <= base.size(); i++) {
+            List<String> inserted = new java.util.ArrayList<>(base);
+            inserted.add(i, marker);
+            edits.add(inserted);
+            if (i < base.size()) {
+                List<String> replaced = new java.util.ArrayList<>(base);
+                replaced.set(i, marker);
+                edits.add(replaced);
+            }
+        }
+        return edits;
+    }
 }

@@ -46,6 +46,9 @@ class PathDisplayTest {
     @Test
     void ofRendersAPathThroughTheSameRules() {
         String home = System.getProperty("user.home", "");
-        assertEquals(PathDisplay.collapseHome(home + "/x.txt"), PathDisplay.of(Path.of(home, "x.txt")));
+        // Joined with the platform's separator: that is how the Path renders, and what collapseHome is given.
+        assertEquals(
+                PathDisplay.collapseHome(home + java.io.File.separator + "x.txt"),
+                PathDisplay.of(Path.of(home, "x.txt")));
     }
 }

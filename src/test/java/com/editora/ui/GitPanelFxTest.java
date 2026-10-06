@@ -426,4 +426,23 @@ class GitPanelFxTest {
         assertFalse(
                 FxTestSupport.callOnFx(() -> p.getChildren().contains(tree(p))), "tree detached when not a repository");
     }
+
+    /**
+     * A conflicted (unmerged) file is not a staged change: it must not sit under Staged — where "Unstage"
+     * would run {@code git reset} and throw its merge stages away — nor enable Commit by itself.
+     */
+    @Test
+    void aConflictedFileIsListedUnderChangesOnlyAndDoesNotEnableCommit() throws Exception {
+        GitPanel p = panel();
+        GitStatus status = new GitStatus(true, "main", "", 0, 0, List.of(new FileEntry("story.txt", 'U', 'U', null)));
+        FxTestSupport.runOnFx(() -> p.setStatus(status));
+
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+        assertEquals(1, root.getChildren().size(), "one group: Changes (no Staged group)");
+        assertEquals(
+                "MODIFIED",
+                String.valueOf(FxTestSupport.call(root.getChildren().get(0).getValue(), "group", new Class<?>[] {})));
+        Button commit = FxTestSupport.field(p, "commitButton");
+        assertTrue(FxTestSupport.callOnFx(commit::isDisable), "nothing is staged");
+    }
 }

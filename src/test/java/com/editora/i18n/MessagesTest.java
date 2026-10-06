@@ -190,7 +190,7 @@ class MessagesTest {
     void trFallsBackOverlayThenBaseThenKey() {
         Messages.init("es");
         // A key present in the overlay returns the Spanish value ("Ver: " is the view.* family prefix).
-        assertEquals("Ver: Configuración", Messages.tr("command.view.settings"));
+        assertEquals("Ver: Ajustes", Messages.tr("command.view.settings"));
         // A wholly unknown key returns the key itself (never an exception).
         assertEquals("no.such.key.exists", Messages.tr("no.such.key.exists"));
         Messages.init("en");
@@ -353,6 +353,7 @@ class MessagesTest {
     private static final Map<String, int[]> IDENTIFIER_ARGUMENTS = Map.ofEntries(
             Map.entry("status.gotoResult", new int[] {0, 1}),
             Map.entry("status.testrunner.debugAttaching", new int[] {0}),
+            Map.entry("status.debug.breakpointMoved", new int[] {0, 1}),
             Map.entry("agent.context.header", new int[] {1}),
             Map.entry("agent.exited", new int[] {0}),
             Map.entry("csvgrid.column", new int[] {0}),

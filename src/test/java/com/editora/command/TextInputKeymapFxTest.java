@@ -106,6 +106,32 @@ class TextInputKeymapFxTest {
         });
     }
 
+    /**
+     * A picker registers its own list-navigation filter before the keymap's, and consumes M-v (page up). The
+     * keymap then never handled that press itself — and used to let its Option glyph through into the query.
+     */
+    @Test
+    void theGlyphOfAChordAnEarlierFilterHandledIsSwallowedToo() throws Exception {
+        onFx(() -> {
+            List<String> reached = new ArrayList<>();
+            TextField field = new TextField("Foo");
+            field.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
+                if (e.getCode() == KeyCode.V && e.isAltDown()) {
+                    e.consume(); // the picker paged its list
+                }
+            });
+            TextInputKeymap.install(field, emacs(true), true);
+            field.addEventHandler(KeyEvent.KEY_TYPED, e -> reached.add(e.getCharacter()));
+
+            field.fireEvent(press(KeyCode.V, false, true));
+            field.fireEvent(typed("\u221a", false, true, false));
+            assertEquals(List.of(), reached, "the chord's glyph is not text");
+
+            field.fireEvent(typed("@", false, true, false));
+            assertEquals(List.of("@"), reached, "and the swallow is spent");
+        });
+    }
+
     @Test
     void aHandledChordWithNoTypedEventDoesNotEatTheNextCharacter() throws Exception {
         onFx(() -> {
@@ -131,6 +157,19 @@ class TextInputKeymapFxTest {
             List<String> elsewhere = new ArrayList<>();
             field("", false, elsewhere).fireEvent(typed("€", true, true, false));
             assertEquals(List.of("€"), elsewhere, "an AltGr-composed character is left to the field");
+        });
+    }
+
+    /** C-f / C-b stepped one UTF-16 unit, parking the caret between the two halves of an emoji. */
+    @Test
+    void charForwardAndBackwardStepOverAWholeEmoji() throws Exception {
+        onFx(() -> {
+            TextField field = field("a\uD83D\uDE00b", false, new ArrayList<>());
+            field.positionCaret(1);
+            field.fireEvent(press(KeyCode.F, true, false)); // C-f
+            assertEquals(3, field.getCaretPosition(), "past both halves of the surrogate pair");
+            field.fireEvent(press(KeyCode.B, true, false)); // C-b
+            assertEquals(1, field.getCaretPosition());
         });
     }
 }

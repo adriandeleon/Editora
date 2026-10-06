@@ -95,4 +95,40 @@ class GitSafetyTest {
         assertEquals(List.of("--end-of-options", "v1.0"), GitSafety.revisionArgs(true, "v1.0"));
         assertEquals(List.of("v1.0"), GitSafety.revisionArgs(false, "v1.0"));
     }
+
+    @Test
+    void aBlobSpecAppliesTheRefRulesOnlyToItsRevisionHalf() {
+        // A TAB (or any control character) is legal in a file name; refusing it reported a tracked file as
+        // "blob not found".
+        assertTrue(GitSafety.isSafeBlobSpec("HEAD:tab\tname.txt"));
+        assertTrue(GitSafety.isSafeBlobSpec(":tab\tname.txt"));
+        assertTrue(GitSafety.isSafeBlobSpec(":2:line\nbreak.txt"));
+        assertTrue(GitSafety.isSafeBlobSpec("HEAD:src/App.java"));
+        assertTrue(GitSafety.isSafeBlobSpec(":2:-dash.txt"));
+        assertTrue(GitSafety.isSafeBlobSpec("v1.0"));
+
+        assertFalse(GitSafety.isSafeBlobSpec("--output=x:README.md"));
+        assertFalse(GitSafety.isSafeBlobSpec("-f"));
+        assertFalse(GitSafety.isSafeBlobSpec("ta\tg:README.md"), "the revision half is still a ref name");
+        assertFalse(GitSafety.isSafeBlobSpec("HEAD:nul\0name"), "NUL cannot be passed in an argument");
+        assertFalse(GitSafety.isSafeBlobSpec("tag\nname"));
+        assertFalse(GitSafety.isSafeBlobSpec(""));
+        assertFalse(GitSafety.isSafeBlobSpec(null));
+    }
+
+    @Test
+    void userCommandsKeepTheUsersLocaleAndPinOnlyTheMessageLanguage() {
+        java.util.Map<String, String> plain = GitSafety.userEnv(java.util.Map.of("LANG", "es_MX.UTF-8"));
+        assertEquals("C", plain.get("LC_MESSAGES"));
+        assertEquals("C", plain.get("LANGUAGE"));
+        assertFalse(plain.containsKey("LC_ALL"), "LC_ALL=C is what broke JVM hooks on non-ASCII paths");
+        assertFalse(plain.containsKey("LC_CTYPE"));
+        assertEquals("0", plain.get("GIT_TERMINAL_PROMPT"));
+
+        // An inherited LC_ALL would override LC_MESSAGES: it is blanked and its charset kept in LC_CTYPE.
+        java.util.Map<String, String> all = GitSafety.userEnv(java.util.Map.of("LC_ALL", "de_DE.UTF-8"));
+        assertEquals("", all.get("LC_ALL"));
+        assertEquals("de_DE.UTF-8", all.get("LC_CTYPE"));
+        assertEquals("C", all.get("LC_MESSAGES"));
+    }
 }

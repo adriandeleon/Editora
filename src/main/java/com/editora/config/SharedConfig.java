@@ -99,6 +99,13 @@ public class SharedConfig {
     private SearchHistory searchHistory;
     private AgentSessionHistory agentSessions;
 
+    /**
+     * Whether the Local History index in memory is the one that was written — false when it failed to load, or
+     * while a backup of one that failed is still on disk. Blob GC is refused when false (see
+     * {@link #mayCollectHistoryBlobs}); read on the history worker.
+     */
+    private volatile boolean historyIndexIntact = true;
+
     /** What {@link #load()} could not read as written, held until a window shows it (see {@link #takeLoadProblems}). */
     private final List<ConfigLoadProblem> loadProblems = new ArrayList<>();
     /**
@@ -113,12 +120,18 @@ public class SharedConfig {
     private JsonNode appliedSettings;
 
     private byte[] appliedSettingsBytes;
+    /** The export in progress, if any (see {@link #exportConfigAsync}). */
+    private java.util.concurrent.CompletableFuture<Path> runningExport;
+
     private Consumer<ConfigManager> onSettingsChanged = origin -> {};
+    private volatile Runnable onStoreChanged = () -> {};
 
     public SharedConfig(Path configDir, boolean dev) {
         this.configDir = configDir;
         this.dev = dev;
         this.projects = new ProjectManager(configDir);
+        this.projects.setOnWriteError(writer::reportWriteError);
+        this.projects.loadProblems().forEach(this::onLoadProblem);
         this.historyService =
                 new HistoryService(new HistoryBlobStore(getHistoryBlobsDir()), this::mayCollectHistoryBlobs);
     }
@@ -161,8 +174,15 @@ public class SharedConfig {
      * History view then listed revisions that opened empty. A secondary therefore never collects, and the
      * primary skips collection while a secondary is alive (its unreferenced blobs are picked up by the first
      * collection after it exits). Evaluated on the history worker immediately before deleting.
+     *
+     * <p>Nor while the index is not the one that was written ({@link HistoryIndexGuard}): the in-memory index
+     * is then missing revisions whose bodies are still on disk, and collecting against it would delete them
+     * all — leaving the kept {@code index.json…bak} pointing at nothing.
      */
     boolean mayCollectHistoryBlobs() {
+        if (!historyIndexIntact) {
+            return false;
+        }
         InstanceLock lock = instanceLock;
         return lock == null || (lock.primary() && !lock.othersPresent());
     }
@@ -200,6 +220,9 @@ public class SharedConfig {
     public void load() {
         loadProblems.clear();
         writeProtected.clear();
+        // The projects index is read once, when this object is built — before load(), which would otherwise
+        // discard what it reported.
+        projects.loadProblems().forEach(this::onLoadProblem);
         appliedSettings = null; // a reload replaces the Settings object; the next window pair re-baselines
         settings = loadSettings();
         loadBookmarks();
@@ -251,8 +274,11 @@ public class SharedConfig {
         return ConfigMigrations.readVersioned(file, json, defaults, schema, this::onLoadProblem);
     }
 
-    private void onLoadProblem(ConfigLoadProblem problem) {
-        loadProblems.add(problem);
+    /** Records {@code problem} for {@link #takeLoadProblems} and write-protects its file when it must be. */
+    void onLoadProblem(ConfigLoadProblem problem) {
+        if (!loadProblems.contains(problem)) { // a session file is read at bootstrap and again by its window
+            loadProblems.add(problem);
+        }
         if (problem.mustNotOverwrite()) {
             writeProtected.add(problem.file());
         }
@@ -386,16 +412,50 @@ public class SharedConfig {
      * and returns the created file. Backs up whichever config dir is in use.
      */
     public Path exportConfig() throws IOException {
+        return exportConfig(Path.of(System.getProperty("user.home")));
+    }
+
+    Path exportConfig(Path destinationDir) throws IOException {
         if (!writer.flush()) {
             throw new IOException("Timed out waiting for pending configuration writes");
         }
-        Path home = Path.of(System.getProperty("user.home"));
         return ConfigExporter.export(
                 configDir,
-                home,
+                destinationDir,
                 com.editora.AppInfo.VERSION,
                 System.getProperty("user.name"),
                 java.time.LocalDateTime.now());
+    }
+
+    /**
+     * {@link #exportConfig()} on a background thread: the export waits for pending writes and then reads and
+     * compresses the whole config directory, which must not happen on the FX thread. The future completes on
+     * that thread — with the zip, or exceptionally with the {@link IOException} — so a caller marshals back
+     * itself. A call made while an export is running joins it rather than starting a second one (both would
+     * be named for the same second).
+     */
+    public synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync() {
+        return exportConfigAsync(Path.of(System.getProperty("user.home")));
+    }
+
+    synchronized java.util.concurrent.CompletableFuture<Path> exportConfigAsync(Path destinationDir) {
+        if (runningExport != null && !runningExport.isDone()) {
+            return runningExport;
+        }
+        java.util.concurrent.CompletableFuture<Path> export = new java.util.concurrent.CompletableFuture<>();
+        runningExport = export;
+        Thread thread = new Thread(
+                () -> {
+                    try {
+                        export.complete(exportConfig(destinationDir));
+                    } catch (IOException | RuntimeException e) {
+                        export.completeExceptionally(e);
+                    }
+                },
+                "config-export");
+        thread.setDaemon(true);
+        thread.start();
+        return export;
     }
 
     // --- file locations ---
@@ -458,16 +518,26 @@ public class SharedConfig {
     /**
      * Writes one store synchronously and atomically. A file that is {@link #isWriteProtected write-protected}
      * is left alone: the in-memory store is the defaults loaded in its place, not its content.
+     *
+     * <p>Never throws. These writes run inside FX event handlers (toggle a bookmark or breakpoint, edit a
+     * note, save a macro, trust a folder) and, for the one-time {@code bookmarks.json} creation, inside
+     * {@link #load()}: an exception from a full disk or a read-only config dir used to abort the handler with
+     * nothing shown, or stop the app from starting. A failure is logged and reported through
+     * {@link #setOnWriteError} like a queued write; the change stays in memory.
+     *
+     * @return whether the store in memory is now the one on disk
      */
-    private void writeStore(Path file, Object store, String what) {
+    private boolean writeStore(Path file, Object store) {
         if (writeProtected.contains(file)) {
-            return;
+            return false;
         }
         try {
             Files.createDirectories(configDir);
             ConfigWriter.writeAtomic(file, json, store);
+            return true;
         } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write " + what + " to " + file, e);
+            writer.reportWriteError(file, e);
+            return false;
         }
     }
 
@@ -522,7 +592,7 @@ public class SharedConfig {
     }
 
     public void savePlugins() {
-        writeStore(getPluginsFile(), pluginStore, "plugins");
+        writeStore(getPluginsFile(), pluginStore);
     }
 
     // --- workspace trust (folders allowed to run their own build wrapper) ---
@@ -544,7 +614,7 @@ public class SharedConfig {
     }
 
     public void saveTrust() {
-        writeStore(getTrustFile(), trustStore, "trusted folders");
+        writeStore(getTrustFile(), trustStore);
     }
 
     // --- keyboard macros (app-global) ---
@@ -562,7 +632,7 @@ public class SharedConfig {
     }
 
     public void saveMacros() {
-        writeStore(getMacrosFile(), macroStore, "macros");
+        writeStore(getMacrosFile(), macroStore);
     }
 
     // --- abbreviations (app-global) ---
@@ -595,7 +665,8 @@ public class SharedConfig {
     }
 
     public void saveAbbreviations() {
-        writeStore(getAbbreviationsFile(), abbrevStore, "abbreviations");
+        writeStore(getAbbreviationsFile(), abbrevStore);
+        onStoreChanged.run();
     }
 
     // --- SFTP connections ---
@@ -621,7 +692,18 @@ public class SharedConfig {
     }
 
     public void saveConnections() {
-        writeStore(getConnectionsFile(), connectionStore, "connections");
+        writeStore(getConnectionsFile(), connectionStore);
+        onStoreChanged.run();
+    }
+
+    /**
+     * Sets what runs (on the saving thread) after the abbreviations or the saved SFTP sites were changed and
+     * saved. Both are edited as whole lists by every window's Settings page, which therefore has to re-read
+     * them when a command, a finished Connect or another window changes one — a focus change is not a reliable
+     * moment for that, since the change can land while Settings already has focus.
+     */
+    public void setOnStoreChanged(Runnable handler) {
+        this.onStoreChanged = handler == null ? () -> {} : handler;
     }
 
     // --- bucketed stores (keyed by project key) ---
@@ -699,13 +781,32 @@ public class SharedConfig {
         }
         try {
             Files.createDirectories(configDir);
+            Path file = getUserDictionaryFile();
+            // A hand-edited or synced file may not end in a line break; appending straight after it would
+            // glue this word onto the last one ("beta" + "gamma" -> "betagamma", losing both).
+            String separator = endsMidLine(file) ? System.lineSeparator() : "";
             Files.writeString(
-                    getUserDictionaryFile(),
-                    w + System.lineSeparator(),
+                    file,
+                    separator + w + System.lineSeparator(),
                     java.nio.file.StandardOpenOption.CREATE,
                     java.nio.file.StandardOpenOption.APPEND);
         } catch (IOException e) {
             // non-fatal: the word still applies for this session, just isn't persisted
+        }
+    }
+
+    /** True when {@code file} has content whose last byte is not a line feed. */
+    private static boolean endsMidLine(Path file) throws IOException {
+        if (!Files.isRegularFile(file)) {
+            return false;
+        }
+        try (java.nio.channels.SeekableByteChannel channel = Files.newByteChannel(file)) {
+            long size = channel.size();
+            if (size == 0) {
+                return false;
+            }
+            java.nio.ByteBuffer last = java.nio.ByteBuffer.allocate(1);
+            return channel.position(size - 1).read(last) == 1 && last.get(0) != '\n';
         }
     }
 
@@ -800,13 +901,26 @@ public class SharedConfig {
     }
 
     private void loadHistory() {
-        if (Files.exists(getHistoryFile())) {
+        Path index = getHistoryFile();
+        int problemsBefore = loadProblems.size();
+        boolean lost = HistoryIndexGuard.lostIndex(index, getHistoryBlobsDir());
+        if (lost && Files.exists(index)) {
+            // Zero-length beside stored revision bodies: a write the OS never flushed, not "no history yet".
+            loadProblems.add(ConfigMigrations.unreadable(index));
+            historyStore = new HistoryStore();
+        } else if (Files.exists(index)) {
             // Reported, but never write-protected: the index publication protocol below must keep running.
             historyStore = ConfigMigrations.readVersioned(
-                    getHistoryFile(), json, new HistoryStore(), ConfigSchema.HISTORY, loadProblems::add);
+                    index, json, new HistoryStore(), ConfigSchema.HISTORY, loadProblems::add);
         } else {
             historyStore = new HistoryStore();
         }
+        // Decided after the read, which is what leaves a backup behind. The backup keeps protecting the
+        // bodies in later sessions, when the index this session writes loads cleanly.
+        // An index that was read with a non-UTF-8 byte replaced still lists every revision, so it does not count.
+        boolean readAsWritten = loadProblems.subList(problemsBefore, loadProblems.size()).stream()
+                .allMatch(p -> p.kind() == ConfigLoadProblem.Kind.NOT_UTF8);
+        historyIndexIntact = !lost && readAsWritten && !HistoryIndexGuard.backupPresent(index);
         Set<String> loaded = HistoryRetention.liveHashes(historyStore.getByProject());
         synchronized (historyPublicationLock) {
             durableHistoryHashes = loaded;
@@ -895,7 +1009,7 @@ public class SharedConfig {
             return;
         }
         try {
-            JsonNode root = json.readTree(Files.readString(file));
+            JsonNode root = json.readTree(ConfigMigrations.readText(file));
             if (!(root instanceof ObjectNode obj)) {
                 return;
             }
@@ -918,12 +1032,12 @@ public class SharedConfig {
 
     /** Writes the global bookmarks to {@code bookmarks.json}, independently of a session save. */
     public void saveBookmarks() {
-        writeStore(getBookmarksFile(), bookmarkStore, "bookmarks");
+        writeStore(getBookmarksFile(), bookmarkStore);
     }
 
     /** Writes the breakpoints to {@code breakpoints.json}, independently of a session save. */
     public void saveBreakpoints() {
-        writeStore(getBreakpointsFile(), breakpointStore, "breakpoints");
+        writeStore(getBreakpointsFile(), breakpointStore);
     }
 
     /** Loads {@code notes.json} (versioned, per-project buckets). Missing/malformed ⇒ an empty store. */
@@ -933,6 +1047,6 @@ public class SharedConfig {
 
     /** Writes the global Personal Notes to {@code notes.json}, independently of a session save. */
     public void saveNotes() {
-        writeStore(getNotesFile(), noteStore, "notes");
+        writeStore(getNotesFile(), noteStore);
     }
 }

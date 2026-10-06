@@ -161,4 +161,99 @@ class TestRunCoordinatorUpToDateFxTest {
         assertTrue(runThatRewritesNothing(host, BuildTool.MAVEN, dir, 0).isEmpty());
         assertFalse(host.statuses.contains(tr("status.testrunner.upToDate")));
     }
+
+    /**
+     * A filtered Maven run that exits 0 having run nothing — the filter matched no test — must say so:
+     * "0 of 0 tests passed" on a green build reads as the rerun having passed.
+     */
+    @Test
+    void aFilteredMavenRunThatRanNothingSaysNoTestMatched(@TempDir Path dir) throws Exception {
+        RecordingHost host = new RecordingHost();
+
+        assertTrue(runThatRewritesNothing(host, BuildTool.MAVEN, dir, 0).isEmpty());
+        assertTrue(host.statuses.contains(tr("status.testrunner.noMatch")), host.statuses.toString());
+
+        RecordingHost failed = new RecordingHost();
+        runThatRewritesNothing(failed, BuildTool.MAVEN, dir, 1);
+        assertFalse(failed.statuses.contains(tr("status.testrunner.noMatch")), "a failed build has its own message");
+    }
+
+    private static final String LIB_REPORT = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <testsuite name="com.y.LibTest" tests="1" failures="1" errors="0" skipped="0" time="0.02">
+              <testcase name="brokenLastWeek" classname="com.y.LibTest" time="0.01"><failure message="old"/></testcase>
+            </testsuite>
+            """;
+
+    /** Runs an instant Gradle run that prints {@code output} and rewrites nothing; returns every leaf shown. */
+    private static List<String> gradleRun(RecordingHost host, Path dir, List<String> task, String... output)
+            throws Exception {
+        TestRunCoordinator coordinator = FxTestSupport.callOnFx(() -> new TestRunCoordinator(host, new Ops()));
+        try {
+            FxTestSupport.runOnFx(() -> {
+                assertTrue(coordinator.onTestRunStart(BuildTool.GRADLE, dir, task, List.of(), List.of("gradle")));
+                for (String line : output) {
+                    coordinator.onTestOutput(line, false);
+                }
+                coordinator.onTestExit(0);
+            });
+            ScheduledExecutorService poller = FxTestSupport.field(coordinator, "poller");
+            poller.submit(() -> {}).get(30, TimeUnit.SECONDS);
+            FxTestSupport.runOnFx(() -> {});
+            FxTestSupport.runOnFx(() -> {});
+            TestRun run = FxTestSupport.callOnFx(() -> FxTestSupport.field(coordinator, "currentRun"));
+            List<String> leaves = new ArrayList<>();
+            FxTestSupport.runOnFx(() -> run.root()
+                    .children()
+                    .forEach(suite -> suite.children().forEach(leaf -> leaves.add(leaf.displayName()))));
+            return leaves;
+        } finally {
+            FxTestSupport.runOnFx(coordinator::shutdown);
+        }
+    }
+
+    /**
+     * Only the reports of the task Gradle reported as up to date stand for the run. Sweeping every report
+     * under the project showed another module's stale failure next to a successful {@code :app:test}.
+     */
+    @Test
+    void anUpToDateTaskShowsItsOwnReportsNotAnotherModules(@TempDir Path dir) throws Exception {
+        Files.writeString(
+                Files.createDirectories(dir.resolve("app/build/test-results/test"))
+                        .resolve("TEST-com.x.FooTest.xml"),
+                REPORT);
+        Files.writeString(
+                Files.createDirectories(dir.resolve("lib/build/test-results/test"))
+                        .resolve("TEST-com.y.LibTest.xml"),
+                LIB_REPORT);
+        RecordingHost host = new RecordingHost();
+
+        List<String> leaves = gradleRun(
+                host,
+                dir,
+                List.of(":app:test", "--tests", "com.x.FooTest"),
+                "> Task :app:compileJava UP-TO-DATE",
+                "> Task :app:test UP-TO-DATE",
+                "BUILD SUCCESSFUL in 1s");
+
+        assertEquals(2, leaves.size(), "app's own results: " + leaves);
+        assertFalse(leaves.stream().anyMatch(n -> n.contains("brokenLastWeek")), "not lib's leftover: " + leaves);
+        assertTrue(host.statuses.contains(tr("status.testrunner.upToDate")));
+    }
+
+    /** A task that merely ends in "Test" and ran no tests has no reports to show, and says nothing was reused. */
+    @Test
+    void aRunWhoseTasksReusedNoTestResultsShowsNothing(@TempDir Path dir) throws Exception {
+        Files.writeString(
+                Files.createDirectories(dir.resolve("lib/build/test-results/test"))
+                        .resolve("TEST-com.y.LibTest.xml"),
+                LIB_REPORT);
+        RecordingHost host = new RecordingHost();
+
+        List<String> leaves =
+                gradleRun(host, dir, List.of("assembleAndroidTest", "--tests", "x"), "> Task :app:assembleAndroidTest");
+
+        assertTrue(leaves.isEmpty(), leaves.toString());
+        assertFalse(host.statuses.contains(tr("status.testrunner.upToDate")));
+    }
 }

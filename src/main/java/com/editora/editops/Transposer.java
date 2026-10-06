@@ -14,7 +14,7 @@ public final class Transposer {
     private Transposer() {}
 
     private static boolean isWord(char c) {
-        return Character.isLetterOrDigit(c) || c == '_';
+        return WordChars.isLetterDigitOrMark(c) || c == '_';
     }
 
     /** Start of the line containing {@code pos} (index just after the previous newline, or 0). */
@@ -43,19 +43,34 @@ public final class Transposer {
      */
     public static Edit transposeChars(String text, int caret) {
         int n = text.length();
-        boolean atEnd = caret >= n || text.charAt(caret) == '\n';
-        if (atEnd) {
-            if (caret >= 2 && text.charAt(caret - 1) != '\n' && text.charAt(caret - 2) != '\n') {
-                String repl = "" + text.charAt(caret - 1) + text.charAt(caret - 2);
-                return new Edit(caret - 2, caret, repl, caret);
-            }
+        if (caret < 0 || caret > n) {
             return null;
         }
-        if (caret >= 1 && text.charAt(caret - 1) != '\n') {
-            String repl = "" + text.charAt(caret) + text.charAt(caret - 1);
-            return new Edit(caret - 1, caret + 1, repl, caret + 1);
+        // Step by code point, so a supplementary character (an emoji, a CJK Extension B ideograph) moves
+        // as one unit instead of being torn into two unpaired surrogates.
+        int here = snapToCodePoint(text, caret);
+        boolean atEnd = here >= n || text.charAt(here) == '\n';
+        int right = atEnd ? here : here + Character.charCount(text.codePointAt(here));
+        int mid = atEnd ? before(text, here) : here;
+        int left = before(text, mid);
+        if (left < 0 || mid < 0 || text.charAt(mid) == '\n' || text.charAt(left) == '\n') {
+            return null;
         }
-        return null;
+        return new Edit(left, right, text.substring(mid, right) + text.substring(left, mid), right);
+    }
+
+    /** {@code offset}, moved back one unit when it falls between the two halves of a surrogate pair. */
+    static int snapToCodePoint(String text, int offset) {
+        boolean split = offset > 0
+                && offset < text.length()
+                && Character.isLowSurrogate(text.charAt(offset))
+                && Character.isHighSurrogate(text.charAt(offset - 1));
+        return split ? offset - 1 : offset;
+    }
+
+    /** Start of the code point that ends at {@code offset}, or -1 at the start of the text. */
+    private static int before(String text, int offset) {
+        return offset <= 0 ? -1 : offset - Character.charCount(text.codePointBefore(offset));
     }
 
     /**

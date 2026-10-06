@@ -555,6 +555,91 @@ class BuildCoordinatorFxTest {
         assertEquals(1, ops.openConsoleCount, "and the declined rerun never ran");
     }
 
+    private static Path script(Path file, String body) throws Exception {
+        Files.writeString(file, "#!/bin/sh\n" + body + "\n");
+        assertTrue(file.toFile().setExecutable(true));
+        return file;
+    }
+
+    /**
+     * Test Results repeats a run where it ran. The marker root follows the active tab, so after opening a
+     * file of another module the rerun used to launch that module's build instead.
+     */
+    @Test
+    void runTaskAtLaunchesInTheGivenRootNotTheActiveTabsModule(@TempDir Path project) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"), "needs a POSIX sh");
+        Path moduleA = Files.createDirectories(project.resolve("module-a"));
+        Path moduleB = Files.createDirectories(project.resolve("module-b"));
+        Files.writeString(moduleA.resolve("pom.xml"), VALID_POM);
+        Files.writeString(moduleB.resolve("pom.xml"), VALID_POM);
+        Path cwdLog = project.resolve("cwd.log");
+        FakeHost host = new FakeHost();
+        host.settings.setMavenSupport(true);
+        host.settings.setMavenCommand(
+                script(project.resolve("fakemvn.sh"), "pwd >> '" + cwdLog + "'").toString());
+        FakeOps ops = new FakeOps();
+        ops.projectRoot = moduleB; // what the active tab now resolves to
+        BuildCoordinator c = coordinator(BuildTool.MAVEN, host, ops);
+        FxTestSupport.runOnFx(c::refresh);
+        waitUntil(() -> moduleB.equals(c.markerRoot()), "module-b is the detected root");
+
+        FxTestSupport.runOnFx(() -> c.runTaskAt(moduleA, List.of("test"), List.of()));
+        waitUntil(() -> !c.isRunning() && Files.exists(cwdLog), "the rerun finished");
+
+        assertEquals(
+                List.of(moduleA.toRealPath().toString()),
+                Files.readAllLines(cwdLog).stream()
+                        .map(l -> uncheckedRealPath(Path.of(l)))
+                        .toList());
+    }
+
+    private static String uncheckedRealPath(Path p) {
+        try {
+            return p.toRealPath().toString();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * "Load all tasks…" takes Gradle about 90 s. Its result was dropped whenever anything re-detected the
+     * project meanwhile — a tab switch, a save, the window regaining focus — although the project was the same.
+     */
+    @Test
+    void loadedGradleTasksSurviveARefreshOfTheSameProjectDuringTheLoad(@TempDir Path dir) throws Exception {
+        org.junit.jupiter.api.Assumptions.assumeFalse(
+                System.getProperty("os.name", "").toLowerCase().contains("win"), "needs a POSIX sh");
+        Files.writeString(dir.resolve("build.gradle"), "plugins { id 'java' }\n");
+        Path fake = Files.createTempFile("fakegradle", ".sh"); // outside the project: not a repo wrapper
+        try {
+            script(
+                    fake,
+                    "sleep 1\ncat <<'EOT'\nBuild tasks\n-----------\nassemble - Assembles the outputs.\n"
+                            + "customDeploy - Deploys.\n\nEOT");
+            FakeHost host = new FakeHost();
+            host.settings.setGradleSupport(true);
+            host.settings.setGradleCommand(fake.toString());
+            FakeOps ops = new FakeOps();
+            ops.projectRoot = dir;
+            BuildCoordinator c = coordinator(BuildTool.GRADLE, host, ops);
+            FxTestSupport.runOnFx(c::refresh);
+            waitUntil(c::isDetected, "the Gradle project is detected");
+
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(c, "loadAllTasks", new Class<?>[] {}));
+            FxTestSupport.runOnFx(c::refresh); // what a tab switch / save / focus-regain does
+            waitUntil(
+                    () -> !((List<?>) FxTestSupport.field(c, "loadedTasks")).isEmpty(),
+                    "the enumeration is kept, not discarded");
+
+            List<String> loaded = FxTestSupport.field(c, "loadedTasks");
+            assertTrue(loaded.contains("assemble") && loaded.contains("customDeploy"), loaded.toString());
+            assertEquals(tr("status.build.loadedTasks", disp(BuildTool.GRADLE), loaded.size()), host.lastStatus);
+        } finally {
+            Files.deleteIfExists(fake);
+        }
+    }
+
     /**
      * Runs one task and waits for its process to die.
      *

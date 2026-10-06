@@ -127,7 +127,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             Path key = host.canonicalPath(target);
             java.util.List<Diagnostic> out = new java.util.ArrayList<>();
             for (var e : host.lspCoordinator().problems().entrySet()) {
-                if (!host.canonicalPath(e.getKey()).equals(key)) {
+                if (!com.editora.config.PathKeys.samePath(host.canonicalPath(e.getKey()), key)) {
                     continue;
                 }
                 for (com.editora.editor.LspDiagnostic d : e.getValue()) {
@@ -158,7 +158,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (p != null) {
                 root = Path.of(p.root());
             }
-            host.searchCoordinator().service().search(q, root, open, fut::complete);
+            // Detached: an MCP call must neither drop the user's own search nor be dropped by it (or by a
+            // second, parallel MCP call) and then wait out the timeout for an answer nobody will send.
+            host.searchCoordinator().service().searchDetached(q, root, open, fut::complete, () -> fut.cancel(false));
         });
         com.editora.search.SearchService.Outcome outcome;
         try {
@@ -220,7 +222,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             CodeArea area = b.getArea();
             String replacement = newText == null ? "" : newText;
             if (oldText == null || oldText.isEmpty()) {
-                area.replaceText(replacement); // whole-buffer rewrite, one undo step
+                // read_buffer returns the whole file, so a rewrite replaces the whole file: widens a narrowed
+                // buffer first, then one undo step.
+                b.replaceWholeDocument(replacement);
                 return null;
             }
             String text = area.getText();
@@ -430,7 +434,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             EditorBuffer b = host.bufferOf(tab);
             if (b != null
                     && b.getPath() != null
-                    && host.canonicalPath(b.getPath()).equals(key)) {
+                    && com.editora.config.PathKeys.samePath(host.canonicalPath(b.getPath()), key)) {
                 return b;
             }
         }

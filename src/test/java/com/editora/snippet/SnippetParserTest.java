@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure snippet body parser (no toolkit). */
 class SnippetParserTest {
@@ -151,5 +153,64 @@ class SnippetParserTest {
         ParsedSnippet p = SnippetParser.parse("for {\n\t$0\n}", NONE);
         assertEquals("for {\n\t\n}", p.text());
         assertArrayEquals(new int[] {7, 7}, stop(p, 0).ranges().get(0));
+    }
+
+    // --- variables: transforms and defaults ---
+
+    @Test
+    void aVariableTransformRewritesTheValueInsteadOfLeakingTheRegex() {
+        SnippetParser.Variables vars = name -> switch (name) {
+            case "TM_DIRECTORY" -> "/home/u/proj/src";
+            case "TM_FILENAME_BASE" -> "foo_bar";
+            case "TM_FILENAME" -> "foo_bar.h";
+            default -> null;
+        };
+        // The bundled C++ `#guard` line.
+        ParsedSnippet p = SnippetParser.parse(
+                "#ifndef INCLUDE${TM_DIRECTORY/.*[\\/\\\\](.*)/_${1:/upcase}/}${TM_FILENAME_BASE/(.*)/_${1:/upcase}/}"
+                        + "${TM_FILENAME/.*\\.(.*)/_${1:/upcase}/}_\n$0",
+                vars);
+        assertEquals("#ifndef INCLUDE_SRC_FOO_BAR_H_\n", p.text());
+        assertNull(stop(p, 1), "the transform's group reference is not a tab stop");
+        assertNotNull(stop(p, 0));
+    }
+
+    @Test
+    void aTransformOfAnUnknownVariableWorksOnTheEmptyString() {
+        assertEquals("[]", SnippetParser.parse("[${NOPE/(.+)/<$1>/}]", NONE).text());
+        assertEquals("[]", SnippetParser.parse("[${NOPE/unterminated}]", NONE).text());
+    }
+
+    @Test
+    void theDefaultStandsInForAnEmptyVariableToo() {
+        SnippetParser.Variables vars = name -> name.startsWith("TM_") ? "" : null;
+        assertEquals(
+                "class MyClass {}",
+                SnippetParser.parse("class ${TM_FILENAME_BASE:MyClass} {}", vars)
+                        .text());
+        ParsedSnippet p = SnippetParser.parse("{\n\t${0:${TM_SELECTED_TEXT:body}}\n}", vars);
+        assertEquals("{\n\tbody\n}", p.text());
+        assertArrayEquals(new int[] {3, 7}, stop(p, 0).ranges().get(0));
+        assertEquals(
+                "class Foo {}",
+                SnippetParser.parse("class ${TM_FILENAME_BASE:MyClass} {}", name -> "Foo")
+                        .text());
+    }
+
+    @Test
+    void spansRecordWhichStopContainsWhich() {
+        // Identical offsets, different structure: $1 nested at the start of $2, versus $1 in front of $2.
+        ParsedSnippet nested = SnippetParser.parse("${2:${1}foo}", NONE);
+        ParsedSnippet adjacent = SnippetParser.parse("${1}${2:foo}", NONE);
+        assertArrayEquals(
+                stop(nested, 1).ranges().get(0), stop(adjacent, 1).ranges().get(0));
+        assertArrayEquals(
+                stop(nested, 2).ranges().get(0), stop(adjacent, 2).ranges().get(0));
+        int[] in = stop(nested, 1).spans().get(0);
+        int[] out = stop(nested, 2).spans().get(0);
+        assertTrue(out[0] < in[0] && in[1] < out[1], "$2 opens before and closes after $1");
+        int[] first = stop(adjacent, 1).spans().get(0);
+        int[] second = stop(adjacent, 2).spans().get(0);
+        assertTrue(first[1] < second[0], "$1 closes before $2 opens");
     }
 }

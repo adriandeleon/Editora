@@ -54,4 +54,25 @@ class JavaRunCommandTest {
         List<String> argv = JavaRunCommand.build("java", List.of(), List.of(), "Main", List.of(), List.of());
         assertEquals(List.of("java", "Main"), argv);
     }
+
+    /** jdtls names a class of a named module {@code <module>/<class>}; {@code java -cp} takes the class only. */
+    @Test
+    void aModuleQualifiedMainClassRunsByItsClassNameOffTheClasspath() {
+        List<String> argv = JavaRunCommand.build(
+                "java", List.of("/mods"), List.of(), "app.core/app.core.ModMain", List.of(), List.of());
+        assertEquals(List.of("java", "-cp", "/mods", "app.core.ModMain"), argv);
+        assertEquals("app.core.ModMain", new JavaMainClass("app.core/app.core.ModMain", "modproj", "").className());
+        assertEquals("demo.Args", new JavaMainClass("demo.Args", "p", "").className());
+    }
+
+    /** A project compiled with preview features is run with the flag — once, and ahead of the user's own. */
+    @Test
+    void aPreviewProjectAddsTheFlagToTheVmArguments() {
+        JavaLaunchInfo preview = new JavaLaunchInfo("java", List.of(), List.of("/cp"), null, true);
+        assertEquals(List.of("--enable-preview"), preview.vmArgs(List.of()));
+        assertEquals(List.of("--enable-preview", "-Xmx1g"), preview.vmArgs(List.of("-Xmx1g")));
+        assertEquals(List.of("-Xmx1g", "--enable-preview"), preview.vmArgs(List.of("-Xmx1g", "--enable-preview")));
+        JavaLaunchInfo plain = new JavaLaunchInfo("java", List.of(), List.of("/cp"), null);
+        assertEquals(List.of("-Xmx1g"), plain.vmArgs(List.of("-Xmx1g")));
+    }
 }

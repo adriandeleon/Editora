@@ -118,4 +118,18 @@ class BlobRewriteTest {
 
         assertNull(BlobRewrite.rewrite(original, StandardCharsets.UTF_8, NO_BOM, decoded, decoded.replace("x", "y")));
     }
+
+    @Test
+    void theViewsTextIsComparedWithTheBlobLineByLineNotByTerminator() {
+        // Diff sides hold the editor's \n-only text; the blob keeps its own terminators.
+        byte[] original = "one\r\ntwo\r\n".getBytes(StandardCharsets.UTF_8);
+        assertEquals(
+                "one\r\nTWO\r\n",
+                new String(
+                        BlobRewrite.rewrite(original, StandardCharsets.UTF_8, NO_BOM, "one\ntwo\n", "one\nTWO\n"),
+                        StandardCharsets.UTF_8));
+        assertNull(
+                BlobRewrite.rewrite(original, StandardCharsets.UTF_8, NO_BOM, "one\ntwo", "one\nTWO"),
+                "a view that differs in its final newline is not this blob");
+    }
 }

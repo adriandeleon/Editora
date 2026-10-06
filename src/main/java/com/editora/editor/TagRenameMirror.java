@@ -5,11 +5,13 @@ import java.util.function.BiConsumer;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
+import com.editora.editops.DoubleClickWord;
 import com.editora.editops.TagRename;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.model.EditableStyledDocument;
 import org.fxmisc.richtext.model.PlainTextChange;
 import org.fxmisc.richtext.model.StyledDocument;
+import org.fxmisc.richtext.model.TwoDimensional;
 
 /**
  * Auto-rename-tag: editing an HTML/XML tag name mirrors the rename onto the paired open/close tag (the
@@ -42,6 +44,11 @@ final class TagRenameMirror {
     private boolean enabled;
     /** Re-entrancy guard: the mirrored {@code replaceText} must not itself trigger another mirror. */
     private boolean applying;
+    /** The buffer's areas (the split view's second one shares the document; each records its own undo). */
+    private CodeArea primary;
+
+    /** Weak: a closed split view's area must not be kept alive by its buffer's mirror. */
+    private java.lang.ref.WeakReference<CodeArea> secondary = new java.lang.ref.WeakReference<>(null);
 
     /**
      * @param language the buffer's current language id
@@ -61,6 +68,13 @@ final class TagRenameMirror {
     CodeArea newArea(EditableStyledDocument<Collection<String>, String, Collection<String>> document) {
         Area area = document == null ? new Area() : new Area(document);
         area.onCommitted = this::committed;
+        area.language = language;
+        EditorMouse.installSelectionDrop(area);
+        if (document == null) {
+            primary = area;
+        } else {
+            secondary = new java.lang.ref.WeakReference<>(area);
+        }
         return area;
     }
 
@@ -100,7 +114,9 @@ final class TagRenameMirror {
         int delta = m.name().length() - (m.to() - m.from());
         applying = true;
         try {
-            a.replaceText(m.from(), m.to(), m.name());
+            // One undo step with the keystroke: undoing only the mirror would leave the tags mismatched.
+            CompletionUndoManager.joinLastEdit(
+                    primary, secondary.get(), () -> a.replaceText(m.from(), m.to(), m.name()));
             a.selectRange(anchor >= m.to() ? anchor + delta : anchor, caret >= m.to() ? caret + delta : caret);
         } finally {
             applying = false;
@@ -118,6 +134,7 @@ final class TagRenameMirror {
     static final class Area extends CodeArea {
 
         private BiConsumer<CodeArea, PlainTextChange> onCommitted = (area, change) -> {};
+        private Supplier<String> language = () -> null;
         private PlainTextChange inFlight;
         private int depth;
         private boolean nested;
@@ -138,6 +155,32 @@ final class TagRenameMirror {
                     inFlight = change;
                 }
             });
+        }
+
+        /**
+         * Tolerates an offset past the end of the document. While a multi-caret change is being notified,
+         * the extra carets still hold their pre-edit offsets; the current-line highlighter (subscribed
+         * before them) re-creates the caret line's cell in that window, which resolves every caret's
+         * paragraph — and for a caret near the end of a document that just got shorter, the stale offset
+         * is out of range. RichTextFX threw from the change notification, the multi-caret commit never
+         * re-asserted its carets, and every later key in the buffer failed. The carets correct themselves
+         * as soon as their own change handlers run, so clamping the transient lookup is all that is needed.
+         */
+        /** Double-click: the word under the caret by {@link DoubleClickWord}'s rules for this language. */
+        @Override
+        public void selectWord() {
+            String lang = language.get();
+            boolean prose = LanguageRegistry.plaintext().equals(lang) || "markdown".equals(lang);
+            int paragraph = getCurrentParagraph();
+            int[] word = DoubleClickWord.at(getText(paragraph), getCaretColumn(), prose, "css".equals(lang));
+            if (word != null) {
+                selectRange(paragraph, word[0], paragraph, word[1]);
+            }
+        }
+
+        @Override
+        public TwoDimensional.Position offsetToPosition(int offset, TwoDimensional.Bias bias) {
+            return super.offsetToPosition(Math.min(offset, getLength()), bias);
         }
 
         @Override

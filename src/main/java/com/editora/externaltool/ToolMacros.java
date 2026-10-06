@@ -57,10 +57,14 @@ public final class ToolMacros {
             String value = vars.get(name);
             if (value != null) {
                 out.append(value);
+                i = close + 1;
             } else {
-                out.append(template, i, close + 1); // unknown $X$ — leave literal
+                // Not a macro: this '$' is literal (a shell variable, a price). Only it is consumed, so the
+                // '$' that would have "closed" it can still open the macro that follows — `echo $USER
+                // $FilePath$` must expand $FilePath$. An unknown $X$ comes out unchanged either way.
+                out.append('$');
+                i++;
             }
-            i = close + 1;
         }
         return out.toString();
     }

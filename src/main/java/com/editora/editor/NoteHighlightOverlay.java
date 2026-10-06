@@ -19,7 +19,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * mouse-transparent {@link Canvas} sized to the viewport, redrawn coalesced (one per pulse) on
  * scroll/edit/resize/fold, only for visible spans. Off in large-file mode / when indicators are hidden.
  */
-final class NoteHighlightOverlay extends Region {
+final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed {
 
     // A soft amber wash painted like a text selection: a flat, contiguous fill (no per-line outline or
     // rounded corners) so a multi-line note traces the same shape as the editor's selection.
@@ -43,6 +43,8 @@ final class NoteHighlightOverlay extends Region {
     private boolean rendering = true;
 
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private NoteHighlightOverlay follower;
     // Whether the last redraw had visible note spans to paint. When false the canvas is shrunk to 1x1 to
     // release its viewport-sized RTTexture — a buffer with no visible notes shouldn't pin a full-viewport
     // texture (the convention the other overlays follow). layoutChildren re-grows only while this is set.
@@ -59,12 +61,29 @@ final class NoteHighlightOverlay extends Region {
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
 
+    /** The same highlights and markers for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public NoteHighlightOverlay follower(CodeArea view) {
+        NoteHighlightOverlay second = new NoteHighlightOverlay(view);
+        second.spans = spans;
+        second.setRenderingActive(rendering);
+        second.setActive(active);
+        follower = second;
+        return second;
+    }
+
     void setSpans(Supplier<List<int[]>> spans) {
+        if (follower != null) {
+            follower.setSpans(spans);
+        }
         this.spans = spans == null ? List::of : spans;
         scheduleRedraw();
     }
 
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -78,6 +97,9 @@ final class NoteHighlightOverlay extends Region {
     }
 
     void refresh() {
+        if (follower != null) {
+            follower.refresh();
+        }
         scheduleRedraw();
     }
 
@@ -99,6 +121,9 @@ final class NoteHighlightOverlay extends Region {
 
     /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
     void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
         if (rendering == on) {
             return;
         }

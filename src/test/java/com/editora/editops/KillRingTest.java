@@ -196,4 +196,18 @@ class KillRingTest {
         assertTrue(r.isEmpty());
         assertNull(r.current());
     }
+
+    @Test
+    void entriesAreStoredWithLfLineEndings() {
+        // The document stores CRLF as one newline; an entry's length must equal what a yank inserts.
+        KillRing r = new KillRing();
+        assertTrue(r.adoptExternal("a\r\nb\r\n"));
+        assertEquals("a\nb\n", r.current());
+        assertFalse(r.adoptExternal("a\r\nb\r\n"), "the same clipboard text is not adopted twice");
+        r.save("c\rd");
+        assertEquals("c\nd", r.current());
+        r.kill("e\r\n", Direction.FORWARD, false);
+        r.kill("f\r\n", Direction.FORWARD, true);
+        assertEquals("e\nf\n", r.current());
+    }
 }

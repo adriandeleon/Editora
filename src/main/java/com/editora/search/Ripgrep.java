@@ -1,5 +1,7 @@
 package com.editora.search;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -23,11 +25,24 @@ public final class Ripgrep {
 
     /**
      * The command to invoke: the user-configured value if set, else {@code rg}; either may be a bare
-     * executable or a multi-token command, split on whitespace. Pure; unit-tested.
+     * executable or a multi-token command, split on whitespace. A value that names an existing file is the
+     * executable as a whole, spaces and all: {@code C:\Program Files\ripgrep\rg.exe} used to be split in
+     * two, fail detection, and leave Find in Files on the walker without a word. Unit-tested.
      */
     public static List<String> command(String configured) {
         String raw = configured == null || configured.isBlank() ? DEFAULT_COMMAND : configured.strip();
+        if (raw.chars().anyMatch(Character::isWhitespace) && isFile(raw)) {
+            return List.of(raw);
+        }
         return List.of(raw.split("\\s+"));
+    }
+
+    private static boolean isFile(String raw) {
+        try {
+            return Files.isRegularFile(Path.of(raw));
+        } catch (RuntimeException notAPath) {
+            return false;
+        }
     }
 
     /**

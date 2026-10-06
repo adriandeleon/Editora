@@ -174,7 +174,17 @@ public enum ConfigSchema {
                             ConfigMigrations::identity), // v103→104: Codex + LM Studio providers; preserve choices
                     // v104→105: authorName/pluginRegistryUrl persist their raw (blank = follow the default)
                     // value; drop the accidental authorNameRaw key and the never-read ijhttpCommand.
-                    Map.entry(104, (Migration) ConfigMigrations::retireUnusedSettingsKeys)),
+                    Map.entry(104, (Migration) ConfigMigrations::retireUnusedSettingsKeys),
+                    // v105→106: key-binding overrides belong to a keymap. keybindings/keybindingsMac stay where
+                    // they are and now mean "the active keymap's" — which is the keymap every existing user's
+                    // overrides were in force under — and the maps for the other keymaps start empty.
+                    Map.entry(105, (Migration) ConfigMigrations::identity),
+                    // v106→107: mavenArchetypeCatalogUrl persists its raw value too; a file that froze either
+                    // built-in URL goes back to blank ("follow the default").
+                    Map.entry(106, (Migration) ConfigMigrations::blankFrozenDefaultUrls),
+                    // v107→108: + debugProgramConsole (additive; no earlier file could have chosen it, so
+                    // every user gets the default — the debugged Java program can be typed to).
+                    Map.entry(107, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -282,6 +292,16 @@ public enum ConfigSchema {
             }
         }
         return Math.min(version, currentVersion);
+    }
+
+    /**
+     * Whether a file of this kind that is not valid UTF-8 gets a {@code .corrupt.bak} copy of its original
+     * bytes when it is loaded with replacements. Not the Local History index: a backup beside it stops
+     * revision bodies from being collected for as long as it exists, and the index that was read still lists
+     * every revision (only a path can hold a replaced character).
+     */
+    public boolean keepsCopyOfUndecodableFile() {
+        return this != HISTORY;
     }
 
     /** The step that upgrades {@code fromVersion → fromVersion+1}, or {@code null} if none is registered. */

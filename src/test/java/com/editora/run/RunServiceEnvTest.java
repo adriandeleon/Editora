@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -40,6 +41,21 @@ class RunServiceEnvTest {
         assertEquals("hola", pb.environment().get("GREETING"));
         assertEquals("es_MX.UTF-8", pb.environment().get("LC_ALL"), "a config may still choose a locale");
         assertEquals("/opt/x", pb.environment().get("PATH"), "and may replace PATH");
+    }
+
+    /** A debug adapter's runInTerminal spells "unset this variable" as a null value. */
+    @Test
+    void aNullValueRemovesTheVariableFromTheChildsEnvironment(@TempDir Path dir) {
+        java.util.Map<String, String> env = new java.util.HashMap<>();
+        env.put("GREETING", "hola");
+        env.put("PATH", null);
+        env.put("NEVER_SET_ANYWHERE", null);
+
+        ProcessBuilder pb = RunService.processBuilder(dir, List.of("java", "Main.java"), env);
+
+        assertEquals("hola", pb.environment().get("GREETING"));
+        assertFalse(pb.environment().containsKey("PATH"), "unset, the augmented PATH included");
+        assertFalse(pb.environment().containsKey("NEVER_SET_ANYWHERE"));
     }
 
     @Test

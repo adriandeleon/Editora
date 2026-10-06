@@ -94,7 +94,6 @@ class AiCoordinatorFxTest {
             EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
                 EditorBuffer b = new EditorBuffer();
                 b.setContent("original");
-                b.getArea().getUndoManager().forgetHistory();
                 b.getArea().selectAll();
                 return b;
             });

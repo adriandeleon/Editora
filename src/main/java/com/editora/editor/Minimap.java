@@ -89,6 +89,26 @@ final class Minimap extends Region {
     private static final Color INFO_STRIPE = Color.web("#4c8eda");
     private static final double STRIPE_WIDTH = 5;
 
+    /** The minimap of the split's second view, given every setting and mark this one is given. */
+    private Minimap follower;
+
+    /** A minimap for a split's second {@code view}, kept in step with this one. */
+    Minimap follower(CodeArea view) {
+        Minimap second = new Minimap(view);
+        second.tabSize = tabSize;
+        second.textColor = textColor;
+        second.viewportColor = viewportColor;
+        second.diagnostics = diagnostics;
+        second.diagnosticsEnabled = diagnosticsEnabled;
+        second.todoMarks = todoMarks;
+        second.todoEnabled = todoEnabled;
+        second.lintMarks = lintMarks;
+        second.lintEnabled = lintEnabled;
+        second.setRenderingActive(renderingActive);
+        follower = second;
+        return second;
+    }
+
     Minimap(CodeArea area) {
         this.area = area;
         getStyleClass().add("minimap");
@@ -109,6 +129,9 @@ final class Minimap extends Region {
 
     /** Sets the visual tab width (columns) and re-renders if it changed. */
     void setTabSize(int tabSize) {
+        if (follower != null) {
+            follower.setTabSize(tabSize);
+        }
         if (tabSize > 0 && tabSize != this.tabSize) {
             this.tabSize = tabSize;
             renderContent();
@@ -117,6 +140,9 @@ final class Minimap extends Region {
 
     /** Sets the document-block and viewport-overlay colors (theme-aware) and re-renders. */
     void setColors(Color text, Color viewport) {
+        if (follower != null) {
+            follower.setColors(text, viewport);
+        }
         this.textColor = text;
         this.viewportColor = viewport;
         renderContent();
@@ -125,17 +151,26 @@ final class Minimap extends Region {
     /** Forces a re-render (e.g. after layout/theme settle at startup, when the first render may have
      *  run before the canvas was sized). */
     void refresh() {
+        if (follower != null) {
+            follower.refresh();
+        }
         renderContent();
     }
 
     /** Sets the LSP diagnostics drawn as right-edge severity stripes; a cheap stripe-only repaint. */
     void setDiagnostics(java.util.List<LspDiagnostic> diagnostics) {
+        if (follower != null) {
+            follower.setDiagnostics(diagnostics);
+        }
         this.diagnostics = diagnostics == null ? java.util.List.of() : diagnostics;
         repaintStripes();
     }
 
     /** Enables/disables the diagnostic stripes (driven by LSP-active for this buffer); a cheap repaint. */
     void setDiagnosticsEnabled(boolean enabled) {
+        if (follower != null) {
+            follower.setDiagnosticsEnabled(enabled);
+        }
         if (this.diagnosticsEnabled == enabled) {
             return;
         }
@@ -145,12 +180,18 @@ final class Minimap extends Region {
 
     /** Sets the TODO/highlight matches drawn as left-edge stripes; a cheap stripe-only repaint. */
     void setTodoMarks(java.util.List<TodoMark> marks) {
+        if (follower != null) {
+            follower.setTodoMarks(marks);
+        }
         this.todoMarks = marks == null ? java.util.List.of() : marks;
         repaintStripes();
     }
 
     /** Enables/disables the TODO stripes (driven by TODO-highlight-on for this buffer); a cheap repaint. */
     void setTodoEnabled(boolean enabled) {
+        if (follower != null) {
+            follower.setTodoEnabled(enabled);
+        }
         if (this.todoEnabled == enabled) {
             return;
         }
@@ -160,12 +201,18 @@ final class Minimap extends Region {
 
     /** Sets the Markdown-lint warnings drawn as right-edge stripes; a cheap stripe-only repaint. */
     void setLintMarks(java.util.List<MarkdownLint.Diagnostic> marks) {
+        if (follower != null) {
+            follower.setLintMarks(marks);
+        }
         this.lintMarks = marks == null ? java.util.List.of() : marks;
         repaintStripes();
     }
 
     /** Enables/disables the lint stripes (driven by Markdown-lint-on for this buffer); a cheap repaint. */
     void setLintEnabled(boolean enabled) {
+        if (follower != null) {
+            follower.setLintEnabled(enabled);
+        }
         if (this.lintEnabled == enabled) {
             return;
         }
@@ -192,6 +239,9 @@ final class Minimap extends Region {
      * is shown again. This is what keeps retained VRAM from growing with the number of open files.
      */
     void setRenderingActive(boolean active) {
+        if (follower != null) {
+            follower.setRenderingActive(active);
+        }
         if (this.renderingActive == active) {
             return;
         }

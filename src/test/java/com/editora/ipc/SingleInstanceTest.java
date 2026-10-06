@@ -1,5 +1,7 @@
 package com.editora.ipc;
 
+import java.io.BufferedReader;
+import java.io.StringReader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -58,6 +60,21 @@ class SingleInstanceTest {
         // wildcard that lets any local process drive the editor.
         assertNull(SingleInstance.parseRequest(SingleInstance.MAGIC + "  6162", ""));
         assertNull(SingleInstance.parseRequest(SingleInstance.MAGIC + "  6162", null));
+    }
+
+    /**
+     * Windows ends a line with {@code \r\n}. Both sides used to write the platform separator and compare the
+     * reply to the bare acknowledgement, so there every reply carried a stray {@code \r}, failed the check,
+     * and no launch was ever forwarded to the running editor.
+     */
+    @Test
+    void aLineEndedTheWindowsWayReadsTheSameAsOneEndedWithLf() throws Exception {
+        String request = SingleInstance.buildRequest("tok", ARGS);
+        for (String terminator : List.of("\n", "\r\n")) {
+            String line = SingleInstance.readBounded(new BufferedReader(new StringReader(request + terminator)));
+            assertEquals(request, line);
+            assertEquals(ARGS, SingleInstance.parseRequest(line, "tok"));
+        }
     }
 
     // --- claim / forward ---------------------------------------------------------------------------
