@@ -332,7 +332,22 @@ public final class HistoryService {
         }
     }
 
+    /** How long {@link #shutdown()} waits for the write it interrupted to let go of the history folder. */
+    private static final long SHUTDOWN_WAIT_SECONDS = 5;
+
+    /**
+     * Stops the worker and waits for it. Queued work is dropped and a blob write in flight is interrupted
+     * (it cleans up its temp file), but it has not <em>finished</em> when {@code shutdownNow} returns — and
+     * the caller's next step assumes it has: the application releases its instance lock ("no more writes
+     * from this process"), a test deletes the folder. Returning early left a window in which the worker was
+     * still creating and moving files there.
+     */
     public void shutdown() {
         exec.shutdownNow();
+        try {
+            exec.awaitTermination(SHUTDOWN_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

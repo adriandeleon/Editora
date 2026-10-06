@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("fx")
@@ -116,9 +117,29 @@ class RunServiceBackpressureFxTest {
         }));
 
         assertTrue(exited.await(10, TimeUnit.SECONDS));
-        assertEquals(1, output.size());
-        assertTrue(output.get(0).length() < 70_000, "the reader must not retain the complete giant line");
-        assertTrue(output.get(0).endsWith("[line truncated]"));
+        // The line usually arrives as one piece. It need not: the pump hands over what it holds whenever the
+        // child has written nothing for 75 ms (so a prompt shows), and a child starved of CPU can pause that
+        // long in the middle of its one print — the line then arrives as "what there was" plus the capped
+        // rest. Counting pieces was a bet on the scheduler; what the cap promises holds for every piece.
+        List<String> pieces = List.copyOf(output);
+        assertFalse(pieces.isEmpty());
+        for (String piece : pieces) {
+            assertTrue(piece.length() < 70_000, "the reader must not retain the complete giant line");
+        }
+        assertTrue(
+                pieces.stream().anyMatch(piece -> piece.endsWith("[line truncated]")),
+                "the piece that reached the cap says the line was cut");
+        long delivered = pieces.stream()
+                .mapToLong(piece -> piece.replace(com.editora.process.OutputPump.LINE_TRUNCATED, "")
+                        .length())
+                .sum();
+        assertTrue(delivered < 2_000_000 / 2, "the excess is dropped, not delivered in slices: " + delivered);
+        assertTrue(
+                pieces.stream()
+                        .allMatch(piece -> piece.replace(com.editora.process.OutputPump.LINE_TRUNCATED, "")
+                                .chars()
+                                .allMatch(c -> c == 'x')),
+                "nothing but the program's own output and the marker");
     }
 
     private static List<String> javaCommand(String... args) {
