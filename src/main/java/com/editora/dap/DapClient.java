@@ -1224,24 +1224,30 @@ public final class DapClient implements IDebugProtocolClient {
             child.dispose(); // children live and die with the session that started them
         }
         children.clear();
+        CompletableFuture<Void> disconnect = null;
         try {
             if (server != null) {
                 DisconnectArguments a = new DisconnectArguments();
                 a.setTerminateDebuggee(true);
-                ignore(timed(server.disconnect(a)));
+                disconnect = timed(server.disconnect(a));
+                ignore(disconnect);
             }
         } catch (RuntimeException ignored) {
             // best effort
         }
         com.editora.lsp.AsyncPipeWriter out = writer;
-        if (out != null) {
-            // The disconnect was only queued. Give it a moment to be written before the transport is
-            // closed under it — normally microseconds; bounded, so an adapter that is not reading cannot
-            // hold the caller the way the direct write used to.
+        if (out != null && disconnect != null) {
+            // The disconnect was only queued. Give the adapter a moment to answer it before the transport is
+            // closed under it — normally a millisecond or two; bounded, so an adapter that is not reading
+            // cannot hold the caller the way the direct write used to. Waiting for the answer rather than for
+            // the bytes to leave matters on Windows: closing a socket that still has unread input resets the
+            // connection, and a reset discards what the adapter has not read yet — the disconnect itself.
             try {
-                out.awaitDrained(DISCONNECT_FLUSH_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+                disconnect.get(DISCONNECT_FLUSH_MILLIS, TimeUnit.MILLISECONDS);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+            } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+                // refused, or not answered in time: close anyway
             }
         }
         try {
