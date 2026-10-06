@@ -10,13 +10,33 @@ import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.fxmisc.undo.UndoManagerFactory;
 import org.fxmisc.undo.impl.ChangeQueue;
-import org.fxmisc.undo.impl.FixedSizeChangeQueue;
 import org.fxmisc.undo.impl.MultiChangeUndoManagerImpl;
 import org.reactfx.EventStream;
 
 /** Keeps UndoFX's replay/merge/mark machinery, with a bounded queue able to rebase delayed imports. */
 final class CompletionUndoFactory implements UndoManagerFactory {
+    /**
+     * Most text (removed plus inserted characters) the undo queue of one document retains. The entry count
+     * alone bounds nothing: one entry can hold a rewrite of a multi-megabyte document. 64 M characters is at
+     * most 128 MB of UTF-16 text, and far beyond any history made of ordinary edits.
+     */
+    static final long RETAINED_CHARS = 64L << 20;
+
     private final int capacity;
+
+    /** The text one undo entry retains: for every change in the batch, what it removed and what it inserted. */
+    static long retainedChars(Object batch) {
+        if (!(batch instanceof List<?> changes)) {
+            return 0;
+        }
+        long chars = 0;
+        for (Object change : changes) {
+            if (change instanceof TextChange<?, ?> text) {
+                chars += (long) text.getRemovalEnd() + text.getInsertionEnd() - 2L * text.getPosition();
+            }
+        }
+        return chars;
+    }
 
     CompletionUndoFactory(int capacity) {
         this.capacity = capacity;
@@ -81,12 +101,22 @@ final class CompletionUndoFactory implements UndoManagerFactory {
 
     /** Delegates normal history unchanged. Rewriting happens inside push, before UndoFX invalidates its values. */
     static final class RebasableQueue<C> implements ChangeQueue<C> {
-        private final FixedSizeChangeQueue<C> delegate;
+        private final BudgetedChangeQueue<C> delegate;
         private C target;
         private Consumer<IdentityHashMap<C, C>> replaced = ignored -> {};
 
         RebasableQueue(int capacity) {
-            delegate = new FixedSizeChangeQueue<>(capacity);
+            delegate = new BudgetedChangeQueue<>(capacity, RETAINED_CHARS, CompletionUndoFactory::retainedChars);
+        }
+
+        /** Entries held, for tests of the bounds. */
+        int size() {
+            return delegate.size();
+        }
+
+        /** Characters the held entries retain, for tests of the bounds. */
+        long retained() {
+            return delegate.retained();
         }
 
         void target(Object batch) {

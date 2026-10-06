@@ -94,10 +94,12 @@ public class App extends Application {
 
         // Localize the UI: pick the language (explicit setting, else system, else English) and load the
         // message catalog before any UI text is created. A change takes effect on the next launch.
-        com.editora.i18n.Messages.init(com.editora.i18n.Messages.resolve(
-                settings.getUiLanguage(),
-                com.editora.i18n.Messages.available().keySet(),
-                java.util.Locale.getDefault().getLanguage()));
+        // The prefetch thread normally parsed the catalog already (it has the settings that pick the
+        // language); this is the inline fallback for when it did not, or picked differently.
+        String language = uiLanguage(settings);
+        if (!language.equals(boot.language())) {
+            com.editora.i18n.Messages.init(language);
+        }
         // Align the JVM default locale with the chosen UI language so JavaFX localizes its own
         // built-in dialog buttons (OK/Cancel/Yes/No) to match. Resolved above first, so this doesn't
         // affect the system-language fallback.
@@ -124,6 +126,7 @@ public class App extends Application {
         if (diffUi != null) {
             windows.launchDiffUi(stage, diffUi);
         } else {
+            windows.adoptBootstrapConfig(bootstrap); // its session is already parsed; don't re-read it on FX
             windows.launch(
                     stage,
                     projectArg(rawArgs),
@@ -346,7 +349,15 @@ public class App extends Application {
     }
 
     /** The shared config, loaded off-thread by {@link #prefetchConfig} and consumed once by {@link #start}. */
-    private record Bootstrap(ConfigManager manager, Settings settings) {}
+    private record Bootstrap(ConfigManager manager, Settings settings, String language) {}
+
+    /** The UI language to load: the explicit setting, else the system language, else English. */
+    private static String uiLanguage(Settings settings) {
+        return com.editora.i18n.Messages.resolve(
+                settings.getUiLanguage(),
+                com.editora.i18n.Messages.available().keySet(),
+                java.util.Locale.getDefault().getLanguage());
+    }
 
     private static volatile CompletableFuture<Bootstrap> configPrefetch;
 
@@ -359,7 +370,13 @@ public class App extends Application {
                 () -> {
                     try {
                         ConfigManager manager = new ConfigManager(configDir);
-                        future.complete(new Bootstrap(manager, manager.load()));
+                        Settings settings = manager.load();
+                        // The message catalog (a few hundred KB of properties) is parsed here too rather than
+                        // on the FX thread: this thread already has the setting that selects the language.
+                        // Completing the future publishes it — start() reads no message before join().
+                        String language = uiLanguage(settings);
+                        com.editora.i18n.Messages.init(language);
+                        future.complete(new Bootstrap(manager, settings, language));
                     } catch (Throwable e) { // NOSONAR: deliberately broad — see takeBootstrap
                         future.completeExceptionally(e);
                     }
@@ -395,7 +412,7 @@ public class App extends Application {
             }
         }
         ConfigManager manager = new ConfigManager(configDir);
-        return new Bootstrap(manager, manager.load());
+        return new Bootstrap(manager, manager.load(), null); // null: the catalog is still to be loaded
     }
 
     /**

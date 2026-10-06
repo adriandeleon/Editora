@@ -39,36 +39,69 @@ public final class RipgrepOutput {
 
     /** Parses only authoritative paths, so discarded open-file disk hits do not consume the match budget. */
     public static List<FileResult> parse(String stdout, int maxMatches, Predicate<Path> includePath) {
-        Map<String, List<LineMatch>> byFile = new LinkedHashMap<>();
         if (stdout == null || stdout.isEmpty()) {
             return List.of();
         }
-        int total = 0;
+        Collector collector = new Collector(maxMatches, includePath);
         for (String line : stdout.split("\n", -1)) {
-            if (line.isBlank()) {
-                continue;
+            if (collector.accept(line)) {
+                break;
+            }
+        }
+        return collector.results();
+    }
+
+    /**
+     * The parser, one line at a time — so a caller reading rg's output as it is produced can stop rg at the
+     * line that fills the match budget. Collecting all of stdout first meant a broad query kept rg searching
+     * the whole tree (and Editora buffering megabytes of JSON) for results that were then thrown away.
+     * Thread-safe: lines arrive on a pipe-reader thread and the results are read from the caller's.
+     */
+    public static final class Collector {
+        private final Map<String, List<LineMatch>> byFile = new LinkedHashMap<>();
+        private final int maxMatches;
+        private final Predicate<Path> includePath;
+        private int total;
+        private boolean summary;
+
+        public Collector(int maxMatches, Predicate<Path> includePath) {
+            this.maxMatches = maxMatches;
+            this.includePath = includePath;
+        }
+
+        /** Takes one line of {@code --json} output; true once the match budget is full (stop feeding). */
+        public synchronized boolean accept(String line) {
+            if (total >= maxMatches) {
+                return true;
+            }
+            if (line == null || line.isBlank()) {
+                return false;
             }
             try {
                 JsonNode root = JSON.readTree(line);
-                if (!"match".equals(text(root.get("type")))) {
-                    continue;
+                String type = text(root.get("type"));
+                if ("summary".equals(type)) {
+                    summary = true;
+                }
+                if (!"match".equals(type)) {
+                    return false;
                 }
                 JsonNode data = root.get("data");
                 String path = textField(data.get("path"));
                 String lineText = textField(data.get("lines"));
                 JsonNode lineNo = data.get("line_number");
                 if (path == null || lineText == null || lineNo == null || !lineNo.isInt()) {
-                    continue; // binary (base64 bytes) or missing fields
+                    return false; // binary (base64 bytes) or missing fields
                 }
                 Path parsedPath = Path.of(path);
                 if (!includePath.test(parsedPath)) {
-                    continue;
+                    return false;
                 }
                 String stripped = stripEol(lineText);
                 List<LineMatch> matches = byFile.computeIfAbsent(path, k -> new ArrayList<>());
                 JsonNode subs = data.get("submatches");
                 if (subs == null || !subs.isArray()) {
-                    continue;
+                    return false;
                 }
                 for (JsonNode sub : subs) {
                     JsonNode start = sub.get("start");
@@ -87,17 +120,29 @@ public final class RipgrepOutput {
             } catch (Exception ignored) {
                 // skip a malformed line
             }
-            if (total >= maxMatches) {
-                break;
-            }
+            return total >= maxMatches;
         }
-        List<FileResult> out = new ArrayList<>(byFile.size());
-        for (Map.Entry<String, List<LineMatch>> e : byFile.entrySet()) {
-            if (!e.getValue().isEmpty()) {
-                out.add(new FileResult(Path.of(e.getKey()), e.getValue()));
-            }
+
+        /** Whether the budget filled, i.e. whether there may be matches beyond the ones collected. */
+        public synchronized boolean full() {
+            return total >= maxMatches;
         }
-        return out;
+
+        /** Whether rg's closing {@code summary} event was seen: it ran to the end of its search. */
+        public synchronized boolean sawSummary() {
+            return summary;
+        }
+
+        /** Per-file results in rg's emission order. */
+        public synchronized List<FileResult> results() {
+            List<FileResult> out = new ArrayList<>(byFile.size());
+            for (Map.Entry<String, List<LineMatch>> e : byFile.entrySet()) {
+                if (!e.getValue().isEmpty()) {
+                    out.add(new FileResult(Path.of(e.getKey()), e.getValue()));
+                }
+            }
+            return out;
+        }
     }
 
     /** rg objects carry text as {@code {"text": "..."}} (or {@code {"bytes": "<base64>"}} for non-UTF-8). */

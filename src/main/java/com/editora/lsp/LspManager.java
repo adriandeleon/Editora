@@ -60,7 +60,18 @@ public final class LspManager {
      *  it for the affected open buffers (#666). {@code accept(serverId, root)}. */
     private volatile BiConsumer<String, Path> onSessionCrashed = (id, root) -> {};
 
-    private volatile Consumer<String> onRefreshRequested = kind -> {};
+    /**
+     * Told (FX thread) that a server wants data re-requested. {@code origin} identifies the asking session:
+     * only its documents are affected, and {@link #servedBy} says which those are.
+     */
+    public interface RefreshHandler {
+        void refreshRequested(String kind, Object origin);
+    }
+
+    private volatile RefreshHandler onRefreshRequested = (kind, origin) -> {};
+
+    /** One unanswered request per document and kind; see {@link LatestRequests}. */
+    private final LatestRequests latest = new LatestRequests();
 
     private final ExecutorService detectExec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "lsp-detect");
@@ -104,8 +115,45 @@ public final class LspManager {
         detectExec.submit(ProcessRunner::augmentedPath);
     }
 
-    public void setOnRefreshRequested(Consumer<String> handler) {
-        onRefreshRequested = handler == null ? kind -> {} : handler;
+    public void setOnRefreshRequested(RefreshHandler handler) {
+        onRefreshRequested = handler == null ? (kind, origin) -> {} : handler;
+    }
+
+    /** Whether {@code file} is open on the session a {@link RefreshHandler} was given as {@code origin}. */
+    public boolean servedBy(Path file, Object origin) {
+        return origin != null && file != null && com.editora.vfs.Vfs.isLocal(file) && sessionFor(file) == origin;
+    }
+
+    /** Pure: whether a server status announces that the server is ready (jdtls: {@code ServiceReady}). */
+    static boolean announcesReady(String statusType) {
+        return statusType != null
+                && statusType.toLowerCase(java.util.Locale.ROOT).contains("ready");
+    }
+
+    /**
+     * Drops what is known about {@code file}'s unanswered requests and cached results, so the next request
+     * of each kind is really sent. For when the server said its answers changed without the document
+     * changing (a refresh request, a capability change, the end of indexing): an answer already on its way
+     * may predate that.
+     */
+    public void invalidateRequests(Path file) {
+        if (file != null && com.editora.vfs.Vfs.isLocal(file)) {
+            String uri = uri(file);
+            // Only what a server can ask to have refreshed. A signature-help or highlight request answers
+            // the caret, not the server's changed state, and its caller is still waiting for it.
+            for (String kind : REFRESHABLE_KINDS) {
+                latest.cancel(uri, kind);
+            }
+            wholeDocumentTokens.remove(uri);
+        }
+    }
+
+    private static final List<String> REFRESHABLE_KINDS =
+            List.of("diagnostic", "documentSymbol", "foldingRange", "inlayHint", "semanticTokens");
+
+    /** Unanswered deduplicated requests — package-private for the bounded-traffic test. */
+    int latestRequestsInFlight() {
+        return latest.inFlight();
     }
 
     /** Updates the feature flag + each server's command ({@code serverId → command}); a changed command
@@ -280,7 +328,7 @@ public final class LspManager {
             return;
         }
         cancelEviction(session); // a reopened document keeps an idle session alive (#669)
-        String uri = file.toUri().toString();
+        String uri = uri(file);
         sessionByDocUri.put(uri, session);
         session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
     }
@@ -298,7 +346,9 @@ public final class LspManager {
     public void saveDocument(Path file, String savedText) {
         LanguageServerSession s = sessionFor(file);
         if (s != null) {
-            s.didSave(uri(file), savedText);
+            String uri = uri(file);
+            latest.cancel(uri, "diagnostic"); // a server may judge the saved file differently: pull afresh
+            s.didSave(uri, savedText);
         }
     }
 
@@ -314,7 +364,12 @@ public final class LspManager {
         LanguageServerSession s = sessionByDocUri.remove(uri);
         semanticTokenState.remove(uri); // the next open starts from a full request (#679)
         semanticRequestGeneration.remove(uri);
-        diagnosticRequestGeneration.merge(uri, 1L, Long::sum);
+        wholeDocumentTokens.remove(uri);
+        // Removed, not bumped: generations are unique across documents (see nextDiagnosticGeneration), so a
+        // reply still on its way finds no entry — or a later one — and is rejected either way.
+        diagnosticRequestGeneration.remove(uri);
+        latest.cancelAll(uri);
+        DocumentUris.forget(file);
         rawDiagnostics.remove(uri); // open-documents-only retention (#670); keyed by this, our own, URI
         if (s != null) {
             s.didClose(uri);
@@ -731,7 +786,14 @@ public final class LspManager {
                 spec,
                 root,
                 params -> onPublishDiagnostics(diagnosticSource[0], params),
-                (type, msg) -> Platform.runLater(() -> onStatus.accept(type, msg)));
+                (type, msg) -> Platform.runLater(() -> {
+                    onStatus.accept(type, msg);
+                    if (announcesReady(type)) {
+                        // Capabilities are known now (and jdtls says this again when it has finished
+                        // importing): the gates and data of this session's documents are due a refresh.
+                        onRefreshRequested.refreshRequested("capabilities", diagnosticSource[0]);
+                    }
+                }));
         diagnosticSource[0] = session;
         session.setJavaOnTypeFormatting(javaOnTypeFormatting);
         // Drop the session the moment it can no longer serve requests — the process died on its own, or the
@@ -739,7 +801,7 @@ public final class LspManager {
         // (so the re-open guard never restarts it), every request fails into an empty result, and LSP is silently
         // dead for the rest of the session while the status bar still names the server.
         session.setOnDead(() -> dropSession(key, session));
-        session.setOnRefresh(kind -> Platform.runLater(() -> onRefreshRequested.accept(kind)));
+        session.setOnRefresh(kind -> Platform.runLater(() -> onRefreshRequested.refreshRequested(kind, session)));
         session.setOnApplyEdit(
                 (edit, respond) -> onServerApplyEdit(session, edit, respond)); // server-side quick fix (#670)
         if (claimedWorkspace != null) {
@@ -1276,8 +1338,16 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(null));
             return;
         }
-        s.signatureHelp(uri(file), new Position(line, character), triggerChar, retrigger, activeHelp)
-                .whenComplete((r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
+        String uri = uri(file);
+        // Never joined (the context differs call to call), but a newer request still cancels the older one:
+        // the popup only ever takes the latest answer.
+        latest.issue(
+                uri,
+                "signatureHelp",
+                new Object(),
+                true,
+                () -> s.signatureHelp(uri, new Position(line, character), triggerChar, retrigger, activeHelp),
+                (r, e) -> Platform.runLater(() -> cb.accept(e == null ? r : null)));
     }
 
     /** True if {@code file}'s server is ready and advertises document highlight (occurrences — #675). */
@@ -1304,24 +1374,32 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.documentHighlight(uri(file), new Position(line, character)).whenComplete((result, error) -> {
-            List<com.editora.editor.OccurrenceSpan> spans = new ArrayList<>();
-            if (error == null && result != null) {
-                for (var h : result) {
-                    if (h == null || h.getRange() == null) {
-                        continue;
+        String uri = uri(file);
+        Position at = new Position(line, character);
+        latest.issue(
+                uri,
+                "documentHighlight",
+                stamp(s, uri, at),
+                true,
+                () -> s.documentHighlight(uri, at),
+                (result, error) -> {
+                    List<com.editora.editor.OccurrenceSpan> spans = new ArrayList<>();
+                    if (error == null && result != null) {
+                        for (var h : result) {
+                            if (h == null || h.getRange() == null) {
+                                continue;
+                            }
+                            var r = h.getRange();
+                            spans.add(new com.editora.editor.OccurrenceSpan(
+                                    r.getStart().getLine(),
+                                    r.getStart().getCharacter(),
+                                    r.getEnd().getLine(),
+                                    r.getEnd().getCharacter(),
+                                    h.getKind() == org.eclipse.lsp4j.DocumentHighlightKind.Write));
+                        }
                     }
-                    var r = h.getRange();
-                    spans.add(new com.editora.editor.OccurrenceSpan(
-                            r.getStart().getLine(),
-                            r.getStart().getCharacter(),
-                            r.getEnd().getLine(),
-                            r.getEnd().getCharacter(),
-                            h.getKind() == org.eclipse.lsp4j.DocumentHighlightKind.Write));
-                }
-            }
-            Platform.runLater(() -> cb.accept(spans));
-        });
+                    Platform.runLater(() -> cb.accept(spans));
+                });
     }
 
     // --- Watched files (#677) ------------------------------------------------------------------
@@ -1452,7 +1530,8 @@ public final class LspManager {
             return;
         }
         var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
-        s.inlayHint(uri(file), range).whenComplete((hints, error) -> {
+        String uri = uri(file);
+        latest.issue(uri, "inlayHint", stamp(s, uri, range), true, () -> s.inlayHint(uri, range), (hints, error) -> {
             List<InlayHintSpan> out = new ArrayList<>();
             if (error == null && hints != null) {
                 for (var h : hints) {
@@ -2013,6 +2092,32 @@ public final class LspManager {
         });
     }
 
+    /**
+     * {@link #documentSymbols} for a caller that only ever wants the latest outline (the Structure window,
+     * re-asked on every typing pause): a request for an older document version is cancelled, one already
+     * running for this version is not repeated, and a superseded request never calls {@code cb}. A caller
+     * that waits for its own answer must use {@link #documentSymbols}.
+     */
+    public void latestDocumentSymbols(Path file, Consumer<List<SymbolNode>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        String uri = uri(file);
+        latest.issue(uri, "documentSymbol", stamp(s, uri, null), true, () -> s.documentSymbol(uri), (result, error) -> {
+            List<SymbolNode> symbols = error == null && result != null ? DocumentSymbolMapper.map(result) : List.of();
+            Platform.runLater(() -> cb.accept(symbols));
+        });
+    }
+
+    /** What a deduplicated request's answer depends on: equal stamps mean the server is asked the same thing. */
+    private record RequestStamp(LanguageServerSession session, Integer version, Object arguments) {}
+
+    private static RequestStamp stamp(LanguageServerSession session, String uri, Object arguments) {
+        return new RequestStamp(session, session.documentVersion(uri), arguments);
+    }
+
     // --- folding ranges (#738) / selection ranges (#739) ---------------------------------------------
 
     /** Pure: whether a server's capabilities include {@code foldingRangeProvider} (null-safe). */
@@ -2049,7 +2154,8 @@ public final class LspManager {
             Platform.runLater(() -> cb.accept(List.of()));
             return;
         }
-        s.foldingRange(uri(file)).whenComplete((ranges, error) -> {
+        String uri = uri(file);
+        latest.issue(uri, "foldingRange", stamp(s, uri, null), true, () -> s.foldingRange(uri), (ranges, error) -> {
             List<com.editora.editor.FoldRegions.Region> regions =
                     error == null ? LspFolding.toRegions(ranges) : List.of();
             Platform.runLater(() -> cb.accept(regions));
@@ -2198,6 +2304,44 @@ public final class LspManager {
     private final Map<String, TokenState> semanticTokenState = new ConcurrentHashMap<>();
     private final Map<String, Long> semanticRequestGeneration = new ConcurrentHashMap<>();
     private final Map<String, Long> diagnosticRequestGeneration = new ConcurrentHashMap<>();
+    /** Source of {@link #diagnosticRequestGeneration} values. One counter for every document, so a value is
+     *  never reused: an entry can then be removed when its document closes without a late reply for the
+     *  closed document ever matching the generation of a reopened one. */
+    private final java.util.concurrent.atomic.AtomicLong diagnosticGenerations =
+            new java.util.concurrent.atomic.AtomicLong();
+
+    private long nextDiagnosticGeneration(String uri) {
+        long generation = diagnosticGenerations.incrementAndGet();
+        diagnosticRequestGeneration.put(uri, generation);
+        return generation;
+    }
+
+    /** Tracked documents — package-private so a test can show closing one releases its entry. */
+    int diagnosticGenerationEntries() {
+        return diagnosticRequestGeneration.size();
+    }
+
+    /** The document version a whole-document token set was last delivered for, per URI. */
+    private record TokenMark(LanguageServerSession session, Integer version) {}
+
+    private final Map<String, TokenMark> wholeDocumentTokens = new ConcurrentHashMap<>();
+
+    /**
+     * Whether the server would answer a semantic-tokens request for {@code file} with what it last sent:
+     * it has no range requests (so every request covers the whole document) and the document has not
+     * changed on the server since that answer. Scrolling such a document shows nothing new, so the
+     * scroll-settle re-request — a whole-document transfer and decode per scroll — can be skipped.
+     */
+    public boolean wholeDocumentTokensCurrent(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        var prov = s == null ? null : semanticTokensProvider(s.capabilities());
+        if (prov == null || eitherTrue(prov.getRange())) {
+            return false;
+        }
+        String uri = uri(file);
+        TokenMark mark = wholeDocumentTokens.get(uri);
+        return mark != null && mark.session() == s && java.util.Objects.equals(mark.version(), s.documentVersion(uri));
+    }
 
     /**
      * Requests semantic tokens over the line window {@code [startLine..endLine]} (inclusive) and delivers
@@ -2232,16 +2376,22 @@ public final class LspManager {
         if (eitherTrue(prov.getRange())) {
             // Clamped to the document — a range past the last line makes a server return nothing (#715).
             var range = inclusiveLineRange(startLine, endLine, lineCount, lastLineLength);
-            s.semanticTokensRange(uri(file), range).whenComplete((tokens, error) -> {
-                if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                    return;
-                }
-                List<com.editora.editor.SemanticToken> out = (error != null || tokens == null)
-                        ? List.of()
-                        : SemanticTokensDecoder.decode(
-                                tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
-                Platform.runLater(() -> cb.accept(out));
-            });
+            latest.issue(
+                    uri,
+                    SEMANTIC,
+                    stamp(s, uri, range),
+                    true,
+                    () -> s.semanticTokensRange(uri, range),
+                    (tokens, error) -> {
+                        if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
+                            return;
+                        }
+                        List<com.editora.editor.SemanticToken> out = (error != null || tokens == null)
+                                ? List.of()
+                                : SemanticTokensDecoder.decode(
+                                        tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
+                        Platform.runLater(() -> cb.accept(out));
+                    });
             return;
         }
         boolean deltaSupported = fullDeltaSupported(prov);
@@ -2252,33 +2402,42 @@ public final class LspManager {
         }
         if (prev != null) {
             TokenState deltaBase = prev;
-            s.semanticTokensFullDelta(uri, deltaBase.resultId()).whenComplete((either, error) -> {
-                if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
-                    return;
-                }
-                List<Integer> data = null;
-                String resultId = null;
-                if (error == null && either != null) {
-                    if (either.isLeft() && either.getLeft() != null) {
-                        data = either.getLeft().getData(); // server chose to answer with a fresh full set
-                        resultId = either.getLeft().getResultId();
-                    } else if (either.isRight() && either.getRight() != null) {
-                        data = SemanticTokensSplice.apply(
-                                deltaBase.data(), either.getRight().getEdits());
-                        resultId = either.getRight().getResultId();
-                    }
-                }
-                if (data == null) {
-                    semanticTokenState.remove(uri); // stale/failed delta — re-request full
-                    requestSemanticTokensFull(s, file, legend, requestGeneration, cb);
-                    return;
-                }
-                rememberTokenState(s, uri, resultId, data);
-                List<Integer> decoded = data;
-                List<com.editora.editor.SemanticToken> out =
-                        SemanticTokensDecoder.decode(decoded, legend.getTokenTypes(), legend.getTokenModifiers());
-                Platform.runLater(() -> cb.accept(out));
-            });
+            Integer version = s.documentVersion(uri);
+            var delta = stamp(s, uri, "delta:" + deltaBase.resultId());
+            latest.issue(
+                    uri,
+                    SEMANTIC,
+                    delta,
+                    true,
+                    () -> s.semanticTokensFullDelta(uri, deltaBase.resultId()),
+                    (either, error) -> {
+                        if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
+                            return;
+                        }
+                        List<Integer> data = null;
+                        String resultId = null;
+                        if (error == null && either != null) {
+                            if (either.isLeft() && either.getLeft() != null) {
+                                data = either.getLeft().getData(); // server chose to answer with a fresh full set
+                                resultId = either.getLeft().getResultId();
+                            } else if (either.isRight() && either.getRight() != null) {
+                                data = SemanticTokensSplice.apply(
+                                        deltaBase.data(), either.getRight().getEdits());
+                                resultId = either.getRight().getResultId();
+                            }
+                        }
+                        if (data == null) {
+                            semanticTokenState.remove(uri); // stale/failed delta — re-request full
+                            requestSemanticTokensFull(s, file, legend, requestGeneration, cb);
+                            return;
+                        }
+                        rememberTokenState(s, uri, resultId, data);
+                        wholeDocumentTokens.put(uri, new TokenMark(s, version));
+                        List<Integer> decoded = data;
+                        List<com.editora.editor.SemanticToken> out = SemanticTokensDecoder.decode(
+                                decoded, legend.getTokenTypes(), legend.getTokenModifiers());
+                        Platform.runLater(() -> cb.accept(out));
+                    });
             return;
         }
         requestSemanticTokensFull(s, file, legend, requestGeneration, cb);
@@ -2292,20 +2451,26 @@ public final class LspManager {
             long requestGeneration,
             Consumer<List<com.editora.editor.SemanticToken>> cb) {
         String uri = uri(file);
-        s.semanticTokensFull(uri).whenComplete((tokens, error) -> {
+        Integer version = s.documentVersion(uri);
+        latest.issue(uri, SEMANTIC, stamp(s, uri, "full"), true, () -> s.semanticTokensFull(uri), (tokens, error) -> {
             if (!currentSemanticRequest(file, s, uri, requestGeneration)) {
                 return;
             }
             if (error != null || tokens == null) {
+                wholeDocumentTokens.remove(uri);
                 Platform.runLater(() -> cb.accept(List.of()));
                 return;
             }
             rememberTokenState(s, uri, tokens.getResultId(), tokens.getData());
+            wholeDocumentTokens.put(uri, new TokenMark(s, version));
             List<com.editora.editor.SemanticToken> out =
                     SemanticTokensDecoder.decode(tokens.getData(), legend.getTokenTypes(), legend.getTokenModifiers());
             Platform.runLater(() -> cb.accept(out));
         });
     }
+
+    /** The {@link LatestRequests} kind shared by the range, full and delta forms: they answer one question. */
+    private static final String SEMANTIC = "semanticTokens";
 
     private boolean currentSemanticRequest(
             Path file, LanguageServerSession session, String uri, long requestGeneration) {
@@ -3136,8 +3301,15 @@ public final class LspManager {
         }
         String documentUri = uri(file);
         Integer requestedVersion = s.documentVersion(documentUri);
-        long generation = diagnosticRequestGeneration.merge(documentUri, 1L, Long::sum);
-        s.diagnostic(documentUri).whenComplete((report, error) -> {
+        // The generation is taken when the request is really sent: a call that finds the same pull still
+        // unanswered sends nothing and must not outdate the answer it is waiting for along with it.
+        long[] sent = new long[1];
+        java.util.function.Supplier<CompletableFuture<org.eclipse.lsp4j.DocumentDiagnosticReport>> send = () -> {
+            sent[0] = nextDiagnosticGeneration(documentUri);
+            return s.diagnostic(documentUri);
+        };
+        latest.issue(documentUri, "diagnostic", stamp(s, documentUri, null), false, send, (report, error) -> {
+            long generation = sent[0];
             if (error != null) {
                 return;
             }
@@ -3199,6 +3371,8 @@ public final class LspManager {
         rawDiagnostics.clear();
         semanticTokenState.clear();
         semanticRequestGeneration.clear();
+        wholeDocumentTokens.clear();
+        latest.clear();
         diagnosticRequestGeneration.clear();
         pendingApplyExpected.clear();
         for (Map.Entry<String, LanguageServerSession> entry : sessionsByRoot.entrySet()) {
@@ -3224,6 +3398,17 @@ public final class LspManager {
 
     // --- Internals -----------------------------------------------------------------------------
 
+    /** Whether diagnostics published for a file that is not open on the publishing server are dropped. */
+    private volatile boolean openDocumentDiagnosticsOnly;
+
+    /**
+     * Says whether the consumer only shows diagnostics for open documents (the Problems window's default
+     * scope). It then never sees a publish for any other file. Off by default: everything is delivered.
+     */
+    public void setOpenDocumentDiagnosticsOnly(boolean openDocumentsOnly) {
+        openDocumentDiagnosticsOnly = openDocumentsOnly;
+    }
+
     private void onPublishDiagnostics(LanguageServerSession source, org.eclipse.lsp4j.PublishDiagnosticsParams params) {
         Path file = uriToPath(params.getUri());
         if (file == null || source == null || source.isDisposed()) {
@@ -3235,8 +3420,15 @@ public final class LspManager {
                         || !java.util.Objects.equals(params.getVersion(), source.documentVersion(sourceUri)))) {
             return; // ranges from an older server snapshot must never replace current diagnostics
         }
-        String generationKey = sourceUri != null ? sourceUri : params.getUri();
-        long generation = diagnosticRequestGeneration.merge(generationKey, 1L, Long::sum);
+        if (sourceUri == null && openDocumentDiagnosticsOnly) {
+            // Nobody shows a file that is not open here, and a server publishes for its whole project
+            // (jdtls: once per file on import). Dropped on this, the reader, thread: each one used to
+            // cost the FX thread a queued task, a search of the tabs and a path resolution to learn that.
+            return;
+        }
+        // Only an open document is tracked: successive publishes for any other file are applied in the
+        // order they were queued, and one entry per file a server ever mentioned was never released.
+        long generation = sourceUri == null ? 0 : nextDiagnosticGeneration(sourceUri);
         // Retain the RAW lsp4j diagnostics for open documents: a code-action request must send the
         // originals as context (their code/source/data are what a quick fix keys off — the mapped neutral
         // LspDiagnostic loses them). Open-documents-only, so a server's project-wide publishes don't
@@ -3248,7 +3440,8 @@ public final class LspManager {
         Platform.runLater(() -> {
             if (source.isDisposed()
                     || !sessionsByRoot.containsValue(source)
-                    || !java.util.Objects.equals(diagnosticRequestGeneration.get(generationKey), generation)
+                    || sourceUri != null
+                            && !java.util.Objects.equals(diagnosticRequestGeneration.get(sourceUri), generation)
                     || sourceUri != null && sessionByDocUri.get(sourceUri) != source
                     || acceptedVersion != null
                             && !java.util.Objects.equals(acceptedVersion, source.documentVersion(sourceUri))) {
@@ -3690,8 +3883,9 @@ public final class LspManager {
         return HoverMarkdown.of(hover);
     }
 
-    private static String uri(Path file) {
-        return file.toUri().toString();
+    /** The document URI for {@code file}; remembered, because computing one stats the file. */
+    static String uri(Path file) {
+        return DocumentUris.of(file);
     }
 
     private static Path uriToPath(String uri) {

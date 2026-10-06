@@ -106,7 +106,12 @@ a project switch discards a superseded walk, and results marshalled back with `P
 The walk itself is [`search/ProjectWalk`](../../src/main/java/com/editora/search/ProjectWalk.java), the
 one pruned walk Find in Files, the TODO scan, the index and the test-source lookups share. It prunes
 **on the directory**: a dot-directory or a `.gitignore`d directory is skipped whole, before anything
-under it is listed. Filtering files after an unpruned `Files.walk` does not work — a directory-only
+under it is listed. A `.gitignore` in a directory below the root applies to its subtree when the filter came
+from `GitignoreFilter.load` (`GitignoreFilter.nested`), and `ProjectWalk.offers(root, file, filter)` applies
+the same pruning to a single file. Walks take a cancel supplier; a superseded index, TODO or filter walk
+stops. An external change that names specific files patches the index for those files
+(`IndexCoordinator.onExternalChanges`); only an overflow, a created directory or a very large batch marks
+it stale. Filtering files after an unpruned `Files.walk` does not work — a directory-only
 rule (`target/`) never applies to a file and a slash-less rule (`node_modules`) only matches a base
 name, so nothing *under* an ignored directory is excluded — and that is what the index used to do:
 it read every file in `target/` and `node_modules/`, offered them in Search Everywhere, and charged

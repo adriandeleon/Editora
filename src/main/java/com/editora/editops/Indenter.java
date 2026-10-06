@@ -15,10 +15,10 @@ import java.util.Set;
 public final class Indenter {
 
     /** Bounds line/back-scans so Enter stays cheap on huge files. */
-    private static final int MAX_SCAN = 8000;
+    static final int MAX_SCAN = 8000;
 
     /** How many lines one wrapped statement is followed over. */
-    private static final int MAX_STATEMENT_LINES = 40;
+    static final int MAX_STATEMENT_LINES = 40;
 
     private Indenter() {}
 
@@ -68,11 +68,21 @@ public final class Indenter {
             boolean shift,
             Boolean insertSpaces,
             Integer indentSize) {
+        return smartTab(
+                text, selStart, selEnd, language, tabSize, shift, unitFor(text, tabSize, insertSpaces, indentSize));
+    }
+
+    /**
+     * As {@link #smartTab(String, int, int, String, int, boolean, Boolean, Integer)} with the indent unit
+     * already decided. Nothing here reads {@code text} beyond the touched lines and the bounded back-scan
+     * above them, so {@link IndentWindow} can hand in a slice of a large document instead of all of it.
+     */
+    static TabEdit smartTab(
+            String text, int selStart, int selEnd, String language, int tabSize, boolean shift, String unit) {
         Style style = styleFor(language);
         if (style == Style.PLAIN) {
             return null;
         }
-        String unit = unitFor(text, tabSize, insertSpaces, indentSize);
         int a = Math.min(selStart, selEnd);
         int b = Math.max(selStart, selEnd);
 
@@ -265,6 +275,12 @@ public final class Indenter {
      *  override when {@code insertSpaces != null} (else {@link #detectUnit}). */
     public static EnterEdit enterEdit(
             String text, int caret, String language, int tabSize, Boolean insertSpaces, Integer indentSize) {
+        return enterEdit(text, caret, language, unitFor(text, tabSize, insertSpaces, indentSize));
+    }
+
+    /** As {@link #enterEdit(String, int, String, int, Boolean, Integer)} with the indent unit already decided;
+     *  reads only the caret's own line of {@code text}. */
+    static EnterEdit enterEdit(String text, int caret, String language, String unit) {
         Style style = styleFor(language);
         int ls = lineStart(text, caret);
         String before = text.substring(ls, caret);
@@ -273,7 +289,6 @@ public final class Indenter {
         // whitespace it sits behind. Enter at column 0 of `    foo();` must not add four more spaces in front
         // of code that is still indented by its own four.
         String indent = leadingWhitespace(before);
-        String unit = unitFor(text, tabSize, insertSpaces, indentSize);
 
         if (isPairSplit(style, before, after)) {
             String body = indent + unit;

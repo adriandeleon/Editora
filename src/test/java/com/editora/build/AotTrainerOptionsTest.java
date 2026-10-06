@@ -179,6 +179,85 @@ class AotTrainerOptionsTest {
                         + "cache under a configuration the app does not run under");
     }
 
+    /**
+     * The training launch must take the startup path a real launch takes: read a settings file, restore a
+     * session, load and highlight a file.
+     *
+     * <p>It used to start against an empty config dir with {@code --new-file}. That is a launch nobody's
+     * machine performs: with no config files the versioned reader returns defaults before any Jackson read,
+     * a blank buffer has no grammar (so the TextMate engine never loads), no file is read and no session is
+     * restored — and none of that is then in the cache. The cache is present and the right size either way,
+     * so nothing but this test notices the trainer drifting back.
+     */
+    @Test
+    void theTrainingLaunchOpensAFileAgainstASeededConfig() throws Exception {
+        String body =
+                stripJavaComments(Files.readString(REPO.resolve("scripts/aot_build.java"), StandardCharsets.UTF_8));
+        int from = body.indexOf("cmd.addAll(List.of(");
+        int to = body.indexOf("));", from);
+        String appArgs = body.substring(body.indexOf("\"-m\"", from), to);
+        assertTrue(appArgs.contains("\"--config-dir\""), "the trainer must keep its own config dir: " + appArgs);
+        assertFalse(
+                appArgs.contains("--new-file"),
+                "a blank buffer has no grammar and loads no file; pass the seeded FILE instead: " + appArgs);
+        assertTrue(
+                appArgs.contains("trainingFile.toString()"),
+                "the training launch must name a file to open (the one seedTrainingConfig returns): " + appArgs);
+
+        // Run the script's own seeding and read the result back through the real config code.
+        Path classes = Files.createTempDirectory("aot-build-classes");
+        javax.tools.JavaCompiler javac = javax.tools.ToolProvider.getSystemJavaCompiler();
+        assertEquals(
+                0,
+                javac.run(
+                        null,
+                        null,
+                        null,
+                        "-nowarn",
+                        "-d",
+                        classes.toString(),
+                        REPO.resolve("scripts/aot_build.java").toString()),
+                "scripts/aot_build.java should compile");
+        Path cfg = Files.createTempDirectory("aot-training-cfg");
+        Path file;
+        try (java.net.URLClassLoader loader =
+                new java.net.URLClassLoader(new java.net.URL[] {classes.toUri().toURL()}, null)) {
+            java.lang.reflect.Method seed =
+                    loader.loadClass("aot_build").getDeclaredMethod("seedTrainingConfig", Path.class);
+            seed.setAccessible(true);
+            file = (Path) seed.invoke(null, cfg);
+        }
+        assertTrue(Files.isRegularFile(file), "the FILE argument must exist: " + file);
+
+        com.editora.config.ConfigManager config = new com.editora.config.ConfigManager(cfg);
+        try {
+            config.load();
+            assertEquals(
+                    java.util.List.of(),
+                    config.shared().takeLoadProblems(),
+                    "the seeded settings and session must load as written (a refused file trains nothing)");
+            java.util.List<com.editora.config.WorkspaceState.OpenFile> open =
+                    config.getWorkspaceState().getOpenFiles();
+            assertEquals(3, open.size(), "the seeded session restores three files");
+            Set<String> extensions = new LinkedHashSet<>();
+            for (com.editora.config.WorkspaceState.OpenFile f : open) {
+                Path p = Path.of(f.getPath());
+                assertTrue(Files.isReadable(p), "a session file the restore would skip: " + p);
+                String name = p.getFileName().toString();
+                extensions.add(name.substring(name.lastIndexOf('.') + 1));
+            }
+            assertEquals(Set.of("java", "md", "json"), extensions, "three different grammars");
+            assertEquals(
+                    file.toAbsolutePath().normalize(),
+                    Path.of(config.getWorkspaceState().getActiveFile())
+                            .toAbsolutePath()
+                            .normalize(),
+                    "the FILE argument is the session's active file, so it is the tab filled and painted first");
+        } finally {
+            config.shared().shutdown();
+        }
+    }
+
     // --- sources -------------------------------------------------------------------------------
 
     /** The active {@code <javaOption>} values from the dist profile, XML comments removed. */

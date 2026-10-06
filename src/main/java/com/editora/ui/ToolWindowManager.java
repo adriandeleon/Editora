@@ -671,7 +671,7 @@ public class ToolWindowManager {
         Node n = target instanceof Node node ? node : null;
         while (n != null) {
             for (ToolWindow tw : byId.values()) {
-                if (tw.getContent() == n) {
+                if (tw.contentIfBuilt() == n) { // an unbuilt panel cannot contain anything
                     return tw;
                 }
             }

@@ -112,7 +112,7 @@ final class ProjectMapPreview extends StackPane {
     private final Button zoomIn = new Button("+");
     private final Button open = new Button();
     private final Button close = new Button("×");
-    private final CodeArea editor = new CodeArea();
+    private final CodeArea editor = AreaUndo.none(new CodeArea());
     private final VirtualizedScrollPane<CodeArea> editorScroll = new VirtualizedScrollPane<>(editor);
     private final ContextMenu editorContextMenu = new ContextMenu();
     private final ImageView imageView = new ImageView();

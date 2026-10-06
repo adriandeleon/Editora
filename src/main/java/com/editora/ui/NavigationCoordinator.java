@@ -149,7 +149,13 @@ final class NavigationCoordinator {
         structurePalette = new QuickOpen<>(
                 tr("nav.structure.title"),
                 tr("nav.structure.prompt"),
-                () -> host.structurePanel().outline(),
+                () -> {
+                    StructurePanel panel = host.structurePanel();
+                    // With the Structure window closed the server outline is fetched on demand: show what
+                    // there is now and take the server's when it arrives.
+                    panel.setOnHiddenOutlineChanged(() -> structurePalette.reload());
+                    return panel.outline();
+                },
                 StructurePanel.Outline::label,
                 StructurePanel.Outline::kind,
                 entry -> host.navigateToLine(entry.line()));

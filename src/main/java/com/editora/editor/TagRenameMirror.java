@@ -99,6 +99,7 @@ final class TagRenameMirror {
         int winStart = Math.max(0, changePos - LOOKBACK);
         int winEnd = Math.min(a.getLength(), changeEnd + LOOKBACK);
         if (changeEnd > winEnd
+                || a.getLength() > TagRename.MAX_DOC // mirror() declines such a document: do not build it to ask
                 || !TagRename.changeInTagName(
                         a.getText(winStart, winEnd), changePos - winStart, changeEnd - winStart)) {
             return;

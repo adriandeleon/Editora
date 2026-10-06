@@ -192,6 +192,110 @@ final class IndexCoordinator {
         }
     }
 
+    /** More named paths than this and one re-walk is cheaper, and easier to trust, than that many patches. */
+    static final int MAX_INCREMENTAL = 256;
+
+    /**
+     * The project watcher's account of what other programs changed. When it names the files, only those are
+     * re-read — marking the whole index stale for one touched file made the next Search Everywhere walk and
+     * read the entire project again. Falls back to {@link #markStale} whenever the account is incomplete, too
+     * long, names a directory (whose contents were not reported), or arrives while a walk is in flight.
+     */
+    void onExternalChanges(List<ProjectPanel.FsChange> changes, boolean complete) {
+        Path root = indexedRoot;
+        if (!complete || root == null || stale || building || changes.size() > MAX_INCREMENTAL) {
+            markStale();
+            return;
+        }
+        List<Path> touched = new ArrayList<>();
+        for (ProjectPanel.FsChange change : changes) {
+            Path path = change.path();
+            if (path == null || !Vfs.isLocal(path) || !path.startsWith(root)) {
+                continue;
+            }
+            if (change.kind() == ProjectPanel.FsKind.DELETED) {
+                touched.remove(path);
+                onFileDeleted(path);
+            } else if (!touched.contains(path)) {
+                touched.add(path);
+            }
+        }
+        if (touched.isEmpty()) {
+            return;
+        }
+        long gen = generation.get();
+        boolean gitignore = ops.respectGitignore();
+        worker.submit(() -> {
+            GitignoreFilter ignore = gitignore ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
+            List<Scanned> rescanned = new ArrayList<>();
+            List<Path> gone = new ArrayList<>();
+            boolean directory = false;
+            for (Path file : touched) {
+                try {
+                    java.nio.file.attribute.BasicFileAttributes attrs = Files.readAttributes(
+                            file,
+                            java.nio.file.attribute.BasicFileAttributes.class,
+                            java.nio.file.LinkOption.NOFOLLOW_LINKS);
+                    if (attrs.isDirectory()) {
+                        directory = true; // a new folder: nobody reported what is inside it
+                        break;
+                    }
+                    if (!ProjectWalk.offers(root, file, ignore)
+                            || (!attrs.isRegularFile() && !(attrs.isSymbolicLink() && Files.isRegularFile(file)))) {
+                        continue;
+                    }
+                    rescanned.add(new Scanned(file, scanFile(file)));
+                } catch (java.nio.file.NoSuchFileException e) {
+                    gone.add(file); // created and removed again before we looked
+                } catch (IOException | RuntimeException e) {
+                    // unreadable: leave whatever the index holds for it
+                }
+            }
+            boolean rewalk = directory;
+            Platform.runLater(() -> {
+                if (gen != generation.get() || indexedRoot == null) {
+                    return; // a project switch or a rebuild: that walk reads these files itself
+                }
+                if (rewalk || building) {
+                    markStale();
+                    return;
+                }
+                gone.forEach(this::onFileDeleted);
+                List<Path> files = null;
+                java.util.Set<Path> known = null;
+                for (Scanned s : rescanned) {
+                    if (s.symbols().isEmpty()) {
+                        index.remove(s.file());
+                    } else {
+                        index.put(s.file(), s.symbols());
+                    }
+                    if (known == null) {
+                        known = new java.util.HashSet<>(projectFiles);
+                    }
+                    if (known.add(s.file())) {
+                        if (files == null) {
+                            files = new ArrayList<>(projectFiles);
+                        }
+                        files.add(s.file());
+                    }
+                }
+                if (files != null) {
+                    projectFiles = List.copyOf(files);
+                    projectRelPaths = relativize(indexedRoot, projectFiles);
+                }
+            });
+        });
+    }
+
+    /** The symbols of one file on disk, or none when it has no declaration rules or is too large to read. */
+    private static List<Symbol> scanFile(Path file) throws IOException {
+        String language = LanguageRegistry.forFileName(file.getFileName().toString());
+        if (!DeclarationScanner.supports(language) || Files.size(file) > MAX_FILE_BYTES) {
+            return List.of();
+        }
+        return DeclarationScanner.scan(Files.readString(file), language);
+    }
+
     /** {@code path} (a file, or a folder and everything under it) was deleted: stop offering it now. */
     void onFileDeleted(Path path) {
         if (indexedRoot == null || path == null || !Vfs.isLocal(path)) {
@@ -271,7 +375,7 @@ final class IndexCoordinator {
         long marks = staleMarks;
         AutoCloseable task = host.startBackgroundTask(tr("status.index.building"));
         worker.submit(() -> {
-            Walked walked = walk(root);
+            Walked walked = walk(root, () -> gen != generation.get());
             Platform.runLater(() -> {
                 building = false;
                 close(task);
@@ -307,9 +411,12 @@ final class IndexCoordinator {
     record Scanned(Path file, List<Symbol> symbols) {}
 
     /** The blocking half — runs on {@link #worker}, touches nothing that belongs to the FX thread. */
-    private Walked walk(Path root) {
+    private Walked walk(Path root, java.util.function.BooleanSupplier superseded) {
+        if (superseded.getAsBoolean()) {
+            return new Walked(List.of(), List.of(), false);
+        }
         GitignoreFilter ignore = ops.respectGitignore() ? GitignoreFilter.load(root) : GitignoreFilter.NONE;
-        return walk(root, ignore, maxFiles);
+        return walk(root, ignore, maxFiles, superseded);
     }
 
     /**
@@ -319,13 +426,21 @@ final class IndexCoordinator {
      * large {@code node_modules} exhausted, leaving the project's own sources unindexed without a word.
      */
     static Walked walk(Path root, GitignoreFilter ignore, int maxFiles) {
+        return walk(root, ignore, maxFiles, () -> false);
+    }
+
+    /**
+     * As above, ending early once {@code superseded}: a project switch or a rebuild has already discarded
+     * this walk's result, and the walk that replaces it is waiting for the same single thread.
+     */
+    static Walked walk(Path root, GitignoreFilter ignore, int maxFiles, java.util.function.BooleanSupplier superseded) {
         List<Scanned> out = new ArrayList<>();
         // Every file the walk sees, not only the ones with symbols: Search Everywhere needs to offer
         // files too, and this walk is already paying for the traversal. Doing it separately would mean a
         // second pass over the same tree for the same information.
         List<Path> files = new ArrayList<>();
         ProjectWalk.Outcome outcome = ProjectWalk.walk(
-                root, new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore), (p, rel, attrs) -> {
+                root, new ProjectWalk.Options(Integer.MAX_VALUE, maxFiles, ignore, superseded), (p, rel, attrs) -> {
                     // A symlink to a file is still a file to open (the walk reads attributes without
                     // following links, so it reports the link itself).
                     if (!attrs.isRegularFile() && !(attrs.isSymbolicLink() && Files.isRegularFile(p))) {

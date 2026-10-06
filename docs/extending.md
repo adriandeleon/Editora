@@ -134,6 +134,10 @@ The discipline that keeps overlays off the hot path (see
   using `CanvasGuards` for dimension/paintability checks;
 - `setActive(false)` clears and **releases the canvas to 1×1** so it holds no full-viewport
   texture;
+- implement `TabSurface` so `EditorBuffer.setRenderingActive` releases the canvas while the tab is in the
+  background, size it with `CanvasGuards.fit` / `release`, keep it at 1×1 whenever there is nothing to
+  draw (an active feature with an empty list included), and return early from `scheduleRedraw()` in that
+  case;
 - the data (diagnostics/marks) is **pushed in** by `EditorBuffer`; the overlay only renders.
 - implement `SecondaryPane.Followed`: `follower(view)` returns a twin for a split's second view, and
   every setter hands its argument to that twin first (before any "unchanged" early return). The twin

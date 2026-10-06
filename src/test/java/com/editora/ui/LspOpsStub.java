@@ -1,10 +1,8 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
-import java.util.List;
 
 import com.editora.editor.EditorBuffer;
-import com.editora.lsp.SymbolNode;
 
 /**
  * No-op {@link LspCoordinator.Ops} so a test overrides only the hooks it cares about — the same convention as
@@ -82,7 +80,9 @@ class LspOpsStub implements LspCoordinator.Ops {
     public void openHierarchyWindow() {}
 
     @Override
-    public void setStructureSymbols(EditorBuffer buffer, List<SymbolNode> symbols) {}
+    public StructurePanel structurePanel() {
+        return null;
+    }
 
     @Override
     public void refreshRunButton() {}

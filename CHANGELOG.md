@@ -7,6 +7,161 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Performance pass over the editor, following a measured review (typing, highlighting, large files, memory,
+  startup, consoles, language servers). Lines marked 'Changed' are behaviour you will notice as different
+  rather than faster:
+  - Syntax highlighting:
+    - Highlighting after an edit re-tokenizes only the lines the edit affects and stops where the grammar
+      state is back to what it was, instead of running to the end of the file. In a 79,000-line Java file an
+      edit near the top settled in about 0.5 s instead of 5–7 s, and the interface stall when the colours
+      apply went from 140–250 ms to about 30 ms. Opening a block comment still recolours to its close.
+    - Changed: lines longer than 20,000 characters are not syntax-highlighted (the rest of the file is), and
+      a single line gets at most one second of tokenizing. One 60,000-character minified-JavaScript line
+      used to hold the highlighter for about two seconds.
+    - Changed: with a language server's semantic highlighting on, a reply recolours only the lines whose
+      tokens changed, and semantic colours below an edit stay in place while the server answers instead of
+      blinking off.
+    - Fixed: files with no syntax grammar were restyled from top to bottom at every typing pause, which also
+      dropped the matching-bracket highlight until the caret moved.
+    - Opening a file no longer waits while another tab's first grammar of the session compiles; many tabs of
+      one language no longer tie up the highlighter's threads; tokenizing is roughly 18% faster.
+  - Large files and memory:
+    - Large files open without freezing the window: a 49 MB file used to block the interface for about three
+      seconds and a 20 MB file for about one and a half; both now stay under about half a second to a second.
+      The file's lines are prepared while it is being read, and a loaded file keeps one copy of its text in
+      memory instead of two (about 100 MB less for a 49 MB file).
+    - Changed: a file of 5 MB or more that would not fit in the memory that is left (typically a second or
+      third very large file) opens as a read-only slice showing its first part, like files over 50 MB already
+      do, instead of risking an out-of-memory failure. Close other large tabs and reopen it to edit it.
+    - Changed: in a file larger than about 256 KB, saved folds collapse a moment after the file appears
+      rather than before; the caret and scroll position are not moved by this.
+    - Commands that rewrite the whole document (Markdown lint fix-all, CSV align, replace in files, applying
+      a diff hunk, agent and plugin edits, convert indentation, restoring an Undo History entry, updating a
+      Markdown table of contents) record only the text that changed as their undo step. Three hundred such
+      steps on a 1 MB file used to keep about 600 MB of history. Changed: undoing one puts the caret at the
+      change rather than at the end of the file, and a rewrite that changes nothing no longer moves the caret.
+    - Changed: a document's undo history is also limited by the amount of text it holds (64 million
+      characters), not only to 300 steps, and Undo History checkpoints are limited across all open files
+      together (64 million characters); the oldest go first.
+    - An empty window no longer starts seven idle network threads: the AI, plugin and language-server-install
+      features create their HTTP connection on first use and release it when the window closes. Closing a
+      window also stops its plugin catalogue and install workers.
+    - Typst and Mermaid previews keep only the newest render of a document being edited, are limited by
+      memory as well as by count, and release their pages when the tab closes.
+    - Saving no longer keeps a second, encoded copy of every saved open file in memory, and no longer hashes
+      the file on the interface thread after each save.
+  - Consoles:
+    - Fixed: the Run, Output (build), Debug, External Tools and Test Runner consoles, the HTTP response view,
+      the Project Map preview, the diff panes and the hex viewer no longer keep an undo history of everything
+      they have ever shown. A console capped at 200,000 characters used to retain every line a long-running
+      program printed (about 110 MB after 200,000 lines, growing for as long as it ran). The snippet and
+      file-template bodies in Settings and the editable merge result keep undo, now limited to 300 steps.
+    - A program or build that prints quickly no longer monopolises the interface. The Run, Output and Debug
+      consoles apply each batch of lines as a single edit and take at most one batch per frame; 200,000 build
+      lines that used to freeze the window for about a minute now stream in about 13 seconds with the window
+      responsive.
+  - Find:
+    - Find in a very large file no longer freezes the editor: documents over about half a million characters
+      are searched in the background, and a query with a huge number of matches holds at most 100,000 of them
+      around the current one instead of every match (a search for "e" in a 45 MB buffer took a third of a
+      second and 105 MB on every edit). Changed: when there are more matches than are held, the count reads
+      "N of 100,000+" until the last match is reached; Next/Previous, Replace and Replace All still reach
+      every match. 'Select All Matches' places carets on the matches held (at most 100,000).
+  - Typing and the status bar:
+    - Enter, Tab, Shift-Tab, a typed closing bracket and snippet-prefix Tab read only the lines around the
+      caret instead of copying the whole document on every keystroke; the detected indent unit is remembered
+      until the top of the file changes.
+    - Moving the caret no longer copies up to 100,000 characters to look for a matching bracket unless the
+      caret is next to one.
+    - Same-length edits of a modified file (move line up/down, overwrite) no longer compare the whole
+      document each time; the modified marker clears shortly after the text returns to its saved state.
+    - Status bar: one refresh per frame while selecting, the selected-line count no longer copies the
+      selection, and a large file's size is counted in the background.
+    - The Run-glyph scan after each typing pause runs in the background; the Structure tool window no longer
+      rebuilds its tree when the outline is unchanged; closed tabs are no longer kept in memory by the last
+      kill, yank or expand-selection.
+  - Scrolling and overlays:
+    - Sticky scroll no longer rebuilds its pinned rows on every scroll step; a row is rebuilt only when its
+      line or its text/colouring changes.
+    - Changed: 'Show whitespace' markers inside a run of spaces now sit on their spaces (each further dot of
+      an indentation used to drift about 2 px to the right), cost a few layout queries per line instead of
+      one per run, and are off in large-file mode (which includes very long lines).
+    - Background tabs and clean files no longer hold a viewport-sized texture for the LSP-diagnostic,
+      Markdown-lint, Mermaid-lint, whitespace and log overlays.
+    - Fixed: line-mode AceJump with the end of the file on screen, and clicking in a file whose note sits at
+      the very end, leaked a timer per repaint/click.
+    - The minimap no longer repaints on every keystroke in LSP buffers, stops scanning a line at its right
+      edge, and re-renders once after a window resize settles instead of on every frame of the drag.
+    - Gutter rows build a fold chevron only where a fold starts and create tooltips on first hover.
+    - The log overlay no longer re-detects the level of every visible line (stack-trace lines included) on
+      each repaint; the spell overlay no longer copies the whole document on each settled edit in Markdown.
+  - Project tool window, search and Git:
+    - Fixed: a file changing in a watched folder no longer rebuilds the whole Project tree on the interface
+      thread. Only the folder whose entries came or went is listed again, and rows that are still right are
+      kept, with their expansion, selection and scroll position. With a 7,000-file folder that another
+      program writes to, typing no longer stalls every second.
+    - Fixed: saving a file in Editora no longer counts as an external change. It used to rebuild the tree,
+      mark the symbol index stale (so the next Search Everywhere re-read the project) and refresh Git, build
+      markers and open diffs a second time.
+    - Changed: a file that is only modified by another program (a log, build output) refreshes Git status and
+      open diffs at most once every two seconds.
+    - Sorting a folder listing no longer asks the disk whether each entry is a directory on every comparison;
+      expanding a folder no longer waits behind a Project filter search; a superseded filter search, TODO
+      scan or index walk stops instead of finishing.
+    - Changed: `.gitignore` files in subfolders are honoured by Search Everywhere / Go to Symbol, the TODO
+      scan, Find in Files without ripgrep and the Project filter (for example `packages/*/.gitignore` naming
+      `node_modules`).
+    - Find in Files stops ripgrep once the result limit is reached instead of letting it search the rest of
+      the project; a file changed outside Editora updates the symbol index for that file only.
+    - Switching tabs or returning to the window no longer checks the file and its `.editorconfig` folders on
+      the interface thread (a slow network or FUSE mount froze the window); the recent-files menu, Find File
+      and the breadcrumb dropdown read the disk in the background.
+    - Fixed: a `git status` that times out no longer makes the window say the folder is not a repository; the
+      last state is kept and the repository is left alone for 30 s (doubling to 5 min) before being asked
+      again. Inline blame is no longer recomputed when the file and HEAD have not changed.
+    - Local History: recording a save no longer copies every file's revision list unless the project is over
+      its size budget; trimming to the budget no longer rescans the project per evicted revision.
+    - Log viewer: following a log that grew by more than the follow limit between polls, or was rotated to a
+      large file, reads only the tail that is kept.
+  - Startup and tabs:
+    - A restored session no longer lays out the tabs you are not looking at. A background tab is still loaded
+      and highlighted, but its editor joins the window the first time you select it. Restoring a 30-file
+      session used about a fifth of the interface-thread time and 140 MB less memory in testing. Changed: the
+      first switch to such a tab does the layout that used to happen at startup.
+    - Changed: with several windows to restore, the window you were last in appears first and the others
+      follow one at a time, instead of nothing appearing until all of them were built. Files opened from the
+      file manager during those moments wait until every window exists.
+    - Switching tabs inside a project no longer re-reads the project's build file (pom.xml, package.json, …)
+      or starts a thread per build tool to look for it; a changed build file is still picked up.
+    - A tab's right-click menu and the build-tool task trees are built when first opened, not for every tab
+      and window. The saved session and the message catalog are no longer read on the interface thread at
+      launch.
+    - Packaged builds train their startup cache on a launch that restores a session and opens a file, rather
+      than on an empty window (effect on the packaged build not yet measured).
+    - `EDITORA_PERF=1` now also reports a launch that opens no file, and when the session finished restoring.
+  - Language servers, debugging and the AI agent:
+    - A server that announces its features one at a time (jdtls, tinymist) no longer makes Editora re-request
+      diagnostics, folding ranges, semantic tokens and inlay hints for every open tab once per announcement.
+      The burst is one refresh, for that server's files only; semantic tokens and inlay hints are fetched for
+      the tab on screen and for another tab when you switch to it.
+    - While you type against a slow server, requests for text that no longer exists are cancelled
+      (`$/cancelRequest`) instead of left running, and a request whose answer is already on its way is not
+      sent twice.
+    - The outline is no longer requested on every typing pause while the Structure window is closed. Jump to
+      Structure still shows the server's outline: it is fetched when the picker opens.
+    - Scrolling a file whose server can only send semantic tokens for the whole document (jdtls) no longer
+      re-fetches them on every scroll. Fixed: with semantic highlighting off and inlay hints on, scrolling did
+      not fetch hints for the lines scrolled to.
+    - Diagnostics a server publishes for files that are not open are discarded before they reach the
+      interface thread while the Problems window shows open files; the Problems tree is rebuilt at most ten
+      times a second and not at all while its window is closed.
+    - Sending a prompt, Stop, Resume, Step or an evaluation can no longer freeze the window when the agent or
+      the debug adapter is not reading its input. Opening, saving and full-syncing a large document no longer
+      encodes it as JSON on the interface thread.
+    - Changed: an agent reply appears as it streams (first text at once, then about eight updates a second)
+      instead of only when the stream pauses, and a long reply no longer gets slower to render as it grows.
+    - Changed: the call stack shows the innermost 1,000 frames when the debug adapter supports partial
+      stacks; deeper frames are not listed.
 - Third round of review follow-ups: standard input for debugged Java programs, the rest of the split view's
   second pane, remote (SFTP) files on closed connections and beside local tabs, and Local History across
   renames. Lines marked 'Changed' are behaviour you will notice as different rather than fixed:

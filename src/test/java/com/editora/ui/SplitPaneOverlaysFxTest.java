@@ -195,7 +195,7 @@ class SplitPaneOverlaysFxTest {
             b.setLspActive(true);
             b.setLspDiagnostics(List.of(error(3, 12, 17, "cannot find symbol value")));
             int at = first.getText().indexOf("value");
-            b.setSearchMatches(List.of(new int[] {at, at + 5}), 0);
+            b.setSearchMatches(com.editora.editor.SearchMatches.of(at, at + 5), 0);
         });
         CodeArea second = split(b);
         Node squiggles = drawn(b, "lsp-diagnostic-overlay");

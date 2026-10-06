@@ -9,7 +9,6 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.layout.Region;
 import javafx.scene.paint.Color;
 
-import com.editora.logviewer.LogFilter;
 import com.editora.logviewer.LogLevel;
 import com.editora.logviewer.LogPatterns;
 import org.fxmisc.richtext.CodeArea;
@@ -26,7 +25,7 @@ import org.fxmisc.richtext.CodeArea;
  * record's level, so an exception's whole trace tints red. Per-line level detection is cached by line
  * text (pure) so a scroll pulse re-tints without re-scanning.
  */
-final class LogHighlightOverlay extends Region implements SecondaryPane.Followed {
+final class LogHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     /** Translucent so they read on any editor theme without per-theme overrides (the search-wash convention). */
     private static final Color ERROR_BAR = Color.web("#e5484d", 0.95);
@@ -46,10 +45,19 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
     private final Canvas canvas = new Canvas(1, 1);
     private boolean active;
     private boolean redrawPending;
+    /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
+    private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private LogHighlightOverlay follower;
 
     private final Map<String, LogLevel> levelCache = lru(8000);
+
+    /** Document edits seen, and the inherited level last computed for (first visible line, edits). */
+    private int edits;
+
+    private int inheritedFirst = -1;
+    private int inheritedEdits = -1;
+    private LogLevel inherited;
 
     private static <K, V> Map<K, V> lru(int max) {
         return new java.util.LinkedHashMap<>(256, 0.75f, true) {
@@ -66,7 +74,10 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         setMouseTransparent(true);
         getChildren().add(canvas);
         area.viewportDirtyEvents().subscribe(ignore -> scheduleRedraw());
-        area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
+        area.multiPlainChanges().subscribe(ignore -> {
+            edits++;
+            scheduleRedraw();
+        });
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
@@ -75,6 +86,7 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
     @Override
     public LogHighlightOverlay follower(CodeArea view) {
         LogHighlightOverlay second = new LogHighlightOverlay(view);
+        second.setRenderingActive(rendering);
         second.setActive(active);
         follower = second;
         return second;
@@ -90,9 +102,32 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         this.active = active;
         setVisible(active);
         if (active) {
+            requestLayout();
             scheduleRedraw();
         } else {
-            clear();
+            CanvasGuards.release(canvas); // drop the full-viewport texture while hidden
+        }
+    }
+
+    /**
+     * Releases the canvas while this overlay's tab is in the background and repaints when it is shown again
+     * (driven by {@code EditorBuffer.setRenderingActive}). A hidden tab would otherwise keep a
+     * viewport-sized texture alive for as long as it stays open.
+     */
+    @Override
+    public void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas);
         }
     }
 
@@ -102,18 +137,16 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
 
     @Override
     protected void layoutChildren() {
-        double w = CanvasGuards.clampWidth(this, getWidth());
-        double h = CanvasGuards.clampHeight(this, getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
         canvas.relocate(0, 0);
+        if (!active || !rendering) {
+            return; // stay 1x1 / no texture while off or backgrounded
+        }
+        CanvasGuards.fit(this, canvas);
         scheduleRedraw();
     }
 
     private void scheduleRedraw() {
-        if (!active || redrawPending) {
+        if (!active || !rendering || redrawPending) {
             return;
         }
         redrawPending = true;
@@ -123,22 +156,37 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         });
     }
 
-    private void clear() {
-        canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+    /** Pattern scans run since construction — the test seam for "a repaint of unchanged lines scans none". */
+    private int levelScans;
+
+    int levelScansForTest() {
+        return levelScans;
     }
 
     private LogLevel levelOf(String line) {
-        return levelCache.computeIfAbsent(line, LogPatterns::levelOf);
+        // Not computeIfAbsent: it records no mapping for a null result, and "no level" is the answer for
+        // every stack-trace and continuation line — exactly the lines that would then be re-scanned on
+        // each repaint.
+        LogLevel cached = levelCache.get(line);
+        if (cached != null || levelCache.containsKey(line)) {
+            return cached;
+        }
+        levelScans++;
+        LogLevel level = LogPatterns.levelOf(line);
+        levelCache.put(line, level);
+        return level;
     }
 
     private void redraw() {
+        if (!active || !rendering || !CanvasGuards.paintable(getWidth(), getHeight())) {
+            CanvasGuards.release(canvas);
+            return;
+        }
+        CanvasGuards.fit(this, canvas); // grown here as well: activation can arrive without a layout pass
         GraphicsContext g = canvas.getGraphicsContext2D();
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
-        if (!active || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            return;
-        }
         try {
             int total = area.getParagraphs().size();
             if (total == 0) {
@@ -152,7 +200,8 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
                     continue;
                 }
                 String line = area.getParagraph(p).getText();
-                LogLevel eff = LogFilter.effectiveLevel(line, carry);
+                LogLevel own = levelOf(line);
+                LogLevel eff = own != null ? own : carry; // LogFilter.effectiveLevel, through the cache
                 carry = eff;
                 if (eff == null || line.isEmpty()) {
                     continue;
@@ -166,14 +215,17 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
 
     /** The inherited level entering {@code first}: the nearest leveled line in the bounded window above it. */
     private LogLevel inheritedLevelAt(int first) {
+        if (first == inheritedFirst && edits == inheritedEdits) {
+            return inherited; // a horizontal scroll, a resize or a caret blink repaints the same lines
+        }
         int from = Math.max(0, first - INHERIT_SCAN);
         LogLevel carry = null;
-        for (int p = from; p < first; p++) {
-            LogLevel own = levelOf(area.getParagraph(p).getText());
-            if (own != null) {
-                carry = own;
-            }
+        for (int p = first - 1; p >= from && carry == null; p--) {
+            carry = levelOf(area.getParagraph(p).getText());
         }
+        inheritedFirst = first;
+        inheritedEdits = edits;
+        inherited = carry;
         return carry;
     }
 

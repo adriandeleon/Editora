@@ -136,4 +136,39 @@ class ProcessRunnerProcessTest {
         assertTrue(over.outTruncated());
         assertEquals(exact.out().length(), over.out().length());
     }
+
+    // --- runLines: stop the child at the line that satisfies the caller -----------------------------------
+
+    @Test
+    void aStreamingRunIsKilledAtTheLineThatFillsTheCallersBudget(@TempDir Path dir) {
+        // Prints forever: only stopping it ends the run before the 60 s timeout.
+        List<String> endless = List.of("sh", "-c", "i=0; while :; do echo line $i; i=$((i+1)); done");
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        long started = System.nanoTime();
+
+        ProcessRunner.Result r = ProcessRunner.runLines(dir, Duration.ofSeconds(60), endless, line -> {
+            seen.add(line);
+            return seen.size() == 100;
+        });
+
+        long elapsedMs = (System.nanoTime() - started) / 1_000_000;
+        assertEquals(100, seen.size(), "nothing is delivered after the stop");
+        assertEquals("line 0", seen.get(0));
+        assertEquals("line 99", seen.get(99));
+        assertFalse(r.timedOut());
+        assertTrue(elapsedMs < 30_000, "the child was killed, not waited for: " + elapsedMs + " ms");
+    }
+
+    @Test
+    void aStreamingRunThatIsNeverStoppedDeliversEveryLineAndTheExitCode(@TempDir Path dir) {
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        ProcessRunner.Result r = ProcessRunner.runLines(
+                dir, Duration.ofSeconds(10), List.of("sh", "-c", "printf 'a\\nb\\nlast'; exit 1"), line -> {
+                    seen.add(line);
+                    return false;
+                });
+        assertEquals(List.of("a", "b", "last"), seen, "a final line without a line break still arrives");
+        assertEquals(1, r.exit());
+        assertFalse(r.outTruncated());
+    }
 }

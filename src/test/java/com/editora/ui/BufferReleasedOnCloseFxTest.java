@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -57,6 +58,59 @@ class BufferReleasedOnCloseFxTest {
         WeakReference<EditorBuffer> ref = openEditAndClose(file);
 
         assertTrue(collected(ref), "the closed buffer is still reachable — something outlived its tab");
+    }
+
+    @Test
+    void killingYankingAndExpandingInATabDoNotKeepItsBufferAlive() throws Exception {
+        Path file = Files.createTempFile("editora-release-kill", ".java");
+        Files.writeString(file, "class B {\n    void m() { int value = 1; }\n}\n");
+
+        WeakReference<EditorBuffer> ref = killYankExpandAndClose(file);
+
+        assertTrue(collected(ref), "the closed buffer is still reachable — a kill/yank/selection slot kept it");
+    }
+
+    /**
+     * The "which buffer was the last kill / yank / expand-selection in" slots only ever compare identity, so
+     * they must not be what keeps a closed buffer alive. The selection-range slot is filled by a language
+     * server's answer, which a headless test does not have: its declared type is pinned instead.
+     */
+    @Test
+    void theLastBufferSlotsAreWeak() throws Exception {
+        assertEquals(
+                WeakReference.class,
+                EditingCoordinator.class.getDeclaredField("lastKillBuffer").getType());
+        assertEquals(
+                WeakReference.class,
+                EditingCoordinator.class.getDeclaredField("lastYankBuffer").getType());
+        assertEquals(
+                WeakReference.class,
+                LspCoordinator.class.getDeclaredField("selectionChainBuffer").getType());
+    }
+
+    /** Opens the file, kills a line, yanks it back, expands the selection, saves and closes it. */
+    private WeakReference<EditorBuffer> killYankExpandAndClose(Path file) throws Exception {
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
+        EditorBuffer buffer = FxTestSupport.callOnFx(
+                () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
+        assertNotNull(buffer, "the file opened into a buffer");
+        CommandRegistry registry = FxTestSupport.field(fx.controller, "registry");
+        FxTestSupport.runOnFx(() -> {
+            buffer.getFocusedArea().moveTo(1, 4);
+            registry.run("edit.killLine"); // fills the last-kill slot
+            registry.run("edit.paste"); // yank it back: fills the last-yank slot
+            buffer.getFocusedArea().moveTo(1, 20);
+            registry.run("edit.expandSelection");
+        });
+        EditingCoordinator editing = FxTestSupport.field(fx.controller, "editing");
+        assertTrue(
+                FxTestSupport.callOnFx(() -> editing.lastYankBuffer.get() == buffer),
+                "precondition: the yank slot points at this buffer");
+        FxTestSupport.runOnFx(() -> registry.run("file.save"));
+        Thread.sleep(400); // as above: the save is asynchronous, and a dirty close would open a modal prompt
+        FxTestSupport.runOnFx(() -> registry.run("buffer.closeAll"));
+        return new WeakReference<>(buffer);
     }
 
     /** Opens the file, edits it (so undo checkpoints exist), saves and closes it. Returns a weak handle. */

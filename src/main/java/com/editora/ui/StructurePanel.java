@@ -110,7 +110,55 @@ public class StructurePanel extends VBox implements ToolWindowContent {
             if (now != null && pendingRebuild) {
                 rebuild();
             }
+            if (now != null) {
+                requestStaleLspSymbols();
+            }
         });
+    }
+
+    // The server outline is only fetched while something shows it. With the window closed the coordinator
+    // reports each skipped refresh here (lspSymbolsStale); the outline is asked for again when the window
+    // opens or the Jump to Structure picker reads it.
+    private java.util.function.Consumer<EditorBuffer> lspSymbolsRequester;
+    private boolean lspSymbolsStale;
+    private Runnable onHiddenOutlineChanged;
+
+    /** Sets how a stale server outline is re-requested (for the attached buffer). */
+    void setLspSymbolsRequester(java.util.function.Consumer<EditorBuffer> requester) {
+        this.lspSymbolsRequester = requester;
+    }
+
+    /** Told when the outline changes while the window is closed — the picker may be showing it. */
+    void setOnHiddenOutlineChanged(Runnable callback) {
+        this.onHiddenOutlineChanged = callback;
+    }
+
+    /** Whether the tool window is open, i.e. the outline is on screen and worth keeping current. */
+    boolean showsOutline() {
+        return visible();
+    }
+
+    /**
+     * The server outline for {@code forBuffer} was not refreshed because nothing shows it. The symbols held
+     * are dropped — their lines belong to an older text — so the picker falls back to the heuristic until
+     * the fresh outline it then asks for arrives.
+     */
+    void lspSymbolsStale(EditorBuffer forBuffer) {
+        if (forBuffer != buffer) {
+            return;
+        }
+        lspSymbolsStale = true;
+        if (lspSymbols != null) {
+            lspSymbols = null;
+            pendingRebuild = true;
+        }
+    }
+
+    private void requestStaleLspSymbols() {
+        if (lspSymbolsStale && lspSymbolsRequester != null && buffer != null) {
+            lspSymbolsStale = false;
+            lspSymbolsRequester.accept(buffer);
+        }
     }
 
     StructurePanel(BookmarkCoordinator bookmarks, NotesCoordinator notes) {
@@ -208,6 +256,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     /** The current structure as a flat, document-order list (for the Jump-to-Structure picker). */
     public List<Outline> outline() {
         List<Outline> out = new ArrayList<>();
+        requestStaleLspSymbols(); // answered later; onHiddenOutlineChanged then lets the picker reload
         // While the tool window is closed the tree is not rebuilt (#549), so {@code roots} is empty or still
         // the outline of whichever file was active when it was last open. The picker is the keyboard "go to
         // symbol in file" and has to work with the window closed: compute the model for this request.
@@ -241,14 +290,16 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
         this.buffer = buffer;
         this.lspSymbols = null; // start with the heuristic; MainController pushes LSP symbols if available
+        this.lspSymbolsStale = false;
         if (buffer == null) {
             rebuild();
             return;
         }
         // Node ranges/nesting come from fold regions; names/kinds come from TextMate symbols — rebuild
         // when either updates (regions on text/fold change, symbols when re-highlighting completes).
-        buffer.getFoldManager().setOnRegionsChanged(this::rebuild);
-        buffer.setOnSymbolsChanged(this::rebuild);
+        buffer.getFoldManager().setOnRegionsChanged(this::rebuildIfChanged);
+        buffer.setOnSymbolsChanged(this::rebuildIfChanged);
+        modelShown = false; // the tree still shows the previous buffer: the next build is unconditional
         // Force a recompute so the tree reflects the current text immediately; the callbacks above
         // then drive live updates as the document changes.
         buffer.getFoldManager().recompute();
@@ -479,15 +530,35 @@ public class StructurePanel extends VBox implements ToolWindowContent {
     // --- Tree construction ---
 
     private void rebuild() {
+        rebuild(false);
+    }
+
+    /**
+     * The buffer announced new fold regions or a finished highlight pass. Both arrive after every edit
+     * settles — and the regions one whether or not anything changed — so most of them describe the outline
+     * that is already showing: the tree, the kind menu and the selection are left alone unless the model
+     * really differs.
+     */
+    private void rebuildIfChanged() {
+        rebuild(true);
+    }
+
+    private void rebuild(boolean onlyIfChanged) {
         if (!visible()) {
             pendingRebuild = true; // defer the O(n) split + TreeView rebuild until the window is shown again
             return;
         }
         pendingRebuild = false;
-        roots = computeRoots();
-        attachDocs(roots);
-        attachSyntaxStyles(roots);
-        sortNodes(roots);
+        List<StructureNode> next = computeRoots();
+        attachDocs(next);
+        attachSyntaxStyles(next);
+        sortNodes(next);
+        if (onlyIfChanged && modelShown && sameModel(next, roots)) {
+            return;
+        }
+        roots = next;
+        modelShown = true;
+        treeBuilds++;
         rebuildKindFilter();
         // A rebuild rebuilds the tree (applyFilter selects row 0); that must not move the editor caret,
         // and it should keep the user on the symbol they had selected rather than snapping to the top.
@@ -499,6 +570,34 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         } finally {
             suppressNavigation = false;
         }
+    }
+
+    /** Whether the tree currently shows {@link #roots} for the attached buffer. */
+    private boolean modelShown;
+    /** How many times the tree was rebuilt from a model (tests). */
+    private int treeBuilds;
+
+    /** Whether two outlines would render the same tree: every node's text, styling, doc and place. */
+    private static boolean sameModel(List<StructureNode> a, List<StructureNode> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            StructureNode x = a.get(i);
+            StructureNode y = b.get(i);
+            if (x.line() != y.line()
+                    || !java.util.Objects.equals(x.label(), y.label())
+                    || !java.util.Objects.equals(x.kind(), y.kind())
+                    || !java.util.Objects.equals(x.region(), y.region())
+                    || !x.detail().equals(y.detail())
+                    || !x.doc().equals(y.doc())
+                    || !x.nameRuns().equals(y.nameRuns())
+                    || !x.returnRuns().equals(y.returnRuns())
+                    || !sameModel(x.children(), y.children())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** The {@link StructureNode} currently selected in the tree (a real symbol with a line), or {@code null}. */
@@ -551,6 +650,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
         this.lspSymbols = symbols;
         rebuild();
+        if (!visible() && onHiddenOutlineChanged != null) {
+            onHiddenOutlineChanged.run();
+        }
     }
 
     /** Converts the LSP symbol tree into structure nodes (region-less; navigation uses the symbol line). */

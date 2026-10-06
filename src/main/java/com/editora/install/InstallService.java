@@ -4,7 +4,6 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
@@ -68,10 +67,9 @@ public final class InstallService {
         return t;
     });
 
-    private final HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(20))
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    /** Built by the first download, not with the service (a {@code MainController} field initializer). */
+    private final com.editora.io.LazyHttpClient client =
+            com.editora.io.LazyHttpClient.following(Duration.ofSeconds(20));
 
     /** Probes which {@link Prereq}s are present on the augmented PATH, off-thread; posts the set on FX. */
     public void detectPrereqs(Consumer<Set<Prereq>> onResult) {
@@ -139,6 +137,7 @@ public final class InstallService {
     /** Stops the worker (window dispose). */
     public void shutdown() {
         exec.shutdownNow();
+        client.close();
     }
 
     // --- step execution ------------------------------------------------------------------------
@@ -403,7 +402,7 @@ public final class InstallService {
                 .header("User-Agent", "Editora")
                 .GET()
                 .build();
-        HttpResponse<InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        HttpResponse<InputStream> resp = client.get().send(req, HttpResponse.BodyHandlers.ofInputStream());
         if (resp.statusCode() / 100 != 2) {
             resp.body().close();
             throw new InstallException("HTTP " + resp.statusCode() + " for " + url);

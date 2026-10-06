@@ -33,7 +33,13 @@ class ProblemsPanelFxTest {
     }
 
     private ProblemsPanel panel() throws Exception {
-        return FxTestSupport.callOnFx(() -> new ProblemsPanel(NOOP));
+        return FxTestSupport.callOnFx(() -> {
+            ProblemsPanel panel = new ProblemsPanel(NOOP);
+            // An open tool window is in a scene; out of one the panel defers its rebuilds (see
+            // ProblemsPanelHiddenFxTest).
+            new javafx.scene.Scene(new javafx.scene.layout.StackPane(panel), 300, 400);
+            return panel;
+        });
     }
 
     @SuppressWarnings("unchecked")

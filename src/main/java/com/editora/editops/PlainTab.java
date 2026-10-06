@@ -47,10 +47,19 @@ public final class PlainTab {
         if (language != null && TAB_IS_SYNTAX.contains(language)) {
             insertSpaces = Boolean.FALSE;
         }
+        return edit(text, selStart, selEnd, tabSize, shift, Indenter.unitFor(text, tabSize, insertSpaces, indentSize));
+    }
+
+    /** The indent unit Tab uses in {@code language}: a tab where one is syntax, else the document's own. */
+    static String unit(String language, String documentUnit) {
+        return language != null && TAB_IS_SYNTAX.contains(language) ? "\t" : documentUnit;
+    }
+
+    /** As {@link #edit(String, int, int, String, int, boolean, Boolean, Integer)} with the unit decided. */
+    static Indenter.TabEdit edit(String text, int selStart, int selEnd, int tabSize, boolean shift, String unit) {
         if (selStart != selEnd || shift) {
-            return Indenter.smartTab(text, selStart, selEnd, STYLED_LANGUAGE, tabSize, shift, insertSpaces, indentSize);
+            return Indenter.smartTab(text, selStart, selEnd, STYLED_LANGUAGE, tabSize, shift, unit);
         }
-        String unit = Indenter.unitFor(text, tabSize, insertSpaces, indentSize);
         int caret = selStart + unit.length();
         return new Indenter.TabEdit(selStart, selStart, unit, caret, caret);
     }

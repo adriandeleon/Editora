@@ -178,4 +178,58 @@ class GrammarRegistryTest {
         assertTrue(names.contains("astro"));
         assertFalse(names.contains("plaintext"));
     }
+
+    @Test
+    void aGrammarLoadInProgressDoesNotBlockLookupsOfLoadedGrammars() throws Exception {
+        GrammarRegistry registry = GrammarRegistry.shared();
+        org.eclipse.tm4e.core.grammar.IGrammar loaded = registry.forLanguageName("java");
+        assertNotNull(loaded);
+        // A cold load holds the load lock for as long as the grammar takes to compile. Hold it here the
+        // same way and ask, from another thread, the questions the FX thread asks when a tab gets its
+        // path: every registry method used to be synchronized on the registry, so they all waited.
+        java.util.concurrent.ExecutorService asker = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            synchronized (registry.loadLock) {
+                synchronized (registry) {
+                    java.util.concurrent.Future<Boolean> answered = asker.submit(() -> registry.hasGrammarFor("B.java")
+                            && registry.cachedForFileName("B.java") == loaded
+                            && registry.forFileName("/src/B.java") == loaded
+                            && registry.forLanguageName("java") == loaded
+                            && registry.cachedForFileName("notes.unknownext") == null
+                            && registry.availableLanguageNames().contains("java"));
+                    assertTrue(
+                            answered.get(30, java.util.concurrent.TimeUnit.SECONDS),
+                            "lookups of an already-loaded grammar answered while a load was in progress");
+                }
+            }
+        } finally {
+            asker.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentFirstRequestsLoadAGrammarOnce() throws Exception {
+        GrammarRegistry registry = GrammarRegistry.shared();
+        int threads = 8;
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(threads);
+        try {
+            java.util.concurrent.CountDownLatch start = new java.util.concurrent.CountDownLatch(1);
+            java.util.List<java.util.concurrent.Future<org.eclipse.tm4e.core.grammar.IGrammar>> loaded =
+                    new java.util.ArrayList<>();
+            for (int i = 0; i < threads; i++) {
+                loaded.add(pool.submit(() -> {
+                    start.await();
+                    return registry.forLanguageName("lua");
+                }));
+            }
+            start.countDown();
+            org.eclipse.tm4e.core.grammar.IGrammar first = loaded.get(0).get(60, java.util.concurrent.TimeUnit.SECONDS);
+            assertNotNull(first);
+            for (var f : loaded) {
+                assertTrue(first == f.get(60, java.util.concurrent.TimeUnit.SECONDS), "one instance for every caller");
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }

@@ -613,3 +613,29 @@ found, via `lspCoordinator.isServerAvailable("java")`; python/js = their enable 
 See [extending.md](../extending.md) — adding an LSP server is one `ServerDef` entry plus its id in the
 coordinator's `SERVER_IDS` and the served language ids in `EditorBuffer.LSP_LANGUAGES`, plus a Settings
 command/enable pair; adding a DAP adapter is one `Def` entry in `DapServerRegistry`.
+
+## Request traffic (2026-10 performance pass)
+
+- **Refresh coalescing.** Capability changes and "ready" statuses go through the same 100 ms coalescer as
+  the other refresh kinds and apply only to the originating session's documents. Semantic tokens and inlay
+  hints are requested for the tab on screen; a skipped tab catches up in `LspCoordinator.onBufferShown`.
+- **One request in flight per document and kind.** Repeated requests (diagnostic, documentSymbol,
+  foldingRange, semantic tokens, inlayHint, documentHighlight, signatureHelp) go through `LatestRequests`: a
+  newer stamp cancels the older request, the same stamp sends nothing. Session futures propagate `cancel`
+  to the JSON-RPC future, so `$/cancelRequest` reaches the server.
+- **Outline.** `documentSymbol` is requested only while the Structure window is shown, or when the Jump to
+  Structure picker opens.
+- **Scroll.** A server without range support is not re-asked for whole-document semantic tokens on scroll
+  when its tokens are current.
+- **Diagnostics.** In open-files scope, publishes for files not open on the publishing server are dropped
+  in `LspManager` on the reader thread. The Problems tree rebuilds at most once per 100 ms and not at all
+  while its window is closed (it catches up on show).
+- **One ordered writer.** `AsyncPipeWriter` is public and also used by `DapClient` and `AcpClient`, so no
+  pipe or socket write happens on the FX thread. `didOpen` / `didChange` / `didSave` are JSON-encoded on the
+  writer thread (`DeferredSyncConsumer`); the incremental diff is still computed by the caller.
+- **URIs.** `DocumentUris` caches `Path.toUri().toString()` per path (the JDK stats the file on each call).
+- **Consoles.** The Run/Build pump delivers each drain inside a `process/OutputBatch`; `ui/ConsoleAppender`
+  applies it as one append, one style application and one trim, and drains start at least 16 ms apart. The
+  Java debuggee's console gets this through the Run pump.
+- **DAP.** `dispose()` waits up to 250 ms for the queued `disconnect`; `stackTrace` asks for the innermost
+  1,000 frames when the adapter advertises `supportsDelayedStackTraceLoading`.

@@ -93,15 +93,20 @@ class PaletteContextFxTest {
         Files.writeString(md, "# Title\n\nbody\n");
         FxWindowFixture fx = FxWindowFixture.create(
                 dir, false, false, false, List.of(new MainController.OpenTarget(md, 0, 0)), c -> {});
+        // The config dir is the @TempDir: stop the window's config writer before JUnit deletes the directory,
+        // or a late write races the cleanup and fails the test with DirectoryNotEmptyException.
+        try {
+            Map<String, Boolean> v =
+                    verdicts(fx.controller, "edit.cut", "nav.lineUp", "markdown.bold", "markdown.toc", "csv.align");
 
-        Map<String, Boolean> v =
-                verdicts(fx.controller, "edit.cut", "nav.lineUp", "markdown.bold", "markdown.toc", "csv.align");
-
-        assertTrue(v.get("edit.cut"), "a buffer is open, so edit.* is actionable");
-        assertTrue(v.get("nav.lineUp"), "a buffer is open, so nav.* is actionable");
-        assertTrue(v.get("markdown.bold"), "a Markdown buffer makes markdown.* actionable");
-        assertTrue(v.get("markdown.toc"), "a Markdown buffer makes markdown.* actionable");
-        assertFalse(v.get("csv.align"), "a Markdown buffer is not a CSV buffer");
+            assertTrue(v.get("edit.cut"), "a buffer is open, so edit.* is actionable");
+            assertTrue(v.get("nav.lineUp"), "a buffer is open, so nav.* is actionable");
+            assertTrue(v.get("markdown.bold"), "a Markdown buffer makes markdown.* actionable");
+            assertTrue(v.get("markdown.toc"), "a Markdown buffer makes markdown.* actionable");
+            assertFalse(v.get("csv.align"), "a Markdown buffer is not a CSV buffer");
+        } finally {
+            fx.dispose();
+        }
     }
 
     /**

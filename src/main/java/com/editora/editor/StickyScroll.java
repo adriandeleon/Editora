@@ -56,6 +56,93 @@ public final class StickyScroll {
         return unique.size() <= max ? List.copyOf(unique) : List.copyOf(unique.subList(0, max));
     }
 
+    /**
+     * {@link #headerLines(List, int, int)} for one region list, without scanning the list per query.
+     *
+     * <p>The pinned lines are asked for on every scroll step, and a large file has tens of thousands of
+     * regions. Sorted by start line, each region gets a <em>parent</em>: the nearest earlier region that is
+     * still open where it starts. Every region containing a line is then on the parent chain of the last
+     * region starting above that line, so a query is a binary search plus a walk of the nesting depth.
+     * Regions that overlap without nesting ({@code } else {} puts an end and a start on one line) only make
+     * a chain carry an entry that the walk's own containment test rejects.
+     */
+    static final class Index {
+
+        static final Index EMPTY = new Index(null, new int[0], new int[0], new int[0]);
+
+        private final List<Region> source;
+        private final int[] start;
+        private final int[] end;
+        private final int[] parent;
+
+        private Index(List<Region> source, int[] start, int[] end, int[] parent) {
+            this.source = source;
+            this.start = start;
+            this.end = end;
+            this.parent = parent;
+        }
+
+        static Index of(List<Region> regions) {
+            if (regions == null || regions.isEmpty()) {
+                return new Index(regions, new int[0], new int[0], new int[0]);
+            }
+            List<Region> sorted = new ArrayList<>(regions);
+            sorted.sort((a, b) -> a.startLine() != b.startLine()
+                    ? Integer.compare(a.startLine(), b.startLine())
+                    : Integer.compare(b.endLine(), a.endLine()));
+            int n = sorted.size();
+            int[] start = new int[n];
+            int[] end = new int[n];
+            int[] parent = new int[n];
+            int[] open = new int[n]; // indices of the regions still open, innermost last
+            int depth = 0;
+            for (int i = 0; i < n; i++) {
+                start[i] = sorted.get(i).startLine();
+                end[i] = sorted.get(i).endLine();
+                while (depth > 0 && end[open[depth - 1]] < start[i]) {
+                    depth--;
+                }
+                parent[i] = depth == 0 ? -1 : open[depth - 1];
+                open[depth++] = i;
+            }
+            return new Index(regions, start, end, parent);
+        }
+
+        /** Whether this index was built from exactly this list (the fold manager replaces it wholesale). */
+        boolean isFor(List<Region> regions) {
+            return source == regions;
+        }
+
+        List<Integer> headerLines(int firstVisible, int max) {
+            if (start.length == 0 || firstVisible <= 0 || max <= 0) {
+                return List.of();
+            }
+            int lo = 0;
+            int hi = start.length; // first index whose start is >= firstVisible
+            while (lo < hi) {
+                int mid = (lo + hi) >>> 1;
+                if (start[mid] < firstVisible) {
+                    lo = mid + 1;
+                } else {
+                    hi = mid;
+                }
+            }
+            List<Integer> inner = new ArrayList<>();
+            for (int i = lo - 1; i >= 0; i = parent[i]) {
+                boolean repeated = !inner.isEmpty() && inner.get(inner.size() - 1) == start[i];
+                if (end[i] >= firstVisible && !repeated) {
+                    inner.add(start[i]);
+                }
+            }
+            int keep = Math.min(max, inner.size());
+            Integer[] out = new Integer[keep];
+            for (int k = 0; k < keep; k++) {
+                out[k] = inner.get(inner.size() - 1 - k); // the walk ran innermost first
+            }
+            return List.of(out);
+        }
+    }
+
     /** As {@link #headerLines(List, int, int)} with {@link #DEFAULT_MAX}. */
     public static List<Integer> headerLines(List<Region> regions, int firstVisible) {
         return headerLines(regions, firstVisible, DEFAULT_MAX);

@@ -86,7 +86,12 @@ public final class AcpClient {
     private volatile Path fsRoot;
 
     private volatile Process process;
-    private final Object writeLock = new Object();
+    /**
+     * The ordered writer to the agent's stdin. Requests are issued from the FX thread (a prompt, Stop, a
+     * model switch), and a direct pipe write blocks for as long as the agent is not reading — an agent busy
+     * with a turn, with a prompt larger than the pipe buffer on its way, froze the editor and Stop with it.
+     */
+    private volatile com.editora.lsp.AsyncPipeWriter writer;
 
     public AcpClient(List<String> command, Path cwd, Host host) {
         this(command, cwd, host, Map.of());
@@ -120,8 +125,13 @@ public final class AcpClient {
             return true;
         }
         try {
-            process = processBuilder(command, cwd, environment).start();
+            Process started = processBuilder(command, cwd, environment).start();
+            process = started;
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
+            // An agent that has stopped reading altogether is killed once the backlog limit is reached; the
+            // reader thread then sees the stream end and reports the exit like any other.
+            writer = new com.editora.lsp.AsyncPipeWriter(
+                    started.getOutputStream(), "acp-agent-writer", () -> ProcessRegistry.killTree(started));
             drainStderr(process);
             startReader(process);
             return true;
@@ -224,16 +234,15 @@ public final class AcpClient {
 
     private boolean send(ObjectNode message) {
         Process p = process;
-        if (p == null || !p.isAlive()) {
+        OutputStream out = writer;
+        if (p == null || out == null || !p.isAlive()) {
             return false;
         }
         try {
             byte[] line = (mapper.writeValueAsString(message) + "\n").getBytes(StandardCharsets.UTF_8);
-            synchronized (writeLock) {
-                OutputStream out = p.getOutputStream();
-                out.write(line);
-                out.flush();
-            }
+            // One write is one queue entry, so a message is never interleaved with another and the wire
+            // order is the order of these calls; the pipe write itself happens on the writer's thread.
+            out.write(line);
             return true;
         } catch (IOException e) {
             LOG.log(Level.FINE, "ACP write failed", e);
@@ -376,6 +385,11 @@ public final class AcpClient {
         process = null;
         if (p != null) {
             ProcessRegistry.killTree(p);
+        }
+        com.editora.lsp.AsyncPipeWriter out = writer;
+        writer = null;
+        if (out != null) {
+            out.close();
         }
         failPending(new IOException("Agent disposed"));
         requestExec.shutdownNow();

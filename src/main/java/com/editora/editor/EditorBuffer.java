@@ -3,9 +3,7 @@ package com.editora.editor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -45,6 +43,7 @@ import com.editora.diagram.DiagramKind;
 import com.editora.editops.AutoClose;
 import com.editora.editops.BraceMatcher;
 import com.editora.editops.Commenter;
+import com.editora.editops.IndentWindow;
 import com.editora.editops.Indenter;
 import com.editora.editops.LineIndent;
 import com.editora.logviewer.LogLevel;
@@ -67,10 +66,7 @@ import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.flowless.VirtualizedScrollPane;
 import org.fxmisc.richtext.CodeArea;
 import org.fxmisc.richtext.NavigationActions.SelectionPolicy;
-import org.fxmisc.richtext.model.ReadOnlyStyledDocumentBuilder;
 import org.fxmisc.richtext.model.StyleSpans;
-import org.fxmisc.richtext.model.StyleSpansBuilder;
-import org.fxmisc.richtext.model.StyledSegment;
 import org.fxmisc.richtext.util.UndoUtils;
 import org.fxmisc.undo.UndoManager;
 import org.reactfx.Subscription;
@@ -222,6 +218,7 @@ public class EditorBuffer implements TabContent {
             this::getLanguage, () -> !this.largeFile && !this.hugeFile && isEditable() && !hasMultipleCarets());
 
     private final CodeArea area = tagRename.newArea(null);
+    private final IndentKeys indentKeys = new IndentKeys(area);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
     /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
@@ -788,16 +785,17 @@ public class EditorBuffer implements TabContent {
     private volatile long highlightGen;
     /** Bumped on every language/grammar change (FX thread only); drops a stale deferred grammar load. */
     private long languageGen;
-    /** Per-line grammar end-states from the last tokenization (FX-thread confined), so an edit can
-     *  re-highlight only from the changed line forward instead of the whole document. */
-    private final java.util.ArrayList<org.eclipse.tm4e.core.grammar.IStateStack> lineStates =
-            new java.util.ArrayList<>();
-    /** Bracket nesting depth at the end of each line, from the same tokenization (FX-thread confined).
-     *  Kept exactly in step with {@link #lineStates} — cleared and spliced at the same points — so an
-     *  incremental pass can start colouring at the edited line without rescanning the prefix. */
-    private final java.util.ArrayList<Integer> lineDepths = new java.util.ArrayList<>();
-    /** Where the next highlight pass must start: the earliest line edited or still owed by a discarded pass. */
-    private final HighlightStart highlightStart = new HighlightStart();
+    /** Per-line grammar end-states and bracket depths of the last applied pass (see {@link HighlightPass});
+     *  null = none, so the next pass tokenizes the whole document. Replaced, never modified. */
+    private HighlightPass.Lines highlightLines;
+    /** The range the next highlight pass owes: every edit since a pass last applied. */
+    private final HighlightDirty highlightDirty = new HighlightDirty();
+    /** Where {@link #semanticTokens} are no longer painted (edits, lexical restyles) since they were anchored. */
+    private final HighlightDirty semanticDirty = new HighlightDirty();
+    /** Line count of the text {@link #semanticTokens} were anchored to. */
+    private int semanticLines;
+    /** A grammar or CSV pass may have styled the document, so losing the grammar leaves styles to clear. */
+    private boolean styled;
     /** Named definitions from the last tokenization (FX-thread confined); drives the Structure view. */
     private List<TextMateHighlighter.Symbol> symbols = List.of();
     /** Notified (on the FX thread) after {@link #symbols} is refreshed. */
@@ -926,7 +924,7 @@ public class EditorBuffer implements TabContent {
         if (indentInsertSpacesOverride != null) {
             return indentInsertSpacesOverride;
         }
-        return !Indenter.detectUnit(area.getText(), tabSize).contains("\t");
+        return !indentKeys.unit(tabSize, null, null).contains("\t");
     }
 
     public EditorBuffer() {
@@ -1017,19 +1015,26 @@ public class EditorBuffer implements TabContent {
                         c.getRemoved().length(),
                         c.getInserted().length()));
         area.setLineHighlighterFill(lineHighlightColor);
-        // Track the earliest changed line immediately (the settled dispatcher coalesces intermediate
-        // edits, so the dirty start must be accumulated here), then re-highlight after a pause.
+        // Track the changed range immediately (the settled dispatcher coalesces intermediate edits, so
+        // the dirty range must be accumulated here), then re-highlight after a pause. Multi-change undo
+        // reports each replacement in the coordinate space where that replacement ran, which is the
+        // order HighlightDirty maps its range through them.
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
             for (var change : changes) {
-                // Multi-change undo reports each replacement in the coordinate space where that
-                // replacement ran. After a batch of deletions, an earlier high offset can therefore lie
-                // beyond the final shortened document even though the batch is valid. The earliest dirty
-                // line only needs the surviving edit boundary, so clamp before resolving it.
-                int position = Math.min(change.getPosition(), area.getLength());
-                int line = area.offsetToPosition(position, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
-                        .getMajor();
-                highlightStart.edited(line);
+                int removed = change.getRemoved().length();
+                int inserted = change.getInserted().length();
+                highlightDirty.edited(change.getPosition(), removed, inserted);
+                if (semanticActive) {
+                    semanticDirty.edited(change.getPosition(), removed, inserted);
+                }
+                // The matched pair moves with the text, so the next re-match clears it where it now is: a
+                // pass no longer restyles everything below an edit, which used to hide a stale position.
+                int[] pair = completionActions.braceMatch;
+                if (pair != null) {
+                    pair[0] = HighlightDirty.moved(pair[0], change.getPosition(), removed, inserted);
+                    pair[1] = HighlightDirty.moved(pair[1], change.getPosition(), removed, inserted);
+                }
             }
             // The cached semantic tokens now point at shifted offsets; suppress the overlay until the
             // next response re-anchors them (one boolean write — off the per-char path's cost budget). The
@@ -1059,10 +1064,9 @@ public class EditorBuffer implements TabContent {
         // (undo or manual) clears the marker. Driven off plainTextChanges (not textProperty): subscribing
         // to textProperty would force RichTextFX to materialize the whole document String on every
         // keystroke — O(n) allocation per char on a very large single buffer (e.g. minified JS on one
-        // line, past the line-count heavy-file tier). The cheap getLength() check gates the full-text
-        // compare so area.getText() is only built in the rare near-clean state, never while typing.
+        // line, past the line-count heavy-file tier). See dirtyAfterEdit for when the text is compared.
         // A log filter or followed append rewrites the area without being a user edit: dirty is carried over.
-        area.plainTextChanges().filter(c -> !logView.adjusting()).subscribe(c -> dirty.set(differsFromSaved()));
+        area.plainTextChanges().filter(c -> !logView.adjusting()).subscribe(c -> dirtyAfterEdit());
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -1091,8 +1095,9 @@ public class EditorBuffer implements TabContent {
      */
     private void configureSettledEditDispatcher() {
         settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
+            resolveDirty();
             applyHighlighting();
-            recomputeRun(); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
+            recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
         });
         settledEdits.at(
                 Duration.ofMillis(250),
@@ -1347,7 +1352,7 @@ public class EditorBuffer implements TabContent {
     }
 
     private void scheduleFormatBar() {
-        if (formatBarUpdatePending) {
+        if (formatBarUpdatePending || !MarkdownFormatBar.updateNeeded(formatBar, formatBarEnabled, focusedArea)) {
             return;
         }
         formatBarUpdatePending = true;
@@ -1442,9 +1447,8 @@ public class EditorBuffer implements TabContent {
         // called it and the bar was never in the scene graph at all. This is the one place that is
         // guaranteed to run right before the bar is needed, and placeStickyScroll is idempotent.
         placeStickyScroll();
-        CodeArea a = focusedArea;
-        stickyLines = StickyScroll.headerLines(folds.regions(), firstVisible);
-        stickyScroll.update(a, stickyLines, getTabSize(), this::jumpToLine);
+        stickyLines = stickyScroll.pinnedLines(folds.regions(), firstVisible);
+        stickyScroll.update(focusedArea, stickyLines, getTabSize(), this::jumpToLine);
     }
 
     private void hideFormatBar() {
@@ -1531,7 +1535,7 @@ public class EditorBuffer implements TabContent {
     }
 
     private void scheduleAiActionsBar() {
-        if (aiActionsBarUpdatePending) {
+        if (aiActionsBarUpdatePending || !AiActionsBar.updateNeeded(aiActionsBar, aiActionsEnabled, focusedArea)) {
             return;
         }
         aiActionsBarUpdatePending = true;
@@ -1999,9 +2003,7 @@ public class EditorBuffer implements TabContent {
         String doc = a.getText();
         String updated = MarkdownToc.updated(doc, 1, 6);
         if (updated != null) {
-            if (!updated.equals(doc)) {
-                a.replaceText(updated); // whole-document, undoable
-            }
+            replaceVisibleText(a, updated); // undoable; records only the TOC block that changed
             a.requestFocus();
             return true;
         }
@@ -2643,6 +2645,9 @@ public class EditorBuffer implements TabContent {
     /** Attaches {@code overlay} to the editor pane just below {@code below}, with the standard text-rect anchors. */
     private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, javafx.scene.Node below) {
         anchorOverText(overlay);
+        if (overlay instanceof TabSurface surface) {
+            surface.setRenderingActive(renderingActive); // first activated while its tab is in the background
+        }
         int idx = root.getChildren().indexOf(below);
         if (idx < 0) {
             idx = root.getChildren().indexOf(minimap); // fallback: just under the minimap
@@ -2699,9 +2704,9 @@ public class EditorBuffer implements TabContent {
     /**
      * Highlights all find matches ({@code [start,end)} offset pairs) behind the text, emphasizing the
      * match at {@code activeIndex}. No-op in large-file mode (the find bar still selects the current
-     * match). Pass an empty list (or call {@link #clearSearchMatches}) to remove the highlight.
+     * match). Pass an empty result (or call {@link #clearSearchMatches}) to remove the highlight.
      */
-    public void setSearchMatches(java.util.List<int[]> matches, int activeIndex) {
+    public void setSearchMatches(SearchMatches matches, int activeIndex) {
         if (largeFile) {
             return;
         }
@@ -2711,7 +2716,7 @@ public class EditorBuffer implements TabContent {
     /** Clears the find-match highlight overlay. */
     public void clearSearchMatches() {
         if (searchOverlay != null) {
-            searchOverlay.setMatches(java.util.List.of(), -1);
+            searchOverlay.setMatches(SearchMatches.EMPTY, -1);
         }
     }
 
@@ -3959,122 +3964,80 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Discards an in-flight background run scan whose result would be stale (mirrors {@link #todoGen}). */
+    private long runScanGen;
+
     /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
     private void recomputeRun() {
+        recomputeRun(false);
+    }
+
+    /**
+     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles, whose scan of the text
+     * ({@link RunScan}) runs off the FX thread — a generation counter drops a superseded result, as for
+     * {@link #refreshTodoMarks}. Every other caller (load, Save As, a feature toggle) needs the answer now.
+     */
+    private void recomputeRun(boolean settled) {
         maybeApplyShebang(); // an interpreter shebang can set the language before we gate the Run glyph
-        String name = path != null ? path.getFileName().toString() : displayName;
-        boolean eligible = runFeatureEnabled && !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
-        boolean httpEligible =
-                httpFeatureEnabled && !largeFile && isHttpFile() && area.getLength() <= COMPACT_SCAN_LIMIT;
+        long gen = ++runScanGen; // any newer pass (or dispose) supersedes an in-flight scan
+        boolean small = !largeFile && area.getLength() <= COMPACT_SCAN_LIMIT;
         // Test gutter: independent of the LSP-gated run feature, so it has its own eligibility (a Java buffer
         // in a JVM project with the Test Runner on). Additive — a test file also keeps any compact-source ▶.
-        boolean testEligible =
-                testGutterEnabled && !largeFile && "java".equals(language) && area.getLength() <= COMPACT_SCAN_LIMIT;
         // Project main-method gutter: a Java file in a Maven/Gradle project (gated by MainController).
-        boolean mainEligible =
-                mainGutterEnabled && !largeFile && "java".equals(language) && area.getLength() <= COMPACT_SCAN_LIMIT;
+        RunScan.Inputs in = new RunScan.Inputs(
+                runFeatureEnabled && small,
+                httpFeatureEnabled && small && isHttpFile(),
+                testGutterEnabled && small && "java".equals(language),
+                mainGutterEnabled && small && "java".equals(language),
+                language,
+                path != null ? path.getFileName().toString() : displayName,
+                shellRunEnabled,
+                shebangJavaSource != null);
         // Only materialize the whole document when we actually scan it (compact-source / .http / test/main
         // detection). Otherwise editing a moderately large file (256 KB–5 MB) would allocate the full text on
         // every 150 ms edit pulse just to discard it as run-ineligible.
-        String text = (eligible || httpEligible || testEligible || mainEligible) ? documentTextSnapshot() : "";
-        boolean nowRunnable;
-        int nowLine;
-        java.util.List<Integer> nowHttpLines = java.util.List.of();
-        java.util.Map<Integer, String> nowMakeTargets = java.util.Map.of();
-        if (httpEligible) {
-            nowHttpLines = com.editora.http.HttpFile.parse(text).stream()
-                    .map(com.editora.http.HttpFile.Request::startLine)
-                    .toList();
-            nowRunnable = !nowHttpLines.isEmpty();
-            nowLine = -1; // .http uses the line set, not a single entry line
-        } else if (eligible && isMakefile()) {
-            // Each rule target gets its own gutter ▶ (running `make <target>`) — the .http multi-glyph model.
-            java.util.Map<Integer, String> targets = new java.util.LinkedHashMap<>();
-            for (com.editora.run.MakefileTargets.Target t : com.editora.run.MakefileTargets.parse(text)) {
-                targets.put(t.line(), t.name());
-            }
-            nowMakeTargets = targets;
-            nowRunnable = !targets.isEmpty();
-            nowLine = -1; // Makefile uses the target line map, not a single entry line
-        } else if (eligible && "python".equals(language)) {
-            nowRunnable = true;
-            nowLine = pythonRunLine(text); // the __main__ guard, else the first line
-        } else if (eligible && shellRunEnabled && "shell".equals(language)) {
-            nowRunnable = true;
-            nowLine = 0; // run the whole script from the top (the shebang line, if any)
-        } else if (eligible
-                && "java".equals(language)
-                && (CompactSource.isLaunchable(name, text)
-                        || (shebangJavaSource != null && CompactSource.hasTopLevelMain(text)))) {
-            // A .java compact source, or an extensionless file with a `java --source N` shebang.
-            nowRunnable = true;
-            nowLine = CompactSource.mainLine(text);
-        } else {
-            nowRunnable = false;
-            nowLine = -1;
+        String text = in.needsText() ? documentTextSnapshot() : "";
+        if (!settled || !in.needsText()) {
+            applyRunScan(RunScan.scan(in, text));
+            return;
         }
-        // JUnit test glyphs are additive to whatever the run type above decided (a test file is usually neither
-        // compact-source nor a script), so they OR into runnable and get their own line→target map.
-        java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> nowTestLines = java.util.Map.of();
-        if (testEligible) {
-            java.util.Map<Integer, com.editora.test.JavaTestScanner.TestTarget> tl = new java.util.LinkedHashMap<>();
-            for (com.editora.test.JavaTestScanner.TestTarget t : com.editora.test.JavaTestScanner.scan(text)) {
-                tl.put(t.line(), t);
-            }
-            nowTestLines = tl;
-            nowRunnable = nowRunnable || !tl.isEmpty();
-        }
-        // Project main-method glyphs — deliberately do NOT flip `runnable` (that stays "single-file/script/test
-        // runnable", so the generic Run File / file.run never mis-launches a project class as one source file);
-        // the gutter draws these via a separate gate (see the run-slot `enabled` supplier + isRunGlyphLine).
-        java.util.Map<Integer, com.editora.run.MainMethodScanner.MainMethod> nowMainLines = java.util.Map.of();
-        if (mainEligible) {
-            java.util.Map<Integer, com.editora.run.MainMethodScanner.MainMethod> ml = new java.util.LinkedHashMap<>();
-            for (com.editora.run.MainMethodScanner.MainMethod m : com.editora.run.MainMethodScanner.scan(text)) {
-                ml.put(m.line(), m);
-            }
-            nowMainLines = ml;
-        }
-        boolean changed = nowRunnable != runnable;
-        boolean httpLinesChanged = !nowHttpLines.equals(httpRequestLines);
-        boolean makeTargetsChanged = !nowMakeTargets.equals(makeTargets);
-        boolean testLinesChanged = !nowTestLines.equals(testLines);
-        boolean mainLinesChanged = !nowMainLines.equals(mainLines);
+        HIGHLIGHT_POOL.execute(() -> {
+            RunScan.Result found = RunScan.scan(in, text);
+            Platform.runLater(() -> {
+                if (gen == runScanGen) {
+                    applyRunScan(found);
+                }
+            });
+        });
+    }
+
+    private void applyRunScan(RunScan.Result now) {
+        boolean changed = now.runnable() != runnable;
+        boolean linesChanged = !now.httpLines().equals(httpRequestLines)
+                || !now.makeTargets().equals(makeTargets)
+                || !now.testLines().equals(testLines)
+                || !now.mainLines().equals(mainLines);
         int oldLine = runLine;
-        runnable = nowRunnable;
-        runLine = nowLine;
-        httpRequestLines = nowHttpLines;
-        makeTargets = nowMakeTargets;
-        testLines = nowTestLines;
-        mainLines = nowMainLines;
+        runnable = now.runnable();
+        runLine = now.line();
+        httpRequestLines = now.httpLines();
+        makeTargets = now.makeTargets();
+        testLines = now.testLines();
+        mainLines = now.mainLines();
         if (changed) {
             onRunnableChanged.run();
             refreshGutter(); // the Run slot appeared/disappeared on every row — rebuild the factory
-        } else if (httpLinesChanged || makeTargetsChanged || testLinesChanged || mainLinesChanged) {
+        } else if (linesChanged) {
             refreshGutter(); // requests/targets/test/main methods added/removed — relight the glyphs
-        } else if (nowLine != oldLine) {
+        } else if (runLine != oldLine) {
             // The entry line moved (edits above it) — repaint just the old and new gutter rows.
             if (oldLine >= 0) {
                 refreshGutterLine(oldLine);
             }
-            if (nowLine >= 0) {
-                refreshGutterLine(nowLine);
+            if (runLine >= 0) {
+                refreshGutterLine(runLine);
             }
         }
-    }
-
-    private static final java.util.regex.Pattern PYTHON_MAIN_GUARD =
-            java.util.regex.Pattern.compile("^\\s*if\\s+__name__\\s*==\\s*['\"]__main__['\"]\\s*:");
-
-    /** The gutter Run line for a Python script: the {@code if __name__ == "__main__":} guard, else line 0. */
-    private static int pythonRunLine(String text) {
-        String[] lines = text.split("\n", -1);
-        for (int i = 0; i < lines.length; i++) {
-            if (PYTHON_MAIN_GUARD.matcher(lines[i]).find()) {
-                return i;
-            }
-        }
-        return 0;
     }
 
     /** Turns LSP rendering (diagnostics overlay + hover) on/off for this buffer. The controller drives
@@ -4150,6 +4113,7 @@ public class EditorBuffer implements TabContent {
             semanticTokens = java.util.List.of();
             semanticStale = false;
         }
+        semanticDirty.applied();
         invalidateHighlighting(); // force a full re-tokenize so the overlay is added/removed everywhere
         applyHighlighting();
     }
@@ -4176,20 +4140,43 @@ public class EditorBuffer implements TabContent {
      * against an older version, or an older request's reply arrives after a newer one — is <b>dropped</b>,
      * leaving {@link #semanticStale} set so the overlay stays suppressed rather than re-anchoring the old
      * tokens onto the shifted text (which mis-colored characters/lines until the next response). A response
-     * identical to the tokens already shown restyles nothing; a different one restyles from its first line.
+     * identical to the tokens already shown restyles nothing; a different one restyles the lines that differ.
      */
     public void setSemanticTokens(java.util.List<SemanticToken> tokens, long requestGen) {
         if (!semanticActive || requestGen != semanticGen) {
             return;
         }
         java.util.List<SemanticToken> next = tokens == null ? java.util.List.of() : tokens;
-        int from = SemanticToken.firstChangedLine(semanticTokens, next, semanticStale);
-        semanticTokens = next;
+        int lines = area.getParagraphs().size();
+        int erasedFirst = semanticStale ? lineOfOffset(semanticDirty.start()) : -1;
+        int[] range = SemanticToken.changedLines(
+                semanticTokens, next, erasedFirst, lineOfOffset(semanticDirty.end()), lines - semanticLines);
+        if (range != null || semanticStale) {
+            semanticTokens = next;
+        }
         semanticStale = false; // anchored to the current (unchanged since request) text → safe to overlay
-        if (from != Integer.MAX_VALUE) { // else the same tokens over the same text: nothing to restyle
-            highlightStart.edited(from); // style-only: the lexical end-states above stay valid, so resume there
+        semanticDirty.applied();
+        semanticLines = lines;
+        if (range != null) { // else the same tokens over the same text: nothing to restyle
+            // Style-only: the pass re-tokenizes just these lines, from the stored end-state above them.
+            int last = Math.min(range[1], lines - 1);
+            highlightDirty.include(
+                    area.getAbsolutePosition(Math.min(range[0], last), 0),
+                    area.getAbsolutePosition(last, area.getParagraphLength(last)));
             applyHighlighting();
         }
+    }
+
+    private int lineOfOffset(int offset) {
+        return area.offsetToPosition(
+                        Math.max(0, Math.min(offset, area.getLength())),
+                        org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+    }
+
+    /** The semantic tokens a pass dispatched now should overlay, or null (off, stale, or none). */
+    private java.util.List<SemanticToken> semanticOverlay() {
+        return semanticActive && !semanticStale && !semanticTokens.isEmpty() ? semanticTokens : null;
     }
 
     /** The inclusive 0-based line range currently visible in the editor (for a viewport semantic-tokens
@@ -5292,6 +5279,7 @@ public class EditorBuffer implements TabContent {
         // moment the tab closes returns that memory now rather than at the next collection.
         undoHistory.clear();
         documentSnapshots.invalidate();
+        PreviewSurfaces.release(path, this); // rendered Mermaid/Typst pages only this document could show
         if (settledEditSub != null) {
             settledEditSub.unsubscribe();
             settledEditSub = null;
@@ -5301,6 +5289,7 @@ public class EditorBuffer implements TabContent {
         previewGen++; // discard any in-flight preview result for this (now closed) buffer
         highlightGen++; // discard any in-flight highlight result
         todoGen++; // discard any in-flight TODO scan result
+        runScanGen++; // discard any in-flight run scan result
         languageGen++; // discard any in-flight deferred grammar load
         // RichTextFX's own teardown, last: it stops the caret blink timer — a running timer is a GC root, so a
         // buffer closed while its editor had focus stayed reachable, with its whole window — and closes the
@@ -5767,7 +5756,7 @@ public class EditorBuffer implements TabContent {
             double scale = previewFontScale;
             // A stable per-buffer surface key so live-editing pulses coalesce (only the latest render spawns
             // mmdc) instead of piling up ~4 s Chromium renders on every 250 ms pause (#458).
-            String surfaceKey = path != null ? path.toString() : ("mmd@" + System.identityHashCode(this));
+            String surfaceKey = PreviewSurfaces.mermaid(path, this);
             javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(
                     MermaidImages.node(documentTextSnapshot(), lw -> lw * scale, surfaceKey));
             box.getStyleClass().add("markdown-preview");
@@ -5823,8 +5812,8 @@ public class EditorBuffer implements TabContent {
             boolean local = path != null && path.getFileSystem() == java.nio.file.FileSystems.getDefault();
             java.nio.file.Path fileDir = local ? path.getParent() : null;
             java.nio.file.Path root = local && typstRootResolver != null ? typstRootResolver.apply(path) : fileDir;
-            String retainKey = path != null ? path.toString() : ("untitled@" + System.identityHashCode(this));
-            String surfaceKey = "typst@" + System.identityHashCode(this);
+            String retainKey = PreviewSurfaces.typstRetain(path, this);
+            String surfaceKey = PreviewSurfaces.typst(this);
             javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(TypstImages.node(
                     documentTextSnapshot(), lw -> lw * scale, retainKey, surfaceKey, fileDir, root, getDisplayName()));
             box.getStyleClass().add("markdown-preview");
@@ -6419,18 +6408,15 @@ public class EditorBuffer implements TabContent {
      */
     private void placeStickyScroll() {
         Node bar = stickyScroll.node();
-        if (!root.getChildren().contains(bar)) {
+        StickyScrollBar.anchor(bar, codePaneControlInset()); // writes only a changed constraint
+        if (bar.getParent() != root) {
             root.getChildren().add(bar);
+            // The bar is attached lazily when scrolling first produces pinned lines, while file-specific
+            // controls may already be present. AnchorPane paints later children on top, so without an
+            // explicit order that timing lets the full-width bar cover Markdown's view-mode toggle or
+            // HTML's browser button. A control attached after the bar is added last and so is above it.
+            bringCornerControlsToFront();
         }
-        AnchorPane.setTopAnchor(bar, 0d);
-        AnchorPane.setLeftAnchor(bar, 0d);
-        AnchorPane.setRightAnchor(bar, codePaneControlInset());
-        // The bar is attached lazily when scrolling first produces pinned lines, while file-specific
-        // controls may already be present. AnchorPane paints later children on top, so without an explicit
-        // order that timing lets the full-width bar cover Markdown's view-mode toggle or HTML's browser
-        // button. Keep every compact corner action above the informational sticky overlay regardless of
-        // which feature attached first.
-        bringCornerControlsToFront();
     }
 
     private void bringCornerControlsToFront() {
@@ -6647,7 +6633,7 @@ public class EditorBuffer implements TabContent {
         if (c == null || !isEditable()) {
             return;
         }
-        area.replaceText(c.text());
+        replaceVisibleText(area, c.text());
         area.moveTo(UndoHistory.clamp(c.caret(), area.getLength()));
         area.requestFocus();
     }
@@ -6692,13 +6678,13 @@ public class EditorBuffer implements TabContent {
             scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
         }
         minimap.setRenderingActive(active);
-        // The full-viewport overlays that are on by default keep a Canvas + RTTexture alive for a tab the
-        // user cannot see; only the minimap used to be released here. The stripes are narrow (small
-        // textures) and the remaining overlays are already 1x1 whenever their feature is off, so these
-        // three are where the per-tab cost actually is.
-        spellOverlay.setRenderingActive(active);
-        todoOverlay.setRenderingActive(active);
-        noteOverlay.setRenderingActive(active);
+        // A full-viewport overlay keeps a Canvas + RTTexture alive for a tab the user cannot see. The
+        // stripes are narrow (small textures); every overlay that can hold a viewport-sized one lets go.
+        for (Node child : root.getChildren()) {
+            if (child instanceof TabSurface surface) {
+                surface.setRenderingActive(active);
+            }
+        }
     }
 
     /**
@@ -7079,8 +7065,7 @@ public class EditorBuffer implements TabContent {
             for (int[] span : notes.activeSpans()) {
                 Bounds scr;
                 try {
-                    scr = a.getCharacterBoundsOnScreen(span[0], Math.min(a.getLength(), span[0] + 1))
-                            .orElse(null);
+                    scr = NoteHighlightOverlay.markerBoundsOnScreen(a, span[0]);
                 } catch (RuntimeException ex) {
                     scr = null;
                 }
@@ -7561,7 +7546,12 @@ public class EditorBuffer implements TabContent {
         // /etc/hosts, .git/config (see ConfigFileType). The registries reduce it to the basename for
         // ordinary extension lookups.
         String lookup = path == null ? null : path.toString();
-        String name = lookup == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(lookup);
+        applyLanguageFor(lookup == null ? LanguageRegistry.plaintext() : LanguageRegistry.forFileName(lookup), lookup);
+        recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
+    }
+
+    /** Applies language {@code name} with the grammar {@code lookup} (a file name or path, or null) maps to. */
+    private void applyLanguageFor(String name, String lookup) {
         GrammarRegistry reg = GrammarRegistry.shared();
         if (lookup == null || !reg.hasGrammarFor(lookup)) {
             applyLanguage(name, null); // no bundled grammar for this type — nothing to load
@@ -7573,7 +7563,6 @@ public class EditorBuffer implements TabContent {
                 applyLanguageDeferred(name, lookup); // first file of this type: compile off the FX thread
             }
         }
-        recomputeRun(); // a Save-As to a runnable file type can show the gutter Run glyph
     }
 
     /**
@@ -7608,8 +7597,7 @@ public class EditorBuffer implements TabContent {
     public void setDisplayName(String name) {
         this.displayName = name == null || name.isBlank() ? null : name;
         if (path == null && displayName != null) {
-            IGrammar g = GrammarRegistry.shared().forFileName(displayName);
-            applyLanguage(LanguageRegistry.forFileName(displayName), g);
+            applyLanguageFor(LanguageRegistry.forFileName(displayName), displayName);
         }
     }
 
@@ -7882,6 +7870,7 @@ public class EditorBuffer implements TabContent {
         folds.setHeuristicEnabled(!large); // never schedule a whole-document fold scan for a large file
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
         applySpellActive(); // spell checking is off in large-file mode (like highlighting)
+        whitespace.setSuppressed(large); // so are the whitespace markers, whatever the setting says
         // Large files don't need (and shouldn't pay the memory for) undo history.
         applyUndoMode();
         if (!large) {
@@ -8273,6 +8262,9 @@ public class EditorBuffer implements TabContent {
         if (!isMarkdown() || !isEditable() || hugeFile || a.getSelection().getLength() > 0) {
             return false;
         }
+        if (!MarkdownTable.isRow(a.getText(a.getCurrentParagraph()))) {
+            return false; // the caret's line alone says "not in a table": no need for the document
+        }
         String text = a.getText();
         int caret = a.getCaretPosition();
         int[] bounds = MarkdownTable.blockBounds(text, caret);
@@ -8297,8 +8289,8 @@ public class EditorBuffer implements TabContent {
      * read-only/large-file mode.
      */
     private boolean applySmartTab(CodeArea a, boolean shift) {
-        Indenter.TabEdit edit = tabEdit(
-                a.getText(), a.getSelection().getStart(), a.getSelection().getEnd(), shift);
+        Indenter.TabEdit edit =
+                tabEdit(a.getSelection().getStart(), a.getSelection().getEnd(), shift);
         if (edit == null) {
             return false;
         }
@@ -8309,25 +8301,19 @@ public class EditorBuffer implements TabContent {
         return true;
     }
 
-    /** The Tab edit for one selection of {@code text} (every caret's, with several); null = leave the key. */
-    private Indenter.TabEdit tabEdit(String text, int selStart, int selEnd, boolean shift) {
+    /** The Tab edit for one selection (every caret's, with several); null = leave the key. Smart Tab, or
+     *  for PLAIN (prose/plaintext) no context re-indent but still the file's indent unit — both computed
+     *  from the lines around the selection, not from the whole document. */
+    private Indenter.TabEdit tabEdit(int selStart, int selEnd, boolean shift) {
         if (!isEditable() || hugeFile) {
             return null;
         }
-        Indenter.TabEdit edit = Indenter.smartTab(
-                text, selStart, selEnd, language, tabSize, shift, indentInsertSpacesOverride, indentSizeOverride);
-        // PLAIN (prose/plaintext): no context re-indent, but still the file's indent unit.
-        return edit != null
-                ? edit
-                : com.editora.editops.PlainTab.edit(
-                        text,
-                        selStart,
-                        selEnd,
-                        language,
-                        tabSize,
-                        shift,
-                        indentInsertSpacesOverride,
-                        indentSizeOverride);
+        return IndentWindow.tabEdit(IndentKeys.doc(area), selStart, selEnd, language, tabSize, shift, indentUnit());
+    }
+
+    /** The indent unit for this buffer: the EditorConfig override, else the document's own (cached). */
+    private String indentUnit() {
+        return indentKeys.unit(tabSize, indentInsertSpacesOverride, indentSizeOverride);
     }
 
     /**
@@ -8641,7 +8627,7 @@ public class EditorBuffer implements TabContent {
         }
         int caret = a.getCaretPosition();
         // Markdown-only: Enter on a table's last row appends a new row.
-        if (isMarkdown()) {
+        if (isMarkdown() && MarkdownTable.isRow(a.getText(a.getCurrentParagraph()))) {
             int[] tb = MarkdownTable.blockBounds(a.getText(), caret);
             if (tb != null) {
                 MarkdownTable.Nav nav = MarkdownTable.enter(a.getText().substring(tb[0], tb[1]), caret - tb[0]);
@@ -8662,7 +8648,7 @@ public class EditorBuffer implements TabContent {
             String line = a.getParagraph(par).getText();
             int markerLen = isTypst()
                     ? TypstMarkup.markerLength(line)
-                    : MarkdownLines.listMarkerLength(a.getText(), lineStart, line);
+                    : MarkdownLines.listMarkerLength(a::getText, lineStart, line);
             if (markerLen > 0 && caret - lineStart >= markerLen) {
                 boolean empty = isTypst() ? TypstMarkup.isEmptyItem(line) : MarkdownLines.isEmptyItem(line);
                 if (empty) {
@@ -8681,8 +8667,7 @@ public class EditorBuffer implements TabContent {
         }
         applyCloserDedent(a, '\n'); // Enter finishes a closer keyword (fi, end, done): align it first
         caret = a.getCaretPosition();
-        Indenter.EnterEdit edit = Indenter.enterEdit(
-                a.getText(), caret, language, tabSize, indentInsertSpacesOverride, indentSizeOverride);
+        Indenter.EnterEdit edit = IndentWindow.enterEdit(IndentKeys.doc(a), caret, language, indentUnit());
         a.replaceText(caret, caret, edit.insert());
         a.moveTo(caret + edit.caretOffset());
         a.requestFollowCaret();
@@ -8748,7 +8733,7 @@ public class EditorBuffer implements TabContent {
         }
         // Re-align this line's indent to its opener; the typed char then inserts normally (not consumed).
         String currentIndent = completionActions.leadingIndent(beforeCaret);
-        String aligned = Indenter.closerAlignIndent(style, a.getText(), caret, tabSize, currentIndent, c);
+        String aligned = IndentWindow.closerAlignIndent(style, IndentKeys.doc(a), caret, tabSize, currentIndent, c);
         if (!aligned.equals(currentIndent)) {
             a.replaceText(lineStart, lineStart + currentIndent.length(), aligned);
             a.moveTo(caret + aligned.length() - currentIndent.length()); // back after the closer, not the indent
@@ -8915,12 +8900,17 @@ public class EditorBuffer implements TabContent {
         }
         CodeArea a = focusedArea;
         int caret = a.getCaretPosition();
-        // BraceMatcher never scans beyond DEFAULT_MAX_SCAN chars from the caret, so feed it only that
-        // window instead of materializing the whole document on every caret move (the hot path); a big
-        // file under the 5 MB brace cap would otherwise allocate the entire text per cursor move.
+        // BraceMatcher answers from the two characters beside the caret and never scans beyond
+        // DEFAULT_MAX_SCAN chars from it: read those two first, and build the window (up to 100,000 chars,
+        // on every caret move — the hot path) only when one of them is a bracket.
         int max = BraceMatcher.DEFAULT_MAX_SCAN;
         int winStart = Math.max(0, caret - max - 1);
         int winEnd = Math.min(a.getLength(), caret + max + 1);
+        String beside = a.getText(Math.max(0, caret - 1), Math.min(a.getLength(), caret + 1));
+        if (!BraceMatcher.needsScan(
+                caret > 0 ? beside.charAt(0) : 0, beside.isEmpty() ? 0 : beside.charAt(beside.length() - 1))) {
+            return;
+        }
         int[] m = BraceMatcher.match(a.getText(winStart, winEnd), caret - winStart, max);
         if (m != null) {
             addBraceClass(m[0] + winStart);
@@ -8977,8 +8967,11 @@ public class EditorBuffer implements TabContent {
         if (!isEditable() || a.getSelection().getLength() > 0) {
             return false;
         }
-        int caret = a.getCaretPosition();
-        String text = a.getText();
+        // A snippet prefix is a short token ending at the caret: look at the same bounded stretch the
+        // completion prefix uses instead of building the whole document on every plain Tab.
+        int base = Math.max(0, a.getCaretPosition() - BufferCompletion.PREFIX_LOOKBACK);
+        String text = a.getText(base, a.getCaretPosition());
+        int caret = text.length();
         int identStart = caret;
         while (identStart > 0 && completionActions.isPrefixChar(text.charAt(identStart - 1))) {
             identStart--;
@@ -8992,7 +8985,7 @@ public class EditorBuffer implements TabContent {
         if (tokenStart < identStart) {
             Snippet wide = snippetProvider.apply(language, text.substring(tokenStart, caret));
             if (wide != null) {
-                startSnippet(a, wide, tokenStart, caret);
+                startSnippet(a, wide, base + tokenStart, base + caret);
                 return true;
             }
         }
@@ -9003,7 +8996,7 @@ public class EditorBuffer implements TabContent {
         if (snippet == null) {
             return false;
         }
-        startSnippet(a, snippet, identStart, caret);
+        startSnippet(a, snippet, base + identStart, base + caret);
         return true;
     }
 
@@ -9030,9 +9023,7 @@ public class EditorBuffer implements TabContent {
         ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
         // asIs (no reindent) keeps the text untouched; otherwise the body's tabs become the buffer's unit.
-        String unit = reindent
-                ? Indenter.unitFor(a.getText(), tabSize, indentInsertSpacesOverride, indentSizeOverride)
-                : null;
+        String unit = reindent ? indentUnit() : null;
         snippetSession.start(a, parsed, from, to, indent, unit);
     }
 
@@ -9350,69 +9341,48 @@ public class EditorBuffer implements TabContent {
         setInitialContent(content, false);
     }
 
-    /**
-     * Installs freshly-loaded content, optionally splitting giant paragraphs into visually identical style
-     * segments. JavaFX Text lays out one RichTextFX segment as one text node; a minified 300 KiB source in a
-     * single node can monopolize the FX thread for many seconds. Alternating two no-op style classes keeps the
-     * document text and paragraph model exact while bounding each node's glyph run.
-     */
+    /** As above, optionally splitting giant paragraphs into style segments ({@link InitialDocument#segmented}). */
     public void setInitialContent(String content, boolean segmentLongLines) {
+        setInitialContent(
+                segmentLongLines ? InitialDocument.prepare(area, content, true) : InitialDocument.ofText(content));
+    }
+
+    /** Builds a load's paragraphs for {@link #setInitialContent(InitialDocument)}; safe off the FX thread. */
+    public InitialDocument prepareInitialContent(String content, boolean segmentLongLines) {
+        return InitialDocument.prepare(area, content, segmentLongLines);
+    }
+
+    /** Installs a prepared load: one document swap, with the loaded String shared as baseline and snapshot. */
+    public void setInitialContent(InitialDocument loaded) {
         // The area never holds a '\r', so remember the file's line ending here and keep the baseline in the
         // same normalised form — a CRLF baseline could never equal the document again (edit + undo stayed dirty).
-        lineEnding = LineEndings.dominant(content);
+        lineEnding = loaded.lineEnding();
         cleanLineEnding = lineEnding;
-        String initial = LineEndings.toLf(content);
+        String initial = loaded.text();
         widen(); // a fresh document supersedes any narrowing of the old one
         Runnable refilter = logView.suspendFilter(true);
         // Establish the baseline before the change event. Otherwise an async loading shell briefly becomes
         // dirty during replace(), which promotes a disposable preview tab before the method can clear it.
-        cleanText = initial;
+        // A truncated load has no baseline (null): it is never compared, and pins no copy once a log tail moves on.
+        cleanText = truncatedLoad ? null : initial;
         forcedDirty = false;
-        if (segmentLongLines) {
-            area.replace(0, area.getLength(), segmentedInitialDocument(initial));
+        documentSnapshots.expect(initial); // the dirty check inside the change event must not copy it back out
+        if (loaded.document() != null) {
+            area.replace(0, area.getLength(), loaded.document());
         } else {
             area.replaceText(initial);
+        }
+        if (area.getLength() == initial.length()) {
+            documentSnapshots.seed(docVersion, initial);
+        } else {
+            documentSnapshots.expect(null);
+            documentSnapshots.invalidate();
         }
         forgetHistoryAtNarrowBoundary(); // the load is the baseline, not an undo step: undoing it emptied the file
         captureUndoCheckpoint(); // ...and the Undo History baseline is the loaded text, not the loading shell
         refilter.run();
         dirty.set(false);
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
-    }
-
-    private static final int LONG_LINE_SEGMENT_CHARS = 4 * 1024;
-    private static final Collection<String> LONG_LINE_SEGMENT_A = List.of("long-line-segment-a");
-    private static final Collection<String> LONG_LINE_SEGMENT_B = List.of("long-line-segment-b");
-
-    private org.fxmisc.richtext.model.ReadOnlyStyledDocument<Collection<String>, String, Collection<String>>
-            segmentedInitialDocument(String text) {
-        var builder = new ReadOnlyStyledDocumentBuilder<Collection<String>, String, Collection<String>>(
-                area.getSegOps(), area.getInitialParagraphStyle());
-        int paragraphStart = 0;
-        while (true) {
-            int newline = text.indexOf('\n', paragraphStart);
-            int paragraphEnd = newline < 0 ? text.length() : newline;
-            int length = paragraphEnd - paragraphStart;
-            if (length == 0) {
-                builder.addParagraph("", Collections.emptyList());
-            } else if (length <= LONG_LINE_SEGMENT_CHARS) {
-                builder.addParagraph(text.substring(paragraphStart, paragraphEnd), Collections.emptyList());
-            } else {
-                List<StyledSegment<String, Collection<String>>> segments =
-                        new ArrayList<>((length + LONG_LINE_SEGMENT_CHARS - 1) / LONG_LINE_SEGMENT_CHARS);
-                int chunk = 0;
-                for (int start = paragraphStart; start < paragraphEnd; start += LONG_LINE_SEGMENT_CHARS) {
-                    int end = Math.min(paragraphEnd, start + LONG_LINE_SEGMENT_CHARS);
-                    Collection<String> style = (chunk++ & 1) == 0 ? LONG_LINE_SEGMENT_A : LONG_LINE_SEGMENT_B;
-                    segments.add(new StyledSegment<>(text.substring(start, end), style));
-                }
-                builder.addParagraph(segments);
-            }
-            if (newline < 0) {
-                return builder.build();
-            }
-            paragraphStart = newline + 1;
-        }
     }
 
     /**
@@ -9585,10 +9555,23 @@ public class EditorBuffer implements TabContent {
     public void replaceWholeDocument(String text) {
         widen();
         Runnable refilter = logView.suspendFilter(false);
-        preventUndoMerge();
-        area.replaceText(text == null ? "" : text);
-        preventUndoMerge();
+        replaceVisibleText(area, text);
         refilter.run();
+    }
+
+    /**
+     * Makes the accessible text {@code text} as ONE undo step that records only the span that differs (see
+     * {@link WholeDocumentEdit}) — nothing at all when it is already equal. The caret ends at the document
+     * end, where replacing everything left it; callers that want it elsewhere move it afterwards.
+     */
+    public void replaceVisibleText(CodeArea view, String text) {
+        WholeDocumentEdit edit = WholeDocumentEdit.between(documentTextSnapshot(), LineEndings.toLf(text));
+        if (edit != null) {
+            preventUndoMerge();
+            view.replaceText(edit.start(), edit.end(), edit.replacement());
+            view.moveTo(view.getLength());
+            preventUndoMerge();
+        }
     }
 
     /** Keeps a programmatic mutation (or a command's edit) separate from adjacent typing (both views share
@@ -9618,8 +9601,37 @@ public class EditorBuffer implements TabContent {
         return dirty;
     }
 
+    /** Exact: an edit that left a dirty buffer at its saved length is compared here if it has not been yet. */
     public boolean isDirty() {
-        return dirty.get();
+        resolveDirty();
+        return dirtyUnresolved ? differsFromSaved() : dirty.get(); // off the FX thread: answer, publish later
+    }
+
+    /** True while {@link #dirty} is carried over an edit that may have restored the saved text. */
+    private boolean dirtyUnresolved;
+
+    /**
+     * The per-edit dirty check. A length (or line-ending) difference decides without reading the text. At
+     * the saved length the text has to be compared, which builds the whole document: a clean buffer does
+     * that at once — it must never show as modified when it is not — but an already-dirty one stays dirty
+     * and is compared when the edit settles (or when {@link #isDirty()} is asked), so a run of same-length
+     * edits (move line up/down, overwrite, transpose) no longer copies the document on every one of them.
+     */
+    private void dirtyAfterEdit() {
+        dirtyUnresolved = dirty.get()
+                && !forcedDirty
+                && lineEnding.equals(cleanLineEnding)
+                && contentLength() == cleanText.length();
+        if (!dirtyUnresolved) {
+            dirty.set(differsFromSaved());
+        }
+    }
+
+    private void resolveDirty() {
+        if (dirtyUnresolved && Platform.isFxApplicationThread()) { // the property is only set on its thread
+            dirtyUnresolved = false;
+            dirty.set(differsFromSaved());
+        }
     }
 
     /** Marks the current content as the saved baseline (after load/save); clears the dirty flag. */
@@ -9634,8 +9646,9 @@ public class EditorBuffer implements TabContent {
     private boolean differsFromSaved() {
         return forcedDirty
                 || !lineEnding.equals(cleanLineEnding)
-                || contentLength() != cleanText.length()
-                || !getContent().equals(cleanText);
+                || (cleanText != null
+                        && (contentLength() != cleanText.length()
+                                || !getContent().equals(cleanText)));
     }
 
     /** Marks content as not durably saved, even when it still equals its in-memory baseline. */
@@ -9691,25 +9704,29 @@ public class EditorBuffer implements TabContent {
     /** Forces the next {@link #applyHighlighting()} to re-tokenize the whole document (e.g. after a
      *  language/grammar change, where no text change occurred). */
     private void invalidateHighlighting() {
-        highlightStart.invalidate();
-        lineStates.clear();
-        lineDepths.clear();
+        highlightDirty.invalidate();
+        highlightLines = null;
+    }
+
+    /** Forgets the per-line tokenizer state and the structure symbols: no grammar pass owns the document. */
+    private void dropHighlightState() {
+        highlightLines = null;
+        if (!symbols.isEmpty()) {
+            symbols = List.of();
+            onSymbolsChanged.run();
+        }
     }
 
     /** Applies per-column rainbow CSV coloring over the whole document. The scan and span construction run
      *  off the FX thread; only the guarded style application returns to it. */
     private void applyCsvRainbow() {
-        lineStates.clear();
-        lineDepths.clear();
-        if (!symbols.isEmpty()) {
-            symbols = List.of();
-            onSymbolsChanged.run();
-        }
+        dropHighlightState();
         String text = documentTextSnapshot();
         int len = text.length();
         if (len == 0) {
             return;
         }
+        styled = true;
         long version = docVersion;
         long gen = ++highlightGen;
         HIGHLIGHT_POOL.execute(() -> {
@@ -9753,13 +9770,7 @@ public class EditorBuffer implements TabContent {
             return; // a closed buffer must not dispatch new passes (see the disposed field)
         }
         if (largeFile) {
-            // Large-file mode: leave the document as plain text and drop any structure symbols/state.
-            lineStates.clear();
-            lineDepths.clear();
-            if (!symbols.isEmpty()) {
-                symbols = List.of();
-                onSymbolsChanged.run();
-            }
+            dropHighlightState(); // large-file mode: leave the document as plain text
             return;
         }
         if (csvRainbow && isCsv() && !heavyFile) {
@@ -9767,162 +9778,79 @@ public class EditorBuffer implements TabContent {
             return;
         }
         if (grammar == null) {
-            // No grammar for this file type: clear any previously applied styles so none linger.
-            // This is cheap (a single span), so do it inline on the FX thread.
+            // No grammar for this file type, so nothing to compute — and nothing to clear either, except
+            // once when a grammar or CSV pass had styled the document, and otherwise in the text typed
+            // since the last pause where it took on the style of its neighbour (a matched brace). Clearing
+            // the whole document at every pause restyled it for nothing and wiped the brace match.
+            dropHighlightState();
             int length = area.getLength();
-            if (length > 0) {
-                area.setStyleSpans(
-                        0,
-                        new StyleSpansBuilder<Collection<String>>()
-                                .add(Collections.emptyList(), length)
-                                .create());
+            int from = styled ? 0 : highlightDirty.isClean() ? length : Math.min(highlightDirty.start(), length);
+            int to = styled ? length : Math.min(highlightDirty.end(), length);
+            int[] matched = styled ? null : completionActions.braceMatch; // the live pair is not a leftover
+            if (styled) {
+                styled = false;
+                highlightGen++; // a pass still in flight must not style the document after this
             }
-            lineStates.clear();
-            lineDepths.clear();
-            if (!symbols.isEmpty()) {
-                symbols = List.of();
-                onSymbolsChanged.run();
+            highlightDirty.applied();
+            if (from < to && HighlightPass.anyStyled(area.getStyleSpans(from, to), from, matched)) {
+                area.clearStyle(from, to);
+                scheduleBraceMatch();
             }
             return;
         }
-        // Tokenizing is O(lines): re-highlight only from the first changed line to the end, reusing
-        // the stored grammar end-states for the unchanged prefix. The work still runs on a background
-        // thread (a generation counter discards stale results) and the result is re-validated against
-        // the current document length before applying, since RichTextFX requires the spans to cover
-        // their range exactly.
-        // The start line is only valid if we have its predecessor's end-state; otherwise re-do all.
-        int from = highlightStart.dispatch(); // includes a superseded pass's lines until one applies
-        boolean colorBrackets = bracketColors;
-        // The carried depth has to be usable too, or the pass would start colouring from a depth
-        // belonging to a different line. Only demanded while the feature is on — otherwise lineDepths is
-        // deliberately empty and requiring it would force a full re-tokenize on every pulse.
-        if (from > 0
-                && (from - 1 >= lineStates.size()
-                        || lineStates.get(from - 1) == null
-                        || (colorBrackets && from - 1 >= lineDepths.size()))) {
-            from = 0;
-        }
-        var startState = from == 0 ? null : lineStates.get(from - 1);
-        int startDepth = from == 0 || !colorBrackets ? 0 : lineDepths.get(from - 1);
-        String text = documentTextSnapshot();
-        IGrammar g = grammar;
-        int fromLine = from;
+        // Tokenizing is O(lines), so a pass covers only the range edited since the last one applied and
+        // stops where the grammar state re-converges (see HighlightPass). The work runs on a background
+        // thread — tokenizing, the semantic and bracket overlays, the spliced per-line state — and the
+        // result is applied only if no newer pass was dispatched and the text is still the snapshot's.
+        styled = true;
+        java.util.List<SemanticToken> overlay = semanticOverlay();
+        HighlightPass.Request request = new HighlightPass.Request(
+                documentTextSnapshot(),
+                grammar,
+                highlightLines,
+                symbols,
+                highlightDirty.isClean() ? -1 : highlightDirty.start(),
+                highlightDirty.end(),
+                bracketColors,
+                overlay);
+        long version = docVersion;
         long gen = ++highlightGen;
-        HIGHLIGHT_POOL.execute(() -> {
-            TextMateHighlighter.IncrementalAnalysis a;
+        HighlightPass.submit(HIGHLIGHT_POOL, grammar, () -> {
+            HighlightPass.Result r;
             try {
                 // The cancel check lets a superseded pass stop at the next line instead of finishing a
                 // doomed multi-MB tokenize while holding the shared grammar monitor (see analyzeFrom).
-                a = TextMateHighlighter.analyzeFrom(text, g, fromLine, startState, () -> gen != highlightGen);
+                r = HighlightPass.run(request, () -> gen != highlightGen);
             } catch (Exception | LinkageError e) {
                 return; // never let a grammar/engine fault kill the highlighter thread
             }
-            if (a == null || a.spans() == null) {
+            if (r == null) {
                 return;
             }
-            // Bracket depth rides this same background pass, over the same captured text: one extra O(n)
-            // character scan next to a tokenize that already cost far more, and the string/comment spans
-            // it needs have just been produced. Doing it on the FX thread instead would put an O(range)
-            // loop on the apply path.
-            BracketColors.Analysis brackets = colorBrackets
-                    ? BracketColors.analyze(
-                            text, a.fromOffset(), startDepth, BracketColors.skipRanges(a.spans()), BracketColors.COLORS)
-                    : null;
             Platform.runLater(() -> {
-                if (gen != highlightGen) {
-                    return; // a newer edit superseded this pass
-                }
-                // The spans cover [fromOffset … end of captured text]; bail if the doc has changed.
-                if (a.fromOffset() + a.spans().length() != area.getLength()) {
+                // Superseded, or the text changed since the snapshot: what this pass owed stays in
+                // highlightDirty, so the next one covers it.
+                if (gen != highlightGen || version != docVersion) {
                     return;
                 }
-                highlightStart.applied();
-                StyleSpans<Collection<String>> spans = a.spans();
-                // Overlay the server's semantic tokens on top of the lexical highlight (semantic wins
-                // where present). Suppressed while stale (doc edited since the tokens were anchored).
-                if (semanticActive && !semanticStale && !semanticTokens.isEmpty()) {
-                    StyleSpans<Collection<String>> sem = buildSemanticSpans(a.fromOffset(), spans.length());
-                    if (sem != null) {
-                        spans = spans.overlay(sem, (lex, s) -> s.isEmpty() ? lex : s);
-                    }
+                highlightDirty.applied();
+                highlightLines = r.lines();
+                if (r.spans() != null) {
+                    setStyleSpansPreservingScroll(r.fromOffset(), r.spans());
+                    scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
                 }
-                // Bracket colours go on last so they win on the bracket characters, and REPLACE rather
-                // than union — see BracketColors.buildSpans for why unioning loses under every theme.
-                if (brackets != null) {
-                    StyleSpans<Collection<String>> bc = BracketColors.buildSpans(spans.length(), brackets.marks());
-                    if (bc != null) {
-                        spans = spans.overlay(bc, (lex, b) -> b.isEmpty() ? lex : b);
-                    }
+                if (r.symbolsChanged()) {
+                    symbols = r.symbols();
+                    onSymbolsChanged.run();
                 }
-                setStyleSpansPreservingScroll(a.fromOffset(), spans);
-                scheduleBraceMatch(); // re-apply the match highlight the spans just overwrote
-                // Replace per-line end-states from fromLine onward (the prefix is unchanged).
-                while (lineStates.size() > fromLine) {
-                    lineStates.remove(lineStates.size() - 1);
+                if (semanticActive && semanticStale) {
+                    semanticDirty.include(r.fromOffset(), r.fromOffset() + r.length()); // overlay gone here
+                } else if (overlay != semanticOverlay() && r.spans() != null) {
+                    // Tokens arrived while this pass ran without them: restyle its range with the overlay.
+                    highlightDirty.include(r.fromOffset(), r.fromOffset() + r.length());
+                    applyHighlighting();
                 }
-                lineStates.addAll(a.endStates());
-                // The carried depths splice in lockstep with the end-states, or the next incremental
-                // pass would start colouring from a depth belonging to a different line.
-                if (brackets == null) {
-                    lineDepths.clear(); // feature off: drop stale depths so re-enabling re-scans in full
-                } else {
-                    while (lineDepths.size() > fromLine) {
-                        lineDepths.remove(lineDepths.size() - 1);
-                    }
-                    lineDepths.addAll(brackets.lineEndDepths());
-                }
-                // Symbols: keep those before fromLine (unchanged), append the freshly tokenized ones.
-                List<TextMateHighlighter.Symbol> merged = new java.util.ArrayList<>();
-                for (TextMateHighlighter.Symbol s : symbols) {
-                    if (s.line() < fromLine) {
-                        merged.add(s);
-                    }
-                }
-                merged.addAll(a.symbols());
-                symbols = merged;
-                onSymbolsChanged.run();
             });
         });
-    }
-
-    /**
-     * A sparse {@link StyleSpans} of length {@code windowLen} (so it can {@code overlay} the TextMate
-     * spans starting at {@code windowStart}) carrying each cached semantic token's CSS class; gaps and
-     * out-of-window tokens are empty styles. Returns {@code null} if no token falls in the window.
-     *
-     * <p>Tokens are sorted by position (the decoder preserves wire order), so a single forward cursor
-     * builds the spans; an out-of-order or overlapping token is skipped defensively. Positions map
-     * through the live document (the {@code area}) — the {@code editor} package stays {@code lsp}-free.
-     */
-    private StyleSpans<Collection<String>> buildSemanticSpans(int windowStart, int windowLen) {
-        StyleSpansBuilder<Collection<String>> b = new StyleSpansBuilder<>();
-        int cursor = 0; // offset within the window of the next unstyled char
-        int paragraphs = area.getParagraphs().size();
-        for (SemanticToken t : semanticTokens) {
-            if (t.line() < 0 || t.line() >= paragraphs) {
-                continue; // line no longer exists (shrunk doc); the stale guard usually precludes this
-            }
-            int col = Math.min(t.startChar(), area.getParagraphLength(t.line()));
-            int off = area.getAbsolutePosition(t.line(), col) - windowStart;
-            if (off < cursor || off >= windowLen) {
-                continue; // before the cursor (overlap/out-of-order) or past the window end
-            }
-            int len = Math.min(t.length(), windowLen - off);
-            if (len <= 0) {
-                continue;
-            }
-            if (off > cursor) {
-                b.add(Collections.emptyList(), off - cursor);
-            }
-            b.add(List.of(t.cssClasses().split(" ")), len);
-            cursor = off + len;
-        }
-        if (cursor == 0) {
-            return null; // no token in this window — skip the overlay entirely
-        }
-        if (cursor < windowLen) {
-            b.add(Collections.emptyList(), windowLen - cursor);
-        }
-        return b.create();
     }
 }

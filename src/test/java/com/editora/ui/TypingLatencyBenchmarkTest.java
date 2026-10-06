@@ -164,6 +164,61 @@ class TypingLatencyBenchmarkTest {
         }
     }
 
+    /**
+     * The same guard for <em>line-mode AceJump</em> with the end of the document on screen.
+     *
+     * <p>Its target on a final empty line is the document's length, where there is no character to the
+     * right: the label was placed with {@code getCharacterBoundsOnScreen(length, length)}, so every repaint of
+     * the labels (each scroll, resize or typed prefix while the mode is up) leaked one blink
+     * {@code Timeline}.
+     */
+    @Test
+    void lineModeAceJumpAtEndOfFileDoesNotLeakPulseReceivers() throws Exception {
+        final int REPAINTS = 60;
+        Path file = Files.createTempFile("editora-aceleak-", ".java");
+        Files.writeString(file, sample(200)); // ends with a line break: the last line is empty
+        try {
+            FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                    FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
+            EditorBuffer b = FxTestSupport.callOnFx(
+                    () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
+            assertNotNull(b, "the file opened into a buffer");
+            FxTestSupport.runOnFx(() -> {
+                CodeArea a = b.getFocusedArea();
+                a.requestFocus();
+                a.showParagraphAtBottom(a.getParagraphs().size() - 1);
+            });
+            for (int i = 0; i < 8; i++) {
+                FxTestSupport.runOnFx(() -> {});
+                Thread.sleep(20);
+            }
+            FxTestSupport.runOnFx(b::startAceJumpLine);
+            FxTestSupport.runOnFx(() -> {});
+            Object overlay = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "aceJump"));
+            java.util.Map<String, Integer> targets =
+                    FxTestSupport.callOnFx(() -> FxTestSupport.field(overlay, "labelToOffset"));
+            int length = FxTestSupport.callOnFx(() -> b.getFocusedArea().getLength());
+            assertTrue(
+                    FxTestSupport.callOnFx(() -> targets.containsValue(length)),
+                    "the empty last line is on screen and is a jump target");
+
+            int before = pulseReceiverCount();
+            assertTrue(before >= 0, "pulse-receiver introspection works on this JDK");
+            for (int i = 0; i < REPAINTS; i++) {
+                FxTestSupport.runOnFx(() -> FxTestSupport.invoke(overlay, "redraw"));
+            }
+            double perRepaint = (pulseReceiverCount() - before) / (double) REPAINTS;
+            FxTestSupport.runOnFx(() -> FxTestSupport.invoke(overlay, "exit"));
+            assertTrue(
+                    perRepaint < 0.1,
+                    "repainting AceJump labels must not leak JavaFX pulse receivers, but leaked " + perRepaint
+                            + " per repaint — an empty getCharacterBoundsOnScreen(end, end) range was measured"
+                            + " (see AceJumpOverlay.labelBounds)");
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
     @Test
     @Disabled(
             "measurement harness, not a check; run explicitly with -Dtest=TypingLatencyBenchmarkTest#bareCodeAreaControl")

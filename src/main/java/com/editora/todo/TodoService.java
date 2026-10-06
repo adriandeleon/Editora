@@ -67,21 +67,29 @@ public final class TodoService {
         long g = gen.incrementAndGet();
         Map<Path, String> open = openContents == null ? Map.of() : Map.copyOf(openContents);
         exec.submit(() -> {
-            Outcome outcome = run(patterns, scopeRoot, open);
+            Outcome outcome = run(patterns, scopeRoot, open, () -> g != gen.get());
             if (g == gen.get()) {
                 Platform.runLater(() -> onResult.accept(outcome));
             }
         });
     }
 
-    private Outcome run(List<TodoPatterns.Compiled> patterns, Path scopeRoot, Map<Path, String> open) {
-        if (patterns == null || patterns.isEmpty()) {
+    /**
+     * {@code superseded} ends the scan early: a newer scan is queued behind this one on the single worker, and
+     * walking and reading up to {@link #MAX_FILES_SCANNED} files for a result nobody will see only delays it.
+     */
+    Outcome run(
+            List<TodoPatterns.Compiled> patterns,
+            Path scopeRoot,
+            Map<Path, String> open,
+            java.util.function.BooleanSupplier superseded) {
+        if (superseded.getAsBoolean() || patterns == null || patterns.isEmpty()) {
             return new Outcome(List.of(), 0, 0, false);
         }
         Set<Path> candidates = new LinkedHashSet<>();
         if (scopeRoot != null && Files.isDirectory(scopeRoot)) {
             GitignoreFilter gitignore = respectGitignore ? GitignoreFilter.load(scopeRoot) : GitignoreFilter.NONE;
-            collect(scopeRoot, candidates, gitignore);
+            collect(scopeRoot, candidates, gitignore, superseded);
         }
         candidates.addAll(open.keySet()); // open buffers, even outside the root
 
@@ -89,6 +97,9 @@ public final class TodoService {
         int total = 0;
         boolean truncated = false;
         for (Path file : candidates) {
+            if (superseded.getAsBoolean()) {
+                return new Outcome(List.of(), 0, 0, false); // dropped by the caller's generation check
+            }
             String content = open.get(file);
             if (content == null) {
                 content = readText(file);
@@ -117,8 +128,10 @@ public final class TodoService {
     }
 
     /** Collects the scan candidates through the shared pruned walk (the same one Find in Files uses). */
-    private void collect(Path root, Set<Path> out, GitignoreFilter gitignore) {
-        ProjectWalk.walk(root, new ProjectWalk.Options(MAX_DEPTH, MAX_FILES_SCANNED, gitignore), (file, rel, attrs) -> {
+    private void collect(
+            Path root, Set<Path> out, GitignoreFilter gitignore, java.util.function.BooleanSupplier superseded) {
+        ProjectWalk.Options options = new ProjectWalk.Options(MAX_DEPTH, MAX_FILES_SCANNED, gitignore, superseded);
+        ProjectWalk.walk(root, options, (file, rel, attrs) -> {
             if (!attrs.isRegularFile() || attrs.size() > MAX_FILE_BYTES) {
                 return ProjectWalk.Verdict.SKIP;
             }

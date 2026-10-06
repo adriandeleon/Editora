@@ -281,4 +281,91 @@ class HistoryRetentionTest {
                 HistoryRetention.evicted(before, after).get("p").get("/f"));
         assertTrue(HistoryRetention.evicted(before, before).isEmpty());
     }
+
+    // --- the budget's eviction order, pinned against the original one-scan-per-eviction algorithm ---------
+
+    /** The algorithm as it was: rescan every file for the globally oldest evictable row, once per eviction. */
+    private static Map<String, List<HistoryRevision>> referenceBudget(
+            Map<String, List<HistoryRevision>> bucket, long maxTotalBytes) {
+        Map<String, List<HistoryRevision>> out = new LinkedHashMap<>();
+        long total = 0;
+        for (Map.Entry<String, List<HistoryRevision>> e : bucket.entrySet()) {
+            List<HistoryRevision> copy = new java.util.ArrayList<>(e.getValue());
+            out.put(e.getKey(), copy);
+            for (HistoryRevision r : copy) {
+                total += r.sizeBytes();
+            }
+        }
+        while (maxTotalBytes > 0 && total > maxTotalBytes) {
+            String victimFile = null;
+            int victimIndex = -1;
+            long victimTs = Long.MAX_VALUE;
+            for (Map.Entry<String, List<HistoryRevision>> e : out.entrySet()) {
+                List<HistoryRevision> list = e.getValue();
+                if (list.size() <= 1) {
+                    continue;
+                }
+                int idx = -1;
+                for (int i = list.size() - 1; i >= 1; i--) {
+                    if (!HistoryRetention.isProtected(list.get(i))) {
+                        idx = i;
+                        break;
+                    }
+                }
+                if (idx >= 0 && list.get(idx).timestamp() < victimTs) {
+                    victimTs = list.get(idx).timestamp();
+                    victimFile = e.getKey();
+                    victimIndex = idx;
+                }
+            }
+            if (victimFile == null) {
+                break;
+            }
+            total -= out.get(victimFile).remove(victimIndex).sizeBytes();
+        }
+        return out;
+    }
+
+    @Test
+    void theQueuedEvictionEvictsExactlyWhatTheRescanningOneDid() {
+        java.util.Random random = new java.util.Random(20261005);
+        for (int round = 0; round < 300; round++) {
+            Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+            long total = 0;
+            int files = 1 + random.nextInt(8);
+            for (int f = 0; f < files; f++) {
+                List<HistoryRevision> list = new java.util.ArrayList<>();
+                int revisions = 1 + random.nextInt(7);
+                for (int r = 0; r < revisions; r++) {
+                    long ts = random.nextInt(12); // few distinct values: ties between files are common
+                    long size = 1 + random.nextInt(50);
+                    String sha = "f" + f + "r" + r;
+                    int kind = random.nextInt(6);
+                    list.add(
+                            kind == 0
+                                    ? labelled(ts, size, sha, "keep")
+                                    : kind == 1 ? deleted(ts, size, sha) : rev(ts, size, sha));
+                    total += size;
+                }
+                bucket.put("/p/file" + f, list);
+            }
+            long budget = random.nextInt(4) == 0 ? 1 : Math.max(1, total * random.nextInt(100) / 100);
+
+            assertEquals(
+                    referenceBudget(bucket, budget),
+                    HistoryRetention.enforceProjectBudget(bucket, budget),
+                    "round " + round + " budget " + budget + " of " + total);
+        }
+    }
+
+    @Test
+    void totalBytesIsTheSumTheBudgetIsCheckedAgainst() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        bucket.put("/a", List.of(rev(1, 100, "a1"), rev(2, 50, "a2")));
+        bucket.put("/b", List.of(rev(3, 7, "b1")));
+        bucket.put("/c", List.of());
+        assertEquals(157, HistoryRetention.totalBytes(bucket));
+        assertEquals(0, HistoryRetention.totalBytes(Map.of()));
+        assertEquals(0, HistoryRetention.totalBytes(null));
+    }
 }

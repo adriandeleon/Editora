@@ -15,7 +15,6 @@ import java.nio.file.Path;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -84,7 +83,22 @@ public final class PreviewImageLoader {
                     return size() > MAX_CACHED_IMAGES;
                 }
             });
-    private static final Map<String, Long> FAILED = new ConcurrentHashMap<>();
+    /** Most failed URLs remembered; the map only spares a retry within the failure TTL, so old ones may go. */
+    static final int MAX_FAILED = 256;
+
+    /** When each URL last failed. Bounded (LRU): it grew by one entry per broken link ever previewed. */
+    private static final Map<String, Long> FAILED = failureMemory(MAX_FAILED);
+
+    /** A synchronized, access-ordered map that forgets its least recently used entry beyond {@code max}. */
+    static Map<String, Long> failureMemory(int max) {
+        return java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<String, Long>(32, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(java.util.Map.Entry<String, Long> eldest) {
+                return size() > max;
+            }
+        });
+    }
+
     private static final ExecutorService EXEC = Executors.newFixedThreadPool(3, r -> {
         Thread t = new Thread(r, "md-image-loader");
         t.setDaemon(true);

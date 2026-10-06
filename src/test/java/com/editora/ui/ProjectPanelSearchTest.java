@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -94,5 +95,39 @@ class ProjectPanelSearchTest {
         assertTrue(containsName(ProjectPanel.search(root, "app", false, none), "app.log"), "no filter → *.log kept");
         assertTrue(
                 containsName(ProjectPanel.search(root, "main", false, none), "Main.class"), "no filter → target kept");
+    }
+
+    @Test
+    void aNestedGitignoreHidesItsPackagesDependenciesFromTheFilter(@TempDir Path root) throws Exception {
+        Files.createDirectories(root.resolve("packages/a/node_modules/dep"));
+        Files.writeString(root.resolve("packages/a/node_modules/dep/widget.js"), "x");
+        Files.createDirectories(root.resolve("packages/a/src"));
+        Files.writeString(root.resolve("packages/a/src/widget.js"), "x");
+        Files.writeString(root.resolve("packages/a/.gitignore"), "node_modules\n");
+
+        List<Path> hits = ProjectPanel.search(root, "widget", false, com.editora.search.GitignoreFilter.load(root));
+
+        assertEquals(List.of(root.resolve("packages/a/src/widget.js")), hits);
+    }
+
+    @Test
+    void aSupersededFilterWalkStopsInsteadOfFinishing(@TempDir Path root) throws Exception {
+        for (int d = 0; d < 30; d++) {
+            Path dir = Files.createDirectories(root.resolve("d" + d));
+            Files.writeString(dir.resolve("needle.txt"), "x");
+        }
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+        var none = com.editora.search.GitignoreFilter.NONE;
+        assertEquals(
+                30,
+                ProjectPanel.search(root, "needle", false, none, () -> false).size(),
+                "the control");
+
+        // Superseded before it started (it sat in the queue behind another walk): nothing is listed at all.
+        assertEquals(List.of(), ProjectPanel.search(root, "needle", false, none, () -> true));
+        // Superseded part-way: it gives up at the next directory rather than visiting the other 25.
+        List<Path> partial = ProjectPanel.search(root, "needle", false, none, () -> asked.incrementAndGet() > 5);
+        assertEquals(List.of(), partial);
+        assertEquals(6, asked.get());
     }
 }

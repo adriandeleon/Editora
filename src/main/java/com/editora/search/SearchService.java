@@ -277,9 +277,14 @@ public final class SearchService {
         List<String> cmd = new ArrayList<>(rgCommand);
         cmd.addAll(RipgrepArgs.build(query, include, exclude, respectGitignore, MAX_FILE_BYTES)); // off ⇒ --no-ignore
         cmd.add(".");
+        // Parsed as it arrives, so rg is stopped at the line that fills the match budget instead of searching
+        // the rest of the tree for output nobody reads.
+        RipgrepOutput.Collector collector = new RipgrepOutput.Collector(
+                MAX_MATCHES + 1,
+                path -> !openKeys.contains(root.resolve(path).toAbsolutePath().normalize()));
         ProcessRunner.Result r;
         try {
-            r = ProcessRunner.run(root, RG_TIMEOUT, cmd);
+            r = ProcessRunner.runLines(root, RG_TIMEOUT, cmd, collector::accept);
         } catch (RuntimeException e) {
             return null;
         }
@@ -288,16 +293,16 @@ public final class SearchService {
         // error such as one unreadable directory, where rg still searched everything else and closed its
         // output with the summary event. That result is kept and flagged partial; discarding it re-ran every
         // search in the walker for the sake of one locked folder.
-        boolean partial = r.exit() == 2 && r.out() != null && r.out().lastIndexOf("\"type\":\"summary\"") >= 0;
-        if (r.exit() != 0 && r.exit() != 1 && !partial) {
+        // A run stopped here on purpose (budget full, or output past the capture limit) was killed, so its
+        // exit status says nothing; what it had produced until then is the result, as it always was.
+        boolean stoppedEarly = collector.full() || r.outTruncated();
+        boolean partial = r.exit() == 2 && collector.sawSummary();
+        if (!stoppedEarly && r.exit() != 0 && r.exit() != 1 && !partial) {
             return null;
         }
         truncated[0] = r.outTruncated() || partial;
         List<FileResult> out = new ArrayList<>();
-        for (FileResult fr : RipgrepOutput.parse(
-                r.out(),
-                MAX_MATCHES + 1,
-                path -> !openKeys.contains(root.resolve(path).toAbsolutePath().normalize()))) {
+        for (FileResult fr : collector.results()) {
             out.add(new FileResult(root.resolve(fr.file().toString()).normalize(), fr.matches()));
         }
         if (!sameInBothEngines(query)) {

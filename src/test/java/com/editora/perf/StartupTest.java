@@ -35,6 +35,25 @@ class StartupTest {
     }
 
     @Test
+    void reportsSessionRestoredWhetherItLandsBeforeOrAfterTheReport() {
+        // No session to restore: the mark precedes first paint and is part of the report.
+        String early = Startup.format(List.of(
+                new Startup.Mark(Startup.WINDOW_SHOWN, 500),
+                new Startup.Mark(Startup.SESSION_RESTORED, 510),
+                new Startup.Mark(Startup.FIRST_PAINT, 560)));
+        assertTrue(early.contains("session-restored    510  (+10)"), early);
+        assertTrue(early.contains("TIME-TO-SESSION-RESTORED 510 ms"), early);
+        assertTrue(early.contains("TIME-TO-FIRST-PAINT 560 ms"), early);
+
+        // A real session finishes restoring after the report was printed at first paint: a late line.
+        String late = Startup.formatLate(
+                new Startup.Mark(Startup.FIRST_PAINT, 760), new Startup.Mark(Startup.SESSION_RESTORED, 1900));
+        assertTrue(late.contains("session-restored   1900  (+1140)"), late);
+        assertTrue(late.contains("TIME-TO-SESSION-RESTORED 1900 ms"), late);
+        assertFalse(Startup.formatLate(null, new Startup.Mark("other", 5)).contains("TIME-TO"));
+    }
+
+    @Test
     void handlesAnEmptyRun() {
         // No EDITORA_PERF_T0 in the test JVM, so the header flags the origin as approximate.
         assertTrue(Startup.format(List.of()).startsWith("[perf] startup (ms since process start"));

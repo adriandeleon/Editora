@@ -337,12 +337,25 @@ final class LanguageServerSession implements LanguageClient {
             AsyncPipeWriter out = new AsyncPipeWriter(
                     process.getOutputStream(), "lsp-writer-" + command.get(0), this::onInputStalled);
             writer = out;
-            Launcher<LanguageServer> launcher = new Launcher.Builder<LanguageServer>()
-                    .setLocalService(this)
+            // The builder keeps its JSON handler to itself; the deferred document-sync encoding needs the
+            // same one LSP4J encodes every other message with.
+            var json = new java.util.concurrent.atomic.AtomicReference<
+                    org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler>();
+            Launcher<LanguageServer> launcher = new Launcher.Builder<LanguageServer>() {
+                @Override
+                protected org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler createJsonHandler() {
+                    json.set(super.createJsonHandler());
+                    return json.get();
+                }
+            }.setLocalService(this)
                     .setRemoteInterface(JdtLanguageServer.class)
                     .setInput(process.getInputStream())
                     .setOutput(out)
                     .setExecutorService(executor)
+                    // LSP4J wraps both directions with this; only its stream writer is the outgoing end.
+                    .wrapMessages(consumer -> consumer instanceof org.eclipse.lsp4j.jsonrpc.json.StreamMessageConsumer
+                            ? new DeferredSyncConsumer(consumer, out, json::get)
+                            : consumer)
                     .create();
             this.launcher = launcher;
             server = launcher.getRemoteProxy();
@@ -1240,7 +1253,8 @@ final class LanguageServerSession implements LanguageClient {
         context.setIsRetrigger(retrigger);
         context.setActiveSignatureHelp(activeHelp);
         params.setContext(context);
-        return bounded(server.getTextDocumentService().signatureHelp(params)).exceptionally(t -> null);
+        var request = bounded(server.getTextDocumentService().signatureHelp(params));
+        return cancelling(request, request.exceptionally(t -> null));
     }
 
     /** Occurrences of the symbol at a position ({@code textDocument/documentHighlight}) → highlights with
@@ -1250,8 +1264,8 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.DocumentHighlightParams(new TextDocumentIdentifier(uri), pos);
-        return bounded(server.getTextDocumentService().documentHighlight(params))
-                .exceptionally(t -> List.of());
+        var request = bounded(server.getTextDocumentService().documentHighlight(params));
+        return cancelling(request, request.exceptionally(t -> List.of()));
     }
 
     /** Validates a rename at a position ({@code textDocument/prepareRename}) → the symbol range and/or
@@ -1300,9 +1314,11 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(List.of());
         }
         var params = new org.eclipse.lsp4j.InlayHintParams(new TextDocumentIdentifier(uri), range);
-        return bounded(server.getTextDocumentService().inlayHint(params))
-                .<List<org.eclipse.lsp4j.InlayHint>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
-                .exceptionally(t -> List.of());
+        var request = bounded(server.getTextDocumentService().inlayHint(params));
+        return cancelling(
+                request,
+                request.<List<org.eclipse.lsp4j.InlayHint>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                        .exceptionally(t -> List.of()));
     }
 
     /** Call-hierarchy anchor at a position ({@code textDocument/prepareCallHierarchy}) → items or empty. */
@@ -1492,10 +1508,12 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(List.of());
         }
-        return bounded(server.getTextDocumentService()
-                        .foldingRange(new org.eclipse.lsp4j.FoldingRangeRequestParams(new TextDocumentIdentifier(uri))))
-                .<List<org.eclipse.lsp4j.FoldingRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
-                .exceptionally(t -> List.of());
+        var request = bounded(server.getTextDocumentService()
+                .foldingRange(new org.eclipse.lsp4j.FoldingRangeRequestParams(new TextDocumentIdentifier(uri))));
+        return cancelling(
+                request,
+                request.<List<org.eclipse.lsp4j.FoldingRange>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
+                        .exceptionally(t -> List.of()));
     }
 
     /** The nested selection-range chain at {@code positions} ({@code textDocument/selectionRange}, #739). */
@@ -1540,9 +1558,9 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(java.util.List.of());
         }
-        return bounded(server.getTextDocumentService()
-                        .documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(new TextDocumentIdentifier(uri))))
-                .exceptionally(t -> java.util.List.of());
+        var request = bounded(server.getTextDocumentService()
+                .documentSymbol(new org.eclipse.lsp4j.DocumentSymbolParams(new TextDocumentIdentifier(uri))));
+        return cancelling(request, request.exceptionally(t -> java.util.List.of()));
     }
 
     /** Pull diagnostics ({@code textDocument/diagnostic}) for {@code uri}; null when the session isn't ready. */
@@ -1559,10 +1577,10 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        return bounded(server.getTextDocumentService()
-                        .semanticTokensRange(new org.eclipse.lsp4j.SemanticTokensRangeParams(
-                                new TextDocumentIdentifier(uri), range)))
-                .exceptionally(t -> null);
+        var request = bounded(server.getTextDocumentService()
+                .semanticTokensRange(
+                        new org.eclipse.lsp4j.SemanticTokensRangeParams(new TextDocumentIdentifier(uri), range)));
+        return cancelling(request, request.exceptionally(t -> null));
     }
 
     /** Whole-document semantic-token <b>delta</b> ({@code semanticTokens/full/delta}) against a previous
@@ -1575,8 +1593,8 @@ final class LanguageServerSession implements LanguageClient {
             return CompletableFuture.completedFuture(null);
         }
         var params = new org.eclipse.lsp4j.SemanticTokensDeltaParams(new TextDocumentIdentifier(uri), previousResultId);
-        return bounded(server.getTextDocumentService().semanticTokensFullDelta(params))
-                .exceptionally(t -> null);
+        var request = bounded(server.getTextDocumentService().semanticTokensFullDelta(params));
+        return cancelling(request, request.exceptionally(t -> null));
     }
 
     /** Whole-document semantic tokens ({@code textDocument/semanticTokens/full}), for servers that don't
@@ -1585,14 +1603,28 @@ final class LanguageServerSession implements LanguageClient {
         if (!ready()) {
             return CompletableFuture.completedFuture(null);
         }
-        return bounded(server.getTextDocumentService()
-                        .semanticTokensFull(
-                                new org.eclipse.lsp4j.SemanticTokensParams(new TextDocumentIdentifier(uri))))
-                .exceptionally(t -> null);
+        var request = bounded(server.getTextDocumentService()
+                .semanticTokensFull(new org.eclipse.lsp4j.SemanticTokensParams(new TextDocumentIdentifier(uri))));
+        return cancelling(request, request.exceptionally(t -> null));
     }
 
     private boolean ready() {
         return initialized && server != null && !disposed;
+    }
+
+    /**
+     * {@code result}, with its cancellation passed on to {@code request}. A dependent stage does not cancel
+     * the future it was derived from, and it is the JSON-RPC future's {@code cancel} that sends
+     * {@code $/cancelRequest} — so without this a caller that abandons a request (it has a newer one) leaves
+     * the server computing an answer nobody will read.
+     */
+    private static <T> CompletableFuture<T> cancelling(CompletableFuture<?> request, CompletableFuture<T> result) {
+        result.whenComplete((value, error) -> {
+            if (result.isCancelled()) {
+                request.cancel(true);
+            }
+        });
+        return result;
     }
 
     /**

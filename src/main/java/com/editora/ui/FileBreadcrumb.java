@@ -1,16 +1,13 @@
 package com.editora.ui;
 
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
-import java.util.stream.Stream;
 
 import javafx.application.Platform;
 import javafx.geometry.Side;
@@ -225,23 +222,37 @@ public class FileBreadcrumb extends StackPane {
         return crumbLabels.getOrDefault(p, BreadcrumbTrail.label(p));
     }
 
+    /**
+     * Opens the dropdown for a crumb. What it lists is read on a worker — a {@code readdir} plus a
+     * {@code stat} per entry, which on a large or slow folder used to hold the FX thread from the click
+     * until the menu appeared — and the menu is shown when the read lands, unless another crumb was clicked
+     * meanwhile.
+     */
     private void showCrumbMenu(Path crumbPath, Node anchor) {
-        boolean isDir = Files.isDirectory(crumbPath);
-        Path dir = isDir ? crumbPath : crumbPath.getParent();
-        if (dir == null) {
-            return;
-        }
-        List<Path> dirs = new ArrayList<>();
-        List<Path> files = new ArrayList<>();
-        try (Stream<Path> entries = Files.list(dir)) {
-            entries.forEach(p -> (Files.isDirectory(p) ? dirs : files).add(p));
-        } catch (IOException | RuntimeException ex) {
-            return; // unreadable directory — nothing to show
-        }
-        Comparator<Path> byName = Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
-        dirs.sort(byName);
-        files.sort(byName);
+        long generation = ++menuGeneration;
+        java.util.function.BiFunction<Path, Boolean, DirectoryListing> reader = directoryReader;
+        Thread.startVirtualThread(() -> {
+            boolean isDir = Files.isDirectory(crumbPath);
+            Path dir = isDir ? crumbPath : crumbPath.getParent();
+            DirectoryListing listing = dir == null ? DirectoryListing.UNREADABLE : reader.apply(dir, false);
+            Platform.runLater(() -> {
+                if (generation == menuGeneration && listing.readable()) {
+                    showCrumbMenu(crumbPath, isDir, listing, anchor);
+                } // else: superseded, or an unreadable directory — nothing to show
+            });
+        });
+    }
 
+    private long menuGeneration;
+
+    /** Reads a directory off the FX thread; replaceable so a test can hold or count the read. */
+    volatile java.util.function.BiFunction<Path, Boolean, DirectoryListing> directoryReader = DirectoryListing::read;
+
+    /** The menu most recently shown, for tests. */
+    ContextMenu lastMenuForTest;
+
+    private void showCrumbMenu(Path crumbPath, boolean isDir, DirectoryListing listing, Node anchor) {
+        List<Path> entries = listing.entries(); // folders first, then files — one sequence for paging
         ContextMenu menu = new ContextMenu();
         // Reveal / Open Terminal act on this crumb (local files only — meaningless over SFTP).
         if ((onReveal != null || onOpenTerminal != null) && Vfs.isLocal(crumbPath)) {
@@ -255,30 +266,41 @@ public class FileBreadcrumb extends StackPane {
                 terminal.setOnAction(e -> onOpenTerminal.accept(crumbPath, isDir));
                 menu.getItems().add(terminal);
             }
-            if (!dirs.isEmpty() || !files.isEmpty()) {
+            if (!entries.isEmpty()) {
                 menu.getItems().add(new SeparatorMenuItem()); // divider before the folder listing
             }
         }
-        // Folders first, then files — one sequence, so paging can't split at an awkward boundary.
-        List<Path> entries = new ArrayList<>(dirs);
-        entries.addAll(files);
         List<int[]> pages = BreadcrumbPages.pages(entries.size(), BreadcrumbPages.PAGE_SIZE);
         if (pages.isEmpty()) {
             // Short listing: flat, exactly as before.
             for (Path p : entries) {
-                menu.getItems().add(entryItem(p, anchor));
+                menu.getItems().add(entryItem(p, listing.isDirectory(p), anchor));
             }
         } else {
             for (int[] page : pages) {
                 javafx.scene.control.Menu sub = new javafx.scene.control.Menu(BreadcrumbPages.label(
                         entries.get(page[0]).getFileName().toString(),
                         entries.get(page[1] - 1).getFileName().toString()));
-                for (int i = page[0]; i < page[1]; i++) {
-                    sub.getItems().add(entryItem(entries.get(i), anchor));
-                }
+                // A page's rows (an item and an icon each) are built when the page is opened. Built up
+                // front, a folder of thousands of files paid for every row of every page to show a menu
+                // of which the user opens one. The placeholder is what makes the submenu openable.
+                sub.getItems().add(new MenuItem(""));
+                int from = page[0];
+                int to = page[1];
+                sub.setOnShowing(e -> {
+                    if (sub.getProperties().putIfAbsent("editora.pageBuilt", Boolean.TRUE) != null) {
+                        return;
+                    }
+                    List<MenuItem> rows = new ArrayList<>(to - from);
+                    for (int i = from; i < to; i++) {
+                        rows.add(entryItem(entries.get(i), listing.isDirectory(entries.get(i)), anchor));
+                    }
+                    sub.getItems().setAll(rows);
+                });
                 menu.getItems().add(sub);
             }
         }
+        lastMenuForTest = menu;
         if (!menu.getItems().isEmpty()) {
             // The bar sits under the editor, so the menu drops upward from the crumb.
             menu.show(anchor, Side.TOP, 0, 0);
@@ -289,9 +311,9 @@ public class FileBreadcrumb extends StackPane {
      * One listing row: a folder drills in, a file opens. Icons match the Project tool window
      * ({@link FileIcons#boxed} folder + per-type file glyphs).
      */
-    private MenuItem entryItem(Path p, Node anchor) {
+    private MenuItem entryItem(Path p, boolean directory, Node anchor) {
         String name = p.getFileName().toString();
-        if (Files.isDirectory(p)) {
+        if (directory) {
             MenuItem mi = new MenuItem(name, FileIcons.boxed(Icons.project()));
             mi.setOnAction(e -> navigateInto(p, anchor));
             return mi;

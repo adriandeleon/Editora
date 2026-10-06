@@ -76,8 +76,27 @@ final class FileWorkflowCoordinator {
         }
     }
 
+    /**
+     * What a physical commit wrote. The bytes themselves are not kept — one encoded copy of every saved open
+     * file, used only to ask "is this still what we wrote?" — but their SHA-256 and length, which answer the
+     * same question (as {@link EditorBuffer.DiskSnapshot} does for a load).
+     */
     private record CommittedSave(
-            long sequence, Path target, String content, byte[] bytes, DiskWrite disk, String lineEnding) {}
+            long sequence,
+            Path target,
+            String content,
+            String fingerprint,
+            long length,
+            DiskWrite disk,
+            String lineEnding) {
+
+        /** Whether {@code bytes} are exactly what this commit wrote. */
+        boolean wrote(byte[] bytes) {
+            return bytes != null
+                    && bytes.length == length
+                    && fingerprint.equals(FileWorkflowCoordinator.fingerprint(bytes));
+        }
+    }
 
     private record RemoteWritePlan(boolean proceed, byte[] expectedBytes, boolean expectedAbsent) {}
 
@@ -355,7 +374,7 @@ final class FileWorkflowCoordinator {
         Tab tab = host.addBuffer(buffer, true, false);
         fileLoadExecutor.execute(() -> {
             try {
-                PreparedLoad load = prepareLoad(file, classifyBinary);
+                PreparedLoad load = prepareLoad(file, classifyBinary).preparedFor(buffer);
                 Platform.runLater(() -> ifWindowOpen(() -> host.finishAsyncOpen(tab, buffer, load)));
             } catch (IOException | RuntimeException e) {
                 Platform.runLater(() -> ifWindowOpen(() -> host.failAsyncOpen(tab, buffer, file, e)));
@@ -546,17 +565,21 @@ final class FileWorkflowCoordinator {
         // only means "a pulse is beginning"; it's the second tick that proves the pulse in between — the one
         // that laid out and painted this content — completed. Accurate to about one frame (~16 ms), which is
         // the honest resolution of "when did the user first see it" without hooking Prism internals.
-        new javafx.animation.AnimationTimer() {
-            private int ticks;
+        WindowSessionCoordinator.afterNextPaint(
+                () -> com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT));
+    }
 
-            @Override
-            public void handle(long now) {
-                if (++ticks >= 2) {
-                    stop();
-                    com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT);
-                }
-            }
-        }.start();
+    /**
+     * The first-paint mark for a launch that loads no file: the window's own first frame. Same one-shot
+     * timer as {@link #notePerfContentLoaded}, so whichever of the two arms first is the one that reports.
+     */
+    void notePerfWindowShown() {
+        if (!com.editora.perf.Startup.enabled() || perfPaintTimerStarted) {
+            return;
+        }
+        perfPaintTimerStarted = true;
+        WindowSessionCoordinator.afterNextPaint(
+                () -> com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT));
     }
 
     /** True once the first-paint timer has been armed, so it arms for one buffer only. */
@@ -581,7 +604,87 @@ final class FileWorkflowCoordinator {
             long logOffset,
             boolean tail,
             byte[] sourceBytes,
-            String declaredCharset) {
+            String declaredCharset,
+            String fingerprint,
+            com.editora.editor.InitialDocument document) {
+
+        /**
+         * Hashes the file's bytes where the load is prepared — the read worker — so the SHA-256 of a large
+         * file is never computed on the FX thread when the prepared document is applied.
+         */
+        PreparedLoad(
+                Path file,
+                String content,
+                long size,
+                long mtime,
+                int lines,
+                int maxLineLength,
+                String charset,
+                com.editora.editorconfig.EditorConfigProperties editorConfig,
+                boolean binary,
+                boolean large,
+                boolean heavy,
+                boolean longLine,
+                boolean truncated,
+                boolean log,
+                long logOffset,
+                boolean tail,
+                byte[] sourceBytes,
+                String declaredCharset) {
+            this(
+                    file,
+                    content,
+                    size,
+                    mtime,
+                    lines,
+                    maxLineLength,
+                    charset,
+                    editorConfig,
+                    binary,
+                    large,
+                    heavy,
+                    longLine,
+                    truncated,
+                    log,
+                    logOffset,
+                    tail,
+                    sourceBytes,
+                    declaredCharset,
+                    binary ? null : FileWorkflowCoordinator.fingerprint(sourceBytes), // a hex view compares nothing
+                    null);
+        }
+
+        /**
+         * This load with its paragraphs built for {@code buffer} — still on the read worker, so the FX thread
+         * is left with the document swap alone. Only for a buffer that is an empty shell: the document is
+         * built with the area's initial styles, which is what an insertion into an empty area uses.
+         */
+        PreparedLoad preparedFor(EditorBuffer buffer) {
+            if (content == null || document != null) {
+                return this;
+            }
+            return new PreparedLoad(
+                    file,
+                    content,
+                    size,
+                    mtime,
+                    lines,
+                    maxLineLength,
+                    charset,
+                    editorConfig,
+                    binary,
+                    large,
+                    heavy,
+                    longLine,
+                    truncated,
+                    log,
+                    logOffset,
+                    tail,
+                    sourceBytes,
+                    declaredCharset,
+                    fingerprint,
+                    buffer.prepareInitialContent(content, longLine));
+        }
 
         /** The declared charset could not decode the file, so {@link #charset} is a lossless stand-in. */
         boolean charsetAssumed() {
@@ -609,6 +712,14 @@ final class FileWorkflowCoordinator {
     }
 
     PreparedLoad prepareLoad(Path file, boolean sniffBinary) throws IOException {
+        return prepareLoad(file, sniffBinary, true);
+    }
+
+    /**
+     * @param forDocument the result becomes an editor document, so it must fit the free heap (see
+     *     {@link #heapCap}); false for a read that only compares the file with what a save is about to replace
+     */
+    private PreparedLoad prepareLoad(Path file, boolean sniffBinary, boolean forDocument) throws IOException {
         // One stat call for both size + mtime instead of two separate syscalls per file load.
         long size;
         long mtime;
@@ -625,7 +736,10 @@ final class FileWorkflowCoordinator {
                 host.editorSettings().editorConfigEnabled() && com.editora.vfs.Vfs.isLocal(file)
                         ? com.editora.editorconfig.EditorConfig.resolveFor(file)
                         : com.editora.editorconfig.EditorConfigProperties.EMPTY;
-        if (size >= EditorBuffer.HUGE_FILE_BYTES) {
+        long cap = forDocument && size >= EditorBuffer.LARGE_FILE_BYTES
+                ? heapCap(size)
+                : Math.min(size, EditorBuffer.HUGE_FILE_BYTES);
+        if (size >= EditorBuffer.HUGE_FILE_BYTES || cap < size) {
             boolean binary = sniffBinary && looksBinaryFile(file);
             if (binary) {
                 return new PreparedLoad(
@@ -650,8 +764,7 @@ final class FileWorkflowCoordinator {
             }
             if (isLog) {
                 // A huge log opens at its END (the tail is what matters) instead of the first chunk.
-                com.editora.logviewer.LogTail.Tail tail =
-                        com.editora.logviewer.LogTail.readTail(file, EditorBuffer.HUGE_FILE_BYTES);
+                com.editora.logviewer.LogTail.Tail tail = com.editora.logviewer.LogTail.readTail(file, cap);
                 TextStats stats = textStats(tail.text());
                 return new PreparedLoad(
                         file,
@@ -673,7 +786,7 @@ final class FileWorkflowCoordinator {
                         null,
                         null);
             }
-            String content = readCapped(file, (int) EditorBuffer.HUGE_FILE_BYTES);
+            String content = readCapped(file, (int) cap);
             TextStats stats = textStats(content);
             return new PreparedLoad(
                     file,
@@ -757,9 +870,33 @@ final class FileWorkflowCoordinator {
                 decoded.declared());
     }
 
+    /** {max, used} heap bytes; replaced by tests to stand in for a heap that is nearly full. */
+    volatile java.util.function.Supplier<long[]> heapUsage = () -> {
+        Runtime runtime = Runtime.getRuntime();
+        return new long[] {runtime.maxMemory(), runtime.totalMemory() - runtime.freeMemory()};
+    };
+
+    /**
+     * How many bytes of a large file to load (see {@link LoadHeapGuard}): the whole file, capped at the
+     * huge-file limit, when its document fits the free heap — else only what fits, which the caller opens
+     * read-only like any other partial load.
+     */
+    private long heapCap(long size) {
+        long wanted = Math.min(size, EditorBuffer.HUGE_FILE_BYTES);
+        long[] heap = heapUsage.get();
+        if (LoadHeapGuard.fits(wanted, heap[0], heap[1])) {
+            return wanted;
+        }
+        // "Used" counts garbage not collected yet (the previous large load leaves plenty), so collect once
+        // before concluding that the file does not fit. Rare, and on the read worker.
+        System.gc();
+        heap = heapUsage.get();
+        return LoadHeapGuard.cap(wanted, heap[0], heap[1]);
+    }
+
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
-        buffer.setDiskSnapshot(load.mtime(), load.size(), fingerprint(load.sourceBytes()));
+        buffer.setDiskSnapshot(load.mtime(), load.size(), load.fingerprint());
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
         buffer.setDetectedCharset(load.charset(), load.charsetAssumed());
@@ -784,7 +921,11 @@ final class FileWorkflowCoordinator {
             // Also back to editable: a reload of a file that is no longer huge used to stay read-only.
             buffer.setReadOnly(load.truncated());
         }
-        buffer.setInitialContent(load.content(), load.longLine());
+        if (load.document() != null) {
+            buffer.setInitialContent(load.document());
+        } else {
+            buffer.setInitialContent(load.content(), load.longLine());
+        }
         if (load.log()) {
             host.logViewer().recordLoadOffset(buffer, load.logOffset());
         }
@@ -802,7 +943,9 @@ final class FileWorkflowCoordinator {
                     com.editora.editorconfig.EditorConfigCharset.displayName(load.declaredCharset()),
                     com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()));
         }
-        if (com.editora.editor.LineEndings.mixed(load.content())) {
+        if (load.document() != null
+                ? load.document().mixedLineEndings()
+                : com.editora.editor.LineEndings.mixed(load.content())) {
             return tr("status.mixedLineEndings", load.file().getFileName(), buffer.getLineEnding());
         }
         if (load.large()) {
@@ -869,39 +1012,79 @@ final class FileWorkflowCoordinator {
         if (checkingExternalChanges || host.editorArea() == null) {
             return;
         }
-        checkingExternalChanges = true;
+        Tab tab = host.editorArea().selectedTab();
+        EditorBuffer buffer = host.bufferOf(tab);
+        if (buffer == null || buffer.getPath() == null) {
+            return;
+        }
+        Path file = buffer.getPath();
+        if (com.editora.vfs.Vfs.isRemote(file)) {
+            return; // remote (SFTP) mtime polling would be a network call per focus — skipped for now
+        }
+        if (!verifyingExternalChange.add(buffer)) {
+            return; // a check of this buffer is already on its way back
+        }
+        // Everything below asks the disk: a stat per ancestor directory for .editorconfig, then the file's
+        // own existence, time and size. On a cold network or FUSE mount each of those can take as long as it
+        // likes, and this runs on every tab switch and focus gain — so it is asked off the FX thread, and
+        // the answer applied only if the buffer is still the one it was asked about.
+        boolean resolveConfig = host.editorSettings().editorConfigEnabled();
+        Runnable settle = () -> verifyingExternalChange.remove(buffer);
         try {
-            Tab tab = host.editorArea().selectedTab();
-            EditorBuffer buffer = host.bufferOf(tab);
-            if (buffer == null || buffer.getPath() == null) {
-                return;
-            }
-            Path file = buffer.getPath();
-            if (com.editora.vfs.Vfs.isRemote(file)) {
-                return; // remote (SFTP) mtime polling would be a network call per focus — skipped for now
-            }
-            if (!loadingBuffers.contains(buffer)) {
-                // A changed .editorconfig (edited here, or by a pull / branch switch) reaches the open file.
-                host.editorSettings().refreshEditorConfig(buffer);
-            }
-            if (!Files.exists(file)) {
-                return; // deleted/renamed externally — keep what's open (no prompt)
-            }
-            long mtime = lastModifiedMillis(file);
-            long size = fileSize(file);
-            if (!buffer.diskChangedFrom(mtime, size)) {
-                return;
-            }
-            String loaded = buffer.diskSnapshot().fingerprint();
-            if (loaded == null) {
-                promptExternalChange(tab, buffer, mtime, size);
-            } else if (verifyingExternalChange.add(buffer)) {
-                verifyExternalChange(tab, buffer, file, loaded);
-            }
-        } finally {
-            checkingExternalChanges = false;
+            fileLoadExecutor.execute(() -> {
+                Runnable hook = beforeExternalStatForTest;
+                if (hook != null) {
+                    hook.run();
+                }
+                com.editora.editorconfig.EditorConfigProperties rules = resolveConfig
+                        ? com.editora.editorconfig.EditorConfig.resolveFor(file)
+                        : com.editora.editorconfig.EditorConfigProperties.EMPTY;
+                boolean exists = Files.exists(file);
+                long mtime = exists ? lastModifiedMillis(file) : 0;
+                long size = exists ? fileSize(file) : 0;
+                Platform.runLater(() -> ifWindowOpen(() -> {
+                    boolean verifying = false;
+                    try {
+                        if (buffer.isDisposed()
+                                || host.tabForBuffer(buffer) != tab
+                                || buffer.getPath() == null
+                                || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), file)) {
+                            return; // closed, renamed or saved elsewhere while the disk was being asked
+                        }
+                        if (!loadingBuffers.contains(buffer)) {
+                            // A changed .editorconfig (edited here, or by a pull / branch switch) reaches the
+                            // open file.
+                            host.editorSettings().applyRefreshedEditorConfig(buffer, rules);
+                        }
+                        if (!exists || !buffer.diskChangedFrom(mtime, size)) {
+                            return; // deleted/renamed externally — keep what's open (no prompt) — or unchanged
+                        }
+                        String loaded = buffer.diskSnapshot().fingerprint();
+                        if (loaded != null) {
+                            verifying = true; // it settles the guard itself, after comparing the bytes
+                            verifyExternalChange(tab, buffer, file, loaded);
+                        } else if (host.editorArea().selectedTab() == tab && !checkingExternalChanges) {
+                            checkingExternalChanges = true; // the prompt steals focus: do not re-enter
+                            try {
+                                promptExternalChange(tab, buffer, mtime, size);
+                            } finally {
+                                checkingExternalChanges = false;
+                            }
+                        }
+                    } finally {
+                        if (!verifying) {
+                            settle.run();
+                        }
+                    }
+                }));
+            });
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            settle.run();
         }
     }
+
+    /** Test seam: runs on the worker before {@link #checkExternalChanges} asks the disk anything. */
+    volatile Runnable beforeExternalStatForTest;
 
     /**
      * Metadata changed; compares the bytes before asking. {@code touch}, a build step or a checkout that
@@ -1677,7 +1860,7 @@ final class FileWorkflowCoordinator {
     private RemoteWritePlan prepareRemoteWrite(
             SaveRequest request, boolean autoSave, boolean raced, java.util.concurrent.atomic.AtomicBoolean blocked)
             throws IOException {
-        PreparedLoad current = prepareLoad(request.target(), false);
+        PreparedLoad current = prepareLoad(request.target(), false, false);
         byte[] currentBytes = current.sourceBytes();
         CommittedSave ownCommit = committedSaves.get(com.editora.config.PathKeys.key(request.target()));
         // A preceding request may be acknowledged and retired after this request captured its old
@@ -1688,7 +1871,7 @@ final class FileWorkflowCoordinator {
         boolean changed = raced
                 || (!request.saveAs()
                         && (followsOwnCommit
-                                ? !java.util.Arrays.equals(ownCommit.bytes(), currentBytes)
+                                ? !ownCommit.fingerprint().equals(current.fingerprint())
                                 : request.diskSnapshot()
                                         .differsFrom(current.mtime(), current.size(), fingerprint(currentBytes))));
         if (!changed) {
@@ -1945,6 +2128,7 @@ final class FileWorkflowCoordinator {
         if (".editorconfig".equals(String.valueOf(request.target().getFileName()))) {
             host.editorConfigSaved(); // its rules reach the files already open, in every window
         }
+        ProjectPanel.noteLocalWrite(host.projectPanel(), request.target()); // ours: not an external change
         if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(savedStatus(request, disk, autoSave));
             host.git().refresh();
@@ -2003,8 +2187,16 @@ final class FileWorkflowCoordinator {
     }
 
     private void publishCommit(SaveRequest request, DiskWrite disk) {
+        // Hashed here, by whoever performed the write (the save worker for every asynchronous save), so the
+        // FX-thread acknowledgement that follows never runs SHA-256 over the file.
         CommittedSave committed = new CommittedSave(
-                request.sequence(), request.target(), request.content(), request.bytes(), disk, request.lineEnding());
+                request.sequence(),
+                request.target(),
+                request.content(),
+                fingerprint(request.bytes()),
+                request.bytes().length,
+                disk,
+                request.lineEnding());
         committedSaves.compute(
                 com.editora.config.PathKeys.key(request.target()),
                 (ignored, previous) ->
@@ -2017,7 +2209,7 @@ final class FileWorkflowCoordinator {
             return false;
         }
         try {
-            return java.util.Arrays.equals(committed.bytes(), java.nio.file.Files.readAllBytes(target));
+            return committed.wrote(java.nio.file.Files.readAllBytes(target));
         } catch (IOException e) {
             return false;
         }
@@ -2051,7 +2243,7 @@ final class FileWorkflowCoordinator {
         // back afterwards matches the disk again.
         buffer.acknowledgeSavedContent(committed.content(), committed.lineEnding());
         buffer.setDiskSnapshot(
-                committed.disk().modifiedMillis(), committed.disk().size(), fingerprint(committed.bytes()));
+                committed.disk().modifiedMillis(), committed.disk().size(), committed.fingerprint());
     }
 
     boolean hasPendingSave(EditorBuffer buffer) {

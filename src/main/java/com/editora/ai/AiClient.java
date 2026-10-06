@@ -54,8 +54,14 @@ public final class AiClient {
             });
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final HttpClient http =
-            HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build();
+    /** Built by the first request, not with the client: see {@link com.editora.io.LazyHttpClient}. */
+    private final com.editora.io.LazyHttpClient http = new com.editora.io.LazyHttpClient(
+            () -> HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build());
+
+    /** Releases the connection pool and its selector thread (window close). */
+    public void close() {
+        http.close();
+    }
 
     /**
      * Sends {@code request} (an {@link AiRequests#requestFor} body matching {@code provider}'s dialect)
@@ -255,7 +261,7 @@ public final class AiClient {
     private HttpResponse<java.io.InputStream> sendUntilHeaders(HttpRequest request, Duration timeout)
             throws IOException, InterruptedException, TimeoutException {
         CompletableFuture<HttpResponse<java.io.InputStream>> exchange =
-                http.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());
+                http.get().sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());
         try {
             return exchange.get(timeout.toNanos(), TimeUnit.NANOSECONDS);
         } catch (ExecutionException e) {
@@ -295,7 +301,7 @@ public final class AiClient {
             } else {
                 b.header("x-api-key", apiKey).header("anthropic-version", "2023-06-01");
             }
-            HttpResponse<String> resp = http.send(b.build(), HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> resp = http.get().send(b.build(), HttpResponse.BodyHandlers.ofString());
             return resp.statusCode() == 200 ? null : errorBodyString(resp.statusCode(), resp.body());
         } catch (Exception e) {
             if (e instanceof InterruptedException) {

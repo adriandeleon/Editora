@@ -67,6 +67,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
      */
     public volatile org.eclipse.lsp4j.debug.ExceptionInfoResponse exceptionInfo;
 
+    /** When set (before the client connects), sessions advertise {@code supportsDelayedStackTraceLoading}. */
+    public volatile boolean delayedStackTraceLoading;
+
     public FakeDebugAdapter(boolean multiSession) throws IOException {
         this(multiSession, InetAddress.getLoopbackAddress());
     }
@@ -319,6 +322,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (exceptionInfo != null) {
                 capabilities.setSupportsExceptionInfoRequest(true);
             }
+            if (delayedStackTraceLoading) {
+                capabilities.setSupportsDelayedStackTraceLoading(true);
+            }
             CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
             // The event follows the response, as the protocol orders them.
             CompletableFuture.runAsync(() -> client.initialized());
@@ -413,13 +419,20 @@ public final class FakeDebugAdapter implements AutoCloseable {
         @Override
         public CompletableFuture<StackTraceResponse> stackTrace(StackTraceArguments args) {
             record("stackTrace");
+            stackTraceRequests.add(args);
             if (runningThreads.contains(args.getThreadId())) {
                 return refused("Thread " + args.getThreadId() + " is not suspended");
             }
             StackTraceResponse response = new StackTraceResponse();
             List<StackFrame> scripted = frames;
             if (scripted != null) {
-                response.setStackFrames(scripted.toArray(new StackFrame[0]));
+                // An adapter that pages returns the window asked for and says how many there are in all.
+                int from = args.getStartFrame() == null ? 0 : Math.min(args.getStartFrame(), scripted.size());
+                int levels = args.getLevels() == null || args.getLevels() == 0 ? scripted.size() : args.getLevels();
+                int to = delayedStackTraceLoading ? Math.min(scripted.size(), from + levels) : scripted.size();
+                response.setStackFrames(scripted.subList(delayedStackTraceLoading ? from : 0, to)
+                        .toArray(new StackFrame[0]));
+                response.setTotalFrames(scripted.size());
                 return CompletableFuture.completedFuture(response);
             }
             StackFrame frame = new StackFrame();
@@ -494,6 +507,8 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public final List<org.eclipse.lsp4j.debug.VariablesArguments> variableRequests = new CopyOnWriteArrayList<>();
         /** When set, every {@code setVariable} is refused with this message. */
         public volatile String setVariableFailure;
+        /** Every {@code stackTrace} request, in arrival order. */
+        public final List<StackTraceArguments> stackTraceRequests = new CopyOnWriteArrayList<>();
         /** When set, {@code stackTrace} answers these frames instead of the single default one. */
         public volatile List<StackFrame> frames;
         /** Extra threads that are listed but not suspended: their {@code stackTrace} is refused. */

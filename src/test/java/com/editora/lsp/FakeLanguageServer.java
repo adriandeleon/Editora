@@ -127,6 +127,51 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     /** When set, the next request of that kind completes exceptionally — the error paths must degrade, not throw. */
     public boolean failEverything;
 
+    /**
+     * When set, the requests the editor repeats on every typing pause (diagnostics, symbols, folding ranges,
+     * semantic tokens, inlay hints, highlights) are recorded but <b>not answered</b>: each gets a future that
+     * stays open in {@link #held} — a server too busy to reply. A test then sees how many requests the
+     * client leaves unanswered and which of them it cancelled.
+     */
+    public volatile boolean holdReplies;
+
+    public final List<CompletableFuture<?>> held = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** Held requests the client has neither cancelled nor had answered. */
+    public long unanswered() {
+        return held.stream().filter(f -> !f.isDone()).count();
+    }
+
+    public long cancelled() {
+        return held.stream().filter(CompletableFuture::isCancelled).count();
+    }
+
+    private <T> CompletableFuture<T> answer(T value) {
+        if (holdReplies) {
+            CompletableFuture<T> open = new CompletableFuture<>();
+            held.add(open);
+            return open;
+        }
+        return CompletableFuture.completedFuture(value);
+    }
+
+    public final List<org.eclipse.lsp4j.FoldingRangeRequestParams> foldingRanges = new ArrayList<>();
+    public final List<org.eclipse.lsp4j.SemanticTokensDeltaParams> semanticDeltas = new ArrayList<>();
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.FoldingRange>> foldingRange(
+            org.eclipse.lsp4j.FoldingRangeRequestParams params) {
+        foldingRanges.add(params);
+        return answer(List.of());
+    }
+
+    @Override
+    public CompletableFuture<Either<SemanticTokens, org.eclipse.lsp4j.SemanticTokensDelta>> semanticTokensFullDelta(
+            org.eclipse.lsp4j.SemanticTokensDeltaParams params) {
+        semanticDeltas.add(params);
+        return answer(semanticTokensResponse == null ? null : Either.forLeft(semanticTokensResponse));
+    }
+
     /** One custom {@code java/…} message, as it went on the wire (#746). */
     public record Raw(String method, Object params) {}
 
@@ -214,19 +259,19 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<List<InlayHint>> inlayHint(InlayHintParams params) {
         inlayHints.add(params);
-        return CompletableFuture.completedFuture(inlayHintResponse);
+        return answer(inlayHintResponse);
     }
 
     @Override
     public CompletableFuture<SemanticTokens> semanticTokensRange(SemanticTokensRangeParams params) {
         semanticRanges.add(params);
-        return CompletableFuture.completedFuture(semanticTokensResponse);
+        return answer(semanticTokensResponse);
     }
 
     @Override
     public CompletableFuture<SemanticTokens> semanticTokensFull(SemanticTokensParams params) {
         semanticFulls.add(params);
-        return CompletableFuture.completedFuture(semanticTokensResponse);
+        return answer(semanticTokensResponse);
     }
 
     @Override
@@ -246,7 +291,7 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(DocumentHighlightParams params) {
         highlights.add(params);
-        return CompletableFuture.completedFuture(List.of());
+        return answer(List.of());
     }
 
     @Override
@@ -305,7 +350,7 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<List<Either<SymbolInformation, DocumentSymbol>>> documentSymbol(
             DocumentSymbolParams params) {
         documentSymbols.add(params);
-        return failEverything ? failed() : CompletableFuture.completedFuture(documentSymbolResponse);
+        return failEverything ? failed() : answer(documentSymbolResponse);
     }
 
     @Override
@@ -334,7 +379,7 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<org.eclipse.lsp4j.DocumentDiagnosticReport> diagnostic(
             org.eclipse.lsp4j.DocumentDiagnosticParams params) {
         diagnosticPulls.add(params);
-        return failEverything ? failed() : CompletableFuture.completedFuture(diagnosticResponse);
+        return failEverything ? failed() : answer(diagnosticResponse);
     }
 
     private static <T> CompletableFuture<T> failed() {

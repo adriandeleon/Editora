@@ -3785,7 +3785,7 @@ public class SettingsWindow {
         TextField prefix = new TextField();
         prefix.setPromptText(tr("settings.snippet.prefixPrompt"));
         TextField description = new TextField();
-        CodeArea body = new CodeArea();
+        CodeArea body = AreaUndo.bounded(new CodeArea());
         body.getStyleClass().addAll("editor-area", "snippet-body");
         body.setWrapText(true);
         // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
@@ -4128,7 +4128,7 @@ public class SettingsWindow {
         language.setPromptText(tr("settings.template.languagePrompt"));
         TextField fileName = new TextField();
         fileName.setPromptText(tr("settings.template.fileNamePrompt"));
-        CodeArea body = new CodeArea();
+        CodeArea body = AreaUndo.bounded(new CodeArea());
         body.getStyleClass().addAll("editor-area", "snippet-body");
         body.setWrapText(true);
         // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
@@ -7353,7 +7353,7 @@ public class SettingsWindow {
     // --- live preview ----------------------------------------------------------------------------
 
     private void buildPreview() {
-        preview = new CodeArea(PREVIEW_SAMPLE);
+        preview = AreaUndo.none(new CodeArea(PREVIEW_SAMPLE));
         preview.getStyleClass().addAll("editor-area", "settings-preview");
         preview.setEditable(false);
         preview.setFocusTraversable(false);

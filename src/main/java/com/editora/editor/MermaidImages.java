@@ -30,7 +30,7 @@ import com.editora.mermaid.Mermaid;
 public final class MermaidImages {
 
     /** A finished render: a {@code loaded} image (success) or an {@code error} message (failure). */
-    private record Cached(PreviewImageLoader.Loaded loaded, String error, long at) {
+    record Cached(PreviewImageLoader.Loaded loaded, String error, long at) {
         Cached(PreviewImageLoader.Loaded loaded, String error) {
             this(loaded, error, System.currentTimeMillis());
         }
@@ -77,6 +77,46 @@ public final class MermaidImages {
     private static final Map<String, Long> LATEST = new java.util.concurrent.ConcurrentHashMap<>();
 
     private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
+
+    /** The newest cached render of each live preview surface; an older one of the same surface is dropped. */
+    private static final PreviewSurfaces.Newest NEWEST = new PreviewSurfaces.Newest();
+
+    /** Drops what is cached for {@code surfaceKey} — its buffer was disposed and can never show it again. */
+    static void release(String surfaceKey) {
+        if (surfaceKey == null) {
+            return;
+        }
+        LATEST.remove(surfaceKey);
+        String key = NEWEST.release(surfaceKey);
+        if (key != null) {
+            CACHE.remove(key);
+        }
+    }
+
+    /**
+     * Stores a finished render: it replaces the previous render of its surface, and the cache is then
+     * trimmed to its byte budget (diagrams are rendered at 2×, so 48 of them is no memory bound by itself).
+     */
+    static void store(String key, Cached result, String surfaceKey) {
+        String replaced = NEWEST.record(surfaceKey, key);
+        synchronized (CACHE) {
+            if (replaced != null) {
+                CACHE.remove(replaced);
+            }
+            CACHE.put(key, result);
+            ImageCacheBudget.trim(
+                    CACHE,
+                    c -> c.loaded() == null
+                            ? 0
+                            : ImageCacheBudget.footprint(c.loaded().image()),
+                    ImageCacheBudget.DIAGRAM_BUDGET_BYTES);
+        }
+    }
+
+    /** Whether a render is cached under {@code key} (tests). */
+    static boolean cached(String key) {
+        return CACHE.containsKey(key);
+    }
 
     private static volatile boolean enabled;
     private static volatile List<String> mmdc = List.of("mmdc");
@@ -200,8 +240,11 @@ public final class MermaidImages {
             } else {
                 result = new Cached(null, r.error());
             }
-            CACHE.put(key, result);
+            store(key, result, surfaceKey);
             Platform.runLater(() -> applyCached(host, result, sizer));
+            if (surfaceKey != null) {
+                LATEST.remove(surfaceKey, gen); // this render was the latest: nothing left to supersede
+            }
         });
     }
 

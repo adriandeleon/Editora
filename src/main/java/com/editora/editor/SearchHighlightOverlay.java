@@ -1,7 +1,5 @@
 package com.editora.editor;
 
-import java.util.List;
-
 import javafx.application.Platform;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
@@ -29,7 +27,10 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
-    private List<int[]> matches = List.of();
+    private SearchMatches matches = SearchMatches.EMPTY;
+    /** How many matches the last redraw looked at (tests): the visible ones, however many there are. */
+    private int visited;
+
     private int activeIndex = -1;
     private boolean active;
     private boolean redrawPending;
@@ -63,12 +64,12 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
         return second;
     }
 
-    /** Sets the matches (offset pairs) to highlight and which is the current one (-1 for none). */
-    void setMatches(List<int[]> matches, int activeIndex) {
+    /** Sets the matches to highlight and which is the current one (-1 for none). */
+    void setMatches(SearchMatches matches, int activeIndex) {
         if (follower != null) {
             follower.setMatches(matches, activeIndex);
         }
-        this.matches = matches == null ? List.of() : matches;
+        this.matches = matches == null ? SearchMatches.EMPTY : matches;
         this.activeIndex = activeIndex;
         boolean show = !this.matches.isEmpty();
         if (active != show) {
@@ -130,18 +131,18 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            // Reject off-screen matches with a cheap offset comparison before the (relatively costly)
-            // offsetToPosition conversions in paintMatch — a "find all" can have hundreds of matches but
-            // only a handful are visible, and this runs on every scroll/edit pulse.
+            // Only the matches that touch the visible offsets are looked at, found by binary search: a
+            // "find all" can hold a hundred thousand matches with a handful visible, and this runs on every
+            // scroll/edit pulse — walking the list from its start made each pulse cost its whole length.
             int firstOffset = area.getAbsolutePosition(first, 0);
             int lastOffset = area.getAbsolutePosition(
                     last, area.getParagraph(last).getText().length());
-            for (int i = 0; i < matches.size(); i++) {
-                int[] m = matches.get(i);
-                if (m[1] < firstOffset || m[0] > lastOffset) {
-                    continue;
-                }
-                paintMatch(g, m, i == activeIndex, first, last, w, h);
+            visited = 0;
+            for (int i = matches.firstEndingAtOrAfter(firstOffset);
+                    i < matches.size() && matches.start(i) <= lastOffset;
+                    i++) {
+                visited++;
+                paintMatch(g, matches.start(i), matches.end(i), i == activeIndex, first, last, w, h);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
@@ -149,9 +150,10 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
     }
 
     /** Paints one match's box, clipped to the visible paragraph range; multi-line matches paint per line. */
-    private void paintMatch(GraphicsContext g, int[] match, boolean isActive, int first, int last, double w, double h) {
-        var startPos = area.offsetToPosition(match[0], Bias.Forward);
-        var endPos = area.offsetToPosition(Math.max(match[1], match[0]), Bias.Backward);
+    private void paintMatch(
+            GraphicsContext g, int from, int to, boolean isActive, int first, int last, double w, double h) {
+        var startPos = area.offsetToPosition(from, Bias.Forward);
+        var endPos = area.offsetToPosition(Math.max(to, from), Bias.Backward);
         int startLine = startPos.getMajor();
         int endLine = endPos.getMajor();
         if (endLine < first || startLine > last) {
@@ -181,6 +183,11 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
                 g.strokeRect(b.getMinX() + 0.5, b.getMinY() + 0.5, b.getWidth() - 1, b.getHeight() - 1);
             }
         }
+    }
+
+    /** How many matches the last redraw looked at (tests). */
+    int visitedInLastRedraw() {
+        return visited;
     }
 
     private Bounds toLocal(Bounds screen) {

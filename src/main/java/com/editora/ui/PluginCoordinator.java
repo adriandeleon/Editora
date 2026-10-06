@@ -156,6 +156,14 @@ final class PluginCoordinator {
             pluginManager.release(l);
         }
         pinnedLoaders.clear();
+        // The catalogue and install workers are this window's: without this each closed window left two
+        // parked threads (and, once used, two HTTP clients) behind for the life of the process.
+        if (pluginRegistry != null) {
+            pluginRegistry.shutdown();
+        }
+        if (pluginInstaller != null) {
+            pluginInstaller.shutdown();
+        }
     }
 
     /** Gates the plugin-contributed tool windows on an open buffer (called from updateBufferToolWindows). */

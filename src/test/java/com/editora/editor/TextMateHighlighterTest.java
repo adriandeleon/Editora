@@ -530,4 +530,82 @@ class TextMateHighlighterTest {
         List<TextMateHighlighter.Symbol> symbols = symbolsOf("a.xml", "<root>\n  <child/>\n</root>\n");
         assertTrue(symbols.stream().anyMatch(s -> s.kind().equals("tag")), "expected xml elements as tag symbols");
     }
+
+    /** The single class on the character at {@code offset} of {@code spans}, or {@code null} if unstyled. */
+    private static String styleAt(StyleSpans<Collection<String>> spans, int offset) {
+        int at = 0;
+        for (StyleSpan<Collection<String>> span : spans) {
+            at += span.getLength();
+            if (offset < at) {
+                return span.getStyle().isEmpty()
+                        ? null
+                        : span.getStyle().iterator().next();
+            }
+        }
+        throw new AssertionError("offset " + offset + " is past the spans (" + at + ")");
+    }
+
+    @Test
+    void aLineOverTheLengthCapIsLeftPlainAndTheStateIsCarriedAcrossIt() {
+        IGrammar js = GrammarRegistry.shared().forFileName("a.js");
+        String unit = "var a=function(b){return b+\"s\"};";
+        String huge = unit.repeat(TextMateHighlighter.MAX_TOKENIZED_LINE / unit.length() + 1);
+        assertTrue(huge.length() > TextMateHighlighter.MAX_TOKENIZED_LINE);
+        String text = "/* open\n" + huge + "\nstill comment */ var x = 1;\n";
+
+        TextMateHighlighter.IncrementalAnalysis a = TextMateHighlighter.analyzeFrom(text, js, 0, null);
+
+        assertEquals(text.length(), a.spans().length(), "the spans still cover the text exactly");
+        int hugeStart = text.indexOf('\n') + 1;
+        for (int offset : new int[] {hugeStart, hugeStart + 4, hugeStart + huge.length() - 1}) {
+            assertNull(styleAt(a.spans(), offset), "the over-long line is not tokenized");
+        }
+        assertTrue(a.endStates().get(0) == a.endStates().get(1), "its end state is the state it started in");
+        int third = hugeStart + huge.length() + 1;
+        assertEquals("comment", styleAt(a.spans(), third), "so the comment opened above it is still open below");
+        assertEquals("keyword", styleAt(a.spans(), text.indexOf("var x")), "and closes where it should");
+
+        // One character under the cap is tokenized as usual.
+        String under = unit.repeat(TextMateHighlighter.MAX_TOKENIZED_LINE / unit.length());
+        assertEquals("keyword", styleAt(TextMateHighlighter.compute(under, js), 0));
+    }
+
+    @Test
+    void aLineThatRunsOutOfItsTimeBudgetKeepsItsStartStateAndDoesNotStyleTheRest() {
+        IGrammar js = GrammarRegistry.shared().forFileName("a.js");
+        String unit = "var a=function(b){return b+\"s\"};";
+        // Long enough that it cannot be tokenized in a millisecond, short enough to be under the cap.
+        String slow = unit.repeat((TextMateHighlighter.MAX_TOKENIZED_LINE - 100) / unit.length());
+        String text = "var first = 1;\n" + slow + "\nvar last = 2;\n";
+
+        TextMateHighlighter.IncrementalAnalysis a =
+                TextMateHighlighter.analyzeFrom(text, js, 0, null, () -> false, null, java.time.Duration.ofMillis(1));
+
+        assertEquals(text.length(), a.spans().length(), "the spans still cover the text exactly");
+        assertTrue(a.endStates().get(0) == a.endStates().get(1), "the stopped line carries its start state");
+        assertNull(styleAt(a.spans(), 15 + slow.length() - 1), "the end of the stopped line is unstyled");
+        assertEquals("keyword", styleAt(a.spans(), text.indexOf("var last")), "the next line tokenizes normally");
+    }
+
+    @Test
+    void memoizedScopeAnswersMatchAFreshClassification() {
+        // Each scope name is classified once and remembered; a second lookup must give the same answers.
+        for (int round = 0; round < 2; round++) {
+            assertEquals("comment", TextMateHighlighter.styleForScopes(List.of("source.java", "comment.block.java")));
+            assertEquals("type", TextMateHighlighter.styleForScopes(List.of("source.java", "storage.type.java")));
+            assertNull(TextMateHighlighter.styleForScopes(List.of("source.java", "storage.modifier.import.java")));
+            assertNull(TextMateHighlighter.styleForScopes(List.of("source.java", "meta.block.java")));
+            assertEquals(
+                    "function",
+                    TextMateHighlighter.kindForScopes(List.of("meta.method.java", "entity.name.function.java")));
+            assertNull(
+                    TextMateHighlighter.kindForScopes(List.of("meta.function-call.java", "entity.name.function.java")));
+            assertEquals("section", TextMateHighlighter.kindForScopes(List.of("entity.name.section.markdown")));
+        }
+        // A grammar can mint scope names from captured text; they are classified without limit.
+        for (int i = 0; i < 20_000; i++) {
+            assertEquals("string", TextMateHighlighter.styleForScopes(List.of("string.unquoted.heredoc.tag" + i)));
+        }
+        assertEquals("keyword", TextMateHighlighter.styleForScopes(List.of("keyword.control.brand-new-scope")));
+    }
 }

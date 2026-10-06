@@ -380,4 +380,55 @@ class StructurePanelFxTest {
                 .toList());
         assertEquals(List.of("accent", "heading"), under, "bindings written inside a section nest under it");
     }
+
+    @Test
+    void anUnchangedOutlineLeavesTheTreeAlone() throws Exception {
+        StructurePanel p = FxTestSupport.callOnFx(StructurePanelFxTest::shownPanel);
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setLanguageOverride("java");
+            b.setContent("class MyClass {\n  void foo() {}\n  void bar() {}\n}\n");
+            return b;
+        });
+        List<SymbolNode> symbols =
+                List.of(new SymbolNode("MyClass", "", "class", 0, 3, List.of(method("foo", 1), method("bar", 2))));
+        FxTestSupport.runOnFx(() -> {
+            p.attach(buffer);
+            p.setLspSymbols(buffer, symbols);
+        });
+
+        FxTestSupport.runOnFx(() -> {
+            int builds = FxTestSupport.<Integer>field(p, "treeBuilds");
+            TreeItem<Object> root = tree(p).getRoot();
+            tree(p).getSelectionModel()
+                    .select(root.getChildren().get(0).getChildren().get(1)); // "bar"
+            Object selected = tree(p).getSelectionModel().getSelectedItem();
+
+            // What every settled edit sends, whether or not the outline changed: new fold regions and a
+            // finished highlight pass. The model they describe is the one already showing.
+            buffer.getFoldManager().recompute();
+            FxTestSupport.invoke(p, "rebuildIfChanged");
+            FxTestSupport.invoke(p, "rebuildIfChanged");
+
+            assertEquals(builds, FxTestSupport.<Integer>field(p, "treeBuilds"), "no rebuild for an identical outline");
+            assertTrue(root == tree(p).getRoot(), "the tree keeps its items");
+            assertTrue(selected == tree(p).getSelectionModel().getSelectedItem(), "and its selection");
+
+            // A real change still rebuilds: a doc comment appears above foo().
+            buffer.getArea().insertText(16, "  /** Does foo. */\n");
+            p.setLspSymbols(
+                    buffer,
+                    List.of(new SymbolNode("MyClass", "", "class", 0, 4, List.of(method("foo", 2), method("bar", 3)))));
+            assertEquals(builds + 1, FxTestSupport.<Integer>field(p, "treeBuilds"));
+            int afterEdit = FxTestSupport.<Integer>field(p, "treeBuilds");
+            buffer.getArea().replaceText(22, 31, "Does bar!"); // same symbols, different comment text
+            FxTestSupport.invoke(p, "rebuildIfChanged");
+            assertEquals(
+                    afterEdit + 1, FxTestSupport.<Integer>field(p, "treeBuilds"), "a changed doc is a changed model");
+
+            // And a forced rebuild (sort mode, re-attach) is never skipped.
+            FxTestSupport.invoke(p, "rebuild");
+            assertEquals(afterEdit + 2, FxTestSupport.<Integer>field(p, "treeBuilds"));
+        });
+    }
 }

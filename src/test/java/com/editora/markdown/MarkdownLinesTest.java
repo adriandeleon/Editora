@@ -135,4 +135,29 @@ class MarkdownLinesTest {
         assertEquals(2, MarkdownLines.listMarkerLength("- - x", 0, "- - x"), "a nested item, not a rule");
         assertEquals(2, MarkdownLines.listMarkerLength("- -", 0, "- -"), "two marks are not a rule");
     }
+
+    @Test
+    void theDocumentIsOnlyAskedForWhenTheLineIsAListItem() {
+        // Enter runs this on every line of a Markdown file; only a real item needs the text above it (the
+        // fence test), so an editor must not have to build its whole document to hear "no marker".
+        int[] asked = new int[1];
+        java.util.function.Supplier<String> document = () -> {
+            asked[0]++;
+            return "intro\n\n- item\nplain text\n- - -\n";
+        };
+        assertEquals(0, MarkdownLines.listMarkerLength(document, 16, "plain text"));
+        assertEquals(0, MarkdownLines.listMarkerLength(document, 27, "- - -"), "a thematic break");
+        assertEquals(0, asked[0], "neither needed the document");
+        assertEquals(2, MarkdownLines.listMarkerLength(document, 7, "- item"));
+        assertEquals(1, asked[0]);
+    }
+
+    @Test
+    void aTableRowIsRecognizedFromItsLineAlone() {
+        // The same gate for the table keys: blockBounds finds nothing unless the caret's own line is a row.
+        assertTrue(MarkdownTable.isRow("| a | b |"));
+        assertFalse(MarkdownTable.isRow("plain text"));
+        assertFalse(MarkdownTable.isRow(""));
+        assertNull(MarkdownTable.blockBounds("| a |\nplain text\n| b |", 8));
+    }
 }

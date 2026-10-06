@@ -274,7 +274,7 @@ public final class DapClient implements IDebugProtocolClient {
             this.port = port;
             this.adapterId = adapterId;
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
-                    this, socket.getInputStream(), socket.getOutputStream(), executor, c -> c);
+                    this, socket.getInputStream(), orderedWriter(socket.getOutputStream()), executor, c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
             // A socket adapter can be joined by a second connection, so child sessions are possible here.
@@ -310,7 +310,7 @@ public final class DapClient implements IDebugProtocolClient {
             ProcessRegistry.track(process); // reaped on JVM exit / next-run startup if we die without dispose()
             watchProcess(process);
             Launcher<IDebugProtocolServer> launcher = DSPLauncher.createClientLauncher(
-                    this, process.getInputStream(), process.getOutputStream(), executor, c -> c);
+                    this, process.getInputStream(), orderedWriter(process.getOutputStream()), executor, c -> c);
             server = launcher.getRemoteProxy();
             watchTransport(launcher.startListening());
             return timed(server.initialize(initArgs(adapterId, false, false))).thenApply(c -> {
@@ -321,6 +321,37 @@ public final class DapClient implements IDebugProtocolClient {
             LOG.log(Level.WARNING, "Failed to wire stdio debug adapter", e);
             return CompletableFuture.failedFuture(e);
         }
+    }
+
+    /** The ordered writer to the adapter; null until connected. */
+    private volatile com.editora.lsp.AsyncPipeWriter writer;
+
+    /** How long {@link #dispose} lets a queued {@code disconnect} reach the adapter before closing. */
+    private static final long DISCONNECT_FLUSH_MILLIS = 250;
+
+    /**
+     * What lsp4j writes to instead of the socket or pipe itself. lsp4j writes on the calling thread, and
+     * Resume, Step, evaluate and the variables requests are issued from the FX thread: an adapter that has
+     * stopped reading (paused, wedged, a full socket buffer) would hold the editor in that write. Requests
+     * are queued in call order and one thread does the writing; an adapter that never reads again has its
+     * transport cut once the backlog limit is reached, which ends the session like any lost connection.
+     */
+    private java.io.OutputStream orderedWriter(java.io.OutputStream transport) {
+        var out = new com.editora.lsp.AsyncPipeWriter(transport, "dap-writer", this::cutTransport);
+        writer = out;
+        return out;
+    }
+
+    private void cutTransport() {
+        try {
+            Socket s = socket;
+            if (s != null) {
+                s.close(); // also releases the writer thread blocked in the socket write
+            }
+        } catch (Exception ignored) {
+            // best effort
+        }
+        ProcessRegistry.killTree(adapterProcess);
     }
 
     /** Records the adapter subprocess (socket transports that spawn their own server, e.g. js-debug) so
@@ -925,6 +956,10 @@ public final class DapClient implements IDebugProtocolClient {
         }
         StackTraceArguments a = new StackTraceArguments();
         a.setThreadId(threadId);
+        if (pagesStackTraces(capabilities)) {
+            a.setStartFrame(0);
+            a.setLevels(STACK_FRAME_LIMIT);
+        }
         return timed(server.stackTrace(a)).thenApply(r -> {
             List<DapModels.StackFrameInfo> out = new ArrayList<>();
             if (r != null && r.getStackFrames() != null) {
@@ -939,6 +974,18 @@ public final class DapClient implements IDebugProtocolClient {
             }
             return out;
         });
+    }
+
+    /**
+     * The most frames asked for per stop. Every stop and every step fetches the stack, and without a limit
+     * an adapter sends — and the client decodes and maps — all of it: tens of thousands of frames in a
+     * runaway recursion, on each Step Over. The frames that matter are the innermost ones.
+     */
+    static final int STACK_FRAME_LIMIT = 1000;
+
+    /** Pure: whether the adapter honours {@code startFrame}/{@code levels} (null-safe). */
+    static boolean pagesStackTraces(Capabilities capabilities) {
+        return capabilities != null && Boolean.TRUE.equals(capabilities.getSupportsDelayedStackTraceLoading());
     }
 
     /**
@@ -1186,12 +1233,26 @@ public final class DapClient implements IDebugProtocolClient {
         } catch (RuntimeException ignored) {
             // best effort
         }
+        com.editora.lsp.AsyncPipeWriter out = writer;
+        if (out != null) {
+            // The disconnect was only queued. Give it a moment to be written before the transport is
+            // closed under it — normally microseconds; bounded, so an adapter that is not reading cannot
+            // hold the caller the way the direct write used to.
+            try {
+                out.awaitDrained(DISCONNECT_FLUSH_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
         try {
             if (socket != null) {
                 socket.close();
             }
         } catch (Exception ignored) {
             // best effort
+        }
+        if (out != null) {
+            out.close();
         }
         // Kill the adapter subprocess and its descendants (debugpy stdio, or a node js-debug server). Like
         // LanguageServerSession: ProcessRegistry.killTree destroys the descendant tree first (a wrapper

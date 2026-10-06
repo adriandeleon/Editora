@@ -43,7 +43,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
-    private final CodeArea output = new CodeArea();
+    private final CodeArea output = AreaUndo.none(new CodeArea());
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
     private Consumer<StackTraceLinks.Link> onLink;
@@ -54,6 +54,8 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private OutputStyle style = OutputStyle.passthrough();
     /** Stops this tool's running build (set per run by {@link #started}). */
     private Runnable onStop;
+
+    private final ConsoleAppender appender = new ConsoleAppender(output, MAX_CHARS);
 
     public BuildToolPanel() {
         getStyleClass().add("run-panel");
@@ -168,6 +170,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
     public void clearConsole() {
+        appender.discard();
         output.clear();
     }
 
@@ -175,7 +178,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     public void started(String header, OutputStyle style, Runnable onStop) {
         this.style = style == null ? OutputStyle.passthrough() : style;
         this.onStop = onStop;
-        output.clear();
+        clearConsole();
         status.setText(tr("run.running", header));
         stopButton.setDisable(false);
     }
@@ -196,10 +199,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * colouring comes from {@code CommandLogFormat} rather than a build tool's {@link OutputStyle}.
      */
     public void appendStyled(String line, String styleClass) {
-        int start = output.getLength();
-        int caretBefore = output.getCaretPosition();
-        boolean follow = caretBefore >= start;
-        output.appendText(line + "\n");
+        StyleSpans<Collection<String>> spans = null;
         if (!line.isEmpty()) {
             StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
             List<GitOutputLinks.Link> fileLinks = gitTranscript ? GitOutputLinks.find(line) : List.of();
@@ -243,10 +243,9 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
                 }
                 previous = end;
             }
-            StyleSpans<Collection<String>> spans = builder.create();
-            output.setStyleSpans(start, spans);
+            spans = builder.create();
         }
-        ConsoleNav.afterAppend(output, caretBefore, follow, MAX_CHARS);
+        appender.append(line + "\n", spans);
     }
 
     public void finished(int code) {

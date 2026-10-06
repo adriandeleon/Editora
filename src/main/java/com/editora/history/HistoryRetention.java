@@ -142,40 +142,58 @@ public final class HistoryRetention {
         if (maxTotalBytes <= 0 || total <= maxTotalBytes) {
             return out;
         }
-        // Repeatedly drop the oldest evictable revision (not a file's last surviving one) until in budget.
-        while (total > maxTotalBytes) {
-            String victimFile = null;
-            int victimIndex = -1;
-            long victimTs = Long.MAX_VALUE;
-            for (Map.Entry<String, List<HistoryRevision>> e : out.entrySet()) {
-                List<HistoryRevision> list = e.getValue();
-                if (list.size() <= 1) {
-                    continue; // keep each file's newest revision
-                }
-                // The oldest EVICTABLE row: a labelled/pre-delete revision is user intent, not cache, so the
-                // budget walks past it rather than deleting it (and its blob) without a word.
-                int idx = -1;
-                for (int i = list.size() - 1; i >= 1; i--) { // newest-first ⇒ walk from the oldest
-                    if (!isProtected(list.get(i))) {
-                        idx = i;
-                        break;
-                    }
-                }
-                if (idx < 0) {
-                    continue; // this file is all labels — nothing here to reclaim
-                }
-                if (list.get(idx).timestamp() < victimTs) {
-                    victimTs = list.get(idx).timestamp();
-                    victimFile = e.getKey();
-                    victimIndex = idx;
-                }
+        // Drop the oldest evictable revision (not a file's last surviving one) until in budget. Each file
+        // offers one candidate at a time — its oldest unprotected row — through a queue ordered by age, so an
+        // eviction costs a queue step rather than another pass over every file of the project.
+        record Candidate(long timestamp, int fileOrder, List<HistoryRevision> list, int index) {}
+        java.util.PriorityQueue<Candidate> oldest = new java.util.PriorityQueue<>(
+                java.util.Comparator.comparingLong(Candidate::timestamp).thenComparingInt(Candidate::fileOrder));
+        int order = 0;
+        for (List<HistoryRevision> list : out.values()) {
+            int idx = oldestEvictable(list, list.size() - 1);
+            if (idx >= 1) {
+                oldest.add(new Candidate(list.get(idx).timestamp(), order, list, idx));
             }
-            if (victimFile == null) {
-                break; // nothing left to evict (every file down to its last revision)
+            order++;
+        }
+        while (total > maxTotalBytes && !oldest.isEmpty()) {
+            Candidate victim = oldest.poll();
+            total -= victim.list().remove(victim.index()).sizeBytes();
+            // Rows are newest-first and candidates are taken from the old end, so the rows before this one
+            // kept their positions: the file's next candidate is the nearest unprotected row above it.
+            int next = oldestEvictable(victim.list(), victim.index() - 1);
+            if (next >= 1) {
+                oldest.add(new Candidate(victim.list().get(next).timestamp(), victim.fileOrder(), victim.list(), next));
             }
-            total -= out.get(victimFile).remove(victimIndex).sizeBytes();
         }
         return out;
+    }
+
+    /**
+     * The index of the oldest row at or before {@code from} that the budget may evict, or -1: never row 0
+     * (each file keeps its newest revision), and never a labelled or pre-delete revision — that is user
+     * intent, not cache, so the budget walks past it rather than deleting it (and its blob) without a word.
+     */
+    private static int oldestEvictable(List<HistoryRevision> list, int from) {
+        for (int i = Math.min(from, list.size() - 1); i >= 1; i--) { // newest-first ⇒ walk from the oldest
+            if (!isProtected(list.get(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** The summed {@code sizeBytes} of every revision in {@code bucket}; allocates nothing. */
+    public static long totalBytes(Map<String, List<HistoryRevision>> bucket) {
+        long total = 0;
+        if (bucket != null) {
+            for (List<HistoryRevision> list : bucket.values()) {
+                for (int i = 0, n = list.size(); i < n; i++) {
+                    total += list.get(i).sizeBytes();
+                }
+            }
+        }
+        return total;
     }
 
     /**

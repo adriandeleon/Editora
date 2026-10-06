@@ -31,7 +31,7 @@ public final class MarkdownTable {
     private MarkdownTable() {}
 
     /** True if {@code line} looks like a table row (contains a pipe and is not blank). */
-    private static boolean isRow(String line) {
+    public static boolean isRow(String line) {
         return line != null && !line.isBlank() && line.indexOf('|') >= 0;
     }
 

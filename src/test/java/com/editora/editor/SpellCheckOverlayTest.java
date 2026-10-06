@@ -60,4 +60,23 @@ class SpellCheckOverlayTest {
         assertTrue(fences("").isEmpty());
         assertTrue(fences(null).isEmpty());
     }
+
+    @Test
+    void theParagraphFormAgreesWithTheWholeTextForm() {
+        String[] documents = {
+            "",
+            "prose only",
+            "a\n```\ncode\n```\nb\n",
+            "  ~~~js\ncode\n\t~~~\ntext\n```\nopen to the end",
+            "```\n```\n```\n",
+            "text ``` not a fence\n \u0001```odd leading control\n"
+        };
+        for (String text : documents) {
+            String[] lines = text.split("\n", -1);
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    text.isEmpty() ? new BitSet() : fences(text),
+                    SpellCheckOverlay.fencedCodeLines(lines.length, i -> lines[i]),
+                    text);
+        }
+    }
 }

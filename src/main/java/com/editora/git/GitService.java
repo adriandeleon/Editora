@@ -285,7 +285,10 @@ public final class GitService {
             if (gen != refreshGen.get()) {
                 return; // superseded while queued: do not run status + diff only to throw the result away
             }
-            RepoState state = computeRefresh(contextPath, diffFile);
+            RepoState state = computeRefresh(contextPath, diffFile, true);
+            if (state == UNANSWERED) {
+                return; // status timed out: the window keeps showing the last state it was given
+            }
             if (gen == refreshGen.get()) {
                 Platform.runLater(() -> {
                     if (gen == refreshGen.get()) {
@@ -308,12 +311,34 @@ public final class GitService {
      */
     public void status(Path contextPath, Consumer<RepoState> onResult) {
         submit(exec, () -> {
-            RepoState state = computeRefresh(contextPath, null);
+            RepoState computed = computeRefresh(contextPath, null, false);
+            RepoState state = computed == UNANSWERED ? RepoState.NONE : computed;
             Platform.runLater(() -> onResult.accept(state));
         });
     }
 
-    private RepoState computeRefresh(Path contextPath, Path diffFile) {
+    /**
+     * "{@code git status} did not answer" — as opposed to {@link RepoState#NONE}, "this is not a repository".
+     * Reporting a timeout as NONE made the window drop its branch, change bars and tree colouring and
+     * declare the folder not a repository, until the next trigger started another status that timed out too.
+     */
+    private static final RepoState UNANSWERED = new RepoState(null, null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
+
+    private final GitStatusBackoff statusBackoff = new GitStatusBackoff();
+
+    /** The limit for one background {@code git status}; {@link #QUICK} outside tests. */
+    private volatile Duration statusTimeout = QUICK;
+
+    /** Test seam: a status that "takes too long" without the test waiting {@link #QUICK}. */
+    public void setStatusTimeoutForTest(Duration timeout) {
+        this.statusTimeout = timeout;
+    }
+
+    /**
+     * @param backOff skip the status (answering {@link #UNANSWERED}) while the repository is in the wait that
+     *     follows a timeout; false for a caller that needs an answer whatever it costs
+     */
+    private RepoState computeRefresh(Path contextPath, Path diffFile, boolean backOff) {
         if (!gitAvailable() || contextPath == null) {
             return RepoState.NONE;
         }
@@ -321,10 +346,18 @@ public final class GitService {
         if (root == null) {
             return RepoState.NONE;
         }
-        ProcessRunner.Result st = git(root, QUICK, "status", "--porcelain=v2", "--branch");
+        if (backOff && statusBackoff.waiting(root, System.nanoTime())) {
+            return UNANSWERED;
+        }
+        ProcessRunner.Result st = git(root, statusTimeout, "status", "--porcelain=v2", "--branch");
+        if (st.timedOut()) {
+            statusBackoff.timedOut(root, System.nanoTime());
+            return UNANSWERED;
+        }
         if (!st.ok()) {
             return RepoState.NONE;
         }
+        statusBackoff.succeeded(root);
         GitStatus status = StatusParser.parse(st.out());
         GitDiff diff = diffFile != null ? diffHead(root, diffFile) : GitDiff.EMPTY;
         return new RepoState(root, diffFile, status, diff.changes(), diff.hunks());
@@ -559,23 +592,99 @@ public final class GitService {
      */
     public void blame(Path root, Path file, Consumer<List<BlameParser.BlameLine>> onResult) {
         submit(exec, () -> {
-            List<BlameParser.BlameLine> lines = List.of();
-            if (gitAvailable() && root != null && file != null) {
-                ProcessRunner.Result r = git(
-                        root,
-                        QUICK,
-                        GitSafety.LITERAL_PATHSPECS,
-                        "blame",
-                        "--line-porcelain",
-                        "--",
-                        file.toAbsolutePath().toString());
-                if (r.ok()) {
-                    lines = BlameParser.parse(r.out());
-                }
-            }
-            List<BlameParser.BlameLine> posted = lines;
+            List<BlameParser.BlameLine> posted = computeBlame(root, file);
             Platform.runLater(() -> onResult.accept(posted));
         });
+    }
+
+    /**
+     * {@link #blame} for the inline annotations, which are re-requested after every status refresh: a request
+     * still queued when a newer one arrives is dropped without running (its callback is never invoked), and
+     * an unchanged file at an unchanged {@code HEAD} is answered from the cache.
+     */
+    public void blameLatest(Path root, Path file, Consumer<List<BlameParser.BlameLine>> onResult) {
+        long gen = blameGen.incrementAndGet();
+        submit(exec, () -> {
+            if (gen != blameGen.get()) {
+                return; // superseded while queued behind status/diff work
+            }
+            List<BlameParser.BlameLine> posted = computeBlame(root, file);
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    private final AtomicLong blameGen = new AtomicLong();
+
+    /** What one blame run was computed from: its result is good for as long as none of these change. */
+    record BlameKey(String head, Path file, long modifiedMillis, long size) {}
+
+    private record CachedBlame(BlameKey key, List<BlameParser.BlameLine> lines) {}
+
+    /** The last few files annotated, by path. Touched only on the git lane. */
+    private final Map<Path, CachedBlame> blameCache = new LinkedHashMap<>(16, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<Path, CachedBlame> eldest) {
+            return size() > BLAME_CACHE_FILES;
+        }
+    };
+
+    static final int BLAME_CACHE_FILES = 8;
+
+    private final AtomicInteger blameRuns = new AtomicInteger();
+
+    /** How many {@code git blame} processes were actually started; read by tests. */
+    public int blameRunsForTest() {
+        return blameRuns.get();
+    }
+
+    private List<BlameParser.BlameLine> computeBlame(Path root, Path file) {
+        if (!gitAvailable() || root == null || file == null) {
+            return List.of();
+        }
+        // Blame of the working file depends on the commit graph (HEAD) and on the file's bytes. Asking for
+        // HEAD is one short process; the blame it saves walks the file's whole history.
+        BlameKey key = blameKey(root, file);
+        Path abs = file.toAbsolutePath();
+        CachedBlame cached;
+        synchronized (blameCache) {
+            cached = blameCache.get(abs);
+        }
+        if (key != null && cached != null && cached.key().equals(key)) {
+            return cached.lines();
+        }
+        blameRuns.incrementAndGet();
+        ProcessRunner.Result r =
+                git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "blame", "--line-porcelain", "--", abs.toString());
+        if (!r.ok()) {
+            return List.of();
+        }
+        List<BlameParser.BlameLine> lines = BlameParser.parse(r.out());
+        // Cache only when the file is the same after the run as before it: a save in between would store
+        // the old bytes' blame under a key that no longer describes them.
+        if (key != null && key.equals(blameKey(root, file))) {
+            synchronized (blameCache) {
+                blameCache.put(abs, new CachedBlame(key, lines));
+            }
+        }
+        return lines;
+    }
+
+    private BlameKey blameKey(Path root, Path file) {
+        try {
+            ProcessRunner.Result head = git(root, QUICK, "rev-parse", "--verify", "HEAD");
+            if (!head.ok()) {
+                return null; // no commits yet, or git did not answer: do not cache
+            }
+            java.nio.file.attribute.BasicFileAttributes attrs =
+                    Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+            return new BlameKey(
+                    head.out().strip(),
+                    file.toAbsolutePath(),
+                    attrs.lastModifiedTime().toMillis(),
+                    attrs.size());
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /** One file changed by a commit: its name-status letter, path, and (for rename/copy) the original path. */
@@ -1388,6 +1497,10 @@ public final class GitService {
     public void invalidateCaches() {
         rootCache.clear();
         notARepoSince.clear();
+        statusBackoff.clear();
+        synchronized (blameCache) {
+            blameCache.clear();
+        }
     }
 
     /**

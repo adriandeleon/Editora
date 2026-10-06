@@ -181,9 +181,8 @@ class AgentFileWriteFxTest {
         }
 
         @Override
-        public EditorBuffer openBackgroundBuffer(Path target) {
+        public void openBackgroundBuffer(Path target) {
             backgroundOpen.set(target);
-            return null;
         }
 
         @Override

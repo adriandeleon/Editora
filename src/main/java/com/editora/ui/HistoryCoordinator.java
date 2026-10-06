@@ -611,10 +611,15 @@ final class HistoryCoordinator {
         updated.add(rev); // newest-first
         updated.addAll(current);
         bucket.put(key, HistoryRetention.prune(updated, policy.maxPerFile(), policy.maxAgeMillis(), now));
-        // Enforce the per-project byte budget across the whole bucket, then persist.
-        var trimmed = HistoryRetention.enforceProjectBudget(bucket, policy.maxTotalBytesPerProject());
-        bucket.clear();
-        bucket.putAll(trimmed);
+        // Enforce the per-project byte budget across the whole bucket, then persist. Nearly every save leaves
+        // the project inside its budget, and then there is nothing to rebuild: copying every file's list and
+        // refilling the bucket on each save was the cost of a check that a sum answers.
+        long budget = policy.maxTotalBytesPerProject();
+        if (budget > 0 && HistoryRetention.totalBytes(bucket) > budget) {
+            var trimmed = HistoryRetention.enforceProjectBudget(bucket, budget);
+            bucket.clear();
+            bucket.putAll(trimmed);
+        }
         if (durableCompletion == null) {
             ops.saveHistory();
         } else {

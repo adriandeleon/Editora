@@ -1,11 +1,11 @@
 package com.editora.editor;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -21,6 +21,14 @@ import org.eclipse.tm4e.core.registry.Registry;
  * single shared {@link Registry} resolves a grammar (and any grammars it embeds, e.g. C inside C++)
  * by scope name via {@link IRegistryOptions#getGrammarSource(String)}. Loaded grammars are cached;
  * a scope that fails to load is remembered so we don't retry it on every keystroke.
+ *
+ * <p><b>Lookups never wait for a load.</b> The name tables are filled in the constructor and only read
+ * afterwards, and the grammar cache is a concurrent map, so asking whether a file type has a grammar, or
+ * for one that is already loaded, takes no lock — the FX thread asks exactly that when a tab is given its
+ * path, and used to stall there for as long as another tab's first grammar of the session took to compile
+ * on a pool thread. Only the load itself is serialized, under {@link #loadLock}, and each grammar is still
+ * loaded once. Loads are serialized with one another rather than per scope because the tm4e
+ * {@link Registry} they share keeps its grammars in plain maps.
  */
 public final class GrammarRegistry {
 
@@ -35,8 +43,10 @@ public final class GrammarRegistry {
     private final Map<String, String> languageNameToScope = new HashMap<>();
 
     private final Registry registry;
-    private final Map<String, IGrammar> grammarCache = new HashMap<>();
-    private final Set<String> failedScopes = new HashSet<>();
+    private final Map<String, IGrammar> grammarCache = new ConcurrentHashMap<>();
+    private final Set<String> failedScopes = ConcurrentHashMap.newKeySet();
+    /** Held while a grammar is being loaded; never by a lookup of one that already is. */
+    final Object loadLock = new Object();
 
     private GrammarRegistry() {
         // tm4e logs verbose WARNING/SEVERE messages for grammar quirks it can tolerate or that we
@@ -67,13 +77,13 @@ public final class GrammarRegistry {
     }
 
     /** The grammar for {@code fileName}'s extension, or {@code null} if none is bundled. */
-    public synchronized IGrammar forFileName(String fileName) {
+    public IGrammar forFileName(String fileName) {
         String scope = scopeForFileName(fileName);
         return scope == null ? null : grammarForScope(scope);
     }
 
     /** Whether {@code fileName}'s extension maps to a bundled grammar at all (regardless of load state). */
-    public synchronized boolean hasGrammarFor(String fileName) {
+    public boolean hasGrammarFor(String fileName) {
         return scopeForFileName(fileName) != null;
     }
 
@@ -82,7 +92,7 @@ public final class GrammarRegistry {
      * Oniguruma compile. Returns {@code null} when not bundled <em>or</em> not yet loaded, so a caller can
      * apply a cached grammar instantly and otherwise load it off-thread (see {@code hasGrammarFor}).
      */
-    public synchronized IGrammar cachedForFileName(String fileName) {
+    public IGrammar cachedForFileName(String fileName) {
         String scope = scopeForFileName(fileName);
         return scope == null ? null : grammarCache.get(scope);
     }
@@ -91,7 +101,7 @@ public final class GrammarRegistry {
      * The grammar for a language name (e.g. {@code "java"}, as produced by {@link LanguageRegistry}),
      * or {@code null} if no grammar is bundled for it.
      */
-    public synchronized IGrammar forLanguageName(String name) {
+    public IGrammar forLanguageName(String name) {
         if (name == null) {
             return null;
         }
@@ -100,23 +110,29 @@ public final class GrammarRegistry {
     }
 
     /** Language names that have a bundled grammar, sorted alphabetically. */
-    public synchronized Set<String> availableLanguageNames() {
+    public Set<String> availableLanguageNames() {
         return new TreeSet<>(languageNameToScope.keySet());
     }
 
     private IGrammar grammarForScope(String scope) {
-        if (grammarCache.containsKey(scope)) {
-            return grammarCache.get(scope);
+        IGrammar cached = grammarCache.get(scope);
+        if (cached != null || failedScopes.contains(scope)) {
+            return cached;
         }
-        if (failedScopes.contains(scope)) {
-            return null;
-        }
-        try {
-            IGrammar grammar = registry.loadGrammar(scope);
-            grammarCache.put(scope, grammar);
-            return grammar;
-        } catch (Exception | LinkageError e) {
-            // Malformed grammar, missing resource, or engine error — fall back to no highlighting.
+        synchronized (loadLock) {
+            cached = grammarCache.get(scope); // loaded while this thread waited for the lock
+            if (cached != null || failedScopes.contains(scope)) {
+                return cached;
+            }
+            try {
+                IGrammar grammar = registry.loadGrammar(scope);
+                if (grammar != null) {
+                    grammarCache.put(scope, grammar);
+                    return grammar;
+                }
+            } catch (Exception | LinkageError e) {
+                // Malformed grammar, missing resource, or engine error — fall back to no highlighting.
+            }
             failedScopes.add(scope);
             return null;
         }

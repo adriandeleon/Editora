@@ -10,7 +10,8 @@ import java.util.List;
  * same {@link UndoMerge#PAUSE} cadence as undo coalescing), so the user can jump back to any recent state
  * with a single (undoable) restore — independent of, and finer-grained than, save-based Local History.
  *
- * <p>Bounded to {@link #MAX} entries and not used for huge files (the caller guards on size); the
+ * <p>Bounded to {@link #MAX} entries and a per-buffer char budget, not used for huge files (the caller
+ * guards on size), and bounded across all buffers by {@link UndoHistoryBudget}; the
  * mutation/eviction/labeling logic here is pure and unit-tested.
  */
 public final class UndoHistory {
@@ -41,6 +42,19 @@ public final class UndoHistory {
     private long seq = 0;
     private long retainedChars = 0; // sum of entries' text lengths, kept in step with the deque
 
+    /** The budget this history shares with every other buffer's (see {@link UndoHistoryBudget}). */
+    private final UndoHistoryBudget budget;
+    /** When this history last gained a checkpoint, on the budget's clock: the least recent is evicted first. */
+    private long lastActive;
+
+    public UndoHistory() {
+        this(UndoHistoryBudget.APP);
+    }
+
+    UndoHistory(UndoHistoryBudget budget) {
+        this.budget = budget;
+    }
+
     /**
      * Records the current document state, unless it equals the most recent checkpoint. Returns true when a
      * checkpoint was actually added (so the caller can refresh the panel).
@@ -61,7 +75,25 @@ public final class UndoHistory {
         while (entries.size() > MAX || (retainedChars > MAX_RETAINED_CHARS && entries.size() > 1)) {
             retainedChars -= entries.removeFirst().text().length();
         }
+        lastActive = budget.tick();
+        budget.added(this); // then the app-wide cap, which takes from the least recently edited buffers
         return true;
+    }
+
+    /** Number of checkpoints held. */
+    int size() {
+        return entries.size();
+    }
+
+    long lastActive() {
+        return lastActive;
+    }
+
+    /** Drops the oldest checkpoint for the app-wide budget; returns the chars it released. */
+    int evictOldest() {
+        int released = entries.removeFirst().text().length();
+        retainedChars -= released;
+        return released;
     }
 
     /** Total document text currently retained across all checkpoints, in chars (for tests/diagnostics). */
@@ -83,6 +115,7 @@ public final class UndoHistory {
     public void clear() {
         entries.clear();
         retainedChars = 0;
+        budget.cleared(this);
     }
 
     /** Clamps {@code v} into {@code [0, len]} (pure). */

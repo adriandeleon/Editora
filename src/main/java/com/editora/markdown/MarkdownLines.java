@@ -52,8 +52,17 @@ public final class MarkdownLines {
      * marker on the next line that had to be deleted every time.
      */
     public static int listMarkerLength(String text, int lineStart, String line) {
+        return listMarkerLength(() -> text, lineStart, line);
+    }
+
+    /**
+     * As {@link #listMarkerLength(String, int, String)}, asking for the document only when {@code line}
+     * really is a list item: the fence test reads everything above the line, and an editor should not build
+     * its whole text on every Enter to learn that an ordinary line has no marker.
+     */
+    public static int listMarkerLength(java.util.function.Supplier<String> text, int lineStart, String line) {
         int marker = markerLength(line);
-        if (marker == 0 || SPACED_RULE.matcher(line).matches() || insideFence(text, lineStart)) {
+        if (marker == 0 || SPACED_RULE.matcher(line).matches() || insideFence(text.get(), lineStart)) {
             return 0;
         }
         return marker;

@@ -52,6 +52,11 @@ mvn clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package    # → target/d
 
 ### AOT cache (JDK 25 Leyden)
 
+The training launch uses a seeded config directory (a `settings.json` and a session naming three generated
+files) and passes one of them as the FILE argument, so settings deserialization, file load, a grammar and
+first paint are all in the cache; it no longer launches `--new-file` on an empty config. The effect on the
+packaged build has not been measured yet.
+
 The build is **two-phase**: phase 1 jlinks an `APP_IMAGE` with `-XX:AOTCache=$APPDIR/editora.aot`
 baked into the launcher `.cfg`; then [`scripts/aot_build.java`](../scripts/aot_build.java) trains
 a full-GUI cache against the image's own runtime (a real window renders, settles ~2.5 s, then

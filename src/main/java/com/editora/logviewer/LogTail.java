@@ -56,25 +56,41 @@ public final class LogTail {
     }
 
     /**
+     * The most a follow step reads: the viewer's follow cap ({@code LogView.FOLLOW_CAP}). It keeps no more
+     * than that much text, so anything read beyond it would be decoded, posted to the FX thread, appended
+     * and then deleted again.
+     */
+    public static final long FOLLOW_BYTES = 12L * 1024 * 1024;
+
+    /** {@link #readAppended(Path, long, long)} bounded by {@link #FOLLOW_BYTES}. */
+    public static Append readAppended(Path file, long fromOffset) throws IOException {
+        return readAppended(file, fromOffset, FOLLOW_BYTES);
+    }
+
+    /**
      * Reads the bytes of {@code file} written after {@code fromOffset}, decoding the complete-UTF-8 prefix
      * and leaving any trailing incomplete sequence for the next call. If the file is now smaller than
-     * {@code fromOffset} it was rotated/truncated: returns {@code reset=true} with the whole (small) file.
+     * {@code fromOffset} it was rotated/truncated: returns {@code reset=true} with the (new) file.
+     *
+     * <p>Never more than the last {@code maxBytes} of what there is to read: a writer that produced gigabytes
+     * between two polls, or a rotation to a file that is already huge, used to be read whole — up to 2 GB
+     * into one array, decoded into a String of the same size and handed to the FX thread. When the read is
+     * cut, it starts at the first line boundary inside the kept window.
      */
-    public static Append readAppended(Path file, long fromOffset) throws IOException {
+    public static Append readAppended(Path file, long fromOffset, long maxBytes) throws IOException {
+        long cap = Math.max(1, Math.min(maxBytes, Integer.MAX_VALUE - 8));
         try (SeekableByteChannel ch = Files.newByteChannel(file)) {
             long size = ch.size();
-            if (size < fromOffset) {
-                byte[] all = readAt(ch, 0, (int) Math.min(size, Integer.MAX_VALUE));
-                int end = completeEnd(all);
-                return new Append(new String(all, 0, end, StandardCharsets.UTF_8), end, true);
-            }
             if (size == fromOffset) {
                 return new Append("", fromOffset, false);
             }
-            int toRead = (int) Math.min(size - fromOffset, Integer.MAX_VALUE);
-            byte[] bytes = readAt(ch, fromOffset, toRead);
-            int end = completeEnd(bytes);
-            return new Append(new String(bytes, 0, end, StandardCharsets.UTF_8), fromOffset + end, false);
+            boolean reset = size < fromOffset;
+            long wanted = reset ? 0 : fromOffset;
+            long start = Math.max(wanted, size - cap);
+            byte[] bytes = readAt(ch, start, (int) (size - start));
+            int from = start > wanted ? firstLineStart(bytes) : 0; // cut: do not begin mid-line (or mid-char)
+            int end = Math.max(from, completeEnd(bytes));
+            return new Append(new String(bytes, from, end - from, StandardCharsets.UTF_8), start + end, reset);
         }
     }
 

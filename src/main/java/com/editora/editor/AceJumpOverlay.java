@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import javafx.application.Platform;
+import javafx.geometry.BoundingBox;
 import javafx.geometry.Bounds;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
@@ -286,9 +287,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
             if (!label.startsWith(typed)) {
                 continue;
             }
-            int at = entry.getValue(); // an empty last line has no character to take the bounds of
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(at, Math.min(at + 1, area.getLength()))
-                    .orElse(null));
+            Bounds b = labelBounds(entry.getValue());
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;
             }
@@ -298,6 +297,51 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
             g.setFill(PILL_TEXT);
             g.fillText(label, b.getMinX() + 3, b.getMinY() + b.getHeight() * 0.78);
         }
+    }
+
+    /**
+     * Where the label for the target at offset {@code at} goes, in canvas coordinates.
+     *
+     * <p>A line-mode target on the document's last line can be the end of the document, where there is no
+     * character to its right. Asking {@code getCharacterBoundsOnScreen} for that empty range makes
+     * RichTextFX build a throwaway {@code CaretNode} whose blink timer is never stopped — one leaked pulse
+     * receiver per repaint. So, as {@code EditorBuffer.caretBounds} does, the last character's right edge is
+     * measured instead, and an empty last line takes its row from the paragraph and its x from the text's
+     * left edge.
+     */
+    private Bounds labelBounds(int at) {
+        if (at < area.getLength()) {
+            return toLocal(area.getCharacterBoundsOnScreen(at, at + 1).orElse(null));
+        }
+        int last = area.getParagraphs().size() - 1;
+        if (area.getParagraphLength(last) > 0) {
+            Bounds b = toLocal(area.getCharacterBoundsOnScreen(at - 1, at).orElse(null));
+            return b == null ? null : new BoundingBox(b.getMaxX(), b.getMinY(), 0, b.getHeight());
+        }
+        Bounds row = toLocal(area.getParagraphBoundsOnScreen(last).orElse(null));
+        double x = textLeftX();
+        return row == null || Double.isNaN(x) ? null : new BoundingBox(x, row.getMinY(), 0, row.getHeight());
+    }
+
+    /** The canvas x of the text's left edge, from the first character of a visible non-empty line (or NaN). */
+    private double textLeftX() {
+        try {
+            int first = Math.max(0, area.firstVisibleParToAllParIndex());
+            int last = Math.min(area.getParagraphs().size() - 1, area.lastVisibleParToAllParIndex());
+            for (int p = first; p <= last; p++) {
+                if (!area.isFolded(p) && area.getParagraphLength(p) > 0) {
+                    int abs = area.getAbsolutePosition(p, 0);
+                    Bounds b = toLocal(
+                            area.getCharacterBoundsOnScreen(abs, abs + 1).orElse(null));
+                    if (b != null) {
+                        return b.getMinX();
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // viewport mid-layout
+        }
+        return Double.NaN;
     }
 
     private Bounds toLocal(Bounds screen) {

@@ -23,7 +23,7 @@ import org.fxmisc.richtext.CodeArea;
  * paragraphs. Word eligibility: in prose buffers every word is checked (except Markdown inline/fenced
  * {@code code}); in code buffers only words styled {@code comment} or {@code string}.
  */
-final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
+final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private static final Color SQUIGGLE = Color.web("#e5484d");
     private static final double AMP = 1.6; // squiggle peak-to-baseline amplitude (px)
@@ -64,8 +64,22 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
     // text, so its cache never needs invalidation; the misspelled cache depends on the dictionary +
     // ignore set, so it is cleared whenever those change (setChecker / refresh). Eligibility (syntax
     // style) is still evaluated fresh per draw, so a re-highlight is reflected immediately.
-    private final java.util.Map<String, List<int[]>> spanCache = lru(2000);
+    //
+    // The line cache holds the finished answer for a line's text — the spans of its words that are
+    // misspelled and not part of a structured token — so a repaint of an unchanged line is one lookup
+    // rather than a substring and a lookup per word. It is derived from the word verdicts, so it is cleared
+    // with them.
+    private final java.util.Map<String, int[][]> flaggedCache = lru(2000);
     private final java.util.Map<String, Boolean> spellCache = lru(20_000);
+
+    private static final int[][] NONE = new int[0][];
+
+    /** Lines whose flagged spans had to be computed (a cache miss) — the test seam for the line cache. */
+    private int linesScanned;
+
+    int linesScannedForTest() {
+        return linesScanned;
+    }
 
     private static <K, V> java.util.Map<K, V> lru(int max) {
         return new java.util.LinkedHashMap<>(256, 0.75f, true) {
@@ -105,20 +119,31 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
     }
 
     private void recomputeCodeLines() {
-        codeLines = markdown ? fencedCodeLines(area.getText()) : new BitSet();
+        if (!markdown) {
+            codeLines = new BitSet();
+            return;
+        }
+        // Straight off the paragraph list: the whole-document String this used to build and split (two
+        // O(document) copies on the FX thread per settled edit) held nothing the paragraphs do not.
+        var paragraphs = area.getParagraphs();
+        codeLines = fencedCodeLines(paragraphs.size(), i -> paragraphs.get(i).getText());
     }
 
     /** 0-based line indices inside Markdown fenced code blocks (the ``` delimiter lines included). Pure. */
     static BitSet fencedCodeLines(String text) {
-        BitSet code = new BitSet();
         if (text == null || text.isEmpty()) {
-            return code;
+            return new BitSet();
         }
         String[] lines = text.split("\n", -1);
+        return fencedCodeLines(lines.length, i -> lines[i]);
+    }
+
+    /** {@link #fencedCodeLines(String)} over {@code count} lines supplied one at a time. Pure. */
+    static BitSet fencedCodeLines(int count, java.util.function.IntFunction<String> lineAt) {
+        BitSet code = new BitSet();
         int fenceStart = -1;
-        for (int i = 0; i < lines.length; i++) {
-            String trimmed = lines[i].trim();
-            if (trimmed.startsWith("```") || trimmed.startsWith("~~~")) {
+        for (int i = 0; i < count; i++) {
+            if (isFence(lineAt.apply(i))) {
                 if (fenceStart < 0) {
                     fenceStart = i;
                 } else {
@@ -128,9 +153,18 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
             }
         }
         if (fenceStart >= 0) {
-            code.set(fenceStart, lines.length); // an unterminated fence runs to EOF (as editors render it)
+            code.set(fenceStart, count); // an unterminated fence runs to EOF (as editors render it)
         }
         return code;
+    }
+
+    /** Whether {@code line}, ignoring leading whitespace as {@code trim()} does, opens or closes a fence. */
+    private static boolean isFence(String line) {
+        int i = 0;
+        while (i < line.length() && line.charAt(i) <= ' ') {
+            i++;
+        }
+        return line.startsWith("```", i) || line.startsWith("~~~", i);
     }
 
     /**
@@ -155,6 +189,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
         }
         this.checker = checker;
         spellCache.clear(); // a different dictionary → re-evaluate misspellings
+        flaggedCache.clear();
         scheduleRedraw();
     }
 
@@ -194,6 +229,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
             follower.refresh();
         }
         spellCache.clear(); // dictionary loaded / language / user-word / ignore-set changed
+        flaggedCache.clear();
         scheduleRedraw();
     }
 
@@ -214,7 +250,8 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
     }
 
     /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
-    void setRenderingActive(boolean on) {
+    @Override
+    public void setRenderingActive(boolean on) {
         if (follower != null) {
             follower.setRenderingActive(on);
         }
@@ -317,30 +354,44 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed {
         if (line.isEmpty()) {
             return;
         }
-        // Absolute offset is the paragraph's base offset plus the column — hoist the base query out of the
-        // per-word loop (it was called up to twice per word). getParagraph(p,0) is the paragraph's first char.
+        int[][] flagged = flaggedCache.get(line);
+        if (flagged == null) {
+            flagged = flaggedSpans(line);
+            flaggedCache.put(line, flagged);
+        }
+        if (flagged.length == 0) {
+            return; // the usual line: nothing misspelled, so no offset or style query at all
+        }
         int parBase = area.getAbsolutePosition(paragraph, 0);
-        for (int[] span : spanCache.computeIfAbsent(line, SpellChecker::wordSpans)) {
-            int start = span[0];
-            int end = span[1];
-            // Spell verdict first (cached per word) — so the per-word style lookup (eligible(), an area
-            // query) runs only for the few misspelled words on screen, not every visible word. Reordering
-            // is safe: eligibility still gates drawing, and a misspelled code token is still skipped; the
-            // only difference is its (harmless) cache entry. This is the per-scroll-pulse hot path on prose.
-            if (!spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
-                continue;
-            }
-            // Don't flag a "misspelled" run that is actually part of a URL, path, command, or
-            // dotted/underscored identifier (checked only for the few flagged words, off the hot path).
-            if (SpellChecker.partOfStructuredToken(line, start, end)) {
-                continue;
-            }
-            int abs = parBase + start;
+        for (int[] span : flagged) {
+            int abs = parBase + span[0];
             if (!eligible(abs)) {
                 continue; // eligibility is style-dependent (inline/fenced code) → evaluated fresh
             }
-            hits.add(new int[] {abs, parBase + end});
+            hits.add(new int[] {abs, parBase + span[1]});
         }
+    }
+
+    /**
+     * The spans of {@code line}'s words that are misspelled — a pure function of the text and the current
+     * dictionary, which is what lets {@link #flaggedCache} keep it. A "misspelled" run that is actually part
+     * of a URL, path, command, or dotted/underscored identifier is not flagged.
+     */
+    private int[][] flaggedSpans(String line) {
+        linesScanned++;
+        List<int[]> flagged = null;
+        for (int[] span : SpellChecker.wordSpans(line)) {
+            int start = span[0];
+            int end = span[1];
+            if (spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)
+                    && !SpellChecker.partOfStructuredToken(line, start, end)) {
+                if (flagged == null) {
+                    flagged = new java.util.ArrayList<>();
+                }
+                flagged.add(span);
+            }
+        }
+        return flagged == null ? NONE : flagged.toArray(new int[0][]);
     }
 
     /** Whether the word at absolute offset {@code abs} should be checked, by its applied syntax style. */

@@ -43,8 +43,11 @@ import com.fasterxml.jackson.dataformat.toml.TomlMapper;
  */
 public class SharedConfig {
 
-    /** Legacy TOML reader used only for the one-time {@code settings.toml} migration. */
-    private final TomlMapper legacyToml = new TomlMapper();
+    /**
+     * Legacy TOML reader used only for the one-time {@code settings.toml} migration — so it is built only
+     * when that file is actually there to read, not on every launch.
+     */
+    private TomlMapper legacyToml;
     /** Pretty JSON for preferences and the bucketed stores. */
     private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
 
@@ -248,6 +251,9 @@ public class SharedConfig {
         Path file = getSettingsFile();
         Path legacy = getLegacySettingsFile();
         if (!Files.exists(file) && Files.isReadable(legacy)) {
+            if (legacyToml == null) {
+                legacyToml = new TomlMapper();
+            }
             Settings migrated = ConfigMigrations.readVersioned(
                     legacy, legacyToml, new Settings(), ConfigSchema.SETTINGS, this::onLoadProblem);
             if (writeProtected.contains(legacy)) {

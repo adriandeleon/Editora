@@ -6,6 +6,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import javafx.application.Platform;
 
@@ -22,9 +25,11 @@ import javafx.application.Platform;
  *   <li><b>A bounded queue.</b> At most {@value #MAX_PENDING_OUTPUT_EVENTS} lines /
  *       {@value #MAX_PENDING_OUTPUT_CHARS} characters wait for the FX thread. What happens at the bound is
  *       the owner's {@link Overflow} choice.
- *   <li><b>Batched delivery.</b> One drain delivers at most {@value #MAX_EVENTS_PER_PULSE} lines /
- *       {@value #MAX_CHARS_PER_PULSE} characters and then yields the FX thread, so input and repaints
- *       interleave with a flood.
+ *   <li><b>Batched, paced delivery.</b> One drain delivers at most {@value #MAX_EVENTS_PER_PULSE} lines /
+ *       {@value #MAX_CHARS_PER_PULSE} characters and then yields the FX thread, and drains start at least
+ *       {@value #MIN_DRAIN_INTERVAL_MILLIS} ms apart — about one a frame — so input and repaints interleave
+ *       with a flood. The lines of a drain are delivered inside an {@link OutputBatch}, which lets a console
+ *       show them with a single edit.
  *   <li><b>A bounded line.</b> No line longer than {@value #MAX_OUTPUT_LINE_CHARS} characters is ever
  *       materialized; the excess is dropped and the line is marked.
  *   <li><b>Ordered exit.</b> {@link #finish} joins the reader threads, and {@link #post} queues behind every
@@ -76,6 +81,25 @@ public final class OutputPump {
     private static final int MAX_EVENTS_PER_PULSE = 256;
     private static final int MAX_CHARS_PER_PULSE = 64 * 1024;
 
+    /**
+     * The least time between the starts of two drains: one frame at 60 Hz. Drains used to be chained back to
+     * back for as long as anything was queued, so a program that printed steadily owned the FX thread; a
+     * console cannot show more than a frame's worth at a time anyway. The first line after a quiet spell is
+     * still delivered at once.
+     */
+    public static final int MIN_DRAIN_INTERVAL_MILLIS = 16;
+
+    private static final long MIN_DRAIN_INTERVAL_NANOS = MIN_DRAIN_INTERVAL_MILLIS * 1_000_000L;
+
+    /** Wakes the FX thread for a drain that has to wait out {@link #MIN_DRAIN_INTERVAL_MILLIS}. */
+    private static final class Pacer {
+        static final ScheduledExecutorService TIMER = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "output-pump-pacer");
+            t.setDaemon(true);
+            return t;
+        });
+    }
+
     /** How long {@link #finish} waits for a reader that is not making progress before closing its stream. */
     private static final long FINISH_GRACE_NANOS = 1_000_000_000L;
 
@@ -106,6 +130,9 @@ public final class OutputPump {
     private int pendingOutputChars;
     private int pendingOutputEvents;
     private boolean drainScheduled;
+    /** When the last drain started ({@link System#nanoTime}); guarded by {@link #lock}. */
+    private long lastDrainNanos = System.nanoTime() - MIN_DRAIN_INTERVAL_NANOS;
+
     private Runnable droppedNotice;
 
     /**
@@ -324,7 +351,20 @@ public final class OutputPump {
             }
         }
         if (schedule) {
+            scheduleDrain();
+        }
+    }
+
+    /** Hands the next drain to the FX thread, no sooner than a frame after the last one started. */
+    private void scheduleDrain() {
+        long wait;
+        synchronized (lock) {
+            wait = lastDrainNanos + MIN_DRAIN_INTERVAL_NANOS - System.nanoTime();
+        }
+        if (wait <= 0) {
             Platform.runLater(this::drain);
+        } else {
+            Pacer.TIMER.schedule(() -> Platform.runLater(this::drain), wait, TimeUnit.NANOSECONDS);
         }
     }
 
@@ -369,6 +409,7 @@ public final class OutputPump {
         Runnable notice;
         boolean more;
         synchronized (lock) {
+            lastDrainNanos = System.nanoTime();
             notice = droppedNotice;
             droppedNotice = null;
             int chars = 0;
@@ -392,18 +433,36 @@ public final class OutputPump {
         // A callback that throws must not end the pump: `drainScheduled` is already set for the batch after
         // this one, so skipping the reschedule below would leave it set forever — no further output for
         // this run or any later one, and under BLOCK a reader (and so the child) parked on a full queue.
+        // Output is delivered inside an OutputBatch so a console applies the drain's lines as one edit. An
+        // exit event is not: it runs with every line before it already on screen, as it always has (it may
+        // start the next run, or open a dialog and so a nested event loop).
+        boolean batching = false;
         try {
             if (notice != null) {
+                OutputBatch.begin();
+                batching = true;
                 deliver(notice);
             }
             for (PendingFx event : batch) {
-                if (event.generation() == generation) {
-                    deliver(event.action());
+                if (event.generation() != generation) {
+                    continue;
                 }
+                if (event.output() != batching) {
+                    if (batching) {
+                        OutputBatch.end();
+                    } else {
+                        OutputBatch.begin();
+                    }
+                    batching = event.output();
+                }
+                deliver(event.action());
             }
         } finally {
+            if (batching) {
+                OutputBatch.end();
+            }
             if (more) {
-                Platform.runLater(this::drain);
+                scheduleDrain();
             }
         }
     }

@@ -422,6 +422,18 @@ class LspCoordinatorDiagnosticsFxTest {
         return FxTestSupport.callOnFx(() -> coordinator.problemsPanel().rebuildCount());
     }
 
+    /** Opens the Problems window: the panel only rebuilds while it is in a scene. */
+    private void showProblemsWindow() throws Exception {
+        FxTestSupport.runOnFx(
+                () -> new javafx.scene.Scene(new javafx.scene.layout.StackPane(coordinator.problemsPanel()), 300, 400));
+    }
+
+    /** Ends the pacing delay between two rebuilds, so the test does not depend on how fast it runs. */
+    private void settleProblems() throws Exception {
+        FxTestSupport.runOnFx(() -> {}); // a rebuild that was due at once is queued behind the publishes
+        FxTestSupport.runOnFx(coordinator::flushProblemsRefresh);
+    }
+
     /**
      * jdtls publishes once per file on a project import. Each publish used to rebuild the whole tree, so a
      * burst of N cost N full rebuilds on the FX thread; now the burst shares one.
@@ -431,7 +443,8 @@ class LspCoordinatorDiagnosticsFxTest {
         EditorBuffer a = openJava("A.java", "class A {}\n");
         EditorBuffer b = openJava("B.java", "class B {}\n");
         EditorBuffer c = openJava("C.java", "class C {}\n");
-        FxTestSupport.runOnFx(() -> {}); // settle anything queued by opening the buffers
+        showProblemsWindow();
+        settleProblems(); // settle anything queued by opening the buffers
         int before = rebuilds();
 
         FxTestSupport.runOnFx(() -> {
@@ -439,7 +452,7 @@ class LspCoordinatorDiagnosticsFxTest {
             coordinator.onDiagnostics(b.getPath(), one("b"));
             coordinator.onDiagnostics(c.getPath(), one("c"));
         });
-        FxTestSupport.runOnFx(() -> {}); // the single deferred rebuild
+        settleProblems(); // the single deferred rebuild
 
         assertEquals(3, problems().size());
         assertEquals(before + 1, rebuilds(), "three publishes in one burst share one rebuild");
@@ -449,16 +462,17 @@ class LspCoordinatorDiagnosticsFxTest {
     @Test
     void republishingIdenticalDiagnosticsDoesNotRebuildTheTree() throws Exception {
         EditorBuffer a = openJava("A.java", "class A {}\n");
+        showProblemsWindow();
         publish(a.getPath(), one("same"));
-        FxTestSupport.runOnFx(() -> {});
+        settleProblems();
         int before = rebuilds();
 
         publish(a.getPath(), one("same"));
-        FxTestSupport.runOnFx(() -> {});
+        settleProblems();
         assertEquals(before, rebuilds(), "identical content: nothing to rebuild");
 
         publish(a.getPath(), one("different"));
-        FxTestSupport.runOnFx(() -> {});
+        settleProblems();
         assertEquals(before + 1, rebuilds());
     }
 }

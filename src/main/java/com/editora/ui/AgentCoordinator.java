@@ -77,8 +77,9 @@ final class AgentCoordinator implements AcpClient.Host {
 
         /** Opens {@code target} as a new, unfocused background tab (creating the {@link EditorBuffer} and
          *  loading its just-written content) — so a brand-new file the agent created is immediately
-         *  visible, without stealing focus from the chat. FX-thread only. */
-        EditorBuffer openBackgroundBuffer(Path target);
+         *  visible, without stealing focus from the chat. FX-thread only; the file is read off it, so the
+         *  tab appears once the read lands. */
+        void openBackgroundBuffer(Path target);
 
         /** Opens (and focuses) {@code file} as a normal tab — already-open switches to it. FX-thread only. */
         void openPath(Path file);
@@ -768,9 +769,59 @@ final class AgentCoordinator implements AcpClient.Host {
 
     // --- AcpClient.Host (reader/request threads — marshal to FX here) --------------------------------
 
+    /**
+     * What the agent has sent that the FX thread has not applied yet, in arrival order: session updates
+     * ({@link AcpJson.Update}) and config changes ({@link Runnable}). A reply streams as hundreds of small
+     * chunks; each used to be its own task on the FX queue. They are now collected and applied by one task
+     * per batch, which also joins neighbouring text chunks into a single append.
+     */
+    private final java.util.Queue<Object> inbox = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    private final java.util.concurrent.atomic.AtomicBoolean inboxScheduled =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    private void post(Object event) {
+        inbox.add(event);
+        if (inboxScheduled.compareAndSet(false, true)) {
+            Platform.runLater(this::drainInbox);
+        }
+    }
+
+    private int inboxDrains;
+
+    /** FX tasks that have applied agent events — lets a test show a burst of chunks shares one. */
+    int inboxDrains() {
+        return inboxDrains;
+    }
+
+    /** FX thread: applies everything received so far, in order. */
+    private void drainInbox() {
+        inboxDrains++;
+        inboxScheduled.set(false); // before polling: an event added from here on schedules its own drain
+        StringBuilder text = null;
+        for (Object event = inbox.poll(); event != null; event = inbox.poll()) {
+            if (event instanceof AcpJson.Update update && update.kind() == AcpJson.UpdateKind.AGENT_MESSAGE) {
+                text = (text == null ? new StringBuilder() : text).append(update.text());
+                continue;
+            }
+            if (text != null) {
+                panel().appendChunk(text.toString());
+                text = null;
+            }
+            if (event instanceof Runnable action) {
+                action.run();
+            } else {
+                applyUpdate((AcpJson.Update) event);
+            }
+        }
+        if (text != null) {
+            panel().appendChunk(text.toString());
+        }
+    }
+
     @Override
     public void onSessionConfig(String updatedSessionId, AcpJson.SessionInfo info) {
-        Platform.runLater(() -> {
+        post((Runnable) () -> {
             if (!java.util.Objects.equals(sessionId, updatedSessionId)) {
                 return;
             }
@@ -784,25 +835,27 @@ final class AgentCoordinator implements AcpClient.Host {
 
     @Override
     public void onUpdate(AcpJson.Update update) {
-        Platform.runLater(() -> {
-            switch (update.kind()) {
-                case AGENT_MESSAGE -> panel().appendChunk(update.text());
-                case TOOL_CALL -> panel().appendToolLine(update.text());
-                case TOOL_CALL_UPDATE -> {
-                    if ("failed".equals(update.text())) {
-                        panel().appendLine("⚙ ✗ " + tr("agent.toolFailed"));
-                    }
-                }
-                case PLAN -> panel().setPlan(update.planEntries());
-                case MODE_CHANGED -> {
-                    currentModeId = update.text();
-                    panel().setModeLabel(modeDisplayName(modes, update.text()));
-                }
-                case AGENT_THOUGHT, OTHER -> {
-                    // thoughts are noisy in a plain transcript; unknown updates are ignored (forward-compatible)
+        post(update);
+    }
+
+    private void applyUpdate(AcpJson.Update update) {
+        switch (update.kind()) {
+            case AGENT_MESSAGE -> panel().appendChunk(update.text());
+            case TOOL_CALL -> panel().appendToolLine(update.text());
+            case TOOL_CALL_UPDATE -> {
+                if ("failed".equals(update.text())) {
+                    panel().appendLine("⚙ ✗ " + tr("agent.toolFailed"));
                 }
             }
-        });
+            case PLAN -> panel().setPlan(update.planEntries());
+            case MODE_CHANGED -> {
+                currentModeId = update.text();
+                panel().setModeLabel(modeDisplayName(modes, update.text()));
+            }
+            case AGENT_THOUGHT, OTHER -> {
+                // thoughts are noisy in a plain transcript; unknown updates are ignored (forward-compatible)
+            }
+        }
     }
 
     @Override

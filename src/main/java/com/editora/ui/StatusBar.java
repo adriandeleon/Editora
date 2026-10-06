@@ -1,9 +1,9 @@
 package com.editora.ui;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.function.Supplier;
 
+import javafx.application.Platform;
 import javafx.beans.InvalidationListener;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -139,8 +139,18 @@ public final class StatusBar extends HBox {
     /** Whether the app-wide MCP server is running, so Simple-mode toggling can re-apply its visibility. */
     private boolean mcpRunning;
     /** Caret / selection changes update only the cheap caret-dependent segments (Ln/Col + the CSV field) —
-     *  NOT the file-size segment, which is O(document) and doesn't change when the caret moves. */
-    private final InvalidationListener caretListener = obs -> refreshCaretSegments();
+     *  NOT the file-size segment, which is O(document) and doesn't change when the caret moves. One key
+     *  moves both the caret and the selection (and a drag moves them every mouse event), so the refresh is
+     *  coalesced to one per pulse rather than run for each property. */
+    private final InvalidationListener caretListener = obs -> scheduleCaretRefresh();
+
+    private boolean caretRefreshPending;
+    /** How many times the caret segments were recomputed (tests). */
+    int caretRefreshes;
+    /** Supersedes an in-flight background size count (a newer count, or another buffer). */
+    private long sizeGen;
+    /** The buffer the size segment currently describes; another buffer's size is never left showing. */
+    private java.lang.ref.WeakReference<EditorBuffer> sizedBuffer = new java.lang.ref.WeakReference<>(null);
     /** A split has two views of the buffer, each with its own caret: follow the one the user is in. */
     private final javafx.beans.value.ChangeListener<org.fxmisc.richtext.CodeArea> viewListener = (obs, old, now) -> {
         trackCaret(old, false);
@@ -620,6 +630,7 @@ public final class StatusBar extends HBox {
             sizeSub = null;
         }
         attached = buffer;
+        sizeGen++; // a count still running for the previous buffer must not land on this one
         if (buffer != null) {
             // Ln/Col + the CSV field track the caret cheaply (no full-document scan).
             trackCaret(buffer.getFocusedArea(), true);
@@ -712,6 +723,17 @@ public final class StatusBar extends HBox {
         refreshSize(buffer);
     }
 
+    private void scheduleCaretRefresh() {
+        if (caretRefreshPending) {
+            return;
+        }
+        caretRefreshPending = true;
+        Platform.runLater(() -> {
+            caretRefreshPending = false;
+            refreshCaretSegments();
+        });
+    }
+
     /** Updates only the caret-dependent segments for the active buffer (the {@link #caretListener} target). */
     private void refreshCaretSegments() {
         EditorBuffer b = activeBuffer.get();
@@ -724,12 +746,17 @@ public final class StatusBar extends HBox {
      *  single-line scans, no full-document materialization, so it's safe on the per-caret-move path (updated
      *  by {@link #caretListener} without recomputing the O(n) file size). */
     private void refreshPositionAndCsv(EditorBuffer buffer, org.fxmisc.richtext.CodeArea area) {
+        caretRefreshes++;
         int line = area.getCurrentParagraph() + 1;
         int col = area.getCaretColumn() + 1;
         int selected = area.getSelection().getLength();
         String text = "Ln " + line + ", Col " + col;
         if (selected > 0) {
-            long lines = area.getSelectedText().lines().count();
+            // From the selection's two ends, not from its text: copying a select-all to count its lines
+            // made every Shift+arrow O(selection).
+            var sel = area.getCaretSelectionBind();
+            long lines =
+                    selectedLines(sel.getStartParagraphIndex(), sel.getEndParagraphIndex(), sel.getEndColumnPosition());
             text += lines > 1 ? " (" + selected + " selected, " + lines + " lines)" : " (" + selected + " selected)";
         }
         position.setText(text);
@@ -751,12 +778,71 @@ public final class StatusBar extends HBox {
         }
     }
 
-    /** The file-size segment. Materializes the whole document (an O(n) String + byte[]) to count UTF-8 bytes,
-     *  so it is kept OFF the per-caret / per-keystroke path — computed only on a full {@link #refresh()} (tab
-     *  switch / state change) and a debounced edit pulse, never per caret move (it doesn't change on one). */
-    private void refreshSize(EditorBuffer buffer) {
-        size.setText(formatSize(buffer.getContent().getBytes(StandardCharsets.UTF_8).length));
+    /**
+     * How many lines a non-empty selection covers, as {@code selectedText.lines().count()} gave it: one per
+     * line break inside it, plus the text after the last one — nothing when it ends right after a break.
+     */
+    static long selectedLines(int startParagraph, int endParagraph, int endColumn) {
+        int breaks = endParagraph - startParagraph;
+        return breaks > 0 && endColumn == 0 ? breaks : breaks + 1;
     }
+
+    /** The UTF-8 length of {@code text} — {@code getBytes(UTF_8).length} without building the bytes. */
+    static long utf8Length(CharSequence text) {
+        long bytes = 0;
+        int n = text.length();
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            if (c < 0x80) {
+                bytes++;
+            } else if (c < 0x800) {
+                bytes += 2;
+            } else if (Character.isHighSurrogate(c) && i + 1 < n && Character.isLowSurrogate(text.charAt(i + 1))) {
+                bytes += 4;
+                i++;
+            } else {
+                bytes += Character.isSurrogate(c) ? 1 : 3; // an unpaired surrogate is encoded as '?'
+            }
+        }
+        return bytes;
+    }
+
+    /** Above this many characters the size is counted off the FX thread. */
+    static final int INLINE_SIZE_CHARS = 256 * 1024;
+
+    /** The file-size segment: the document's UTF-8 byte count. Kept OFF the per-caret / per-keystroke path —
+     *  computed only on a full {@link #refresh()} (tab switch / state change) and a debounced edit pulse,
+     *  never per caret move (it doesn't change on one). The text is the buffer's shared snapshot; counting
+     *  it is O(n), so for anything but a small file it happens on a background thread and a superseded count
+     *  is dropped. */
+    private void refreshSize(EditorBuffer buffer) {
+        long gen = ++sizeGen;
+        String content = buffer.getContent();
+        if (content.length() <= INLINE_SIZE_CHARS) {
+            showSize(buffer, utf8Length(content));
+            return;
+        }
+        if (sizedBuffer.get() != buffer) {
+            size.setText(""); // until the count arrives, rather than the previous tab's size
+        }
+        sizeCounter.execute(() -> {
+            long bytes = utf8Length(content);
+            Platform.runLater(() -> {
+                if (gen == sizeGen) {
+                    showSize(buffer, bytes);
+                }
+            });
+        });
+    }
+
+    private void showSize(EditorBuffer buffer, long bytes) {
+        sizedBuffer = new java.lang.ref.WeakReference<>(buffer);
+        size.setText(formatSize(bytes));
+    }
+
+    /** Where a large document's size is counted; replaceable so a test can hold the count back. */
+    java.util.concurrent.Executor sizeCounter =
+            task -> Thread.ofVirtual().name("status-size").start(task);
 
     /** Simple UI mode: hide the git / language / tab-size / line-ending / encoding segments (size is kept). */
     /** Shows the narrowing indicator. Deliberately visible in Simple mode too — it is not chrome. */

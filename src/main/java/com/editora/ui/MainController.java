@@ -336,6 +336,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The app-wide recent-files list ({@code SharedConfig}); the search/agent histories are read from there too. */
     private RecentFiles recentFiles;
+
+    private final RecentFilesCheck recentCheck = new RecentFilesCheck();
     /** The VSCode-style Welcome page, shown in its own tab when no file is open (or via {@code view.welcome}). */
     private WelcomePane welcomePane;
     /** The single open Welcome tab (a non-buffer {@link TabContent} tab), or null when none is open. */
@@ -1747,10 +1749,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * dropdown and the Welcome page filter identically; a deleted file must not be offered by either.
      */
     List<Path> showableRecentFiles() {
-        return recentFiles == null
-                ? List.of()
-                : RecentFiles.showable(
-                        recentFiles.getList(), com.editora.vfs.Vfs::isLocal, java.nio.file.Files::exists);
+        return recentFiles == null ? List.of() : recentCheck.showable(recentFiles.getList());
     }
 
     /** A shared history list changed (in any window): refresh this window's recent menu and query dropdown. */
@@ -1765,6 +1764,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void rebuildRecentMenu() {
+        recentCheck.revalidate(recentFiles, this::rebuildRecentMenu); // stats off-thread; re-renders if wrong
         recentButton.getItems().clear();
         List<Path> shown = showableRecentFiles();
         if (shown.isEmpty()) {
@@ -2052,9 +2052,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
         // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
         // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
-        projectPanel.setOnExternalChange(() -> {
+        projectPanel.setOnExternalChanges((changes, complete) -> {
             com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
-            indexCoordinator.markStale();
+            indexCoordinator.onExternalChanges(changes, complete);
             git.refresh();
             refreshBuildTools();
             diffCoordinator.refreshOpenDiffs();
@@ -2484,7 +2484,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             tr("toolwindow." + tool.id()),
                             ToolWindow.Side.RIGHT,
                             c.iconSupplier(),
-                            c.tasksPanel(),
+                            c::tasksPanel, // built on first open
                             "tool." + tool.id()));
         }
         // A single shared "Output" console for every build tool (auto-opens on a run).
@@ -5257,8 +5257,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer openBackgroundBuffer(Path target) {
-            return MainController.this.openBackgroundBuffer(target);
+        public void openBackgroundBuffer(Path target) {
+            MainController.this.openBackgroundBufferAsync(target, opened -> {});
         }
 
         @Override
@@ -6824,8 +6824,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
-                public void setStructureSymbols(EditorBuffer buffer, java.util.List<com.editora.lsp.SymbolNode> syms) {
-                    structurePanel.setLspSymbols(buffer, syms);
+                public StructurePanel structurePanel() {
+                    return structurePanel;
                 }
 
                 @Override
@@ -6937,8 +6937,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public EditorBuffer openBackgroundBuffer(Path target) {
-            return MainController.this.openBackgroundBuffer(target);
+        public void openBackgroundBuffer(Path target) {
+            MainController.this.openBackgroundBufferAsync(target, opened -> {});
         }
 
         @Override
@@ -8124,7 +8124,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      */
     private Tab addContentTab(TabContent content, boolean select) {
         Tab tab = new Tab();
-        tab.setContent(content.node());
+        DeferredTabContent.install(tab, content.node()); // a restored background tab attaches when shown
         tab.setUserData(content);
         // Title lives in a graphic header (not tab.setText) so it's a drag handle for mouse reorder, like
         // buffer tabs. Buffer tabs replace this header via updateTabMeta; non-buffer tabs (Welcome) keep it.
@@ -8811,75 +8811,70 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Builds and attaches the right-click context menu for a tab. */
     private void installTabMenu(Tab tab, EditorBuffer buffer) {
-        MenuItem save = new MenuItem(tr("menu.save"));
-        save.setGraphic(Icons.save());
-        save.setOnAction(e -> fileWorkflows.save(buffer));
-        MenuItem saveAs = new MenuItem(tr("menu.saveAs"));
-        saveAs.setGraphic(Icons.saveAs());
-        saveAs.setOnAction(e -> fileWorkflows.saveAs(buffer));
-        MenuItem close = new MenuItem(tr("menu.close"));
-        close.setGraphic(Icons.closeTab());
-        close.setOnAction(e -> closeTab(tab));
-        MenuItem closeOthers = new MenuItem(tr("menu.closeOthers"));
-        closeOthers.setGraphic(Icons.closeOtherTabs());
-        closeOthers.setOnAction(e -> closeOtherTabs(tab));
-        MenuItem closeAll = new MenuItem(tr("menu.closeAll"));
-        closeAll.setGraphic(Icons.closeAllTabs());
-        closeAll.setOnAction(e -> closeAllTabs());
-        MenuItem closeUnmodified = new MenuItem(tr("menu.closeUnmodified"));
-        closeUnmodified.setGraphic(Icons.closeUnmodifiedTabs());
-        closeUnmodified.setOnAction(e -> closeUnmodifiedTabs());
-        MenuItem closeLeft = new MenuItem(tr("menu.closeLeft"));
-        closeLeft.setGraphic(Icons.closeTabsLeft());
-        closeLeft.setOnAction(e -> closeTabsToLeft(tab));
-        MenuItem closeRight = new MenuItem(tr("menu.closeRight"));
-        closeRight.setGraphic(Icons.closeTabsRight());
-        closeRight.setOnAction(e -> closeTabsToRight(tab));
-        MenuItem copyPath = new MenuItem(tr("menu.copyPath"));
-        copyPath.setGraphic(Icons.copy());
-        copyPath.setOnAction(e -> copyPath(buffer));
-        MenuItem pin = new MenuItem(tr("menu.pin"));
-        pin.setGraphic(Icons.pin());
-        pin.setOnAction(e -> togglePin(tab));
-        MenuItem rename = new MenuItem(tr("menu.rename"));
-        rename.setGraphic(Icons.edit());
-        rename.setOnAction(e -> renameFile(buffer, tab));
+        tab.setContextMenu(LazyContextMenu.of(menu -> buildTabMenu(tab, buffer, menu))); // built on first use
+    }
+
+    private void buildTabMenu(Tab tab, EditorBuffer buffer, ContextMenu menu) {
+        MenuItem save = LazyContextMenu.item(tr("menu.save"), Icons.save(), () -> fileWorkflows.save(buffer));
+        MenuItem saveAs = LazyContextMenu.item(tr("menu.saveAs"), Icons.saveAs(), () -> fileWorkflows.saveAs(buffer));
+        MenuItem close = LazyContextMenu.item(tr("menu.close"), Icons.closeTab(), () -> closeTab(tab));
+        MenuItem closeOthers =
+                LazyContextMenu.item(tr("menu.closeOthers"), Icons.closeOtherTabs(), () -> closeOtherTabs(tab));
+        MenuItem closeAll = LazyContextMenu.item(tr("menu.closeAll"), Icons.closeAllTabs(), () -> closeAllTabs());
+        MenuItem closeUnmodified = LazyContextMenu.item(
+                tr("menu.closeUnmodified"), Icons.closeUnmodifiedTabs(), () -> closeUnmodifiedTabs());
+        MenuItem closeLeft =
+                LazyContextMenu.item(tr("menu.closeLeft"), Icons.closeTabsLeft(), () -> closeTabsToLeft(tab));
+        MenuItem closeRight =
+                LazyContextMenu.item(tr("menu.closeRight"), Icons.closeTabsRight(), () -> closeTabsToRight(tab));
+        MenuItem copyPath = LazyContextMenu.item(tr("menu.copyPath"), Icons.copy(), () -> copyPath(buffer));
+        MenuItem pin = LazyContextMenu.item(tr("menu.pin"), Icons.pin(), () -> togglePin(tab));
+        MenuItem rename = LazyContextMenu.item(tr("menu.rename"), Icons.edit(), () -> renameFile(buffer, tab));
         // Git submenu — mirrors the Project tree's cell "Git" submenu, acting on this tab's file.
         Menu gitMenu = new Menu(tr("project.menu.git"));
         gitMenu.setGraphic(Icons.git());
-        MenuItem stage = new MenuItem(tr("project.menu.git.stage"));
-        stage.setGraphic(Icons.stageAll());
-        stage.setOnAction(e -> git.ifEnabled(() -> git.gitStagePath(buffer.getPath())));
-        MenuItem unstage = new MenuItem(tr("project.menu.git.unstage"));
-        unstage.setGraphic(Icons.remove());
-        unstage.setOnAction(e -> git.ifEnabled(() -> git.gitUnstagePath(buffer.getPath())));
-        MenuItem revert = new MenuItem(tr("project.menu.git.revert"));
-        revert.setGraphic(Icons.undo());
-        revert.setOnAction(e -> git.ifEnabled(() -> git.gitRevertPath(buffer.getPath())));
-        MenuItem ignore = new MenuItem(tr("project.menu.git.addToGitignore"));
-        ignore.setGraphic(Icons.git());
-        ignore.setOnAction(e -> git.ifEnabled(() -> git.addToGitignore(buffer.getPath())));
-        MenuItem diffHead = new MenuItem(tr("project.menu.git.compareHead"));
-        diffHead.setGraphic(Icons.diff());
-        diffHead.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsHead(buffer.getPath())));
-        MenuItem diffBranch = new MenuItem(tr("project.menu.git.compareBranch"));
-        diffBranch.setGraphic(Icons.diff());
-        diffBranch.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsBranch(buffer.getPath())));
-        MenuItem diffTag = new MenuItem(tr("project.menu.git.compareTag"));
-        diffTag.setGraphic(Icons.diff());
-        diffTag.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsTag(buffer.getPath())));
-        MenuItem diffCommit = new MenuItem(tr("project.menu.git.compareRevision"));
-        diffCommit.setGraphic(Icons.diff());
-        diffCommit.setOnAction(e -> git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(buffer.getPath())));
+        MenuItem stage = LazyContextMenu.item(
+                tr("project.menu.git.stage"),
+                Icons.stageAll(),
+                () -> git.ifEnabled(() -> git.gitStagePath(buffer.getPath())));
+        MenuItem unstage = LazyContextMenu.item(
+                tr("project.menu.git.unstage"),
+                Icons.remove(),
+                () -> git.ifEnabled(() -> git.gitUnstagePath(buffer.getPath())));
+        MenuItem revert = LazyContextMenu.item(
+                tr("project.menu.git.revert"),
+                Icons.undo(),
+                () -> git.ifEnabled(() -> git.gitRevertPath(buffer.getPath())));
+        MenuItem ignore = LazyContextMenu.item(
+                tr("project.menu.git.addToGitignore"),
+                Icons.git(),
+                () -> git.ifEnabled(() -> git.addToGitignore(buffer.getPath())));
+        MenuItem diffHead = LazyContextMenu.item(
+                tr("project.menu.git.compareHead"),
+                Icons.diff(),
+                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsHead(buffer.getPath())));
+        MenuItem diffBranch = LazyContextMenu.item(
+                tr("project.menu.git.compareBranch"),
+                Icons.diff(),
+                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsBranch(buffer.getPath())));
+        MenuItem diffTag = LazyContextMenu.item(
+                tr("project.menu.git.compareTag"),
+                Icons.diff(),
+                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsTag(buffer.getPath())));
+        MenuItem diffCommit = LazyContextMenu.item(
+                tr("project.menu.git.compareRevision"),
+                Icons.diff(),
+                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(buffer.getPath())));
         MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
         annotate.setGraphic(Icons.blame());
         annotate.setOnAction(e -> git.ifEnabled(() -> {
             fileWorkflows.openPath(buffer.getPath());
             git.annotateActive();
         }));
-        MenuItem history = new MenuItem(tr("project.menu.git.fileHistory"));
-        history.setGraphic(Icons.gitLog());
-        history.setOnAction(e -> git.ifEnabled(() -> gitWindows.gitFileHistoryForPath(buffer.getPath())));
+        MenuItem history = LazyContextMenu.item(
+                tr("project.menu.git.fileHistory"),
+                Icons.gitLog(),
+                () -> git.ifEnabled(() -> gitWindows.gitFileHistoryForPath(buffer.getPath())));
         gitMenu.getItems()
                 .addAll(
                         stage,
@@ -8895,40 +8890,41 @@ public class MainController implements com.editora.mcp.McpBridge {
                         history);
         // "Compare With…" (any two files) and "Open in Diff Viewer" (a .patch/.diff file) are not Git
         // actions, so they stay outside the Git submenu.
-        MenuItem compareWith = new MenuItem(tr("menu.compareWith"));
-        compareWith.setGraphic(Icons.diff());
-        compareWith.setOnAction(e -> diffCoordinator.compareActiveWithFile());
-        MenuItem openPatch = new MenuItem(tr("menu.openInDiffViewer"));
-        openPatch.setGraphic(Icons.diff());
-        openPatch.setOnAction(e -> diffCoordinator.openPatchFile(buffer));
-        MenuItem reveal = new MenuItem(tr("menu.revealInFileManager"));
-        reveal.setGraphic(Icons.revealInFiles());
-        reveal.setOnAction(e -> revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer)));
-        MenuItem terminal = new MenuItem(tr("menu.openTerminal"));
-        terminal.setGraphic(Icons.terminal());
-        terminal.setOnAction(e -> openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer)));
+        MenuItem compareWith = LazyContextMenu.item(
+                tr("menu.compareWith"), Icons.diff(), () -> diffCoordinator.compareActiveWithFile());
+        MenuItem openPatch = LazyContextMenu.item(
+                tr("menu.openInDiffViewer"), Icons.diff(), () -> diffCoordinator.openPatchFile(buffer));
+        MenuItem reveal = LazyContextMenu.item(
+                tr("menu.revealInFileManager"),
+                Icons.revealInFiles(),
+                () -> revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer)));
+        MenuItem terminal = LazyContextMenu.item(
+                tr("menu.openTerminal"),
+                Icons.terminal(),
+                () -> openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer)));
 
-        ContextMenu menu = new ContextMenu(
-                save,
-                saveAs,
-                new SeparatorMenuItem(),
-                close,
-                closeOthers,
-                closeAll,
-                closeUnmodified,
-                new SeparatorMenuItem(),
-                closeLeft,
-                closeRight,
-                new SeparatorMenuItem(),
-                gitMenu,
-                compareWith,
-                openPatch,
-                new SeparatorMenuItem(),
-                reveal,
-                terminal,
-                copyPath,
-                pin,
-                rename);
+        menu.getItems()
+                .setAll(
+                        save,
+                        saveAs,
+                        new SeparatorMenuItem(),
+                        close,
+                        closeOthers,
+                        closeAll,
+                        closeUnmodified,
+                        new SeparatorMenuItem(),
+                        closeLeft,
+                        closeRight,
+                        new SeparatorMenuItem(),
+                        gitMenu,
+                        compareWith,
+                        openPatch,
+                        new SeparatorMenuItem(),
+                        reveal,
+                        terminal,
+                        copyPath,
+                        pin,
+                        rename);
         menu.setOnShowing(e -> {
             closeLeft.setDisable(eligibleToLeft(tab).isEmpty());
             closeRight.setDisable(eligibleToRight(tab).isEmpty());
@@ -8954,7 +8950,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             save.setDisable(hasPath && !buffer.isDirty());
             pin.setText(tr(pinned.contains(tab) ? "menu.unpin" : "menu.pin"));
         });
-        tab.setContextMenu(menu);
     }
 
     /** Reflection seam retained for lifecycle tests and project deletion. */

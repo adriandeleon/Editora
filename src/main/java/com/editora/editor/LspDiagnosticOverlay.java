@@ -19,7 +19,7 @@ import org.fxmisc.richtext.CodeArea;
  * multi-line ranges and per-severity colors. Diagnostics use 0-based line/character (LSP convention) and
  * are pushed in by {@link EditorBuffer}; this class only renders them.
  */
-final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followed {
+final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
@@ -30,6 +30,8 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
     private List<LspDiagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
+    private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private LspDiagnosticOverlay follower;
 
@@ -55,6 +57,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
     @Override
     public LspDiagnosticOverlay follower(CodeArea view) {
         LspDiagnosticOverlay second = new LspDiagnosticOverlay(view);
+        second.setRenderingActive(rendering);
         second.setActive(active);
         second.setDiagnostics(diagnostics);
         follower = second;
@@ -75,9 +78,7 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
             scheduleRedraw();
         } else {
             diagnostics = List.of();
-            clear();
-            canvas.setWidth(1); // release the full-viewport texture while hidden
-            canvas.setHeight(1);
+            CanvasGuards.release(canvas); // drop the full-viewport texture while hidden
         }
     }
 
@@ -86,6 +87,12 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
             follower.setDiagnostics(diagnostics);
         }
         this.diagnostics = diagnostics == null ? List.of() : diagnostics;
+        if (this.diagnostics.isEmpty()) {
+            // Nothing to underline: let the texture go now, and stay out of the scroll/edit repaint path
+            // entirely until there is (the usual state of a clean file).
+            CanvasGuards.release(canvas);
+            return;
+        }
         scheduleRedraw();
     }
 
@@ -96,20 +103,42 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
     @Override
     protected void layoutChildren() {
         canvas.relocate(0, 0);
-        if (!active) {
-            return; // stay 1x1 / no texture while inactive (the common case)
+        if (!drawable()) {
+            return; // stay 1x1 / no texture while off, backgrounded, or with nothing to draw
         }
-        double w = CanvasGuards.clampWidth(this, getWidth());
-        double h = CanvasGuards.clampHeight(this, getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
+        CanvasGuards.fit(this, canvas);
         scheduleRedraw();
     }
 
+    /**
+     * Releases the canvas while this overlay's tab is in the background and repaints when it is shown again
+     * (driven by {@code EditorBuffer.setRenderingActive}). A hidden tab would otherwise keep a
+     * viewport-sized texture alive for as long as it stays open.
+     */
+    @Override
+    public void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas);
+        }
+    }
+
+    /** Whether there is anything to paint; the canvas is 1x1 (no viewport texture) whenever there is not. */
+    private boolean drawable() {
+        return active && rendering && !diagnostics.isEmpty();
+    }
+
     private void scheduleRedraw() {
-        if (!active || redrawPending) {
+        if (!drawable() || redrawPending) {
             return;
         }
         redrawPending = true;
@@ -119,18 +148,16 @@ final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followe
         });
     }
 
-    private void clear() {
-        canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-    }
-
     private void redraw() {
+        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+            CanvasGuards.release(canvas);
+            return;
+        }
+        CanvasGuards.fit(this, canvas); // grown here as well: content can arrive without a layout pass
         GraphicsContext g = canvas.getGraphicsContext2D();
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
-        if (!active || diagnostics.isEmpty() || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            return;
-        }
         try {
             int total = area.getParagraphs().size();
             int first = Math.max(0, area.firstVisibleParToAllParIndex());

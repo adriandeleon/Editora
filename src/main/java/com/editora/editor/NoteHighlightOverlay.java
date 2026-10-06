@@ -19,7 +19,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * mouse-transparent {@link Canvas} sized to the viewport, redrawn coalesced (one per pulse) on
  * scroll/edit/resize/fold, only for visible spans. Off in large-file mode / when indicators are hidden.
  */
-final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed {
+final class NoteHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     // A soft amber wash painted like a text selection: a flat, contiguous fill (no per-line outline or
     // rounded corners) so a multi-line note traces the same shape as the editor's selection.
@@ -120,7 +120,8 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
-    void setRenderingActive(boolean on) {
+    @Override
+    public void setRenderingActive(boolean on) {
         if (follower != null) {
             follower.setRenderingActive(on);
         }
@@ -256,6 +257,18 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
                 g.fillPolygon(new double[] {gx, gx + GLYPH_SIZE, gx}, new double[] {gy, gy, gy + GLYPH_SIZE}, 3);
             }
         }
+    }
+
+    /**
+     * The on-screen box of the character a note starting at {@code start} hangs its marker on, or
+     * {@code null} when there is none. A note whose text was deleted up to the end of the document starts
+     * <em>at</em> the end: there is no character there and no marker is drawn, and asking
+     * {@code getCharacterBoundsOnScreen} for that empty range would leak a caret blink timer per call.
+     */
+    static Bounds markerBoundsOnScreen(CodeArea area, int start) {
+        return start < 0 || start >= area.getLength()
+                ? null
+                : area.getCharacterBoundsOnScreen(start, start + 1).orElse(null);
     }
 
     private static int clamp(int v, int lo, int hi) {

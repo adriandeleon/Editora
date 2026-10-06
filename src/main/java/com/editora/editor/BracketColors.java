@@ -14,10 +14,10 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
  * answers "where does <em>this</em> one close?" — both are worth having and they combine.
  *
  * <p>Computed in Java rather than by a grammar (TextMate cannot count nesting) and folded into the
- * existing incremental highlight in {@link EditorBuffer#applyHighlighting}: the depth pass runs on the
- * same background thread, over the same captured text, as the tokenize that precedes it, and its spans are
- * overlaid onto the token spans in the one {@code setStyleSpans} that was happening anyway. So there is no
- * extra apply, no extra repaint, and nothing added to the caret or scroll paths.
+ * existing incremental highlight ({@link HighlightPass}): the depth pass runs on the same background
+ * thread, over the same captured text, as the tokenize it follows line by line ({@link Scanner}), and its
+ * spans are overlaid onto the token spans there, before the one {@code setStyleSpans} that was happening
+ * anyway. So there is no extra apply, no extra repaint, and nothing added to the caret or scroll paths.
  *
  * <p><b>Brackets inside strings and comments are skipped.</b> {@link BraceMatcher} cannot do this — it runs
  * off the caret with no token information — but here the tokenize has just finished, so the string/comment
@@ -25,12 +25,14 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
  * shift the colour of every bracket below it, which reads as the feature being broken rather than as one
  * bracket being wrong.
  *
- * <p>Depth is carried across incremental passes by {@link Analysis#lineEndDepths()}, stored per line beside
- * the grammar end-states and spliced identically, so re-highlighting from the edited line never has to
- * rescan the unchanged prefix.
+ * <p>Depth is carried across incremental passes per line, beside the grammar end-states and spliced
+ * identically ({@link HighlightPass.Lines}), so re-highlighting from the edited line never has to rescan
+ * the unchanged prefix — and a pass may only stop early on a line whose depth, as well as its grammar
+ * state, is what it was: an added bracket changes the colour of every bracket below it.
  *
- * <p>The pure {@link #analyze} (no toolkit) is unit-tested; {@link #buildSpans} is the thin RichTextFX
- * wrapper, mirroring {@link CsvRainbow}.
+ * <p>The pure {@link #analyze} (no toolkit) is unit-tested, and {@link Scanner} — the same pass fed token
+ * runs — against it in {@code BracketColorsTest}; {@link #buildSpans} is the thin RichTextFX wrapper,
+ * mirroring {@link CsvRainbow}.
  */
 final class BracketColors {
 
@@ -111,6 +113,62 @@ final class BracketColors {
                 return new Analysis(marks, lineEndDepths);
             }
             pos = newline + 1;
+        }
+    }
+
+    /**
+     * The same depth pass as {@link #analyze}, fed the token runs as the tokenizer produces them instead of
+     * walking the finished spans afterwards. That makes the depth at the end of each line available while
+     * the pass is still running, which is what lets an incremental pass stop once both the grammar state
+     * and the bracket depth are back to what they were — and saves the second walk.
+     */
+    static final class Scanner {
+        private final String text;
+        private final int base;
+        private final int cycle;
+        private final List<int[]> marks = new ArrayList<>();
+        private int pos;
+        private int depth;
+
+        /** Scans from offset {@code from} of {@code text}, entering it at nesting depth {@code startDepth}. */
+        Scanner(String text, int from, int startDepth, int colors) {
+            this.text = text;
+            this.base = from;
+            this.pos = from;
+            this.depth = Math.max(0, startDepth);
+            this.cycle = Math.max(1, colors);
+        }
+
+        /** The next {@code length} characters carry token class {@code style} ({@code null} = none). */
+        void run(String style, int length) {
+            int end = Math.min(text.length(), pos + length);
+            if (!"string".equals(style) && !"comment".equals(style)) {
+                for (int i = pos; i < end; i++) {
+                    char c = text.charAt(i);
+                    if (isOpen(c)) {
+                        marks.add(new int[] {i - base, depth % cycle});
+                        depth++;
+                    } else if (isClose(c)) {
+                        if (depth == 0) {
+                            marks.add(new int[] {i - base, UNMATCHED});
+                        } else {
+                            depth--;
+                            marks.add(new int[] {i - base, depth % cycle});
+                        }
+                    }
+                }
+            }
+            pos = end;
+        }
+
+        /** Nesting depth after everything fed so far. */
+        int depth() {
+            return depth;
+        }
+
+        /** {@code {offset, code}} per bracket, offsets relative to the scan start — see {@link Analysis}. */
+        List<int[]> marks() {
+            return marks;
         }
     }
 

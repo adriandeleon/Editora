@@ -123,7 +123,8 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
     private final ComboBox<DapModels.ThreadInfo> threads = new ComboBox<>();
     private final ListView<DapModels.StackFrameInfo> stack = new ListView<>();
     private final TreeView<VarRow> variables = new TreeView<>();
-    private final CodeArea console = new CodeArea();
+    private final CodeArea console = AreaUndo.none(new CodeArea());
+    private final ConsoleAppender appender = new ConsoleAppender(console, MAX_CONSOLE_CHARS);
     private final TextField evalInput = new TextField();
 
     private int selectedFrameId = -1;
@@ -1007,17 +1008,13 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
             return;
         }
         text = DebugValues.stripAnsi(text); // colour codes of a logger / Node script are not text to read
-        int start = console.getLength();
-        int caretBefore = console.getCaretPosition();
-        boolean follow = caretBefore >= start; // scrolled back? stay put
-        console.appendText(text);
+        StyleSpans<Collection<String>> spans = null;
         if ("stderr".equals(category) && !text.isEmpty()) {
-            StyleSpans<Collection<String>> spans = new StyleSpansBuilder<Collection<String>>()
+            spans = new StyleSpansBuilder<Collection<String>>()
                     .add(List.of("run-stderr"), text.length())
                     .create();
-            console.setStyleSpans(start, spans);
         }
-        ConsoleNav.afterAppend(console, caretBefore, follow, MAX_CONSOLE_CHARS);
+        appender.append(text, spans);
     }
 
     /**
@@ -1051,6 +1048,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
      * short of a newline (a prompt), and the notice must not read as part of it.
      */
     public void appendNotice(String line) {
+        appender.flush(); // the line break below is decided by what the console ends with
         int length = console.getLength();
         boolean midLine = length > 0 && !"\n".equals(console.getText(length - 1, length));
         appendOutput((midLine ? "\n" : "") + line + "\n", "console");
@@ -1207,6 +1205,7 @@ public final class DebugPanel extends VBox implements ToolWindowContent {
 
     /** Empties the console (its context menu, and each new launch — see {@code DebugCoordinator}). */
     public void clearConsole() {
+        appender.discard();
         console.clear();
     }
 

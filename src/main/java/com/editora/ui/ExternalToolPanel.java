@@ -34,7 +34,7 @@ public final class ExternalToolPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
-    private final CodeArea output = new CodeArea();
+    private final CodeArea output = AreaUndo.none(new CodeArea());
     private Consumer<StackTraceLinks.Link> onLink;
 
     public ExternalToolPanel() {

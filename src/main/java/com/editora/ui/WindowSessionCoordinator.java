@@ -68,7 +68,8 @@ final class WindowSessionCoordinator {
 
         NotesCoordinator notesCoordinator();
 
-        EditorBuffer openBackgroundBuffer(Path target);
+        /** Opens {@code target} as an unfocused tab; the file is read off the FX thread, then attached. */
+        void openBackgroundBuffer(Path target);
 
         void setStatus(String message);
 
@@ -141,6 +142,11 @@ final class WindowSessionCoordinator {
             // restore-complete bookkeeping, and show Welcome only if nothing got opened.
             runPendingStartupAction(hasStartupWork);
             runPendingAfterRestore(); // action already ran when hasStartupWork; this does the bookkeeping
+            if (startupTargets.isEmpty()) {
+                // No file will load, so nothing else arms the first-paint mark: a launch that lands on
+                // Welcome (or a blank --new-file buffer) used to print no startup report at all.
+                host.fileWorkflows().notePerfWindowShown();
+            }
             Platform.runLater(host::showWelcomeIfNoTabs);
             return;
         }
@@ -167,6 +173,34 @@ final class WindowSessionCoordinator {
         // group rather than opened into one group and moved afterwards.
         com.editora.config.EditorGroupLayout layout = state.getEditorLayout();
         host.editorArea().restoreLayout(layout);
+        host.editorArea().holdActiveTab(true); // until the session's own active tab is the selected one
+        try {
+            restoreShells(files, layout, selectIndex, buffers);
+        } finally {
+            host.editorArea().holdActiveTab(false);
+            // Only now is each group's selection the restored one: the tabs showing attach their editor,
+            // the rest wait for their first selection.
+            host.editorArea().tabs().forEach(DeferredTabContent::arm);
+        }
+        // Fill order: the selected file first (the CLI target when there is one, else the session's active
+        // file), then the rest in tab order.
+        int firstIndex = selectIndex >= 0 ? selectIndex : activeIndex;
+        List<Integer> order = new ArrayList<>();
+        order.add(firstIndex);
+        for (int i = 0; i < files.size(); i++) {
+            if (i != firstIndex) {
+                order.add(i);
+            }
+        }
+        fillSessionFiles(files, buffers, order, 0);
+    }
+
+    /** Creates every restored tab as an empty shell, in tab order, and applies the saved selection. */
+    private void restoreShells(
+            List<WorkspaceState.OpenFile> files,
+            com.editora.config.EditorGroupLayout layout,
+            int selectIndex,
+            List<EditorBuffer> buffers) {
         for (int i = 0; i < files.size(); i++) {
             WorkspaceState.OpenFile f = files.get(i);
             host.editorArea().setRestoreTargetGroup(layout == null ? -1 : f.getGroup());
@@ -196,6 +230,9 @@ final class WindowSessionCoordinator {
             buffer.setHeavyFile(true); // suppress LSP/minimap while this restored tab is only a shell
             buffer.setLoading(true);
             host.fileWorkflows().loadingBuffers.add(buffer);
+            if (!active) {
+                DeferredTabContent.defer(buffer.getNode()); // filled in the background, laid out when shown
+            }
             Tab tab = host.addBuffer(buffer, active, false);
             if (f.isPinned()) {
                 host.pinned().add(tab);
@@ -216,17 +253,6 @@ final class WindowSessionCoordinator {
                 host.editorArea().select(active); // re-assert the active file after the per-group selections
             }
         }
-        // Fill order: the selected file first (the CLI target when there is one, else the session's active
-        // file), then the rest in tab order.
-        int firstIndex = selectIndex >= 0 ? selectIndex : activeIndex;
-        List<Integer> order = new ArrayList<>();
-        order.add(firstIndex);
-        for (int i = 0; i < files.size(); i++) {
-            if (i != firstIndex) {
-                order.add(i);
-            }
-        }
-        fillSessionFiles(files, buffers, order, 0);
     }
 
     /** Fills one restored buffer per pulse (in {@code order}), keeping the UI responsive between files. */
@@ -461,6 +487,7 @@ final class WindowSessionCoordinator {
     /** Marks the restore complete, running the CLI startup action first if it hasn't already run. */
     void runPendingAfterRestore() {
         runPendingStartupAction(false);
+        com.editora.perf.Startup.mark(com.editora.perf.Startup.SESSION_RESTORED);
         openMainClassForRunConfig();
     }
 
@@ -713,7 +740,43 @@ final class WindowSessionCoordinator {
         CodeArea area = buffer.getArea();
         int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
         area.moveTo(caret);
-        scrollRestoredCaretIntoView(buffer, SCROLL_SETTLE_ATTEMPTS);
+        Tab tab = host.tabForBuffer(buffer);
+        if (DeferredTabContent.isDeferred(tab)) {
+            // Restored in the background: there is no viewport to position until its editor is attached.
+            DeferredTabContent.whenShown(tab, () -> scrollRestoredCaretWhenLaidOut(buffer));
+        } else {
+            scrollRestoredCaretIntoView(buffer, SCROLL_SETTLE_ATTEMPTS);
+        }
+    }
+
+    /**
+     * {@link #scrollRestoredCaretIntoView} for an editor attached this instant (a deferred tab's first
+     * show). Its retries are chained {@code runLater}s, which can all run before the pulse that first gives
+     * the area a height, so wait for that height instead of spending them on a 0-high viewport.
+     * Asking for the paragraph up front as well lets the first layout land on it rather than paint the top of
+     * the file for a frame.
+     */
+    void scrollRestoredCaretWhenLaidOut(EditorBuffer buffer) {
+        CodeArea area = buffer.getArea();
+        if (area.getHeight() > 0) {
+            scrollRestoredCaretIntoView(buffer, SCROLL_SETTLE_ATTEMPTS);
+            return;
+        }
+        try {
+            area.showParagraphAtTop(area.getCurrentParagraph());
+        } catch (RuntimeException ignored) {
+            // No viewport yet; the laid-out pass below positions it.
+        }
+        area.heightProperty().addListener(new javafx.beans.value.ChangeListener<Number>() {
+            @Override
+            public void changed(javafx.beans.value.ObservableValue<? extends Number> obs, Number was, Number now) {
+                if (now.doubleValue() > 0) {
+                    area.heightProperty().removeListener(this);
+                    // Deferred: this fires inside the layout pass that sized the area.
+                    Platform.runLater(() -> scrollRestoredCaretIntoView(buffer, SCROLL_SETTLE_ATTEMPTS));
+                }
+            }
+        });
     }
 
     /** Pulses to keep defending a restored buffer's scroll while the layout is still moving under it. */

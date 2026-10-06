@@ -1017,16 +1017,13 @@ final class BufferCompletion {
         if (caret == 0) {
             return; // nothing to continue yet
         }
-        String text = a.getText();
-        int lineEnd = caret;
-        while (lineEnd < text.length() && text.charAt(lineEnd) != '\n') {
-            lineEnd++;
-        }
-        if (!text.substring(caret, lineEnd).isBlank()) {
+        // Only the rest of the caret's line and a few kilobytes either side of the caret are read: never
+        // the whole document, which this runs against after every typing pause.
+        if (!a.getText(a.getCurrentParagraph()).substring(a.getCaretColumn()).isBlank()) {
             return;
         }
-        String prefix = text.substring(Math.max(0, caret - AI_COMPLETION_PREFIX_CHARS), caret);
-        String suffix = text.substring(caret, Math.min(text.length(), caret + AI_COMPLETION_SUFFIX_CHARS));
+        String prefix = a.getText(Math.max(0, caret - AI_COMPLETION_PREFIX_CHARS), caret);
+        String suffix = a.getText(caret, Math.min(a.getLength(), caret + AI_COMPLETION_SUFFIX_CHARS));
         long gen = ++aiCompletionGen;
         aiCompletionProvider.complete(host.language(), prefix, suffix, result -> {
             if (gen != aiCompletionGen

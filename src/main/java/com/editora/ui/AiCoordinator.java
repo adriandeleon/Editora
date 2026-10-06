@@ -54,12 +54,15 @@ final class AiCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final AiService service = new AiService();
+    /** One HTTP client for the three services below: they differ in what they cancel, not in where they connect. */
+    private final com.editora.ai.AiClient client = new com.editora.ai.AiClient();
+
+    private final AiService service = new AiService(client);
     /** Inline completion streams on its own service so it can never cancel (or be cancelled by) an
      *  explicit action like commit-message generation; each keystroke's request supersedes the last. */
-    private final AiService completionService = new AiService();
+    private final AiService completionService = new AiService(client);
 
-    private final AiService probeService = new AiService();
+    private final AiService probeService = new AiService(client);
 
     private boolean busy;
     /** Cached result of the last connectivity probe (see {@link #applySupport}) — never re-checked per
@@ -536,5 +539,6 @@ final class AiCoordinator {
         service.shutdown();
         completionService.shutdown();
         probeService.shutdown();
+        client.close();
     }
 }

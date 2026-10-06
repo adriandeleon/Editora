@@ -3,7 +3,6 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.animation.PauseTransition;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
@@ -20,7 +19,6 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
-import javafx.util.Duration;
 
 import com.editora.agent.AcpJson;
 import com.editora.editor.MarkdownRenderer;
@@ -38,10 +36,12 @@ import static com.editora.i18n.Messages.tr;
  * ({@link #appendChunk}) is rendered as <b>Markdown</b> via {@link MarkdownRenderer} (the same renderer
  * the Markdown preview uses) — so code blocks, lists, bold, tables, and even Mermaid/math in a reply
  * render properly instead of showing raw markup. A reply streams in one chunk at a time; each chunk
- * accumulates into that message's own raw-text buffer and a debounced ({@link #RENDER_DEBOUNCE}) re-parse
- * replaces that message's single rendered node in place, so a long response isn't re-parsed on every
- * chunk. {@link #appendLine} (a new prompt, a tool-call line, an error) finalizes — flushes any pending
- * render synchronously — whatever agent message was streaming, so the next chunk starts a fresh message
+ * accumulates into that message's own raw-text buffer and the message is re-rendered at a fixed pace
+ * ({@link #RENDER_INTERVAL_MILLIS}): at once for the first chunk, then at most that often while chunks keep
+ * arriving — so text appears as it streams rather than when the stream pauses. A streaming render parses
+ * only the blocks that can still change ({@link AgentStreamSplit}); finished blocks keep their nodes.
+ * {@link #appendLine} (a new prompt, a tool-call line, an error) finalizes — renders once more, as a
+ * whole — whatever agent message was streaming, so the next chunk starts a fresh message
  * rather than continuing the previous one. Capped at {@link #MAX_ENTRIES} transcript nodes (oldest
  * dropped first) so a long session can't grow memory without bound.
  *
@@ -55,8 +55,11 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     /** Trim the transcript once it exceeds this many entries (keeps the most recent messages/lines). */
     private static final int MAX_ENTRIES = 2000;
 
-    /** Coalesces rapid streaming chunks into one Markdown re-parse+re-render per pause. */
-    private static final Duration RENDER_DEBOUNCE = Duration.millis(150);
+    /**
+     * The longest a streamed chunk waits to be shown. This used to be a 150 ms debounce restarted by every
+     * chunk — and an agent sends chunks faster than that, so a reply showed nothing until it paused.
+     */
+    static final int RENDER_INTERVAL_MILLIS = 120;
 
     private final Label status = new Label();
     private final Label agentLabel = new Label();
@@ -91,7 +94,35 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     /** Raw Markdown accumulated so far for {@link #currentAgentWrapper}. */
     private final StringBuilder currentAgentMarkdown = new StringBuilder();
 
-    private PauseTransition renderPause;
+    /** Paces the streaming message's renders: the first chunk at once, then one per interval. */
+    private final FxThrottle renderThrottle =
+            new FxThrottle(RENDER_INTERVAL_MILLIS, false, () -> renderCurrentMarkdown(false));
+
+    /** The block container of the streaming message's render, or null when it must be rendered whole. */
+    private javafx.scene.layout.Pane streamBlocks;
+    /** How much of {@link #currentAgentMarkdown} is rendered into blocks that are final. */
+    private int settledLength;
+    /** How many of {@link #streamBlocks}' children those final blocks are. */
+    private int settledBlocks;
+
+    private int wholeRenders;
+    private int tailRenders;
+    private int tailChars;
+
+    /** Renders of a whole message — lets a test show a stream is not re-parsed from its start each time. */
+    int wholeRenderCount() {
+        return wholeRenders;
+    }
+
+    /** Streaming renders that parsed only the unsettled tail. */
+    int tailRenderCount() {
+        return tailRenders;
+    }
+
+    /** Characters parsed by those tail renders, in all. */
+    int tailCharsRendered() {
+        return tailChars;
+    }
 
     public AgentPanel(
             Runnable onStop,
@@ -222,7 +253,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             trimIfNeeded();
         }
         currentAgentMarkdown.append(text);
-        scheduleMarkdownRender();
+        renderThrottle.request();
     }
 
     /** Appends {@code line} as its own plain-text entry (tool activity, prompts, status notes) — finalizes
@@ -281,36 +312,44 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private void scheduleMarkdownRender() {
-        if (renderPause == null) {
-            renderPause = new PauseTransition(RENDER_DEBOUNCE);
-            renderPause.setOnFinished(e -> renderCurrentMarkdown());
-        }
-        renderPause.stop();
-        renderPause.playFromStart();
-    }
-
-    /** Flushes any pending debounced render synchronously and stops streaming the current message
-     *  (the next {@link #appendChunk} starts a new one). A no-op when nothing is streaming. */
+    /** Renders the current message in full, synchronously, and stops streaming it (the next
+     *  {@link #appendChunk} starts a new one). A no-op when nothing is streaming. */
     private void finalizeCurrentMessage() {
-        if (renderPause != null) {
-            renderPause.stop();
-        }
+        renderThrottle.cancel();
         if (currentAgentWrapper != null) {
-            renderCurrentMarkdown();
+            renderCurrentMarkdown(true);
             currentAgentWrapper = null;
             currentAgentMarkdown.setLength(0);
+            streamBlocks = null;
         }
     }
 
-    /** Re-parses {@link #currentAgentMarkdown} and replaces {@link #currentAgentWrapper}'s content —
-     *  MUST run on the FX thread ({@link MarkdownRenderer#renderDocument} builds FX nodes). Falls back to
-     *  a plain wrapped label if rendering throws (malformed input should never break the chat). */
-    private void renderCurrentMarkdown() {
+    /**
+     * Brings {@link #currentAgentWrapper} up to date with {@link #currentAgentMarkdown} — MUST run on the FX
+     * thread ({@link MarkdownRenderer#renderDocument} builds FX nodes).
+     *
+     * <p>While the message is streaming only its unsettled tail is parsed and rebuilt. {@code complete}
+     * renders the whole message in one piece instead: the finished reply is then exactly what a single
+     * parse makes of it, whatever the stream was split into along the way.
+     */
+    private void renderCurrentMarkdown(boolean complete) {
         if (currentAgentWrapper == null) {
             return;
         }
+        if (!complete && renderTail()) {
+            return;
+        }
         String md = currentAgentMarkdown.toString();
+        Node rendered = renderMarkdown(md);
+        currentAgentWrapper.getChildren().setAll(rendered);
+        wholeRenders++;
+        streamBlocks = blocksOf(rendered);
+        settledLength = 0;
+        settledBlocks = 0;
+    }
+
+    /** Falls back to a plain wrapped label if rendering throws (malformed input should never break the chat). */
+    private Node renderMarkdown(String md) {
         Node rendered;
         try {
             rendered = MarkdownRenderer.renderDocument(
@@ -321,7 +360,61 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
             rendered = fallback;
         }
         wireInlineCodePaths(rendered);
-        currentAgentWrapper.getChildren().setAll(rendered);
+        return rendered;
+    }
+
+    /**
+     * The container holding one node per top-level block of a rendered document, or null when
+     * {@code rendered} is not shaped that way (the error fallback) and so cannot be extended block by block.
+     */
+    private static javafx.scene.layout.Pane blocksOf(Node rendered) {
+        if (rendered instanceof javafx.scene.layout.StackPane wrap
+                && wrap.getChildren().size() == 1
+                && wrap.getChildren().get(0) instanceof VBox blocks
+                && blocks.getStyleClass().contains("markdown-preview")) {
+            return blocks;
+        }
+        return null;
+    }
+
+    /**
+     * Re-renders only the blocks of the streaming message that can still change, keeping the nodes of the
+     * ones that cannot. Returns false when the message has to be rendered whole (its first render, or a
+     * render whose shape is not block-per-node).
+     */
+    private boolean renderTail() {
+        if (streamBlocks == null) {
+            return false;
+        }
+        List<Node> blocks = streamBlocks.getChildren();
+        String md = currentAgentMarkdown.toString();
+        int from = settledLength;
+        int end = AgentStreamSplit.settledEnd(md, from);
+        List<Node> settled = end > from ? renderBlocks(md.substring(from, end)) : List.of();
+        List<Node> tail = end < md.length() ? renderBlocks(md.substring(end)) : List.of();
+        if (settled == null || tail == null) {
+            streamBlocks = null;
+            return false;
+        }
+        blocks.subList(settledBlocks, blocks.size()).clear(); // the previous tail
+        blocks.addAll(settled);
+        settledLength = end;
+        settledBlocks = blocks.size();
+        blocks.addAll(tail);
+        tailRenders++;
+        tailChars += md.length() - from;
+        return true;
+    }
+
+    /** The top-level block nodes of {@code md}, detached from their own container; null if not block-shaped. */
+    private List<Node> renderBlocks(String md) {
+        javafx.scene.layout.Pane rendered = blocksOf(renderMarkdown(md));
+        if (rendered == null) {
+            return null;
+        }
+        List<Node> blocks = new java.util.ArrayList<>(rendered.getChildren());
+        rendered.getChildren().clear();
+        return blocks;
     }
 
     /**
@@ -359,9 +452,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     /** Clears the transcript (a new session). */
     public void clearTranscript() {
         transcriptBox.getChildren().clear();
-        if (renderPause != null) {
-            renderPause.stop();
-        }
+        renderThrottle.cancel();
+        streamBlocks = null;
         currentAgentWrapper = null;
         currentAgentMarkdown.setLength(0);
     }
