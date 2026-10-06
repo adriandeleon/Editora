@@ -93,6 +93,23 @@ class RemoteSaveFxTest {
             EditorBuffer buffer = openRemote(async, fx, sftp.remotePath("ro.txt"));
 
             assertTrue(FxTestSupport.callOnFx(buffer::isViewMode), "read-only on the server: opened to look at");
+            // The banner says why, as it does for a local file; "Enable Editing" would promise a plain save.
+            javafx.scene.control.Button enable = FxTestSupport.field(buffer, "enableEditingButton");
+            Label readOnlyNote = FxTestSupport.field(buffer, "viewModeNote");
+            assertFalse(FxTestSupport.callOnFx(enable::isVisible), "no Enable Editing for a file with no write bit");
+            assertTrue(FxTestSupport.callOnFx(readOnlyNote::isVisible));
+            assertEquals(tr("viewmode.note"), FxTestSupport.callOnFx(readOnlyNote::getText));
+            Files.writeString(sftp.serverPath("rw.txt"), "open\n");
+            EditorBuffer writable = openRemote(async, fx, sftp.remotePath("rw.txt"));
+            FxTestSupport.runOnFx(() -> writable.setViewMode(true));
+            javafx.scene.control.Button enableWritable = FxTestSupport.field(writable, "enableEditingButton");
+            assertTrue(FxTestSupport.callOnFx(enableWritable::isVisible), "a writable remote file still offers it");
+            FxTestSupport.runOnFx(() -> editorArea(fx)
+                    .select(editorArea(fx).tabs().stream()
+                            .filter(tab -> tab.getUserData() == buffer)
+                            .findFirst()
+                            .orElseThrow()));
+            async.awaitFx();
             FxTestSupport.runOnFx(() -> {
                 buffer.setViewMode(false);
                 buffer.getArea().insertText(0, "changed\n");
@@ -255,7 +272,9 @@ class RemoteSaveFxTest {
     }
 
     private static int sftpVersion(EmbeddedSftpFixture sftp) {
-        return ((org.apache.sshd.sftp.client.fs.SftpFileSystem) sftp.remotePath("x").getFileSystem()).getVersion();
+        return ((org.apache.sshd.sftp.client.fs.SftpFileSystem)
+                        sftp.remotePath("x").getFileSystem())
+                .getVersion();
     }
 
     @Test

@@ -269,6 +269,8 @@ public class EditorBuffer implements TabContent {
     /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
     private boolean adminEditAvailable;
 
+    private Boolean writableOnDisk; // null: ask Files.isWritable; else what the window found out (remote files)
+
     /** IntelliJ-style "install language support?" banner (lazy), stacked above the view-mode bar; driven by
      *  MainController via {@link #setInstallPrompt}/{@link #showInstallBar}. Generic (strings + runnables),
      *  so {@code editor} stays decoupled from {@code install}/{@code ui}. */
@@ -7545,6 +7547,8 @@ public class EditorBuffer implements TabContent {
     /** Associates this buffer with a file and selects the grammar and fold language from its extension. */
     public void setPath(Path path) {
         this.path = path;
+        writableOnDisk =
+                path == null || path.getFileSystem() != java.nio.file.FileSystems.getDefault() ? writableOnDisk : null;
         // The full path (not just the basename) so location-based rules resolve — e.g. ~/.ssh/config,
         // /etc/hosts, .git/config (see ConfigFileType). The registries reduce it to the basename for
         // ordinary extension lookups.
@@ -8016,6 +8020,15 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * Whether the file's permissions allow writing it, from the layer that can tell: {@code Files.isWritable}
+     * answers yes for any existing SFTP file. {@code null} (the default) asks the file system directly.
+     */
+    public void setWritableOnDisk(Boolean writable) {
+        writableOnDisk = writable;
+        updateViewModeBar();
+    }
+
+    /**
      * Shows/hides the MS-Word-style "View Mode" banner above the editor: visible only in user View mode
      * (not huge-file mode, which can't be made editable). The "Enable Editing" button appears only when
      * the file is writable; otherwise a "read-only on disk" note replaces it.
@@ -8026,7 +8039,7 @@ public class EditorBuffer implements TabContent {
             if (viewModeBar == null) {
                 viewModeBar = buildViewModeBar();
             }
-            boolean canEdit = path == null || Files.isWritable(path);
+            boolean canEdit = path == null || (writableOnDisk != null ? writableOnDisk : Files.isWritable(path));
             // A non-writable file offers "Edit as Administrator" when elevation is available (Linux/pkexec),
             // instead of a dead-end "read-only on disk" note. Enabling editing routes the eventual Save
             // through the elevated write.

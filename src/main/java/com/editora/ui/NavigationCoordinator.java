@@ -574,7 +574,7 @@ final class NavigationCoordinator {
         host.lspCoordinator().gotoDefinition(() -> {
             EditorBuffer landed = host.activeBuffer();
             Path landedPath = landed == null ? null : landed.getPath();
-            if (landedPath != null && !landedPath.equals(originPath)) {
+            if (landedPath != null && !com.editora.config.PathKeys.samePath(landedPath, originPath)) {
                 host.splitEditorGroup(Orientation.HORIZONTAL);
             }
         });

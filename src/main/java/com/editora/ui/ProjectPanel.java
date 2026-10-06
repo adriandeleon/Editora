@@ -515,7 +515,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (!(tree.getRoot() instanceof PathItem item)
-                || !target.startsWith(root.toAbsolutePath().normalize())) {
+                || !com.editora.config.PathKeys.isAtOrUnder(
+                        target, root.toAbsolutePath().normalize())) {
             return;
         }
         pendingTreeReveal = target;
@@ -625,7 +626,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Finds a (visible) tree item for {@code target} among the expanded items, or null if gone. */
     private static TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
-        if (target.equals(item.getValue())) {
+        if (com.editora.config.PathKeys.samePath(target, item.getValue())) {
             return item;
         }
         if (!item.isExpanded()) {

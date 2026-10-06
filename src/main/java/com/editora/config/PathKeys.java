@@ -80,6 +80,12 @@ public final class PathKeys {
      * exact identity mismatch that silently dropped diagnostics (#470).
      */
     public static Path canonical(Path p) {
+        if (Vfs.isRemote(p)) {
+            // Not asked of the server (a round trip per lookup, often on the FX thread) and never cached: the
+            // cache is keyed by the path's text, which a remote /etc/hosts shares with the local one — the
+            // local file would then be answered with a path on the server, and the other way round.
+            return p.toAbsolutePath().normalize();
+        }
         String cacheKey = p.toString();
         Path hit = CANONICAL_CACHE.get(cacheKey);
         if (hit != null) {
@@ -154,6 +160,24 @@ public final class PathKeys {
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    /**
+     * A provider-safe {@code path.startsWith(ancestor)}: whether {@code path} is {@code ancestor} or lies
+     * below it. Paths on different file systems never contain one another; asking {@code startsWith}
+     * directly throws when the receiver is a remote path and the argument a local one.
+     */
+    public static boolean isAtOrUnder(Path path, Path ancestor) {
+        try {
+            return sameFileSystem(path, ancestor) && path.startsWith(ancestor);
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** {@link #isAtOrUnder} without the folder itself: {@code path} is somewhere below {@code ancestor}. */
+    public static boolean isUnder(Path path, Path ancestor) {
+        return isAtOrUnder(path, ancestor) && !samePath(path, ancestor);
     }
 
     /**

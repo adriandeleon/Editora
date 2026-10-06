@@ -127,7 +127,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             Path key = host.canonicalPath(target);
             java.util.List<Diagnostic> out = new java.util.ArrayList<>();
             for (var e : host.lspCoordinator().problems().entrySet()) {
-                if (!host.canonicalPath(e.getKey()).equals(key)) {
+                if (!com.editora.config.PathKeys.samePath(host.canonicalPath(e.getKey()), key)) {
                     continue;
                 }
                 for (com.editora.editor.LspDiagnostic d : e.getValue()) {
@@ -434,7 +434,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             EditorBuffer b = host.bufferOf(tab);
             if (b != null
                     && b.getPath() != null
-                    && host.canonicalPath(b.getPath()).equals(key)) {
+                    && com.editora.config.PathKeys.samePath(host.canonicalPath(b.getPath()), key)) {
                 return b;
             }
         }

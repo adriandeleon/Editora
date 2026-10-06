@@ -932,7 +932,8 @@ final class ProjectMapView extends VBox {
     private void recordSelection(Path path) {
         Path normalized = ProjectMapModel.normalize(path);
         if (normalized == null
-                || historyIndex >= 0 && selectionHistory.get(historyIndex).equals(normalized)) {
+                || historyIndex >= 0
+                        && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex), normalized)) {
             return;
         }
         if (historyIndex + 1 < selectionHistory.size()) {
@@ -1009,7 +1010,7 @@ final class ProjectMapView extends VBox {
             crumb.setTooltip(new Tooltip(path.toString()));
             crumb.setOnAction(event -> revealPath(path));
             nodes.add(crumb);
-            if (!path.equals(selected)) {
+            if (!com.editora.config.PathKeys.samePath(path, selected)) {
                 Label separator = new Label("›");
                 separator.getStyleClass().add("project-map-breadcrumb-separator");
                 nodes.add(separator);

@@ -1168,7 +1168,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Path dir = (path != null && com.editora.vfs.Vfs.isLocal(path))
                 ? path.toAbsolutePath().getParent()
                 : null;
-        if (!java.util.Objects.equals(projectPanel.getRoot(), dir)) {
+        if (!com.editora.config.PathKeys.samePath(projectPanel.getRoot(), dir)) {
             projectPanel.setRoot(dir); // null => placeholder (unsaved/Welcome tab); rebuilds only on change
         }
         if (projectToolWindow != null) {
@@ -1618,7 +1618,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     continue;
                 }
                 Path pn = p.toAbsolutePath().normalize();
-                if (pn.startsWith(oldNorm) && !pn.equals(oldNorm)) {
+                if (com.editora.config.PathKeys.isUnder(pn, oldNorm)) { // never a tab on another file system
                     Path moved = target.resolve(oldNorm.relativize(pn));
                     fileWorkflows.invalidatePendingWrite(p);
                     b.setPath(moved);
@@ -6350,7 +6350,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                     EditorBuffer b = activeBuffer();
                     if (b == null
                             || b.getPath() == null
-                            || !canonicalPath(b.getPath()).equals(canonicalPath(file))) {
+                            || !pathKey(b.getPath()).equals(pathKey(file))) {
                         return;
                     }
                     // Say so rather than doing nothing: a TODO in a read-only buffer is common (a .log opens in View
@@ -7370,7 +7370,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private EditorBuffer openBufferFor(Path target) {
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
-            if (b != null && b.getPath() != null && canonicalPath(b.getPath()).equals(canonicalPath(target))) {
+            if (b != null && b.getPath() != null && pathKey(b.getPath()).equals(pathKey(target))) {
                 return b;
             }
         }
@@ -9612,7 +9612,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Log files open in View mode by default — the log viewer is for reading, and follow-tail still
         // appends programmatically while read-only — but the "Enable Editing" banner lets the user opt in.
         boolean logDefault = logViewer.isEnabled() && buffer.isLog();
-        if (shouldOpenReadOnly(persisted, com.editora.vfs.Vfs.isWritableOnDisk(file)) || logDefault) {
+        boolean writable = com.editora.vfs.Vfs.isWritableOnDisk(file);
+        buffer.setWritableOnDisk(com.editora.vfs.Vfs.isRemote(file) ? writable : null); // the banner cannot ask
+        if (shouldOpenReadOnly(persisted, writable) || logDefault) {
             buffer.setViewMode(true);
         }
     }
