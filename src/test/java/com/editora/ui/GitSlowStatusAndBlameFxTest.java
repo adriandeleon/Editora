@@ -71,6 +71,8 @@ class GitSlowStatusAndBlameFxTest {
             service.setCommand(wrapper.toString());
             AtomicInteger applied = new AtomicInteger();
             AtomicReference<GitService.RepoState> last = new AtomicReference<>();
+            // Always composed as window.andThen(cb): `call` returns as soon as cb runs, so the window must have
+            // counted the state before that, or the assertions below race the FX thread.
             Consumer<GitService.RepoState> window = state -> {
                 last.set(state);
                 applied.incrementAndGet();
@@ -78,7 +80,7 @@ class GitSlowStatusAndBlameFxTest {
             assertTrue(call(
                             async,
                             "the first refresh",
-                            (Consumer<GitService.RepoState> cb) -> service.refresh(file, null, cb.andThen(window)))
+                            (Consumer<GitService.RepoState> cb) -> service.refresh(file, null, window.andThen(cb)))
                     .isRepo());
             assertEquals(1, applied.get());
 
@@ -105,7 +107,7 @@ class GitSlowStatusAndBlameFxTest {
             assertTrue(call(
                             async,
                             "a refresh after recovery",
-                            (Consumer<GitService.RepoState> cb) -> service.refresh(file, null, cb.andThen(window)))
+                            (Consumer<GitService.RepoState> cb) -> service.refresh(file, null, window.andThen(cb)))
                     .isRepo());
             assertEquals(2, applied.get());
         }
