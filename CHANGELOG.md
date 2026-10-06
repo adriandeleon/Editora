@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Updated AtlantaFX to 3.0.0. The scrollbar thumb of a long file or list is no longer a 4px sliver in any
+  theme, and menu rows keep the same height in every theme (Primer, Nord and Dracula would otherwise have
+  become denser than the rest; Cupertino's rows are now as tall as the others).
 - Third round of review follow-ups: standard input for debugged Java programs, the rest of the split view's
   second pane, remote (SFTP) files on closed connections and beside local tabs, and Local History across
   renames. Lines marked 'Changed' are behaviour you will notice as different rather than fixed:
