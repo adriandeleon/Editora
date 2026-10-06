@@ -240,7 +240,40 @@ class StickyScrollFxTest {
         javafx.scene.Node bar = (javafx.scene.Node) call(b, "stickyScrollNode");
         int barIndex = root.getChildren().indexOf(bar);
         assertTrue(barIndex >= 0, "the sticky bar must be attached for this z-order check");
-        assertTrue(root.getChildren().indexOf(control) > barIndex, message);
+        assertTrue(root.getChildren().indexOf(control.getParent()) > barIndex, message);
+    }
+
+    @Test
+    void theExpertExitSharesARowWithTheFileControlInsteadOfCoveringIt() throws Exception {
+        EditorBuffer html = buffer();
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.Button openInBrowser = new javafx.scene.control.Button("Open in Browser");
+            javafx.scene.control.Button exitExpert = new javafx.scene.control.Button("E");
+            // Both orders: Expert entered on an HTML tab, and an HTML control arriving while in Expert.
+            html.setExpertExitControl(exitExpert);
+            html.setHtmlPreviewControl(openInBrowser);
+            assertSideBySide(openInBrowser, exitExpert);
+
+            html.setExpertExitControl(null);
+            assertTrue(exitExpert.getParent() == null, "leaving Expert must detach its control");
+            html.setExpertExitControl(exitExpert);
+            assertSideBySide(openInBrowser, exitExpert);
+        });
+    }
+
+    private static void assertSideBySide(javafx.scene.Node fileControl, javafx.scene.Node exitExpert) {
+        javafx.scene.Parent row = fileControl.getParent();
+        assertTrue(row instanceof javafx.scene.layout.HBox, "corner controls must be laid out in a row");
+        assertTrue(exitExpert.getParent() == row, "both controls must share that row");
+        row.applyCss();
+        row.layout();
+        assertTrue(
+                !fileControl.getBoundsInParent().intersects(exitExpert.getBoundsInParent()),
+                "the two controls must not overlap");
+        assertTrue(
+                fileControl.getBoundsInParent().getMaxX()
+                        <= exitExpert.getBoundsInParent().getMinX(),
+                "the Expert exit stays outermost");
     }
 
     @Test

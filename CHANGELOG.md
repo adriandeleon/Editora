@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The floating controls at the top-right of the editor no longer overlap. In Expert mode the "E" exit
+  button sat on top of an HTML file's open-in-browser button, a Markdown file's Editor/Split/Preview
+  toggle or a log file's controls; they now share one row. In Zen mode the "Z" also clears the HTML and
+  log controls, not only the preview toggle.
+
 ## [0.19.0] - 2026-10-06
 
 ### Security
