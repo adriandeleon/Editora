@@ -22,7 +22,7 @@ import org.fxmisc.richtext.CodeArea;
  * redraws (on scroll / edit / resize / fold) are coalesced to one per pulse — when inactive the
  * overlay does nothing, so it is free unless the user turns it on.
  */
-final class WhitespaceOverlay extends Region {
+final class WhitespaceOverlay extends Region implements SecondaryPane.Followed {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final String SPACE = "·";
@@ -57,16 +57,12 @@ final class WhitespaceOverlay extends Region {
     }
 
     /**
-     * The same markers for a split's second {@code view}: an overlay to put in that view's pane, which lies
-     * over {@code text} (the view's scroll pane, wherever a minimap leaves it) and from then on is switched
-     * and re-fonted together with this one.
+     * The same markers for a split's second {@code view}: an overlay to put in that view's pane, from then
+     * on switched and re-fonted together with this one.
      */
-    WhitespaceOverlay follower(CodeArea view, Region text) {
+    @Override
+    public WhitespaceOverlay follower(CodeArea view) {
         var second = new WhitespaceOverlay(view);
-        second.setManaged(false);
-        text.boundsInParentProperty()
-                .addListener(
-                        (obs, old, b) -> second.resizeRelocate(b.getMinX(), b.getMinY(), b.getWidth(), b.getHeight()));
         second.font = font;
         second.setActive(active);
         follower = second;

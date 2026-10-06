@@ -23,7 +23,7 @@ import org.fxmisc.richtext.CodeArea;
  * {@code onActivate}). Coalesced redraw + a 1×1 backing texture while inactive — the same
  * {@link CanvasGuards}/overlay discipline as {@link TodoStripe}. Diagnostics carry 1-based lines.
  */
-final class MarkdownLintStripe extends Region {
+final class MarkdownLintStripe extends Region implements SecondaryPane.Followed {
 
     static final double WIDTH = 6;
     private static final double HIT_PAD = 3;
@@ -34,6 +34,9 @@ final class MarkdownLintStripe extends Region {
     private List<MarkdownLint.Diagnostic> marks = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private MarkdownLintStripe follower;
+
     private Tooltip tooltip;
     private String shownText;
     private IntConsumer onActivate = line -> {};
@@ -53,8 +56,22 @@ final class MarkdownLintStripe extends Region {
         addEventHandler(MouseEvent.MOUSE_CLICKED, this::onClick);
     }
 
+    /** The same marks beside a split's second {@code view}; a click there moves that view. */
+    @Override
+    public MarkdownLintStripe follower(CodeArea view) {
+        MarkdownLintStripe second = new MarkdownLintStripe(view);
+        second.onActivate = line -> SecondaryPane.jumpToLine(view, line);
+        second.setDiagnostics(marks);
+        second.setActive(active);
+        follower = second;
+        return second;
+    }
+
     /** Shows/hides the stripe (driven by Markdown-lint-on for this buffer). */
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -72,6 +89,9 @@ final class MarkdownLintStripe extends Region {
     }
 
     void setDiagnostics(List<MarkdownLint.Diagnostic> diagnostics) {
+        if (follower != null) {
+            follower.setDiagnostics(diagnostics);
+        }
         this.marks = diagnostics == null ? List.of() : diagnostics;
         setMouseTransparent(!active || marks.isEmpty());
         requestLayout();

@@ -19,7 +19,7 @@ import org.fxmisc.richtext.CodeArea;
  * multi-line ranges and per-severity colors. Diagnostics use 0-based line/character (LSP convention) and
  * are pushed in by {@link EditorBuffer}; this class only renders them.
  */
-final class LspDiagnosticOverlay extends Region {
+final class LspDiagnosticOverlay extends Region implements SecondaryPane.Followed {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
@@ -30,6 +30,8 @@ final class LspDiagnosticOverlay extends Region {
     private List<LspDiagnostic> diagnostics = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private LspDiagnosticOverlay follower;
 
     LspDiagnosticOverlay(CodeArea area) {
         this.area = area;
@@ -49,7 +51,20 @@ final class LspDiagnosticOverlay extends Region {
         });
     }
 
+    /** The same squiggles for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public LspDiagnosticOverlay follower(CodeArea view) {
+        LspDiagnosticOverlay second = new LspDiagnosticOverlay(view);
+        second.setActive(active);
+        second.setDiagnostics(diagnostics);
+        follower = second;
+        return second;
+    }
+
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -67,6 +82,9 @@ final class LspDiagnosticOverlay extends Region {
     }
 
     void setDiagnostics(List<LspDiagnostic> diagnostics) {
+        if (follower != null) {
+            follower.setDiagnostics(diagnostics);
+        }
         this.diagnostics = diagnostics == null ? List.of() : diagnostics;
         scheduleRedraw();
     }

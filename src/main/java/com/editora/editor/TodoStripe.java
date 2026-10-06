@@ -23,7 +23,7 @@ import org.fxmisc.richtext.CodeArea;
  * redraw + a 1×1 backing texture while inactive — the same {@link CanvasGuards}/overlay discipline as
  * {@link DiagnosticStripe}, but generic (per-mark color, no severities). 0-based lines.
  */
-final class TodoStripe extends Region {
+final class TodoStripe extends Region implements SecondaryPane.Followed {
 
     static final double WIDTH = 6;
     private static final double HIT_PAD = 3;
@@ -34,6 +34,9 @@ final class TodoStripe extends Region {
     private List<Color> colors = List.of();
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private TodoStripe follower;
+
     private Tooltip tooltip;
     private String shownText;
     private IntConsumer onActivate = line -> {};
@@ -53,8 +56,22 @@ final class TodoStripe extends Region {
         addEventHandler(MouseEvent.MOUSE_CLICKED, this::onClick);
     }
 
+    /** The same marks beside a split's second {@code view}; a click there moves that view. */
+    @Override
+    public TodoStripe follower(CodeArea view) {
+        TodoStripe second = new TodoStripe(view);
+        second.onActivate = line -> SecondaryPane.jumpToLine(view, line);
+        second.setMarks(marks);
+        second.setActive(active);
+        follower = second;
+        return second;
+    }
+
     /** Shows/hides the stripe (driven by TODO-highlight-on for this buffer). */
     void setActive(boolean active) {
+        if (follower != null) {
+            follower.setActive(active);
+        }
         if (this.active == active) {
             return;
         }
@@ -72,6 +89,9 @@ final class TodoStripe extends Region {
     }
 
     void setMarks(List<TodoMark> marks) {
+        if (follower != null) {
+            follower.setMarks(marks);
+        }
         List<TodoMark> m = new ArrayList<>();
         List<Color> c = new ArrayList<>();
         if (marks != null) {

@@ -8101,9 +8101,9 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         // Selection changes toggle cut/copy enablement (no clipboard read here — that's refreshPasteState).
-        buffer.getArea().selectionProperty().addListener((obs, was, now) -> {
+        buffer.onSelectionChanged(() -> {
             if (buffer == activeBuffer()) {
-                refreshEditState();
+                refreshEditState(); // of the split pane in use
             }
         });
         installTabMenu(tab, buffer);
