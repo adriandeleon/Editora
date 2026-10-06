@@ -670,7 +670,7 @@ final class WindowSessionCoordinator {
                     if (host.fileWorkflows().isShutdown()) {
                         return;
                     }
-                    failSessionBuffer(f, buffer, e.getMessage());
+                    failSessionBuffer(f, buffer, RemoteReadFailure.reason(file, e));
                     onComplete.run();
                 });
             }

@@ -515,7 +515,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         if (!(tree.getRoot() instanceof PathItem item)
-                || !target.startsWith(root.toAbsolutePath().normalize())) {
+                || !com.editora.config.PathKeys.isAtOrUnder(
+                        target, root.toAbsolutePath().normalize())) {
             return;
         }
         pendingTreeReveal = target;
@@ -625,7 +626,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Finds a (visible) tree item for {@code target} among the expanded items, or null if gone. */
     private static TreeItem<Path> findVisible(TreeItem<Path> item, Path target) {
-        if (target.equals(item.getValue())) {
+        if (com.editora.config.PathKeys.samePath(target, item.getValue())) {
             return item;
         }
         if (!item.isExpanded()) {
@@ -1202,6 +1203,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
     public void setOnStatus(Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
+        mapView.setOnStatus(this.onStatus);
     }
 
     /** Restores and persists the Project Map's directional layout in workspace state. */
@@ -1725,6 +1727,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                                     || generation != loadGeneration
                                     || treeGeneration != searchGen.get()) {
                                 return;
+                            }
+                            if (entries.isEmpty() && RemoteReadFailure.connectionClosed(parent)) {
+                                onStatus.accept(RemoteReadFailure.unreadable(parent)); // not "an empty folder"
                             }
                             List<TreeItem<Path>> kids = new ArrayList<>(entries.size());
                             for (PathEntry child : entries) {

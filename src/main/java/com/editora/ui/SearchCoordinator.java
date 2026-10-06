@@ -357,6 +357,13 @@ final class SearchCoordinator {
             host.setError(badRegex);
             return;
         }
+        if (RemoteReadFailure.connectionClosed(root)) {
+            // The walk would fail folder by folder and report "No results" for files it never read.
+            shown = null;
+            panel.showError(RemoteReadFailure.unreadable(root));
+            host.setError(RemoteReadFailure.unreadable(root));
+            return;
+        }
         host.setStatus(tr("search.searching"));
         List<String> include = Globs.split(includeGlobs);
         List<String> exclude = Globs.split(excludeGlobs);

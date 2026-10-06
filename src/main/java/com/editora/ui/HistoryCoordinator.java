@@ -31,11 +31,13 @@ import com.editora.config.SharedConfig;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.LineEndings;
 import com.editora.editorconfig.EditorConfigCharset;
+import com.editora.history.HistoryMoves;
 import com.editora.history.HistoryQueries;
 import com.editora.history.HistoryRetention;
 import com.editora.history.HistoryService;
 import com.editora.io.AtomicFileWrite;
 import com.editora.io.DocumentWriteSequencer;
+import com.editora.vfs.Vfs;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -496,16 +498,26 @@ final class HistoryCoordinator {
             }
             return;
         }
-        String key = historyKey(file);
-        List<HistoryRevision> existing = ops.historyMap().getOrDefault(key, List.of());
+        String submittedKey = historyKey(file);
+        List<HistoryRevision> existing = ops.historyMap().getOrDefault(submittedKey, List.of());
         var policy = retentionPolicy();
         long now = System.currentTimeMillis();
+        int renamesSeen = renames.size();
         historyService.snapshotWithOutcome(file, content, reason, label, force, existing, policy, now, outcome -> {
-            HistoryRevision rev = outcome.revision();
+            // The file may have been renamed while its content was hashed and stored: the revision belongs
+            // to the file, so it lands under the name the file has now, not the one it had when submitted.
+            String key = keyAfterRenamesSince(renamesSeen, submittedKey);
+            boolean adopted = outcome.successful() && adoptSaveAsOrigin(key);
+            HistoryRevision rev = outcome.revision() == null ? null : HistoryMoves.at(key, outcome.revision());
             if (rev != null) {
                 applyRecorded(key, rev, policy, now, durableCompletion);
-            } else if (durableCompletion != null) {
-                durableCompletion.accept(outcome.successful());
+            } else {
+                if (adopted) {
+                    ops.saveHistory();
+                }
+                if (durableCompletion != null) {
+                    durableCompletion.accept(outcome.successful());
+                }
             }
             EditorBuffer active = host.activeBuffer();
             if (rev != null
@@ -515,6 +527,71 @@ final class HistoryCoordinator {
                 refresh();
             }
         });
+    }
+
+    /** One rename this window was told about; {@link #renames} keeps them in order. */
+    private record Rename(String oldKey, String newKey, String separator) {}
+
+    /** Renames seen so far. A record in flight replays the ones that happened after it was submitted. */
+    private final List<Rename> renames = new ArrayList<>();
+
+    /** Save As targets whose first save has not been recorded yet → the file they were saved from. */
+    private final Map<String, String> saveAsOrigins = new java.util.HashMap<>();
+
+    private String keyAfterRenamesSince(int seen, String key) {
+        for (int i = Math.min(seen, renames.size()); i < renames.size(); i++) {
+            Rename rename = renames.get(i);
+            String renamed = HistoryMoves.renamed(key, rename.oldKey(), rename.newKey(), rename.separator());
+            key = renamed == null ? key : renamed;
+        }
+        return key;
+    }
+
+    /**
+     * A file or folder was renamed or moved ({@code old → target}) inside Editora: the history recorded
+     * under the old path follows it, in every project's bucket — the index is keyed by path, so it would
+     * otherwise be orphaned and the file would start again with none. Runs whether or not the feature is
+     * on (the index must not go stale while it is off). The move is one step on the FX thread and drops no
+     * revision, so a blob collection can only ever see an index that references every body.
+     */
+    void pathRenamed(Path old, Path target) {
+        if (old == null || target == null || !Vfs.isLocal(old) || !Vfs.isLocal(target)) {
+            return;
+        }
+        Rename rename = new Rename(
+                historyKey(old), historyKey(target), old.getFileSystem().getSeparator());
+        if (rename.oldKey().equals(rename.newKey())) {
+            return;
+        }
+        renames.add(rename);
+        if (HistoryMoves.rename(ops.historyByProject(), rename.oldKey(), rename.newKey(), rename.separator())) {
+            ops.saveHistory();
+            refresh();
+        }
+    }
+
+    /**
+     * Save As re-pointed {@code buffer} from {@code oldPath}. Once the new file has actually been written
+     * (its first recorded save), it is given the history of the file it was saved from, which keeps its
+     * own. A Save As that is rolled back re-points the buffer to where it was, and nothing is copied.
+     */
+    void bufferPathChanged(EditorBuffer buffer, Path oldPath) {
+        Path now = buffer.getPath();
+        if (oldPath == null || now == null || !Vfs.isLocal(oldPath) || !Vfs.isLocal(now)) {
+            return;
+        }
+        String from = historyKey(oldPath);
+        String to = historyKey(now);
+        if (to.equals(saveAsOrigins.get(from))) {
+            saveAsOrigins.remove(from); // rolled back
+        } else if (!from.equals(to)) {
+            saveAsOrigins.put(to, from);
+        }
+    }
+
+    private boolean adoptSaveAsOrigin(String key) {
+        String origin = saveAsOrigins.remove(key);
+        return origin != null && HistoryMoves.copy(ops.historyMap(), origin, key);
     }
 
     /**

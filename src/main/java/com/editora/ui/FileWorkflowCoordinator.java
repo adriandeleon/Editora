@@ -312,6 +312,12 @@ final class FileWorkflowCoordinator {
             }
             return;
         }
+        if (RemoteReadFailure.connectionClosed(file)) {
+            // Said before a tab shell appears and vanishes — and before the viewers below ask the dead
+            // connection about the file on the FX thread, which it answers with an unchecked exception.
+            host.setStatus(tr("status.failedOpen", RemoteReadFailure.reason(file, null)));
+            return;
+        }
         // A raster image opens in the read-only image viewer instead of dumping its bytes into a text buffer.
         if (ImageFormats.isSupported(file.getFileName().toString())) {
             openImageTab(file, true);
@@ -995,9 +1001,9 @@ final class FileWorkflowCoordinator {
                         onComplete.accept(applied);
                     }
                 });
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) { // a closed SFTP file system may raise either
                 Platform.runLater(() -> {
-                    host.setStatus(tr("status.failedReload", file.getFileName(), e.getMessage()));
+                    host.setStatus(tr("status.failedReload", file.getFileName(), RemoteReadFailure.reason(file, e)));
                     onComplete.accept(false);
                 });
             }
