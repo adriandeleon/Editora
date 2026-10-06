@@ -25,7 +25,7 @@ import org.fxmisc.richtext.CodeArea;
  * {@link DebugIdentifiers#matchesIn}), redraws coalesce to one per pulse, and when no values are set
  * the canvas is 1×1 and invisible — zero cost outside a paused debug session.
  */
-final class InlineValuesOverlay extends Region {
+final class InlineValuesOverlay extends Region implements SecondaryPane.Followed {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final int MAX_PER_LINE = 3;
@@ -40,6 +40,9 @@ final class InlineValuesOverlay extends Region {
     private int frameLine = -1;
 
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private InlineValuesOverlay follower;
+
     private Font font = Font.font("monospace", FontPosture.ITALIC, 14);
 
     InlineValuesOverlay(CodeArea area) {
@@ -58,8 +61,21 @@ final class InlineValuesOverlay extends Region {
         });
     }
 
+    /** The same inline values for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public InlineValuesOverlay follower(CodeArea view) {
+        InlineValuesOverlay second = new InlineValuesOverlay(view);
+        second.font = font;
+        second.setValues(values, frameLine);
+        follower = second;
+        return second;
+    }
+
     /** Sets the suspended frame's variables (null or empty clears and releases the canvas). */
     void setValues(Map<String, String> v, int frameLine) {
+        if (follower != null) {
+            follower.setValues(v, frameLine);
+        }
         this.values = (v == null || v.isEmpty()) ? null : Map.copyOf(v);
         this.frameLine = frameLine;
         boolean active = values != null;
@@ -76,6 +92,9 @@ final class InlineValuesOverlay extends Region {
 
     /** Keeps the annotation font in step with the editor font (italic variant). */
     void setFont(String family, int size) {
+        if (follower != null) {
+            follower.setFont(family, size);
+        }
         this.font = Font.font(family, FontPosture.ITALIC, size);
         scheduleRedraw();
     }

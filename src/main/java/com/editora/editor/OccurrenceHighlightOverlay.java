@@ -22,7 +22,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * scroll/edit/resize, visible paragraphs only, released to a 1×1 texture while empty (the common case —
  * the caret is rarely resting on a highlightable symbol).
  */
-final class OccurrenceHighlightOverlay extends Region {
+final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.Followed {
 
     private static final Color READ = Color.web("#90a4ae", 0.28); // neutral blue-gray wash
     private static final Color WRITE = Color.web("#ffb74d", 0.32); // warmer — the symbol is assigned here
@@ -35,6 +35,8 @@ final class OccurrenceHighlightOverlay extends Region {
 
     private boolean active;
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private OccurrenceHighlightOverlay follower;
 
     OccurrenceHighlightOverlay(CodeArea area) {
         this.area = area;
@@ -47,8 +49,20 @@ final class OccurrenceHighlightOverlay extends Region {
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
 
+    /** The same wash for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public OccurrenceHighlightOverlay follower(CodeArea view) {
+        OccurrenceHighlightOverlay second = new OccurrenceHighlightOverlay(view);
+        second.setSpans(spans);
+        follower = second;
+        return second;
+    }
+
     /** Sets the occurrence spans (offset triples) to wash; empty hides + releases the texture. */
     void setSpans(List<int[]> spans) {
+        if (follower != null) {
+            follower.setSpans(spans);
+        }
         this.spans = spans == null ? List.of() : spans;
         boolean show = !this.spans.isEmpty();
         if (active != show) {

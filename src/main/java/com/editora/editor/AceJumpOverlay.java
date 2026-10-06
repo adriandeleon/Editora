@@ -26,7 +26,7 @@ import org.fxmisc.richtext.CodeArea;
  * the {@link CodeArea} so nothing is inserted and no chord fires, plus the {@code editora.ownsKeys}
  * property). A mouse-transparent {@link Canvas} draws the labels; visible-only; scrolling cancels.
  */
-final class AceJumpOverlay extends Region {
+final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
 
     private static final Color PILL = Color.web("#ffe0b2"); // pastel peach/amber
     private static final Color PILL_TEXT = Color.web("#5a3a00"); // dark brown for contrast
@@ -40,6 +40,8 @@ final class AceJumpOverlay extends Region {
     private boolean awaitingChar;
     private String typed = "";
     private boolean redrawPending;
+    /** The overlay of the split's second view; a jump started while that view has focus runs there. */
+    private AceJumpOverlay follower;
 
     AceJumpOverlay(CodeArea area) {
         this.area = area;
@@ -57,8 +59,19 @@ final class AceJumpOverlay extends Region {
         area.addEventFilter(KeyEvent.KEY_TYPED, this::onKeyTyped);
     }
 
+    /** Jump labels for a split's second {@code view}. */
+    @Override
+    public AceJumpOverlay follower(CodeArea view) {
+        follower = new AceJumpOverlay(view);
+        return follower;
+    }
+
     /** Begins AceJump: the next typed character chooses the targets. */
     void start() {
+        if (follower != null && follower.area.isFocused()) {
+            follower.start();
+            return;
+        }
         if (active) {
             return;
         }
@@ -73,6 +86,10 @@ final class AceJumpOverlay extends Region {
     /** Begins AceJump line-mode (avy-goto-line): every visible line is labeled immediately (no char step);
      *  typing a label jumps the caret to that line's first non-whitespace character. */
     void startLine() {
+        if (follower != null && follower.area.isFocused()) {
+            follower.startLine();
+            return;
+        }
         if (active) {
             return;
         }
@@ -269,7 +286,8 @@ final class AceJumpOverlay extends Region {
             if (!label.startsWith(typed)) {
                 continue;
             }
-            Bounds b = toLocal(area.getCharacterBoundsOnScreen(entry.getValue(), entry.getValue() + 1)
+            int at = entry.getValue(); // an empty last line has no character to take the bounds of
+            Bounds b = toLocal(area.getCharacterBoundsOnScreen(at, Math.min(at + 1, area.getLength()))
                     .orElse(null));
             if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
                 continue;

@@ -23,7 +23,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * resize / fold, only for the visible paragraphs, and dropped to 1x1 (no GPU texture) when there are no
  * matches. Driven by {@link #setMarks}.
  */
-final class TodoHighlightOverlay extends Region {
+final class TodoHighlightOverlay extends Region implements SecondaryPane.Followed {
 
     /** Opacity of the highlight wash drawn over each part (the part color provides the hue). */
     private static final double WASH_ALPHA = 0.30;
@@ -42,6 +42,8 @@ final class TodoHighlightOverlay extends Region {
     private boolean rendering = true;
 
     private boolean redrawPending;
+    /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
+    private TodoHighlightOverlay follower;
 
     TodoHighlightOverlay(CodeArea area) {
         this.area = area;
@@ -55,8 +57,21 @@ final class TodoHighlightOverlay extends Region {
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
     }
 
+    /** The same highlights for a split's second {@code view}, kept in step with this one. */
+    @Override
+    public TodoHighlightOverlay follower(CodeArea view) {
+        TodoHighlightOverlay second = new TodoHighlightOverlay(view);
+        second.setRenderingActive(rendering);
+        second.setMarks(marks);
+        follower = second;
+        return second;
+    }
+
     /** Sets the highlight marks (null/empty clears and releases the canvas). */
     void setMarks(List<TodoMark> newMarks) {
+        if (follower != null) {
+            follower.setMarks(newMarks);
+        }
         List<TodoMark> valid = new ArrayList<>();
         if (newMarks != null) {
             for (TodoMark m : newMarks) {
@@ -114,6 +129,9 @@ final class TodoHighlightOverlay extends Region {
 
     /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
     void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
         if (rendering == on) {
             return;
         }

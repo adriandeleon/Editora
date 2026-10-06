@@ -135,6 +135,12 @@ The discipline that keeps overlays off the hot path (see
 - `setActive(false)` clears and **releases the canvas to 1×1** so it holds no full-viewport
   texture;
 - the data (diagnostics/marks) is **pushed in** by `EditorBuffer`; the overlay only renders.
+- implement `SecondaryPane.Followed`: `follower(view)` returns a twin for a split's second view, and
+  every setter hands its argument to that twin first (before any "unchanged" early return). The twin
+  is created and stacked by `SecondaryPane.follow` — when the split is built, and from
+  `attachLazyOverlay` for a lazily attached overlay — so nothing else needs wiring, and the second
+  pane cannot be left without the overlay. Stripes, the minimap and the column ruler follow the same
+  rule.
 - colours come from `OverlayPalette`, not from a `Color.web("#…")` constant: a Canvas cannot be styled
   from CSS, and one fixed colour is too faint on one editor theme or too loud on the other. Call
   `OverlayPalette.track(area, palette -> { colors = palette; scheduleRedraw(); })` in the constructor —

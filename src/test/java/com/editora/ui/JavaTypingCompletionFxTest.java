@@ -474,6 +474,56 @@ class JavaTypingCompletionFxTest {
     }
 
     @Test
+    void aCompletionAcceptedInTheSecondSplitViewUndoesWithItsImportFromTheFirst() throws Exception {
+        org.fxmisc.richtext.CodeArea second = FxTestSupport.callOnFx(() -> {
+            buffer.setSplit(EditorBuffer.Split.SIDE_BY_SIDE);
+            stage.getScene().getRoot().applyCss();
+            stage.getScene().getRoot().layout();
+            buffer.cancelCompletion();
+            buffer.setContent("class A { Arr");
+            org.fxmisc.richtext.CodeArea view = FxTestSupport.field(buffer, "area2");
+            view.requestFocus();
+            view.moveTo(13);
+            return view;
+        });
+        scope.awaitFx();
+        org.junit.jupiter.api.Assumptions.assumeTrue(
+                FxTestSupport.callOnFx(() -> buffer.getFocusedArea() == second), "headless focus");
+        var apply = new java.util.concurrent.atomic.AtomicReference<Consumer<List<LspTextEdit>>>();
+        invoke();
+        respond(
+                requests.size() - 1,
+                false,
+                Completion.lsp(
+                        "ArrayList",
+                        "ArrayList",
+                        "java.util",
+                        () -> apply.set(buffer.trackCompletionAdditionalEdits())));
+        expectCompletion("ArrayList");
+        press("ENTER");
+        assertEquals("class A { ArrayList", FxTestSupport.callOnFx(buffer::text));
+        assertEquals(19, FxTestSupport.callOnFx(second::getCaretPosition), "accepted at the second view's caret");
+        type(" values");
+        FxTestSupport.runOnFx(() -> apply.get().accept(arrayListImport()));
+        String accepted = FxTestSupport.callOnFx(buffer::text);
+        assertEquals("import java.util.ArrayList;\nclass A { ArrayList values", accepted);
+        assertEquals(accepted.length(), FxTestSupport.callOnFx(second::getCaretPosition), "the import moved it along");
+        FxTestSupport.runOnFx(() -> {
+            org.fxmisc.richtext.CodeArea first = buffer.getArea();
+            first.undo(); // the word
+            first.undo(); // the space
+            assertEquals("import java.util.ArrayList;\nclass A { ArrayList", buffer.text());
+            first.undo(); // the completion and its import, together
+            assertEquals("class A { Arr", buffer.text());
+            second.redo();
+            assertEquals("import java.util.ArrayList;\nclass A { ArrayList", buffer.text());
+            first.redo();
+            second.redo();
+            assertEquals(accepted, buffer.text());
+        });
+    }
+
+    @Test
     void anEarlierDelayedImportPreservesTheLaterCompletionsUndoGroup() throws Exception {
         var firstImport = acceptArrayList(false);
         type(" values; HashM");
