@@ -201,19 +201,35 @@ class RemoteSaveFxTest {
         }
     }
 
-    @Test
-    void savingARemoteFileWithAnotherHardLinkKeepsBothNamesOnTheSameContent(@TempDir Path dir) throws Exception {
+    /**
+     * Where the link count comes from differs by protocol: a version-3 directory listing (OpenSSH), the
+     * version-6 link-count attribute where the server sends it, and — for a server that speaks 4 to 6
+     * without that attribute but also offers 3, as MINA's does — a version-3 listing on a second channel.
+     */
+    @ParameterizedTest(name = "{0}")
+    @ValueSource(strings = {"protocol 3 listing", "protocol 6 attribute", "protocol 6 with a protocol 3 channel"})
+    void savingARemoteFileWithAnotherHardLinkKeepsBothNamesOnTheSameContent(String server, @TempDir Path dir)
+            throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
             EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.start(dir));
             Path first = Files.writeString(sftp.serverPath("h1.txt"), "hard\n");
             Path second = sftp.serverPath("h2.txt");
+            Path alone = Files.writeString(sftp.serverPath("alone.txt"), "one name\n");
             try {
                 Files.createLink(second, first);
             } catch (UnsupportedOperationException | java.io.IOException noHardLinks) {
                 Assumptions.abort("no hard links here: " + noHardLinks);
             }
-            // The link count is only on offer in a protocol-3 directory listing, which is what OpenSSH speaks.
-            sftp.speakProtocolVersion(3);
+            Object aloneKey = Files.readAttributes(alone, java.nio.file.attribute.BasicFileAttributes.class)
+                    .fileKey();
+            switch (server) {
+                case "protocol 3 listing" -> sftp.speakProtocolVersion(3);
+                case "protocol 6 attribute" -> {
+                    sftp.reportLinkCounts();
+                    sftp.speakProtocolVersion(6); // 6 only: no protocol-3 channel to fall back to
+                }
+                default -> assertEquals(6, sftpVersion(sftp), "the unpinned server and client agree on 6");
+            }
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             EditorBuffer buffer = openRemote(async, fx, sftp.remotePath("h1.txt"));
 
@@ -223,7 +239,23 @@ class RemoteSaveFxTest {
             assertEquals("hard\nmore\n", Files.readString(first));
             assertEquals("hard\nmore\n", Files.readString(second), "the other name still names the same file");
             assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
+
+            // A file with one name is still replaced, not written in place: the count was read, not assumed.
+            EditorBuffer single = openRemote(async, fx, sftp.remotePath("alone.txt"));
+            FxTestSupport.runOnFx(() -> single.getArea().appendText("more\n"));
+            save(async, fx);
+            assertEquals("one name\nmore\n", Files.readString(alone));
+            if (aloneKey != null) {
+                assertFalse(
+                        aloneKey.equals(Files.readAttributes(alone, java.nio.file.attribute.BasicFileAttributes.class)
+                                .fileKey()),
+                        "a file with a single name is replaced by a new one");
+            }
         }
+    }
+
+    private static int sftpVersion(EmbeddedSftpFixture sftp) {
+        return ((org.apache.sshd.sftp.client.fs.SftpFileSystem) sftp.remotePath("x").getFileSystem()).getVersion();
     }
 
     @Test
@@ -345,8 +377,10 @@ class RemoteSaveFxTest {
         }
     }
 
-    @Test
-    void aStagingFileLeftByADroppedConnectionIsRemovedByTheNextSaveToThatServer(@TempDir Path dir) throws Exception {
+    @ParameterizedTest(name = "after an app restart: {0}")
+    @ValueSource(booleans = {false, true})
+    void aStagingFileLeftByADroppedConnectionIsRemovedByTheNextSaveToThatServer(boolean restarted, @TempDir Path dir)
+            throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
             EmbeddedSftpFixture sftp = async.own(EmbeddedSftpFixture.start(dir));
             Files.writeString(sftp.serverPath("drop.txt"), "server\n");
@@ -379,6 +413,15 @@ class RemoteSaveFxTest {
             Assumptions.assumeTrue(
                     hasStagingFile(sftp.serverPath(".")), "the close won the race before anything was staged");
             assertTrue(echo(fx).contains(sftp.connection().id()), "the failure names the lost connection: " + echo(fx));
+            Path ledger = fx.configDir.resolve("save-backups").resolve("remote-staging-leftovers.txt");
+            assertTrue(Files.exists(ledger), "the leftover is written down");
+            if (restarted) {
+                // What the next run starts with: nothing in memory, only the list beside the save backups.
+                java.lang.reflect.Method forget =
+                        Class.forName("com.editora.io.SftpFiles").getDeclaredMethod("forgetOrphansInMemory");
+                forget.setAccessible(true);
+                forget.invoke(null);
+            }
 
             sftp.reconnect();
             RemoteCoordinator remote = remoteCoordinator(fx, sftp);
@@ -391,6 +434,7 @@ class RemoteSaveFxTest {
 
             assertEquals("server\nedit\n", Files.readString(sftp.serverPath("drop.txt")));
             assertFalse(hasStagingFile(sftp.serverPath(".")), "the earlier save's staging file is gone too");
+            assertFalse(Files.exists(ledger), "and crossed off the list");
         }
     }
 
