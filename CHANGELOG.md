@@ -7,933 +7,561 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Updated AtlantaFX to 3.0.0. The scrollbar thumb of a long file or list is no longer a 4px sliver in any
-  theme, and menu rows keep the same height in every theme (Primer, Nord and Dracula would otherwise have
-  become denser than the rest; Cupertino's rows are now as tall as the others).
-- Performance pass over the editor, following a measured review (typing, highlighting, large files, memory,
-  startup, consoles, language servers). Lines marked 'Changed' are behaviour you will notice as different
-  rather than faster:
-  - Syntax highlighting:
-    - Highlighting after an edit re-tokenizes only the lines the edit affects and stops where the grammar
-      state is back to what it was, instead of running to the end of the file. In a 79,000-line Java file an
-      edit near the top settled in about 0.5 s instead of 5–7 s, and the interface stall when the colours
-      apply went from 140–250 ms to about 30 ms. Opening a block comment still recolours to its close.
-    - Changed: lines longer than 20,000 characters are not syntax-highlighted (the rest of the file is), and
-      a single line gets at most one second of tokenizing. One 60,000-character minified-JavaScript line
-      used to hold the highlighter for about two seconds.
-    - Changed: with a language server's semantic highlighting on, a reply recolours only the lines whose
-      tokens changed, and semantic colours below an edit stay in place while the server answers instead of
-      blinking off.
-    - Fixed: files with no syntax grammar were restyled from top to bottom at every typing pause, which also
-      dropped the matching-bracket highlight until the caret moved.
-    - Opening a file no longer waits while another tab's first grammar of the session compiles; many tabs of
-      one language no longer tie up the highlighter's threads; tokenizing is roughly 18% faster.
-  - Large files and memory:
-    - Large files open without freezing the window: a 49 MB file used to block the interface for about three
-      seconds and a 20 MB file for about one and a half; both now stay under about half a second to a second.
-      The file's lines are prepared while it is being read, and a loaded file keeps one copy of its text in
-      memory instead of two (about 100 MB less for a 49 MB file).
-    - Changed: a file of 5 MB or more that would not fit in the memory that is left (typically a second or
-      third very large file) opens as a read-only slice showing its first part, like files over 50 MB already
-      do, instead of risking an out-of-memory failure. Close other large tabs and reopen it to edit it.
-    - Changed: in a file larger than about 256 KB, saved folds collapse a moment after the file appears
-      rather than before; the caret and scroll position are not moved by this.
-    - Commands that rewrite the whole document (Markdown lint fix-all, CSV align, replace in files, applying
-      a diff hunk, agent and plugin edits, convert indentation, restoring an Undo History entry, updating a
-      Markdown table of contents) record only the text that changed as their undo step. Three hundred such
-      steps on a 1 MB file used to keep about 600 MB of history. Changed: undoing one puts the caret at the
-      change rather than at the end of the file, and a rewrite that changes nothing no longer moves the caret.
-    - Changed: a document's undo history is also limited by the amount of text it holds (64 million
-      characters), not only to 300 steps, and Undo History checkpoints are limited across all open files
-      together (64 million characters); the oldest go first.
-    - An empty window no longer starts seven idle network threads: the AI, plugin and language-server-install
-      features create their HTTP connection on first use and release it when the window closes. Closing a
-      window also stops its plugin catalogue and install workers.
-    - Typst and Mermaid previews keep only the newest render of a document being edited, are limited by
-      memory as well as by count, and release their pages when the tab closes.
-    - Saving no longer keeps a second, encoded copy of every saved open file in memory, and no longer hashes
-      the file on the interface thread after each save.
-  - Consoles:
-    - Fixed: the Run, Output (build), Debug, External Tools and Test Runner consoles, the HTTP response view,
-      the Project Map preview, the diff panes and the hex viewer no longer keep an undo history of everything
-      they have ever shown. A console capped at 200,000 characters used to retain every line a long-running
-      program printed (about 110 MB after 200,000 lines, growing for as long as it ran). The snippet and
-      file-template bodies in Settings and the editable merge result keep undo, now limited to 300 steps.
-    - A program or build that prints quickly no longer monopolises the interface. The Run, Output and Debug
-      consoles apply each batch of lines as a single edit and take at most one batch per frame; 200,000 build
-      lines that used to freeze the window for about a minute now stream in about 13 seconds with the window
-      responsive.
-  - Find:
-    - Find in a very large file no longer freezes the editor: documents over about half a million characters
-      are searched in the background, and a query with a huge number of matches holds at most 100,000 of them
-      around the current one instead of every match (a search for "e" in a 45 MB buffer took a third of a
-      second and 105 MB on every edit). Changed: when there are more matches than are held, the count reads
-      "N of 100,000+" until the last match is reached; Next/Previous, Replace and Replace All still reach
-      every match. 'Select All Matches' places carets on the matches held (at most 100,000).
-  - Typing and the status bar:
-    - Enter, Tab, Shift-Tab, a typed closing bracket and snippet-prefix Tab read only the lines around the
-      caret instead of copying the whole document on every keystroke; the detected indent unit is remembered
-      until the top of the file changes.
-    - Moving the caret no longer copies up to 100,000 characters to look for a matching bracket unless the
-      caret is next to one.
-    - Same-length edits of a modified file (move line up/down, overwrite) no longer compare the whole
-      document each time; the modified marker clears shortly after the text returns to its saved state.
-    - Status bar: one refresh per frame while selecting, the selected-line count no longer copies the
-      selection, and a large file's size is counted in the background.
-    - The Run-glyph scan after each typing pause runs in the background; the Structure tool window no longer
-      rebuilds its tree when the outline is unchanged; closed tabs are no longer kept in memory by the last
-      kill, yank or expand-selection.
-  - Scrolling and overlays:
-    - Sticky scroll no longer rebuilds its pinned rows on every scroll step; a row is rebuilt only when its
-      line or its text/colouring changes.
-    - Changed: 'Show whitespace' markers inside a run of spaces now sit on their spaces (each further dot of
-      an indentation used to drift about 2 px to the right), cost a few layout queries per line instead of
-      one per run, and are off in large-file mode (which includes very long lines).
-    - Background tabs and clean files no longer hold a viewport-sized texture for the LSP-diagnostic,
-      Markdown-lint, Mermaid-lint, whitespace and log overlays.
-    - Fixed: line-mode AceJump with the end of the file on screen, and clicking in a file whose note sits at
-      the very end, leaked a timer per repaint/click.
-    - The minimap no longer repaints on every keystroke in LSP buffers, stops scanning a line at its right
-      edge, and re-renders once after a window resize settles instead of on every frame of the drag.
-    - Gutter rows build a fold chevron only where a fold starts and create tooltips on first hover.
-    - The log overlay no longer re-detects the level of every visible line (stack-trace lines included) on
-      each repaint; the spell overlay no longer copies the whole document on each settled edit in Markdown.
-  - Project tool window, search and Git:
-    - Fixed: a file changing in a watched folder no longer rebuilds the whole Project tree on the interface
-      thread. Only the folder whose entries came or went is listed again, and rows that are still right are
-      kept, with their expansion, selection and scroll position. With a 7,000-file folder that another
-      program writes to, typing no longer stalls every second.
-    - Fixed: saving a file in Editora no longer counts as an external change. It used to rebuild the tree,
-      mark the symbol index stale (so the next Search Everywhere re-read the project) and refresh Git, build
-      markers and open diffs a second time.
-    - Changed: a file that is only modified by another program (a log, build output) refreshes Git status and
-      open diffs at most once every two seconds.
-    - Sorting a folder listing no longer asks the disk whether each entry is a directory on every comparison;
-      expanding a folder no longer waits behind a Project filter search; a superseded filter search, TODO
-      scan or index walk stops instead of finishing.
-    - Changed: `.gitignore` files in subfolders are honoured by Search Everywhere / Go to Symbol, the TODO
-      scan, Find in Files without ripgrep and the Project filter (for example `packages/*/.gitignore` naming
-      `node_modules`).
-    - Find in Files stops ripgrep once the result limit is reached instead of letting it search the rest of
-      the project; a file changed outside Editora updates the symbol index for that file only.
-    - Switching tabs or returning to the window no longer checks the file and its `.editorconfig` folders on
-      the interface thread (a slow network or FUSE mount froze the window); the recent-files menu, Find File
-      and the breadcrumb dropdown read the disk in the background.
-    - Fixed: a `git status` that times out no longer makes the window say the folder is not a repository; the
-      last state is kept and the repository is left alone for 30 s (doubling to 5 min) before being asked
-      again. Inline blame is no longer recomputed when the file and HEAD have not changed.
-    - Local History: recording a save no longer copies every file's revision list unless the project is over
-      its size budget; trimming to the budget no longer rescans the project per evicted revision.
-    - Log viewer: following a log that grew by more than the follow limit between polls, or was rotated to a
-      large file, reads only the tail that is kept.
-  - Startup and tabs:
-    - A restored session no longer lays out the tabs you are not looking at. A background tab is still loaded
-      and highlighted, but its editor joins the window the first time you select it. Restoring a 30-file
-      session used about a fifth of the interface-thread time and 140 MB less memory in testing. Changed: the
-      first switch to such a tab does the layout that used to happen at startup.
-    - Changed: with several windows to restore, the window you were last in appears first and the others
-      follow one at a time, instead of nothing appearing until all of them were built. Files opened from the
-      file manager during those moments wait until every window exists.
-    - Switching tabs inside a project no longer re-reads the project's build file (pom.xml, package.json, …)
-      or starts a thread per build tool to look for it; a changed build file is still picked up.
-    - A tab's right-click menu and the build-tool task trees are built when first opened, not for every tab
-      and window. The saved session and the message catalog are no longer read on the interface thread at
-      launch.
-    - Packaged builds train their startup cache on a launch that restores a session and opens a file, rather
-      than on an empty window (effect on the packaged build not yet measured).
-    - `EDITORA_PERF=1` now also reports a launch that opens no file, and when the session finished restoring.
-  - Language servers, debugging and the AI agent:
-    - A server that announces its features one at a time (jdtls, tinymist) no longer makes Editora re-request
-      diagnostics, folding ranges, semantic tokens and inlay hints for every open tab once per announcement.
-      The burst is one refresh, for that server's files only; semantic tokens and inlay hints are fetched for
-      the tab on screen and for another tab when you switch to it.
-    - While you type against a slow server, requests for text that no longer exists are cancelled
-      (`$/cancelRequest`) instead of left running, and a request whose answer is already on its way is not
-      sent twice.
-    - The outline is no longer requested on every typing pause while the Structure window is closed. Jump to
-      Structure still shows the server's outline: it is fetched when the picker opens.
-    - Scrolling a file whose server can only send semantic tokens for the whole document (jdtls) no longer
-      re-fetches them on every scroll. Fixed: with semantic highlighting off and inlay hints on, scrolling did
-      not fetch hints for the lines scrolled to.
-    - Diagnostics a server publishes for files that are not open are discarded before they reach the
-      interface thread while the Problems window shows open files; the Problems tree is rebuilt at most ten
-      times a second and not at all while its window is closed.
-    - Sending a prompt, Stop, Resume, Step or an evaluation can no longer freeze the window when the agent or
-      the debug adapter is not reading its input. Opening, saving and full-syncing a large document no longer
-      encodes it as JSON on the interface thread.
-    - Changed: an agent reply appears as it streams (first text at once, then about eight updates a second)
-      instead of only when the stream pauses, and a long reply no longer gets slower to render as it grows.
-    - Changed: the call stack shows the innermost 1,000 frames when the debug adapter supports partial
-      stacks; deeper frames are not listed.
-- Third round of review follow-ups: standard input for debugged Java programs, the rest of the split view's
-  second pane, remote (SFTP) files on closed connections and beside local tabs, and Local History across
-  renames. Lines marked 'Changed' are behaviour you will notice as different rather than fixed:
-  - Java debugging:
-    - Changed: the Debug console now feeds the running program's standard input for Java launches; a debugged
-      program that read `System.in` used to wait forever. While the program runs, Enter sends the line to it
-      (an empty line counts); while it is paused, Enter evaluates an expression as before, and the prompt says
-      which of the two the field does. Ctrl+D in the field, 'Debug: End Program Input (EOF)' or the console's
-      context menu ends the input. This is on by default; the switch is under Settings > Debugging > Java
-      (also 'Debug: Toggle Program Input in the Debug Console') and takes effect at the next launch. Attached
-      sessions, Python and JavaScript work as before. Not yet confirmed on Windows.
-    - Changed: in that mode Editora starts the Java program itself instead of leaving it to the debugger, and
-      kills it on Stop, Restart, a new launch, a failed launch and closing the window. The session ends when
-      the program exits, after its last output, and the console reports the exit code. Lines the program
-      writes to stdout and to stderr at almost the same moment can appear in either order.
-    - Changed: the Java language server (jdtls) gets its JVM option on its command line instead of through
-      `JDK_JAVA_OPTIONS`, so debugged programs no longer inherit the variable and no longer print 'NOTE:
-      Picked up JDK_JAVA_OPTIONS'. The environment variable remains the fallback for a jdtls command that is
-      neither the launcher script jdtls ships nor a direct `java` (a wrapper script, for example); there the
-      note still appears when the Debug console switch above is off.
-  - Split view:
-    - Changed: both panes share one undo history. Undo in one pane no longer re-applies what the other pane
-      just undid, an edit made in one pane is undone once from the other, and undo moves the caret of the pane
-      it was issued in. Typing is grouped into the same undo steps in both panes; the second pane used to
-      group a word and the space after it differently.
-    - The second pane shows everything the first does: language-server squiggles, search and occurrence
-      highlights, TODO highlights, Markdown and Mermaid lint marks, inline debug values, log colouring, the
-      column ruler, and the scrollbar stripes and minimap marks. Its stripes have their hover tooltips, and a
-      click on one moves the pane that was clicked.
-    - Hover popups (diagnostics, debug values, Markdown and Mermaid lint, personal notes) open in the second
-      pane too, at the pointer.
-    - AceJump started in the second pane labels and moves that pane instead of the first; toolbar Cut and Copy
-      follow the selection of the pane in use.
-    - An abbreviation expanding, or a line auto-filling, while typing in the second pane no longer leaves the
-      caret in front of the character just typed.
-    - Narrowing and widening keep the second pane's caret instead of sending it to the start of the buffer.
-  - Remote (SFTP) files:
-    - Changed: personal notes on a remote file are stored under the path it was opened by, not the target of
-      a symlink; notes made earlier on a remote file opened through a symlink may no longer be found.
-    - Saving a remote file with other hard links keeps them in more cases: on protocol 3 (OpenSSH) through the
-      directory listing as before, on protocol 6 when the server reports a link count, and on a server
-      speaking protocol 4 to 6 without a count when it also accepts a protocol 3 channel. On other servers the
-      links cannot be detected and are still broken. The protocol 6 case is not yet confirmed against a
-      third-party server.
-    - A temporary file left on the server by a dropped connection is remembered across restarts of Editora and
-      removed by the next save to that server (a few internal save paths still remember theirs only until
-      Editora exits).
-    - Opening, restoring or reloading a file on a closed SFTP connection says that the connection is closed
-      and how to reconnect; the Project tree, the Project map and search say that the folder cannot be read
-      instead of showing an empty folder or 'No results'.
-    - Reload on a closed connection no longer stays unfinished, and the Project map no longer stops updating.
-    - A remote file that is read-only on the server shows the 'read-only on disk' note in View mode, as a
-      local one does. The state is read when the file is opened.
-    - With a remote tab open beside local ones, these no longer fail: diff and history look-ups, editing a
-      TODO line, MCP file look-ups and diagnostics, renaming a local folder (it stopped at the first remote
-      tab), Reveal in Project, the Bookmarks window, the Project map's history and breadcrumb, and Go to
-      Definition in the split.
-  - Local History and renames:
-    - Changed: a file created with Save As starts with a copy of the Local History of the file it was saved
-      from, once its first save is recorded; the original keeps its own. The copied revisions count towards
-      the project's history size limit, so old revisions can be dropped sooner. A Save As that fails copies
-      nothing.
-    - Local File History follows a file that is renamed or moved, also inside a renamed or moved folder and
-      for files that are not open, in every project that has history for it. History already at the new path
-      is merged with it.
-    - A revision still being stored when its file is renamed lands under the new name instead of bringing the
-      old one back.
-    - The history follows renames while Local History is switched off, too.
-  - Settings:
-    - Changed: settings schema 108, for the Debug console switch above; the migration changes nothing else.
-    - Remote and Abbreviations: a site or abbreviation changed elsewhere no longer discards what is being
-      typed into the form. The typed fields keep their text, caret and focus and the others follow the change;
-      when the entry itself was removed or re-identified elsewhere, the form reloads.
-  - Stability:
-    - Changed: lines typed quickly into a running program's input (Run and Debug consoles) reach it in the
-      order they were sent, and end of input arrives after the last line; they could arrive swapped.
-    - Changed: a git refresh no longer rebuilds the gutter of a file whose blame did not change; it did so on
-      every refresh, also for a file outside a repository or with blame off.
-    - The column ruler no longer stays left of its column after the gutter is rebuilt twice in quick
-      succession.
-    - Quitting waits (up to 5 seconds) for a Local History write that is still running before it releases the
-      configuration lock.
-    - AceJump line mode no longer throws on every repaint in a file that ends in an empty line.
-- Doctor reports Python debugging as healthy only when the configured interpreter can import debugpy,
-  the same check the debugger uses, so a found debugpy bundle no longer hides a missing or misconfigured
-  Python. A missing Mermaid linter is now a warning rather than a problem, since diagrams still render
-  without it. Refresh no longer lets the previous run's queued checks start, the Git row shows the
-  configured Git command, and the Java row links to the Build Tools page where its JDK is chosen.
-- A setting toggled from the command palette or a key binding now always reaches the other open windows.
-  When another window happened to save just before the window you toggled it in, that window was taken for
-  the one that made the change and kept the old view until restart or its next settings change.
-- Windows: opening a file while Editora is already running now hands it to the running editor instead of
-  starting a second one. The two sides ended their messages with the platform's line ending and the reply
-  check did not expect the extra carriage return, so no launch was ever forwarded there.
-- Windows: AI requests through the Codex agent no longer leave an empty `editora-ai-` folder behind in the
-  temp directory each time; the folder could not be removed while the agent was still exiting.
-- Follow-ups to the Settings, Java debugging and editing review, plus a review of mouse editing, tab dragging
-  and remote (SFTP) saves. Lines marked 'Changed' are behaviour you will notice as different rather than
-  fixed:
-  - Settings:
-    - Changed: settings schema 107. A plugin registry URL or Maven archetype catalog URL in `settings.json`
-      that equals the built-in address is blanked by the migration, so it follows future defaults again; this
-      includes one typed by hand that happens to equal it. Any other URL is kept.
-    - Changed: the remaining Settings text fields (Git, gh, diagram and Typst tool paths, build-tool commands,
-      ripgrep, Maven catalog, plugin registry, AI endpoint, models and API key, template author name) apply on
-      Enter, on leaving the field or on closing the window instead of on every keystroke; their 'detected'
-      status lines update at the same moment.
-    - Changed: Spanish: the Settings window is called 'Ajustes' throughout; 'Configuración' is kept where it
-      means configuration (config folder, export, run configurations).
-    - A fresh `settings.json` no longer freezes the Maven archetype catalog URL; a blank value means the
-      built-in catalog (it used to be refused as not HTTPS).
-    - A config file that is not valid UTF-8 is reported in the status bar when it is loaded and its original
-      bytes are kept as `<name>.corrupt.bak` (no copy is made of the Local History index), instead of the
-      replaced characters being saved back silently.
-    - A read-only or full config folder is reported as soon as the window opens, not only at the next save.
-    - Switching the AI provider keeps what was typed for the provider being left instead of dropping it or
-      writing it to the other one.
-    - The Remote and Abbreviations pages show a site or abbreviation added elsewhere at once, even while the
-      Settings window has the focus.
-    - Templates: a whitespace-only change no longer turns a bundled template into a user override, and editing
-      another field of a bundled template keeps its multi-line description.
-    - The Macros page's key binding, and a Settings window open in another window, follow keymap switches,
-      rebinds and resets.
-    - French and Portuguese: the Settings search prompt is no longer cut off. Remote: the key-file field keeps
-      a usable width, with Browse moving below it when the row is narrow.
-    - 'Enable AI actions' and 'Expand abbreviations as you type' are switch rows like the rest of Settings.
-  - Java debugging:
-    - Changed: while a debug session runs, a breakpoint the debugger has not verified (its code is not loaded
-      yet, or the line has no code) is drawn as a hollow ring, with the debugger's explanation on hover. Every
-      breakpoint is hollow from the start of the session until the debugger answers, and the markers return to
-      normal when the session ends. In Java a breakpoint on a line with no code stays hollow for the whole
-      session.
-    - Changed: Restart is disabled for a debugger attached to a test or build run, with the reason as its
-      tooltip and in the command palette; the key still reports it in the status bar. A session started with
-      Debug > Attach can still be restarted.
-    - A breakpoint the debugger refuses is flagged in the gutter and reported in the status bar, once per
-      session.
-    - Java: a breakpoint condition or logpoint message that cannot be evaluated is reported in the Debug
-      console and the status bar and its breakpoint is flagged; the program used to stop on every hit without
-      saying why.
-    - A breakpoint the debugger binds to a different line (Python: a blank or comment line) moves to that line
-      and the status bar says so.
-    - A stop on an exception names it: 'Suspended on IllegalStateException: boom' in the Debug panel, the full
-      type and message in the status bar.
-    - A watch that cannot be evaluated is drawn as an error instead of as a value.
-  - Editing and split view:
-    - Changed: the editor's right-click Cut and Copy are disabled when there are several carets and nothing is
-      selected at any of them, whatever 'copy/cut the line when nothing is selected' says; they used to take
-      whole lines.
-    - Changed: a command that rewrites the whole document, and undoing it, no longer scrolls to the caret
-      (unless the whole document was selected).
-    - Markdown, Typst and other commands that edit at the caret scroll to it when the change is outside the
-      window.
-    - Renaming or moving a file or folder from the Project tree keeps its bookmarks, personal notes,
-      breakpoints, fold state, Markdown mode, spell-check language, program arguments and read-only pin, also
-      for files that are not open. Save As copies the marks and per-file view settings to the new file and the
-      original keeps its own.
-    - Save As onto a file that is open in another window is refused; a saved `.editorconfig` reaches the open
-      files of every window.
-    - Tab with multiple carets indents by the file's indent style (and indents selected lines) at every caret
-      instead of typing a tab character, as one undo step; Shift-Tab dedents at every caret instead of doing
-      nothing.
-    - Converting line endings back to what a save that was still running wrote no longer leaves the buffer
-      marked modified.
-    - Editing a TODO from the TODO window works in a narrowed buffer: a line inside the region is edited in
-      place, one outside it widens the buffer first.
-    - Split view: the second pane shows fold chevrons, bookmark, breakpoint, run and blame marks and change
-      bars in its gutter, draws spelling squiggles and note highlights, and has the editor context menu, whose
-      items act on the pane that was right-clicked.
-    - Split view: closing the split from the second pane keeps that pane's caret, selection and scroll
-      position.
-    - Split view: Reload from disk keeps the second pane's place when that pane is not the focused one.
-  - Mouse and context menu:
-    - Changed: a right-click outside the selection moves the caret to the click and drops extra carets, so
-      Paste, Run/Debug Test, Run/Debug Main, the language-server items, spelling suggestions and Add Bookmark
-      all act on the place that was clicked. A right-click inside a selection (a column selection included)
-      leaves it alone.
-    - Changed: a dragged selection released outside its editor, or over the other split pane, is cancelled:
-      nothing moves and the selection stays.
-    - Changed: Fold and Unfold, by click or by command, keep the selection when it is outside the folded text
-      instead of collapsing it to a caret.
-    - The context menu opened with the Menu key or Shift+F10 opens at the caret and acts on it.
-    - Clicking a fold chevron, the breakpoint strip, a run glyph or a blame cell no longer moves the caret or
-      drops the selection and extra carets.
-    - Double-click selects `don't` (plain text and Markdown) and `3.14` as one word, and `margin-top` in CSS.
-    - An image dropped on a Markdown or Typst file is inserted where it is dropped, in the pane it was dropped
-      on, not at the old caret.
-    - Alt+drag column selection with word wrap on covers every wrapped row the rectangle crosses.
-  - Tabs and editor groups:
-    - Dragging a tab onto a tab header in another editor group moves it there; the tab could disappear with
-      its unsaved changes, or stay in its own group.
-    - Pinning or unpinning a tab keeps it in its own group, at that group's pinned boundary; pinning a group's
-      only tab used to move it to another group.
-  - Remote (SFTP) files and saving:
-    - Changed: Save As on a remote tab is no longer refused: it writes a local copy and the tab becomes that
-      local file. This also works after the connection is gone.
-    - Changed: Remote: Disconnect asks first when remote tabs have unsaved changes, naming them, and closes
-      every connection of the window, not only the mounted one.
-    - Changed: a remote file with no write bit on the server opens in View mode and is no longer replaced
-      silently: Save asks first and auto-save does not write it.
-    - Saving a remote file opened through a symlink writes the link's target instead of replacing the link
-      with a regular file.
-    - A writable remote file in a folder that allows no new entries can be saved: it is overwritten in place,
-      with its previous content held in a local backup until the write is done. This is done only when the
-      server refuses the temporary file for permissions.
-    - Saving a remote file with other hard links keeps them on servers that speak SFTP protocol 3 (OpenSSH);
-      on newer protocol versions the links cannot be detected and are still broken. A file owned by another
-      user should now be written in place instead of taken over (not yet confirmed against a second account).
-    - A temporary file left on the server by a dropped connection is removed by the next save to that server
-      in the same run of Editora, and a failed cleanup no longer hides the real error.
-    - Saving after the connection has closed says so and how to recover (reconnect, or Save As for a local
-      copy).
-    - A slow or stalled remote save no longer holds up saving local files.
-    - Connecting to a second SFTP host, or reconnecting to the same one, no longer fails in the Project map;
-      the earlier connection is closed unless open tabs still use it.
-    - With 'save as administrator' on, saving your own read-only file in a folder you can write to asks to
-      overwrite it instead of asking for elevated rights.
-- Settings, Java debugging and editing review fixes (Settings persistence, window behaviour and UI; the Java
-  debug adapter layer and Debug panel; core editing, edit operations, file I/O, view and split view). Lines
-  marked 'Changed' are behaviour you will notice as different rather than fixed:
-  - Settings storage:
-    - Changed: key-binding overrides are now kept per keymap (settings schema 106). Switching keymap no longer
-      unbinds unrelated keys, and switching back restores the rebinds made there; existing overrides stay with
-      the keymap in use. Reset to Defaults leaves them with the keymap it leaves instead of applying them to
-      the default keymap.
-    - Changed: Export Configuration no longer includes downloaded language servers, debug adapters, jdtls
-      workspaces, the instance lock, the MCP endpoint file with its live token, the session log and other
-      runtime files (local history, `.bak` backups and installed plugins are still exported). It runs in the
-      background and no longer leaves a truncated zip behind when it fails.
-    - A `settings.json` (or any other config file) kept as a symlink into a dotfiles repository is written
-      through the link instead of being replaced by a regular file.
-    - A config file saved with a UTF-8 byte-order mark, or containing a byte that is not valid UTF-8, no
-      longer resets every setting in it to the default.
-    - An unreadable or newer `projects.json` or session file is reported in the status bar like other config
-      files, and is not overwritten when no backup of it could be made.
-    - A full disk or read-only config folder no longer stops Editora from starting, and no longer throws out
-      of toggling a bookmark or breakpoint, editing a note, saving a macro, trusting a folder or opening a
-      project window; the failed save is reported in the status bar.
-    - A config store that stays unreadable is backed up once, not on every launch (after 20 launches it used
-      to become silently unsaveable).
-    - A fresh `settings.json` no longer freezes the default plugin registry URL; the built-in URL is stored as
-      blank so it follows future defaults.
-    - Add to Dictionary no longer glues the new word onto the last line of a `dictionary.txt` that lacks a
-      final newline.
-    - Importing shared run configurations tolerates extra keys and null entries in
-      `.editora/run-configurations.json`.
-  - Settings window (behaviour):
-    - Clearing the Font size field no longer stops every later Settings change from being saved and applied.
-    - Changing an unrelated setting no longer rewrites the editor font (a size above 48 or below 8 was reset;
-      a second or previously closed Settings window reverted the font).
-    - Number fields no longer throw on letters, an empty field or an over-long number, and accept the same
-      range as their palette commands (fill column 1-1000, auto-save delay 1-3600 s, ...).
-    - Palette and key-binding toggles (ruler, line highlight, line numbers, minimap, whitespace, spell check,
-      Zen, Expert) move the switches of an open Settings window.
-    - With Settings open in two windows, a change in one is shown in the other instead of being reverted by
-      it.
-    - The Tool Windows page shows each window's current side and visibility when Settings is reopened.
-    - Language-server, debug-adapter and agent command fields apply on Enter or focus loss instead of
-      restarting servers on every keystroke.
-    - A file opened with word wrap held off for a very long line stays unwrapped when settings are re-applied;
-      Toggle Word Wrap on that buffer turns it on.
-    - Keymaps: the shortcut list and the chord chips follow keymap changes, rebinds and resets; 'Reset all
-      shortcuts' asks first.
-    - Abbreviations, Remote and External Tools no longer delete entries added elsewhere (Define Abbreviation,
-      Connect, another window) the next time anything on the page is edited.
-    - Abbreviations added, changed or removed in Settings take effect in files that are already open.
-    - Templates: clicking through a bundled template's fields no longer turns it into a user override; an id
-      that another template already uses, or that is not a valid file name, is refused.
-    - Snippets: a snippet is no longer lost when two share a name, when Add is pressed twice or when the name
-      is cleared; bundled snippets with multi-line descriptions stay bundled until edited.
-    - External Tools: renaming or removing a tool carries or clears its key binding instead of leaving a dead
-      chord; adding two tools in a row gives each its own command.
-    - TODO: a malformed pattern is flagged and not saved instead of silently disabling the keyword.
-    - The Git command field stays editable when Git is off, so a wrong path can be corrected.
-  - Settings window (keyboard, search, layout):
-    - Changed: Escape clears a running search, otherwise closes the Settings window (not while recording a
-      shortcut, in a snippet or template body, in an editing cell or with a combo open).
-    - Changed: the minimum Settings window width is 900 px (was 720). Row titles wrap, list-and-form pages no
-      longer collapse, combos and path fields fit their content, the Appearance combos line up and the
-      Advanced hints wrap.
-    - Keymaps: the shortcut list can be used from the keyboard alone (arrows, Home/End, Enter to select and to
-      record); focus returns to the row afterwards.
-    - Shortcut recorder (Keymaps and Macros): Enter saves once a chord is recorded and Escape cancels; the
-      prompt says so.
-    - Shift+Tab and Ctrl+Tab leave the Snippets and Templates body editors; Tab still types a tab there.
-    - Sidebar arrow, Home/End and Page keys skip group headers and pages filtered out by a search, which are
-      now dimmed.
-    - Search finds a row by its page's name, opens a page whose name the query starts (3 or more characters),
-      and shows its prompt while focused.
-    - 'Delay (seconds)' and the tool-window sides are translated; build-tool hints point to the override
-      'below'; the AI Actions status names the switch that is off.
-    - Accessible names for the reorder arrows, TODO and Markdown-lint controls and the search field; the
-      Macros step editor and the Remove buttons are disabled when there is nothing to act on; 'Require signed
-      plugins' is a switch row.
-    - French: Settings is called 'Paramètres' throughout, and command titles are capitalised consistently.
-  - Java debugging:
-    - Conditional breakpoints no longer stop on every hit, logpoints print, and Evaluate, watches and hover
-      values work in attached Java sessions (including Debug Test) and when debugging a compact source file;
-      the debugger was never told which project to evaluate against.
-    - Debugging a single `.java` file outside any Maven/Gradle project no longer fails with
-      `ClassNotFoundException` when it has a classic `public static void main`; it is compiled and debugged.
-    - In a project with a `module-info.java`, gutter Run/Debug and saved run configurations no longer report
-      'No main class was found'.
-    - Debug on a project's file runs the program in the project root, like Run, instead of the source package
-      folder.
-    - Projects compiled with `--enable-preview` can be run and debugged; the flag is added automatically.
-    - Debug no longer shows the main-class picker for a file's own `main` when the project was opened through
-      a symlink.
-    - A Java debug session with a very long class path no longer fails to start ('Argument list too long' /
-      Windows error 206); such launches use an argument file.
-    - Restart on a debugger attached to a test or build run no longer leaves a dead session showing 'Running';
-      it says the run has to be started again.
-  - Debug panel:
-    - Changed: the Debug console is cleared at each launch (and kept after a session ends); it has a Clear
-      Console menu item and no longer shows ANSI colour codes.
-    - Changed: an open Debug window no longer closes on switching to a tab that cannot be debugged, nor while
-      a session starts or ends on another tab.
-    - Changed: call stack, variables and console sit side by side when the panel is wide enough (stacked when
-      narrow), with compact frame rows and the thread selector in the header; the call stack no longer has
-      zero rows at the default height.
-    - Expanding a large array or collection in Variables no longer freezes the window or overloads the
-      debuggee; elements are fetched and shown 100 at a time ('Show more').
-    - A stop inside JDK or library code no longer flashes a tab and reports 'Failed to open'; the nearest
-      frame with source is shown and the status bar says so. Frames without source stay selectable and show
-      their variables.
-    - A rejected Set Value is reported instead of being displayed as applied; adapter errors no longer start
-      with a Java exception class name.
-    - Breakpoints follow a file that is renamed, moved or saved under a new name; line shifts in several files
-      are all saved; Undo restores the breakpoint of a deleted line; cancelling Edit Breakpoint on a bare line
-      creates nothing; files without a debugger get no invisible breakpoints.
-    - Expanded variables and the selection survive a step; watches are visible when idle; Stop and Restart are
-      available in the menu and palette while a session is starting.
-    - Picking a running thread stays on the stopped one and says why; a stale frame clicked while the program
-      runs paints no execution line; reopening the stopped file shows the execution line again.
-    - Inline values are shown only in the function the program is stopped in, and not for names inside
-      comments or strings.
-    - stderr is drawn in its own colour in the Debug, Run and External Tool consoles.
-    - Pressing Enter in the Debug console while the program is running shows a hint instead of being ignored;
-      a stop on an exception reads 'Suspended on an exception'.
-    - Stepping no longer writes 'Already open: <file>' to the status bar.
-  - Editing commands:
-    - With multiple carets, typing after Undo/Redo, a command that edits at the primary caret, a
-      language-server edit or a reload no longer deletes text that was never selected.
-    - Multi-caret Backspace, Delete and arrow keys no longer split emoji and other supplementary characters.
-    - Add Caret Above/Below adds a caret on each further line instead of stopping at the second.
-    - Select All, Cancel (C-g) and document start/end collapse multiple carets; the multi-caret Cut/Copy
-      commands with nothing selected respect 'copy/cut the line when nothing is selected'.
-    - C-f / C-b no longer stop inside an emoji (editor, consoles, text fields); word commands keep a combining
-      accent with its letter.
-    - Tab over a selection in Markdown, plain text, TOML and other unstyled files indents the lines instead of
-      replacing them with a tab, and Shift-Tab dedents. A bare Tab there follows the indent style; Makefiles
-      and CSV/TSV always get a real tab.
-    - A command's edit (paste, Duplicate Line, kill, case change, ...) is its own undo step instead of merging
-      with adjacent typing; a command repeated with C-u undoes one run at a time.
-    - Paste, undo, redo, Duplicate Line, Move Line and other edit and macro commands scroll to the caret when
-      their change is outside the window, as typing does.
-    - The Emacs mark is per buffer and any edit deactivates it: C-SPC, typing, then C-n no longer selects text
-      that the next key replaces, and a mark set in one tab no longer makes motion select in the next.
-    - C-e goes to the end of the whole line with word wrap on, matching C-a and C-k.
-    - Auto-rename-tag keeps both tags in step when a tag name is cleared and retyped.
-    - Abbreviations expand before Enter on an indented line and before an auto-closed bracket.
-    - Cutting the last line and pasting it back no longer joins it onto the previous line.
-    - Converting line endings and back no longer leaves the buffer marked modified.
-    - Markdown: Enter no longer continues a list inside a fenced code block or after a `- - -` rule.
-    - Bracket auto-close and closer re-alignment should now work for characters typed with Option / AltGr
-      (not yet confirmed on a German or Spanish layout).
-  - Edit operations (indent, comment, fill, s-expressions, case):
-    - Changed: in code languages Fill Paragraph and Fill Region fill comments only (line comments and block
-      comments that start a line); they no longer join code statements.
-    - Changed: Move Line Up/Down and Duplicate Line act on every line of a selection.
-    - Changed: indentation detection uses a file's own indent width (a 2-space file gets 2-space Tab, Enter
-      and Shift-Tab whatever the tab size), and no longer mistakes a ` * ` comment header for space
-      indentation.
-    - Fill no longer joins Markdown list items, headings, tables, rules or fenced code; `-`, `+` and numbered
-      items are list paragraphs; Fill Region no longer takes the line a selection merely ends at; the fill
-      width counts tabs and wide characters; Javadoc `@tags` stay separate paragraphs; batch `REMOTE=` lines
-      are not treated as `REM`.
-    - Auto Fill wraps a list item under its text instead of starting a new item.
-    - A closing bracket or keyword after a wrapped statement aligns to its opener; Tab on a `}` / `else` /
-      `fi` / `</tag>` line no longer indents it to body level; Enter indents after `{ /* comment */`; Ruby
-      endless methods and shell lines ending in 'do'/'then' are no longer taken for block openers.
-    - Toggle Comment uncomments a selection of line-commented lines, adds no stray whitespace on blank lines
-      and keeps a bare caret out of the comment opener. Text that contains a block comment is line-commented
-      instead of wrapped in another, or refused with a message where the language has only block comments.
-    - Kill Sexp and Mark Sexp no longer run to the end of the buffer when a comment contains an apostrophe or
-      the code has a Rust lifetime; an unbalanced bracket is left alone.
-    - Expand Selection grows to the enclosing definition rather than the previous one.
-    - Case conversion keeps leading and trailing underscores (`__init__`), round-trips `I18N`, and no longer
-      swallows the minus in `count-1`.
-    - Auto-close tag no longer fires on comparisons or inside `<script>`, `<style>`, `<textarea>` and
-      `<title>` content; Tabify leaves the rest of a line alone from its first quote.
-  - Files on disk (encodings, saving, .editorconfig):
-    - Changed: a file opened through a stand-in encoding (unknown legacy encodings such as Shift-JIS or GBK)
-      refuses a save that would re-encode it. Typing a character outside the stand-in charset no longer
-      rewrites the file as mojibake: the status bar names the character and its line, and the file can be
-      saved again once it is removed.
-    - Changed: saving a hard-linked file, or a file owned by another user, now writes in place, so every name
-      of the file gets the new content and ownership is kept; saving used to break the link or take the file
-      over.
-    - Changed: a file that is read-only on disk is no longer replaced silently: Save asks first (once per
-      file), and auto-save reports that it cannot write instead of writing.
-    - Saving a writable file in a folder you cannot write to, or a file that cannot be renamed over, now
-      works: the file is overwritten in place after a temporary backup of its previous content, and the status
-      bar says so. Files with very long names can be saved.
-    - Under a declared charset such as `charset = latin1`, a save that has to fall back to UTF-8 writes a BOM
-      so the file reads back correctly, keeps its warning visible and updates the status bar.
-    - Changes to `.editorconfig` reach files that are already open; a `.editorconfig` with a UTF-8 BOM or
-      non-UTF-8 bytes is no longer ignored.
-    - BOM-less UTF-16 files declared by `.editorconfig` open as text and are saved without an added BOM.
-    - Save As onto a file open in another tab of the window is refused instead of leaving two tabs on one
-      path.
-    - 'Keep' on an externally changed file leaves the tab marked unsaved; a file whose bytes did not change
-      (touch, identical rewrite) no longer prompts.
-    - A line-ending conversion chosen while a save is running is no longer dropped.
-    - Reloading a file that is no longer huge makes it editable again.
-    - `editora path/to/new-file` opens a new buffer at that path instead of failing.
-    - Case-only renames should now work on case-insensitive volumes (not yet confirmed on macOS or Windows).
-    - Large-file and long-line mode say that undo is off, and Undo/Redo explain themselves there; a file with
-      mixed line endings says what a save will write.
-  - View, scrolling and split view:
-    - Changed: tabs are now drawn at the configured tab size (setting or `.editorconfig`) instead of always 8
-      columns; with the default setting a tab is 4 columns wide.
-    - Reload from disk keeps your place: the scroll position, the caret's line and column and the collapsed
-      folds survive, instead of the view jumping to the top with every fold open. Session restore lands on the
-      right line too.
-    - The column ruler is on the right column: it no longer sits several columns (or a late-laid-out gutter's
-      width) too far left on a freshly opened file or too far right when the visible lines are short, and no
-      longer disappears for tab-indented or CJK text.
-    - Opening a narrowed file at a line (search hit, go-to, `file:line`, link) goes to that line; the buffer
-      is widened when the target is outside the region, and Back/Forward stay correct across narrow and widen.
-      The 'Narrowed' status chip no longer stays lit on other tabs.
-    - Split view: the status bar (line/column, selection, CSV field) shows the pane you are in.
-    - Split view: fold, bookmark, note, breakpoint, run-to-cursor and run-test-at-caret commands act on the
-      focused pane's caret; folding no longer leaves the other pane's caret inside hidden text.
-    - Split view: closing the split from the second pane keeps keyboard focus in the editor instead of moving
-      it to the toolbar.
-    - Split view: the second pane honours word wrap, the line-numbers setting, whitespace markers and the
-      current-line highlight.
-- Second round of coding-feature fixes (173 further issues from the same review):
-  - Editing, folding, highlighting and outline:
-    - Fixed multi-caret editing throwing and then dropping every key when an edit shortened the document with
-      a caret near its end (current-line highlight on).
-    - Fixed query-replace and zap-to-char keys also being acted on by auto-indent, smart Backspace/Tab and
-      auto-close; quitting query-replace with q no longer types a q; zap-to-char is cancelled by moving the
-      caret.
-    - fill-paragraph no longer reflows code into the comment above it, strips comment markers from code, or
-      breaks a Javadoc's delimiters; list items wrap with a hanging indent.
-    - Enter and Tab now indent after openers containing --, # or // that are not comments (i--, $#, #main,
-      this.#x, n // 2, #t); HTML void elements no longer indent the next line.
-    - Typing a new tag no longer renames the enclosing element's closing tag; a mirrored tag rename is one
-      undo step with the keystroke.
-    - Select All Occurrences from a bare caret matches whole words only.
-    - Expand Selection no longer starts a new ladder from the previous ladder's server ranges.
-    - Trim/sort/other whole-buffer line commands and Toggle Comment no longer leave their output selected when
-      started from a bare caret.
-    - forward/backward-sexp cross operators and separators; paragraph motion no longer skips a paragraph from
-      a block's edge line; mark-paragraph on a blank line takes the paragraph below.
-    - transpose-chars and the rectangle commands no longer split emoji and other supplementary characters.
-    - Comment toggle: a selection between two block comments is no longer 'uncommented'; batch REM is matched
-      as a whole word in any case.
-    - Smaller editing fixes: Shift-Tab honours indent_size, a closing bracket ignores a column-0 preprocessor
-      line, auto-fill no longer re-breaks after a quote marker, no tag auto-close on a comparison in inline
-      script, no doubled quote after ) or ., case-cycle works on one-word tokens, an empty cut/copy leaves the
-      kill ring alone.
-    - Jump to Structure works with the Structure tool window closed and after switching files.
-    - Brace folding (and sticky scroll / the outline that depend on it) survives an unpaired quote: Rust
-      lifetimes, apostrophes in template literals, raw strings, text blocks, JSX text and # comments.
-    - Server-free outline: Go methods are named after the method, type references are no longer listed as
-      types, declarations with a wrapped signature are found, and Python/Ruby/shell/Lua/YAML files get an
-      outline.
-    - Syntax highlighting: call arguments and punctuation are no longer coloured as function names;
-      TypeScript/Python type-annotation punctuation is no longer coloured as a decorator.
-    - Symbol index no longer invents declarations from return/throw/new/else/await statements or from the body
-      of a multi-line template literal; Rust `fn new` is indexed; a very long string literal no longer stalls
-      the scan.
-  - Completion and snippets:
-    - Accepting a completion that has no server edit range no longer duplicates what was typed (`$us` +
-      `$user` gave `$$user`; `apt-g` + `apt-get` gave `apt-apt-get`).
-    - Label-only completion items (bash-language-server commands such as `docker-compose` or `g++`, pyright
-      keyword arguments such as `timeout=`) insert their whole label instead of being cut at the first non-
-      identifier character.
-    - A commit character typed on a plain completion inside a snippet field no longer ends the enclosing
-      snippet session.
-    - Snippet variable transforms (`${TM_FILENAME_BASE/(.*)/${1:/upcase}/}`) are applied instead of leaking
-      the regex into the document; `${VAR:default}` uses its default when the variable is empty (no selection,
-      untitled buffer). The PowerShell `block-comment` snippet inserts its `<# #>` again.
-    - Snippet tab stops that contain another stop or a mirror (`${4:$1}`, `${2:${1}foo}`, `${0:${1/.../}}`)
-      keep their extent while the inner one is edited, and empty stops at the same position keep their order.
-    - Backspace, Delete or a paste in a mirrored snippet field is a single undo step together with its
-      mirrors.
-    - Pressing Control (or another modifier) on its own no longer dismisses the quick-fix list, so C-n / C-p /
-      C-g reach it.
-  - Find and replace:
-    - Query Replace no longer skips the next of several adjacent matches when the replacement is empty, and no
-      longer re-offers the same spot for ever for a zero-width pattern such as `$` or a lookahead.
-    - Query Replace `!` (replace all the rest) is linear instead of quadratic in the number of matches, so it
-      no longer freezes the window on large files; a replacement that names a missing group is reported
-      instead of throwing.
-    - Find Next steps through zero-width regex matches (`^`, `$`, `^$`), and Replace acts on them.
-    - Whole word now means the match is not glued to a word character on either side, identically in the find
-      bar, replace, Query Replace and Find in Files and matching ripgrep `-w`; queries such as `@Override`,
-      `$var` or `--flag` are found, and accented letters count as word characters in regex mode.
-    - In Find in Files, regex `^`, `^$` and `^\s*$` match empty lines again.
-    - A regular expression that exhausts the regex engine's stack (for example `(.|\n)*?` across a long block)
-      is reported as too complex instead of silently leaving the previous results in the find bar.
-    - The find bar follows the active tab: switching tabs re-searches the new file instead of applying the
-      previous file's match offsets, and the tab that was left keeps no highlights.
-    - Closing the find bar no longer re-highlights matches or moves the selection afterwards.
-    - Find reveals a match that lies inside a folded region.
-  - Find in Files, index and file finder:
-    - Find in Files: `$` now matches at the end of CRLF lines with the ripgrep backend, and ripgrep honours
-      `.gitignore` in folders that are not git repositories, as the built-in walker does.
-    - Find in Files: one unreadable folder no longer makes every ripgrep search be discarded and re-run by the
-      built-in walker; the result is kept and marked partial.
-    - Find in Files no longer fails when an SFTP tab is open, and the tool window, the popup and the MCP
-      `findInFiles` tool no longer cancel each other's searches.
-    - Find in Files: an invalid regex is reported instead of shown as "No results"; an invalid regex
-      replacement (`$9`, `$name`, trailing `\`) is refused up front instead of reporting "Replaced 0
-      occurrences".
-    - Replace in Files no longer rewrites read-only files that are not open; they are listed as not changed.
-    - Find in Files popup: long (minified) lines are previewed around the match instead of laid out whole,
-      typed prefixes are no longer stored in the search history, and the ripgrep badge shows after the first
-      detection.
-    - Include/exclude globs: an escaped comma (`we\,ird/*`) now matches the same files with both backends and
-      for open buffers.
-    - A ripgrep path containing spaces (e.g. under `Program Files`) is now accepted.
-    - Projects opened through a symbolic link are now searched, indexed and scanned for TODOs by the built-in
-      walker.
-    - A folder inside a git repository opened as the project now honours the repository's `.gitignore` files
-      above it (symbol index, Search Everywhere, built-in Find in Files, TODO scan).
-    - Search Everywhere follows the project: newly saved files are offered, deleted and renamed files are
-      dropped, and an external change triggers a re-index on next use.
-    - Test results: a test class stored outside its package directory, or in a module folder named
-      `out`/`build`/`target`, is found again.
-    - Related-file jump offers Python-style `test_<name>` files; the file finder resolves a bare name against
-      the listed directory instead of the working directory.
-  - Language servers:
-    - LSP: the Structure outline is nested again for Java, Python, C/C++, XML, JSON and YAML (hierarchical
-      document symbols are now requested; non-type containers keep their children).
-    - LSP: hovers are requested as Markdown; plaintext hovers are no longer reinterpreted as Markdown
-      (`__init__` shown as a bold `init`) and legacy language-tagged hovers render as code.
-    - LSP: servers are told Editora handles semantic-token, inlay-hint, diagnostic and folding refresh
-      requests, so dependent tabs update after e.g. a header edit; refresh bursts are coalesced.
-    - LSP: requests still in flight when a server dies or is restarted fail immediately instead of at their
-      timeout (up to 10 minutes for Build Project).
-    - LSP: a jdtls whose start-up timed out no longer leaves its workspace cache marked failed forever; the
-      cache is repaired once the process has exited and stale markers heal themselves.
-    - LSP: quick fixes are offered for diagnostics from pull-only servers (CSS, Ruby).
-    - LSP: a language server hosting a running Java debug session is no longer shut down as idle after its
-      last tab closes.
-    - LSP: server-initiated edits outside a tracked command are applied when they name the document's current
-      version.
-    - LSP: a marker in the home directory or filesystem root no longer becomes a server's workspace, and a
-      project reached through a symlink stays on one server.
-    - LSP: renaming a Java package works (a CreateFile after text edits is accepted; rename preview keeps
-      create/delete operations).
-    - LSP: Generate Constructors lets you choose the super constructors and works for classes without fields.
-    - LSP: revoking folder trust immediately stops a project-supplied server command from being used, in every
-      window.
-    - LSP: opening Settings no longer restarts a trusted project's language server on the global command.
-    - LSP: restoring a session no longer starts language servers for tabs that were never shown.
-    - LSP: each window resolves its workspace root, project overrides and trust from its own project.
-    - LSP: a case-only class/file rename works on case-insensitive volumes.
-    - LSP: a cross-file edit is refused for a tab that kept its own text over a changed file.
-    - LSP: Format Document, quick fixes and renames keep the caret, selection and scroll position.
-    - LSP: squiggles return after an edit that leaves the text unchanged (type + Backspace) or a pull answered
-      'unchanged'.
-    - LSP: on-type formatting is applied, and Tab re-indent formats the text on screen rather than the
-      server's stale copy.
-    - LSP: the quick-fix list closes on tab switch, scroll, click or tab close, and only a click on a row
-      applies an action.
-    - macOS: an Option navigation chord in a query picker no longer types its glyph into the query.
-  - Debugging, breakpoints and bookmarks:
-    - Debug Restart now saves the edited file and runs the configuration's before-launch build, like Stop +
-      Start, instead of relaunching the previous code.
-    - With several threads stopped on a breakpoint (Java), Continue no longer leaves the other threads
-      suspended behind a 'Running' session; the next stopped thread is shown.
-    - A Step the debug adapter refuses no longer leaves the Debug panel in 'Running' with its controls
-      disabled; the adapter's message is shown.
-    - Start/Continue (F5) pressed during a step no longer stops the session and launches the active file.
-    - Stepping no longer throws keyboard focus out of the Debug panel's Evaluate field (typed text could end
-      up in the source file).
-    - Breakpoints of a narrowed buffer are sent to the debugger with their real file lines; the execution
-      line, Run to Cursor and Jump to Line work in a narrowed buffer.
-    - Debug Test attaches even when the test class has no open tab.
-    - The execution-line highlight no longer sticks after editing above it while paused, and a stop inside a
-      collapsed fold reveals the whole fold.
-    - Bookmarks and breakpoints stay on their statement through Move Line Up/Down, Format Document and other
-      multi-edit changes, and undo of a multi-caret edit; deleting to the end of a marked line removes its
-      mark; pasting over lines no longer marks the line below.
-    - A breakpoint or bookmark whose line was edited no longer jumps to another line with the old text when
-      the file is reopened; lines longer than 200 characters re-anchor correctly.
-    - Fixed (Windows): a stack frame whose source is not a file path no longer empties the call stack.
-    - 'Debug via build tool' for Maven Spring Boot now opens the JDWP port on the loopback interface only (was
-      all interfaces).
-  - Git service:
-    - Git: a push, pull or fetch requested right after a commit or checkout now waits for it instead of
-      overtaking it (a push could publish the old HEAD and report success).
-    - Git: staging or committing while a pull is waiting on a slow remote no longer freezes status, gutters,
-      blame and diffs.
-    - Git: hooks started by commit/checkout/pull/push run in your locale again (LC_ALL=C broke JVM-based hooks
-      on non-ASCII paths); only Git's message language is pinned.
-    - Git: a folder that becomes a repository outside Editora (git init, clone) is picked up on the next
-      refresh; a timed-out probe is no longer remembered as 'not a repository'.
-    - Git: changing the git path in Settings now takes effect in every open window, and a path containing a
-      space (C:\Program Files\Git\cmd\git.exe) works.
-    - Git: file names with [ ] * ? are no longer treated as patterns by the gutter diff, blame, file history
-      and folder review; a tracked file with a control character in its name is found again.
-    - Git: the change-bar tooltip is shown for removed '-- comment' lines and added '++i;' lines.
-    - Git: Clone no longer reads a pasted value that starts with '-' as a git option.
-    - Git: refreshes superseded while queued no longer run git status and diff.
-  - Git panels, GitHub and remote files:
-    - With a remote (SFTP) tab open, switching to a local tab no longer aborts the tab-switch refresh, Git
-      checkout/pull/discard/stash run again, and LSP renames / workspace edits apply (paths on different file
-      systems are no longer compared).
-    - The Commit window no longer lists a conflicted file under Staged or offers to unstage it (which silently
-      discarded the conflict); conflicted files are marked '!' and Unstage refuses them.
-    - Clicking the blame annotation of a line older than a rename of the file opens that commit's diff instead
-      of an empty one.
-    - In File History, opening another file of the selected commit compares it with its own working copy, not
-      with the history file.
-    - A narrowed buffer no longer shows Git change bars on the wrong lines.
-    - The branch popup no longer displays credentials embedded in the remote URL.
-    - A pull-request review tab's Refresh / Submit review, and the GitHub window's row actions, act on the
-      repository the pull request was listed from.
-    - The pull-request review lists pure renames, mode-only changes and binary files, and shows non-ASCII file
-      names correctly.
-    - A failed GitHub list fetch shows gh's error instead of an empty list or an endless spinner; the CI
-      checks segment and the GitHub stripe follow branch and repository changes; github.refresh no longer
-      closes the GitHub window.
-    - `gh pr checkout` is no longer killed after two minutes or when the window closes mid-checkout.
-  - Diff, merge and Local History:
-    - Merge resolver: conflict markers written with a `conflict-marker-size` attribute are recognised again by
-      the marker fallback, and unresolved conflicts keep their marker size.
-    - Compare Directories: a root that is a symbolic link is compared through its target instead of reporting
-      'identical', and a scan that hits the file limit no longer lists files present on both sides as one-
-      sided.
-    - Diff: a heavily rewritten large file or one very long changed line no longer stalls every diff in the
-      window (bounded search with a coarse fallback), and a diff that fails still reports back instead of
-      never opening.
-    - Export Patch keeps carriage returns, so a patch exported for CRLF content applies with git.
-    - Git diff: Revert hunk/line now enables the pane's Undo and Save like any other apply.
-    - Diff: two sides over the 10 MB limit are no longer reported as 'No differences' when they differ.
-    - Commit window: Show Diff on a staged rename compares with the file's old path instead of showing the
-      whole file as added.
-    - Diff: scrolling one side by its scroll bar moves the other side too.
-    - Diff Result editor: closing it brings the apply chevrons back, no longer leaves a discarded draft shown
-      as the working side, and no longer keeps a closed window in memory.
-    - Folder review: the pane cache returns to its 32-pane cap after a draft is resolved.
-    - Local History: Revert updates the panel to the restored text; saving while a revision is selected keeps
-      the selection and its diff; purging a file removes it from every project's history; restoring a revision
-      over an existing file first records the content it replaces; a damaged stored revision is repaired when
-      the same content is recorded again; folder history works for the filesystem root.
-    - Merge resolver: Apply keeps form feeds and other control characters, and a second Apply after a change
-      of mind is no longer refused as stale.
-    - Patch review: toggling a diff option while a side swap is pending no longer mixes one side's rows with
-      the other's text.
-  - Run, build and test:
-    - Test results with the same name no longer overwrite each other - TAP subtests are named after their
-      parents and Cargo tests are grouped per test binary, so a failing test can no longer be shown as passed.
-    - 'Rerun failed' and 'Rerun/Debug this test' for a JUnit 5 @Nested test or a JUnit 4 parameterized test
-      (Maven), and for Go subtests with regex characters in their names; a filtered Maven run that matches no
-      test now says so instead of showing '0 of 0 tests passed'.
-    - Test Results' Rerun commands run in the directory of the run they repeat, not in the module of the
-      active tab.
-    - A second build tool's test run started while another is running no longer corrupts the first run's
-      results.
-    - An up-to-date Gradle test task shows its own previous results, not stale reports from other modules or
-      tasks.
-    - Run with a before-launch build saves the edited file first, so the build compiles what is on screen;
-      script configurations and Rerun save too. Rerun after a failed before-launch step no longer runs in the
-      wrong directory.
-    - A run or build could lose its exit (leaving Run 'busy' or Test Results 'running' forever) when another
-      was started just as it finished; one failing output handler no longer silences the console for good.
-    - Build output shows carriage-return progress (Maven downloads) line by line again.
-    - Non-UTF-8 program output (Windows code pages, legacy locales) is decoded with the system encoding
-      instead of turning into replacement characters; console input is sent in that encoding.
-    - Fixed (Windows): npm, mvn, gradle, yarn and pnpm resolve to their .cmd/.bat launcher rather than the
-      POSIX shim beside it.
-    - A before-launch step that reads stdin no longer hangs a debug launch.
-    - Run Configurations - committing a field of the only configuration no longer blanks the form, and an edit
-      is kept when another configuration is clicked.
-    - Gradle 'Load all tasks' is no longer discarded by a tab switch, save or focus change during the load.
-    - Opening a diff from the Git Log or Commit window no longer closes that window.
-    - Package.json, Cargo.toml and go.mod saved with a UTF-8 BOM are read correctly.
-    - Java classes, tests and symbols with non-ASCII names (Café, größe, 日本語) get their run/test gutter
-      markers and index entries.
-    - External-tool arguments containing a literal '$' (a shell variable) before a $Macro$ now expand the
-      macro.
-    - Double-clicking a very long console line no longer freezes the window; absurd line numbers and an empty
-      first console line no longer throw.
-- Coding-feature fixes from the October review of LSP, Git, diff, debugging, completion, editing, search and
-  the test runner:
-  - Security:
-    - Background Git reads (gutter diff, blob view, blame, folder review) no longer fetch missing objects on
-      demand, so a partial-clone repository's own config can no longer make opening a file run its transport
-      program.
-    - The Astro language server no longer loads a TypeScript SDK from an untrusted folder. It uses the SDK
-      beside the server, or is not started until the folder is trusted; the trust prompt lists the SDK.
-  - Editing:
-    - Undo could go past the file load (or a reload from disk) and empty the buffer, after which a save wrote
-      a zero-byte file. The loaded text is now the undo baseline.
-    - Enter or a terminator after an already aligned `fi`/`end`/`done`/`else` no longer dedents that line
-      again; Backspace and Escape no longer trigger the closer re-align.
-    - Editing a collapsed fold's header no longer strands its hidden body: kill/cut/copy line, duplicate,
-      move, transpose and comment act on the whole folded block, and splitting or joining the header expands
-      the fold.
-    - Pasting CRLF clipboard text (and yank-pop, the kill-ring picker) no longer overshoots the caret and yank
-      range.
-    - Whole-buffer External Tools ("Replace buffer"), Markdown lint fix, CSV align/shrink, an AI agent file
-      write, a plugin `setText` and an MCP whole-buffer `edit_buffer` no longer duplicate the hidden text of a
-      narrowed buffer; they widen and replace the whole document.
-  - Completion and snippets:
-    - With the completion popup or quick-fix list open, caret and editing chords (C-a, C-e, C-k, M-f,
-      Ctrl+/ …) run their commands again instead of selecting the whole document, pasting, or typing a
-      letter; the documentation panel no longer swallows the first Escape.
-    - Without a language server the completion list follows the word as you type, and Enter/Tab no longer
-      replace a finished word with a snippet offered for its first letters.
-    - Snippets use the buffer's indentation, and CRLF in snippet, clipboard or server text no longer
-      misplaces tab stops.
-    - User snippet files with comments or trailing commas (VS Code style) load; Settings → Snippets never
-      overwrites a file it could not parse and keeps multiple prefixes and `scope`.
-  - Search:
-    - Find bar Replace rewrote a different match than the selected one after navigating or on repeated
-      presses; it now replaces the selected match and moves to the next.
-    - Find in Files Replace All with the ripgrep backend could rewrite text the preview never showed for
-      patterns ripgrep and Java read differently; the listed matches now come from the engine that replaces
-      them.
-    - Search Everywhere filters as you type in a window with no project, with the symbol index off, and
-      while the first project walk is running.
-  - Git, diff and history:
-    - The Git Log acts on the repository it lists: it clears and reloads when the active repository or branch
-      changes, its actions run there even if the active tab changes while a dialog is open, and the
-      hard-reset confirmation names the branch and repository.
-    - Stage/Unstage hunk no longer writes an index blob that matches neither side at end of file; unstaging
-      a newly added file removes it from the index and staging a deleted file stages the deletion.
-    - The three-way merge resolver no longer drops or duplicates an edit when both sides change lines inside
-      a run of identical lines.
-    - Diffs, the merge resolver and Local History read non-UTF-8 files the way the editor does, so an
-      unmodified file no longer shows changes against HEAD and applying a hunk no longer writes U+FFFD;
-      hunks can be applied to a CRLF file that is not open; restoring a revision keeps line endings and
-      encoding.
-    - Resolve Conflicts and diffs on a narrowed buffer use the whole document.
-    - A Local History index that could not be loaded no longer causes every stored revision to be deleted
-      at the next save.
-  - Language servers:
-    - Renaming a Java class from a usage site no longer fails when the declaring file is not open, and a
-      file-moving rename in a project opened through a symlink no longer leaves the tab on the old path.
-    - JSON, CSS and HTML diagnostics work again and Pyright resolves `src/`-layout imports: configuration is
-      now sent and answered per server.
-  - Run, test and debug:
-    - The Run console no longer closes when a run exits.
-    - Test Results no longer reports a failed run as "N of N tests passed"; Go build failures and the npm
-      "see Output" banner are shown.
-    - Re-hitting the same breakpoint with debugpy no longer leaves stale variables; Java debugging with
-      program arguments no longer times out.
-  - Navigation and windows:
-    - Bookmark, note, mnemonic-mark and diff "open at line" jumps into a file with no tab land on the line
-      instead of line 1, and are recorded once in the Back/Forward history.
-    - A file opened in the background (cross-file rename, diff apply, agent write) restores its folds,
-      bookmarks, breakpoints, notes and read-only pin.
-  - Ruby and `.desktop` files have syntax highlighting again, as do TypeScript `using` lines.
-- Fixed a memory leak of about 20 MB per closed window: read-only console areas (Run, build output, HTTP
-  response, diff sides, the Settings preview) were held by a static RichTextFX stream, and an editor that had
-  focus when its window closed kept its caret blink timer running. Buffers now dispose their editor areas.
+## [0.19.0] - 2026-10-06
+
+### Security
+
+- Updated jackson-databind to 2.22.3, which fixes CVE-2026-91776 and CVE-2026-91777 (two ways for crafted
+  JSON to make parsing consume excessive memory or time).
+- Background Git reads (gutter diff, blob view, blame, folder review) no longer fetch missing objects on
+  demand, so a partial-clone repository's own config can no longer make opening a file run its transport
+  program.
+- The Astro language server no longer loads a TypeScript SDK from an untrusted folder. It uses the SDK
+  beside the server, or is not started until the folder is trusted; the trust prompt lists the SDK.
 - Updated Apache MINA SSHD to 2.20.0, which fixes CVE-2026-94002 (a malicious SFTP server could exhaust the
   editor's memory). The remote connection root is now resolved to an absolute path at connect time, as
   2.17+ requires.
-- File loading, saving and session fixes:
+- Opening a file no longer lets its folder's `.git/config` run programs. The status, diff, log, blame
+  and blob lookups Editora runs by itself now override `core.fsmonitor`, hooks, external diff and
+  textconv drivers; commands you start (commit, checkout, push, …) still run your hooks. Ref names that
+  start with `-` are refused, and Git never waits on a hidden terminal prompt.
+- Hardened the places where content you merely opened could reach outside its own folder or the app.
+  Links (Markdown preview and Ctrl/Cmd-click, tool output, plugins, the update page) now go through one
+  check: only `http`, `https` and `mailto` are handed to the system; a relative or `file:` link opens
+  inside the editor when it is a file in the project or the document's folder; anything else is refused
+  with a status message. `.http` body files and `>>` response targets can no longer follow a symlink out of
+  the request's folder. PlantUML previews run with `PLANTUML_SECURITY_PROFILE=SANDBOX` (no local-file or URL
+  `!include`; export the variable yourself to choose another profile), and every preview renderer
+  (PlantUML, Graphviz, Mermaid, Typst) starts without secret-looking environment variables. Agent replies,
+  language-server hovers and completion docs, and pull-request text no longer load remote images — they
+  show the alt text and URL instead. The HTML Live Preview server answers only its own browser tab (Host
+  check plus an unguessable URL prefix) and refuses to serve a home directory or drive root. PDF/DOCX/ODT
+  export fetches images through the same internal-address guard and size cap as the preview; oversized
+  SVG dimensions are clamped. An agent's file reads and writes are confined to the session folder and can
+  never touch Editora's own configuration. A hostile `.editorconfig` section can no longer freeze a window
+  when a file opens. Markdown copied as rich text carries no raw HTML or `javascript:` links, and HTML
+  export neutralises `javascript:` URLs. A plugin whose capabilities cannot be shown is left disabled, and
+  in-app installers download only from the hosts their catalog names.
+
+### Changed
+
+Behaviour you will notice as different, rather than fixed or faster.
+
+- **Editing**
+  - The editor's right-click Cut and Copy are disabled when there are several carets and nothing is
+    selected at any of them, whatever 'copy/cut the line when nothing is selected' says; they used to take
+    whole lines.
+  - A command that rewrites the whole document, and undoing it, no longer scrolls to the caret
+    (unless the whole document was selected).
+  - In code languages Fill Paragraph and Fill Region fill comments only (line comments and block
+    comments that start a line); they no longer join code statements.
+  - Move Line Up/Down and Duplicate Line act on every line of a selection.
+  - Indentation detection uses a file's own indent width (a 2-space file gets 2-space Tab, Enter
+    and Shift-Tab whatever the tab size), and no longer mistakes a ` * ` comment header for space
+    indentation.
+- **Highlighting, folding and outline**
+  - Lines longer than 20,000 characters are not syntax-highlighted (the rest of the file is), and
+    a single line gets at most one second of tokenizing. One 60,000-character minified-JavaScript line
+    used to hold the highlighter for about two seconds.
+  - With a language server's semantic highlighting on, a reply recolours only the lines whose
+    tokens changed, and semantic colours below an edit stay in place while the server answers instead of
+    blinking off.
+- **Files, encodings and saving**
+  - A file of 5 MB or more that would not fit in the memory that is left (typically a second or
+    third very large file) opens as a read-only slice showing its first part, like files over 50 MB already
+    do, instead of risking an out-of-memory failure. Close other large tabs and reopen it to edit it.
+  - In a file larger than about 256 KB, saved folds collapse a moment after the file appears
+    rather than before; the caret and scroll position are not moved by this.
+  - A document's undo history is also limited by the amount of text it holds (64 million
+    characters), not only to 300 steps, and Undo History checkpoints are limited across all open files
+    together (64 million characters); the oldest go first.
+  - A file opened through a stand-in encoding (unknown legacy encodings such as Shift-JIS or GBK)
+    refuses a save that would re-encode it. Typing a character outside the stand-in charset no longer
+    rewrites the file as mojibake: the status bar names the character and its line, and the file can be
+    saved again once it is removed.
+  - Saving a hard-linked file, or a file owned by another user, now writes in place, so every name
+    of the file gets the new content and ownership is kept; saving used to break the link or take the file
+    over.
+  - A file that is read-only on disk is no longer replaced silently: Save asks first (once per
+    file), and auto-save reports that it cannot write instead of writing.
+- **Split view, tabs and windows**
+  - Both panes share one undo history. Undo in one pane no longer re-applies what the other pane
+    just undid, an edit made in one pane is undone once from the other, and undo moves the caret of the pane
+    it was issued in. Typing is grouped into the same undo steps in both panes; the second pane used to
+    group a word and the space after it differently.
+- **Keyboard, mouse and accessibility**
+  - A right-click outside the selection moves the caret to the click and drops extra carets, so
+    Paste, Run/Debug Test, Run/Debug Main, the language-server items, spelling suggestions and Add Bookmark
+    all act on the place that was clicked. A right-click inside a selection (a column selection included)
+    leaves it alone.
+  - A dragged selection released outside its editor, or over the other split pane, is cancelled:
+    nothing moves and the selection stays.
+  - Fold and Unfold, by click or by command, keep the selection when it is outside the folded text
+    instead of collapsing it to a caret.
+  - Shortcuts are shown in the notation of the active keymap and platform — `Ctrl+Shift+P`, `⇧⌘P`, or
+    Emacs notation in the Emacs keymap — in menus, tooltips, the command palette, the Welcome page and
+    status messages, and the shortcut shown for a command no longer changes between launches.
+  - Undo, redo and toggle-comment have shortcuts that can be typed on keyboards where `/` is a shifted
+    key: `C-x u`, `C-_` and Ctrl+Shift+7 undo in the Emacs keymap, and Ctrl+Shift+7 or the numpad slash
+    toggle a comment in the other keymaps.
+  - The Menu key and Shift+F10 open the context menu of the selected row in the Project, Bookmarks,
+    Notes, TODO, Git Log and Structure tool windows. F2 renames and Delete deletes the selected file in
+    the Project tree; Delete removes the selected bookmark or note.
+- **View, scrolling, layout and translations**
+  - Updated AtlantaFX to 3.0.0. The scrollbar thumb of a long file or list is no longer a 4px sliver in any
+    theme, and menu rows keep the same height in every theme (Primer, Nord and Dracula would otherwise have
+    become denser than the rest; Cupertino's rows are now as tall as the others).
+  - 'Show whitespace' markers inside a run of spaces now sit on their spaces (each further dot of
+    an indentation used to drift about 2 px to the right), cost a few layout queries per line instead of
+    one per run, and are off in large-file mode (which includes very long lines).
+  - Tabs are now drawn at the configured tab size (setting or `.editorconfig`) instead of always 8
+    columns; with the default setting a tab is 4 columns wide.
+- **Settings**
+  - Settings schema 108, for the Debug console switch above; the migration changes nothing else.
+  - Settings schema 107. A plugin registry URL or Maven archetype catalog URL in `settings.json`
+    that equals the built-in address is blanked by the migration, so it follows future defaults again; this
+    includes one typed by hand that happens to equal it. Any other URL is kept.
+  - The remaining Settings text fields (Git, gh, diagram and Typst tool paths, build-tool commands,
+    ripgrep, Maven catalog, plugin registry, AI endpoint, models and API key, template author name) apply on
+    Enter, on leaving the field or on closing the window instead of on every keystroke; their 'detected'
+    status lines update at the same moment.
+  - Spanish: the Settings window is called 'Ajustes' throughout; 'Configuración' is kept where it
+    means configuration (config folder, export, run configurations).
+  - Key-binding overrides are now kept per keymap (settings schema 106). Switching keymap no longer
+    unbinds unrelated keys, and switching back restores the rebinds made there; existing overrides stay with
+    the keymap in use. Reset to Defaults leaves them with the keymap it leaves instead of applying them to
+    the default keymap.
+  - Export Configuration no longer includes downloaded language servers, debug adapters, jdtls
+    workspaces, the instance lock, the MCP endpoint file with its live token, the session log and other
+    runtime files (local history, `.bak` backups and installed plugins are still exported). It runs in the
+    background and no longer leaves a truncated zip behind when it fails.
+  - Escape clears a running search, otherwise closes the Settings window (not while recording a
+    shortcut, in a snippet or template body, in an editing cell or with a combo open).
+  - The minimum Settings window width is 900 px (was 720). Row titles wrap, list-and-form pages no
+    longer collapse, combos and path fields fit their content, the Appearance combos line up and the
+    Advanced hints wrap.
+- **Language servers**
+  - An agent reply appears as it streams (first text at once, then about eight updates a second)
+    instead of only when the stream pauses, and a long reply no longer gets slower to render as it grows.
+  - The call stack shows the innermost 1,000 frames when the debug adapter supports partial
+    stacks; deeper frames are not listed.
+- **Debugging**
+  - The Debug console now feeds the running program's standard input for Java launches; a debugged
+    program that read `System.in` used to wait forever. While the program runs, Enter sends the line to it
+    (an empty line counts); while it is paused, Enter evaluates an expression as before, and the prompt says
+    which of the two the field does. Ctrl+D in the field, 'Debug: End Program Input (EOF)' or the console's
+    context menu ends the input. This is on by default; the switch is under Settings > Debugging > Java
+    (also 'Debug: Toggle Program Input in the Debug Console') and takes effect at the next launch. Attached
+    sessions, Python and JavaScript work as before. Not yet confirmed on Windows.
+  - In that mode Editora starts the Java program itself instead of leaving it to the debugger, and
+    kills it on Stop, Restart, a new launch, a failed launch and closing the window. The session ends when
+    the program exits, after its last output, and the console reports the exit code. Lines the program
+    writes to stdout and to stderr at almost the same moment can appear in either order.
+  - The Java language server (jdtls) gets its JVM option on its command line instead of through
+    `JDK_JAVA_OPTIONS`, so debugged programs no longer inherit the variable and no longer print 'NOTE:
+    Picked up JDK_JAVA_OPTIONS'. The environment variable remains the fallback for a jdtls command that is
+    neither the launcher script jdtls ships nor a direct `java` (a wrapper script, for example); there the
+    note still appears when the Debug console switch above is off.
+  - While a debug session runs, a breakpoint the debugger has not verified (its code is not loaded
+    yet, or the line has no code) is drawn as a hollow ring, with the debugger's explanation on hover. Every
+    breakpoint is hollow from the start of the session until the debugger answers, and the markers return to
+    normal when the session ends. In Java a breakpoint on a line with no code stays hollow for the whole
+    session.
+  - Restart is disabled for a debugger attached to a test or build run, with the reason as its
+    tooltip and in the command palette; the key still reports it in the status bar. A session started with
+    Debug > Attach can still be restarted.
+  - The Debug console is cleared at each launch (and kept after a session ends); it has a Clear
+    Console menu item and no longer shows ANSI colour codes.
+  - An open Debug window no longer closes on switching to a tab that cannot be debugged, nor while
+    a session starts or ends on another tab.
+  - Call stack, variables and console sit side by side when the panel is wide enough (stacked when
+    narrow), with compact frame rows and the thread selector in the header; the call stack no longer has
+    zero rows at the default height.
+- **Git, diff and Local History**
+  - A file created with Save As starts with a copy of the Local History of the file it was saved
+    from, once its first save is recorded; the original keeps its own. The copied revisions count towards
+    the project's history size limit, so old revisions can be dropped sooner. A Save As that fails copies
+    nothing.
+- **Remote (SFTP) files**
+  - Personal notes on a remote file are stored under the path it was opened by, not the target of
+    a symlink; notes made earlier on a remote file opened through a symlink may no longer be found.
+  - Save As on a remote tab is no longer refused: it writes a local copy and the tab becomes that
+    local file. This also works after the connection is gone.
+  - Remote: Disconnect asks first when remote tabs have unsaved changes, naming them, and closes
+    every connection of the window, not only the mounted one.
+  - A remote file with no write bit on the server opens in View mode and is no longer replaced
+    silently: Save asks first and auto-save does not write it.
+- **Project tool window**
+  - A file that is only modified by another program (a log, build output) refreshes Git status and
+    open diffs at most once every two seconds.
+  - `.gitignore` files in subfolders are honoured by Search Everywhere / Go to Symbol, the TODO
+    scan, Find in Files without ripgrep and the Project filter (for example `packages/*/.gitignore` naming
+    `node_modules`).
+- **Startup, processes, installers and platform**
+  - With several windows to restore, the window you were last in appears first and the others
+    follow one at a time, instead of nothing appearing until all of them were built. Files opened from the
+    file manager during those moments wait until every window exists.
+  - Lines typed quickly into a running program's input (Run and Debug consoles) reach it in the
+    order they were sent, and end of input arrives after the last line; they could arrive swapped.
+  - A git refresh no longer rebuilds the gutter of a file whose blame did not change; it did so on
+    every refresh, also for a file outside a repository or with blame off.
+  - Quitting now asks running language servers and programs to stop (SIGTERM) and waits briefly before
+    force-killing whatever is left, instead of killing everything at once.
+
+### Performance
+
+- **Syntax highlighting**
+  - Highlighting after an edit re-tokenizes only the lines the edit affects and stops where the grammar
+    state is back to what it was, instead of running to the end of the file. In a 79,000-line Java file an
+    edit near the top settled in about 0.5 s instead of 5–7 s, and the interface stall when the colours
+    apply went from 140–250 ms to about 30 ms. Opening a block comment still recolours to its close.
+  - Opening a file no longer waits while another tab's first grammar of the session compiles; many tabs of
+    one language no longer tie up the highlighter's threads; tokenizing is roughly 18% faster.
+- **Large files and memory**
+  - Large files open without freezing the window: a 49 MB file used to block the interface for about three
+    seconds and a 20 MB file for about one and a half; both now stay under about half a second to a second.
+    The file's lines are prepared while it is being read, and a loaded file keeps one copy of its text in
+    memory instead of two (about 100 MB less for a 49 MB file).
+  - Commands that rewrite the whole document (Markdown lint fix-all, CSV align, replace in files, applying
+    a diff hunk, agent and plugin edits, convert indentation, restoring an Undo History entry, updating a
+    Markdown table of contents) record only the text that changed as their undo step. Three hundred such
+    steps on a 1 MB file used to keep about 600 MB of history. Changed: undoing one puts the caret at the
+    change rather than at the end of the file, and a rewrite that changes nothing no longer moves the caret.
+  - An empty window no longer starts seven idle network threads: the AI, plugin and language-server-install
+    features create their HTTP connection on first use and release it when the window closes. Closing a
+    window also stops its plugin catalogue and install workers.
+  - Typst and Mermaid previews keep only the newest render of a document being edited, are limited by
+    memory as well as by count, and release their pages when the tab closes.
+  - Saving no longer keeps a second, encoded copy of every saved open file in memory, and no longer hashes
+    the file on the interface thread after each save.
+- **Consoles**
+  - A program or build that prints quickly no longer monopolises the interface. The Run, Output and Debug
+    consoles apply each batch of lines as a single edit and take at most one batch per frame; 200,000 build
+    lines that used to freeze the window for about a minute now stream in about 13 seconds with the window
+    responsive.
+- **Find**
+  - Find in a very large file no longer freezes the editor: documents over about half a million characters
+    are searched in the background, and a query with a huge number of matches holds at most 100,000 of them
+    around the current one instead of every match (a search for "e" in a 45 MB buffer took a third of a
+    second and 105 MB on every edit). Changed: when there are more matches than are held, the count reads
+    "N of 100,000+" until the last match is reached; Next/Previous, Replace and Replace All still reach
+    every match. 'Select All Matches' places carets on the matches held (at most 100,000).
+- **Typing and the status bar**
+  - Enter, Tab, Shift-Tab, a typed closing bracket and snippet-prefix Tab read only the lines around the
+    caret instead of copying the whole document on every keystroke; the detected indent unit is remembered
+    until the top of the file changes.
+  - Moving the caret no longer copies up to 100,000 characters to look for a matching bracket unless the
+    caret is next to one.
+  - Same-length edits of a modified file (move line up/down, overwrite) no longer compare the whole
+    document each time; the modified marker clears shortly after the text returns to its saved state.
+  - Status bar: one refresh per frame while selecting, the selected-line count no longer copies the
+    selection, and a large file's size is counted in the background.
+  - The Run-glyph scan after each typing pause runs in the background; the Structure tool window no longer
+    rebuilds its tree when the outline is unchanged; closed tabs are no longer kept in memory by the last
+    kill, yank or expand-selection.
+- **Scrolling and overlays**
+  - Sticky scroll no longer rebuilds its pinned rows on every scroll step; a row is rebuilt only when its
+    line or its text/colouring changes.
+  - Background tabs and clean files no longer hold a viewport-sized texture for the LSP-diagnostic,
+    Markdown-lint, Mermaid-lint, whitespace and log overlays.
+  - The minimap no longer repaints on every keystroke in LSP buffers, stops scanning a line at its right
+    edge, and re-renders once after a window resize settles instead of on every frame of the drag.
+  - Gutter rows build a fold chevron only where a fold starts and create tooltips on first hover.
+  - The log overlay no longer re-detects the level of every visible line (stack-trace lines included) on
+    each repaint; the spell overlay no longer copies the whole document on each settled edit in Markdown.
+- **Project tool window, search and Git**
+  - Sorting a folder listing no longer asks the disk whether each entry is a directory on every comparison;
+    expanding a folder no longer waits behind a Project filter search; a superseded filter search, TODO
+    scan or index walk stops instead of finishing.
+  - Find in Files stops ripgrep once the result limit is reached instead of letting it search the rest of
+    the project; a file changed outside Editora updates the symbol index for that file only.
+  - Switching tabs or returning to the window no longer checks the file and its `.editorconfig` folders on
+    the interface thread (a slow network or FUSE mount froze the window); the recent-files menu, Find File
+    and the breadcrumb dropdown read the disk in the background.
+  - Local History: recording a save no longer copies every file's revision list unless the project is over
+    its size budget; trimming to the budget no longer rescans the project per evicted revision.
+  - Log viewer: following a log that grew by more than the follow limit between polls, or was rotated to a
+    large file, reads only the tail that is kept.
+- **Startup and tabs**
+  - A restored session no longer lays out the tabs you are not looking at. A background tab is still loaded
+    and highlighted, but its editor joins the window the first time you select it. Restoring a 30-file
+    session used about a fifth of the interface-thread time and 140 MB less memory in testing. Changed: the
+    first switch to such a tab does the layout that used to happen at startup.
+  - Switching tabs inside a project no longer re-reads the project's build file (pom.xml, package.json, …)
+    or starts a thread per build tool to look for it; a changed build file is still picked up.
+  - A tab's right-click menu and the build-tool task trees are built when first opened, not for every tab
+    and window. The saved session and the message catalog are no longer read on the interface thread at
+    launch.
+  - Packaged builds train their startup cache on a launch that restores a session and opens a file, rather
+    than on an empty window (effect on the packaged build not yet measured).
+  - `EDITORA_PERF=1` now also reports a launch that opens no file, and when the session finished restoring.
+- **Language servers, debugging and the AI agent**
+  - A server that announces its features one at a time (jdtls, tinymist) no longer makes Editora re-request
+    diagnostics, folding ranges, semantic tokens and inlay hints for every open tab once per announcement.
+    The burst is one refresh, for that server's files only; semantic tokens and inlay hints are fetched for
+    the tab on screen and for another tab when you switch to it.
+  - While you type against a slow server, requests for text that no longer exists are cancelled
+    (`$/cancelRequest`) instead of left running, and a request whose answer is already on its way is not
+    sent twice.
+  - The outline is no longer requested on every typing pause while the Structure window is closed. Jump to
+    Structure still shows the server's outline: it is fetched when the picker opens.
+  - Scrolling a file whose server can only send semantic tokens for the whole document (jdtls) no longer
+    re-fetches them on every scroll. Fixed: with semantic highlighting off and inlay hints on, scrolling did
+    not fetch hints for the lines scrolled to.
+  - Diagnostics a server publishes for files that are not open are discarded before they reach the
+    interface thread while the Problems window shows open files; the Problems tree is rebuilt at most ten
+    times a second and not at all while its window is closed.
+  - Sending a prompt, Stop, Resume, Step or an evaluation can no longer freeze the window when the agent or
+    the debug adapter is not reading its input. Opening, saving and full-syncing a large document no longer
+    encodes it as JSON on the interface thread.
+
+### Fixed
+
+- **Editing**
+  - Markdown, Typst and other commands that edit at the caret scroll to it when the change is outside the
+    window.
+  - Renaming or moving a file or folder from the Project tree keeps its bookmarks, personal notes,
+    breakpoints, fold state, Markdown mode, spell-check language, program arguments and read-only pin, also
+    for files that are not open. Save As copies the marks and per-file view settings to the new file and the
+    original keeps its own.
+  - Save As onto a file that is open in another window is refused; a saved `.editorconfig` reaches the open
+    files of every window.
+  - Tab with multiple carets indents by the file's indent style (and indents selected lines) at every caret
+    instead of typing a tab character, as one undo step; Shift-Tab dedents at every caret instead of doing
+    nothing.
+  - Converting line endings back to what a save that was still running wrote no longer leaves the buffer
+    marked modified.
+  - Editing a TODO from the TODO window works in a narrowed buffer: a line inside the region is edited in
+    place, one outside it widens the buffer first.
+  - Split view: the second pane shows fold chevrons, bookmark, breakpoint, run and blame marks and change
+    bars in its gutter, draws spelling squiggles and note highlights, and has the editor context menu, whose
+    items act on the pane that was right-clicked.
+  - Split view: closing the split from the second pane keeps that pane's caret, selection and scroll
+    position.
+  - Split view: Reload from disk keeps the second pane's place when that pane is not the focused one.
+  - With multiple carets, typing after Undo/Redo, a command that edits at the primary caret, a
+    language-server edit or a reload no longer deletes text that was never selected.
+  - Multi-caret Backspace, Delete and arrow keys no longer split emoji and other supplementary characters.
+  - Add Caret Above/Below adds a caret on each further line instead of stopping at the second.
+  - Select All, Cancel (C-g) and document start/end collapse multiple carets; the multi-caret Cut/Copy
+    commands with nothing selected respect 'copy/cut the line when nothing is selected'.
+  - C-f / C-b no longer stop inside an emoji (editor, consoles, text fields); word commands keep a combining
+    accent with its letter.
+  - Tab over a selection in Markdown, plain text, TOML and other unstyled files indents the lines instead of
+    replacing them with a tab, and Shift-Tab dedents. A bare Tab there follows the indent style; Makefiles
+    and CSV/TSV always get a real tab.
+  - A command's edit (paste, Duplicate Line, kill, case change, ...) is its own undo step instead of merging
+    with adjacent typing; a command repeated with C-u undoes one run at a time.
+  - Paste, undo, redo, Duplicate Line, Move Line and other edit and macro commands scroll to the caret when
+    their change is outside the window, as typing does.
+  - The Emacs mark is per buffer and any edit deactivates it: C-SPC, typing, then C-n no longer selects text
+    that the next key replaces, and a mark set in one tab no longer makes motion select in the next.
+  - C-e goes to the end of the whole line with word wrap on, matching C-a and C-k.
+  - Auto-rename-tag keeps both tags in step when a tag name is cleared and retyped.
+  - Abbreviations expand before Enter on an indented line and before an auto-closed bracket.
+  - Cutting the last line and pasting it back no longer joins it onto the previous line.
+  - Converting line endings and back no longer leaves the buffer marked modified.
+  - Markdown: Enter no longer continues a list inside a fenced code block or after a `- - -` rule.
+  - Bracket auto-close and closer re-alignment should now work for characters typed with Option / AltGr
+    (not yet confirmed on a German or Spanish layout).
+  - Fill no longer joins Markdown list items, headings, tables, rules or fenced code; `-`, `+` and numbered
+    items are list paragraphs; Fill Region no longer takes the line a selection merely ends at; the fill
+    width counts tabs and wide characters; Javadoc `@tags` stay separate paragraphs; batch `REMOTE=` lines
+    are not treated as `REM`.
+  - Auto Fill wraps a list item under its text instead of starting a new item.
+  - A closing bracket or keyword after a wrapped statement aligns to its opener; Tab on a `}` / `else` /
+    `fi` / `</tag>` line no longer indents it to body level; Enter indents after `{ /* comment */`; Ruby
+    endless methods and shell lines ending in 'do'/'then' are no longer taken for block openers.
+  - Toggle Comment uncomments a selection of line-commented lines, adds no stray whitespace on blank lines
+    and keeps a bare caret out of the comment opener. Text that contains a block comment is line-commented
+    instead of wrapped in another, or refused with a message where the language has only block comments.
+  - Kill Sexp and Mark Sexp no longer run to the end of the buffer when a comment contains an apostrophe or
+    the code has a Rust lifetime; an unbalanced bracket is left alone.
+  - Expand Selection grows to the enclosing definition rather than the previous one.
+  - Case conversion keeps leading and trailing underscores (`__init__`), round-trips `I18N`, and no longer
+    swallows the minus in `count-1`.
+  - Auto-close tag no longer fires on comparisons or inside `<script>`, `<style>`, `<textarea>` and
+    `<title>` content; Tabify leaves the rest of a line alone from its first quote.
+  - Fixed multi-caret editing throwing and then dropping every key when an edit shortened the document with
+    a caret near its end (current-line highlight on).
+  - Fixed query-replace and zap-to-char keys also being acted on by auto-indent, smart Backspace/Tab and
+    auto-close; quitting query-replace with q no longer types a q; zap-to-char is cancelled by moving the
+    caret.
+  - fill-paragraph no longer reflows code into the comment above it, strips comment markers from code, or
+    breaks a Javadoc's delimiters; list items wrap with a hanging indent.
+  - Enter and Tab now indent after openers containing --, # or // that are not comments (i--, $#, #main,
+    this.#x, n // 2, #t); HTML void elements no longer indent the next line.
+  - Typing a new tag no longer renames the enclosing element's closing tag; a mirrored tag rename is one
+    undo step with the keystroke.
+  - Select All Occurrences from a bare caret matches whole words only.
+  - Expand Selection no longer starts a new ladder from the previous ladder's server ranges.
+  - Trim/sort/other whole-buffer line commands and Toggle Comment no longer leave their output selected when
+    started from a bare caret.
+  - forward/backward-sexp cross operators and separators; paragraph motion no longer skips a paragraph from
+    a block's edge line; mark-paragraph on a blank line takes the paragraph below.
+  - transpose-chars and the rectangle commands no longer split emoji and other supplementary characters.
+  - Comment toggle: a selection between two block comments is no longer 'uncommented'; batch REM is matched
+    as a whole word in any case.
+  - Smaller editing fixes: Shift-Tab honours indent_size, a closing bracket ignores a column-0 preprocessor
+    line, auto-fill no longer re-breaks after a quote marker, no tag auto-close on a comparison in inline
+    script, no doubled quote after ) or ., case-cycle works on one-word tokens, an empty cut/copy leaves the
+    kill ring alone.
+  - Jump to Structure works with the Structure tool window closed and after switching files.
+  - Brace folding (and sticky scroll / the outline that depend on it) survives an unpaired quote: Rust
+    lifetimes, apostrophes in template literals, raw strings, text blocks, JSX text and # comments.
+  - Server-free outline: Go methods are named after the method, type references are no longer listed as
+    types, declarations with a wrapped signature are found, and Python/Ruby/shell/Lua/YAML files get an
+    outline.
+  - Syntax highlighting: call arguments and punctuation are no longer coloured as function names;
+    TypeScript/Python type-annotation punctuation is no longer coloured as a decorator.
+  - Symbol index no longer invents declarations from return/throw/new/else/await statements or from the body
+    of a multi-line template literal; Rust `fn new` is indexed; a very long string literal no longer stalls
+    the scan.
+  - Undo could go past the file load (or a reload from disk) and empty the buffer, after which a save wrote
+    a zero-byte file. The loaded text is now the undo baseline.
+  - Enter or a terminator after an already aligned `fi`/`end`/`done`/`else` no longer dedents that line
+    again; Backspace and Escape no longer trigger the closer re-align.
+  - Editing a collapsed fold's header no longer strands its hidden body: kill/cut/copy line, duplicate,
+    move, transpose and comment act on the whole folded block, and splitting or joining the header expands
+    the fold.
+  - Pasting CRLF clipboard text (and yank-pop, the kill-ring picker) no longer overshoots the caret and yank
+    range.
+  - Whole-buffer External Tools ("Replace buffer"), Markdown lint fix, CSV align/shrink, an AI agent file
+    write, a plugin `setText` and an MCP whole-buffer `edit_buffer` no longer duplicate the hidden text of a
+    narrowed buffer; they widen and replace the whole document.
+  - Bookmarks, breakpoints and notes inside a multi-line replace are kept — Replace All, a formatter edit, a
+    history restore or diff apply no longer delete them — and a narrow → widen cycle restores every one.
+    Narrowing also clears the second split view's undo history and the Undo History checkpoints, which
+    could otherwise duplicate or truncate the file.
+  - Auto-rename-tag no longer scrambles text typed in a closing tag (`</div` + `xy` gave `</divyx>`), keeps
+    the caret in place for Backspace, and does nothing while several carets are active.
+  - Enter at the start of an indented line no longer indents it further, and words that merely begin with
+    a closing keyword (`find`, `endpoint`) no longer de-indent; `fi`, `end`, `done` align when a space, `;`
+    or Enter follows.
+- **Highlighting, folding and outline**
+  - Files with no syntax grammar were restyled from top to bottom at every typing pause, which also
+    dropped the matching-bracket highlight until the caret moved.
+  - Ruby and `.desktop` files have syntax highlighting again, as do TypeScript `using` lines.
+  - Java and Groovy no longer render as a wall of the bold keyword colour: referenced type names
+    (`String`, `List<Widget>`, `new HashMap<>()`) take the theme's type colour and `import`/`package`
+    paths are plain. Modifiers, primitives, `var` and other languages' declaration keywords are unchanged.
+  - The server-free outline (Structure, sticky scroll, the symbol index) no longer lists calls as
+    declarations in Java, PHP, C, C++, Kotlin, Go and Rust (`event.getCode()`, `s.isEmpty()`).
+  - Highlighting no longer goes stale between two quick edits, and semantic tokens restyle only from their
+    first line (not at all when unchanged) instead of the whole document on every scroll or typing pause.
+  - A fold chevron folds the block's current extent after it has grown, minimap clicks land on the right
+    line with folds or word wrap, and highlights and squiggles reach the edge when the minimap is hidden.
+- **Completion and snippets**
+  - Accepting a completion that has no server edit range no longer duplicates what was typed (`$us` +
+    `$user` gave `$$user`; `apt-g` + `apt-get` gave `apt-apt-get`).
+  - Label-only completion items (bash-language-server commands such as `docker-compose` or `g++`, pyright
+    keyword arguments such as `timeout=`) insert their whole label instead of being cut at the first non-
+    identifier character.
+  - A commit character typed on a plain completion inside a snippet field no longer ends the enclosing
+    snippet session.
+  - Snippet variable transforms (`${TM_FILENAME_BASE/(.*)/${1:/upcase}/}`) are applied instead of leaking
+    the regex into the document; `${VAR:default}` uses its default when the variable is empty (no selection,
+    untitled buffer). The PowerShell `block-comment` snippet inserts its `<# #>` again.
+  - Snippet tab stops that contain another stop or a mirror (`${4:$1}`, `${2:${1}foo}`, `${0:${1/.../}}`)
+    keep their extent while the inner one is edited, and empty stops at the same position keep their order.
+  - Backspace, Delete or a paste in a mirrored snippet field is a single undo step together with its
+    mirrors.
+  - Pressing Control (or another modifier) on its own no longer dismisses the quick-fix list, so C-n / C-p /
+    C-g reach it.
+  - With the completion popup or quick-fix list open, caret and editing chords (C-a, C-e, C-k, M-f,
+    Ctrl+/ …) run their commands again instead of selecting the whole document, pasting, or typing a
+    letter; the documentation panel no longer swallows the first Escape.
+  - Without a language server the completion list follows the word as you type, and Enter/Tab no longer
+    replace a finished word with a snippet offered for its first letters.
+  - Snippets use the buffer's indentation, and CRLF in snippet, clipboard or server text no longer
+    misplaces tab stops.
+  - User snippet files with comments or trailing commas (VS Code style) load; Settings → Snippets never
+    overwrites a file it could not parse and keeps multiple prefixes and `scope`.
+  - Snippet tab stops that touch or contain one another no longer drift: the final caret lands after text
+    typed into the last field, an adjacent field keeps its own extent, and fields deleted with an
+    enclosing one are skipped.
+- **Find and replace**
+  - Query Replace no longer skips the next of several adjacent matches when the replacement is empty, and no
+    longer re-offers the same spot for ever for a zero-width pattern such as `$` or a lookahead.
+  - Query Replace `!` (replace all the rest) is linear instead of quadratic in the number of matches, so it
+    no longer freezes the window on large files; a replacement that names a missing group is reported
+    instead of throwing.
+  - Find Next steps through zero-width regex matches (`^`, `$`, `^$`), and Replace acts on them.
+  - Whole word now means the match is not glued to a word character on either side, identically in the find
+    bar, replace, Query Replace and Find in Files and matching ripgrep `-w`; queries such as `@Override`,
+    `$var` or `--flag` are found, and accented letters count as word characters in regex mode.
+  - In Find in Files, regex `^`, `^$` and `^\s*$` match empty lines again.
+  - A regular expression that exhausts the regex engine's stack (for example `(.|\n)*?` across a long block)
+    is reported as too complex instead of silently leaving the previous results in the find bar.
+  - The find bar follows the active tab: switching tabs re-searches the new file instead of applying the
+    previous file's match offsets, and the tab that was left keeps no highlights.
+  - Closing the find bar no longer re-highlights matches or moves the selection afterwards.
+  - Find reveals a match that lies inside a folded region.
+  - Find bar Replace rewrote a different match than the selected one after navigating or on repeated
+    presses; it now replaces the selected match and moves to the next.
+  - Find in Files Replace All with the ripgrep backend could rewrite text the preview never showed for
+    patterns ripgrep and Java read differently; the listed matches now come from the engine that replaces
+    them.
+  - Search Everywhere filters as you type in a window with no project, with the symbol index off, and
+    while the first project walk is running.
+  - Regex `^` and `$` in the Find bar, Replace All and Query Replace now anchor at every line instead of
+    only at the start and end of the document.
+- **Find in Files, index and navigation**
+  - Find in Files: `$` now matches at the end of CRLF lines with the ripgrep backend, and ripgrep honours
+    `.gitignore` in folders that are not git repositories, as the built-in walker does.
+  - Find in Files: one unreadable folder no longer makes every ripgrep search be discarded and re-run by the
+    built-in walker; the result is kept and marked partial.
+  - Find in Files no longer fails when an SFTP tab is open, and the tool window, the popup and the MCP
+    `findInFiles` tool no longer cancel each other's searches.
+  - Find in Files: an invalid regex is reported instead of shown as "No results"; an invalid regex
+    replacement (`$9`, `$name`, trailing `\`) is refused up front instead of reporting "Replaced 0
+    occurrences".
+  - Replace in Files no longer rewrites read-only files that are not open; they are listed as not changed.
+  - Find in Files popup: long (minified) lines are previewed around the match instead of laid out whole,
+    typed prefixes are no longer stored in the search history, and the ripgrep badge shows after the first
+    detection.
+  - Include/exclude globs: an escaped comma (`we\,ird/*`) now matches the same files with both backends and
+    for open buffers.
+  - A ripgrep path containing spaces (e.g. under `Program Files`) is now accepted.
+  - Projects opened through a symbolic link are now searched, indexed and scanned for TODOs by the built-in
+    walker.
+  - A folder inside a git repository opened as the project now honours the repository's `.gitignore` files
+    above it (symbol index, Search Everywhere, built-in Find in Files, TODO scan).
+  - Search Everywhere follows the project: newly saved files are offered, deleted and renamed files are
+    dropped, and an external change triggers a re-index on next use.
+  - Test results: a test class stored outside its package directory, or in a module folder named
+    `out`/`build`/`target`, is found again.
+  - Related-file jump offers Python-style `test_<name>` files; the file finder resolves a bare name against
+    the listed directory instead of the working directory.
+  - The symbol index and Search Everywhere no longer walk into `.gitignore`d directories: `target/`,
+    `node_modules/` and `build/` are skipped whole instead of being read, listed and counted against the
+    50,000-file cap; an unreadable directory no longer ends the index early; and an index that does reach the
+    cap says so in the status bar. The same pruned walk now backs Find in Files, the TODO scan and the
+    test-source lookups, and the JVM test-report poll no longer re-walks `.git` and `node_modules` every 750 ms.
+  - Find in Files: an include such as `*.{js,ts}` is one glob; an exclude of `target` or `node_modules`
+    drops everything beneath it with or without ripgrep and in open buffers; `\w`, `\d` and `\b` mean the
+    same in open buffers and replacements as they do in ripgrep; Replace All uses the query its results were
+    found with and refreshes instead of replacing when the fields were edited since; and a superseded search
+    no longer leaves "Searching…" counting up in the status bar.
+- **Files, encodings and saving**
+  - Saving a writable file in a folder you cannot write to, or a file that cannot be renamed over, now
+    works: the file is overwritten in place after a temporary backup of its previous content, and the status
+    bar says so. Files with very long names can be saved.
+  - Under a declared charset such as `charset = latin1`, a save that has to fall back to UTF-8 writes a BOM
+    so the file reads back correctly, keeps its warning visible and updates the status bar.
+  - Changes to `.editorconfig` reach files that are already open; a `.editorconfig` with a UTF-8 BOM or
+    non-UTF-8 bytes is no longer ignored.
+  - BOM-less UTF-16 files declared by `.editorconfig` open as text and are saved without an added BOM.
+  - Save As onto a file open in another tab of the window is refused instead of leaving two tabs on one
+    path.
+  - 'Keep' on an externally changed file leaves the tab marked unsaved; a file whose bytes did not change
+    (touch, identical rewrite) no longer prompts.
+  - A line-ending conversion chosen while a save is running is no longer dropped.
+  - Reloading a file that is no longer huge makes it editable again.
+  - `editora path/to/new-file` opens a new buffer at that path instead of failing.
+  - Case-only renames should now work on case-insensitive volumes (not yet confirmed on macOS or Windows).
+  - Large-file and long-line mode say that undo is off, and Undo/Redo explain themselves there; a file with
+    mixed line endings says what a save will write.
   - Files that are not valid UTF-8 (Latin-1, Windows-1252, Shift-JIS, …) are no longer corrupted on save.
     They open as Windows-1252 (or ISO-8859-1 when the bytes rule that out) so every byte is preserved, the
     status bar shows the encoding and says it was assumed, and saving writes the same bytes back.
@@ -956,59 +584,468 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     unavailable at startup (an unmounted volume) are kept for the next launch.
   - Renaming from the tab menu updates the file in every window; bookmark and note positions pending when
     a window closes are saved; closing a window while files are still loading no longer applies them.
-- Java and Groovy no longer render as a wall of the bold keyword colour: referenced type names
-  (`String`, `List<Widget>`, `new HashMap<>()`) take the theme's type colour and `import`/`package`
-  paths are plain. Modifiers, primitives, `var` and other languages' declaration keywords are unchanged.
-- The server-free outline (Structure, sticky scroll, the symbol index) no longer lists calls as
-  declarations in Java, PHP, C, C++, Kotlin, Go and Rust (`event.getCode()`, `s.isEmpty()`).
-- Regex `^` and `$` in the Find bar, Replace All and Query Replace now anchor at every line instead of
-  only at the start and end of the document.
-- Bookmarks, breakpoints and notes inside a multi-line replace are kept — Replace All, a formatter edit, a
-  history restore or diff apply no longer delete them — and a narrow → widen cycle restores every one.
-  Narrowing also clears the second split view's undo history and the Undo History checkpoints, which
-  could otherwise duplicate or truncate the file.
-- Auto-rename-tag no longer scrambles text typed in a closing tag (`</div` + `xy` gave `</divyx>`), keeps
-  the caret in place for Backspace, and does nothing while several carets are active.
-- Enter at the start of an indented line no longer indents it further, and words that merely begin with
-  a closing keyword (`find`, `endpoint`) no longer de-indent; `fi`, `end`, `done` align when a space, `;`
-  or Enter follows.
-- Snippet tab stops that touch or contain one another no longer drift: the final caret lands after text
-  typed into the last field, an adjacent field keeps its own extent, and fields deleted with an
-  enclosing one are skipped.
-- A language server's edit that ends or starts one line past the end of the file now reaches the end of
-  the document (whole-file formatting no longer leaves the old last line behind; "insert final newline"
-  applies).
-- Highlighting no longer goes stale between two quick edits, and semantic tokens restyle only from their
-  first line (not at all when unchanged) instead of the whole document on every scroll or typing pause.
-- A fold chevron folds the block's current extent after it has grown, minimap clicks land on the right
-  line with folds or word wrap, and highlights and squiggles reach the edge when the minimap is hidden.
-- Re-linting several Markdown or Mermaid buffers at once updates every one of them, not only the last.
-- Opening a second Editora on the same configuration (launching it again without a file, with
-  `--project`, `--new-instance` or `--diff-ui`) no longer kills the first one's language servers, debug
-  adapters, builds and running programs, and no longer deletes its Local File History revisions. The second
-  instance now warns once that both share the configuration: settings, notes, bookmarks, breakpoints,
-  projects and recent files are still saved whole by each instance, so the last one to save wins.
-
-- Programs you run, builds, language servers, debug adapters, the AI agent, External Tools, before-launch
-  steps, in-app installers and the terminal/browser Editora opens now keep your locale instead of being
-  forced into `LC_ALL=C`. Projects under a path with non-ASCII characters (`año/`, `café/`) can be run,
-  built, debugged and indexed, and program output is no longer reduced to `?`. Git, ripgrep and other
-  output Editora parses still use the C locale.
-
-- Quitting now asks running language servers and programs to stop (SIGTERM) and waits briefly before
-  force-killing whatever is left, instead of killing everything at once.
-
-- In-app installs work when the configuration directory contains a space (for example
-  `C:\Users\Jane Doe\.editora`): the installed server is no longer reported missing right after the
-  install. The Typst CLI install now finds its Linux and macOS downloads.
-
-- The build commit and branch shown for development builds are looked up in the background from the
-  build's own checkout, so a slow or stuck `git` can no longer freeze the window at startup.
-- Git, diff and Local History hardening:
-  - Opening a file no longer lets its folder's `.git/config` run programs. The status, diff, log, blame
-    and blob lookups Editora runs by itself now override `core.fsmonitor`, hooks, external diff and
-    textconv drivers; commands you start (commit, checkout, push, …) still run your hooks. Ref names that
-    start with `-` are refused, and Git never waits on a hidden terminal prompt.
+- **Split view, tabs and windows**
+  - The second pane shows everything the first does: language-server squiggles, search and occurrence
+    highlights, TODO highlights, Markdown and Mermaid lint marks, inline debug values, log colouring, the
+    column ruler, and the scrollbar stripes and minimap marks. Its stripes have their hover tooltips, and a
+    click on one moves the pane that was clicked.
+  - Hover popups (diagnostics, debug values, Markdown and Mermaid lint, personal notes) open in the second
+    pane too, at the pointer.
+  - AceJump started in the second pane labels and moves that pane instead of the first; toolbar Cut and Copy
+    follow the selection of the pane in use.
+  - An abbreviation expanding, or a line auto-filling, while typing in the second pane no longer leaves the
+    caret in front of the character just typed.
+  - Narrowing and widening keep the second pane's caret instead of sending it to the start of the buffer.
+  - Dragging a tab onto a tab header in another editor group moves it there; the tab could disappear with
+    its unsaved changes, or stay in its own group.
+  - Pinning or unpinning a tab keeps it in its own group, at that group's pinned boundary; pinning a group's
+    only tab used to move it to another group.
+  - Bookmark, note, mnemonic-mark and diff "open at line" jumps into a file with no tab land on the line
+    instead of line 1, and are recorded once in the Back/Forward history.
+  - A file opened in the background (cross-file rename, diff apply, agent write) restores its folds,
+    bookmarks, breakpoints, notes and read-only pin.
+  - Recent files, Find in Files history and AI Agent sessions are shared by all windows. Each window used
+    to keep its own copy and rewrite the whole file, so the last window to save discarded the others'
+    entries. Remote (SFTP) recent files are no longer dropped from the list on restart.
+- **Keyboard, mouse and accessibility**
+  - The context menu opened with the Menu key or Shift+F10 opens at the caret and acts on it.
+  - Clicking a fold chevron, the breakpoint strip, a run glyph or a blame cell no longer moves the caret or
+    drops the selection and extra carets.
+  - Double-click selects `don't` (plain text and Markdown) and `3.14` as one word, and `margin-top` in CSS.
+  - An image dropped on a Markdown or Typst file is inserted where it is dropped, in the pane it was dropped
+    on, not at the old caret.
+  - Alt+drag column selection with word wrap on covers every wrapped row the rectangle crosses.
+  - Keyboard routing fixes. Editing chords typed in a text field now edit that field instead of the
+    document behind it: with the caret in the Find bar, `C-k`, Ctrl+V/X/Z/A and `C-u` used to act on the
+    open buffer. The Find and Replace fields also follow the active keymap's caret and editing chords.
+  - Option-typed characters (`@ [ ] { } | \ ~` on German and Spanish Mac layouts) can be typed in the
+    pickers and prompts again, and on Windows AltGr combinations such as AltGr+E are typed instead of
+    running the `Ctrl+Alt` chord bound to that key.
+  - A `settings.json` naming a keymap that does not exist no longer prevents Editora from starting; the
+    default keymap is used and the problem is reported once in the message log.
+  - Pickers take their navigation keys from the active keymap and list only keys that work there; they
+    also handle PageUp/PageDown and Ctrl+Home/End. In input cards, Enter activates the focused button
+    rather than always confirming, and Tab stays inside the card.
+  - Keyboard and screen-reader access: Settings switches now toggle with Space or Enter and are announced
+    by their row title; every button, switch, check box, link and combo shows a focus ring when reached
+    with the keyboard; icon-only buttons (tool windows, Git, diff, test results, preview zoom) have
+    accessible names; closing the focused tool window returns focus to the editor.
+  - A key binding you assign is no longer overridden by a plugin that binds the same chord, and two
+    projects whose folders produce the same internal id no longer share a session.
+- **View, scrolling, layout and translations**
+  - Line-mode AceJump with the end of the file on screen, and clicking in a file whose note sits at
+    the very end, leaked a timer per repaint/click.
+  - Reload from disk keeps your place: the scroll position, the caret's line and column and the collapsed
+    folds survive, instead of the view jumping to the top with every fold open. Session restore lands on the
+    right line too.
+  - The column ruler is on the right column: it no longer sits several columns (or a late-laid-out gutter's
+    width) too far left on a freshly opened file or too far right when the visible lines are short, and no
+    longer disappears for tab-indented or CJK text.
+  - Opening a narrowed file at a line (search hit, go-to, `file:line`, link) goes to that line; the buffer
+    is widened when the target is outside the region, and Back/Forward stay correct across narrow and widen.
+    The 'Narrowed' status chip no longer stays lit on other tabs.
+  - Split view: the status bar (line/column, selection, CSV field) shows the pane you are in.
+  - Split view: fold, bookmark, note, breakpoint, run-to-cursor and run-test-at-caret commands act on the
+    focused pane's caret; folding no longer leaves the other pane's caret inside hidden text.
+  - Split view: closing the split from the second pane keeps keyboard focus in the editor instead of moving
+    it to the toolbar.
+  - Split view: the second pane honours word wrap, the line-numbers setting, whitespace markers and the
+    current-line highlight.
+  - Readability: key legends, line numbers and tinted labels now meet contrast guidelines in Editora Light
+    and Dark; text on accent-coloured badges and the selected Project Map node is readable in dark themes;
+    whitespace markers, diagnostic squiggles and search highlights adapt to the editor theme; Problems and
+    Debug colours follow the theme. Failure messages such as "PDF export failed" are shown as errors in the
+    status bar and stay flagged in the message log.
+  - Layout: the Find bar's fields use the available width and the bar wraps instead of truncating its
+    labels in a narrow window; Find in Files gives the query its own row; one wide diagram, image or
+    formula no longer stops the Markdown preview from wrapping in Split view; Settings rows with a wide
+    control put it under the description; the command palette no longer cuts its last row in half; long
+    paths in the Commit window keep the file name visible; the breadcrumb starts at the project folder;
+    in Split view the Editor/Split/Preview control sits on the preview instead of over the first line.
+  - Translations: apostrophes are no longer doubled or dropped (French and Italian palette titles and
+    messages, English "isn't"), line numbers, ports, pull-request numbers and exit codes are no longer
+    digit-grouped ("Line 12,345"), two messages that showed their internal key now have text, and the
+    remaining English-only picker titles, prompts and labels are translated. Unused strings were removed.
+  - Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
+    unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the
+    horizontal scrollbar stayed until you scrolled back over those lines or restarted.
+  - `View: Toggle Word Wrap` no longer fails with an internal error when the Settings window has not been
+    opened yet in that window; the toggle now completes and reports the new state in the status bar.
+- **Settings**
+  - Remote and Abbreviations: a site or abbreviation changed elsewhere no longer discards what is being
+    typed into the form. The typed fields keep their text, caret and focus and the others follow the change;
+    when the entry itself was removed or re-identified elsewhere, the form reloads.
+  - A setting toggled from the command palette or a key binding now always reaches the other open windows.
+    When another window happened to save just before the window you toggled it in, that window was taken for
+    the one that made the change and kept the old view until restart or its next settings change.
+  - A fresh `settings.json` no longer freezes the Maven archetype catalog URL; a blank value means the
+    built-in catalog (it used to be refused as not HTTPS).
+  - A config file that is not valid UTF-8 is reported in the status bar when it is loaded and its original
+    bytes are kept as `<name>.corrupt.bak` (no copy is made of the Local History index), instead of the
+    replaced characters being saved back silently.
+  - A read-only or full config folder is reported as soon as the window opens, not only at the next save.
+  - Switching the AI provider keeps what was typed for the provider being left instead of dropping it or
+    writing it to the other one.
+  - The Remote and Abbreviations pages show a site or abbreviation added elsewhere at once, even while the
+    Settings window has the focus.
+  - Templates: a whitespace-only change no longer turns a bundled template into a user override, and editing
+    another field of a bundled template keeps its multi-line description.
+  - The Macros page's key binding, and a Settings window open in another window, follow keymap switches,
+    rebinds and resets.
+  - French and Portuguese: the Settings search prompt is no longer cut off. Remote: the key-file field keeps
+    a usable width, with Browse moving below it when the row is narrow.
+  - 'Enable AI actions' and 'Expand abbreviations as you type' are switch rows like the rest of Settings.
+  - A `settings.json` (or any other config file) kept as a symlink into a dotfiles repository is written
+    through the link instead of being replaced by a regular file.
+  - A config file saved with a UTF-8 byte-order mark, or containing a byte that is not valid UTF-8, no
+    longer resets every setting in it to the default.
+  - An unreadable or newer `projects.json` or session file is reported in the status bar like other config
+    files, and is not overwritten when no backup of it could be made.
+  - A full disk or read-only config folder no longer stops Editora from starting, and no longer throws out
+    of toggling a bookmark or breakpoint, editing a note, saving a macro, trusting a folder or opening a
+    project window; the failed save is reported in the status bar.
+  - A config store that stays unreadable is backed up once, not on every launch (after 20 launches it used
+    to become silently unsaveable).
+  - A fresh `settings.json` no longer freezes the default plugin registry URL; the built-in URL is stored as
+    blank so it follows future defaults.
+  - Add to Dictionary no longer glues the new word onto the last line of a `dictionary.txt` that lacks a
+    final newline.
+  - Importing shared run configurations tolerates extra keys and null entries in
+    `.editora/run-configurations.json`.
+  - Clearing the Font size field no longer stops every later Settings change from being saved and applied.
+  - Changing an unrelated setting no longer rewrites the editor font (a size above 48 or below 8 was reset;
+    a second or previously closed Settings window reverted the font).
+  - Number fields no longer throw on letters, an empty field or an over-long number, and accept the same
+    range as their palette commands (fill column 1-1000, auto-save delay 1-3600 s, ...).
+  - Palette and key-binding toggles (ruler, line highlight, line numbers, minimap, whitespace, spell check,
+    Zen, Expert) move the switches of an open Settings window.
+  - With Settings open in two windows, a change in one is shown in the other instead of being reverted by
+    it.
+  - The Tool Windows page shows each window's current side and visibility when Settings is reopened.
+  - Language-server, debug-adapter and agent command fields apply on Enter or focus loss instead of
+    restarting servers on every keystroke.
+  - A file opened with word wrap held off for a very long line stays unwrapped when settings are re-applied;
+    Toggle Word Wrap on that buffer turns it on.
+  - Keymaps: the shortcut list and the chord chips follow keymap changes, rebinds and resets; 'Reset all
+    shortcuts' asks first.
+  - Abbreviations, Remote and External Tools no longer delete entries added elsewhere (Define Abbreviation,
+    Connect, another window) the next time anything on the page is edited.
+  - Abbreviations added, changed or removed in Settings take effect in files that are already open.
+  - Templates: clicking through a bundled template's fields no longer turns it into a user override; an id
+    that another template already uses, or that is not a valid file name, is refused.
+  - Snippets: a snippet is no longer lost when two share a name, when Add is pressed twice or when the name
+    is cleared; bundled snippets with multi-line descriptions stay bundled until edited.
+  - External Tools: renaming or removing a tool carries or clears its key binding instead of leaving a dead
+    chord; adding two tools in a row gives each its own command.
+  - TODO: a malformed pattern is flagged and not saved instead of silently disabling the keyword.
+  - The Git command field stays editable when Git is off, so a wrong path can be corrected.
+  - Keymaps: the shortcut list can be used from the keyboard alone (arrows, Home/End, Enter to select and to
+    record); focus returns to the row afterwards.
+  - Shortcut recorder (Keymaps and Macros): Enter saves once a chord is recorded and Escape cancels; the
+    prompt says so.
+  - Shift+Tab and Ctrl+Tab leave the Snippets and Templates body editors; Tab still types a tab there.
+  - Sidebar arrow, Home/End and Page keys skip group headers and pages filtered out by a search, which are
+    now dimmed.
+  - Search finds a row by its page's name, opens a page whose name the query starts (3 or more characters),
+    and shows its prompt while focused.
+  - 'Delay (seconds)' and the tool-window sides are translated; build-tool hints point to the override
+    'below'; the AI Actions status names the switch that is off.
+  - Accessible names for the reorder arrows, TODO and Markdown-lint controls and the search field; the
+    Macros step editor and the Remove buttons are disabled when there is nothing to act on; 'Require signed
+    plugins' is a switch row.
+  - French: Settings is called 'Paramètres' throughout, and command titles are capitalised consistently.
+  - Settings: search matches the titles and descriptions shown in your language, accepts several words in
+    any order, and says when nothing matches; the window always opens fully on the screen its parent is
+    on; Reset to Defaults now also restores the keymap immediately.
+  - A mistyped value in `settings.json` (for example `"showMinimap": "yes"`) no longer resets every setting
+    after it, including key bindings and API keys. Only that value falls back to its default, the file as
+    written is kept as `settings.json.corrupt.bak`, and the first window reports which values were reset.
+    Tab size, font size and text zoom are clamped to their valid ranges on load, so `"tabSize": 0` can no
+    longer break indentation commands.
+  - A settings file whose `schemaVersion` line was removed is no longer migrated from scratch, which
+    turned Projects back on, re-added removed TODO keywords and toolbar buttons, and on macOS replaced the
+    Cmd key-binding overrides. A config file from a newer Editora that cannot be backed up is now left
+    untouched for the session instead of being overwritten with defaults, and the status bar says so.
+  - A blank author name stays "follow the OS user": it was saved as the current user name on the first
+    save. The unused `ijhttpCommand` setting is gone.
+  - Settings toggled from the command palette or a key binding now apply in every open window, not just
+    the one the command ran in.
+- **Language servers**
+  - LSP: the Structure outline is nested again for Java, Python, C/C++, XML, JSON and YAML (hierarchical
+    document symbols are now requested; non-type containers keep their children).
+  - LSP: hovers are requested as Markdown; plaintext hovers are no longer reinterpreted as Markdown
+    (`__init__` shown as a bold `init`) and legacy language-tagged hovers render as code.
+  - LSP: servers are told Editora handles semantic-token, inlay-hint, diagnostic and folding refresh
+    requests, so dependent tabs update after e.g. a header edit; refresh bursts are coalesced.
+  - LSP: requests still in flight when a server dies or is restarted fail immediately instead of at their
+    timeout (up to 10 minutes for Build Project).
+  - LSP: a jdtls whose start-up timed out no longer leaves its workspace cache marked failed forever; the
+    cache is repaired once the process has exited and stale markers heal themselves.
+  - LSP: quick fixes are offered for diagnostics from pull-only servers (CSS, Ruby).
+  - LSP: a language server hosting a running Java debug session is no longer shut down as idle after its
+    last tab closes.
+  - LSP: server-initiated edits outside a tracked command are applied when they name the document's current
+    version.
+  - LSP: a marker in the home directory or filesystem root no longer becomes a server's workspace, and a
+    project reached through a symlink stays on one server.
+  - LSP: renaming a Java package works (a CreateFile after text edits is accepted; rename preview keeps
+    create/delete operations).
+  - LSP: Generate Constructors lets you choose the super constructors and works for classes without fields.
+  - LSP: revoking folder trust immediately stops a project-supplied server command from being used, in every
+    window.
+  - LSP: opening Settings no longer restarts a trusted project's language server on the global command.
+  - LSP: restoring a session no longer starts language servers for tabs that were never shown.
+  - LSP: each window resolves its workspace root, project overrides and trust from its own project.
+  - LSP: a case-only class/file rename works on case-insensitive volumes.
+  - LSP: a cross-file edit is refused for a tab that kept its own text over a changed file.
+  - LSP: Format Document, quick fixes and renames keep the caret, selection and scroll position.
+  - LSP: squiggles return after an edit that leaves the text unchanged (type + Backspace) or a pull answered
+    'unchanged'.
+  - LSP: on-type formatting is applied, and Tab re-indent formats the text on screen rather than the
+    server's stale copy.
+  - LSP: the quick-fix list closes on tab switch, scroll, click or tab close, and only a click on a row
+    applies an action.
+  - macOS: an Option navigation chord in a query picker no longer types its glyph into the query.
+  - Renaming a Java class from a usage site no longer fails when the declaring file is not open, and a
+    file-moving rename in a project opened through a symlink no longer leaves the tab on the old path.
+  - JSON, CSS and HTML diagnostics work again and Pyright resolves `src/`-layout imports: configuration is
+    now sent and answered per server.
+  - A language server's edit that ends or starts one line past the end of the file now reaches the end of
+    the document (whole-file formatting no longer leaves the old last line behind; "insert final newline"
+    applies).
+  - Renaming a Java symbol used in files that are not open (or in restored tabs never shown) now works
+    instead of reporting "Rename failed". Edits to such files are applied only when the file has not
+    changed since the request was sent; when one blocks the edit, the status line names it.
+  - A project's `.editora/settings.json` server command is now the one that actually launches — and only
+    for a trusted folder. In an untrusted folder the project's commands (and any attempt to re-enable a
+    server you switched off) are ignored until you run "LSP: Trust This Project's Server Settings".
+    "LSP: Set Server Command" is prefilled from your global setting, not the project's.
+  - Java: on-type formatting works again, the rename prompt validates and pre-fills the symbol name
+    again, and Go to Implementation / Type Definition appear once the server is ready. Semantic
+    highlighting is restored for servers that register it late (Typst).
+  - A language server that stops responding can no longer freeze the editor; servers are shut down
+    cleanly on quit; "Build Project" is no longer cancelled after 30 seconds; quick fixes get their
+    diagnostics when the server spells a file's URI differently; a burst of diagnostics rebuilds the
+    Problems list once; opening a file on a filesystem root no longer breaks the handshake; and a
+    closed window can no longer restart its language servers.
+- **Debugging**
+  - A breakpoint the debugger refuses is flagged in the gutter and reported in the status bar, once per
+    session.
+  - Java: a breakpoint condition or logpoint message that cannot be evaluated is reported in the Debug
+    console and the status bar and its breakpoint is flagged; the program used to stop on every hit without
+    saying why.
+  - A breakpoint the debugger binds to a different line (Python: a blank or comment line) moves to that line
+    and the status bar says so.
+  - A stop on an exception names it: 'Suspended on IllegalStateException: boom' in the Debug panel, the full
+    type and message in the status bar.
+  - A watch that cannot be evaluated is drawn as an error instead of as a value.
+  - Conditional breakpoints no longer stop on every hit, logpoints print, and Evaluate, watches and hover
+    values work in attached Java sessions (including Debug Test) and when debugging a compact source file;
+    the debugger was never told which project to evaluate against.
+  - Debugging a single `.java` file outside any Maven/Gradle project no longer fails with
+    `ClassNotFoundException` when it has a classic `public static void main`; it is compiled and debugged.
+  - In a project with a `module-info.java`, gutter Run/Debug and saved run configurations no longer report
+    'No main class was found'.
+  - Debug on a project's file runs the program in the project root, like Run, instead of the source package
+    folder.
+  - Projects compiled with `--enable-preview` can be run and debugged; the flag is added automatically.
+  - Debug no longer shows the main-class picker for a file's own `main` when the project was opened through
+    a symlink.
+  - A Java debug session with a very long class path no longer fails to start ('Argument list too long' /
+    Windows error 206); such launches use an argument file.
+  - Restart on a debugger attached to a test or build run no longer leaves a dead session showing 'Running';
+    it says the run has to be started again.
+  - Expanding a large array or collection in Variables no longer freezes the window or overloads the
+    debuggee; elements are fetched and shown 100 at a time ('Show more').
+  - A stop inside JDK or library code no longer flashes a tab and reports 'Failed to open'; the nearest
+    frame with source is shown and the status bar says so. Frames without source stay selectable and show
+    their variables.
+  - A rejected Set Value is reported instead of being displayed as applied; adapter errors no longer start
+    with a Java exception class name.
+  - Breakpoints follow a file that is renamed, moved or saved under a new name; line shifts in several files
+    are all saved; Undo restores the breakpoint of a deleted line; cancelling Edit Breakpoint on a bare line
+    creates nothing; files without a debugger get no invisible breakpoints.
+  - Expanded variables and the selection survive a step; watches are visible when idle; Stop and Restart are
+    available in the menu and palette while a session is starting.
+  - Picking a running thread stays on the stopped one and says why; a stale frame clicked while the program
+    runs paints no execution line; reopening the stopped file shows the execution line again.
+  - Inline values are shown only in the function the program is stopped in, and not for names inside
+    comments or strings.
+  - stderr is drawn in its own colour in the Debug, Run and External Tool consoles.
+  - Pressing Enter in the Debug console while the program is running shows a hint instead of being ignored;
+    a stop on an exception reads 'Suspended on an exception'.
+  - Stepping no longer writes 'Already open: <file>' to the status bar.
+  - Debug Restart now saves the edited file and runs the configuration's before-launch build, like Stop +
+    Start, instead of relaunching the previous code.
+  - With several threads stopped on a breakpoint (Java), Continue no longer leaves the other threads
+    suspended behind a 'Running' session; the next stopped thread is shown.
+  - A Step the debug adapter refuses no longer leaves the Debug panel in 'Running' with its controls
+    disabled; the adapter's message is shown.
+  - Start/Continue (F5) pressed during a step no longer stops the session and launches the active file.
+  - Stepping no longer throws keyboard focus out of the Debug panel's Evaluate field (typed text could end
+    up in the source file).
+  - Breakpoints of a narrowed buffer are sent to the debugger with their real file lines; the execution
+    line, Run to Cursor and Jump to Line work in a narrowed buffer.
+  - Debug Test attaches even when the test class has no open tab.
+  - The execution-line highlight no longer sticks after editing above it while paused, and a stop inside a
+    collapsed fold reveals the whole fold.
+  - Bookmarks and breakpoints stay on their statement through Move Line Up/Down, Format Document and other
+    multi-edit changes, and undo of a multi-caret edit; deleting to the end of a marked line removes its
+    mark; pasting over lines no longer marks the line below.
+  - A breakpoint or bookmark whose line was edited no longer jumps to another line with the old text when
+    the file is reopened; lines longer than 200 characters re-anchor correctly.
+  - Fixed (Windows): a stack frame whose source is not a file path no longer empties the call stack.
+  - 'Debug via build tool' for Maven Spring Boot now opens the JDWP port on the loopback interface only (was
+    all interfaces).
+  - JavaScript (Node) debugging now attaches: Editora opens the second session vscode-js-debug asks for
+    and reaches the adapter when `localhost` is the IPv6 loopback, so breakpoints hit and stepping, the
+    call stack and variables work. Step Over/Into/Out show the session as running until the next stop,
+    and Debug console output is batched so a chatty program no longer stalls the editor.
+- **Run, build and test**
+  - Test results with the same name no longer overwrite each other - TAP subtests are named after their
+    parents and Cargo tests are grouped per test binary, so a failing test can no longer be shown as passed.
+  - 'Rerun failed' and 'Rerun/Debug this test' for a JUnit 5 @Nested test or a JUnit 4 parameterized test
+    (Maven), and for Go subtests with regex characters in their names; a filtered Maven run that matches no
+    test now says so instead of showing '0 of 0 tests passed'.
+  - Test Results' Rerun commands run in the directory of the run they repeat, not in the module of the
+    active tab.
+  - A second build tool's test run started while another is running no longer corrupts the first run's
+    results.
+  - An up-to-date Gradle test task shows its own previous results, not stale reports from other modules or
+    tasks.
+  - Run with a before-launch build saves the edited file first, so the build compiles what is on screen;
+    script configurations and Rerun save too. Rerun after a failed before-launch step no longer runs in the
+    wrong directory.
+  - A run or build could lose its exit (leaving Run 'busy' or Test Results 'running' forever) when another
+    was started just as it finished; one failing output handler no longer silences the console for good.
+  - Build output shows carriage-return progress (Maven downloads) line by line again.
+  - Non-UTF-8 program output (Windows code pages, legacy locales) is decoded with the system encoding
+    instead of turning into replacement characters; console input is sent in that encoding.
+  - Fixed (Windows): npm, mvn, gradle, yarn and pnpm resolve to their .cmd/.bat launcher rather than the
+    POSIX shim beside it.
+  - A before-launch step that reads stdin no longer hangs a debug launch.
+  - Run Configurations - committing a field of the only configuration no longer blanks the form, and an edit
+    is kept when another configuration is clicked.
+  - Gradle 'Load all tasks' is no longer discarded by a tab switch, save or focus change during the load.
+  - Opening a diff from the Git Log or Commit window no longer closes that window.
+  - Package.json, Cargo.toml and go.mod saved with a UTF-8 BOM are read correctly.
+  - Java classes, tests and symbols with non-ASCII names (Café, größe, 日本語) get their run/test gutter
+    markers and index entries.
+  - External-tool arguments containing a literal '$' (a shell variable) before a $Macro$ now expand the
+    macro.
+  - Double-clicking a very long console line no longer freezes the window; absurd line numbers and an empty
+    first console line no longer throw.
+  - The Run console no longer closes when a run exits.
+  - Test Results no longer reports a failed run as "N of N tests passed"; Go build failures and the npm
+    "see Output" banner are shown.
+  - Re-hitting the same breakpoint with debugpy no longer leaves stale variables; Java debugging with
+    program arguments no longer times out.
+  - Build output is delivered in bounded batches with a line-length cap, so a chatty build (`mvn -X`) no
+    longer stalls the window or its Stop button, and the exit is reported only after the last output has
+    arrived — Go, Cargo and npm test runs no longer lose their final results.
+  - Stack-trace links and Test Results activation work without a Java language server: a frame such as
+    `at com.foo.Bar.baz(Bar.java:12)` opens `com/foo/Bar.java` under the project's source roots instead of
+    looking for `Bar.java` in the project root, a failed test whose frame cannot be resolved falls back to
+    the test's own source, and a test in a closed file lands on its method instead of line 1.
+  - `mvnw`/`gradlew` at the project root are used when the build file is in a module, and the
+    workspace-trust prompt is about the folder that ships the wrapper actually launched.
+  - `Maven: Update Versions` computes from the open `pom.xml` buffer, so unsaved edits are kept; a read-only
+    buffer is left alone and a closed pom is replaced atomically. New Maven Project always uses your own
+    Maven, never a wrapper found in the target folder. A `pom.xml` with a byte-order mark or a declared
+    non-UTF-8 encoding is no longer reported as malformed.
+  - A run configuration's before-launch step streams into the console, is stopped by Stop, ends with the
+    window, and cannot be started twice by pressing Run again.
+  - External tools: output larger than the 10 MB capture limit is no longer applied to the buffer or
+    selection; it goes to the tool console with an explanation.
+  - Rerun test / rerun failed: parameterized invocations collapse to their method, Maven reruns no longer
+    fail a multi-module build on modules without the selected test, and an up-to-date Gradle test task shows
+    its existing results instead of an empty tree.
+- **Consoles**
+  - The Run, Output (build), Debug, External Tools and Test Runner consoles, the HTTP response view,
+    the Project Map preview, the diff panes and the hex viewer no longer keep an undo history of everything
+    they have ever shown. A console capped at 200,000 characters used to retain every line a long-running
+    program printed (about 110 MB after 200,000 lines, growing for as long as it ran). The snippet and
+    file-template bodies in Settings and the editable merge result keep undo, now limited to 300 steps.
+- **Git, diff and Local History**
+  - Local File History follows a file that is renamed or moved, also inside a renamed or moved folder and
+    for files that are not open, in every project that has history for it. History already at the new path
+    is merged with it.
+  - A revision still being stored when its file is renamed lands under the new name instead of bringing the
+    old one back.
+  - The history follows renames while Local History is switched off, too.
+  - Git: a push, pull or fetch requested right after a commit or checkout now waits for it instead of
+    overtaking it (a push could publish the old HEAD and report success).
+  - Git: staging or committing while a pull is waiting on a slow remote no longer freezes status, gutters,
+    blame and diffs.
+  - Git: hooks started by commit/checkout/pull/push run in your locale again (LC_ALL=C broke JVM-based hooks
+    on non-ASCII paths); only Git's message language is pinned.
+  - Git: a folder that becomes a repository outside Editora (git init, clone) is picked up on the next
+    refresh; a timed-out probe is no longer remembered as 'not a repository'.
+  - Git: changing the git path in Settings now takes effect in every open window, and a path containing a
+    space (C:\Program Files\Git\cmd\git.exe) works.
+  - Git: file names with [ ] * ? are no longer treated as patterns by the gutter diff, blame, file history
+    and folder review; a tracked file with a control character in its name is found again.
+  - Git: the change-bar tooltip is shown for removed '-- comment' lines and added '++i;' lines.
+  - Git: Clone no longer reads a pasted value that starts with '-' as a git option.
+  - Git: refreshes superseded while queued no longer run git status and diff.
+  - With a remote (SFTP) tab open, switching to a local tab no longer aborts the tab-switch refresh, Git
+    checkout/pull/discard/stash run again, and LSP renames / workspace edits apply (paths on different file
+    systems are no longer compared).
+  - The Commit window no longer lists a conflicted file under Staged or offers to unstage it (which silently
+    discarded the conflict); conflicted files are marked '!' and Unstage refuses them.
+  - Clicking the blame annotation of a line older than a rename of the file opens that commit's diff instead
+    of an empty one.
+  - In File History, opening another file of the selected commit compares it with its own working copy, not
+    with the history file.
+  - A narrowed buffer no longer shows Git change bars on the wrong lines.
+  - The branch popup no longer displays credentials embedded in the remote URL.
+  - A pull-request review tab's Refresh / Submit review, and the GitHub window's row actions, act on the
+    repository the pull request was listed from.
+  - The pull-request review lists pure renames, mode-only changes and binary files, and shows non-ASCII file
+    names correctly.
+  - A failed GitHub list fetch shows gh's error instead of an empty list or an endless spinner; the CI
+    checks segment and the GitHub stripe follow branch and repository changes; github.refresh no longer
+    closes the GitHub window.
+  - `gh pr checkout` is no longer killed after two minutes or when the window closes mid-checkout.
+  - Merge resolver: conflict markers written with a `conflict-marker-size` attribute are recognised again by
+    the marker fallback, and unresolved conflicts keep their marker size.
+  - Compare Directories: a root that is a symbolic link is compared through its target instead of reporting
+    'identical', and a scan that hits the file limit no longer lists files present on both sides as one-
+    sided.
+  - Diff: a heavily rewritten large file or one very long changed line no longer stalls every diff in the
+    window (bounded search with a coarse fallback), and a diff that fails still reports back instead of
+    never opening.
+  - Export Patch keeps carriage returns, so a patch exported for CRLF content applies with git.
+  - Git diff: Revert hunk/line now enables the pane's Undo and Save like any other apply.
+  - Diff: two sides over the 10 MB limit are no longer reported as 'No differences' when they differ.
+  - Commit window: Show Diff on a staged rename compares with the file's old path instead of showing the
+    whole file as added.
+  - Diff: scrolling one side by its scroll bar moves the other side too.
+  - Diff Result editor: closing it brings the apply chevrons back, no longer leaves a discarded draft shown
+    as the working side, and no longer keeps a closed window in memory.
+  - Folder review: the pane cache returns to its 32-pane cap after a draft is resolved.
+  - Local History: Revert updates the panel to the restored text; saving while a revision is selected keeps
+    the selection and its diff; purging a file removes it from every project's history; restoring a revision
+    over an existing file first records the content it replaces; a damaged stored revision is repaired when
+    the same content is recorded again; folder history works for the filesystem root.
+  - Merge resolver: Apply keeps form feeds and other control characters, and a second Apply after a change
+    of mind is no longer refused as stale.
+  - Patch review: toggling a diff option while a side swap is pending no longer mixes one side's rows with
+    the other's text.
+  - The Git Log acts on the repository it lists: it clears and reloads when the active repository or branch
+    changes, its actions run there even if the active tab changes while a dialog is open, and the
+    hard-reset confirmation names the branch and repository.
+  - Stage/Unstage hunk no longer writes an index blob that matches neither side at end of file; unstaging
+    a newly added file removes it from the index and staging a deleted file stages the deletion.
+  - The three-way merge resolver no longer drops or duplicates an edit when both sides change lines inside
+    a run of identical lines.
+  - Diffs, the merge resolver and Local History read non-UTF-8 files the way the editor does, so an
+    unmodified file no longer shows changes against HEAD and applying a hunk no longer writes U+FFFD;
+    hunks can be applied to a CRLF file that is not open; restoring a revision keeps line endings and
+    encoding.
+  - Resolve Conflicts and diffs on a narrowed buffer use the whole document.
+  - A Local History index that could not be loaded no longer causes every stored revision to be deleted
+    at the next save.
   - Commit, checkout, reset, stash and discard are no longer killed after 10 seconds, network commands
     get a longer limit and their own queue, a running command shows in the status bar, and closing the
     window lets it finish instead of interrupting it mid-update.
@@ -1027,173 +1064,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     days), uses each file's own encoding when capturing and restoring, and no longer scans its whole
     store on every save. New commands `Local History: Delete History of Current File…` and
     `Local History: Delete History of Project…` remove snapshots permanently.
-- Hardened the places where content you merely opened could reach outside its own folder or the app.
-  Links (Markdown preview and Ctrl/Cmd-click, tool output, plugins, the update page) now go through one
-  check: only `http`, `https` and `mailto` are handed to the system; a relative or `file:` link opens
-  inside the editor when it is a file in the project or the document's folder; anything else is refused
-  with a status message. `.http` body files and `>>` response targets can no longer follow a symlink out of
-  the request's folder. PlantUML previews run with `PLANTUML_SECURITY_PROFILE=SANDBOX` (no local-file or URL
-  `!include`; export the variable yourself to choose another profile), and every preview renderer
-  (PlantUML, Graphviz, Mermaid, Typst) starts without secret-looking environment variables. Agent replies,
-  language-server hovers and completion docs, and pull-request text no longer load remote images — they
-  show the alt text and URL instead. The HTML Live Preview server answers only its own browser tab (Host
-  check plus an unguessable URL prefix) and refuses to serve a home directory or drive root. PDF/DOCX/ODT
-  export fetches images through the same internal-address guard and size cap as the preview; oversized
-  SVG dimensions are clamped. An agent's file reads and writes are confined to the session folder and can
-  never touch Editora's own configuration. A hostile `.editorconfig` section can no longer freeze a window
-  when a file opens. Markdown copied as rich text carries no raw HTML or `javascript:` links, and HTML
-  export neutralises `javascript:` URLs. A plugin whose capabilities cannot be shown is left disabled, and
-  in-app installers download only from the hosts their catalog names.
-- Language servers and debugging: fixes from the whole-app review.
-  - Renaming a Java symbol used in files that are not open (or in restored tabs never shown) now works
-    instead of reporting "Rename failed". Edits to such files are applied only when the file has not
-    changed since the request was sent; when one blocks the edit, the status line names it.
-  - JavaScript (Node) debugging now attaches: Editora opens the second session vscode-js-debug asks for
-    and reaches the adapter when `localhost` is the IPv6 loopback, so breakpoints hit and stepping, the
-    call stack and variables work. Step Over/Into/Out show the session as running until the next stop,
-    and Debug console output is batched so a chatty program no longer stalls the editor.
-  - A project's `.editora/settings.json` server command is now the one that actually launches — and only
-    for a trusted folder. In an untrusted folder the project's commands (and any attempt to re-enable a
-    server you switched off) are ignored until you run "LSP: Trust This Project's Server Settings".
-    "LSP: Set Server Command" is prefilled from your global setting, not the project's.
-  - Java: on-type formatting works again, the rename prompt validates and pre-fills the symbol name
-    again, and Go to Implementation / Type Definition appear once the server is ready. Semantic
-    highlighting is restored for servers that register it late (Typst).
-  - A language server that stops responding can no longer freeze the editor; servers are shut down
-    cleanly on quit; "Build Project" is no longer cancelled after 30 seconds; quick fixes get their
-    diagnostics when the server spells a file's URI differently; a burst of diagnostics rebuilds the
-    Problems list once; opening a file on a filesystem root no longer breaks the handshake; and a
-    closed window can no longer restart its language servers.
-- Keyboard routing fixes. Editing chords typed in a text field now edit that field instead of the
-  document behind it: with the caret in the Find bar, `C-k`, Ctrl+V/X/Z/A and `C-u` used to act on the
-  open buffer. The Find and Replace fields also follow the active keymap's caret and editing chords.
-- Option-typed characters (`@ [ ] { } | \ ~` on German and Spanish Mac layouts) can be typed in the
-  pickers and prompts again, and on Windows AltGr combinations such as AltGr+E are typed instead of
-  running the `Ctrl+Alt` chord bound to that key.
-- A `settings.json` naming a keymap that does not exist no longer prevents Editora from starting; the
-  default keymap is used and the problem is reported once in the message log.
-- Shortcuts are shown in the notation of the active keymap and platform — `Ctrl+Shift+P`, `⇧⌘P`, or
-  Emacs notation in the Emacs keymap — in menus, tooltips, the command palette, the Welcome page and
-  status messages, and the shortcut shown for a command no longer changes between launches.
-- Pickers take their navigation keys from the active keymap and list only keys that work there; they
-  also handle PageUp/PageDown and Ctrl+Home/End. In input cards, Enter activates the focused button
-  rather than always confirming, and Tab stays inside the card.
-- Undo, redo and toggle-comment have shortcuts that can be typed on keyboards where `/` is a shifted
-  key: `C-x u`, `C-_` and Ctrl+Shift+7 undo in the Emacs keymap, and Ctrl+Shift+7 or the numpad slash
-  toggle a comment in the other keymaps.
-- The Menu key and Shift+F10 open the context menu of the selected row in the Project, Bookmarks,
-  Notes, TODO, Git Log and Structure tool windows. F2 renames and Delete deletes the selected file in
-  the Project tree; Delete removes the selected bookmark or note.
-- Keyboard and screen-reader access: Settings switches now toggle with Space or Enter and are announced
-  by their row title; every button, switch, check box, link and combo shows a focus ring when reached
-  with the keyboard; icon-only buttons (tool windows, Git, diff, test results, preview zoom) have
-  accessible names; closing the focused tool window returns focus to the editor.
+- **Remote (SFTP) files**
+  - Saving a remote file with other hard links keeps them in more cases: on protocol 3 (OpenSSH) through the
+    directory listing as before, on protocol 6 when the server reports a link count, and on a server
+    speaking protocol 4 to 6 without a count when it also accepts a protocol 3 channel. On other servers the
+    links cannot be detected and are still broken. The protocol 6 case is not yet confirmed against a
+    third-party server.
+  - A temporary file left on the server by a dropped connection is remembered across restarts of Editora and
+    removed by the next save to that server (a few internal save paths still remember theirs only until
+    Editora exits).
+  - Opening, restoring or reloading a file on a closed SFTP connection says that the connection is closed
+    and how to reconnect; the Project tree, the Project map and search say that the folder cannot be read
+    instead of showing an empty folder or 'No results'.
+  - Reload on a closed connection no longer stays unfinished, and the Project map no longer stops updating.
+  - A remote file that is read-only on the server shows the 'read-only on disk' note in View mode, as a
+    local one does. The state is read when the file is opened.
+  - With a remote tab open beside local ones, these no longer fail: diff and history look-ups, editing a
+    TODO line, MCP file look-ups and diagnostics, renaming a local folder (it stopped at the first remote
+    tab), Reveal in Project, the Bookmarks window, the Project map's history and breadcrumb, and Go to
+    Definition in the split.
+  - Saving a remote file opened through a symlink writes the link's target instead of replacing the link
+    with a regular file.
+  - A writable remote file in a folder that allows no new entries can be saved: it is overwritten in place,
+    with its previous content held in a local backup until the write is done. This is done only when the
+    server refuses the temporary file for permissions.
+  - Saving a remote file with other hard links keeps them on servers that speak SFTP protocol 3 (OpenSSH);
+    on newer protocol versions the links cannot be detected and are still broken. A file owned by another
+    user should now be written in place instead of taken over (not yet confirmed against a second account).
+  - A temporary file left on the server by a dropped connection is removed by the next save to that server
+    in the same run of Editora, and a failed cleanup no longer hides the real error.
+  - Saving after the connection has closed says so and how to recover (reconnect, or Save As for a local
+    copy).
+  - A slow or stalled remote save no longer holds up saving local files.
+  - Connecting to a second SFTP host, or reconnecting to the same one, no longer fails in the Project map;
+    the earlier connection is closed unless open tabs still use it.
+  - With 'save as administrator' on, saving your own read-only file in a folder you can write to asks to
+    overwrite it instead of asking for elevated rights.
+- **Project tool window**
+  - A file changing in a watched folder no longer rebuilds the whole Project tree on the interface
+    thread. Only the folder whose entries came or went is listed again, and rows that are still right are
+    kept, with their expansion, selection and scroll position. With a 7,000-file folder that another
+    program writes to, typing no longer stalls every second.
+  - Saving a file in Editora no longer counts as an external change. It used to rebuild the tree,
+    mark the symbol index stale (so the next Search Everywhere re-read the project) and refresh Git, build
+    markers and open diffs a second time.
+  - A `git status` that times out no longer makes the window say the folder is not a repository; the
+    last state is kept and the repository is left alone for 30 s (doubling to 5 min) before being asked
+    again. Inline blame is no longer recomputed when the file and HEAD have not changed.
+- **Markdown, export and HTTP Client**
+  - Re-linting several Markdown or Mermaid buffers at once updates every one of them, not only the last.
+  - Exports no longer lose or change content while reporting success. Markdown → PDF keeps the source's
+    spacing around inline styles (`**world**!`, `un*real*ly`, `` `Ctrl`+`C` ``), wraps long code-block lines
+    and expands tabs instead of clipping them or printing `?`, hard-breaks words wider than the page (URLs,
+    table cells), and draws CJK, Arabic, Hebrew, Thai and other scripts with an installed system font; any
+    character no font can draw is counted and the status says so. Word/OpenDocument exports keep code blocks,
+    quotes and images inside list items, task checkboxes, raw HTML and footnotes. CSV → Excel/OpenDocument
+    leaves values such as `12D`, `5F` and 19-digit ids as text, and CSV → PDF/Print shows cells verbatim
+    (`__init__`, `2*3*4`, `List<String>`) with the same columns as the grid, including pipe-delimited files.
+  - HTTP Client: a request body that starts with `<` (XML, HTML, SOAP) is sent as the body instead of being
+    mistaken for a file reference, and a missing body file stops the request with a warning instead of sending
+    it empty. Uploads and downloads are byte-exact (`< file`, `>>`), responses over 50 MB are cut with a visible
+    marker, and a running request can be cancelled (`HTTP: Cancel Running Request` or the Cancel button) so a
+    hung or streaming response no longer blocks later runs. The response view pretty-prints JSON without
+    altering numbers or dropping duplicate keys, marks a truncated view, formats in the background, and Save /
+    Open in tab use the response as received. Comment lines between headers are no longer sent as headers.
+  - Dropped or pasted images whose names contain spaces or parentheses now insert a working Markdown link.
+    Image and binary (hex) tabs load in the background, and very large images are shown at reduced resolution
+    instead of exhausting memory. Markdown lint no longer flags URLs that are already links or `m[i][j]` in
+    inline code, and its fixer no longer turns a tab-indented code line into a heading or leaves part of a
+    trailing `...`. systemd `OnCalendar` accepts a time zone and `Mon-Fri`, the Dockerfile preview shows the
+    real base image after `FROM --platform=…`, and `.editorconfig` `unset` clears the inherited value.
+- **Startup, processes, installers and platform**
+  - The column ruler no longer stays left of its column after the gutter is rebuilt twice in quick
+    succession.
+  - Quitting waits (up to 5 seconds) for a Local History write that is still running before it releases the
+    configuration lock.
+  - AceJump line mode no longer throws on every repaint in a file that ends in an empty line.
+  - Doctor reports Python debugging as healthy only when the configured interpreter can import debugpy,
+    the same check the debugger uses, so a found debugpy bundle no longer hides a missing or misconfigured
+    Python. A missing Mermaid linter is now a warning rather than a problem, since diagrams still render
+    without it. Refresh no longer lets the previous run's queued checks start, the Git row shows the
+    configured Git command, and the Java row links to the Build Tools page where its JDK is chosen.
+  - Windows: opening a file while Editora is already running now hands it to the running editor instead of
+    starting a second one. The two sides ended their messages with the platform's line ending and the reply
+    check did not expect the extra carriage return, so no launch was ever forwarded there.
+  - Windows: AI requests through the Codex agent no longer leave an empty `editora-ai-` folder behind in the
+    temp directory each time; the folder could not be removed while the agent was still exiting.
+  - Fixed a memory leak of about 20 MB per closed window: read-only console areas (Run, build output, HTTP
+    response, diff sides, the Settings preview) were held by a static RichTextFX stream, and an editor that had
+    focus when its window closed kept its caret blink timer running. Buffers now dispose their editor areas.
+  - Opening a second Editora on the same configuration (launching it again without a file, with
+    `--project`, `--new-instance` or `--diff-ui`) no longer kills the first one's language servers, debug
+    adapters, builds and running programs, and no longer deletes its Local File History revisions. The second
+    instance now warns once that both share the configuration: settings, notes, bookmarks, breakpoints,
+    projects and recent files are still saved whole by each instance, so the last one to save wins.
+  - Programs you run, builds, language servers, debug adapters, the AI agent, External Tools, before-launch
+    steps, in-app installers and the terminal/browser Editora opens now keep your locale instead of being
+    forced into `LC_ALL=C`. Projects under a path with non-ASCII characters (`año/`, `café/`) can be run,
+    built, debugged and indexed, and program output is no longer reduced to `?`. Git, ripgrep and other
+    output Editora parses still use the C locale.
+  - In-app installs work when the configuration directory contains a space (for example
+    `C:\Users\Jane Doe\.editora`): the installed server is no longer reported missing right after the
+    install. The Typst CLI install now finds its Linux and macOS downloads.
+  - The build commit and branch shown for development builds are looked up in the background from the
+    build's own checkout, so a slow or stuck `git` can no longer freeze the window at startup.
 
-- Readability: key legends, line numbers and tinted labels now meet contrast guidelines in Editora Light
-  and Dark; text on accent-coloured badges and the selected Project Map node is readable in dark themes;
-  whitespace markers, diagnostic squiggles and search highlights adapt to the editor theme; Problems and
-  Debug colours follow the theme. Failure messages such as "PDF export failed" are shown as errors in the
-  status bar and stay flagged in the message log.
+### Packaging
 
-- Layout: the Find bar's fields use the available width and the bar wraps instead of truncating its
-  labels in a narrow window; Find in Files gives the query its own row; one wide diagram, image or
-  formula no longer stops the Markdown preview from wrapping in Split view; Settings rows with a wide
-  control put it under the description; the command palette no longer cuts its last row in half; long
-  paths in the Commit window keep the file name visible; the breadcrumb starts at the project folder;
-  in Split view the Editor/Split/Preview control sits on the preview instead of over the first line.
-
-- Settings: search matches the titles and descriptions shown in your language, accepts several words in
-  any order, and says when nothing matches; the window always opens fully on the screen its parent is
-  on; Reset to Defaults now also restores the keymap immediately.
-- The symbol index and Search Everywhere no longer walk into `.gitignore`d directories: `target/`,
-  `node_modules/` and `build/` are skipped whole instead of being read, listed and counted against the
-  50,000-file cap; an unreadable directory no longer ends the index early; and an index that does reach the
-  cap says so in the status bar. The same pruned walk now backs Find in Files, the TODO scan and the
-  test-source lookups, and the JVM test-report poll no longer re-walks `.git` and `node_modules` every 750 ms.
-
-- Build output is delivered in bounded batches with a line-length cap, so a chatty build (`mvn -X`) no
-  longer stalls the window or its Stop button, and the exit is reported only after the last output has
-  arrived — Go, Cargo and npm test runs no longer lose their final results.
-
-- Stack-trace links and Test Results activation work without a Java language server: a frame such as
-  `at com.foo.Bar.baz(Bar.java:12)` opens `com/foo/Bar.java` under the project's source roots instead of
-  looking for `Bar.java` in the project root, a failed test whose frame cannot be resolved falls back to
-  the test's own source, and a test in a closed file lands on its method instead of line 1.
-
-- Find in Files: an include such as `*.{js,ts}` is one glob; an exclude of `target` or `node_modules`
-  drops everything beneath it with or without ripgrep and in open buffers; `\w`, `\d` and `\b` mean the
-  same in open buffers and replacements as they do in ripgrep; Replace All uses the query its results were
-  found with and refreshes instead of replacing when the fields were edited since; and a superseded search
-  no longer leaves "Searching…" counting up in the status bar.
-
-- `mvnw`/`gradlew` at the project root are used when the build file is in a module, and the
-  workspace-trust prompt is about the folder that ships the wrapper actually launched.
-
-- `Maven: Update Versions` computes from the open `pom.xml` buffer, so unsaved edits are kept; a read-only
-  buffer is left alone and a closed pom is replaced atomically. New Maven Project always uses your own
-  Maven, never a wrapper found in the target folder. A `pom.xml` with a byte-order mark or a declared
-  non-UTF-8 encoding is no longer reported as malformed.
-
-- A run configuration's before-launch step streams into the console, is stopped by Stop, ends with the
-  window, and cannot be started twice by pressing Run again.
-
-- External tools: output larger than the 10 MB capture limit is no longer applied to the buffer or
-  selection; it goes to the tool console with an explanation.
-
-- Rerun test / rerun failed: parameterized invocations collapse to their method, Maven reruns no longer
-  fail a multi-module build on modules without the selected test, and an up-to-date Gradle test task shows
-  its existing results instead of an empty tree.
-- Exports no longer lose or change content while reporting success. Markdown → PDF keeps the source's
-  spacing around inline styles (`**world**!`, `un*real*ly`, `` `Ctrl`+`C` ``), wraps long code-block lines
-  and expands tabs instead of clipping them or printing `?`, hard-breaks words wider than the page (URLs,
-  table cells), and draws CJK, Arabic, Hebrew, Thai and other scripts with an installed system font; any
-  character no font can draw is counted and the status says so. Word/OpenDocument exports keep code blocks,
-  quotes and images inside list items, task checkboxes, raw HTML and footnotes. CSV → Excel/OpenDocument
-  leaves values such as `12D`, `5F` and 19-digit ids as text, and CSV → PDF/Print shows cells verbatim
-  (`__init__`, `2*3*4`, `List<String>`) with the same columns as the grid, including pipe-delimited files.
-
-- HTTP Client: a request body that starts with `<` (XML, HTML, SOAP) is sent as the body instead of being
-  mistaken for a file reference, and a missing body file stops the request with a warning instead of sending
-  it empty. Uploads and downloads are byte-exact (`< file`, `>>`), responses over 50 MB are cut with a visible
-  marker, and a running request can be cancelled (`HTTP: Cancel Running Request` or the Cancel button) so a
-  hung or streaming response no longer blocks later runs. The response view pretty-prints JSON without
-  altering numbers or dropping duplicate keys, marks a truncated view, formats in the background, and Save /
-  Open in tab use the response as received. Comment lines between headers are no longer sent as headers.
-
-- Dropped or pasted images whose names contain spaces or parentheses now insert a working Markdown link.
-  Image and binary (hex) tabs load in the background, and very large images are shown at reduced resolution
-  instead of exhausting memory. Markdown lint no longer flags URLs that are already links or `m[i][j]` in
-  inline code, and its fixer no longer turns a tab-indented code line into a heading or leaves part of a
-  trailing `...`. systemd `OnCalendar` accepts a time zone and `Mon-Fri`, the Dockerfile preview shows the
-  real base image after `FROM --platform=…`, and `.editorconfig` `unset` clears the inherited value.
-- A mistyped value in `settings.json` (for example `"showMinimap": "yes"`) no longer resets every setting
-  after it, including key bindings and API keys. Only that value falls back to its default, the file as
-  written is kept as `settings.json.corrupt.bak`, and the first window reports which values were reset.
-  Tab size, font size and text zoom are clamped to their valid ranges on load, so `"tabSize": 0` can no
-  longer break indentation commands.
-
-- A settings file whose `schemaVersion` line was removed is no longer migrated from scratch, which
-  turned Projects back on, re-added removed TODO keywords and toolbar buttons, and on macOS replaced the
-  Cmd key-binding overrides. A config file from a newer Editora that cannot be backed up is now left
-  untouched for the session instead of being overwritten with defaults, and the status bar says so.
-
-- A blank author name stays "follow the OS user": it was saved as the current user name on the first
-  save. The unused `ijhttpCommand` setting is gone.
-
-- Settings toggled from the command palette or a key binding now apply in every open window, not just
-  the one the command ran in.
-
-- Recent files, Find in Files history and AI Agent sessions are shared by all windows. Each window used
-  to keep its own copy and rewrite the whole file, so the last window to save discarded the others'
-  entries. Remote (SFTP) recent files are no longer dropped from the list on restart.
-
-- Translations: apostrophes are no longer doubled or dropped (French and Italian palette titles and
-  messages, English "isn't"), line numbers, ports, pull-request numbers and exit codes are no longer
-  digit-grouped ("Line 12,345"), two messages that showed their internal key now have text, and the
-  remaining English-only picker titles, prompts and labels are translated. Unused strings were removed.
-
-- A key binding you assign is no longer overridden by a plugin that binds the same chord, and two
-  projects whose folders produce the same internal id no longer share a session.
 - **Packaging and release hardening.** Installers and archives now carry the licence: `LICENSE` and `NOTICE`
   are inside the application (and as plain files in the Linux tarball, the AppImage and the experimental
   Native Image archives), the `.deb`/`.rpm`/`.msi` are built with the MIT text, each bundled font family ships
@@ -1218,14 +1195,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Builds:** `-Pdist` now always starts from a clean `target/` (and `-Pfatjar` from clean classes), so a
     forgotten `clean` can no longer package stale classes; CI also runs the non-UI test suite on Windows and
     macOS.
-
-- Turning word wrap on now takes effect immediately. Previously, long lines that had been displayed
-  unwrapped and then scrolled out of view kept the whole editor at their width, so nothing wrapped and the
-  horizontal scrollbar stayed until you scrolled back over those lines or restarted.
-
-- `View: Toggle Word Wrap` no longer fails with an internal error when the Settings window has not been
-  opened yet in that window; the toggle now completes and reports the new state in the status bar.
-
 - Experimental Windows Native Image builds now include the host charset and JavaFX Windows theme
   bundle needed during startup.
 
