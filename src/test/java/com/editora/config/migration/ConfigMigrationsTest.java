@@ -379,6 +379,23 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v107→108: debugProgramConsole is new — nothing else in the file changes, and it starts at its default. */
+    @Test
+    void theProgramConsoleSettingArrivesWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v107 = mapper.readTree("{\"schemaVersion\":107,\"debugSupport\":true,\"javaDebugPluginPath\":\"/x\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v107.deepCopy(), mapper);
+        assertEquals(108, out.get("schemaVersion").asInt());
+        assertTrue(out.get("debugSupport").asBoolean());
+        assertEquals("/x", out.get("javaDebugPluginPath").asText());
+        assertFalse(out.has("debugProgramConsole"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertTrue(loaded.isDebugProgramConsole(), "on for everyone who never chose");
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":108,\"debugProgramConsole\":false}");
+        assertFalse(
+                mapper.treeToValue(chosen, com.editora.config.Settings.class).isDebugProgramConsole());
+    }
+
     /** v106→107: a built-in URL frozen into the file goes back to blank; a URL the user chose is kept. */
     @Test
     void frozenDefaultUrlsAreBlankedButChosenOnesAreKept() throws Exception {
@@ -386,7 +403,9 @@ class ConfigMigrationsTest {
                 + "\"pluginRegistryUrl\":\" " + ConfigMigrations.FROZEN_PLUGIN_REGISTRY + "\","
                 + "\"mavenArchetypeCatalogUrl\":\"" + ConfigMigrations.FROZEN_MAVEN_ARCHETYPE_CATALOG + "\"}");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, frozen, mapper);
-        assertEquals(107, out.get("schemaVersion").asInt());
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
         assertEquals("", out.get("pluginRegistryUrl").asText());
         assertEquals("", out.get("mavenArchetypeCatalogUrl").asText());
 

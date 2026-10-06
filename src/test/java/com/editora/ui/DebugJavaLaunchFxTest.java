@@ -141,6 +141,8 @@ class DebugJavaLaunchFxTest {
         public void saveBreakpoints() {}
     }
 
+    private Host host;
+
     @BeforeEach
     void setUp() throws Exception {
         Files.writeString(project.resolve("pom.xml"), "<project/>\n");
@@ -151,7 +153,7 @@ class DebugJavaLaunchFxTest {
         lspManager.configure(true, Map.of("java", "jdtls"));
         dap = new DapManager(lspManager);
         FxTestSupport.runOnFx(() -> {
-            Host host = new Host();
+            host = new Host();
             host.settings.setDebugSupport(true);
             host.settings.setLspSupport(true);
             LspCoordinator lsp = new LspCoordinator(host, lspManager, new LspOpsStub());
@@ -246,6 +248,38 @@ class DebugJavaLaunchFxTest {
         FxTestSupport.runOnFx(() -> debug.debugStart());
 
         assertEquals(project.toString(), request("launch").get("cwd"));
+    }
+
+    /**
+     * Who starts the debugged program follows the setting, from the next launch: on (the default), the launch
+     * asks the adapter to hand the command line back so the program has a standard input; off, the adapter
+     * starts it as it always did.
+     */
+    @Test
+    void theProgramConsoleSettingDecidesWhoStartsTheDebuggedProgram() throws Exception {
+        Path file = open("src/main/java/demo/Args.java", "package demo;\npublic class Args {\n}\n");
+        classpath();
+        replies.put(
+                "vscode.java.resolveMainClass",
+                List.of(Map.of("mainClass", "demo.Args", "projectName", "proj", "filePath", file.toString())));
+        assertTrue(new Settings().isDebugProgramConsole(), "on unless the user turns it off");
+
+        FxTestSupport.runOnFx(() -> {
+            // As set up: no plugin jar of this machine's, so applying changes nothing about jdtls itself.
+            host.settings.setJavaDebugPluginPath(
+                    project.resolve("no-plugin-here").toString());
+            debug.applySupport(); // what every settings apply does
+            debug.debugStart();
+        });
+        assertEquals("integratedTerminal", request("launch").get("console"));
+
+        FxTestSupport.runOnFx(() -> {
+            debug.stop();
+            host.settings.setDebugProgramConsole(false);
+            debug.applySupport();
+            debug.debugStart();
+        });
+        assertEquals("internalConsole", request("launch").get("console"));
     }
 
     /**

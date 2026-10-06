@@ -319,7 +319,9 @@ Editora is built with the help of AI coding tools.
   jump-to-line, call stack, variables, watches and set-value, inline values and a value-hover popup, and
   an IntelliJ-style Debug tool window (`M-g d`). **Debug via Build Tool** launches a Gradle
   (`run`/`bootRun --debug-jvm`) or Spring Boot Maven (`spring-boot:run` + a JDWP agent) app under a
-  suspended JVM and attaches when it's listening. Off by default (*Settings → Debugging*); adapters are
+  suspended JVM and attaches when it's listening. A debugged Java program can read its standard input:
+  while it runs, a line typed in the Debug console is sent to it (while it is paused the same field
+  evaluates expressions). Off by default (*Settings → Debugging*); adapters are
   user-installed (helper scripts provided), and a `jdtls` that already bundles the java-debug plugin is
   detected as-is.
 - **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without

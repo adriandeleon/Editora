@@ -178,4 +178,17 @@ class LaunchConfigTest {
                 LaunchConfig.launch("com.app.Main", "p", jars, List.of(), "", "/proj", List.of(), "", false);
         assertEquals("argfile", m.get("shortenCommandLine"));
     }
+
+    /** The launch that gives the program a standard input: the adapter hands its command line to the client. */
+    @Test
+    void aLaunchInTheClientsConsoleAsksForRunInTerminalAndKeepsEverythingElse() {
+        Map<String, Object> plain = LaunchConfig.launch(
+                "demo.Echo", "p1", List.of("/cp"), List.of(), "/jdk/bin/java", "/work", List.of("a"), "", false);
+        Map<String, Object> client = LaunchConfig.inClientConsole(new java.util.LinkedHashMap<>(plain));
+        assertEquals("integratedTerminal", client.get("console"));
+        client.remove("console");
+        Map<String, Object> rest = new java.util.LinkedHashMap<>(plain);
+        rest.remove("console");
+        assertEquals(rest, client);
+    }
 }

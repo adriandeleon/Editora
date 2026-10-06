@@ -10,6 +10,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -107,6 +108,17 @@ public final class DapManager implements DapClient.Host {
         /** A message from the adapter for the user that is not program output — java-debug reports a
          *  breakpoint condition or logpoint message it could not evaluate this way. */
         default void onNotice(String message, boolean error) {}
+
+        /**
+         * Whether lines can be typed to the debugged program's standard input changed: true once a program
+         * Editora started itself is running (see {@link #setProgramConsole}), false when it has ended or its
+         * input was closed. A session that ends says nothing — no session, no input.
+         */
+        default void onProgramInput(boolean available) {}
+
+        /** The program Editora started for this session ended by itself with {@code code}; the session
+         *  ends right after. Not reported for a program that was stopped. */
+        default void onProgramExit(int code) {}
     }
 
     private final LspManager lsp;
@@ -160,6 +172,13 @@ public final class DapManager implements DapClient.Host {
 
     private record SourceAlias(long epoch, Path original, Path compiled) {}
 
+    /** Whether a Java launch asks the adapter to let Editora start the program (see {@link #setProgramConsole}). */
+    private boolean programConsole;
+    /** The program of the current session when Editora started it, else null (FX thread). */
+    private Debuggee debuggee;
+    /** How long a program may take to exit once the adapter has reported the session over, before it is killed. */
+    private static final long DEBUGGEE_EXIT_GRACE_MILLIS = 3_000;
+
     private Supplier<List<DapModels.FileBreakpoints>> breakpointsSupplier = List::of;
     private List<String> exceptionFilters = List.of();
     private Runnable restartAction;
@@ -182,6 +201,44 @@ public final class DapManager implements DapClient.Host {
         if (client != null) {
             client.setExceptionFilters(this.exceptionFilters);
         }
+    }
+
+    /**
+     * Whether the next Java <em>launch</em> runs the program as Editora's own child process, so that it has
+     * a standard input ({@link #sendProgramInput}): the launch says {@code console: integratedTerminal} and
+     * the adapter hands the command line back ({@code runInTerminal}) instead of starting it inside jdtls,
+     * where nothing can be typed to it. Editora then owns the process: it pumps its output to
+     * {@link Listener#onOutput}, kills it whenever the session ends, and ends the session when it exits. Off
+     * (the default here; the window turns it on from the setting), the adapter starts the program as before.
+     * An attach, and the Python and JavaScript adapters, are not affected either way.
+     */
+    public void setProgramConsole(boolean programConsole) {
+        this.programConsole = programConsole;
+    }
+
+    /** Whether a line typed now would reach the debugged program's standard input. */
+    public boolean programInputAvailable() {
+        return debuggee != null && debuggee.acceptsInput();
+    }
+
+    /** Sends {@code line} (a line terminator is added) to the debugged program's standard input; false when
+     *  there is no such program to send it to. */
+    public boolean sendProgramInput(String line) {
+        if (!programInputAvailable() || line == null) {
+            return false;
+        }
+        debuggee.sendInput(line);
+        return true;
+    }
+
+    /** Ends the debugged program's standard input (end of file); false when there is none to end. */
+    public boolean closeProgramInput() {
+        if (!programInputAvailable()) {
+            return false;
+        }
+        debuggee.closeInput();
+        listener.onProgramInput(false);
+        return true;
     }
 
     /** Java-only configure (kept for back-compat); delegates with python/js disabled. */
@@ -1032,6 +1089,10 @@ public final class DapManager implements DapClient.Host {
             lspLease.run();
             lspLease = lsp.retain(file);
             DapClient c = new DapClient(sessionHost(epoch));
+            if (!attach && programConsole) {
+                c.setRunsDebuggee(true);
+                LaunchConfig.inClientConsole(args);
+            }
             c.setBreakpoints(adapterBreakpoints(breakpointsSupplier.get())); // snapshot on the FX thread
             c.setExceptionFilters(exceptionFilters);
             if (!publishClient(epoch, c)) {
@@ -1494,6 +1555,7 @@ public final class DapManager implements DapClient.Host {
             c = client;
             client = null;
         }
+        killDebuggee(); // disconnect(terminateDebuggee) does not end a program the adapter did not start
         if (c != null) {
             c.dispose();
         }
@@ -1790,26 +1852,101 @@ public final class DapManager implements DapClient.Host {
 
     private void onTerminated(long epoch) {
         Platform.runLater(() -> {
+            Debuggee program = debuggee;
+            if (isCurrent(epoch) && program != null && program.isRunning()) {
+                // The adapter is done with a program Editora started. Its last output is still in our pipe
+                // and the process may not be gone yet: the session ends when its exit is delivered
+                // (startDebuggee's sink), and a program that outlives its debugger is ended, not left running.
+                CompletableFuture.delayedExecutor(DEBUGGEE_EXIT_GRACE_MILLIS, TimeUnit.MILLISECONDS)
+                        .execute(() -> Platform.runLater(() -> {
+                            if (debuggee == program) {
+                                program.terminate();
+                            }
+                        }));
+                return;
+            }
+            endSession(epoch);
+        });
+    }
+
+    /** Ends the session of {@code epoch}, if it is still the current one (FX thread). */
+    private void endSession(long epoch) {
+        if (!isCurrent(epoch)) {
+            return;
+        }
+        outputPump.flush(); // the program's last lines arrived before this event — show them first
+        tempBreakpointFile = null; // session over — nothing to restore
+        DapClient c;
+        synchronized (sessionLock) {
             if (!isCurrent(epoch)) {
                 return;
             }
-            outputPump.flush(); // the program's last lines arrived before this event — show them first
-            tempBreakpointFile = null; // session over — nothing to restore
-            DapClient c;
-            synchronized (sessionLock) {
-                if (!isCurrent(epoch)) {
-                    return;
+            sessionEpoch++;
+            c = client;
+            client = null;
+        }
+        killDebuggee();
+        if (c != null) {
+            c.dispose();
+        }
+        releaseCompilationDirectory();
+        setState(State.INACTIVE);
+    }
+
+    /**
+     * The adapter's {@code runInTerminal}: starts the program of session {@code epoch} as Editora's child and
+     * completes {@code started} with its process id. The command, working directory and environment are the
+     * adapter's, untouched; the environment goes over the user's own with the augmented PATH, as for Run.
+     */
+    private void startDebuggee(
+            long epoch, String cwd, List<String> argv, Map<String, String> env, CompletableFuture<Long> started) {
+        if (!isCurrent(epoch)) {
+            started.completeExceptionally(new java.util.concurrent.CancellationException("the session has ended"));
+            return;
+        }
+        killDebuggee(); // a session has one program
+        Debuggee program = new Debuggee();
+        try {
+            long pid = program.start(cwd, argv, env, new Debuggee.Sink() {
+                @Override
+                public void output(String text, boolean stderr) {
+                    if (debuggee == program && isCurrent(epoch)) {
+                        listener.onOutput(text, stderr ? "stderr" : "stdout");
+                    }
                 }
-                sessionEpoch++;
-                c = client;
-                client = null;
-            }
-            if (c != null) {
-                c.dispose();
-            }
-            releaseCompilationDirectory();
-            setState(State.INACTIVE);
-        });
+
+                @Override
+                public void exited(int code) {
+                    if (debuggee != program) {
+                        return; // stopped: whoever stopped it has ended, or is ending, the session
+                    }
+                    boolean inputWasOpen = program.inputOpen();
+                    debuggee = null;
+                    if (isCurrent(epoch)) {
+                        if (inputWasOpen) {
+                            listener.onProgramInput(false);
+                        }
+                        listener.onProgramExit(code);
+                        endSession(epoch);
+                    }
+                }
+            });
+            debuggee = program;
+            started.complete(pid);
+            listener.onProgramInput(true);
+        } catch (java.io.IOException | RuntimeException e) {
+            program.kill();
+            started.completeExceptionally(e); // the adapter fails the launch with this, which reports it
+        }
+    }
+
+    /** Ends the session's own program, if it has one, and stops listening to it (FX thread). */
+    private void killDebuggee() {
+        Debuggee program = debuggee;
+        debuggee = null;
+        if (program != null) {
+            program.kill();
+        }
     }
 
     @Override
@@ -1851,6 +1988,7 @@ public final class DapManager implements DapClient.Host {
         if (startup != null) {
             startup.cancel(true);
         }
+        killDebuggee();
         synchronized (sessionLock) {
             return ++sessionEpoch;
         }
@@ -1920,6 +2058,13 @@ public final class DapManager implements DapClient.Host {
             @Override
             public void onNotice(String message, boolean error) {
                 DapManager.this.onNotice(epoch, message, error);
+            }
+
+            @Override
+            public CompletableFuture<Long> onRunInTerminal(String cwd, List<String> argv, Map<String, String> env) {
+                CompletableFuture<Long> started = new CompletableFuture<>();
+                Platform.runLater(() -> startDebuggee(epoch, cwd, argv, env, started));
+                return started;
             }
 
             @Override

@@ -181,7 +181,10 @@ public enum ConfigSchema {
                     Map.entry(105, (Migration) ConfigMigrations::identity),
                     // v106→107: mavenArchetypeCatalogUrl persists its raw value too; a file that froze either
                     // built-in URL goes back to blank ("follow the default").
-                    Map.entry(106, (Migration) ConfigMigrations::blankFrozenDefaultUrls)),
+                    Map.entry(106, (Migration) ConfigMigrations::blankFrozenDefaultUrls),
+                    // v107→108: + debugProgramConsole (additive; no earlier file could have chosen it, so
+                    // every user gets the default — the debugged Java program can be typed to).
+                    Map.entry(107, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

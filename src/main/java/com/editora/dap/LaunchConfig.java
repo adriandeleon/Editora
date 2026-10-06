@@ -90,6 +90,19 @@ public final class LaunchConfig {
         return m;
     }
 
+    /** The {@code console} of a launch whose debuggee the client starts itself (DAP {@code runInTerminal}). */
+    public static final String CLIENT_CONSOLE = "integratedTerminal";
+
+    /**
+     * Turns a {@link #launch} body into one that asks the adapter to hand the debuggee's command line back
+     * to the client ({@code runInTerminal}) instead of starting it: the only way the program gets a standard
+     * input, since java-debug's {@code internalConsole} has none. Returns {@code launch}, changed in place.
+     */
+    public static Map<String, Object> inClientConsole(Map<String, Object> launch) {
+        launch.put("console", CLIENT_CONSOLE);
+        return launch;
+    }
+
     /**
      * Encodes an argv as the single command-line string java-debug expects in {@code args}, so that its
      * tokenizer ({@code DebugUtility.parseArguments}) yields the same arguments back. The adapter tokenizes
