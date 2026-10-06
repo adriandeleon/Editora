@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-10-06
+
 ### Security
 
 - Updated jackson-databind to 2.22.3, which fixes CVE-2026-91776 and CVE-2026-91777 (two ways for crafted
