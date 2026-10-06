@@ -152,9 +152,15 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   SFTP on **that connection's own writer thread** (`FileWorkflowCoordinator.saveExecutor`; local files keep the
   shared one, so a stalled server never holds up a local save). `io/SftpFiles` answers what NIO does not over
   SFTP: links are followed by `readSymbolicLink` (an `SftpPath.toRealPath()` does not), "read-only" is read off
-  the mode bits (`Vfs.isWritableOnDisk`; `Files.isWritable` says yes to 0444), a link count comes from the
-  protocol-3 `ls -l` long name, and a staging file a dropped connection left behind is removed by the next
-  save to that server. A staging refusal *for permissions* falls back to the backed-up in-place write (the
+  the mode bits (`Vfs.isWritableOnDisk`; `Files.isWritable` says yes to 0444 — the window hands the answer to
+  `EditorBuffer.setWritableOnDisk` for the View-mode banner, since `editor` may not import `vfs`), a link count
+  comes from one protocol-6 `STAT` asking for `SSH_FILEXFER_ATTR_LINK_COUNT` where the server sends it (MINA's
+  client discards the field, so `SftpFiles` decodes the reply itself), else from the protocol-3 `ls -l` long
+  name of a directory listing — on the connection itself for a protocol-3 server (OpenSSH), over a second
+  protocol-3 channel for a 4–6 server that also speaks 3 (MINA's) — and a staging file a dropped connection
+  left behind is listed in `<config>/save-backups/remote-staging-leftovers.txt` and removed by the next
+  save to that server, in this run or a later one. A request on a closed connection raises an unchecked
+  `SftpFileSystem is closed …`; every read path reports it through `ui/RemoteReadFailure` instead. A staging refusal *for permissions* falls back to the backed-up in-place write (the
   backup is local); any other staging failure still fails the save. Save As from a remote buffer writes a
   **local** copy (no remote destination picker); a save on a closed connection says so
   (`status.remote.connectionLost`). Recent files round-trip the `sftp://` URI (`Vfs.toStorableString`;
