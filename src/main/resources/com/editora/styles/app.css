@@ -3918,6 +3918,16 @@
 .scroll-bar > .thumb {
     -fx-background-radius: 999;
 }
+/* Minimum thumb length. On JavaFX 27 a scrollbar over a long document (a 7,000-line file, the key
+   bindings table) shrinks its thumb to about 4px, which is hard to see and harder to grab. AtlantaFX 3.0
+   fixes it in its own themes with these two rules; the vendored themes under atlantafx-themes/ are
+   compiled from the 2.1.0 stylesheet and do not have them, so they are repeated here for every theme. */
+.scroll-bar:horizontal > .increment-button > .increment-arrow {
+    -fx-padding: 4 0 4 0;
+}
+.scroll-bar:vertical > .increment-button > .increment-arrow {
+    -fx-padding: 0 4 0 4;
+}
 
 /* Popup surfaces: menus, submenus and tooltips to the kit's 8px card radius (theme ships 4px). */
 .context-menu,
@@ -4024,6 +4034,13 @@
 }
 .menu-bar > .container > .menu-button {
     -fx-padding: 3 10 3 10;
+}
+
+/* Menu rows: 34px in every theme. AtlantaFX 3.0 trimmed its own themes' rows to 30px (6px vertical
+   padding) while the vendored themes kept the 2.1.0 value, so the density depended on the theme. */
+.menu-item,
+.caption-menu-item {
+    -fx-padding: 8px 12px 8px 12px;
 }
 
 /* ---- Menu items: the chord in its own right-aligned column ---------------------------------------
