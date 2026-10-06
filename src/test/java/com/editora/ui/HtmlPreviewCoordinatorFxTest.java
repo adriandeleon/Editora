@@ -137,10 +137,11 @@ class HtmlPreviewCoordinatorFxTest {
             c.ensureControl(html);
         });
         Node control = FxTestSupport.field(html, "htmlPreviewControl");
-        double withoutMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control));
+        // The control sits in the code pane's shared corner row; the row is what gets anchored.
+        double withoutMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control.getParent()));
 
         FxTestSupport.runOnFx(() -> html.setMinimapVisible(true));
-        double withMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control));
+        double withMinimap = FxTestSupport.callOnFx(() -> AnchorPane.getRightAnchor(control.getParent()));
 
         assertTrue(withMinimap > withoutMinimap, "browser control must move left instead of covering the minimap");
     }

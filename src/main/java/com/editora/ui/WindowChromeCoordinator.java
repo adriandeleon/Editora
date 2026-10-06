@@ -374,8 +374,8 @@ final class WindowChromeCoordinator {
 
     /**
      * Shows the floating exit button only while in Zen mode (so it never overlaps normal chrome). When
-     * the active file is Markdown its floating preview controls also sit top-right, so the Z is dropped
-     * below them to avoid overlapping.
+     * the active file has floating controls of its own top-right (preview toggle, open-in-browser, log
+     * controls), the Z is dropped below them to avoid overlapping.
      */
     void updateZenButton() {
         if (zenExitButton == null) {
@@ -385,8 +385,10 @@ final class WindowChromeCoordinator {
         zenExitButton.setVisible(zen);
         zenExitButton.setManaged(zen);
         EditorBuffer active = host.activeBuffer();
-        boolean belowMarkdownControls = zen && active != null && active.hasPreview();
-        double top = belowMarkdownControls ? 44 : 8; // clear the Markdown preview toggle when present
+        boolean belowFileControls = zen
+                && active != null
+                && (active.hasPreview() || active.hasHtmlPreviewControl() || active.hasLogControl());
+        double top = belowFileControls ? 44 : 8; // clear the file's own corner controls when present
         StackPane.setMargin(zenExitButton, new javafx.geometry.Insets(top, 12, 0, 0));
     }
 
