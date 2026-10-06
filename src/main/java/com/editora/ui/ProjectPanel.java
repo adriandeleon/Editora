@@ -1203,6 +1203,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
     public void setOnStatus(Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
+        mapView.setOnStatus(this.onStatus);
     }
 
     /** Restores and persists the Project Map's directional layout in workspace state. */
@@ -1726,6 +1727,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                                     || generation != loadGeneration
                                     || treeGeneration != searchGen.get()) {
                                 return;
+                            }
+                            if (entries.isEmpty() && RemoteReadFailure.connectionClosed(parent)) {
+                                onStatus.accept(RemoteReadFailure.unreadable(parent)); // not "an empty folder"
                             }
                             List<TreeItem<Path>> kids = new ArrayList<>(entries.size());
                             for (PathEntry child : entries) {

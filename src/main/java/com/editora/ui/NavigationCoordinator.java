@@ -243,7 +243,7 @@ final class NavigationCoordinator {
 
     /** Opens an existing file, or creates a new buffer for a not-yet-existing path (written on save). */
     void findFileChosen(Path target) {
-        if (Files.isRegularFile(target)) {
+        if (RemoteReadFailure.connectionClosed(target) || Files.isRegularFile(target)) { // closed: openPath says so
             host.fileWorkflows().openPath(target);
             return;
         }

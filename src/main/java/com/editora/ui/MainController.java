@@ -8466,7 +8466,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (tabForBuffer(buffer) == tab) {
             editorArea.remove(tab);
         }
-        setStatus(tr("status.failedOpen", error.getMessage()));
+        setStatus(tr("status.failedOpen", RemoteReadFailure.reason(file, error)));
         if (recentFiles != null) {
             recentFiles.remove(file);
         }
