@@ -279,6 +279,28 @@ class SplitUndoHistoryFxTest {
     }
 
     @Test
+    void aLineAutoFilledWhileTypingInTheSecondPaneKeepsTheCaretAfterWhatWasTyped() throws Exception {
+        EditorBuffer b = open("fill.txt", "aaaa bbbb cccc dddd\n");
+        CodeArea first = b.getArea();
+        CodeArea second = split(b);
+        FxTestSupport.runOnFx(() -> {
+            b.setFillColumn(20);
+            b.setAutoFillEnabled(true);
+        });
+        enter(b, second, 19);
+        type(second, " eeee");
+        settle();
+        assertEquals("aaaa bbbb cccc dddd\neeee\n", text(b), "the word that passed the column moved down");
+        assertEquals(24, FxTestSupport.callOnFx(second::getCaretPosition), "the caret is after it");
+        type(second, "!");
+        assertEquals("aaaa bbbb cccc dddd\neeee!\n", text(b));
+        runIn(b, first, "edit.undo");
+        runIn(b, first, "edit.undo");
+        assertTrue(text(b).startsWith("aaaa bbbb cccc dddd"), text(b));
+        FxTestSupport.runOnFx(() -> b.setAutoFillEnabled(false));
+    }
+
+    @Test
     void reloadFromDiskForgetsTheHistoryOfBothPanes() throws Exception {
         EditorBuffer b = open("reload.txt", "on disk\n");
         CodeArea first = b.getArea();
