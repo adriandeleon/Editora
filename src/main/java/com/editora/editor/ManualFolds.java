@@ -65,7 +65,29 @@ public final class ManualFolds {
         return out;
     }
 
-    /** The number of line breaks in {@code s} ({@code null} counts 0) — the shift's removed/inserted units. */
+    /**
+     * As {@link #shift}, for bare header lines (saved collapsed folds whose regions are not detected yet). A
+     * header above the change, or on the line it starts in, stays; one below the removed lines moves by the
+     * delta; one <em>inside</em> the removed lines no longer exists and is dropped.
+     */
+    public static List<Integer> shiftLines(
+            List<Integer> lines, int changeStartLine, int removedLines, int insertedLines) {
+        int delta = insertedLines - removedLines;
+        if (lines == null || lines.isEmpty() || (delta == 0 && removedLines == 0)) {
+            return lines == null ? List.of() : lines;
+        }
+        int removedEnd = changeStartLine + removedLines;
+        List<Integer> out = new ArrayList<>(lines.size());
+        for (int line : lines) {
+            if (line <= changeStartLine) {
+                out.add(line);
+            } else if (line > removedEnd) {
+                out.add(line + delta);
+            }
+        }
+        return out;
+    }
+
     public static int lineBreaks(String s) {
         if (s == null || s.isEmpty()) {
             return 0;

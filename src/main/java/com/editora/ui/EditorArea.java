@@ -104,6 +104,9 @@ final class EditorArea {
     /** While >= 0, {@link #add(Tab)} routes to this group index instead of the focused one (session restore). */
     private int restoreTargetGroup = -1;
 
+    /** See {@link #holdActiveTab}. */
+    private boolean activeTabHeld;
+
     /**
      * Translucent overlay showing where a dragged tab would land. Unmanaged and mouse-transparent so it can
      * be positioned freely over any group without taking part in layout or swallowing the drag events it is
@@ -233,7 +236,12 @@ final class EditorArea {
             }
         });
         group.getSelectionModel().selectedItemProperty().addListener((obs, was, now) -> {
-            if (group == focused) {
+            if (now != null && !activeTabHeld) {
+                // Before the active tab is published: its listeners (the controller's tab-switch work) are
+                // entitled to find the editor they are told about in the scene.
+                DeferredTabContent.show(now);
+            }
+            if (group == focused && !activeTabHeld) {
                 activeTab.set(now);
             }
         });
@@ -516,6 +524,9 @@ final class EditorArea {
         }
         setFocusedGroup(owner);
         owner.getSelectionModel().select(tab);
+        if (owner.getSelectionModel().getSelectedItem() == tab) {
+            DeferredTabContent.show(tab); // an explicit selection always shows, held or not
+        }
         activeTab.set(owner.getSelectionModel().getSelectedItem());
     }
 
@@ -960,6 +971,21 @@ final class EditorArea {
         group.getStyleClass().remove("no-tab-header");
         if (!tabHeaderVisible) {
             group.getStyleClass().add("no-tab-header");
+        }
+    }
+
+    /**
+     * While held, a selection a {@code TabPane} makes on its own is not published as the active tab; an
+     * explicit {@link #select(Tab)} still is. Releasing publishes the focused group's selection.
+     *
+     * <p>For a session restore: an empty pane selects the first tab added to it, which is rarely the tab the
+     * session had active, and publishing it ran the controller's whole tab-switch fan-out (status bar,
+     * breadcrumb, git, build detection, a session save…) for a tab that is replaced a moment later.
+     */
+    void holdActiveTab(boolean held) {
+        activeTabHeld = held;
+        if (!held) {
+            activeTab.set(focused.getSelectionModel().getSelectedItem());
         }
     }
 

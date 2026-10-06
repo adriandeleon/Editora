@@ -69,7 +69,9 @@ final class BuildCoordinator {
     private final Ops ops;
     private final BuildService service = new BuildService();
     private final BuildOutputPanel panel; // the shared tabbed "Output" window (this tool gets its own tab)
-    private final BuildActionsTree tree;
+    /** The tasks-tree tool window content, built on its first open; see {@link #tasksPanel()}. */
+    private BuildActionsTree tree;
+
     private final BuildActionsPopup popup;
 
     /** The nearest detected marker-file directory for the current context, or {@code null}. */
@@ -84,6 +86,13 @@ final class BuildCoordinator {
     private String detectedLabel;
 
     private int detectGeneration;
+
+    /**
+     * The stamp of the detection currently applied, or {@code null} when the next refresh must parse (nothing
+     * applied yet, the tool was off, an explicit refresh, or a build just ran — a run can download the plugins
+     * a Maven goal list is read from). FX thread only; a worker compares against the copy it was handed.
+     */
+    private BuildDetection.Stamp appliedStamp;
 
     /** The most recent launch, for {@code <tool>.rerunLast}. */
     private Path lastRoot;
@@ -103,29 +112,47 @@ final class BuildCoordinator {
         this.host = host;
         this.ops = ops;
         this.panel = sharedConsole; // the shared tabbed Output window (owned by MainController)
-        this.tree = new BuildActionsTree();
         this.popup = new BuildActionsPopup(new BuildActionsPopup.Labels(
                 tool.displayName(), tr("buildpopup.searchPrompt"), tr("buildpopup.runCustom")));
         popup.setOnRunCustom(this::runCustom);
         popup.setOnRun(this::runTask);
-        tree.setOnRun(this::runTask);
-        tree.setOnRefresh(this::refreshMarker);
-        tree.setOnRunCustom(this::runCustom);
-        tree.setOnStop(this::stop);
         // A DSL-based tool (Gradle) whose tasks can't be statically parsed gets a "Load all tasks…" action.
-        tool.taskLoadLabel().ifPresent(key -> {
-            popup.setSecondaryAction(tr(key), this::loadAllTasks);
-            tree.setSecondaryAction(tr(key), this::loadAllTasks);
-        });
+        tool.taskLoadLabel().ifPresent(key -> popup.setSecondaryAction(tr(key), this::loadAllTasks));
     }
 
     BuildTool tool() {
         return tool;
     }
 
-    /** The IntelliJ-style tasks-tree tool window content. */
+    /**
+     * The IntelliJ-style tasks-tree tool window content, built on first use and brought up to the state
+     * detection and a running build have reached meanwhile. Every window used to build one per build tool at
+     * open — five trees, most for tools the project does not use and whose stripe is never even shown.
+     */
     BuildActionsTree tasksPanel() {
+        if (tree == null) {
+            tree = new BuildActionsTree();
+            tree.setOnRun(this::runTask);
+            tree.setOnRefresh(this::refreshMarker);
+            tree.setOnRunCustom(this::runCustom);
+            tree.setOnStop(this::stop);
+            tool.taskLoadLabel().ifPresent(key -> tree.setSecondaryAction(tr(key), this::loadAllTasks));
+            showDetectedInTree();
+            tree.setRunning(service.isRunning());
+        }
         return tree;
+    }
+
+    /** Pushes the current detection into the tree, when there is one to push it to. */
+    private void showDetectedInTree() {
+        if (tree == null) {
+            return;
+        }
+        // A marker that exists but doesn't parse is not the same as no marker at all: the stripe stays (the
+        // root is real), so the tree must say the build file is broken rather than "no build tool detected".
+        tree.setProvider(
+                provider,
+                markerRoot != null && provider == null ? tr("status.build.malformed", tool.displayName()) : null);
     }
 
     /** This tool's stripe/tool-window icon (also the toolbar button glyph). */
@@ -187,42 +214,54 @@ final class BuildCoordinator {
         // these early returns apply — leaving the stripe up for a tool that was just switched off.
         int gen = ++detectGeneration;
         if (!isEnabled()) {
+            appliedStamp = null;
             applyDetected(null, null, null);
             return;
         }
         Path context = contextPath();
         if (context == null || !Vfs.isLocal(context)) {
+            appliedStamp = null;
             applyDetected(null, null, null);
             return;
         }
-        Thread t = new Thread(
-                () -> {
-                    // filesOnly: every build marker is a file (pom.xml/package.json/go.mod/…), so a directory
-                    // merely named like one must not root the tool there (it would then fail to parse) — #451.
-                    Path root = RootResolver.findMarkerRoot(context, tool.markers(), true);
-                    BuildActionsProvider parsed = null;
-                    String label = null;
-                    if (root != null) {
-                        try {
-                            BuildTool.Detected detected = tool.parse(root);
-                            parsed = detected.provider();
-                            label = detected.label();
-                        } catch (Exception e) {
-                            parsed = null; // marker found but malformed — applyDetected reports it distinctly
-                        }
+        BuildDetection.Stamp known = appliedStamp;
+        BuildDetection.execute(() -> {
+            // filesOnly: every build marker is a file (pom.xml/package.json/go.mod/…), so a directory
+            // merely named like one must not root the tool there (it would then fail to parse) — #451.
+            Path root = RootResolver.findMarkerRoot(context, tool.markers(), true);
+            BuildDetection.Stamp stamp = BuildDetection.Stamp.of(root, tool.markers());
+            if (stamp.equals(known)) {
+                // Same build file, untouched: what is applied is what a parse would produce, so keep the
+                // provider and the tree as they are. The stripe/toolbar/gutter gating is still re-derived —
+                // it also reads state this stamp does not cover (the window's project root, for one).
+                Platform.runLater(() -> {
+                    if (gen == detectGeneration) {
+                        reapplyVisibility();
                     }
-                    Path finalRoot = root;
-                    BuildActionsProvider finalProvider = parsed;
-                    String finalLabel = label;
-                    Platform.runLater(() -> {
-                        if (gen == detectGeneration) {
-                            applyDetected(finalRoot, finalProvider, finalLabel);
-                        }
-                    });
-                },
-                tool.id() + "-detect");
-        t.setDaemon(true);
-        t.start();
+                });
+                return;
+            }
+            BuildActionsProvider parsed = null;
+            String label = null;
+            if (root != null) {
+                BuildDetection.countParse();
+                try {
+                    BuildTool.Detected detected = tool.parse(root);
+                    parsed = detected.provider();
+                    label = detected.label();
+                } catch (Exception e) {
+                    parsed = null; // marker found but malformed — applyDetected reports it distinctly
+                }
+            }
+            BuildActionsProvider finalProvider = parsed;
+            String finalLabel = label;
+            Platform.runLater(() -> {
+                if (gen == detectGeneration) {
+                    appliedStamp = stamp;
+                    applyDetected(root, finalProvider, finalLabel);
+                }
+            });
+        });
     }
 
     /** Re-derives the tool windows' stripe visibility from the last detection without a fresh re-detect. */
@@ -240,10 +279,7 @@ final class BuildCoordinator {
         if (parsed != null && root != null && root.equals(loadedTasksRoot) && !loadedTasks.isEmpty()) {
             parsed.addLoadedTasks(loadedTasks);
         }
-        // A marker that exists but doesn't parse is not the same as no marker at all: the stripe stays (the
-        // root is real), so the tree must say the build file is broken rather than "no build tool detected".
-        tree.setProvider(
-                parsed, root != null && parsed == null ? tr("status.build.malformed", tool.displayName()) : null);
+        showDetectedInTree();
         ops.setToolWindowsAvailable(isEnabled() && root != null);
     }
 
@@ -440,7 +476,9 @@ final class BuildCoordinator {
         }
         String label = String.join(" ", taskArgs);
         panel.started(this, tool.displayName(), label, tool.outputStyle(), this::stop);
-        tree.setRunning(true);
+        if (tree != null) {
+            tree.setRunning(true);
+        }
         host.setStatus(tr("status.build.started", tool.displayName(), label));
         java.util.Map<String, String> environment = tool == BuildTool.MAVEN
                 ? com.editora.run.JdkToolchain.environment(
@@ -476,8 +514,11 @@ final class BuildCoordinator {
             @Override
             public void onExit(int code) {
                 outputWatcher = null; // the run is over; drop any JDWP watcher that never fired
+                appliedStamp = null; // the run may have changed what a parse reads (downloaded plugins)
                 panel.finished(BuildCoordinator.this, code);
-                tree.setRunning(false);
+                if (tree != null) {
+                    tree.setRunning(false);
+                }
                 if (claimed) {
                     testRunHook.onTestExit(code);
                 }
@@ -491,7 +532,9 @@ final class BuildCoordinator {
             public void onError(String message) {
                 outputWatcher = null;
                 panel.failed(BuildCoordinator.this, message);
-                tree.setRunning(false);
+                if (tree != null) {
+                    tree.setRunning(false);
+                }
                 if (claimed) {
                     testRunHook.onTestError(message);
                 }
@@ -521,6 +564,7 @@ final class BuildCoordinator {
 
     /** Force re-parses the marker file right now (e.g. after an external edit) — {@code <tool>.refresh}. */
     void refreshMarker() {
+        appliedStamp = null; // asked for by hand: always re-read
         refresh();
         host.setStatus(tr("status.build.refreshed", tool.displayName()));
     }
@@ -564,7 +608,9 @@ final class BuildCoordinator {
                         }
                         if (provider != null) {
                             provider.addLoadedTasks(finalTasks); // mutate the shared provider once…
-                            tree.refreshFromProvider(); // …then re-render both views over it
+                            if (tree != null) {
+                                tree.refreshFromProvider(); // …then re-render both views over it
+                            }
                             popup.rerender();
                         }
                         host.setStatus(tr("status.build.loadedTasks", tool.displayName(), finalTasks.size()));

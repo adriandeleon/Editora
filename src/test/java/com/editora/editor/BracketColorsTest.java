@@ -191,4 +191,36 @@ class BracketColorsTest {
         }
         assertTrue(css.contains(".text.bracket-unmatched "), "syntax.css defines the unmatched class");
     }
+
+    @Test
+    void theScannerFedTokenRunsAgreesWithTheReferencePassOverRealTokens() {
+        String text = "class C {\n"
+                + "    /* ( not counted [ */ int[] a = {1, (2), 3};\n"
+                + "    String s = \"}{)(\" + f(a[0]); // trailing ) ]\n"
+                + "    void m() { g(\"\"\"\n        text { block (\n        \"\"\"); }\n"
+                + "}\n"
+                + ")] stray\n";
+        var java = GrammarRegistry.shared().forLanguageName("java");
+        BracketColors.Scanner scanner = new BracketColors.Scanner(text, 0, 0, C);
+        List<Integer> depths = new java.util.ArrayList<>();
+        TextMateHighlighter.IncrementalAnalysis tokens =
+                TextMateHighlighter.analyzeFrom(text, java, 0, null, () -> false, new TextMateHighlighter.LineHook() {
+                    @Override
+                    public void run(String style, int length) {
+                        scanner.run(style, length);
+                    }
+
+                    @Override
+                    public boolean lineDone(int line, int start, int end, org.eclipse.tm4e.core.grammar.IStateStack s) {
+                        depths.add(scanner.depth());
+                        return false;
+                    }
+                });
+
+        BracketColors.Analysis reference =
+                BracketColors.analyze(text, 0, 0, BracketColors.skipRanges(tokens.spans()), C);
+        assertEquals(marks(reference), marks(new BracketColors.Analysis(scanner.marks(), depths)));
+        assertEquals(reference.lineEndDepths(), depths);
+        assertTrue(scanner.marks().size() > 10, "the sample has brackets to colour");
+    }
 }

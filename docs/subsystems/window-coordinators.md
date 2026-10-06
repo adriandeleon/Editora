@@ -70,3 +70,15 @@ and the tab is an empty read-only shell until it lands. Use `openThen` / `whenLo
 `WindowSessionCoordinator.gotoInFile`, which defers itself and carries its record decision and origin through
 the deferral) rather than `openPath` + `Platform.runLater`. `openAndGoto` records its jump once, after the
 load, through `NavigationCoordinator.landJump`.
+
+## Restore is staggered
+
+`WindowManager.launch` builds the primary window (the one that had focus), returns to the event loop, and
+then builds each remaining restored window after a painted frame. External open requests that arrive
+meanwhile are queued until every window exists, a quit pauses the queue, and windows not yet built keep
+their saved sessions. Within a window, a restored background tab is loaded, highlighted and has its folds
+and caret restored as before, but its editor node is attached to the scene only when the tab is first
+selected (`DeferredTabContent`); the first restored tab the `TabPane` auto-selects is not treated as active
+(`EditorArea.holdActiveTab`). Tab context menus (`LazyContextMenu`) and the build-tool task trees
+(`ToolWindow` content suppliers) are built on first use, and build-file detection runs on one shared worker
+that skips unchanged marker files (`BuildDetection`).

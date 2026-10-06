@@ -98,7 +98,28 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
         HBox header = new HBox(8, summary, spacer, scope);
         header.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
         getChildren().addAll(header, tree);
-        setProblems(Map.of());
+        rebuild(); // the empty state, built once so a panel shown before any diagnostics is not blank
+        // A closed tool window is out of the scene; catch up once when it is (re)opened.
+        sceneProperty().addListener((o, was, now) -> {
+            if (now != null && pendingRebuild) {
+                pendingRebuild = false;
+                if (activeFileChanged || !lastByFile.equals(rendered)) {
+                    rebuild();
+                }
+            }
+        });
+    }
+
+    // Diagnostics change on every typing pause and with every file a server analyses, whether or not this
+    // tool window is open. While it is closed nothing is compared, copied or rebuilt: the latest map is
+    // remembered and the tree catches up in one rebuild when the window is shown. (Same idiom as the
+    // Structure panel, #549.)
+    private boolean pendingRebuild;
+    private boolean activeFileChanged;
+
+    /** The tree is only worth rebuilding while the tool window is open (its node is in the scene). */
+    private boolean visible() {
+        return getScene() != null;
     }
 
     /** Reflects the current scope in the selector without firing its handler (#743). */
@@ -177,6 +198,10 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
      */
     public void setProblems(Map<Path, List<LspDiagnostic>> byFile) {
         lastByFile = byFile == null ? Map.of() : byFile;
+        if (!visible()) {
+            pendingRebuild = true;
+            return;
+        }
         if (lastByFile.equals(rendered)) {
             return;
         }
@@ -203,11 +228,17 @@ public final class ProblemsPanel extends VBox implements ToolWindowContent {
             return;
         }
         activeFile = canonicalActive;
+        if (!visible()) {
+            pendingRebuild = true;
+            activeFileChanged = true;
+            return;
+        }
         rebuild();
     }
 
     private void rebuild() {
         rebuilds++;
+        activeFileChanged = false;
         rendered = new HashMap<>(lastByFile);
         // Bucket the non-empty files by display language name (TreeMap keeps the language headers sorted).
         Map<String, List<Path>> byLanguage = new TreeMap<>();

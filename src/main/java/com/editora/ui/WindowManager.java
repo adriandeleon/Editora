@@ -273,39 +273,158 @@ public class WindowManager {
         String primary = WindowKeys.primaryKey(
                 cliId, toOpen, pm.active() == null ? null : pm.active().id());
 
-        for (String key : toOpen) {
+        // The window the user will be looking at is built first and alone: every window used to be built
+        // in this one FX turn, so with several restored the first frame waited for all of them. The rest
+        // follow one per painted frame (see buildNextRestoredWindow).
+        List<String> order = new ArrayList<>(toOpen);
+        if (order.remove(primary)) {
+            order.add(0, primary);
+        }
+        for (String key : order) {
             boolean untitled = WindowKeys.isUntitled(key);
             Project project = (key.isEmpty() || untitled) ? null : findProject(key);
             if (!key.isEmpty() && !untitled && project == null) {
                 continue; // a stale id (project deleted out from under the open set)
             }
             Path stateFile = untitled ? untitledStateFile(key) : (project == null ? null : pm.stateFile(project));
-            boolean isPrimary = key.equals(primary);
-            try {
-                buildWindow(
-                        key,
-                        project,
-                        stateFile,
-                        isPrimary ? targets : List.of(),
-                        isPrimary && zen,
-                        isPrimary && expert,
-                        isPrimary ? newFile : null,
-                        isPrimary && simple);
-                pm.markOpen(key);
-            } catch (RuntimeException | Error t) {
-                // One window failing to build (corrupt session, etc.) must NOT abort restoring the rest —
-                // launch runs in App.start with no catch, so an uncaught throw here would silently leave only
-                // the windows built before it. Log and continue with the remaining windows.
-                java.util.logging.Logger.getLogger(WindowManager.class.getName())
-                        .log(java.util.logging.Level.WARNING, "Failed to build window for key '" + key + "'", t);
-            }
+            pendingRestore.add(new PendingWindow(key, project, stateFile));
         }
-        if (findHolder(primary) == null && !windows.isEmpty()) {
-            primary = windows.get(0).key(); // the chosen primary failed to build — focus whatever opened
+        restoreFocusKey = primary;
+        // Until one window is on screen: normally just the primary, the next one if it failed to build.
+        while (windows.isEmpty() && !pendingRestore.isEmpty()) {
+            PendingWindow next = pendingRestore.poll();
+            boolean isPrimary = next.key().equals(primary);
+            buildRestoredWindow(
+                    next,
+                    isPrimary ? targets : List.of(),
+                    isPrimary && zen,
+                    isPrimary && expert,
+                    isPrimary ? newFile : null,
+                    isPrimary && simple);
         }
         pm.save();
+        // Against the whole restore set, and now rather than when the last window exists: a window the user
+        // opens while the rest are still being built has a session file this set does not know about.
         gcOrphanWindowSessions(toOpen);
-        focusKey(primary);
+        if (pendingRestore.isEmpty()) {
+            finishRestore();
+        } else {
+            focusKey(primary);
+            restoreScheduler.accept(this::buildNextRestoredWindow);
+        }
+    }
+
+    /**
+     * The launch's bootstrap config: it already read {@code workspace-state.json} (off the FX thread, while
+     * the toolkit started), so the default window built during this launch adopts it instead of parsing the
+     * same file again on the FX thread. Only for the launch itself — a default window opened later must read
+     * what is on disk then.
+     */
+    private ConfigManager bootstrapConfig;
+
+    /** Offers {@code bootstrap} to the default window of the launch that follows. */
+    public void adoptBootstrapConfig(ConfigManager bootstrap) {
+        if (bootstrap != null && bootstrap.shared() == shared) {
+            bootstrapConfig = bootstrap;
+        }
+    }
+
+    private ConfigManager takeBootstrapConfig() {
+        ConfigManager boot = bootstrapConfig;
+        bootstrapConfig = null;
+        return boot;
+    }
+
+    /** A restored window waiting for its turn to be built; see {@link #launch}. */
+    private record PendingWindow(String key, Project project, Path stateFile) {}
+
+    /** Restored windows not built yet, in build order. Their saved sessions are untouched until they are. */
+    private final java.util.ArrayDeque<PendingWindow> pendingRestore = new java.util.ArrayDeque<>();
+
+    /** External launches that arrived while windows were still pending; run once every window exists. */
+    private final List<Runnable> deferredExternalLaunches = new ArrayList<>();
+
+    /** The window that ends up focused once the restore completes. */
+    private String restoreFocusKey;
+
+    /** Set while a quit is asking its questions, so no window is built underneath the prompts. */
+    private boolean restorePaused;
+
+    /** How the next pending window's build is scheduled (a seam: tests step the queue by hand). */
+    java.util.function.Consumer<Runnable> restoreScheduler = WindowSessionCoordinator::afterNextPaint;
+
+    /** True while restored windows are still waiting to be built. */
+    boolean restorePending() {
+        return !pendingRestore.isEmpty();
+    }
+
+    private void buildRestoredWindow(
+            PendingWindow w,
+            List<MainController.OpenTarget> targets,
+            boolean zen,
+            boolean expert,
+            String newFile,
+            boolean simple) {
+        try {
+            buildWindow(w.key(), w.project(), w.stateFile(), targets, zen, expert, newFile, simple);
+            projects().markOpen(w.key());
+        } catch (RuntimeException | Error t) {
+            // One window failing to build (corrupt session, etc.) must NOT abort restoring the rest —
+            // launch runs in App.start with no catch, so an uncaught throw here would silently leave only
+            // the windows built before it. Log and continue with the remaining windows.
+            java.util.logging.Logger.getLogger(WindowManager.class.getName())
+                    .log(java.util.logging.Level.WARNING, "Failed to build window for key '" + w.key() + "'", t);
+        }
+    }
+
+    /**
+     * Builds one pending restored window, then yields to the event loop until a frame has painted before the
+     * next. Showing a window gives it the focus, so focus is handed back each time — to the window the user
+     * has focused meanwhile, else to the one the restore is meant to end on.
+     */
+    private void buildNextRestoredWindow() {
+        if (restorePaused || pendingRestore.isEmpty()) {
+            return; // a cancelled quit reschedules; an emptied queue was finished by whoever emptied it
+        }
+        PendingWindow next = pendingRestore.poll();
+        if (findHolder(next.key()) == null) { // else opened by hand while it was waiting
+            Holder focused = actuallyFocusedHolder();
+            buildRestoredWindow(next, List.of(), false, false, null, false);
+            Holder back = focused != null ? focused : findHolder(restoreFocusKey);
+            if (back != null) {
+                focus(back.stage());
+            }
+        }
+        if (pendingRestore.isEmpty()) {
+            finishRestore();
+        } else {
+            restoreScheduler.accept(this::buildNextRestoredWindow);
+        }
+    }
+
+    /** Runs what waits for the whole restore set to exist: the persisted open set, focus, queued launches. */
+    private void finishRestore() {
+        bootstrapConfig = null; // the launch is over; see the field
+        if (findHolder(restoreFocusKey) == null && !windows.isEmpty()) {
+            restoreFocusKey = windows.get(0).key(); // the chosen primary failed to build — focus whatever opened
+        }
+        projects().save();
+        if (actuallyFocusedHolder() == null) {
+            focusKey(restoreFocusKey);
+        }
+        List<Runnable> deferred = new ArrayList<>(deferredExternalLaunches);
+        deferredExternalLaunches.clear();
+        deferred.forEach(Runnable::run);
+    }
+
+    /** The window that really has the focus, or {@code null} — unlike {@link #focusedHolder()}, no fallback. */
+    private Holder actuallyFocusedHolder() {
+        for (Holder h : windows) {
+            if (h.stage() != null && h.stage().isFocused()) {
+                return h;
+            }
+        }
+        return null;
     }
 
     /**
@@ -368,6 +487,7 @@ public class WindowManager {
                     .log(java.util.logging.Level.WARNING, "Failed to build single window for key '" + key + "'", t);
         }
         focusKey(key);
+        bootstrapConfig = null; // the launch is over; see the field
     }
 
     /** Finds a project by display name (exact first, then case-insensitive), or {@code null} if none match. */
@@ -462,6 +582,12 @@ public class WindowManager {
         if (files == null || files.isEmpty()) {
             return;
         }
+        if (restorePending()) {
+            // A window still to be built may be the one that has this file open; deciding now would open a
+            // second buffer over it in a new window.
+            deferredExternalLaunches.add(() -> openExternalLaunchInNewWindow(files, zen, expert, simple));
+            return;
+        }
         Holder holding = holderWithAnyOf(files);
         if (holding != null) {
             presentForExternalLaunch(holding.stage());
@@ -506,6 +632,10 @@ public class WindowManager {
 
     public void openExternalFiles(List<MainController.OpenTarget> files, boolean zen, boolean expert, boolean simple) {
         if (files == null || files.isEmpty()) {
+            return;
+        }
+        if (restorePending()) {
+            deferredExternalLaunches.add(() -> openExternalFiles(files, zen, expert, simple));
             return;
         }
         Holder target = focusedHolder();
@@ -706,6 +836,10 @@ public class WindowManager {
         transientWindows.remove(holder.key);
         if (windows.isEmpty()) {
             pluginManager.closeAll(); // last window gone — close every plugin class loader, freeing jar handles (#442)
+            // Closed before the rest of the restore set was built: that is a quit, not a request to see the
+            // other windows. They stay in the saved open set (reconcileOpenSet never writes an empty one)
+            // with their sessions untouched, and come back next launch.
+            pendingRestore.clear();
         }
         openSetReconcile.playFromStart();
     }
@@ -727,6 +861,21 @@ public class WindowManager {
      * @return false if the user cancelled at some window's save prompt (the quit is off).
      */
     boolean confirmCloseAllWindows() {
+        // The prompts below run nested event loops; a pending restored window must not be built under them.
+        // Left paused when the quit goes ahead: the unbuilt windows keep their saved sessions and their
+        // place in the open set, exactly as if they had been open.
+        restorePaused = true;
+        boolean confirmed = confirmAndDisposeAllWindows();
+        if (!confirmed) {
+            restorePaused = false;
+            if (restorePending()) {
+                restoreScheduler.accept(this::buildNextRestoredWindow);
+            }
+        }
+        return confirmed;
+    }
+
+    private boolean confirmAndDisposeAllWindows() {
         List<Holder> closing = new ArrayList<>(windows);
         java.util.IdentityHashMap<MainController, CloseCoordinator.ApprovalState> approvals =
                 new java.util.IdentityHashMap<>();
@@ -794,6 +943,12 @@ public class WindowManager {
         }
         if (windows.isEmpty()) {
             return; // quitting — keep the pre-quit open set so it's all restored next launch
+        }
+        if (restorePending()) {
+            // The live set is not the open set yet: writing it now would forget every window still waiting
+            // to be built. Try again once they exist.
+            openSetReconcile.playFromStart();
+            return;
         }
         List<String> keys = new ArrayList<>();
         for (Holder h : windows) {
@@ -1071,8 +1226,11 @@ public class WindowManager {
             CommandRegistry registry = new CommandRegistry();
             // A no-project window normally uses the default workspace-state.json (stateFile null); a project
             // OR an extra "untitled" no-project window passes its own session file so windows never clobber.
-            ConfigManager config = stateFile == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
-            config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
+            ConfigManager config = stateFile == null ? takeBootstrapConfig() : null;
+            if (config == null) {
+                config = stateFile == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
+                config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
+            }
 
             FXMLLoader loader = new FXMLLoader(WindowManager.class.getResource("main.fxml"));
             // Set the classloader explicitly: FXMLLoader otherwise falls back to the FX thread's context

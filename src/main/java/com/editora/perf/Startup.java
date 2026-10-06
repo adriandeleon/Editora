@@ -38,8 +38,17 @@ public final class Startup {
     public static final String WINDOW_SHOWN = "window-shown";
     /** Phase: the requested file's text has been put into its buffer (not necessarily painted). */
     public static final String FILE_LOADED = "file-loaded";
-    /** Phase: the first frame carrying that file's content has been rendered. The headline number. */
+    /**
+     * Phase: the first frame carrying that file's content has been rendered — or, for a launch that opens no
+     * file (it lands on Welcome, or on a blank {@code --new-file} buffer), the window's first frame. The
+     * headline number.
+     */
     public static final String FIRST_PAINT = "first-paint";
+    /**
+     * Phase: every tab of the saved session has been restored (or there was no session). Normally after
+     * {@link #FIRST_PAINT}, in which case it is printed as a late line below the report.
+     */
+    public static final String SESSION_RESTORED = "session-restored";
 
     /** Enabled via {@code -Deditora.perf} or {@code EDITORA_PERF=1} (the env var suits a packaged app). */
     private static final boolean ENABLED =
@@ -82,13 +91,23 @@ public final class Startup {
             return;
         }
         long ms = Duration.between(ORIGIN, Instant.now()).toMillis();
+        Mark late = null;
+        Mark previous = null;
         synchronized (MARKS) {
             for (Mark m : MARKS) {
                 if (m.phase().equals(phase)) {
                     return;
                 }
             }
+            if (reported) {
+                // The report went out at first paint; a phase that completes afterwards still gets a line.
+                late = new Mark(phase, ms);
+                previous = MARKS.isEmpty() ? null : MARKS.get(MARKS.size() - 1);
+            }
             MARKS.add(new Mark(phase, ms));
+        }
+        if (late != null) {
+            System.err.print(formatLate(previous, late));
         }
         if (FIRST_PAINT.equals(phase)) {
             report();
@@ -96,6 +115,15 @@ public final class Startup {
                 Runtime.getRuntime().halt(0); // halt, not exit: don't run shutdown hooks into the timing
             }
         }
+    }
+
+    /** One line for a mark recorded after the report was printed, in the report's own column layout. Pure. */
+    public static String formatLate(Mark previous, Mark late) {
+        long delta = late.millis() - (previous == null ? 0 : previous.millis());
+        String line = String.format("[perf] %-14s %6d  (+%d)%n", late.phase(), late.millis(), delta);
+        return SESSION_RESTORED.equals(late.phase())
+                ? line + String.format("[perf] TIME-TO-SESSION-RESTORED %d ms%n", late.millis())
+                : line;
     }
 
     /** The marks recorded so far, in the order they happened. */
@@ -224,6 +252,9 @@ public final class Startup {
         for (Mark m : marks) {
             if (FIRST_PAINT.equals(m.phase())) {
                 sb.append(String.format("[perf] TIME-TO-FIRST-PAINT %d ms%n", m.millis()));
+            }
+            if (SESSION_RESTORED.equals(m.phase())) {
+                sb.append(String.format("[perf] TIME-TO-SESSION-RESTORED %d ms%n", m.millis()));
             }
         }
         return sb.toString();

@@ -83,7 +83,7 @@ public final class HttpClientPanel extends VBox {
     private final ComboBox<String> envCombo = new ComboBox<>();
     private final ComboBox<HttpExchange> historyCombo = new ComboBox<>();
     private final TextArea headersArea = new TextArea();
-    private final CodeArea bodyArea = new CodeArea();
+    private final CodeArea bodyArea = AreaUndo.none(new CodeArea());
     private final Button cancelButton = new Button();
     private final Button copyCurlButton = new Button();
     private final Button openTabButton = new Button();

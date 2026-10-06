@@ -23,7 +23,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * resize / fold, only for the visible paragraphs, and dropped to 1x1 (no GPU texture) when there are no
  * matches. Driven by {@link #setMarks}.
  */
-final class TodoHighlightOverlay extends Region implements SecondaryPane.Followed {
+final class TodoHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     /** Opacity of the highlight wash drawn over each part (the part color provides the hue). */
     private static final double WASH_ALPHA = 0.30;
@@ -97,19 +97,11 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     private static Color washColor(String web) {
-        try {
-            return Color.web(web, WASH_ALPHA);
-        } catch (RuntimeException ignored) {
-            return Color.web("#E5C07B", WASH_ALPHA); // fall back to the default amber on a bad hex
-        }
+        return TodoColors.wash(web, WASH_ALPHA);
     }
 
     private static Color solidColor(String web) {
-        try {
-            return Color.web(web);
-        } catch (RuntimeException ignored) {
-            return Color.web("#E5C07B");
-        }
+        return TodoColors.solid(web);
     }
 
     @Override
@@ -128,7 +120,8 @@ final class TodoHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     /** Release/repaint this overlay as its tab is backgrounded/shown (see {@link #rendering}). */
-    void setRenderingActive(boolean on) {
+    @Override
+    public void setRenderingActive(boolean on) {
         if (follower != null) {
             follower.setRenderingActive(on);
         }

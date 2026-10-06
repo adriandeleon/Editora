@@ -36,6 +36,16 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         this.queue = queue;
     }
 
+    /** Undo and redo entries the queue holds (tests of its bounds). */
+    int historyEntries() {
+        return queue.size();
+    }
+
+    /** Removed plus inserted characters those entries retain (tests of its bounds). */
+    long historyChars() {
+        return queue.retained();
+    }
+
     @SuppressWarnings("unchecked")
     void replaceEntries(java.util.IdentityHashMap<?, ?> replacements) {
         for (var all : List.of(groups, joins)) {

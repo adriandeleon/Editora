@@ -49,6 +49,33 @@ public final class LspTestHooks {
                         java.util.List.of(new org.eclipse.lsp4j.Registration("test-" + method, method))));
     }
 
+    /** Plays jdtls's {@code language/status} notification (for instance {@code ServiceReady}) for {@code file}. */
+    public static void languageStatus(LspManager manager, java.nio.file.Path file, String type) {
+        var status = new LanguageServerSession.LanguageStatus();
+        status.type = type;
+        manager.sessionForTest(file).languageStatus(status);
+    }
+
+    /** Plays a server's {@code workspace/semanticTokens/refresh} request for {@code file}'s session. */
+    public static void refreshSemanticTokens(LspManager manager, java.nio.file.Path file) {
+        manager.sessionForTest(file).refreshSemanticTokens();
+    }
+
+    /** Capabilities for the data the editor re-requests: pull diagnostics, folding, whole-document semantic
+     *  tokens (jdtls's shape: no range requests), inlay hints, symbols and highlights. */
+    public static ServerCapabilities refreshableCaps() {
+        var caps = caps();
+        caps.setDiagnosticProvider(new org.eclipse.lsp4j.DiagnosticRegistrationOptions());
+        caps.setFoldingRangeProvider(true);
+        caps.setInlayHintProvider(true);
+        var tokens = new org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions();
+        tokens.setLegend(
+                new org.eclipse.lsp4j.SemanticTokensLegend(java.util.List.of("variable"), java.util.List.of()));
+        tokens.setFull(org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(true));
+        caps.setSemanticTokensProvider(tokens);
+        return caps;
+    }
+
     /** Measures the production pure sync calculation without transport or server latency. */
     public static void computeSyncDiff(String before, String after) {
         var delta = TextSyncDiff.diff(before, after);

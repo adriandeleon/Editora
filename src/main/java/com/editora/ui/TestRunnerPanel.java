@@ -73,7 +73,7 @@ final class TestRunnerPanel extends VBox implements ToolWindowContent {
 
     private final TreeItem<TestNode> rootItem = new TreeItem<>(null);
     private final TreeView<TestNode> tree = new TreeView<>(rootItem);
-    private final CodeArea detail = new CodeArea();
+    private final CodeArea detail = AreaUndo.none(new CodeArea());
 
     /** Same-instance {@link TestNode} → its tree item, so live updates never rebuild or duplicate the tree. */
     private final Map<TestNode, TreeItem<TestNode>> items = new IdentityHashMap<>();

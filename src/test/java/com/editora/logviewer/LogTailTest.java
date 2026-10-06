@@ -86,4 +86,70 @@ class LogTailTest {
         assertTrue(a.reset(), "shrunk file signals a reset (reload)");
         assertEquals("fresh\n", a.text());
     }
+
+    // --- a follow step never reads more than the viewer keeps ---------------------------------------------
+
+    @Test
+    void aBurstLargerThanTheCapIsReadFromItsTailAtALineBoundary(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path log = dir.resolve("app.log");
+        StringBuilder sb = new StringBuilder("first\n");
+        for (int i = 0; i < 1000; i++) {
+            sb.append("line ").append(i).append('\n');
+        }
+        java.nio.file.Files.writeString(log, sb);
+        long size = java.nio.file.Files.size(log);
+
+        LogTail.Append a = LogTail.readAppended(log, 6, 100); // everything after "first\n", at most 100 bytes
+
+        assertFalse(a.reset());
+        assertEquals(size, a.offset(), "the follow resumes at the true end");
+        assertTrue(a.text().length() <= 100, "read " + a.text().length());
+        assertTrue(a.text().endsWith("line 999\n"));
+        assertTrue(
+                a.text().startsWith("line "),
+                "it starts on a whole line: " + a.text().substring(0, 12));
+        // An append within the cap is unchanged: every byte since the offset.
+        assertEquals(sb.substring(6), LogTail.readAppended(log, 6, 1 << 20).text());
+        assertEquals(sb.substring(6), LogTail.readAppended(log, 6).text());
+    }
+
+    @Test
+    void aRotationToALargeFileReadsItsTailNotAllOfIt(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path log = dir.resolve("app.log");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 1000; i++) {
+            sb.append("rotated ").append(i).append('\n');
+        }
+        java.nio.file.Files.writeString(log, sb);
+        long size = java.nio.file.Files.size(log);
+
+        LogTail.Append a = LogTail.readAppended(log, size + 500, 64); // we were further along: it shrank
+
+        assertTrue(a.reset());
+        assertEquals(size, a.offset());
+        assertTrue(a.text().length() <= 64);
+        assertTrue(a.text().startsWith("rotated ") && a.text().endsWith("rotated 999\n"), a.text());
+        // A small rotated file still comes back whole.
+        LogTail.Append whole = LogTail.readAppended(log, size + 500, 1 << 20);
+        assertTrue(whole.reset());
+        assertEquals(sb.toString(), whole.text());
+    }
+
+    @Test
+    void aCutReadStillHoldsBackAHalfWrittenCharacter(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.nio.file.Path log = dir.resolve("app.log");
+        byte[] euro = "€".getBytes(StandardCharsets.UTF_8);
+        java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+        bytes.write("aaaaaaaaaaaaaaaaaaaaaaaa\nbb\ncc".getBytes(StandardCharsets.UTF_8));
+        bytes.write(euro, 0, 2); // the writer is mid-character
+        java.nio.file.Files.write(log, bytes.toByteArray());
+
+        LogTail.Append a = LogTail.readAppended(log, 0, 10);
+
+        assertEquals("bb\ncc", a.text());
+        assertEquals(bytes.size() - 2, a.offset(), "the two bytes of the unfinished character are read next time");
+    }
 }

@@ -47,7 +47,7 @@ sequenceDiagram
     main->>start: launch()
     start->>start: config.load(), Messages.init(), pin classloader
     start->>start: ProcessRegistry.reapOrphans()
-    start->>WM: launch()  (restore previously-open windows)
+    start->>WM: launch()  (restore previously-open windows: primary first, the rest one per painted frame)
     loop each window to open
         WM->>MC: buildWindow()
         MC->>MC: registerCommands, KeyDispatcher, theme, load main.fxml
@@ -118,8 +118,9 @@ completion, snippets). Anything with behaviour, state or I/O is injected rather 
 `editor` package does import `config` and a set of pure parsers directly; the exact list is
 pinned by a test — see the [package map](#package-map) below.
 
-A buffer's lifecycle, and why `dispose()` matters (it shuts the per-buffer daemon executors so
-they don't accumulate one pair per opened file):
+A buffer's lifecycle, and why `dispose()` matters (a buffer owns no threads — highlighting and previews
+run on shared pools — but `dispose()` bumps the generation guards, unsubscribes, releases preview surfaces
+and undo checkpoints, and disposes the RichTextFX areas so a closed tab is collectable):
 
 ```mermaid
 stateDiagram-v2

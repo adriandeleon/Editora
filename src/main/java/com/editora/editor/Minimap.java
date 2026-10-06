@@ -62,6 +62,15 @@ final class Minimap extends Region {
     private boolean painting;
 
     private boolean redrawPending;
+    /** Holds the content render back while the column is still being resized; see {@link #layoutChildren}. */
+    private final javafx.animation.PauseTransition resizeRender =
+            new javafx.animation.PauseTransition(javafx.util.Duration.millis(RESIZE_SETTLE_MILLIS));
+
+    private static final double RESIZE_SETTLE_MILLIS = 120;
+
+    /** Content renders run by all minimaps — the test seam for "one render per tab switch / resize drag". */
+    static final java.util.concurrent.atomic.AtomicInteger RENDERS_FOR_TEST =
+            new java.util.concurrent.atomic.AtomicInteger();
     /** A content render is queued for this pulse; see {@link #renderContent}. */
     private boolean renderPending;
     /** False until the first content render has run, which is the one held back until after first paint. */
@@ -125,6 +134,7 @@ final class Minimap extends Region {
         // On the Region rather than the canvas, so the wheel works over the whole column even in the
         // moments the canvas is smaller than it (see CanvasGuards / layoutChildren).
         addEventHandler(ScrollEvent.SCROLL, this::wheelScroll);
+        resizeRender.setOnFinished(e -> renderContent());
     }
 
     /** Sets the visual tab width (columns) and re-renders if it changed. */
@@ -162,7 +172,11 @@ final class Minimap extends Region {
         if (follower != null) {
             follower.setDiagnostics(diagnostics);
         }
-        this.diagnostics = diagnostics == null ? java.util.List.of() : diagnostics;
+        java.util.List<LspDiagnostic> now = diagnostics == null ? java.util.List.of() : diagnostics;
+        if (now.isEmpty() && this.diagnostics.isEmpty()) {
+            return; // an LSP buffer clears its (already empty) list on every keystroke
+        }
+        this.diagnostics = now;
         repaintStripes();
     }
 
@@ -183,7 +197,11 @@ final class Minimap extends Region {
         if (follower != null) {
             follower.setTodoMarks(marks);
         }
-        this.todoMarks = marks == null ? java.util.List.of() : marks;
+        java.util.List<TodoMark> now = marks == null ? java.util.List.of() : marks;
+        if (now.isEmpty() && this.todoMarks.isEmpty()) {
+            return;
+        }
+        this.todoMarks = now;
         repaintStripes();
     }
 
@@ -204,7 +222,11 @@ final class Minimap extends Region {
         if (follower != null) {
             follower.setLintMarks(marks);
         }
-        this.lintMarks = marks == null ? java.util.List.of() : marks;
+        java.util.List<MarkdownLint.Diagnostic> now = marks == null ? java.util.List.of() : marks;
+        if (now.isEmpty() && this.lintMarks.isEmpty()) {
+            return;
+        }
+        this.lintMarks = now;
         repaintStripes();
     }
 
@@ -226,10 +248,13 @@ final class Minimap extends Region {
      * there is no cached image yet (early startup, before the editor's first paint), it does nothing and
      * lets the minimap's normal layout-driven first render draw the stripes. Forcing a snapshot at that
      * point blanks the editor surface until the next relayout.
+     *
+     * <p>Coalesced like the scroll repaint: diagnostics, lint marks and TODO marks routinely change in the
+     * same turn (and again on the next keystroke), and each used to repaint the whole column by itself.
      */
     private void repaintStripes() {
         if (contentImage != null) {
-            redraw();
+            scheduleRedraw();
         }
     }
 
@@ -261,7 +286,16 @@ final class Minimap extends Region {
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
             canvas.setWidth(w);
             canvas.setHeight(h);
-            renderContent();
+            if (contentImage == null) {
+                renderContent();
+            } else {
+                // Dragging the window edge changes the height on every pulse, and a content render walks
+                // every paragraph and then snapshots (a forced full-scene layout). Until the size settles
+                // the cached image is re-blitted with the live viewport box and stripes over it; the
+                // render that matches the final size follows once.
+                scheduleRedraw();
+                resizeRender.playFromStart();
+            }
         }
         canvas.relocate(0, 0);
     }
@@ -496,6 +530,7 @@ final class Minimap extends Region {
             return; // nested paint triggered by snapshot()'s forced layout — let the outer render finish
         }
         painting = true;
+        RENDERS_FOR_TEST.incrementAndGet();
         try {
             renderContent0();
         } finally {
@@ -550,8 +585,10 @@ final class Minimap extends Region {
         drawTodoStripes(g, h, total, rowHeight);
     }
 
-    /** Cheap redraw on scroll: re-blit the cached content image and draw the viewport rectangle. */
-    /** Coalesces scroll-driven repaints to one per pulse (the overlay {@code pending}-flag idiom). */
+    /**
+     * Cheap redraw on scroll: re-blit the cached content image and draw the viewport rectangle. Coalesces
+     * scroll-driven repaints to one per pulse (the overlay {@code pending}-flag idiom).
+     */
     private void scheduleRedraw() {
         if (redrawPending) {
             return;
@@ -690,11 +727,7 @@ final class Minimap extends Region {
         }
         double markH = Math.max(2.0, rowHeight);
         for (TodoMark m : todoMarks) {
-            try {
-                g.setFill(Color.web(m.colorWeb()));
-            } catch (RuntimeException e) {
-                g.setFill(Color.web("#E5C07B"));
-            }
+            g.setFill(TodoColors.solid(m.colorWeb()));
             double y = clamp(m.line(), total) * rowHeight;
             g.fillRect(0, Math.min(y, h - markH), STRIPE_WIDTH, markH);
         }
@@ -702,10 +735,23 @@ final class Minimap extends Region {
 
     /** Draws a block for each contiguous run of non-whitespace characters in {@code text}. */
     private void drawRuns(GraphicsContext g, String text, double y, double blockH, double w) {
+        drawRuns(g, text, y, blockH, w, tabSize);
+    }
+
+    /** As the instance method; returns how many characters of {@code text} had to be examined. */
+    static int drawRuns(GraphicsContext g, String text, double y, double blockH, double w, int tabSize) {
         int n = text.length();
         int col = 0;
         int runStart = -1;
         for (int i = 0; i <= n; i++) {
+            if (i < n && col * CHAR_SCALE >= w) {
+                // Past the column's right edge nothing more can be drawn; a minified line would otherwise
+                // be scanned to its end for blocks that all fall outside it.
+                if (runStart >= 0 && runStart * CHAR_SCALE < w) {
+                    g.fillRect(runStart * CHAR_SCALE, y, w - runStart * CHAR_SCALE, blockH);
+                }
+                return i;
+            }
             boolean whitespace = i == n || Character.isWhitespace(text.charAt(i));
             if (!whitespace && runStart < 0) {
                 runStart = col;
@@ -721,6 +767,7 @@ final class Minimap extends Region {
                 col += text.charAt(i) == '\t' ? tabSize : 1;
             }
         }
+        return n;
     }
 
     private static int clamp(int idx, int total) {

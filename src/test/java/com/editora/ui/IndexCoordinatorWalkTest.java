@@ -119,4 +119,21 @@ class IndexCoordinatorWalkTest {
         assertFalse(com.editora.index.DeclarationScanner.supports("csv"));
         assertFalse(com.editora.index.DeclarationScanner.supports(null));
     }
+
+    @Test
+    void aSupersededWalkStopsReadingFiles(@TempDir Path root) throws Exception {
+        for (int i = 0; i < 40; i++) {
+            Files.writeString(root.resolve("C" + i + ".java"), "class C" + i + " {}\n");
+        }
+        java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+
+        IndexCoordinator.Walked walked =
+                IndexCoordinator.walk(root, GitignoreFilter.NONE, 100, () -> asked.incrementAndGet() > 10);
+
+        assertTrue(walked.files().size() <= 10, "read " + walked.files().size() + " of 40 files");
+        assertEquals(
+                40,
+                IndexCoordinator.walk(root, GitignoreFilter.NONE, 100).files().size(),
+                "the control");
+    }
 }

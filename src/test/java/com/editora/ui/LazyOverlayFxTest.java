@@ -45,7 +45,7 @@ class LazyOverlayFxTest {
     @Test
     void searchActivationAttachesOverlayBelowTodo() throws Exception {
         EditorBuffer b = newBuffer();
-        FxTestSupport.runOnFx(() -> b.setSearchMatches(List.of(new int[] {0, 0}), -1));
+        FxTestSupport.runOnFx(() -> b.setSearchMatches(com.editora.editor.SearchMatches.of(0, 0), -1));
 
         Node search = FxTestSupport.field(b, "searchOverlay");
         Node todo = FxTestSupport.field(b, "todoOverlay");

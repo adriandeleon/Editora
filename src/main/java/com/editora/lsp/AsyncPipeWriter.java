@@ -8,7 +8,8 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * The single ordered writer for one language server's stdin.
+ * The single ordered writer for one language server's stdin — and, since they have the same problem, for a
+ * debug adapter's socket or stdin ({@code dap.DapClient}) and an ACP agent's stdin ({@code agent.AcpClient}).
  *
  * <p>LSP4J serializes a message and writes it to the output stream on the calling thread. With the process
  * pipe as that stream, a server that stops reading its stdin (wedged, paused in a debugger, swapping) fills
@@ -27,7 +28,7 @@ import java.util.logging.Logger;
  * rather than growing without limit. One write is always accepted while the backlog is under the limit, so
  * a single large document can never trip it on its own.
  */
-final class AsyncPipeWriter extends OutputStream {
+public final class AsyncPipeWriter extends OutputStream {
 
     private static final Logger LOG = Logger.getLogger(AsyncPipeWriter.class.getName());
 
@@ -42,19 +43,24 @@ final class AsyncPipeWriter extends OutputStream {
     private final Runnable onStalled;
     private final Thread thread;
 
+    /** A queue entry whose bytes are produced by the writer thread when its turn comes. */
+    private record Deferred(long estimatedBytes, java.util.function.Supplier<byte[]> bytes) {}
+
     private final Object lock = new Object();
-    private final ArrayDeque<byte[]> queue = new ArrayDeque<>();
+    /** {@code byte[]} chunks and {@link Deferred} entries, in the order they were accepted. */
+    private final ArrayDeque<Object> queue = new ArrayDeque<>();
+
     private long queuedBytes;
     private boolean writing;
     private boolean closed;
     private boolean failed;
     private boolean stalled;
 
-    AsyncPipeWriter(OutputStream target, String threadName, Runnable onStalled) {
+    public AsyncPipeWriter(OutputStream target, String threadName, Runnable onStalled) {
         this(target, threadName, DEFAULT_CAPACITY_BYTES, onStalled);
     }
 
-    AsyncPipeWriter(OutputStream target, String threadName, long capacityBytes, Runnable onStalled) {
+    public AsyncPipeWriter(OutputStream target, String threadName, long capacityBytes, Runnable onStalled) {
         this.target = target;
         this.capacityBytes = Math.max(1, capacityBytes);
         this.onStalled = onStalled == null ? () -> {} : onStalled;
@@ -73,6 +79,24 @@ final class AsyncPipeWriter extends OutputStream {
         if (length <= 0) {
             return;
         }
+        byte[] copy = new byte[length];
+        System.arraycopy(bytes, offset, copy, 0, length);
+        enqueue(copy, length);
+    }
+
+    /**
+     * Queues bytes that do not exist yet: {@code bytes} is called on the writer thread when everything
+     * accepted before it has been written, and what it returns goes out in that position. For a message
+     * that is expensive to encode (a whole document as JSON) this moves the encoding off the calling thread
+     * as well as the write, without giving up the order. {@code estimatedBytes} stands in for its size in
+     * the backlog limit. A supplier that throws is logged and skipped; later entries are unaffected.
+     */
+    public void writeDeferred(long estimatedBytes, java.util.function.Supplier<byte[]> bytes) throws IOException {
+        long estimate = Math.max(1, estimatedBytes);
+        enqueue(new Deferred(estimate, bytes), estimate);
+    }
+
+    private void enqueue(Object entry, long size) throws IOException {
         boolean reportStall = false;
         synchronized (lock) {
             if (closed || failed || stalled) {
@@ -84,16 +108,14 @@ final class AsyncPipeWriter extends OutputStream {
                 stalled = true;
                 reportStall = true;
             } else {
-                byte[] copy = new byte[length];
-                System.arraycopy(bytes, offset, copy, 0, length);
-                queue.add(copy);
-                queuedBytes += length;
+                queue.add(entry);
+                queuedBytes += size;
                 lock.notifyAll();
             }
         }
         if (reportStall) {
             onStalled.run(); // outside the lock: the handler kills the process, which unblocks the writer
-            throw new IOException("language server is not reading its input");
+            throw new IOException("the peer is not reading its input");
         }
     }
 
@@ -102,7 +124,7 @@ final class AsyncPipeWriter extends OutputStream {
     public void flush() {}
 
     /** Bytes accepted but not yet written to the pipe. */
-    long queuedBytes() {
+    public long queuedBytes() {
         synchronized (lock) {
             return queuedBytes;
         }
@@ -112,7 +134,7 @@ final class AsyncPipeWriter extends OutputStream {
      * Waits until everything accepted so far has reached the pipe, or the timeout passes. Used by the
      * graceful shutdown so {@code exit} is really delivered before the process tree is killed.
      */
-    boolean awaitDrained(long timeout, TimeUnit unit) throws InterruptedException {
+    public boolean awaitDrained(long timeout, TimeUnit unit) throws InterruptedException {
         long deadline = System.nanoTime() + unit.toNanos(timeout);
         synchronized (lock) {
             while ((!queue.isEmpty() || writing) && !failed) {
@@ -142,9 +164,19 @@ final class AsyncPipeWriter extends OutputStream {
         thread.interrupt();
     }
 
+    /** The deferred entry's bytes, or null when producing them failed (the entry is then dropped). */
+    private static byte[] produce(Deferred deferred) {
+        try {
+            return deferred.bytes().get();
+        } catch (RuntimeException e) {
+            LOG.log(Level.WARNING, "Dropping an outgoing message that could not be encoded", e);
+            return null;
+        }
+    }
+
     private void drain() {
         while (true) {
-            byte[] chunk;
+            Object entry;
             synchronized (lock) {
                 while (queue.isEmpty() && !closed) {
                     try {
@@ -158,16 +190,27 @@ final class AsyncPipeWriter extends OutputStream {
                 if (closed) {
                     return;
                 }
-                chunk = queue.poll();
+                entry = queue.poll();
                 writing = true;
             }
             boolean ok = true;
             try {
-                target.write(chunk);
+                long size;
+                byte[] chunk;
+                if (entry instanceof Deferred deferred) {
+                    size = deferred.estimatedBytes();
+                    chunk = produce(deferred);
+                } else {
+                    chunk = (byte[]) entry;
+                    size = chunk.length;
+                }
+                if (chunk != null) {
+                    target.write(chunk);
+                }
                 boolean idle;
                 synchronized (lock) {
                     if (!closed) {
-                        queuedBytes -= chunk.length; // close() already zeroed the backlog
+                        queuedBytes -= size; // close() already zeroed the backlog
                     }
                     idle = queue.isEmpty();
                 }
@@ -176,7 +219,7 @@ final class AsyncPipeWriter extends OutputStream {
                 }
             } catch (IOException | RuntimeException e) {
                 ok = false;
-                LOG.log(Level.FINE, "language server input closed", e);
+                LOG.log(Level.FINE, "peer input closed", e);
             }
             synchronized (lock) {
                 writing = false;

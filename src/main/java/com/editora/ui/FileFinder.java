@@ -1,16 +1,13 @@
 package com.editora.ui;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
@@ -65,7 +62,13 @@ public class FileFinder {
     /** Cached listing of {@link #currentDir}; re-read only when the directory part of the path changes. */
     private Path currentDir;
 
-    private List<Path> dirEntries = List.of();
+    /** The listing of {@link #currentDir}, once its read has landed; knows which entries are folders. */
+    private DirectoryListing listing = DirectoryListing.UNREADABLE;
+
+    private long listGeneration;
+
+    /** Reads a directory off the FX thread; replaceable so a test can hold or count the read. */
+    volatile java.util.function.BiFunction<Path, Boolean, DirectoryListing> directoryReader = DirectoryListing::read;
 
     public FileFinder(Supplier<Path> startDir, Consumer<Path> onChoose) {
         this(startDir, onChoose, false, tr("filefinder.title"));
@@ -113,7 +116,8 @@ public class FileFinder {
         }
         Path dir = startDir.get();
         currentDir = null;
-        dirEntries = List.of();
+        listing = DirectoryListing.UNREADABLE;
+        listGeneration++; // a read still in flight belongs to the previous showing
         hint.setText(PickerKeys.legend(PickerKeys.hint("complete", "tab"), PickerKeys.hint("open", "↵")));
         // Pre-fill with the start directory + separator so the user types a name straight away.
         input.setText(dir.toString().endsWith(SEP) ? dir.toString() : dir + SEP);
@@ -156,18 +160,39 @@ public class FileFinder {
         return slash < 0 ? text : text.substring(slash + 1);
     }
 
-    /** Re-lists the directory (only if it changed) and filters its entries by the typed prefix. */
+    /**
+     * Filters the listed entries by the typed prefix, and — when the directory part of the path changed —
+     * asks for that directory's listing. The listing is a {@code readdir} plus a {@code stat} per entry, so
+     * it is read on a worker: typing a path into a large or slow (network, FUSE) folder used to freeze the
+     * window at the keystroke that completed the folder's name. The list is empty until the read lands.
+     */
     private void refresh(String text) {
         Path dir = dirPart(text).isEmpty() ? currentDir : Path.of(dirPart(text));
         if (dir != null && !dir.equals(currentDir)) {
             currentDir = dir;
-            dirEntries = listDir(dir);
+            listing = DirectoryListing.UNREADABLE;
+            long generation = ++listGeneration;
+            java.util.function.BiFunction<Path, Boolean, DirectoryListing> reader = directoryReader;
+            Thread.startVirtualThread(() -> {
+                DirectoryListing read = reader.apply(dir, pickDirectory);
+                Platform.runLater(() -> {
+                    if (generation != listGeneration) {
+                        return; // the path field names another directory by now
+                    }
+                    listing = read;
+                    applyFilter(input.getText());
+                });
+            });
         }
+        applyFilter(text);
+    }
+
+    private void applyFilter(String text) {
         String prefix = prefixPart(text);
         boolean wantHidden = prefix.startsWith(".");
         String q = prefix.toLowerCase(Locale.ROOT);
         List<Path> matches = new ArrayList<>();
-        for (Path p : dirEntries) {
+        for (Path p : listing.entries()) {
             String name = p.getFileName().toString();
             if (!wantHidden && name.startsWith(".")) {
                 continue; // hide dotfiles unless the user is typing a leading dot
@@ -180,33 +205,6 @@ public class FileFinder {
         if (!items.isEmpty()) {
             list.getSelectionModel().select(0);
         }
-    }
-
-    /** Directory children, sorted directories-first then files, case-insensitive; empty if unreadable. */
-    private List<Path> listDir(Path dir) {
-        if (!Files.isDirectory(dir)) {
-            return List.of();
-        }
-        List<Path> dirs = new ArrayList<>();
-        List<Path> files = new ArrayList<>();
-        try (Stream<Path> entries = Files.list(dir)) {
-            entries.forEach(p -> {
-                if (Files.isDirectory(p)) {
-                    dirs.add(p);
-                } else if (!pickDirectory) {
-                    files.add(p); // in directory-pick mode, list only folders
-                }
-            });
-        } catch (IOException | RuntimeException ex) {
-            return List.of();
-        }
-        Comparator<Path> byName = Comparator.comparing(p -> p.getFileName().toString(), String.CASE_INSENSITIVE_ORDER);
-        dirs.sort(byName);
-        files.sort(byName);
-        List<Path> all = new ArrayList<>(dirs.size() + files.size());
-        all.addAll(dirs);
-        all.addAll(files);
-        return all;
     }
 
     private void onKey(KeyEvent e) {
@@ -285,7 +283,7 @@ public class FileFinder {
         if (pickDirectory) {
             // Folder picker: Tab descends into the highlighted folder (Enter chooses it).
             Path selected = list.getSelectionModel().getSelectedItem();
-            if (selected != null && Files.isDirectory(selected)) {
+            if (selected != null && listing.isDirectory(selected)) {
                 descendInto(selected);
             }
             return;
@@ -299,7 +297,7 @@ public class FileFinder {
         if (lcp.length() > current.length()) {
             input.setText(dir + lcp);
             input.positionCaret(input.getText().length());
-        } else if (items.size() == 1 && Files.isDirectory(items.get(0))) {
+        } else if (items.size() == 1 && listing.isDirectory(items.get(0))) {
             descendInto(items.get(0));
         }
     }
@@ -334,7 +332,7 @@ public class FileFinder {
                 setGraphic(null);
                 return;
             }
-            boolean dir = Files.isDirectory(item);
+            boolean dir = listing.isDirectory(item); // known from the listing: no stat per rendered row
             label.setText(item.getFileName() + (dir ? SEP : ""));
             Path fileName = item.getFileName();
             box.getChildren()

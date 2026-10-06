@@ -5,6 +5,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RipgrepOutputTest {
@@ -72,5 +73,46 @@ class RipgrepOutputTest {
         assertEquals(1, results.size());
         assertEquals("a.txt", results.get(0).file().toString());
         assertEquals(2, results.get(0).matches().get(0).col());
+    }
+
+    private static String match(String path, int line) {
+        return "{\"type\":\"match\",\"data\":{\"path\":{\"text\":\"" + path + "\"},"
+                + "\"lines\":{\"text\":\"foo foo\\n\"},\"line_number\":" + line + ","
+                + "\"submatches\":[{\"match\":{\"text\":\"foo\"},\"start\":0,\"end\":3},"
+                + "{\"match\":{\"text\":\"foo\"},\"start\":4,\"end\":7}]}}";
+    }
+
+    @Test
+    void theCollectorSaysStopAtTheLineThatFillsTheBudget() {
+        RipgrepOutput.Collector collector =
+                new RipgrepOutput.Collector(5, p -> !p.toString().startsWith("open"));
+
+        assertFalse(collector.accept("{\"type\":\"begin\",\"data\":{\"path\":{\"text\":\"a.txt\"}}}"));
+        assertFalse(collector.accept(match("a.txt", 1)), "2 of 5");
+        assertFalse(collector.accept(match("open.txt", 1)), "a file overlaid from an open buffer costs nothing");
+        assertFalse(collector.accept(match("a.txt", 2)), "4 of 5");
+        assertFalse(collector.full());
+        assertTrue(collector.accept(match("b.txt", 9)), "the fifth match: rg can be stopped here");
+        assertTrue(collector.full());
+        assertTrue(collector.accept(match("c.txt", 1)), "and anything after it is not collected");
+        assertFalse(collector.sawSummary());
+
+        List<FileResult> results = collector.results();
+        assertEquals(2, results.size());
+        assertEquals(4, results.get(0).matches().size());
+        assertEquals(1, results.get(1).matches().size());
+        // The same cut the whole-output parser makes.
+        String all = String.join("\n", match("a.txt", 1), match("open.txt", 1), match("a.txt", 2), match("b.txt", 9));
+        assertEquals(results, RipgrepOutput.parse(all, 5, p -> !p.toString().startsWith("open")));
+    }
+
+    @Test
+    void theCollectorNotesThatRipgrepFinished() {
+        RipgrepOutput.Collector collector = new RipgrepOutput.Collector(100, p -> true);
+        collector.accept(match("a.txt", 1));
+        assertFalse(collector.sawSummary());
+        collector.accept("{\"type\":\"summary\",\"data\":{\"stats\":{\"matched_lines\":1}}}");
+        assertTrue(collector.sawSummary());
+        assertFalse(collector.full());
     }
 }

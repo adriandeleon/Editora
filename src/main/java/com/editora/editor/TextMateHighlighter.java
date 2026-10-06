@@ -28,8 +28,22 @@ import org.fxmisc.richtext.model.StyleSpansBuilder;
  */
 public final class TextMateHighlighter {
 
-    /** Zero means "no per-line timeout" to tm4e — we tokenize lazily/debounced anyway. */
-    private static final Duration NO_TIMEOUT = Duration.ZERO;
+    /**
+     * Longest line handed to the tokenizer; a longer one is left unstyled and the grammar state is carried
+     * across it unchanged. Tokenizing is not interruptible within a line and holds the per-grammar lock, and
+     * its cost grows with the line: a single 60,000-character minified-JavaScript line measured ~1.9 s
+     * (20,000: ~0.6 s) while the same length of JSON took ~20 ms. The cap is VS Code's
+     * {@code editor.maxTokenizationLineLength} default.
+     */
+    static final int MAX_TOKENIZED_LINE = 20_000;
+
+    /**
+     * Per-line budget passed to tm4e, the backstop for a line under the length cap that a grammar's regexes
+     * handle pathologically. Generous on purpose: an ordinary line takes microseconds and the slowest capped
+     * line of real code measured stays under it, so hitting it means something is wrong with that line, and
+     * what the budget buys is a bounded wait for cancellation and for the next buffer of the same language.
+     */
+    static final Duration LINE_TIMEOUT = Duration.ofMillis(1000);
 
     private static final Logger LOG = Logger.getLogger(TextMateHighlighter.class.getName());
     private static final Set<String> REPORTED_FAILURES = ConcurrentHashMap.newKeySet();
@@ -55,6 +69,23 @@ public final class TextMateHighlighter {
      */
     public record IncrementalAnalysis(
             int fromOffset, StyleSpans<Collection<String>> spans, List<IStateStack> endStates, List<Symbol> symbols) {}
+
+    /**
+     * Follows a pass line by line, on the tokenizing thread. It sees exactly what goes into the spans — so a
+     * consumer needing the token classes (bracket depth skips strings and comments) does not have to walk
+     * the finished spans again — and it can end the pass early.
+     */
+    interface LineHook {
+        /** The next {@code length} characters of the range carry {@code style} ({@code null} = unstyled). */
+        void run(String style, int length);
+
+        /**
+         * Line {@code lineIndex}, occupying {@code [lineStart, lineEnd)} of the text, has been tokenized and
+         * ended in {@code endState}. Returning {@code true} stops the pass after this line; the analysis then
+         * covers up to {@code lineEnd}, without the line's terminator.
+         */
+        boolean lineDone(int lineIndex, int lineStart, int lineEnd, IStateStack endState);
+    }
 
     /**
      * Style spans covering the whole text. Returns {@code null} for empty text or a null grammar
@@ -100,6 +131,33 @@ public final class TextMateHighlighter {
      */
     public static IncrementalAnalysis analyzeFrom(
             String text, IGrammar grammar, int fromLine, IStateStack startState, BooleanSupplier cancelled) {
+        return analyzeFrom(text, grammar, fromLine, startState, cancelled, null);
+    }
+
+    /**
+     * {@link #analyzeFrom(String, IGrammar, int, IStateStack, BooleanSupplier)} observed by a
+     * {@link LineHook}, which may stop the pass before the end of the text. {@code spans} is {@code null}
+     * when the tokenized range is empty.
+     */
+    static IncrementalAnalysis analyzeFrom(
+            String text,
+            IGrammar grammar,
+            int fromLine,
+            IStateStack startState,
+            BooleanSupplier cancelled,
+            LineHook hook) {
+        return analyzeFrom(text, grammar, fromLine, startState, cancelled, hook, LINE_TIMEOUT);
+    }
+
+    /** As above with an explicit per-line budget, so a test can make a line run out of it. */
+    static IncrementalAnalysis analyzeFrom(
+            String text,
+            IGrammar grammar,
+            int fromLine,
+            IStateStack startState,
+            BooleanSupplier cancelled,
+            LineHook hook,
+            Duration lineTimeout) {
         if (text == null || grammar == null) {
             return null;
         }
@@ -109,7 +167,7 @@ public final class TextMateHighlighter {
         // and throw — silently dropping one file's highlighting. Serialize per grammar instance:
         // same-grammar passes run sequentially; different grammars still run in parallel.
         synchronized (grammar) {
-            return analyzeFromLocked(text, grammar, fromLine, startState, cancelled);
+            return analyzeFromLocked(text, grammar, fromLine, startState, cancelled, hook, lineTimeout);
         }
     }
 
@@ -137,12 +195,18 @@ public final class TextMateHighlighter {
     }
 
     private static IncrementalAnalysis analyzeFromLocked(
-            String text, IGrammar grammar, int fromLine, IStateStack startState, BooleanSupplier cancelled) {
+            String text,
+            IGrammar grammar,
+            int fromLine,
+            IStateStack startState,
+            BooleanSupplier cancelled,
+            LineHook hook,
+            Duration lineTimeout) {
         // Adjacent runs with the same style are merged before they reach the builder: we collapse
         // many TextMate scopes onto a few coarse classes, so a single line yields long stretches of
         // identical (or empty) styling. RichTextFX materializes one Text node per span, so emitting
         // every token as its own span balloons the node count and makes layout/scrolling crawl.
-        SpanMerger spans = new SpanMerger();
+        SpanMerger spans = new SpanMerger(hook);
         List<IStateStack> endStates = new ArrayList<>();
         List<Symbol> symbols = new ArrayList<>();
         IStateStack state = startState;
@@ -156,26 +220,47 @@ public final class TextMateHighlighter {
             }
             int newline = text.indexOf('\n', pos);
             int lineEnd = newline < 0 ? length : newline;
-            String line = text.substring(pos, lineEnd);
-            // Some grammars contain rules tm4e can't parse (malformed captures) or regexes the joni
-            // backend rejects (variable-length look-behind, etc.). Tokenizing such a line throws; we
-            // must never let that escape onto the JavaFX thread, so degrade that line to plain text
-            // and carry the last good state forward.
-            try {
-                // Pass the newline so end-of-line ($) anchors and line-ending rules match as expected.
-                ITokenizeLineResult<IToken[]> result = grammar.tokenizeLine(line + "\n", state, NO_TIMEOUT);
-                state = result.getRuleStack();
-                addLineSpans(spans, line.length(), result.getTokens());
-                collectSymbol(symbols, lineIndex, line, result.getTokens());
-            } catch (Exception | LinkageError e) {
-                spans.add(null, line.length());
-                reportTokenizeFailure(grammar, e);
+            int lineLength = lineEnd - pos;
+            if (lineLength > MAX_TOKENIZED_LINE) {
+                spans.add(null, lineLength); // too long to tokenize: plain text, state carried across it
+            } else {
+                // One copy per line, terminator included when the text has one: the newline is what makes
+                // end-of-line ($) anchors and line-ending rules match, and tm4e only appends its own (a
+                // second copy) to a line that lacks it.
+                String line = text.substring(pos, newline < 0 ? length : newline + 1);
+                // Some grammars contain rules tm4e can't parse (malformed captures) or regexes the joni
+                // backend rejects (variable-length look-behind, etc.). Tokenizing such a line throws; we
+                // must never let that escape onto the JavaFX thread, so degrade that line to plain text
+                // and carry the last good state forward.
+                try {
+                    ITokenizeLineResult<IToken[]> result = grammar.tokenizeLine(line, state, lineTimeout);
+                    IToken[] tokens = result.getTokens();
+                    int count = tokens.length;
+                    if (result.isStoppedEarly()) {
+                        // Out of budget part-way: the state it stopped in belongs to the middle of the
+                        // line, so the line's start state is carried instead, and its last token — tm4e's
+                        // filler from the stopping point to the end of the line — is left unstyled.
+                        count = Math.max(0, count - 1);
+                    } else {
+                        state = result.getRuleStack();
+                    }
+                    addLineSpans(spans, lineLength, tokens, count);
+                    collectSymbol(symbols, lineIndex, line, lineLength, tokens, count);
+                } catch (Exception | LinkageError e) {
+                    spans.add(null, lineLength - spans.lineProgress());
+                    reportTokenizeFailure(grammar, e);
+                }
             }
-            endStates.add(state); // end state of this line (carried unchanged on a tokenization failure)
+            spans.endLine();
+            endStates.add(state); // end state of this line (carried unchanged over a failed or skipped line)
+            if (hook != null && hook.lineDone(lineIndex, pos, lineEnd, state)) {
+                break;
+            }
             if (newline < 0) {
                 break;
             }
             spans.add(null, 1); // the '\n' itself
+            spans.endLine();
             pos = newline + 1;
             lineIndex++;
         }
@@ -204,10 +289,11 @@ public final class TextMateHighlighter {
      * {@code func (s *Server) Run()} the receiver type comes first, and every method of a type used to be
      * listed as that type. A type name that is only a <em>reference</em> is not a definition at all.
      */
-    private static void collectSymbol(List<Symbol> symbols, int lineIndex, String line, IToken[] tokens) {
-        int len = line.length();
+    private static void collectSymbol(
+            List<Symbol> symbols, int lineIndex, String line, int len, IToken[] tokens, int count) {
         Symbol type = null;
-        for (IToken token : tokens) {
+        for (int i = 0; i < count; i++) {
+            IToken token = tokens[i];
             String kind = kindForScopes(token.getScopes());
             if (kind == null) {
                 continue;
@@ -303,33 +389,74 @@ public final class TextMateHighlighter {
             return null;
         }
         for (int i = scopes.size() - 1; i >= 0; i--) {
-            String scope = scopes.get(i);
-            if (isCallScope(scope)) {
+            ScopeInfo info = scopeInfo(scopes.get(i));
+            if (info.call()) {
                 return null;
             }
-            if (scope.startsWith("meta.")) {
+            if (info.meta()) {
                 break; // a declaration's own scope is nearer than any enclosing call
             }
         }
         for (int i = scopes.size() - 1; i >= 0; i--) {
-            String scope = scopes.get(i);
-            if (scope.startsWith("entity.name.function")) {
-                return "function";
-            }
-            if (scope.startsWith("entity.name.type") || scope.startsWith("entity.name.class")) {
-                return "type";
-            }
-            if (scope.startsWith("entity.name.namespace")) {
-                return "namespace";
-            }
-            if (scope.startsWith("entity.name.section")) {
-                return "section";
-            }
-            if (scope.startsWith("entity.name.tag")) {
-                return "tag";
+            String kind = scopeInfo(scopes.get(i)).kind();
+            if (kind != null) {
+                return kind;
             }
         }
         return null;
+    }
+
+    /** The definition kind a single scope names, or {@code null} — see {@link #kindForScopes}. */
+    private static String definitionKind(String scope) {
+        if (!scope.startsWith("entity.name.")) {
+            return null;
+        }
+        if (scope.startsWith("entity.name.function")) {
+            return "function";
+        }
+        if (scope.startsWith("entity.name.type") || scope.startsWith("entity.name.class")) {
+            return "type";
+        }
+        if (scope.startsWith("entity.name.namespace")) {
+            return "namespace";
+        }
+        if (scope.startsWith("entity.name.section")) {
+            return "section";
+        }
+        if (scope.startsWith("entity.name.tag")) {
+            return "tag";
+        }
+        return null;
+    }
+
+    /**
+     * Everything the highlighter derives from one scope name: its style class ({@code null} = none of
+     * ours, {@link #PLAIN} = decides the token as unstyled), whether it marks a call, whether it is a
+     * structural {@code meta.*} scope, and the definition kind it names.
+     */
+    private record ScopeInfo(String style, boolean call, boolean meta, String kind) {}
+
+    /** Bound on {@link #SCOPE_INFO}; the bundled grammars together name a few thousand scopes. */
+    private static final int SCOPE_CACHE_LIMIT = 16_384;
+
+    /**
+     * {@link ScopeInfo} per scope name. Every token carries a stack of scopes and each one used to be run
+     * through some forty-five {@code startsWith} tests, twice (style, then outline kind), on every pass;
+     * the set of distinct names is small and fixed by the grammars, so the answers are computed once.
+     * Bounded because a grammar can build a scope name from captured text: past the limit new names are
+     * simply classified without being remembered.
+     */
+    private static final ConcurrentHashMap<String, ScopeInfo> SCOPE_INFO = new ConcurrentHashMap<>();
+
+    private static ScopeInfo scopeInfo(String scope) {
+        ScopeInfo info = SCOPE_INFO.get(scope);
+        if (info == null) {
+            info = new ScopeInfo(classify(scope), isCallScope(scope), scope.startsWith("meta."), definitionKind(scope));
+            if (SCOPE_INFO.size() < SCOPE_CACHE_LIMIT) {
+                SCOPE_INFO.put(scope, info);
+            }
+        }
+        return info;
     }
 
     /**
@@ -361,9 +488,10 @@ public final class TextMateHighlighter {
                 || kind.startsWith("macro.rules.");
     }
 
-    private static void addLineSpans(SpanMerger spans, int lineLength, IToken[] tokens) {
+    private static void addLineSpans(SpanMerger spans, int lineLength, IToken[] tokens, int count) {
         int last = 0;
-        for (IToken token : tokens) {
+        for (int i = 0; i < count; i++) {
+            IToken token = tokens[i];
             int start = Math.min(token.getStartIndex(), lineLength);
             int end = Math.min(token.getEndIndex(), lineLength); // clamp the synthetic '\n' away
             if (end <= start) {
@@ -386,13 +514,33 @@ public final class TextMateHighlighter {
      */
     private static final class SpanMerger {
         private final StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
+        private final LineHook hook;
         private String current; // style class of the open run, or null for unstyled
         private int length; // accumulated length of the open run
+        private int lineChars; // characters added since the last endLine()
+        private boolean any;
+
+        SpanMerger(LineHook hook) {
+            this.hook = hook;
+        }
+
+        /** Characters added to the line in progress — what a line that failed part-way still has to cover. */
+        int lineProgress() {
+            return lineChars;
+        }
+
+        void endLine() {
+            lineChars = 0;
+        }
 
         /** Append {@code len} characters styled with {@code style} (null = unstyled). */
         void add(String style, int len) {
             if (len <= 0) {
                 return;
+            }
+            lineChars += len;
+            if (hook != null) {
+                hook.run(style, len);
             }
             if (length == 0) {
                 current = style;
@@ -408,14 +556,16 @@ public final class TextMateHighlighter {
 
         private void flush() {
             if (length > 0) {
-                builder.add(current == null ? Collections.emptyList() : List.of(current), length);
+                builder.add(current == null ? Collections.emptyList() : styleList(current), length);
                 length = 0;
+                any = true;
             }
         }
 
+        /** The spans, or {@code null} when nothing was added (RichTextFX cannot build zero-length spans). */
         StyleSpans<Collection<String>> build() {
             flush();
-            return builder.create();
+            return any ? builder.create() : null;
         }
     }
 
@@ -428,12 +578,19 @@ public final class TextMateHighlighter {
             return null;
         }
         for (int i = scopes.size() - 1; i >= 0; i--) {
-            String style = classify(scopes.get(i));
+            String style = scopeInfo(scopes.get(i)).style();
             if (style != null) {
                 return style.isEmpty() ? null : style; // PLAIN
             }
         }
         return null;
+    }
+
+    /** One shared single-class style list per class, instead of a fresh {@code List.of} for every span. */
+    private static final ConcurrentHashMap<String, List<String>> STYLE_LISTS = new ConcurrentHashMap<>();
+
+    static List<String> styleList(String style) {
+        return STYLE_LISTS.computeIfAbsent(style, List::of);
     }
 
     /** {@link #classify}'s answer for "this scope decides the token, and the token is unstyled". */

@@ -25,6 +25,9 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.Background;
+import javafx.scene.layout.BackgroundFill;
+import javafx.scene.layout.CornerRadii;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
@@ -96,6 +99,17 @@ public final class FoldManager {
     private Runnable onRegionsChanged = () -> {};
     /** Suppresses change notifications while we programmatically restore saved folds. */
     private boolean restoring;
+
+    /**
+     * A document at least this long restores its folds from a background detection rather than scanning the
+     * whole text on the FX thread while the file opens (measured: 150 ms of a 4.9 MB open). Below it the scan
+     * costs a few milliseconds and the restore stays synchronous.
+     */
+    static final int DEFERRED_RESTORE_CHARS = 256 * 1024;
+    /** True from a deferred restore until its regions (or any newer ones) are applied. */
+    private boolean regionsPending;
+    /** Saved collapsed header lines waiting for those regions, kept in step with edits; null when none. */
+    private List<Integer> pendingCollapsed;
 
     /** Whether a line carries a bookmark (drawn as a gutter marker); default none. */
     private IntPredicate isBookmarked = i -> false;
@@ -193,17 +207,19 @@ public final class FoldManager {
         area.plainTextChanges().subscribe(ch -> {
             recomputeGeneration++;
             noteEditNearFold(ch.getPosition(), ch.getInserted(), ch.getRemoved());
-            if (manualRegions.isEmpty()) {
+            if (manualRegions.isEmpty() && pendingCollapsed == null) {
                 return;
             }
             int startLine = area.offsetToPosition(
                             ch.getPosition(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                     .getMajor();
-            manualRegions = ManualFolds.shift(
-                    manualRegions,
-                    startLine,
-                    ManualFolds.lineBreaks(ch.getRemoved()),
-                    ManualFolds.lineBreaks(ch.getInserted()));
+            int removedLines = ManualFolds.lineBreaks(ch.getRemoved());
+            int insertedLines = ManualFolds.lineBreaks(ch.getInserted());
+            manualRegions = ManualFolds.shift(manualRegions, startLine, removedLines, insertedLines);
+            if (pendingCollapsed != null) {
+                // The detection this edit just superseded is redone on the settle; its headers moved meanwhile.
+                pendingCollapsed = ManualFolds.shiftLines(pendingCollapsed, startLine, removedLines, insertedLines);
+            }
         });
         installHoverPreview();
     }
@@ -241,6 +257,7 @@ public final class FoldManager {
 
     /** Removes every manual fold range, unfolding any that are collapsed. Returns how many were removed. */
     public int removeManualFolds() {
+        settleRegions();
         List<Region> removed = manualRegions;
         if (removed.isEmpty()) {
             return 0;
@@ -428,6 +445,9 @@ public final class FoldManager {
     }
 
     private void applyRegions(List<Region> detected) {
+        List<Integer> restoreCollapsed = pendingCollapsed;
+        regionsPending = false;
+        pendingCollapsed = null;
         Set<Integer> oldStarts = byStart.keySet();
         regions = detected;
         Map<Integer, Region> map = new HashMap<>();
@@ -474,6 +494,84 @@ public final class FoldManager {
             repadVisibleLineNumbers(total);
         }
         onRegionsChanged.run();
+        if (restoreCollapsed != null) {
+            collapseDeferred(restoreCollapsed);
+        }
+    }
+
+    /**
+     * Collapses the saved headers of a deferred restore. Unlike the synchronous restore this runs after the
+     * file is on screen, so it must leave the caret, the selection and the viewport where they are — and it
+     * keeps open a region the caret has since been taken into (a queued {@code file:line} jump, a find), which
+     * is where the synchronous order ends up too: restore first, then the jump unfolds its target.
+     */
+    private void collapseDeferred(List<Integer> startLines) {
+        Set<Integer> wanted = new HashSet<>(startLines);
+        int caret = area.getCaretPosition();
+        int anchor = area.getAnchor();
+        int caretLine = area.getCurrentParagraph();
+        int anchorLine = area.offsetToPosition(anchor, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
+                .getMajor();
+        int topPar = -1;
+        boolean folded = false;
+        boolean anchorHidden = false;
+        restoring = true;
+        try {
+            for (Region r : regions) {
+                if (!wanted.contains(r.startLine())
+                        || isCollapsed(r.startLine())
+                        || (caretLine > r.startLine() && caretLine <= r.endLine())) {
+                    continue;
+                }
+                if (!folded) {
+                    topPar = firstVisiblePar(); // forces a layout: asked once, and only when something folds
+                    folded = true;
+                }
+                anchorHidden |= anchorLine > r.startLine() && anchorLine <= r.endLine();
+                area.foldParagraphs(r.startLine(), r.endLine());
+                shadeHeader(r.startLine(), true);
+            }
+        } finally {
+            restoring = false;
+        }
+        if (folded) {
+            int to = Math.min(caret, area.getLength()); // foldParagraphs() moved the caret to a fold header
+            area.selectRange(anchorHidden ? to : Math.min(anchor, area.getLength()), to);
+            restoreViewport(topPar);
+        }
+    }
+
+    /** Whether a restore of this document's folds should wait for a background detection. */
+    private boolean deferRestore() {
+        return heuristicEnabled && area.getLength() >= DEFERRED_RESTORE_CHARS;
+    }
+
+    /** Starts the background detection of a deferred restore, carrying {@code collapsed} to its arrival. */
+    private void restoreDeferred(List<Integer> collapsed) {
+        if (collapsed != null && !collapsed.isEmpty()) {
+            List<Integer> merged = new ArrayList<>(pendingCollapsed == null ? List.of() : pendingCollapsed);
+            merged.addAll(collapsed);
+            pendingCollapsed = merged;
+        }
+        regionsPending = true;
+        recomputeAsync();
+    }
+
+    /**
+     * Regions a deferred restore is still detecting are computed now: an explicit fold command acts on the
+     * regions, so it cannot run against the empty list of a file that has only just opened.
+     */
+    private void settleRegions() {
+        if (regionsPending) {
+            recompute();
+        }
+    }
+
+    /** As {@link #settleRegions}, for a caller that only cares about folds that are saved but not yet applied. */
+    private void settleCollapsed() {
+        if (pendingCollapsed != null) {
+            recompute();
+        }
     }
 
     /** Recreates the gutter graphics of those of {@code lines} (null = all) that {@code view} is showing. */
@@ -817,6 +915,7 @@ public final class FoldManager {
      * shown rather than silently scrolled to a hidden paragraph.)
      */
     public void unfoldContaining(int line) {
+        settleCollapsed();
         int n = area.getParagraphs().size();
         if (line < 0 || line >= n || !area.isFolded(line)) {
             return;
@@ -839,6 +938,7 @@ public final class FoldManager {
     }
 
     public void foldAll() {
+        settleRegions();
         int topPar = firstVisiblePar();
         for (Region r : regions) {
             if (!isCollapsed(r.startLine())) {
@@ -853,6 +953,7 @@ public final class FoldManager {
     }
 
     public void unfoldAll() {
+        settleRegions();
         if (!hasCollapsedParagraph()) {
             return; // nothing folded: skip firstVisiblePar() (a forced VirtualFlow layout) and the shade sweep
         }
@@ -892,6 +993,7 @@ public final class FoldManager {
      * thousands of nested collapses in a big file bloats the persisted fold state for no visible change.
      */
     public void foldAllExcept(int line) {
+        settleRegions();
         int topPar = firstVisiblePar();
         for (Region r : regions) {
             if (r.startLine() <= line && line <= r.endLine()) {
@@ -925,6 +1027,7 @@ public final class FoldManager {
      * collapsed fold, so "except the fold I'm on" reads naturally).
      */
     public void unfoldAllExcept(int line) {
+        settleRegions();
         int topPar = firstVisiblePar();
         boolean changed = false;
         for (Integer s : collapsedStartLines()) {
@@ -961,16 +1064,19 @@ public final class FoldManager {
 
     /** Folds every multi-line block comment (VS Code's {@code foldAllBlockComments}). Returns the count. */
     public int foldAllBlockComments() {
+        settleRegions();
         return foldExactly(FoldRegions.blockComments(textSnapshot.get(), language));
     }
 
     /** Folds every {@code #region} marker region (VS Code's {@code foldAllMarkerRegions}). Returns the count. */
     public int foldAllMarkerRegions() {
+        settleRegions();
         return foldExactly(FoldRegions.markers(textSnapshot.get(), language));
     }
 
     /** Unfolds every {@code #region} marker region ({@code unfoldAllMarkerRegions}). Returns the count. */
     public int unfoldAllMarkerRegions() {
+        settleRegions();
         int topPar = firstVisiblePar();
         int n = 0;
         for (Region r : FoldRegions.markers(textSnapshot.get(), language)) {
@@ -1009,6 +1115,7 @@ public final class FoldManager {
 
     /** Collapses the innermost expanded foldable region around the caret; no-op if none applies. */
     public void foldAtCaret() {
+        settleRegions();
         int line = caretLine.getAsInt();
         Region target = null; // innermost (largest startLine) containing, expanded region
         for (Region r : regions) {
@@ -1026,6 +1133,7 @@ public final class FoldManager {
 
     /** Expands the collapsed region at the caret (its header line, or the innermost containing it). */
     public void unfoldAtCaret() {
+        settleRegions();
         int line = caretLine.getAsInt();
         Region atHeader = byStart.get(line);
         if (atHeader != null && isCollapsed(atHeader.startLine())) {
@@ -1048,6 +1156,7 @@ public final class FoldManager {
 
     /** Toggles the region at the caret: expands it if collapsed, otherwise collapses it. */
     public void toggleFoldAtCaret() {
+        settleRegions();
         int line = caretLine.getAsInt();
         boolean collapsedHere = false;
         for (Region r : regions) {
@@ -1069,6 +1178,7 @@ public final class FoldManager {
      * levels stay open and deeper regions are hidden inside the folds (revealing them when unfolded).
      */
     public void foldLevel(int level) {
+        settleRegions();
         int topPar = firstVisiblePar();
         unfoldEverythingNoFire();
         for (Region r : FoldTree.atLevel(regions, level)) {
@@ -1083,6 +1193,7 @@ public final class FoldManager {
 
     /** Collapses the innermost region around the caret <b>and</b> every region nested inside it. */
     public void foldRecursivelyAtCaret() {
+        settleRegions();
         Region target = FoldTree.innermostContaining(regions, caretLine.getAsInt());
         if (target == null) {
             return;
@@ -1107,6 +1218,7 @@ public final class FoldManager {
 
     /** Expands the collapsed region around the caret <b>and</b> every region nested inside it. */
     public void unfoldRecursivelyAtCaret() {
+        settleRegions();
         int line = caretLine.getAsInt();
         Region target = byStart.get(line);
         if (target == null || !isCollapsed(target.startLine())) {
@@ -1189,6 +1301,7 @@ public final class FoldManager {
 
     /** Header line indices of every currently collapsed region, for persistence. */
     public List<Integer> collapsedStartLines() {
+        settleCollapsed();
         List<Integer> out = new ArrayList<>();
         for (Region r : regions) {
             if (isCollapsed(r.startLine())) {
@@ -1203,31 +1316,41 @@ public final class FoldManager {
         if (startLines == null || startLines.isEmpty()) {
             return;
         }
-        restoring = true;
-        try {
-            recompute();
-            for (Region r : regions) {
-                if (startLines.contains(r.startLine()) && !isCollapsed(r.startLine())) {
-                    area.foldParagraphs(r.startLine(), r.endLine());
-                    shadeHeader(r.startLine(), true);
-                }
-            }
-        } finally {
-            restoring = false;
-        }
-    }
-
-    /** Restores manual ranges and collapsed headers with one region recomputation instead of two. */
-    public void restore(List<Region> manual, List<Integer> collapsedStartLines) {
-        manualRegions = manual == null || manual.isEmpty() ? List.of() : List.copyOf(manual);
-        recompute();
-        if (collapsedStartLines == null || collapsedStartLines.isEmpty()) {
+        if (deferRestore()) {
+            restoreDeferred(startLines);
             return;
         }
         restoring = true;
         try {
+            recompute();
+        } finally {
+            restoring = false;
+        }
+        collapseRestored(startLines);
+    }
+
+    /**
+     * Restores manual ranges and collapsed headers with one region recomputation instead of two. For a long
+     * document ({@link #DEFERRED_RESTORE_CHARS}) that recomputation runs in the background and the collapsed
+     * headers are applied when its regions arrive; anything that needs them sooner computes them on demand.
+     */
+    public void restore(List<Region> manual, List<Integer> collapsedStartLines) {
+        manualRegions = manual == null || manual.isEmpty() ? List.of() : List.copyOf(manual);
+        if (deferRestore()) {
+            restoreDeferred(collapsedStartLines);
+            return;
+        }
+        recompute();
+        if (collapsedStartLines != null && !collapsedStartLines.isEmpty()) {
+            collapseRestored(collapsedStartLines);
+        }
+    }
+
+    private void collapseRestored(List<Integer> startLines) {
+        restoring = true;
+        try {
             for (Region r : regions) {
-                if (collapsedStartLines.contains(r.startLine()) && !isCollapsed(r.startLine())) {
+                if (startLines.contains(r.startLine()) && !isCollapsed(r.startLine())) {
                     area.foldParagraphs(r.startLine(), r.endLine());
                     shadeHeader(r.startLine(), true);
                 }
@@ -1337,7 +1460,7 @@ public final class FoldManager {
                 bpSlot.getChildren().add(breakpointMarker(breakpointClass.apply(idx)));
                 String bpTip = breakpointTooltip.apply(idx);
                 if (bpTip != null && !bpTip.isEmpty()) {
-                    Tooltip.install(bpSlot, new Tooltip(bpTip));
+                    LazyTooltip.install(bpSlot, () -> bpTip);
                 }
             }
             ownPointer(bpSlot);
@@ -1383,9 +1506,7 @@ public final class FoldManager {
                 marker.setCursor(Cursor.HAND);
                 String runTip = runTooltip.apply(idx);
                 if (runTip != null && !runTip.isBlank()) {
-                    Tooltip tip = new Tooltip(runTip);
-                    tip.setShowDelay(javafx.util.Duration.millis(300));
-                    Tooltip.install(marker, tip);
+                    LazyTooltip.install(marker, () -> runTip, null, 300);
                 }
                 final int runIdx = idx;
                 ownPointer(marker);
@@ -1413,11 +1534,16 @@ public final class FoldManager {
             box.getChildren().add(lineNo);
         }
 
-        Label chevron = new Label(" ");
-        chevron.getStyleClass().add("fold-chevron");
-        if (regionStartingAt(idx).isPresent()) {
-            boolean collapsed = isCollapsed(idx);
-            chevron.setText(collapsed ? "▸" : "▾"); // ▸ / ▾
+        // The chevron column is reserved on every row, but only a fold-start line gets the Label: a Label is
+        // a Control with a skin and a Text child, and nine rows in ten would build one to show a space. The
+        // rest get a bare Region that the stylesheet gives the same width (.fold-chevron-slot).
+        if (regionStartingAt(idx).isEmpty()) {
+            javafx.scene.layout.Region slot = new javafx.scene.layout.Region();
+            slot.getStyleClass().add("fold-chevron-slot");
+            box.getChildren().add(slot);
+        } else {
+            Label chevron = new Label(isCollapsed(idx) ? "▸" : "▾"); // ▸ / ▾
+            chevron.getStyleClass().add("fold-chevron");
             chevron.setCursor(Cursor.HAND);
             ownPointer(chevron);
             chevron.setOnMouseClicked(e -> {
@@ -1430,8 +1556,8 @@ public final class FoldManager {
                 }
                 e.consume(); // a fold click is not a text click
             });
+            box.getChildren().add(chevron);
         }
-        box.getChildren().add(chevron);
 
         // Git change bar: a thin full-height stripe at the gutter's inner edge (next to the text),
         // IntelliJ-style. The slot is reserved on every row while tracking is on, so a bar
@@ -1449,10 +1575,7 @@ public final class FoldManager {
             }
             String hunk = changeTooltip.apply(idx);
             if (hunk != null && !hunk.isBlank()) {
-                Tooltip tip = new Tooltip(hunk);
-                tip.getStyleClass().add("git-diff-tooltip");
-                tip.setShowDelay(javafx.util.Duration.millis(300));
-                Tooltip.install(bar, tip);
+                LazyTooltip.install(bar, () -> hunk, "git-diff-tooltip", 300);
             }
             box.getChildren().add(bar);
         }
@@ -1465,6 +1588,31 @@ public final class FoldManager {
      * commit. A blank slot of the same width is returned for an empty / not-yet-loaded row so the column
      * width — and thus the line-number alignment — stays constant across rows.
      */
+    /**
+     * The age-heatmap backgrounds, one per distinct tint. An inline style string is parsed by the CSS engine
+     * for every cell that carries it, and blame puts one on every row scrolled into view; the tints are a
+     * few dozen values per file, so each is resolved once. FX-thread only.
+     */
+    private static final java.util.Map<String, Background> BLAME_TINTS = new java.util.HashMap<>();
+
+    /** The cached {@link Background} for a heatmap colour, or {@code null} when it is not a plain colour. */
+    static Background blameTint(String web) {
+        Background tint = BLAME_TINTS.get(web);
+        if (tint == null) {
+            try {
+                tint = new Background(new BackgroundFill(
+                        javafx.scene.paint.Color.web(web), CornerRadii.EMPTY, javafx.geometry.Insets.EMPTY));
+            } catch (RuntimeException notAPlainColour) {
+                return null;
+            }
+            if (BLAME_TINTS.size() >= 1024) {
+                BLAME_TINTS.clear(); // a different file's range of ages; the cache only needs the current ones
+            }
+            BLAME_TINTS.put(web, tint);
+        }
+        return tint;
+    }
+
     private Node buildBlameSlot(int idx) {
         double w = Math.max(0, blameColumnWidth.getAsDouble());
         HBox slot = new HBox();
@@ -1479,7 +1627,12 @@ public final class FoldManager {
             return slot; // reserve the column on blank/unloaded rows so nothing shifts
         }
         if (info.bg() != null && !info.bg().isBlank()) {
-            slot.setStyle("-fx-background-color: " + info.bg() + ";");
+            Background tint = blameTint(info.bg());
+            if (tint != null) {
+                slot.setBackground(tint);
+            } else {
+                slot.setStyle("-fx-background-color: " + info.bg() + ";"); // not a plain colour: let CSS parse it
+            }
         }
         Label author = new Label(info.author());
         author.getStyleClass().add("blame-author");
@@ -1489,10 +1642,7 @@ public final class FoldManager {
         date.getStyleClass().add("blame-date");
         slot.getChildren().addAll(author, date);
         if (info.tooltip() != null && !info.tooltip().isBlank()) {
-            Tooltip tip = new Tooltip(info.tooltip());
-            tip.getStyleClass().add("blame-tooltip");
-            tip.setShowDelay(javafx.util.Duration.millis(400));
-            Tooltip.install(slot, tip);
+            LazyTooltip.install(slot, info::tooltip, "blame-tooltip", 400);
         }
         slot.setCursor(Cursor.HAND);
         final int blameIdx = idx;

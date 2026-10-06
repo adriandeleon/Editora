@@ -8,6 +8,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import javafx.animation.PauseTransition;
+import javafx.application.Platform;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
@@ -23,6 +24,7 @@ import com.editora.editops.PreserveCase;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.NoteAnchors;
 import com.editora.editor.SearchMatcher;
+import com.editora.editor.SearchMatches;
 import org.fxmisc.richtext.CodeArea;
 import org.reactfx.Subscription;
 
@@ -54,8 +56,38 @@ public class FindReplaceBar extends HBox {
     /** Subscription to the searched buffer's text changes (live while the bar is shown); null when hidden. */
     private Subscription textSub;
 
-    private List<int[]> matches = List.of();
+    /**
+     * The matches being shown: all of them for an ordinary result, else the page around the active one (see
+     * {@link SearchMatcher#around}) — a query that matches millions of times is never held, or even
+     * counted, in full.
+     */
+    private SearchMatches matches = SearchMatches.EMPTY;
+
     private int activeIndex = -1;
+    /** The document version and query {@link #matches} were found for; null when there are none. */
+    private SearchKey matchesKey;
+
+    private record SearchKey(long version, SearchMatcher.Query query) {}
+
+    /**
+     * Documents up to this many characters are searched where the request is made, as they always were: a
+     * few milliseconds at most, and the result is there for the next line of code. Anything larger is
+     * searched on {@link #SEARCH_POOL} and applied when it arrives — a search of a 45 MB buffer took a third
+     * of a second on the FX thread, again after every edit made with the bar open.
+     */
+    static final int SYNC_SEARCH_CHARS = 512 * 1024;
+
+    /** One daemon thread, shared by every window's bar and gone after 30 s idle. */
+    private static final java.util.concurrent.ExecutorService SEARCH_POOL = new java.util.concurrent.ThreadPoolExecutor(
+            0, 1, 30, java.util.concurrent.TimeUnit.SECONDS, new java.util.concurrent.LinkedBlockingQueue<>(), task -> {
+                Thread thread = new Thread(task, "find-search");
+                thread.setDaemon(true);
+                return thread;
+            });
+
+    private int syncSearchChars = SYNC_SEARCH_CHARS;
+    private int pageSize = SearchMatcher.DEFAULT_PAGE;
+    private LatestOnly searcher = new LatestOnly(SEARCH_POOL, Platform::runLater);
     /** The buffer {@link #matches}, the edit subscription and the scope belong to; null while hidden. */
     private EditorBuffer boundBuffer;
     /** True when the last search was abandoned part-way (time budget or regex stack depth). */
@@ -354,7 +386,14 @@ public class FindReplaceBar extends HBox {
             buffer.clearSearchMatches();
             buffer.getFocusedArea().requestFocus();
         }
-        matches = List.of();
+        forgetMatches();
+    }
+
+    /** Drops the match list and any search still running for it. */
+    private void forgetMatches() {
+        searcher.cancel();
+        matches = SearchMatches.EMPTY;
+        matchesKey = null;
         activeIndex = -1;
     }
 
@@ -384,8 +423,7 @@ public class FindReplaceBar extends HBox {
         boundBuffer = now;
         debounce.stop();
         editDebounce.stop();
-        matches = List.of();
-        activeIndex = -1;
+        forgetMatches();
         countLabel.setText("");
         resetScope();
         CodeArea area = area();
@@ -440,7 +478,15 @@ public class FindReplaceBar extends HBox {
     /** The current match ranges for the live query (empty when nothing matches / the bar is closed). */
     public List<int[]> currentMatches() {
         onActiveBufferChanged();
-        return matches;
+        return matches.toList();
+    }
+
+    /** Test seam: where large documents are searched, what counts as large, and how many matches are held. */
+    void searchOn(java.util.concurrent.Executor worker, int syncChars, int page) {
+        searcher.cancel();
+        searcher = new LatestOnly(worker, Platform::runLater);
+        syncSearchChars = syncChars;
+        pageSize = page;
     }
 
     /** Wires the Alt+Enter "select all matches" action (turns every match into a caret). */
@@ -460,6 +506,14 @@ public class FindReplaceBar extends HBox {
 
     /** As {@link #recompute()}, selecting the first match at/after {@code anchor} instead of the open-time caret. */
     private void recompute(int anchor) {
+        recompute(anchor, true);
+    }
+
+    /**
+     * @param announce whether to report "not found" / "too complex" in the status line; Replace All reports
+     *     its own count instead, which a search finishing after it must not overwrite
+     */
+    private void recompute(int anchor, boolean announce) {
         if (!isVisible()) {
             return; // a late debounce or a toggle reset must not search for a bar that is closed
         }
@@ -468,8 +522,7 @@ public class FindReplaceBar extends HBox {
         CodeArea area = buffer == null ? null : buffer.getFocusedArea();
         String query = findField.getText();
         if (area == null || query.isEmpty()) {
-            matches = List.of();
-            activeIndex = -1;
+            forgetMatches();
             if (buffer != null) {
                 buffer.clearSearchMatches();
             }
@@ -479,27 +532,33 @@ public class FindReplaceBar extends HBox {
         if (regex.isSelected()) {
             String err = SearchMatcher.regexError(query);
             if (err != null) {
-                matches = List.of();
-                activeIndex = -1;
+                forgetMatches();
                 buffer.clearSearchMatches();
                 countLabel.setText("");
                 status.accept(tr("find.badRegex", err));
                 return;
             }
         }
-        matches = computeMatches(area, query);
-        if (matches.isEmpty()) {
-            activeIndex = -1;
-            buffer.clearSearchMatches();
-            countLabel.setText("");
-            status.accept(searchIncomplete ? tr("find.tooComplex") : tr("find.notFound", query));
-            return;
-        }
-        activeIndex = SearchMatcher.nextIndex(matches, anchor, true);
-        applyActive(buffer, area, false);
-        if (searchIncomplete) {
-            status.accept(tr("find.tooComplex")); // what is highlighted is not every match
-        }
+        locate(buffer, query, anchor, true, found -> {
+            if (found.index() < 0) {
+                showNoMatches(buffer);
+                if (announce) {
+                    status.accept(searchIncomplete ? tr("find.tooComplex") : tr("find.notFound", query));
+                }
+                return;
+            }
+            activeIndex = found.index();
+            applyActive(buffer, area, false);
+            if (searchIncomplete && announce) {
+                status.accept(tr("find.tooComplex")); // what is highlighted is not every match
+            }
+        });
+    }
+
+    private void showNoMatches(EditorBuffer buffer) {
+        activeIndex = -1;
+        buffer.clearSearchMatches();
+        countLabel.setText("");
     }
 
     /**
@@ -514,50 +573,83 @@ public class FindReplaceBar extends HBox {
         if (area == null || query.isEmpty()) {
             return;
         }
-        matches = computeMatches(area, query);
-        if (matches.isEmpty()) {
-            activeIndex = -1;
-            buffer.clearSearchMatches();
-            countLabel.setText("");
+        // Keep the "active" (boxed) match near the caret, but never move the caret/selection here.
+        locate(buffer, query, area.getCaretPosition(), true, found -> {
+            if (found.index() < 0) {
+                showNoMatches(buffer);
+                return;
+            }
+            activeIndex = found.index();
+            buffer.setSearchMatches(matches, activeIndex);
+            countLabel.setText(countText());
+        });
+    }
+
+    /** The live query with its options and the find-in-selection scope, as the matcher takes it. */
+    private SearchMatcher.Query query(String text) {
+        boolean scoped = hasScope();
+        return new SearchMatcher.Query(
+                text,
+                caseSensitive.isSelected(),
+                regex.isSelected(),
+                wholeWord.isSelected(),
+                scoped ? scopeStart : -1,
+                scoped ? scopeEnd : -1);
+    }
+
+    /**
+     * Finds the match to go to from {@code from} (see {@link SearchMatcher#locate}) together with the page of
+     * matches around it, makes that page the current match list and hands the result to {@code then}.
+     *
+     * <p>The text is the buffer's shared snapshot, not a fresh {@code area.getText()}. A document over
+     * {@link #syncSearchChars} is searched off the FX thread: {@code then} runs later, and not at all if the
+     * search was superseded by another, the document was edited meanwhile (that edit's own re-search is
+     * already on its way) or the bar has moved to another buffer or closed.
+     */
+    private void locate(
+            EditorBuffer buffer, String query, int from, boolean forward, Consumer<SearchMatcher.Located> then) {
+        SearchMatcher.Query q = query(query);
+        String text = buffer.getVisibleContent();
+        long version = buffer.docVersion();
+        int page = pageSize;
+        Consumer<SearchMatcher.Located> apply = found -> {
+            matches = found.matches();
+            matchesKey = new SearchKey(version, q);
+            searchIncomplete = !matches.complete();
+            then.accept(found);
+        };
+        if (text.length() <= syncSearchChars) {
+            searcher.cancel();
+            apply.accept(SearchMatcher.locate(text, q, from, forward, page));
             return;
         }
-        // Keep the "active" (boxed) match near the caret, but never move the caret/selection here.
-        activeIndex = SearchMatcher.nextIndex(matches, area.getCaretPosition(), true);
-        buffer.setSearchMatches(matches, activeIndex);
-        countLabel.setText(tr("find.count", activeIndex + 1, matches.size()));
-    }
-
-    /**
-     * The current match set for {@code query}, restricted to the find-in-selection scope when one is
-     * active (empty on an invalid regex; no UI side effects).
-     */
-    private List<int[]> computeMatches(CodeArea area, String query) {
-        searchIncomplete = false;
-        if (regex.isSelected() && SearchMatcher.regexError(query) != null) {
-            return List.of();
-        }
-        SearchMatcher.Result found = SearchMatcher.search(
-                area.getText(), query, caseSensitive.isSelected(), regex.isSelected(), wholeWord.isSelected());
-        searchIncomplete = !found.complete();
-        return scoped(found.matches());
-    }
-
-    /**
-     * Keeps only matches lying wholly inside the scope. Filtering absolute offsets — rather than searching
-     * a substring and mapping offsets back — keeps anchors ({@code ^}, {@code $}, {@code \b}) resolving
-     * against the real document, and leaves every offset already correct for the buffer.
-     */
-    private List<int[]> scoped(List<int[]> all) {
-        if (!hasScope() || all.isEmpty()) {
-            return all;
-        }
-        List<int[]> out = new ArrayList<>();
-        for (int[] m : all) {
-            if (m[0] >= scopeStart && m[1] <= scopeEnd) {
-                out.add(m);
+        searcher.submit(() -> SearchMatcher.locate(text, q, from, forward, page), found -> {
+            if (isVisible() && boundBuffer == buffer && buffer.docVersion() == version) {
+                apply.accept(found);
             }
-        }
-        return out;
+        });
+    }
+
+    /** Whether {@link #matches} were found for {@code buffer} as it is now and for the query as it is now. */
+    private boolean matchesCurrent(EditorBuffer buffer, String query) {
+        return matchesKey != null
+                && buffer == boundBuffer
+                && matchesKey.version() == buffer.docVersion()
+                && matchesKey.query().equals(query(query));
+    }
+
+    /**
+     * "{n} of {total}". When the document has more matches than are held, the total is not known — finding
+     * it would mean walking them all — so it reads as the number counted so far followed by {@code +}.
+     */
+    private String countText() {
+        long ordinal = matches.ordinal(activeIndex);
+        return matches.moreAfter()
+                ? tr(
+                        "find.count",
+                        ordinal,
+                        java.text.NumberFormat.getIntegerInstance().format(matches.counted()) + "+")
+                : tr("find.count", ordinal, matches.counted());
     }
 
     /** True when {@code [start,end)} lies wholly inside an active scope (or there is no scope). */
@@ -597,36 +689,51 @@ public class FindReplaceBar extends HBox {
             return;
         }
         onActiveBufferChanged();
-        if (matches.isEmpty()) {
+        if (matches.isEmpty() && !searcher.pending()) {
             recompute();
             if (matches.isEmpty()) {
                 return;
             }
         }
+        String query = findField.getText();
+        boolean current = matchesCurrent(buffer, query) && !searcher.pending();
         int selStart = area.getSelection().getStart();
         int selEnd = area.getSelection().getEnd();
-        if (forward && isActiveMatch(selStart, selEnd)) {
-            // Step by index: searching from the selection's end would land on a zero-width match (^, $,
-            // ^$) again and again, since such a match ends where it starts.
-            activeIndex = (activeIndex + 1) % matches.size();
-        } else {
-            activeIndex = SearchMatcher.nextIndex(matches, forward ? selEnd : selStart, forward);
+        // From the active match, step to the one that starts after it: searching from the selection's end
+        // would land on a zero-width match (^, $, ^$) again and again, since such a match ends where it
+        // starts.
+        int from = !forward
+                ? selStart
+                : current && isActiveMatch(selStart, selEnd) ? matches.start(activeIndex) + 1 : selEnd;
+        int index = current ? matches.step(from, forward) : -1;
+        if (index >= 0) {
+            activeIndex = index;
+            applyActive(buffer, area, true);
+            return;
         }
-        applyActive(buffer, area, true);
+        // The target is not among the matches held (a long result is held a page at a time), or they are
+        // out of date: search from there.
+        locate(buffer, query, from, forward, found -> {
+            if (found.index() < 0) {
+                showNoMatches(buffer);
+                return;
+            }
+            activeIndex = found.index();
+            applyActive(buffer, area, true);
+        });
     }
 
     /** True when {@code [start,end)} is exactly the match the bar currently shows as active. */
     private boolean isActiveMatch(int start, int end) {
-        if (activeIndex < 0 || activeIndex >= matches.size()) {
-            return false;
-        }
-        int[] m = matches.get(activeIndex);
-        return m[0] == start && m[1] == end;
+        return activeIndex >= 0
+                && activeIndex < matches.size()
+                && matches.start(activeIndex) == start
+                && matches.end(activeIndex) == end;
     }
 
     /** Selects/scrolls to the active match, refreshes the overlay + count. */
     private void applyActive(EditorBuffer buffer, CodeArea area, boolean focusEditor) {
-        int[] m = matches.get(activeIndex);
+        int[] m = {matches.start(activeIndex), matches.end(activeIndex)};
         // Reveal a match hidden in a collapsed fold first: selecting hidden text shows nothing, and the
         // selection then spans from the fold header into lines the user cannot see.
         int firstLine = area.offsetToPosition(m[0], org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
@@ -640,7 +747,7 @@ public class FindReplaceBar extends HBox {
         area.selectRange(m[0], m[1]);
         area.requestFollowCaret();
         buffer.setSearchMatches(matches, activeIndex);
-        countLabel.setText(tr("find.count", activeIndex + 1, matches.size()));
+        countLabel.setText(countText());
         if (focusEditor) {
             // navigation via buttons/Enter keeps the find field focused for further typing
             findField.requestFocus();
@@ -659,15 +766,18 @@ public class FindReplaceBar extends HBox {
         // Validate the selection against a fresh match list WITHOUT recompute(): that re-selects the first
         // match after the open-time anchor, and the replace below then rewrote that match instead of this one.
         String query = findField.getText();
-        boolean currentMatch =
-                !query.isEmpty() && computeMatches(area, query).stream().anyMatch(m -> m[0] == start && m[1] == end);
+        String text = buffer.getVisibleContent();
+        boolean currentMatch = !query.isEmpty()
+                && (matchesCurrent(buffer, query) && matches.covers(start)
+                        ? matches.indexOf(start, end) >= 0
+                        : SearchMatcher.isMatch(text, query(query), start, end));
         int next = start;
         // A zero-width match (^, $, a lookahead) is replaceable too: it is an insertion at that spot.
         if (inScope(start, end) && currentMatch) {
             String matched = area.getText(start, end);
             String repl;
             try {
-                repl = replacementForSingle(area.getText(), start, end, matched);
+                repl = replacementForSingle(text, start, end, matched);
             } catch (RuntimeException badReference) {
                 status.accept(tr("find.badReplacement", describe(badReference)));
                 return;
@@ -726,11 +836,11 @@ public class FindReplaceBar extends HBox {
                 return;
             }
         }
-        String text = area.getText();
-        List<int[]> spans = new ArrayList<>();
+        String text = buffer.getVisibleContent();
+        SearchMatches spans;
         List<String> replacements = new ArrayList<>();
         try {
-            collectReplacements(area, text, query, spans, replacements);
+            spans = collectReplacements(text, query, replacements);
         } catch (SearchMatcher.MatchBudgetExceededException timeout) {
             // A valid-but-pathological pattern blew the backtracking budget mid-walk — abandon the whole
             // replace (a half-collected set would splice a corrupt document) rather than freeze the UI.
@@ -751,50 +861,52 @@ public class FindReplaceBar extends HBox {
         }
         // Splice only the span from the first to the last match, not the whole document: one ranged edit
         // keeps the untouched remainder out of the undo entry and leaves the caret where it was.
-        int from = spans.get(0)[0];
-        int to = spans.get(spans.size() - 1)[1];
+        int from = spans.start(0);
+        int to = spans.end(spans.size() - 1);
+        String same = replaceField.getText(); // what every match gets when none has a text of its own
         StringBuilder sb = new StringBuilder();
         int i = from;
         for (int k = 0; k < spans.size(); k++) {
-            int[] m = spans.get(k);
-            sb.append(text, i, m[0]).append(replacements.get(k));
-            i = m[1];
+            sb.append(text, i, spans.start(k)).append(replacements.isEmpty() ? same : replacements.get(k));
+            i = spans.end(k);
         }
         area.replaceText(from, to, sb.toString());
-        recompute();
+        recompute(searchAnchor, false);
         status.accept(tr("find.replaced", spans.size()));
     }
 
     /**
-     * Fills {@code spans}/{@code replacements} with each in-scope match and the text that should replace
-     * it — group references expanded in regex mode, then recased when preserve-case is on.
+     * Every in-scope match of the document — not the page the bar happens to be showing — and, in
+     * {@code replacements}, the text that should replace each: group references expanded in regex mode, then
+     * recased when preserve-case is on. A plain literal replace gives every match the same text, so
+     * {@code replacements} is left empty rather than filled with one reference per match.
      *
-     * <p>Regex mode walks the pattern over the full document rather than reusing {@link #computeMatches},
+     * <p>Regex mode walks the pattern over the full document rather than reusing the bar's match list,
      * because expanding {@code $1} needs live {@link Matcher} state. Expansion is delegated to
      * {@link Matcher#appendReplacement} (writing into a scratch buffer we then slice) so the JDK's own
      * {@code $}/{@code \} handling is used verbatim instead of being reimplemented here.
      *
      * @throws RuntimeException from {@code appendReplacement} if the replacement references a missing group
      */
-    private void collectReplacements(
-            CodeArea area, String text, String query, List<int[]> spans, List<String> replacements) {
+    private SearchMatches collectReplacements(String text, String query, List<String> replacements) {
         String replacement = replaceField.getText();
         boolean recase = preserveCase.isSelected();
         if (!regex.isSelected()) {
-            for (int[] m : computeMatches(area, query)) {
-                spans.add(m);
-                replacements.add(recase ? PreserveCase.apply(text.substring(m[0], m[1]), replacement) : replacement);
+            SearchMatches all = SearchMatcher.all(text, query(query));
+            for (int k = 0; recase && k < all.size(); k++) {
+                replacements.add(PreserveCase.apply(text.substring(all.start(k), all.end(k)), replacement));
             }
-            return;
+            return all;
         }
         // Whole-word wraps the query in a non-capturing group, so user group numbers survive.
         Pattern p = SearchMatcher.compileDocumentRegex(query, caseSensitive.isSelected(), wholeWord.isSelected());
         if (p == null) {
-            return;
+            return SearchMatches.EMPTY;
         }
+        List<int[]> spans = new ArrayList<>();
         // Wrap the document in the same wall-clock backtracking budget the incremental search uses, so a
         // pathological-but-valid pattern aborts (via MatchBudgetExceededException) instead of hanging the FX
-        // thread. text.substring(...)/computeMatches below still read the raw String, so offsets are exact.
+        // thread. text.substring(...) below still reads the raw String, so offsets are exact.
         Matcher m = p.matcher(SearchMatcher.budgetedSequence(text));
         StringBuffer scratch = new StringBuffer();
         int lastEnd = 0;
@@ -811,6 +923,7 @@ public class FindReplaceBar extends HBox {
             spans.add(new int[] {m.start(), m.end()});
             replacements.add(recase ? PreserveCase.apply(m.group(), expanded) : expanded);
         }
+        return SearchMatches.ofPairs(spans);
     }
 
     /** A short, user-facing description of a replacement-expansion failure. */

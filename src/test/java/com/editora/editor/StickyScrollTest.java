@@ -94,4 +94,51 @@ class StickyScrollTest {
         assertEquals(250, StickyScroll.navigationFirstVisible(NESTED, 250, 5));
         assertEquals(0, StickyScroll.navigationFirstVisible(NESTED, -4, 5));
     }
+
+    @Test
+    void theIndexAnswersExactlyAsTheLinearScanDoes() {
+        java.util.Random random = new java.util.Random(20261005);
+        for (int round = 0; round < 300; round++) {
+            // Arbitrary intervals: nested, adjacent, sharing a start line, and overlapping without nesting
+            // (the "} else {" shape, where one region ends on the line the next starts on).
+            List<Region> regions = new java.util.ArrayList<>();
+            int lines = 20 + random.nextInt(200);
+            for (int i = random.nextInt(40); i > 0; i--) {
+                int start = random.nextInt(lines);
+                regions.add(r(start, start + random.nextInt(lines - start + 1)));
+            }
+            StickyScroll.Index index = StickyScroll.Index.of(regions);
+            for (int first = 0; first <= lines + 1; first++) {
+                for (int max : new int[] {1, 3, 5, 50}) {
+                    assertEquals(
+                            StickyScroll.headerLines(regions, first, max),
+                            index.headerLines(first, max),
+                            "regions " + regions + " first " + first + " max " + max);
+                }
+            }
+        }
+    }
+
+    @Test
+    void theIndexIsReusedOnlyForTheListItWasBuiltFrom() {
+        StickyScroll.Index index = StickyScroll.Index.of(NESTED);
+        org.junit.jupiter.api.Assertions.assertTrue(index.isFor(NESTED));
+        org.junit.jupiter.api.Assertions.assertFalse(index.isFor(List.copyOf(new java.util.ArrayList<>(NESTED))));
+        assertEquals(List.of(), StickyScroll.Index.EMPTY.headerLines(25, 5));
+        assertEquals(List.of(), StickyScroll.Index.of(null).headerLines(25, 5));
+    }
+
+    @Test
+    void aQueryWalksTheNestingDepthNotTheFile() {
+        // 50,000 sibling methods inside one class: only the class and one method enclose any line.
+        List<Region> regions = new java.util.ArrayList<>();
+        regions.add(r(0, 500_001));
+        for (int i = 0; i < 50_000; i++) {
+            regions.add(r(1 + i * 10, 9 + i * 10));
+        }
+        StickyScroll.Index index = StickyScroll.Index.of(regions);
+        assertEquals(List.of(0, 250_001), index.headerLines(250_005, 5));
+        assertEquals(List.of(0), index.headerLines(250_010, 5));
+        assertEquals(StickyScroll.headerLines(regions, 499_995, 5), index.headerLines(499_995, 5));
+    }
 }

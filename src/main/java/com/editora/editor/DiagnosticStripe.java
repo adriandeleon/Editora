@@ -110,7 +110,11 @@ final class DiagnosticStripe extends Region implements SecondaryPane.Followed {
         if (follower != null) {
             follower.setDiagnostics(diagnostics);
         }
-        this.diagnostics = diagnostics == null ? List.of() : diagnostics;
+        List<LspDiagnostic> now = diagnostics == null ? List.of() : diagnostics;
+        if (now.isEmpty() && this.diagnostics.isEmpty()) {
+            return; // cleared again on every keystroke of an LSP buffer: nothing to shrink or repaint
+        }
+        this.diagnostics = now;
         // Only intercept mouse events (over the scrollbar) when there are marks to hover/click.
         setMouseTransparent(!active || this.diagnostics.isEmpty());
         requestLayout(); // grow the canvas when marks appear / shrink it to 1x1 when they're gone

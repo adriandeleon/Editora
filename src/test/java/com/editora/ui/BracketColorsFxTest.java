@@ -153,19 +153,17 @@ class BracketColorsFxTest {
                 }
             }
             // These separate the remaining candidates, which the style counts alone cannot:
-            //   lineStates empty while highlightGen > 0 → passes dispatched but none ever applied
-            //   lineStates non-empty                    → a pass applied but produced no styles
-            //   bracketColors false                     → the per-buffer flag never took
-            java.util.List<?> states = FxTestSupport.field(b, "lineStates");
-            java.util.List<?> depths = FxTestSupport.field(b, "lineDepths");
+            //   highlightLines null while highlightGen > 0 → passes dispatched but none ever applied
+            //   highlightLines non-null                    → a pass applied but produced no styles
+            //   bracketColors false                        → the per-buffer flag never took
             return "hasHighlighting=" + b.hasHighlighting() + " length=" + area.getLength() + " styledChars=" + styled
                     + " styleAtProbe=" + area.getStyleOfChar(probe) + " bracketColors="
                     + FxTestSupport.field(b, "bracketColors") + " highlightGen="
-                    + FxTestSupport.field(b, "highlightGen") + " highlightStart="
-                    + FxTestSupport.field(b, "highlightStart") + " lineStates=" + states.size() + " lineDepths="
-                    + depths.size();
+                    + FxTestSupport.field(b, "highlightGen") + " highlightDirty="
+                    + FxTestSupport.field(b, "highlightDirty") + " highlightLines="
+                    + FxTestSupport.field(b, "highlightLines");
         });
-        // highlightGen>0 with lineStates=0 means passes were handed to the pool and none ever applied.
+        // highlightGen>0 with highlightLines=null means passes were handed to the pool and none ever applied.
         // The thread dump says whether the pool's workers are stuck (and on what — the shared grammar
         // monitor is the prime suspect: CLAUDE.md records a full-suite-only deadlock on it before), or
         // idle (⇒ the task threw and was swallowed, or the apply threw — see fxUncaught).

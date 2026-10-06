@@ -449,7 +449,7 @@ final class GitCoordinator {
             return;
         }
         Path file = b.getPath();
-        service.blame(repoRoot, file, lines -> {
+        service.blameLatest(repoRoot, file, lines -> {
             if (host.activeBuffer() != b) {
                 return; // the user switched tabs while blame ran
             }

@@ -8,7 +8,7 @@ import javafx.scene.image.Image;
 
 /**
  * A byte budget for the decoded-image caches ({@link PreviewImageLoader}, {@link DiagramImages},
- * {@link MathImages}).
+ * {@link MermaidImages}, {@link TypstImages}, {@link MathImages}).
  *
  * <p>Those caches were bounded by <em>entry count</em>, which is not a memory bound when the entries
  * differ in size by three orders of magnitude. A shields.io badge is a few KB; a
@@ -28,6 +28,12 @@ final class ImageCacheBudget {
 
     /** Rendered diagrams: large, but generated from source the user is looking at. */
     static final long DIAGRAM_BUDGET_BYTES = 128L * 1024 * 1024;
+
+    /**
+     * Typst pages: ~14 MB each decoded (A4 at 192 PPI), and the same pages are held by the render cache and
+     * by the retained-last-good map, so each of the two is weighed against this on its own.
+     */
+    static final long TYPST_BUDGET_BYTES = 192L * 1024 * 1024;
 
     /** Formulas are small; this is a backstop, not a working limit. */
     static final long MATH_BUDGET_BYTES = 32L * 1024 * 1024;

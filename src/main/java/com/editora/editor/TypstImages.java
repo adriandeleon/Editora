@@ -43,10 +43,10 @@ import com.editora.typst.TypstRenderer;
  */
 public final class TypstImages {
 
-    private record Loaded(Image image, double logicalWidth) {}
+    record Loaded(Image image, double logicalWidth) {}
 
     /** {@code more} = pages beyond the display cap that were not rendered into the preview (0 = all shown). */
-    private record Cached(List<Loaded> pages, String error, int more, long at) {
+    record Cached(List<Loaded> pages, String error, int more, long at) {
         Cached(List<Loaded> pages, String error, int more) {
             this(pages, error, more, System.currentTimeMillis());
         }
@@ -97,6 +97,69 @@ public final class TypstImages {
     });
     private static final Map<String, Long> LATEST = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.concurrent.atomic.AtomicLong SEQ = new java.util.concurrent.atomic.AtomicLong();
+
+    /** The newest cached render of each preview surface; an older one of the same surface is dropped. */
+    private static final PreviewSurfaces.Newest NEWEST = new PreviewSurfaces.Newest();
+
+    /**
+     * Drops what is held for a preview whose buffer was disposed: its retained last-good pages and its
+     * newest render. Until this existed a closed document's pages stayed until others pushed them out.
+     */
+    static void release(String retainKey, String surfaceKey) {
+        if (retainKey != null) {
+            LAST_GOOD.remove(retainKey);
+        }
+        if (surfaceKey != null) {
+            LATEST.remove(surfaceKey);
+            String key = NEWEST.release(surfaceKey);
+            if (key != null) {
+                CACHE.remove(key);
+            }
+        }
+    }
+
+    /**
+     * Stores a finished render. It replaces the previous render of its surface — every settled edit is a new
+     * source, hence a new entry, and only the newest can be shown again — and both maps are then bounded by
+     * pages and by decoded bytes, never evicting what was just stored.
+     */
+    static void store(String key, Cached result, String retainKey, String surfaceKey) {
+        String replaced = NEWEST.record(surfaceKey, key);
+        if (replaced != null) {
+            CACHE.remove(replaced);
+        }
+        CACHE.put(key, result);
+        evictToPageBudget(CACHE, c -> c.pages() == null ? 0 : c.pages().size(), MAX_CACHED_PAGES);
+        synchronized (CACHE) {
+            ImageCacheBudget.trim(CACHE, c -> footprint(c.pages()), ImageCacheBudget.TYPST_BUDGET_BYTES);
+        }
+        if (result.ok()) {
+            LAST_GOOD.put(retainKey, result.pages());
+            evictToPageBudget(LAST_GOOD, List::size, MAX_CACHED_PAGES);
+            synchronized (LAST_GOOD) {
+                ImageCacheBudget.trim(LAST_GOOD, TypstImages::footprint, ImageCacheBudget.TYPST_BUDGET_BYTES);
+            }
+        }
+    }
+
+    private static long footprint(List<Loaded> pages) {
+        long bytes = 0;
+        if (pages != null) {
+            for (Loaded page : pages) {
+                bytes += ImageCacheBudget.footprint(page.image());
+            }
+        }
+        return bytes;
+    }
+
+    /** Whether a render is cached under {@code key} / pages are retained under {@code retainKey} (tests). */
+    static boolean cached(String key) {
+        return CACHE.containsKey(key);
+    }
+
+    static boolean retained(String retainKey) {
+        return LAST_GOOD.containsKey(retainKey);
+    }
 
     private static volatile boolean enabled;
     private static volatile List<String> command = List.of("typst");
@@ -244,12 +307,7 @@ public final class TypstImages {
             } else {
                 result = new Cached(null, r.error(), 0);
             }
-            CACHE.put(key, result);
-            evictToPageBudget(CACHE, c -> c.pages() == null ? 0 : c.pages().size(), MAX_CACHED_PAGES);
-            if (result.ok()) {
-                LAST_GOOD.put(retainKey, result.pages());
-                evictToPageBudget(LAST_GOOD, List::size, MAX_CACHED_PAGES);
-            }
+            store(key, result, retainKey, surfaceKey);
             Platform.runLater(() -> applyCached(host, result, sizer, retainKey));
             if (surfaceKey != null) {
                 LATEST.remove(surfaceKey, gen);

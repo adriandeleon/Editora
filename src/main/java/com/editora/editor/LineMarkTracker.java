@@ -61,6 +61,11 @@ final class LineMarkTracker {
 
     static <T> Result<T> apply(
             NavigableMap<Integer, T> marks, LineMarks.Kind<T> kind, List<PlainTextChange> changes, CodeArea area) {
+        if (marks.isEmpty()) {
+            // Nothing to carry — the usual case — so a large batch (a formatter's edit set, a multi-caret
+            // edit) is not settled replacement by replacement, which is quadratic in the batch.
+            return new Result<>(marks, false, false);
+        }
         int n = changes.size();
         int[] positions = new int[n];
         int[] lengthDelta = new int[n];

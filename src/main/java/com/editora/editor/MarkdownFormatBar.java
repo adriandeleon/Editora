@@ -74,6 +74,17 @@ final class MarkdownFormatBar {
         return node;
     }
 
+    /**
+     * Whether placing {@code bar} (which may not exist yet) can change anything: it could come up — the
+     * feature is on and {@code view} has a selection — or it is up and may have to move or go away. The
+     * buffer asks before queueing an update, because the triggers are every scroll event and caret move.
+     */
+    static boolean updateNeeded(MarkdownFormatBar bar, boolean enabled, org.fxmisc.richtext.CodeArea view) {
+        return view == null
+                || (enabled && view.getSelection().getLength() > 0)
+                || (bar != null && bar.node.isVisible());
+    }
+
     private static Button button(Node icon, String tooltipKey, Runnable action) {
         Button b = new Button();
         b.setGraphic(icon);

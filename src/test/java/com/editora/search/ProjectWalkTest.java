@@ -218,4 +218,96 @@ class ProjectWalkTest {
         assertEquals(List.of("src/A.java", "top.txt"), rels.stream().sorted().toList());
         assertTrue(files.stream().allMatch(f -> f.startsWith(link)), "offered under the root as given: " + files);
     }
+
+    // --- nested .gitignore files -----------------------------------------------------------------------
+
+    @Test
+    void aNestedGitignoreAppliesToItsOwnSubtreeOnly(@TempDir Path root) throws Exception {
+        // A monorepo: each package ignores its own node_modules and dist; the root file knows nothing of them.
+        Files.writeString(root.resolve(".gitignore"), "*.log\n");
+        file(root, "packages/a/src/index.js");
+        file(root, "packages/a/node_modules/dep/index.js");
+        file(root, "packages/a/dist/bundle.js");
+        file(root, "packages/a/keep.log.txt");
+        file(root, "packages/a/debug.log");
+        Files.writeString(root.resolve("packages/a/.gitignore"), "node_modules\n/dist\n");
+        file(root, "packages/b/src/main.js");
+        file(root, "packages/b/node_modules/dep/index.js"); // b has no .gitignore of its own
+        file(root, "packages/b/dist/bundle.js");
+        file(root, "packages/a/src/dist/kept.js"); // "/dist" is anchored to packages/a
+
+        List<String> entered = new ArrayList<>();
+        List<String> files = new ArrayList<>();
+        ProjectWalk.walk(root, unbounded(GitignoreFilter.load(root)), new ProjectWalk.Visitor() {
+            @Override
+            public boolean enter(Path dir, String rel) {
+                entered.add(rel);
+                return true;
+            }
+
+            @Override
+            public ProjectWalk.Verdict file(Path f, String rel, java.nio.file.attribute.BasicFileAttributes attrs) {
+                files.add(rel);
+                return ProjectWalk.Verdict.ACCEPT;
+            }
+        });
+        files.sort(null);
+
+        assertEquals(
+                List.of(
+                        "packages/a/keep.log.txt",
+                        "packages/a/src/dist/kept.js",
+                        "packages/a/src/index.js",
+                        "packages/b/dist/bundle.js",
+                        "packages/b/node_modules/dep/index.js",
+                        "packages/b/src/main.js"),
+                files);
+        assertFalse(entered.contains("packages/a/node_modules"), "pruned before it is listed: " + entered);
+        assertFalse(entered.contains("packages/a/dist"));
+        assertTrue(entered.contains("packages/b/node_modules"), "a's rules do not reach its sibling");
+    }
+
+    @Test
+    void aNestedNegationOutranksTheRootRule(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve(".gitignore"), "*.gen\n");
+        file(root, "a/x.gen");
+        file(root, "b/y.gen");
+        Files.writeString(root.resolve("b/.gitignore"), "!y.gen\n");
+
+        assertEquals(List.of("b/y.gen"), walk(root, unbounded(GitignoreFilter.load(root))));
+    }
+
+    @Test
+    void nestedFilesAreNotReadWhenGitignoreIsOffOrTheFilterIsLiteral(@TempDir Path root) throws Exception {
+        file(root, "pkg/node_modules/dep.js");
+        file(root, "pkg/src.js");
+        Files.writeString(root.resolve("pkg/.gitignore"), "node_modules\n");
+
+        // "Respect .gitignore" switched off: NONE means everything, nested files included.
+        assertEquals(List.of("pkg/node_modules/dep.js", "pkg/src.js"), walk(root, unbounded(GitignoreFilter.NONE)));
+        // A filter parsed from text is exactly that text.
+        assertEquals(
+                List.of("pkg/node_modules/dep.js", "pkg/src.js"),
+                walk(root, unbounded(GitignoreFilter.parse("*.tmp\n"))));
+        // A root with no .gitignore of its own still honours the nested ones.
+        assertEquals(List.of("pkg/src.js"), walk(root, unbounded(GitignoreFilter.load(root))));
+    }
+
+    @Test
+    void offersAgreesWithTheWalkAboutOneFile(@TempDir Path root) throws Exception {
+        Files.writeString(root.resolve(".gitignore"), "target/\n");
+        file(root, "pkg/node_modules/dep.js");
+        file(root, "pkg/src.js");
+        file(root, "target/out.js");
+        file(root, ".idea/x.xml");
+        Files.writeString(root.resolve("pkg/.gitignore"), "node_modules\n");
+        GitignoreFilter ignore = GitignoreFilter.load(root);
+
+        assertTrue(ProjectWalk.offers(root, root.resolve("pkg/src.js"), ignore));
+        assertFalse(ProjectWalk.offers(root, root.resolve("pkg/node_modules/dep.js"), ignore));
+        assertFalse(ProjectWalk.offers(root, root.resolve("target/out.js"), ignore));
+        assertFalse(ProjectWalk.offers(root, root.resolve(".idea/x.xml"), ignore));
+        assertFalse(ProjectWalk.offers(root, root.resolve("pkg/.hidden"), ignore));
+        assertFalse(ProjectWalk.offers(root, root, ignore));
+    }
 }

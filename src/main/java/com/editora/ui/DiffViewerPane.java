@@ -1174,7 +1174,7 @@ public final class DiffViewerPane implements TabContent {
     }
 
     private void buildResultEditor() {
-        resultArea = new CodeArea();
+        resultArea = AreaUndo.bounded(new CodeArea());
         resultArea.setId("diff-editable-result");
         resultArea.getStyleClass().addAll("editor-area", "diff-result");
         resultArea.setAccessibleText(tr("diff.resultDescription"));
@@ -1952,7 +1952,7 @@ public final class DiffViewerPane implements TabContent {
     // --- shared rendering -----------------------------------------------------------------------
 
     private CodeArea readOnlyArea(String extraClass) {
-        CodeArea area = new CodeArea();
+        CodeArea area = AreaUndo.none(new CodeArea());
         area.getStyleClass().addAll("editor-area", "diff-area", extraClass);
         area.setAccessibleText(
                 extraClass.equals("diff-left")

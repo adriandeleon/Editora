@@ -41,6 +41,9 @@ public final class ProcessRunner {
     /** Cap on captured stdout/stderr per run — enough for any real tool report, bounded against a runaway. */
     private static final int MAX_CAPTURED_BYTES = 10 * 1024 * 1024;
 
+    /** The {@code err} of a {@link Result} whose command was killed at its timeout. */
+    static final String TIMED_OUT = "command timed out";
+
     /** Outcome of one command: process {@code exit} code plus its captured {@code out}/{@code err}. */
     public record Result(int exit, String out, String err, boolean outTruncated, boolean errTruncated) {
         public Result(int exit, String out, String err) {
@@ -49,6 +52,11 @@ public final class ProcessRunner {
 
         public boolean ok() {
             return exit == 0;
+        }
+
+        /** The command was killed at its timeout: it said nothing about what it was asked, either way. */
+        public boolean timedOut() {
+            return exit == -1 && TIMED_OUT.equals(err);
         }
 
         /** A human-readable error: stderr if present, else stdout, trimmed. */
@@ -177,6 +185,19 @@ public final class ProcessRunner {
         }
     }
 
+    /**
+     * Runs {@code command}, handing each line of its stdout (UTF-8, without the line break) to
+     * {@code stopAfter} as it arrives instead of collecting it; the returned {@link Result#out()} is empty.
+     * When the predicate answers {@code true} the process tree is killed there and then — for a caller that
+     * takes the first N results and has no use for the hours of output after them. Lines are delivered on a
+     * reader thread, in order, never concurrently. More than the capture limit of output also ends the run,
+     * flagged {@link Result#outTruncated()}.
+     */
+    public static Result runLines(
+            Path workingDir, Duration timeout, List<String> command, java.util.function.Predicate<String> stopAfter) {
+        return decoded(runRaw(workingDir, timeout, command, Map.of(), null, false, false, stopAfter));
+    }
+
     /** Runs {@code command} and returns its raw stdout bytes (undecoded). No stdin. */
     public static BytesResult runBytes(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
@@ -191,6 +212,18 @@ public final class ProcessRunner {
             byte[] stdin,
             boolean userLocale,
             boolean scrubSecrets) {
+        return runRaw(workingDir, timeout, command, extraEnv, stdin, userLocale, scrubSecrets, null);
+    }
+
+    private static BytesResult runRaw(
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            byte[] stdin,
+            boolean userLocale,
+            boolean scrubSecrets,
+            java.util.function.Predicate<String> stopAfterLine) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
         // child env we set below — so without this, mmdc/npx still wouldn't be found.
@@ -244,15 +277,18 @@ public final class ProcessRunner {
         errReader.start();
         ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
         AtomicBoolean outTruncated = new AtomicBoolean();
-        Thread outReader = new Thread(() -> drain(process.getInputStream(), outBuf, outTruncated), "proc-stdout");
+        Thread outReader = new Thread(
+                stopAfterLine == null
+                        ? () -> drain(process.getInputStream(), outBuf, outTruncated)
+                        : () -> drainLines(process, stopAfterLine, outTruncated),
+                "proc-stdout");
         outReader.setDaemon(true);
         outReader.start();
 
         try {
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 ProcessRegistry.killTree(process); // children first — a wrapper script's real work is a child
-                return new BytesResult(
-                        -1, outBuf.toByteArray(), "command timed out", outTruncated.get(), errTruncated.get());
+                return new BytesResult(-1, outBuf.toByteArray(), TIMED_OUT, outTruncated.get(), errTruncated.get());
             }
             // The child is gone; give the readers a moment to finish the pipe's tail. A bounded join (rather
             // than an open-ended read) so a grandchild holding the pipe open can't hang us.
@@ -588,6 +624,48 @@ public final class ProcessRunner {
             }
         } catch (IOException ignored) {
             // Stream closed early (process exited); whatever we captured is good enough.
+        }
+    }
+
+    /**
+     * The streaming counterpart of {@link #drain}: delivers stdout line by line and kills the process tree as
+     * soon as {@code stopAfter} has what it wants, or the output passes the capture limit.
+     */
+    private static void drainLines(
+            Process process, java.util.function.Predicate<String> stopAfter, AtomicBoolean truncated) {
+        byte[] buf = new byte[8192];
+        ByteArrayOutputStream line = new ByteArrayOutputStream();
+        long total = 0;
+        try (InputStream in = process.getInputStream()) {
+            int n;
+            while ((n = in.read(buf)) != -1) {
+                int from = 0;
+                for (int i = 0; i < n; i++) {
+                    if (buf[i] != '\n') {
+                        continue;
+                    }
+                    line.write(buf, from, i - from);
+                    from = i + 1;
+                    String text = line.toString(StandardCharsets.UTF_8);
+                    line.reset();
+                    if (stopAfter.test(text)) {
+                        ProcessRegistry.killTree(process);
+                        return;
+                    }
+                }
+                line.write(buf, from, n - from);
+                total += n;
+                if (total > MAX_CAPTURED_BYTES) {
+                    truncated.set(true);
+                    ProcessRegistry.killTree(process);
+                    return;
+                }
+            }
+            if (line.size() > 0) {
+                stopAfter.test(line.toString(StandardCharsets.UTF_8));
+            }
+        } catch (IOException | RuntimeException ignored) {
+            // Stream closed early (process exited or was killed); what was delivered stands.
         }
     }
 

@@ -498,12 +498,16 @@ final class MavenProjectCoordinator {
                 .header("User-Agent", "Editora")
                 .GET()
                 .build();
-        HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
-        if (response.statusCode() / 100 != 2) {
-            throw new IllegalStateException("HTTP " + response.statusCode());
-        }
-        try (InputStream in = response.body()) {
-            return new String(PluginRegistry.readCapped(in, MAX_CATALOG_BYTES), StandardCharsets.UTF_8);
+        try {
+            HttpResponse<InputStream> response = client.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() / 100 != 2) {
+                throw new IllegalStateException("HTTP " + response.statusCode());
+            }
+            try (InputStream in = response.body()) {
+                return new String(PluginRegistry.readCapped(in, MAX_CATALOG_BYTES), StandardCharsets.UTF_8);
+            }
+        } finally {
+            client.shutdownNow(); // one client per fetch: give its selector thread back with the answer
         }
     }
 
@@ -1037,6 +1041,9 @@ final class MavenProjectCoordinator {
         service.shutdown();
         if (fetchExec != null) {
             fetchExec.shutdownNow();
+        }
+        if (metadataClient != null) {
+            metadataClient.shutdownNow();
         }
     }
 

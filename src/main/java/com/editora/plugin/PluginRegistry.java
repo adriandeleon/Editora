@@ -2,7 +2,6 @@ package com.editora.plugin;
 
 import java.io.ByteArrayInputStream;
 import java.net.URI;
-import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
@@ -51,12 +50,17 @@ public final class PluginRegistry {
         t.setDaemon(true);
         return t;
     });
-    private final HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(CONNECT_TIMEOUT)
-            .followRedirects(HttpClient.Redirect.NORMAL)
-            .build();
+    /** Built by the first fetch, not with the registry (constructed for every window at startup). */
+    private final com.editora.io.LazyHttpClient client = com.editora.io.LazyHttpClient.following(CONNECT_TIMEOUT);
+
     private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private final ConcurrentHashMap<String, Result> cache = new ConcurrentHashMap<>();
+
+    /** Stops the worker and releases the HTTP client (window dispose). */
+    public void shutdown() {
+        exec.shutdownNow();
+        client.close();
+    }
 
     /** Clears the per-URL cache so the next {@link #fetch} re-downloads. */
     public void invalidate() {
@@ -120,7 +124,7 @@ public final class PluginRegistry {
                     .header("Accept", "application/json")
                     .GET()
                     .build();
-            HttpResponse<java.io.InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<java.io.InputStream> resp = client.get().send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
                 return new Result(List.of(), "HTTP " + resp.statusCode(), false);
@@ -154,7 +158,7 @@ public final class PluginRegistry {
                     .timeout(REQUEST_TIMEOUT)
                     .GET()
                     .build();
-            HttpResponse<java.io.InputStream> resp = client.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            HttpResponse<java.io.InputStream> resp = client.get().send(req, HttpResponse.BodyHandlers.ofInputStream());
             if (resp.statusCode() / 100 != 2) {
                 resp.body().close();
                 return false;

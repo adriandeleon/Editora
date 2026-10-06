@@ -15,6 +15,16 @@ public final class BraceMatcher {
 
     private BraceMatcher() {}
 
+    /**
+     * Whether a caret between {@code prev} and {@code next} touches a bracket at all. {@link #match} can only
+     * answer from one of those two characters, so a caller holding a document rather than a String asks this
+     * first and builds the scan window only when it says yes — most caret moves land beside neither.
+     * Pass {@code 0} for a side that is past the document's edge.
+     */
+    public static boolean needsScan(char prev, char next) {
+        return mate(prev) != 0 || mate(next) != 0;
+    }
+
     /** The two matching bracket offsets (ascending) to highlight, or {@code null} if none is adjacent. */
     public static int[] match(String text, int caret, int maxScan) {
         int[] left = matchFrom(text, caret - 1, maxScan);

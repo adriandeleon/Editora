@@ -149,7 +149,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Notified after the filesystem watcher picks up an <em>external</em> change (not the app's own edit), so
      *  the window can refresh things anchored to the working tree — Git status / the Commit stripe, build-tool
      *  markers, open diffs — which otherwise only re-evaluate on focus-regain / tab switch (#529). */
-    private Runnable onExternalChange = () -> {};
+    private java.util.function.Consumer<ProjectWatchChanges.Plan> onExternalChange = plan -> {};
     /** Raw watcher events (path + kind), forwarded to LSP as didChangeWatchedFiles (#677); null = off. */
     private volatile java.util.function.Consumer<List<FsChange>> fsChangeSink;
     /** Injected by MainController: "New From Template…" on a folder, given the target directory. */
@@ -274,6 +274,13 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return t;
     });
     private final AtomicLong searchGen = new AtomicLong();
+    // Folder listings get their own thread: on the filter's they queued behind whatever walk was in flight,
+    // so expanding a folder waited for a search nobody was waiting for any more.
+    private final ExecutorService listExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "project-tree-list");
+        t.setDaemon(true);
+        return t;
+    });
     private Path pendingTreeSelection;
     private Path pendingTreeReveal;
     /** Test seam for holding directory I/O without blocking the JavaFX thread. */
@@ -281,7 +288,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     // Filesystem watcher: auto-refresh the tree when files change on disk. Watches only the root + currently
     // -expanded directories (re-synced on expand/collapse and after each refresh) so it's cheap even on huge
-    // trees; a daemon thread drains events and a debounce coalesces bursts into one refreshTree(). Local roots
+    // trees; a daemon thread drains events and a debounce coalesces bursts into one tick that re-lists just
+    // the directories whose entries came or went (applyWatchChanges). Local roots
     // only (a remote SFTP root has no local WatchService). On macOS the JDK uses a polling watcher, so external
     // changes may take a few seconds to show (the focus-regain refresh covers the immediate case).
     private java.nio.file.WatchService watchService;
@@ -296,6 +304,22 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private volatile long lastLocalChangeMs;
 
     private static final long SELF_CHANGE_WINDOW_MS = 1500;
+    // What the watcher reported since the last debounce tick, by directory (FX thread only).
+    private final ProjectWatchChanges watchChanges = new ProjectWatchChanges();
+    // Files Editora saved a moment ago (path -> when): the watcher reports the atomic rename as the file being
+    // created, which is neither an external change nor, for a file the tree already shows, a reason to re-list.
+    private final java.util.Map<Path, Long> localWrites = new java.util.HashMap<>();
+    // A file that is merely rewritten (a log, a build output) changes no tree, and the Git/diff refresh it
+    // asks for is coalesced to one per interval rather than one per write.
+    private static final long MODIFY_THROTTLE_MS = 2000;
+    private final PauseTransition externalThrottle = new PauseTransition();
+    private final List<FsChange> queuedExternal = new ArrayList<>();
+    private boolean queuedUnknown;
+    private long lastExternalNotifyMs;
+    /** Counts whole-tree refreshes and single-directory listings; read by tests. */
+    int treeRefreshCountForTest;
+
+    int directoryListCountForTest;
 
     private Path root;
     private boolean filtering;
@@ -364,22 +388,19 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
         // Expanding/collapsing a folder changes which directories we need to watch.
-        tree.addEventHandler(TreeItem.<Path>branchExpandedEvent(), e -> syncWatches());
+        tree.addEventHandler(TreeItem.<Path>branchExpandedEvent(), e -> {
+            // A folder that was listed, collapsed (so no longer watched) and is opened again may have changed
+            // meanwhile: look again, in the background, keeping the rows that are still right.
+            if (e.getTreeItem() instanceof PathItem item) {
+                item.refresh();
+            }
+            syncWatches();
+        });
         tree.addEventHandler(TreeItem.<Path>branchCollapsedEvent(), e -> syncWatches());
         // A coalesced filesystem-change event re-scans the tree (preserving expansion + selection) — unless
         // we just made the change ourselves (in-app rename/delete already updated the tree instantly).
-        watchDebounce.setOnFinished(e -> {
-            if (disposed) {
-                return;
-            }
-            if (System.currentTimeMillis() - lastLocalChangeMs < SELF_CHANGE_WINDOW_MS) {
-                syncWatches(); // our own edit already refreshed the tree; just keep the watch set current
-                return;
-            }
-            refreshTree();
-            syncWatches(); // a newly-created folder that's expanded would need watching
-            onExternalChange.run(); // an external change → refresh Git/Commit stripe, build markers, diffs (#529)
-        });
+        watchDebounce.setOnFinished(e -> applyWatchChanges());
+        externalThrottle.setOnFinished(e -> flushExternal());
 
         Label placeholder = new Label(tr("project.placeholder"));
         placeholder.getStyleClass().add("tool-window-placeholder");
@@ -597,6 +618,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      * Cheap: only re-lists directories that are currently expanded. Called on window focus-regain.
      */
     public void refreshTree() {
+        treeRefreshCountForTest++;
         if (mapMode) {
             mapView.refresh();
             return;
@@ -604,13 +626,121 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
             return;
         }
-        java.util.Set<Path> expanded = new java.util.HashSet<>();
-        collectExpanded(rootItem, expanded);
-        TreeItem<Path> selected = tree.getSelectionModel().getSelectedItem();
-        Path selectedPath = selected == null ? null : selected.getValue();
+        List<PathItem> expanded = new ArrayList<>();
+        collectExpandedItems(rootItem, expanded);
+        expanded.forEach(PathItem::refresh);
+    }
 
-        pendingTreeSelection = selectedPath;
-        rootItem.reload(expanded);
+    /** Re-lists just {@code dirs} (those the tree currently shows expanded); the rest of the tree is untouched. */
+    private void refreshDirectories(java.util.Collection<Path> dirs) {
+        if (mapMode) {
+            mapView.refresh();
+            return;
+        }
+        if (root == null || filtering || !(tree.getRoot() instanceof PathItem rootItem)) {
+            return;
+        }
+        for (Path dir : dirs) {
+            if (findVisible(rootItem, dir) instanceof PathItem item && item.isExpanded()) {
+                item.refresh();
+            }
+        }
+    }
+
+    /** Whether the tree already has a row for {@code path} (so a save of it adds nothing to show). */
+    private boolean treeShows(Path path) {
+        return !mapMode
+                && !filtering
+                && tree.getRoot() instanceof PathItem rootItem
+                && findVisible(rootItem, path) != null;
+    }
+
+    /**
+     * Records that Editora itself just wrote {@code file} (a completed save), so the watch events that write
+     * produces are not taken for an external change. FX thread.
+     */
+    public void noteLocalWrite(Path file) {
+        if (file == null || watchService == null || !com.editora.vfs.Vfs.isLocal(file)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        localWrites.values().removeIf(at -> now - at >= SELF_CHANGE_WINDOW_MS);
+        localWrites.put(file.toAbsolutePath().normalize(), now);
+    }
+
+    /** {@link #noteLocalWrite(Path)} for a caller whose window may have no panel (a test host). */
+    static void noteLocalWrite(ProjectPanel panel, Path file) {
+        if (panel != null) {
+            panel.noteLocalWrite(file);
+        }
+    }
+
+    private boolean recentlyWrittenLocally(Path path) {
+        Long at = localWrites.get(path.toAbsolutePath().normalize());
+        return at != null && System.currentTimeMillis() - at < SELF_CHANGE_WINDOW_MS;
+    }
+
+    /** The debounced half of the watcher: applies what accumulated since the last tick. FX thread. */
+    private void applyWatchChanges() {
+        if (disposed) {
+            return;
+        }
+        if (System.currentTimeMillis() - lastLocalChangeMs < SELF_CHANGE_WINDOW_MS) {
+            watchChanges.clear();
+            syncWatches(); // our own edit already refreshed the tree; just keep the watch set current
+            return;
+        }
+        ProjectWatchChanges.Plan plan = watchChanges.drain(this::recentlyWrittenLocally);
+        if (plan.relistAll()) {
+            refreshTree();
+        } else {
+            java.util.Set<Path> dirs = new java.util.LinkedHashSet<>(plan.relistDirs());
+            for (Path written : plan.localWrites()) {
+                if (written.getParent() != null && (mapMode || !treeShows(written))) {
+                    dirs.add(written.getParent()); // a first save of a new file: the row is still missing
+                }
+            }
+            if (!dirs.isEmpty()) {
+                refreshDirectories(dirs);
+            }
+        }
+        syncWatches(); // a newly-created folder that's expanded would need watching
+        if (plan.hasExternal()) {
+            // An external change → refresh Git/Commit stripe, build markers, diffs (#529).
+            queuedExternal.addAll(plan.external());
+            queuedUnknown |= plan.unknown();
+            long sinceLast = System.currentTimeMillis() - lastExternalNotifyMs;
+            if (plan.structural() || plan.unknown() || sinceLast >= MODIFY_THROTTLE_MS) {
+                flushExternal();
+            } else if (externalThrottle.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+                externalThrottle.setDuration(Duration.millis(MODIFY_THROTTLE_MS - sinceLast));
+                externalThrottle.playFromStart();
+            }
+        }
+    }
+
+    private void flushExternal() {
+        externalThrottle.stop();
+        if (disposed || (queuedExternal.isEmpty() && !queuedUnknown)) {
+            return;
+        }
+        ProjectWatchChanges.Plan plan = new ProjectWatchChanges.Plan(
+                false, java.util.Set.of(), List.of(), List.copyOf(queuedExternal), queuedUnknown);
+        queuedExternal.clear();
+        queuedUnknown = false;
+        lastExternalNotifyMs = System.currentTimeMillis();
+        onExternalChange.accept(plan);
+    }
+
+    /** Every expanded directory row whose children are loaded, parents before children. */
+    private static void collectExpandedItems(TreeItem<Path> item, List<PathItem> out) {
+        if (!item.isExpanded() || !(item instanceof PathItem dir)) {
+            return;
+        }
+        out.add(dir);
+        for (TreeItem<Path> child : item.getChildren()) {
+            collectExpandedItems(child, out);
+        }
     }
 
     /** Collects the paths of every currently-expanded directory (children are already loaded). */
@@ -707,7 +837,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     com.editora.search.GitignoreFilter gitignore = useGitignore
                             ? com.editora.search.GitignoreFilter.load(searchRoot)
                             : com.editora.search.GitignoreFilter.NONE;
-                    List<Path> matches = search(searchRoot, q, includeHidden, gitignore);
+                    List<Path> matches = search(searchRoot, q, includeHidden, gitignore, () -> gen != searchGen.get());
                     Platform.runLater(() -> {
                         if (gen != searchGen.get() || !mapMode) {
                             return;
@@ -738,7 +868,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 com.editora.search.GitignoreFilter gitignore = useGitignore
                         ? com.editora.search.GitignoreFilter.load(searchRoot)
                         : com.editora.search.GitignoreFilter.NONE;
-                List<Path> matches = search(searchRoot, q, includeHidden, gitignore);
+                List<Path> matches = search(searchRoot, q, includeHidden, gitignore, () -> gen != searchGen.get());
                 Platform.runLater(() -> {
                     if (gen != searchGen.get()) {
                         return; // a newer query (or a tree switch) superseded this one
@@ -875,8 +1005,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     }
                 }
                 var sink = fsChangeSink;
-                if (sink != null && !changes.isEmpty()) {
-                    List<FsChange> batch = List.copyOf(changes);
+                List<FsChange> batch = List.copyOf(changes);
+                if (sink != null && !batch.isEmpty()) {
                     Platform.runLater(() -> {
                         if (!disposed) {
                             sink.accept(batch);
@@ -886,8 +1016,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 if (!watchEventsWarrantRefresh(names, overflow)) {
                     continue; // only Editora's own temp files changed — no tree rebuild
                 }
+                boolean lost = overflow;
                 Platform.runLater(() -> {
                     if (!disposed) {
+                        // Carried through the debounce by directory, so the tick re-lists the folders whose
+                        // entries came or went rather than the whole tree.
+                        watchChanges.add(watchedDir, batch, lost);
                         watchDebounce.playFromStart();
                     }
                 });
@@ -913,13 +1047,14 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Whether {@code name} is an Editora-internal throwaway file the tree watcher should ignore. */
     static boolean isEditoraTempName(String name) {
-        return name != null && name.startsWith(".editora-typst-");
+        return ProjectWatchChanges.isInternalName(name);
     }
 
     /** Stops the watcher + its thread; call on window close so the daemon thread + native handles are freed. */
     public void dispose() {
         disposed = true;
         watchDebounce.stop();
+        externalThrottle.stop();
         watchKeys.clear();
         java.nio.file.WatchService ws = watchService;
         watchService = null;
@@ -931,6 +1066,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         }
         searchExecutor.shutdownNow();
+        listExecutor.shutdownNow();
         mapView.dispose();
     }
 
@@ -955,31 +1091,62 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     static List<Path> search(
             Path root, String query, boolean includeHidden, com.editora.search.GitignoreFilter gitignore) {
+        return search(root, query, includeHidden, gitignore, () -> false);
+    }
+
+    /**
+     * As above, giving up as soon as {@code cancelled} says so (the result is then partial and unused). Every
+     * keystroke in the filter field starts a walk of up to {@link #MAX_VISIT} entries; without this each one
+     * ran to the end on the single filter thread, so the walk for what is typed now waited behind the walks
+     * for every prefix typed on the way to it.
+     */
+    static List<Path> search(
+            Path root,
+            String query,
+            boolean includeHidden,
+            com.editora.search.GitignoreFilter gitignore,
+            java.util.function.BooleanSupplier cancelled) {
+        if (cancelled.getAsBoolean()) {
+            return List.of(); // superseded while it sat in the queue
+        }
         String q = query.toLowerCase(Locale.ROOT);
-        boolean useGitignore = gitignore != null && !gitignore.isEmpty();
+        com.editora.search.GitignoreFilter rootIgnore =
+                gitignore == null ? com.editora.search.GitignoreFilter.NONE : gitignore;
         List<Path> matches = new ArrayList<>();
-        record Dir(Path path, int depth) {}
+        // Each queued directory carries the ignore rules in force inside it: the root's, plus those of any
+        // .gitignore met on the way down (packages/<name>/.gitignore naming node_modules).
+        record Dir(Path path, int depth, com.editora.search.GitignoreFilter ignore) {}
         java.util.Deque<Dir> queue = new java.util.ArrayDeque<>();
-        queue.add(new Dir(root, 0));
+        queue.add(new Dir(root, 0, rootIgnore));
         int visited = 0;
         while (!queue.isEmpty() && visited <= MAX_VISIT && matches.size() < MAX_MATCHES) {
+            if (cancelled.getAsBoolean()) {
+                return List.of();
+            }
             Dir current = queue.poll();
+            com.editora.search.GitignoreFilter ignore = current.ignore();
+            boolean useGitignore = !ignore.isEmpty();
             try (java.nio.file.DirectoryStream<Path> entries = Files.newDirectoryStream(current.path())) {
                 for (Path p : entries) {
                     if (++visited > MAX_VISIT || matches.size() >= MAX_MATCHES) {
                         break;
                     }
+                    if ((visited & 0xFF) == 0 && cancelled.getAsBoolean()) {
+                        return List.of(); // one huge directory must not pin the thread either
+                    }
                     String name = p.getFileName().toString();
                     boolean hidden = name.startsWith(".");
                     boolean dir = Files.isDirectory(p, java.nio.file.LinkOption.NOFOLLOW_LINKS);
-                    if (useGitignore
-                            && gitignore.ignored(
-                                    root.relativize(p).toString().replace(java.io.File.separatorChar, '/'), dir)) {
+                    String rel = useGitignore || (dir && ignore.nests())
+                            ? root.relativize(p).toString().replace(java.io.File.separatorChar, '/')
+                            : null;
+                    if (useGitignore && ignore.ignored(rel, dir)) {
                         continue; // .gitignore'd (e.g. target/, node_modules/, *.log) — skip file + subtree
                     }
                     if (dir) {
                         if (current.depth() + 1 < MAX_DEPTH && (includeHidden || !hidden)) {
-                            queue.add(new Dir(p, current.depth() + 1)); // descend later — shallower first
+                            // descend later — shallower first
+                            queue.add(new Dir(p, current.depth() + 1, ignore.nested(p, rel)));
                         }
                     } else if ((includeHidden || !hidden) && FuzzyMatch.of(name, q) != null) {
                         matches.add(p);
@@ -1238,7 +1405,17 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     /** Injects the external-change hook (see {@link #onExternalChange}); {@code null} restores the no-op. */
     public void setOnExternalChange(Runnable onExternalChange) {
-        this.onExternalChange = onExternalChange == null ? () -> {} : onExternalChange;
+        this.onExternalChange = onExternalChange == null ? plan -> {} : plan -> onExternalChange.run();
+    }
+
+    /**
+     * As {@link #setOnExternalChange(Runnable)}, but told what changed: the files the watcher named, and
+     * whether that list is complete ({@code false} after an overflow — then anything may have changed).
+     */
+    public void setOnExternalChanges(java.util.function.BiConsumer<List<FsChange>, Boolean> onExternalChanges) {
+        this.onExternalChange = onExternalChanges == null
+                ? plan -> {}
+                : plan -> onExternalChanges.accept(plan.external(), !plan.unknown());
     }
 
     /** Injects the "Reveal in File Manager" handler ({@code (path, isDirectory)}) for the cell menu. */
@@ -1687,7 +1864,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         private final boolean showHidden;
         private boolean childrenReady;
         private long loadGeneration;
-        private java.util.Set<Path> restoreExpanded = java.util.Set.of();
 
         PathItem(Path path, boolean showHidden, boolean directory) {
             this(path, showHidden, directory, false);
@@ -1715,7 +1891,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                     long generation = ++loadGeneration;
                     long treeGeneration = searchGen.get();
                     Path parent = getValue();
-                    searchExecutor.submit(() -> {
+                    listExecutor.submit(() -> {
                         Runnable hook = beforeDirectoryListForTest;
                         if (hook != null) {
                             hook.run();
@@ -1737,13 +1913,6 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                             }
                             PathItem.super.getChildren().setAll(kids);
                             childrenReady = true;
-                            for (TreeItem<Path> child : kids) {
-                                if (child instanceof PathItem dir && restoreExpanded.contains(dir.getValue())) {
-                                    dir.restoreExpanded = restoreExpanded;
-                                    dir.setExpanded(true);
-                                    dir.getChildren();
-                                }
-                            }
                             restorePendingTreeSelection();
                             if (tree.getRoot() instanceof PathItem currentRoot) {
                                 continuePendingReveal(currentRoot);
@@ -1756,14 +1925,52 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return super.getChildren();
         }
 
-        void reload(java.util.Set<Path> expanded) {
-            loaded = false;
-            childrenReady = false;
-            loadGeneration++;
-            restoreExpanded = expanded == null ? java.util.Set.of() : java.util.Set.copyOf(expanded);
-            super.getChildren().clear();
-            setExpanded(true);
-            getChildren();
+        /**
+         * Lists this directory again off the FX thread and reconciles the rows with the result: rows for
+         * entries that are still there are kept (with their expansion, their loaded children and their place
+         * in the selection), and only the differences are inserted or removed. A no-op while the first
+         * listing is still in flight — that one is as fresh as this would be.
+         */
+        void refresh() {
+            if (!directory || !loaded || !childrenReady || filtering) {
+                return;
+            }
+            long generation = ++loadGeneration;
+            long treeGeneration = searchGen.get();
+            Path parent = getValue();
+            directoryListCountForTest++;
+            listExecutor.submit(() -> {
+                Runnable hook = beforeDirectoryListForTest;
+                if (hook != null) {
+                    hook.run();
+                }
+                List<PathEntry> entries = listDir(parent, showHidden);
+                Platform.runLater(() -> {
+                    if (disposed || !loaded || generation != loadGeneration || treeGeneration != searchGen.get()) {
+                        return;
+                    }
+                    if (entries.isEmpty() && RemoteReadFailure.connectionClosed(parent)) {
+                        onStatus.accept(RemoteReadFailure.unreadable(parent)); // not "an empty folder"
+                    }
+                    TreeItem<Path> selectedItem = tree.getSelectionModel().getSelectedItem();
+                    Path selected = selectedItem == null ? null : selectedItem.getValue();
+                    boolean changed = ChildReconciler.reconcile(
+                            PathItem.super.getChildren(),
+                            entries,
+                            item -> new PathEntry(item.getValue(), !item.isLeaf()),
+                            entry -> new PathItem(entry.path(), showHidden, entry.directory()));
+                    if (!changed) {
+                        return;
+                    }
+                    TreeItem<Path> now = tree.getSelectionModel().getSelectedItem();
+                    if (selected != null && (now == null || !selected.equals(now.getValue()))) {
+                        pendingTreeSelection = selected; // a wholesale replacement dropped it: put it back
+                        restorePendingTreeSelection();
+                        pendingTreeSelection = null;
+                    }
+                    syncWatches();
+                });
+            });
         }
     }
 
@@ -1798,8 +2005,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         } catch (IOException | RuntimeException ex) {
             return List.of();
         }
-        java.util.Comparator<PathEntry> order =
-                (a, b) -> ProjectPathOrder.DIRECTORIES_FIRST.compare(a.path(), b.path());
+        // The directory flag was read once, above; the comparator must not stat again per comparison.
+        java.util.Comparator<PathEntry> order = ProjectPathOrder.directoriesFirst(
+                PathEntry::directory, e -> e.path().getFileName().toString());
         dirs.sort(order);
         files.sort(order);
         List<PathEntry> all = new ArrayList<>(dirs.size() + files.size());

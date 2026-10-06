@@ -52,6 +52,198 @@ public final class SearchMatcher {
                 : new Result(literalMatches(text, query, caseSensitive, wholeWord, limit), true);
     }
 
+    // --- bounded results for the find bar ---------------------------------------------------------
+
+    /**
+     * What the find bar searches for. {@code scopeStart}/{@code scopeEnd} restrict the result to matches
+     * lying wholly inside {@code [scopeStart, scopeEnd)} (find in selection); -1/-1 is the whole document.
+     * The scope filters matches found by searching the whole text — it is not a search of the substring —
+     * so anchors and lookarounds resolve against the real document and the non-overlapping matches are the
+     * same ones a whole-document search highlights.
+     */
+    public record Query(
+            String text, boolean caseSensitive, boolean regex, boolean wholeWord, int scopeStart, int scopeEnd) {
+
+        public Query(String text, boolean caseSensitive, boolean regex, boolean wholeWord) {
+            this(text, caseSensitive, regex, wholeWord, -1, -1);
+        }
+
+        boolean scoped() {
+            return scopeStart >= 0 && scopeEnd > scopeStart;
+        }
+
+        boolean inScope(int start, int end) {
+            return !scoped() || (start >= scopeStart && end <= scopeEnd);
+        }
+    }
+
+    /** Receives each match in document order; returns false to stop the search. */
+    @FunctionalInterface
+    interface Sink {
+        boolean match(int start, int end);
+    }
+
+    /** The most matches the find bar holds at once (see {@link #around}). */
+    public static final int DEFAULT_PAGE = 100_000;
+
+    /**
+     * Feeds every in-scope match of {@code q} to {@code sink} until it declines one. Returns false when the
+     * search was abandoned part-way (a regex out of time or stack) rather than finished or stopped.
+     */
+    static boolean scan(String text, Query q, Sink sink) {
+        if (text == null || q.text() == null || q.text().isEmpty()) {
+            return true;
+        }
+        Sink scoped = !q.scoped()
+                ? sink
+                // A match starting past the scope ends the search: nothing after it can be inside.
+                : (start, end) -> q.inScope(start, end) ? sink.match(start, end) : start <= q.scopeEnd();
+        if (q.regex()) {
+            return scanRegex(text, q.text(), q.caseSensitive(), q.wholeWord(), DEFAULT_MATCH_BUDGET_NANOS, scoped);
+        }
+        scanLiteral(text, q.text(), q.caseSensitive(), q.wholeWord(), scoped);
+        return true;
+    }
+
+    /** Every in-scope match of {@code q}, held compactly. For Replace All, which has to rewrite them all. */
+    public static SearchMatches all(String text, Query q) {
+        IntPairs found = new IntPairs(Integer.MAX_VALUE);
+        boolean complete = scan(text, q, (start, end) -> {
+            found.add(start, end);
+            return true;
+        });
+        return new SearchMatches(found.toArray(found.size()), found.size(), 0, false, complete);
+    }
+
+    /**
+     * At most {@code cap} matches of {@code q} around {@code from}: the nearest ones before it — up to half
+     * the page, more when few follow — and the ones starting at or after it that fill the rest. A result
+     * under the cap is simply every match; a longer one is the page next to {@code from}, which knows how
+     * many matches precede it and whether more follow. The search stops as soon as the page is full, so a
+     * dense query costs the text up to {@code from} plus a bounded stretch after it, and memory proportional
+     * to {@code cap} — never to the number of matches in the document.
+     */
+    public static SearchMatches around(String text, Query q, int from, int cap) {
+        int limit = Math.max(2, cap);
+        IntPairs before = new IntPairs(limit); // a ring: only the nearest `limit` before `from` survive
+        IntPairs after = new IntPairs(limit);
+        long[] seenBefore = new long[1];
+        boolean[] more = new boolean[1];
+        boolean complete = scan(text, q, (start, end) -> {
+            if (start < from) {
+                before.add(start, end);
+                seenBefore[0]++;
+                return true;
+            }
+            // Matches arrive in order, so every one before `from` has been seen by now: they keep at most
+            // half the page, and what they do not use goes to the ones ahead.
+            if (after.size() == limit - Math.min(before.size(), limit / 2)) {
+                more[0] = true;
+                return false;
+            }
+            after.add(start, end);
+            return true;
+        });
+        int keep = Math.min(before.size(), limit - after.size());
+        int[] offsets = new int[2 * (keep + after.size())];
+        before.copyLast(keep, offsets, 0);
+        after.copyLast(after.size(), offsets, 2 * keep);
+        return new SearchMatches(offsets, keep + after.size(), seenBefore[0] - keep, more[0], complete);
+    }
+
+    /** A page of matches and the index in it of the match that was asked for (-1 when there are none). */
+    public record Located(SearchMatches matches, int index) {}
+
+    /**
+     * The match to jump to from {@code from} — forward: the first one starting at or after it, else the
+     * document's first; backward: the last one starting before it, else the document's last — together with
+     * the page of matches around it. This is {@link #nextIndex} for a result too long to hold: wrapping
+     * around searches again from the other end instead of indexing a list of everything.
+     */
+    public static Located locate(String text, Query q, int from, boolean forward, int cap) {
+        SearchMatches page = around(text, q, from, cap);
+        if (page.isEmpty()) {
+            return new Located(page, -1);
+        }
+        int at = page.firstStartingAtOrAfter(from);
+        if (forward) {
+            if (at < page.size()) {
+                return new Located(page, at);
+            }
+            if (page.before() > 0) {
+                page = around(text, q, 0, cap); // wrap: the page that starts the document
+            }
+            return new Located(page, page.isEmpty() ? -1 : 0);
+        }
+        if (at > 0) {
+            return new Located(page, at - 1);
+        }
+        if (page.moreAfter()) {
+            page = around(text, q, Integer.MAX_VALUE, cap); // wrap: the page that ends the document
+        }
+        return new Located(page, page.size() - 1);
+    }
+
+    /**
+     * Whether {@code [start, end)} is one of {@code q}'s matches. Reads the text only up to {@code start}
+     * and builds no result.
+     */
+    public static boolean isMatch(String text, Query q, int start, int end) {
+        boolean[] found = new boolean[1];
+        scan(text, q, (s, e) -> {
+            found[0] = s == start && e == end;
+            return s < start;
+        });
+        return found[0];
+    }
+
+    /** Growable start/end pairs; past {@code capacity} pairs it keeps only the newest (a ring). */
+    private static final class IntPairs {
+        private final int capacity;
+        private int[] data = new int[32];
+        private int size;
+        private int head; // index of the oldest pair once the ring is full
+
+        IntPairs(int capacity) {
+            this.capacity = capacity;
+        }
+
+        int size() {
+            return size;
+        }
+
+        void add(int start, int end) {
+            if (size == capacity) { // full: overwrite the oldest
+                data[2 * head] = start;
+                data[2 * head + 1] = end;
+                head = (head + 1) % capacity;
+                return;
+            }
+            if (2 * size == data.length) {
+                long grown = Math.min(2L * capacity, 2L * data.length);
+                data = java.util.Arrays.copyOf(data, (int) Math.min(grown, Integer.MAX_VALUE - 8));
+            }
+            data[2 * size] = start;
+            data[2 * size + 1] = end;
+            size++;
+        }
+
+        /** Copies the newest {@code count} pairs, oldest first, into {@code target} at {@code at}. */
+        void copyLast(int count, int[] target, int at) {
+            for (int i = size - count; i < size; i++) {
+                int from = 2 * ((head + i) % Math.max(1, size));
+                target[at++] = data[from];
+                target[at++] = data[from + 1];
+            }
+        }
+
+        int[] toArray(int count) {
+            int[] out = new int[2 * count];
+            copyLast(count, out, 0);
+            return out;
+        }
+    }
+
     /** The regex compile error description, or {@code null} if {@code query} is a valid pattern. */
     public static String regexError(String query) {
         try {
@@ -99,8 +291,20 @@ public final class SearchMatcher {
 
     private static List<int[]> literalMatches(
             String text, String query, boolean caseSensitive, boolean wholeWord, int limit) {
-        if (limit <= 0 || Thread.currentThread().isInterrupted()) {
+        if (limit <= 0) {
             return List.of();
+        }
+        List<int[]> out = new ArrayList<>();
+        scanLiteral(text, query, caseSensitive, wholeWord, (start, end) -> {
+            out.add(new int[] {start, end});
+            return out.size() < limit;
+        });
+        return out;
+    }
+
+    private static void scanLiteral(String text, String query, boolean caseSensitive, boolean wholeWord, Sink sink) {
+        if (Thread.currentThread().isInterrupted()) {
+            return;
         }
         // regionMatches folds per character, so it cannot match a case pair of different lengths (ß↔SS,
         // ﬁ↔FI). Take the full-folding path only when one side actually contains such a character — the
@@ -108,29 +312,28 @@ public final class SearchMatcher {
         if (!caseSensitive) {
             boolean expandingQuery = CaseFold.mayExpand(query);
             if (Thread.currentThread().isInterrupted()) {
-                return List.of();
+                return;
             }
             boolean expandingText = !expandingQuery && CaseFold.mayExpand(text);
             if (Thread.currentThread().isInterrupted()) {
-                return List.of();
+                return;
             }
             if (expandingQuery || expandingText) {
-                return foldedMatches(text, query, wholeWord, limit);
+                scanFolded(text, query, wholeWord, sink);
+                return;
             }
         }
-        List<int[]> out = new ArrayList<>();
         int n = text.length();
         int m = query.length();
         for (int i = 0; i + m <= n; ) {
             if ((i & 0x3FF) == 0 && Thread.currentThread().isInterrupted()) {
-                return out;
+                return;
             }
             if (text.regionMatches(!caseSensitive, i, query, 0, m)) {
                 int end = i + m;
                 if (!wholeWord || isWordBounded(text, i, end)) {
-                    out.add(new int[] {i, end});
-                    if (out.size() >= limit) {
-                        return out;
+                    if (!sink.match(i, end)) {
+                        return;
                     }
                     i = end; // non-overlapping
                     continue;
@@ -138,7 +341,6 @@ public final class SearchMatcher {
             }
             i++;
         }
-        return out;
     }
 
     /**
@@ -146,29 +348,26 @@ public final class SearchMatcher {
      * both directions. Offsets are the original text's throughout — {@link CaseFold#matchAt} folds on the fly
      * rather than searching a folded copy, so there is no index map to translate back through.
      */
-    private static List<int[]> foldedMatches(String text, String query, boolean wholeWord, int limit) {
+    private static void scanFolded(String text, String query, boolean wholeWord, Sink sink) {
         String folded = CaseFold.fold(query);
         if (folded.isEmpty()) {
-            return List.of();
+            return;
         }
-        List<int[]> out = new ArrayList<>();
         int n = text.length();
         for (int i = 0; i < n; ) {
             if ((i & 0x3FF) == 0 && Thread.currentThread().isInterrupted()) {
-                return out;
+                return;
             }
             int end = CaseFold.matchAt(text, i, folded);
             if (end > i && (!wholeWord || isWordBounded(text, i, end))) {
-                out.add(new int[] {i, end});
-                if (out.size() >= limit) {
-                    return out;
+                if (!sink.match(i, end)) {
+                    return;
                 }
                 i = end; // non-overlapping
                 continue;
             }
             i += Character.charCount(text.codePointAt(i));
         }
-        return out;
     }
 
     /** A character that counts as part of a word for whole-word matching — the regex twin of isWordChar. */
@@ -248,24 +447,36 @@ public final class SearchMatcher {
         if (limit <= 0 || Thread.currentThread().isInterrupted()) {
             return new Result(List.of(), true);
         }
+        List<int[]> out = new ArrayList<>();
+        boolean complete = scanRegex(text, query, caseSensitive, wholeWord, budgetNanos, (start, end) -> {
+            out.add(new int[] {start, end});
+            return out.size() < limit;
+        });
+        return new Result(out, complete);
+    }
+
+    /** Feeds each regex match to {@code sink}; false when the search was abandoned rather than finished. */
+    private static boolean scanRegex(
+            String text, String query, boolean caseSensitive, boolean wholeWord, long budgetNanos, Sink sink) {
+        if (Thread.currentThread().isInterrupted()) {
+            return true;
+        }
         // An empty text is one empty line, which a MULTILINE ^ cannot match (see compileRegex).
         Pattern p = compile(query, caseSensitive, wholeWord, !text.isEmpty());
         if (p == null) {
-            return new Result(List.of(), true);
+            return true;
         }
-        List<int[]> out = new ArrayList<>();
         Matcher matcher = p.matcher(new Deadline(text, budgetNanos));
         int from = 0;
         try {
             while (from <= text.length() && matcher.find(from)) {
                 if (Thread.currentThread().isInterrupted()) {
-                    return new Result(out, false);
+                    return false;
                 }
                 int start = matcher.start();
                 int end = matcher.end();
-                out.add(new int[] {start, end});
-                if (out.size() >= limit) {
-                    return new Result(out, true);
+                if (!sink.match(start, end)) {
+                    return true;
                 }
                 from = end > start ? end : end + 1; // advance past a zero-width match
             }
@@ -273,9 +484,9 @@ public final class SearchMatcher {
             // Budget exceeded, or java.util.regex recursed once per repetition of a group (`(.|\n)*?` over
             // a couple of thousand characters) and ran out of stack. Partial results beat freezing the UI
             // or an Error escaping onto the FX / search thread.
-            return new Result(out, false);
+            return false;
         }
-        return new Result(out, true);
+        return true;
     }
 
     /**

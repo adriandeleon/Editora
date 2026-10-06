@@ -20,21 +20,27 @@ import com.editora.vfs.Vfs;
  * <em>anchoring</em> to the root vs. a slash-less pattern matching a path's base name at any depth, and the
  * {@code *} / {@code **} / {@code ?} / {@code [...]} globs. So {@code target/}, {@code node_modules/},
  * {@code build/}, {@code *.log}, {@code /dist} all work. It reads the project root's {@code .gitignore} and,
- * when the root lies inside a git repository, those of the directories above it up to the repository's top
- * (not nested ones, {@code .git/info/exclude}, or the global excludes file) — ripgrep covers the full
- * semantics when present; this is the no-tools fallback.
+ * when the root lies inside a git repository, those of the directories above it up to the repository's top;
+ * a walk adds the {@code .gitignore} of each directory it enters through {@link #nested}. Not read:
+ * {@code .git/info/exclude} and the global excludes file — ripgrep covers the full semantics when present;
+ * this is the no-tools fallback.
  *
  * <p>Pure (the matching is) + unit-tested; {@link #load} does the one file read.
  */
 public final class GitignoreFilter {
 
     /** A filter that ignores nothing (no {@code .gitignore}, or the feature is off). */
-    public static final GitignoreFilter NONE = new GitignoreFilter(List.of());
+    public static final GitignoreFilter NONE = new GitignoreFilter(List.of(), false);
 
     private record Rule(Pattern regex, boolean negated, boolean dirOnly, boolean anchored) {}
 
-    /** One {@code .gitignore}: its rules, and the path from its directory down to the root ("" or "a/b/"). */
-    private record Layer(List<Rule> rules, String prefix) {}
+    /**
+     * One {@code .gitignore}: its rules, and where its directory lies relative to the root. For a file at or
+     * above the root, {@code prefix} is the path from its directory down to the root ("" or "a/b/"). For one
+     * below the root, {@code scope} is the path from the root down to its directory ("packages/a/"): it
+     * speaks only for paths inside that directory, relative to it.
+     */
+    private record Layer(List<Rule> rules, String prefix, String scope) {}
 
     /** Innermost first — the root's own file, then each ancestor's — which is git's order of precedence. */
     private final List<Layer> layers;
@@ -42,8 +48,42 @@ public final class GitignoreFilter {
     /** How far above the root a repository top is looked for; a bound, not a tuning knob. */
     private static final int MAX_ANCESTORS = 32;
 
-    private GitignoreFilter(List<Layer> layers) {
+    /**
+     * Whether a walk should look for further {@code .gitignore} files below the root. True for a filter that
+     * came from {@link #load} — "this project's ignore rules" — and false for {@link #NONE} ("ignore nothing")
+     * and for {@link #parse}, which is exactly the text it was given.
+     */
+    private final boolean nests;
+
+    private GitignoreFilter(List<Layer> layers, boolean nests) {
         this.layers = layers;
+        this.nests = nests;
+    }
+
+    /** See the field: whether {@link #nested} can ever return anything but this filter. */
+    public boolean nests() {
+        return nests;
+    }
+
+    /**
+     * This filter plus the {@code .gitignore} of {@code dir}, a directory below the root at root-relative
+     * {@code relDir} — or this filter when there is none (the common case: one {@code stat}). A monorepo keeps
+     * {@code node_modules} or {@code dist} in {@code packages/<name>/.gitignore}; read only at the root, the
+     * rule was never seen and those trees were walked, read and charged against the caps.
+     */
+    public GitignoreFilter nested(Path dir, String relDir) {
+        if (!nests || dir == null || relDir == null || relDir.isEmpty()) {
+            return this;
+        }
+        List<Layer> own = new ArrayList<>(1);
+        addLayer(own, dir, "");
+        if (own.isEmpty()) {
+            return this;
+        }
+        List<Layer> all = new ArrayList<>(layers.size() + 1);
+        all.add(new Layer(own.get(0).rules(), "", relDir.endsWith("/") ? relDir : relDir + "/"));
+        all.addAll(layers); // innermost first: the deeper file outranks the ones above it
+        return new GitignoreFilter(List.copyOf(all), true);
     }
 
     public boolean isEmpty() {
@@ -71,7 +111,7 @@ public final class GitignoreFilter {
         } catch (RuntimeException e) {
             // the root's own file is still worth having
         }
-        return layers.isEmpty() ? NONE : new GitignoreFilter(List.copyOf(layers));
+        return new GitignoreFilter(List.copyOf(layers), true);
     }
 
     private static void addAncestors(List<Layer> layers, Path root) {
@@ -103,7 +143,7 @@ public final class GitignoreFilter {
             if (Files.isRegularFile(gi)) {
                 GitignoreFilter parsed = parse(Files.readString(gi));
                 if (!parsed.layers.isEmpty()) {
-                    layers.add(new Layer(parsed.layers.get(0).rules(), prefix));
+                    layers.add(new Layer(parsed.layers.get(0).rules(), prefix, ""));
                 }
             }
         } catch (IOException | RuntimeException e) {
@@ -147,7 +187,7 @@ public final class GitignoreFilter {
                 rules.add(new Rule(rx, negated, dirOnly, anchored));
             }
         }
-        return rules.isEmpty() ? NONE : new GitignoreFilter(List.of(new Layer(List.copyOf(rules), "")));
+        return rules.isEmpty() ? NONE : new GitignoreFilter(List.of(new Layer(List.copyOf(rules), "", "")), false);
     }
 
     /**
@@ -159,8 +199,16 @@ public final class GitignoreFilter {
             return false;
         }
         for (Layer layer : layers) {
-            Boolean decided =
-                    decide(layer.rules(), layer.prefix().isEmpty() ? relPath : layer.prefix() + relPath, isDir);
+            String path;
+            if (!layer.scope().isEmpty()) {
+                if (relPath.length() <= layer.scope().length() || !relPath.startsWith(layer.scope())) {
+                    continue; // a nested file says nothing about paths outside its own directory
+                }
+                path = relPath.substring(layer.scope().length());
+            } else {
+                path = layer.prefix().isEmpty() ? relPath : layer.prefix() + relPath;
+            }
+            Boolean decided = decide(layer.rules(), path, isDir);
             if (decided != null) {
                 return decided; // a deeper .gitignore outranks the ones above it
             }

@@ -357,8 +357,7 @@ final class ProjectMapModel {
         } catch (IOException | RuntimeException ignored) {
             return List.of();
         }
-        result.sort(ProjectPathOrder.DIRECTORIES_FIRST);
-        return result;
+        return ProjectPathOrder.sorted(result, Files::isDirectory);
     }
 
     static Path normalize(Path path) {

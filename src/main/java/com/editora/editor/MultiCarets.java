@@ -58,7 +58,7 @@ final class MultiCarets {
     private final Subscription changes;
     private final EventHandler<KeyEvent> onPressed = this::keyPressed;
     private final EventHandler<KeyEvent> onTyped = this::keyTyped;
-    private final MultiTab.Edits tabEdits;
+    private final MultiTab.CaretEdits tabEdits;
     /** Alt+drag over wrapped paragraphs, which the fork's box selection treats as one line each. */
     private final WrapBoxSelection wrapBox;
 
@@ -68,7 +68,7 @@ final class MultiCarets {
     private boolean anchorsStale;
     private boolean syncQueued;
 
-    private MultiCarets(CodeArea area, MultiTab.Edits tabEdits) {
+    private MultiCarets(CodeArea area, MultiTab.CaretEdits tabEdits) {
         this.area = area;
         this.tabEdits = tabEdits;
         this.controller = MultiCaretController.install(area);
@@ -95,7 +95,7 @@ final class MultiCarets {
     }
 
     /** {@code tabEdits} is the buffer's own Tab for one caret, applied here at every caret. */
-    static MultiCarets install(CodeArea area, MultiTab.Edits tabEdits) {
+    static MultiCarets install(CodeArea area, MultiTab.CaretEdits tabEdits) {
         return new MultiCarets(area, tabEdits);
     }
 
@@ -470,7 +470,7 @@ final class MultiCarets {
         for (Extra x : extras) {
             carets.add(new int[] {x.anchor(), x.caret()});
         }
-        MultiTab.Plan plan = MultiTab.plan(area.getText(), carets, shift, tabEdits);
+        MultiTab.Plan plan = MultiTab.plan(carets, shift, tabEdits);
         if (plan == null) {
             return false;
         }

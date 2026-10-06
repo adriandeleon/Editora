@@ -9,7 +9,6 @@ import java.util.Map;
 import com.editora.config.migration.ConfigMigrations;
 import com.editora.config.migration.ConfigSchema;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 
 /**
  * The <em>per-window</em> view of the configuration. Each window owns its own session state
@@ -50,8 +49,12 @@ public class ConfigManager {
     static final String HISTORY_INDEX_NAME = "index.json";
     static final String HISTORY_BLOBS_NAME = "blobs";
 
-    /** Pretty JSON for this window's session-state file. */
-    private final ObjectMapper json = new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT);
+    /**
+     * Pretty JSON for this window's session-state file: the shared config's mapper, not one per window. A
+     * mapper caches the (de)serializers it builds per type, so a private one made every window pay the
+     * {@link WorkspaceState} warm-up again, on the FX thread, while it was being built.
+     */
+    private final ObjectMapper json;
 
     /** The shared, app-wide config (preferences + cross-project stores), shared by reference. */
     private final SharedConfig shared;
@@ -81,6 +84,7 @@ public class ConfigManager {
     /** A window over {@code shared}, pointed at a specific session-state file (e.g. a project's). */
     public ConfigManager(SharedConfig shared, Path stateFile) {
         this.shared = shared;
+        this.json = shared.json();
         this.workspaceStateFile = stateFile;
     }
 

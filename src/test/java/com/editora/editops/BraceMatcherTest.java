@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure matching-bracket finder. */
 class BraceMatcherTest {
@@ -101,5 +103,38 @@ class BraceMatcherTest {
     @Test
     void selectSpanIsNullWhenNoBracketAdjacent() {
         assertNull(BraceMatcher.selectSpan("abc", 1, BraceMatcher.DEFAULT_MAX_SCAN));
+    }
+
+    // --- needsScan (the caret-move precheck) ---
+
+    @Test
+    void needsScanIsTrueOnlyBesideABracket() {
+        for (char bracket : "()[]{}".toCharArray()) {
+            assertTrue(BraceMatcher.needsScan(bracket, 'x'), "left of the caret: " + bracket);
+            assertTrue(BraceMatcher.needsScan('x', bracket), "right of the caret: " + bracket);
+            assertTrue(BraceMatcher.needsScan((char) 0, bracket), "at the document start: " + bracket);
+            assertTrue(BraceMatcher.needsScan(bracket, (char) 0), "at the document end: " + bracket);
+        }
+        assertFalse(BraceMatcher.needsScan('a', 'b'));
+        assertFalse(BraceMatcher.needsScan(' ', '\n'));
+        assertFalse(BraceMatcher.needsScan('<', '>'), "angle brackets are not matched");
+        assertFalse(BraceMatcher.needsScan((char) 0, (char) 0), "an empty document");
+    }
+
+    @Test
+    void whenNoScanIsNeededThereIsNeverAMatch() {
+        // The precheck may only skip work, never change the answer: wherever it says "no", match() — which
+        // the editor would otherwise have built a 100,000-character window for — finds nothing.
+        String text = "int f(int[] a) { return a[0] + (g(1) * 2); } // done\n\"(\" x";
+        int skipped = 0;
+        for (int caret = 0; caret <= text.length(); caret++) {
+            char prev = caret > 0 ? text.charAt(caret - 1) : 0;
+            char next = caret < text.length() ? text.charAt(caret) : 0;
+            if (!BraceMatcher.needsScan(prev, next)) {
+                skipped++;
+                assertNull(BraceMatcher.match(text, caret, BraceMatcher.DEFAULT_MAX_SCAN), "caret " + caret);
+            }
+        }
+        assertTrue(skipped > text.length() / 3, "most caret positions need no scan: " + skipped);
     }
 }

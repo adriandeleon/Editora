@@ -334,12 +334,11 @@ class FindReplaceBarFxTest {
     @Test
     void regexLineAnchorsCountEveryLineInTheFindBar() throws Exception {
         Harness h = harness("import a;\nimport b;\nclass C {}\n");
-        @SuppressWarnings("unchecked")
         List<int[]> matches = FxTestSupport.callOnFx(() -> {
+            h.bar.show(false);
             h.query("^import", "");
-            h.toggle("regex", true);
-            return (List<int[]>) FxTestSupport.call(
-                    h.bar, "computeMatches", new Class<?>[] {CodeArea.class, String.class}, h.area(), "^import");
+            h.toggle("regex", true); // an option change searches at once
+            return h.bar.currentMatches();
         });
         assertEquals(2, matches.size());
         assertEquals(0, matches.get(0)[0]);
@@ -502,7 +501,10 @@ class FindReplaceBarFxTest {
 
     private static List<int[]> overlayMatches(EditorBuffer buffer) {
         Object overlay = FxTestSupport.field(buffer, "searchOverlay");
-        return overlay == null ? List.of() : FxTestSupport.field(overlay, "matches");
+        return overlay == null
+                ? List.of()
+                : FxTestSupport.<com.editora.editor.SearchMatches>field(overlay, "matches")
+                        .toList();
     }
 
     @Test

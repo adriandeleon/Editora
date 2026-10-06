@@ -128,8 +128,11 @@ final class LspCoordinator {
         /** Opens (shows + focuses) the Hierarchy tool window after a call/type-hierarchy prepare (#682). */
         void openHierarchyWindow();
 
-        /** Pushes the server's document-symbol outline (or {@code null} to fall back to the heuristic). */
-        void setStructureSymbols(EditorBuffer buffer, java.util.List<com.editora.lsp.SymbolNode> symbols);
+        /**
+         * The Structure tool window — where the server's document-symbol outline goes, and what says
+         * whether anything is showing an outline at all. Null in a test that has none.
+         */
+        StructurePanel structurePanel();
 
         /** Refreshes the toolbar Run button after the shell Run gate changes. */
         void refreshRunButton();
@@ -395,6 +398,7 @@ final class LspCoordinator {
         lspManager.setApplyEditHandler(this::applyWorkspaceEditsAsync); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
+        lspManager.setOpenDocumentDiagnosticsOnly(!projectWideProblems); // the Problems window's default scope
         lspManager.setOnDiagnosticsUnchanged(this::diagnosticsUnchanged);
     }
 
@@ -413,8 +417,11 @@ final class LspCoordinator {
         }
     }
 
-    /** Refresh kinds a server asked for since the last flush; see {@link #refreshRequested}. */
-    private final java.util.Set<String> pendingRefreshKinds = new java.util.LinkedHashSet<>();
+    /**
+     * What servers asked to have re-requested since the last flush: refresh kind → the sessions that asked
+     * (the manager's opaque origins, compared by identity). See {@link #refreshRequested}.
+     */
+    private final Map<String, java.util.Set<Object>> pendingRefreshes = new java.util.LinkedHashMap<>();
 
     private final javafx.animation.PauseTransition refreshFlush =
             new javafx.animation.PauseTransition(javafx.util.Duration.millis(REFRESH_COALESCE_MILLIS));
@@ -422,34 +429,58 @@ final class LspCoordinator {
     /** Window over which a server's {@code workspace/…/refresh} requests are folded into one re-request. */
     static final int REFRESH_COALESCE_MILLIS = 100;
 
+    /** The refresh kind for "this server's capabilities changed, or it has just become ready". */
+    static final String CAPABILITIES = "capabilities";
+
     /**
      * A server asked for its data to be re-requested. Servers send these in bursts (clangd: two right after
-     * an open, one per rebuilt dependent after a header save), so the kinds are collected for a short fixed
-     * window — the timer is not restarted by a later request, which would let a chatty server starve it.
+     * an open, one per rebuilt dependent after a header save; jdtls and tinymist: one
+     * {@code client/registerCapability} per feature after initialize), so the kinds are collected for a
+     * short fixed window — the timer is not restarted by a later request, which would let a chatty server
+     * starve it. Capability changes take the same route: applied at once, each registration re-requested
+     * diagnostics, folding ranges, semantic tokens and inlay hints for every open tab of every server.
      */
-    private void refreshRequested(String kind) {
-        if ("capabilities".equals(kind)) {
-            refreshCapabilityGates();
-            return;
-        }
-        pendingRefreshKinds.add(kind);
+    private void refreshRequested(String kind, Object origin) {
+        pendingRefreshes
+                .computeIfAbsent(kind, k -> java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()))
+                .add(origin);
         if (refreshFlush.getStatus() != javafx.animation.Animation.Status.RUNNING) {
             refreshFlush.setOnFinished(e -> flushRefreshes());
             refreshFlush.playFromStart();
         }
     }
 
-    private void flushRefreshes() {
-        List<String> kinds = List.copyOf(pendingRefreshKinds);
-        pendingRefreshKinds.clear();
+    /** Re-requests what was asked for, for the documents of the sessions that asked. */
+    void flushRefreshes() {
+        Map<String, java.util.Set<Object>> due = new java.util.LinkedHashMap<>(pendingRefreshes);
+        pendingRefreshes.clear();
+        java.util.Set<Object> capabilityOrigins = due.remove(CAPABILITIES);
         EditorBuffer active = host.activeBuffer();
+        boolean[] activeGated = {false};
         host.forEachBuffer(buffer -> {
             Path path = buffer.getPath();
             if (path == null || !lspManager.isManaged(path)) {
                 return;
             }
-            for (String kind : kinds) {
+            if (servedByAny(path, capabilityOrigins)) {
+                refreshCapabilityGates(buffer, buffer == active); // covers every other kind for this buffer
+                activeGated[0] |= buffer == active;
+                return;
+            }
+            boolean invalidated = false;
+            for (var asked : due.entrySet()) {
+                String kind = asked.getKey();
+                if (!servedByAny(path, asked.getValue())) {
+                    continue;
+                }
+                if (!invalidated) {
+                    // The server's answers changed without the document changing: one already on its way
+                    // may predate that, so it must not stand in for the request made here.
+                    lspManager.invalidateRequests(path);
+                    invalidated = true;
+                }
                 if (!refreshAppliesTo(kind, buffer == active)) {
+                    refreshWhenShown.add(buffer);
                     continue;
                 }
                 switch (kind) {
@@ -463,46 +494,86 @@ final class LspCoordinator {
                 }
             }
         });
+        if (capabilityOrigins != null) {
+            if (activeGated[0]) {
+                requestStructureSymbols(active);
+            }
+            ops.onServerCapabilitiesReady();
+        }
+    }
+
+    private boolean servedByAny(Path path, java.util.Set<Object> origins) {
+        if (origins != null) {
+            for (Object origin : origins) {
+                if (lspManager.servedBy(path, origin)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**
      * Pure: whether a refresh of {@code kind} re-requests for a buffer. Semantic tokens and inlay hints are
      * only ever applied to the active buffer (their replies are dropped for any other, and a tab re-requests
-     * when it is shown), so asking for them for every open tab was pure server load.
+     * when it is shown — {@link #onBufferShown}), so asking for them for every open tab was pure server load.
      */
     static boolean refreshAppliesTo(String kind, boolean activeBuffer) {
         return activeBuffer || !("semanticTokens".equals(kind) || "inlayHints".equals(kind));
     }
 
-    /** Re-applies every buffer/UI gate after initialize or a dynamic capability change. */
+    /**
+     * Buffers whose semantic tokens or inlay hints went out of date while their tab was hidden: the request
+     * was not made (its reply would have been dropped), so it is owed when the tab is next shown.
+     */
+    private final java.util.Set<EditorBuffer> refreshWhenShown =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /** Re-applies every managed buffer's gates now — every server, not coalesced (the typing probe's hook). */
     private void refreshCapabilityGates() {
+        EditorBuffer active = host.activeBuffer();
         host.forEachBuffer(b -> {
             if (b.getPath() != null && lspManager.isManaged(b.getPath())) {
-                b.setLspTriggerChars(lspManager.triggerCharacters(b.getPath()));
-                b.setLspFormatAvailable(lspManager.supportsFormatting(b.getPath()));
-                b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(b.getPath()));
-                b.setLspOnTypeTriggers(lspManager.onTypeTriggerCharacters(b.getPath()));
-                b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(b.getPath()));
-                b.setLspRenameAvailable(lspManager.supportsRename(b.getPath()));
-                // Both navigation gates used to be pushed only by syncBuffer — which runs before initialize
-                // answers, when no capability is known — so a server that registers them dynamically (or
-                // simply finishes its handshake) never got its menu entries switched on.
-                b.setLspImplementationAvailable(lspManager.supportsImplementation(b.getPath()));
-                b.setLspTypeDefinitionAvailable(lspManager.supportsTypeDefinition(b.getPath()));
-                b.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(b.getPath()));
-                lspManager.pullDiagnostics(b.getPath());
-                requestFoldingRanges(b);
-                boolean sem = host.settings().isSemanticHighlight() && lspManager.supportsSemanticTokens(b.getPath());
-                b.setSemanticActive(sem);
-                if (sem) {
-                    requestSemanticTokens(b);
-                }
-                b.setInlayHintsActive(host.settings().isInlayHints());
-                requestInlayHints(b);
+                refreshCapabilityGates(b, b == active);
             }
         });
-        requestStructureSymbols(host.activeBuffer());
+        requestStructureSymbols(active);
         ops.onServerCapabilitiesReady();
+    }
+
+    /**
+     * Re-applies one managed buffer's gates after initialize or a dynamic capability change, and re-requests
+     * its server data: diagnostics and folding ranges for any tab (both are kept per buffer), semantic
+     * tokens and inlay hints only for the tab on screen.
+     */
+    private void refreshCapabilityGates(EditorBuffer b, boolean active) {
+        Path path = b.getPath();
+        b.setLspTriggerChars(lspManager.triggerCharacters(path));
+        b.setLspFormatAvailable(lspManager.supportsFormatting(path));
+        b.setLspRangeFormatAvailable(lspManager.supportsRangeFormatting(path));
+        b.setLspOnTypeTriggers(lspManager.onTypeTriggerCharacters(path));
+        b.setLspCodeActionsAvailable(lspManager.supportsCodeActions(path));
+        b.setLspRenameAvailable(lspManager.supportsRename(path));
+        // Both navigation gates used to be pushed only by syncBuffer — which runs before initialize
+        // answers, when no capability is known — so a server that registers them dynamically (or
+        // simply finishes its handshake) never got its menu entries switched on.
+        b.setLspImplementationAvailable(lspManager.supportsImplementation(path));
+        b.setLspTypeDefinitionAvailable(lspManager.supportsTypeDefinition(path));
+        b.setLspSignatureTriggerChars(lspManager.signatureTriggerCharacters(path));
+        lspManager.invalidateRequests(path); // what the server answers may have changed with its capabilities
+        lspManager.pullDiagnostics(path);
+        requestFoldingRanges(b);
+        boolean sem = host.settings().isSemanticHighlight() && lspManager.supportsSemanticTokens(path);
+        b.setSemanticActive(sem);
+        b.setInlayHintsActive(host.settings().isInlayHints());
+        if (!active) {
+            refreshWhenShown.add(b);
+            return;
+        }
+        if (sem) {
+            requestSemanticTokens(b);
+        }
+        requestInlayHints(b);
     }
 
     /** How many on-their-own session deaths per (server, root) within {@link #CRASH_WINDOW_NANOS} are
@@ -725,6 +796,7 @@ final class LspCoordinator {
             return;
         }
         projectWideProblems = projectWide;
+        lspManager.setOpenDocumentDiagnosticsOnly(!projectWide);
         if (!projectWide) {
             problems.keySet().removeIf(p -> ops.bufferForPath(p) == null);
         }
@@ -772,8 +844,20 @@ final class LspCoordinator {
         refreshProblems();
     }
 
-    /** Whether a Problems rebuild is already queued behind the diagnostics still waiting on the FX queue. */
-    private boolean problemsRefreshQueued;
+    /** Shortest time between two Problems rebuilds while diagnostics keep arriving. */
+    static final int PROBLEMS_REFRESH_MILLIS = 100;
+
+    /** Paces Problems rebuilds; the action is deferred to the end of the FX queue (see below). */
+    private final FxThrottle problemsRefresh = new FxThrottle(PROBLEMS_REFRESH_MILLIS, true, this::showProblems);
+
+    private void showProblems() {
+        problemsPanel.setProblems(problems);
+    }
+
+    /** Runs a Problems rebuild that is waiting for its turn now — a test's stand-in for the pacing delay. */
+    void flushProblemsRefresh() {
+        problemsRefresh.flush();
+    }
 
     /**
      * Queues one Problems rebuild for the current burst of changes.
@@ -782,16 +866,13 @@ final class LspCoordinator {
      * on a project import — hundreds of full rebuilds back to back on the FX thread. Deferring the rebuild
      * to the end of the queue lets every publish already waiting there land first, so a burst costs one
      * rebuild; the panel then skips it altogether when the content is what it already shows.
+     *
+     * <p>That alone is one rebuild per publish whenever the FX thread keeps up with the server, which is
+     * the usual case: publishes arrive milliseconds apart, each finds the queue empty. So rebuilds are also
+     * paced — the first of a burst is immediate, the rest share one every {@link #PROBLEMS_REFRESH_MILLIS}.
      */
     private void refreshProblems() {
-        if (problemsRefreshQueued) {
-            return;
-        }
-        problemsRefreshQueued = true;
-        Platform.runLater(() -> {
-            problemsRefreshQueued = false;
-            problemsPanel.setProblems(problems);
-        });
+        problemsRefresh.request();
     }
 
     // --- gating + lifecycle (the configure/detect/per-buffer-sync machine) ----------------------------
@@ -985,8 +1066,15 @@ final class LspCoordinator {
 
     /** Called when a tab becomes visible: starts the server we deferred at wire time, if any. */
     void onBufferShown(EditorBuffer buffer) {
-        if (buffer != null && deferredLsp.remove(buffer)) {
-            syncBuffer(buffer);
+        if (buffer == null) {
+            return;
+        }
+        boolean owed = refreshWhenShown.remove(buffer);
+        if (deferredLsp.remove(buffer)) {
+            syncBuffer(buffer); // requests everything itself
+        } else if (owed) {
+            requestSemanticTokens(buffer);
+            requestInlayHints(buffer);
         }
     }
 
@@ -1464,9 +1552,50 @@ final class LspCoordinator {
         lspManager.requestSemanticTokens(
                 path, window[0], window[1], buffer.lineCount(), buffer.lastLineLength(), tokens -> {
                     if (buffer == host.activeBuffer()) {
+                        if (gen == buffer.semanticGen()) {
+                            semanticShownGen.put(buffer, gen); // the buffer accepts it: see semanticTokensCurrent
+                        }
                         buffer.setSemanticTokens(tokens, gen);
                     }
                 });
+    }
+
+    /** The {@link EditorBuffer#semanticGen()} each buffer's displayed semantic tokens were applied at. */
+    private final Map<EditorBuffer, Long> semanticShownGen = new java.util.WeakHashMap<>();
+
+    /**
+     * Whether {@code buffer} already shows the tokens a new request would return: its server only answers
+     * for the whole document, that answer was computed for the text the server still holds
+     * ({@code LspManager.wholeDocumentTokensCurrent}), and it was applied to the buffer as it stands now.
+     * Both halves are needed — an edit that nets to nothing leaves the server's text alone but still
+     * marks the buffer's tokens stale, and they then have to be fetched again.
+     */
+    private boolean semanticTokensCurrent(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        Long shown = semanticShownGen.get(buffer);
+        return path != null
+                && shown != null
+                && shown == buffer.semanticGen()
+                && buffer.isSemanticActive()
+                && lspManager.isManaged(path)
+                && lspManager.wholeDocumentTokensCurrent(path);
+    }
+
+    /** Scroll-settle for inlay hints while semantic highlighting is off; see {@link #wireBuffer}. */
+    private final javafx.animation.PauseTransition inlayScrollSettle = inlayScrollSettle();
+
+    private EditorBuffer inlayScrollTarget;
+
+    private javafx.animation.PauseTransition inlayScrollSettle() {
+        var settle = new javafx.animation.PauseTransition(javafx.util.Duration.millis(250));
+        settle.setOnFinished(e -> {
+            EditorBuffer target = inlayScrollTarget;
+            inlayScrollTarget = null;
+            if (target != null && target == host.activeBuffer() && !target.isDisposed()) {
+                requestInlayHints(target);
+            }
+        });
+        return settle;
     }
 
     /**
@@ -1495,21 +1624,50 @@ final class LspCoordinator {
      * falls back to the heuristic.
      */
     void requestStructureSymbols(EditorBuffer buffer) {
+        requestStructureSymbols(buffer, false);
+    }
+
+    /** How the Structure panel asks for the outline it let go stale while nothing was showing it. */
+    private final java.util.function.Consumer<EditorBuffer> structureSymbolsWanted =
+            buffer -> requestStructureSymbols(buffer, true);
+
+    /**
+     * @param evenIfHidden ask the server although the Structure window is closed — the panel needs the
+     *     outline now (it is being shown, or the Jump to Structure picker is reading it). Otherwise a closed
+     *     window is told its outline is stale instead: the request used to go out on every typing pause for
+     *     an outline nobody was looking at.
+     */
+    private void requestStructureSymbols(EditorBuffer buffer, boolean evenIfHidden) {
         if (buffer == null || buffer != host.activeBuffer()) {
             return;
         }
+        StructurePanel panel = ops.structurePanel();
+        if (panel != null) {
+            panel.setLspSymbolsRequester(structureSymbolsWanted);
+        }
         Path path = buffer.getPath();
         if (path != null && lspManager.isManaged(path) && lspManager.supportsDocumentSymbols(path)) {
+            if (!evenIfHidden && panel != null && !panel.showsOutline()) {
+                panel.lspSymbolsStale(buffer);
+                return;
+            }
             long version = buffer.docVersion();
-            lspManager.documentSymbols(path, syms -> {
+            lspManager.latestDocumentSymbols(path, syms -> {
                 if (buffer == host.activeBuffer()
                         && java.util.Objects.equals(path, buffer.getPath())
                         && version == buffer.docVersion()) {
-                    ops.setStructureSymbols(buffer, syms.isEmpty() ? null : syms);
+                    setStructureSymbols(buffer, syms.isEmpty() ? null : syms);
                 }
             });
         } else {
-            ops.setStructureSymbols(buffer, null);
+            setStructureSymbols(buffer, null);
+        }
+    }
+
+    private void setStructureSymbols(EditorBuffer buffer, List<com.editora.lsp.SymbolNode> symbols) {
+        StructurePanel panel = ops.structurePanel();
+        if (panel != null) {
+            panel.setLspSymbols(buffer, symbols);
         }
     }
 
@@ -1735,12 +1893,10 @@ final class LspCoordinator {
             if (t.contains("ready") || t.contains("error")) {
                 ops.setLspLoading(false); // server finished starting (or failed)
             }
-            if (t.contains("ready")) {
-                // A server just finished initializing — its capabilities are now known. Push completion
-                // trigger characters to every open managed buffer and pull initial diagnostics (the
-                // pull-model servers don't publish until asked).
-                refreshCapabilityGates();
-            }
+            // A "ready" status also means the server's capabilities are now known. The manager turns it
+            // into a capabilities refresh for that server's documents (see refreshRequested), which pushes
+            // the completion trigger characters and pulls initial diagnostics (the pull-model servers
+            // don't publish until asked).
         }
     }
 
@@ -1798,8 +1954,22 @@ final class LspCoordinator {
         });
         // Semantic tokens re-request (fired on the same debounce as didChange + on scroll-settle).
         buffer.setSemanticTokensRequester(() -> {
-            requestSemanticTokens(buffer);
+            // This also runs when scrolling settles. A server without range requests answers with the
+            // whole document every time, so when the buffer already shows its answer for this text there
+            // is nothing a scroll could change — only a transfer and a decode of every token to save.
+            if (!semanticTokensCurrent(buffer)) {
+                requestSemanticTokens(buffer);
+            }
             requestInlayHints(buffer); // same cadence: didChange debounce + scroll-settle (#681)
+        });
+        // The buffer's own scroll-settle trigger only runs while semantic highlighting is on, so with it
+        // off (the setting, or a server without semantic tokens) scrolling never fetched the hints for the
+        // lines scrolled to. Cover exactly that case here.
+        buffer.getArea().estimatedScrollYProperty().addListener((obs, was, now) -> {
+            if (host.settings().isInlayHints() && !buffer.isSemanticActive() && buffer == host.activeBuffer()) {
+                inlayScrollTarget = buffer;
+                inlayScrollSettle.playFromStart();
+            }
         });
         buffer.setLspCompletionSource((line, column, kind, trigger, cb) -> {
             if (buffer.getPath() != null && lspManager.isManaged(buffer.getPath())) {
@@ -1953,8 +2123,9 @@ final class LspCoordinator {
     }
 
     /** The cached selection-range chain for expand-selection, valid only for the buffer + document version
-     *  it was fetched against (#739). */
-    private EditorBuffer selectionChainBuffer;
+     *  it was fetched against (#739). Held weakly: the slot only answers "is this the same buffer", and a
+     *  strong field kept the last expanded-in buffer alive after its tab closed. */
+    private java.lang.ref.WeakReference<EditorBuffer> selectionChainBuffer = new java.lang.ref.WeakReference<>(null);
 
     private long selectionChainVersion = -1;
     private int selectionChainRequest;
@@ -1966,7 +2137,7 @@ final class LspCoordinator {
      */
     List<int[]> selectionChain(EditorBuffer buffer) {
         boolean valid =
-                buffer != null && buffer == selectionChainBuffer && buffer.docVersion() == selectionChainVersion;
+                buffer != null && buffer == selectionChainBuffer.get() && buffer.docVersion() == selectionChainVersion;
         return valid ? selectionChain : List.of();
     }
 
@@ -1985,7 +2156,7 @@ final class LspCoordinator {
         Path path = buffer == null ? null : buffer.getPath();
         // The cache is anchored at one ladder's origin: drop it now, so presses made before this request
         // answers fall back to the local ladder instead of walking the previous ladder's chain.
-        selectionChainBuffer = null;
+        selectionChainBuffer.clear();
         selectionChain = List.of();
         selectionChainVersion = -1;
         int request = ++selectionChainRequest;
@@ -1997,7 +2168,7 @@ final class LspCoordinator {
             if (buffer.docVersion() != version || request != selectionChainRequest) {
                 return; // stale: the text has since changed, or a newer ladder has asked
             }
-            selectionChainBuffer = buffer;
+            selectionChainBuffer = new java.lang.ref.WeakReference<>(buffer);
             selectionChainVersion = version;
             selectionChain = chain;
         });

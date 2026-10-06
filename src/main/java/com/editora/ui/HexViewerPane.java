@@ -40,7 +40,7 @@ public final class HexViewerPane implements TabContent {
     private final Path path;
     private final String title;
     private final BorderPane root = new BorderPane();
-    private final CodeArea area = new CodeArea();
+    private final CodeArea area = AreaUndo.none(new CodeArea());
     private boolean loaded;
     private volatile boolean disposed;
     private final CompletableFuture<Void> finished = new CompletableFuture<>();

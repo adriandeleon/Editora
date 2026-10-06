@@ -902,7 +902,15 @@ final class EditorSettingsCoordinator {
                 !editorConfigEnabled() || path == null || !com.editora.vfs.Vfs.isLocal(path)
                         ? com.editora.editorconfig.EditorConfigProperties.EMPTY
                         : com.editora.editorconfig.EditorConfig.resolveFor(path);
-        if (now.equals(buffer.getEditorConfigProps())) {
+        return applyRefreshedEditorConfig(buffer, now);
+    }
+
+    /**
+     * The FX half of {@link #refreshEditorConfig}, for a caller that resolved {@code now} off the FX thread
+     * (resolving walks every ancestor directory): applies it when it differs from what the buffer holds.
+     */
+    boolean applyRefreshedEditorConfig(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties now) {
+        if (now == null || now.equals(buffer.getEditorConfigProps())) {
             return false;
         }
         applyResolvedEditorConfig(buffer, now);

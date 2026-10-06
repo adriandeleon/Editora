@@ -27,6 +27,12 @@ public final class MultiTab {
         Indenter.TabEdit edit(String text, int selStart, int selEnd, boolean shift);
     }
 
+    /** {@link Edits} for a caller whose document is not a String: it reads what it needs itself. */
+    @FunctionalInterface
+    public interface CaretEdits {
+        Indenter.TabEdit edit(int selStart, int selEnd, boolean shift);
+    }
+
     /** One replacement, in the coordinates of the text before any of them. */
     public record Change(int from, int to, String replacement) {}
 
@@ -45,13 +51,18 @@ public final class MultiTab {
      * the key alone.
      */
     public static Plan plan(String text, List<int[]> carets, boolean shift, Edits edits) {
+        return plan(carets, shift, (selStart, selEnd, back) -> edits.edit(text, selStart, selEnd, back));
+    }
+
+    /** As {@link #plan(String, List, boolean, Edits)}, without handing the document's text through. */
+    public static Plan plan(List<int[]> carets, boolean shift, CaretEdits edits) {
         int n = carets.size();
         Indenter.TabEdit[] wanted = new Indenter.TabEdit[n];
         List<Integer> order = new ArrayList<>(n);
         for (int i = 0; i < n; i++) {
             int anchor = carets.get(i)[0];
             int caret = carets.get(i)[1];
-            wanted[i] = edits.edit(text, Math.min(anchor, caret), Math.max(anchor, caret), shift);
+            wanted[i] = edits.edit(Math.min(anchor, caret), Math.max(anchor, caret), shift);
             if (wanted[i] == null) {
                 return null;
             }

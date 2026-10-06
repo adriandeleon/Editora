@@ -208,11 +208,81 @@ public class aot_build {
         }
     }
 
+    /**
+     * The settings file the training launch reads. An empty object is enough: what matters is that the file
+     * EXISTS, so the settings are actually parsed and bound by Jackson instead of short-circuiting to the
+     * defaults — that binding is most of the config-load cost a real launch pays. No {@code schemaVersion}
+     * on purpose: a literal one would go stale with every schema bump, and a file claiming a NEWER schema
+     * than the app is refused. AotTrainerOptionsTest loads this through the real config code and fails if it
+     * ever stops loading cleanly.
+     */
+    static final String TRAINING_SETTINGS = "{}";
+
+    /**
+     * The session the training launch restores: three small files of different languages, the first active.
+     * {@code %1$s}/{@code %2$s}/{@code %3$s} are their absolute paths (forward slashes, so no JSON escaping).
+     */
+    static final String TRAINING_SESSION = "{\"openFiles\":[{\"path\":\"%1$s\"},{\"path\":\"%2$s\"},"
+            + "{\"path\":\"%3$s\"}],\"activeFile\":\"%1$s\"}";
+
+    /** The files of {@link #TRAINING_SESSION}, in order: name, then content. */
+    static final String[][] TRAINING_FILES = {
+        {
+            "Sample.java",
+            "package sample;\n\nimport java.util.List;\n\n/** A small class for the training run. */\n"
+                    + "public final class Sample {\n    private final List<String> names = List.of(\"a\", \"b\");\n\n"
+                    + "    public int count() {\n        int n = 0;\n        for (String name : names) {\n"
+                    + "            if (!name.isEmpty()) {\n                n++; // counted\n            }\n"
+                    + "        }\n        return n;\n    }\n}\n"
+        },
+        {
+            "notes.md",
+            "# Notes\n\nSome *emphasis*, a [link](https://example.com) and `code`.\n\n"
+                    + "- one\n- two\n\n```java\nint x = 1;\n```\n"
+        },
+        {"data.json", "{\n  \"name\": \"sample\",\n  \"values\": [1, 2, 3],\n  \"nested\": {\"ok\": true}\n}\n"},
+    };
+
+    /**
+     * Makes the training launch exercise the startup path a real launch takes, and returns the file to pass
+     * as its {@code FILE} argument.
+     *
+     * <p>The cache archives what the training run loads and links. Launched against an EMPTY config dir with
+     * {@code --new-file}, that run skipped most of a real startup: with no config files the versioned reader
+     * returns defaults before any Jackson read; a blank buffer has no grammar, so the TextMate engine and its
+     * regex library never load; no file is read and no session is restored. Every one of those then loaded
+     * cold on the user's machine instead. So: a settings file to bind, a session naming three small files of
+     * different languages to restore, and one of them as the command-line file so load, highlight and first
+     * paint all happen before the trainer exits.
+     *
+     * <p>Generated here rather than copied from {@code samples/}: the script must not depend on what the
+     * working directory holds, and the content only has to make each grammar tokenize something.
+     */
+    private static Path seedTrainingConfig(Path cfg) throws IOException {
+        Path dir = Files.createDirectories(cfg.resolve("training-files"));
+        String[] stored = new String[TRAINING_FILES.length];
+        Path first = null;
+        for (int i = 0; i < TRAINING_FILES.length; i++) {
+            Path file = dir.resolve(TRAINING_FILES[i][0]);
+            Files.writeString(file, TRAINING_FILES[i][1]);
+            stored[i] = file.toAbsolutePath().toString().replace('\\', '/');
+            if (first == null) {
+                first = file;
+            }
+        }
+        Files.writeString(cfg.resolve("settings.json"), TRAINING_SETTINGS);
+        Files.writeString(cfg.resolve("workspace-state.json"), String.format(TRAINING_SESSION, (Object[]) stored));
+        return first;
+    }
+
     /** Run the GUI app against the image runtime with -XX:AOTCacheOutput; render one frame then exit. */
     private static void trainBestEffort(Path imageJava, Path aot, String module) {
         Path tmpCfg = null;
         try {
             tmpCfg = Files.createTempDirectory("editora-aot-train");
+            // The launch must look like a real one: settings and a session to read, files to load and
+            // highlight. See seedTrainingConfig.
+            Path trainingFile = seedTrainingConfig(tmpCfg);
             List<String> cmd = new ArrayList<>();
             // On a headless Linux runner, a virtual X server is needed for JavaFX; wrap with xvfb-run.
             String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
@@ -281,7 +351,7 @@ public class aot_build {
                     "-XX:+UnlockDiagnosticVMOptions", "-XX:-AOTAdapterCaching",
                     "-XX:AOTCacheOutput=" + aot,
                     "-m", module,
-                    "--config-dir", tmpCfg.toString(), "--new-file"));
+                    "--config-dir", tmpCfg.toString(), trainingFile.toString()));
             System.out.println("[aot] training: " + String.join(" ", cmd));
             Process p = new ProcessBuilder(cmd).redirectErrorStream(true).inheritIO().start();
             if (!p.waitFor(180, TimeUnit.SECONDS)) {

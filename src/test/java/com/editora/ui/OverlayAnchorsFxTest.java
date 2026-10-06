@@ -60,7 +60,7 @@ class OverlayAnchorsFxTest {
             }
 
             // An overlay first attached while the minimap is hidden must start on the same rectangle…
-            b.setSearchMatches(List.of(new int[] {0, 5}), 0);
+            b.setSearchMatches(com.editora.editor.SearchMatches.of(0, 5), 0);
             assertEquals(0d, rightAnchor(b, "searchOverlay"));
 
             // …and move with everything else when it comes back.

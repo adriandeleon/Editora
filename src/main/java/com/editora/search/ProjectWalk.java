@@ -23,6 +23,8 @@ import java.util.function.BooleanSupplier;
  *
  * <ul>
  *   <li>a dot-directory ({@code .git}, {@code .idea}) and a {@code .gitignore}d directory are skipped whole;
+ *   <li>a {@code .gitignore} in a directory below the root applies to that directory's subtree, when the
+ *       filter came from {@link GitignoreFilter#load} (see {@link GitignoreFilter#nested});
  *   <li>dot-files and {@code .gitignore}d files are never offered;
  *   <li>an unreadable file or directory is counted and stepped over, never fatal;
  *   <li>the cap counts <b>accepted</b> files only, so a big ignored tree cannot exhaust it;
@@ -107,9 +109,24 @@ public final class ProjectWalk {
         Path given = root;
         java.util.function.UnaryOperator<Path> shown =
                 real == given ? p -> p : p -> given.resolve(real.relativize(p).toString());
+        // The filter in force for the directory being listed: the root's, plus one layer per directory on the
+        // way down that has a .gitignore of its own. Only pushed where it changes, so a tree without nested
+        // files keeps one filter throughout.
+        java.util.ArrayDeque<GitignoreFilter> filters = new java.util.ArrayDeque<>();
+        java.util.ArrayDeque<Path> filterDirs = new java.util.ArrayDeque<>();
+        filters.push(options.gitignore());
         try {
             Files.walkFileTree(
                     real, EnumSet.noneOf(FileVisitOption.class), options.maxDepth(), new SimpleFileVisitor<>() {
+                        @Override
+                        public FileVisitResult postVisitDirectory(Path dir, IOException e) {
+                            if (dir.equals(filterDirs.peek())) {
+                                filterDirs.pop();
+                                filters.pop();
+                            }
+                            return FileVisitResult.CONTINUE;
+                        }
+
                         @Override
                         public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
                             if (options.cancelled().getAsBoolean()) {
@@ -122,8 +139,14 @@ public final class ProjectWalk {
                                 return FileVisitResult.SKIP_SUBTREE; // .git, .idea, …
                             }
                             String rel = relativize(real, dir);
-                            if (options.gitignore().ignored(rel, true) || !visitor.enter(shown.apply(dir), rel)) {
+                            GitignoreFilter current = filters.peek();
+                            if (current.ignored(rel, true) || !visitor.enter(shown.apply(dir), rel)) {
                                 return FileVisitResult.SKIP_SUBTREE; // target/, node_modules/, …
+                            }
+                            GitignoreFilter inside = current.nested(dir, rel);
+                            if (inside != current) {
+                                filters.push(inside);
+                                filterDirs.push(dir);
                             }
                             return FileVisitResult.CONTINUE;
                         }
@@ -135,7 +158,7 @@ public final class ProjectWalk {
                             }
                             if (attrs.isDirectory()) {
                                 // walkFileTree hands a directory to visitFile only at the depth limit.
-                                if (!hidden(file) && !options.gitignore().ignored(relativize(real, file), true)) {
+                                if (!hidden(file) && !filters.peek().ignored(relativize(real, file), true)) {
                                     depthLimited[0] = true;
                                 }
                                 return FileVisitResult.CONTINUE;
@@ -144,7 +167,7 @@ public final class ProjectWalk {
                                 return FileVisitResult.CONTINUE;
                             }
                             String rel = relativize(real, file);
-                            if (options.gitignore().ignored(rel, false)) {
+                            if (filters.peek().ignored(rel, false)) {
                                 return FileVisitResult.CONTINUE;
                             }
                             if (accepted[0] >= options.maxAccepted()) {
@@ -194,6 +217,33 @@ public final class ProjectWalk {
             return false;
         }
         return !("/" + relDir.substring(0, slash + 1)).contains("/src/");
+    }
+
+    /**
+     * Whether a walk of {@code root} with {@code gitignore} would offer {@code file} — for a caller told about
+     * one changed file that must apply the walk's pruning without repeating the walk: no dot-directory or
+     * ignored directory on the way down, and the file itself neither a dot-file nor ignored.
+     */
+    public static boolean offers(Path root, Path file, GitignoreFilter gitignore) {
+        if (root == null || file == null || !file.startsWith(root) || file.equals(root)) {
+            return false;
+        }
+        GitignoreFilter filter = gitignore == null ? GitignoreFilter.NONE : gitignore;
+        Path dir = root;
+        Path rel = root.relativize(file);
+        int last = rel.getNameCount() - 1;
+        for (int i = 0; i <= last; i++) {
+            Path next = dir.resolve(rel.getName(i));
+            String relNext = relativize(root, next);
+            if (hidden(next) || filter.ignored(relNext, i < last)) {
+                return false;
+            }
+            if (i < last) {
+                filter = filter.nested(next, relNext);
+            }
+            dir = next;
+        }
+        return true;
     }
 
     private static boolean hidden(Path path) {

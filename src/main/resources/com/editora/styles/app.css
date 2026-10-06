@@ -135,6 +135,12 @@
     -fx-alignment: center;
 }
 
+/* The same column on a line that starts no fold: an empty spacer, so the text does not shift between
+   rows. Its width must stay equal to the chevron's min-width above. */
+.editor-area .fold-chevron-slot {
+    -fx-min-width: 19;
+}
+
 .editor-area .fold-chevron:hover {
     -fx-text-fill: #0969da;
 }

@@ -177,6 +177,10 @@ class AcpFsGuardTest {
         Field processField = AcpClient.class.getDeclaredField("process");
         processField.setAccessible(true);
         processField.set(client, process);
+        // start() is what normally pairs the process with its ordered writer; this test attaches a fake.
+        Field writerField = AcpClient.class.getDeclaredField("writer");
+        writerField.setAccessible(true);
+        writerField.set(client, process.writer);
         try {
             JsonNode ok = request(client, process, "fs/read_text_file", path(inside));
             assertEquals(
@@ -231,8 +235,12 @@ class AcpFsGuardTest {
 
     private final class CapturingProcess extends Process {
         private final ByteArrayOutputStream sent = new ByteArrayOutputStream();
+        final com.editora.lsp.AsyncPipeWriter writer =
+                new com.editora.lsp.AsyncPipeWriter(sent, "acp-test-writer", () -> {});
 
         JsonNode take() throws Exception {
+            // Messages are written by the client's writer thread, not by the call that sent them.
+            assertTrue(writer.awaitDrained(10, java.util.concurrent.TimeUnit.SECONDS));
             JsonNode message = mapper.readTree(sent.toString(StandardCharsets.UTF_8));
             sent.reset();
             return message;

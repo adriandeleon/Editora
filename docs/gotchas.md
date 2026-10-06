@@ -181,6 +181,13 @@ editable area outside `EditorBuffer` needs the same call from its owner's close 
 `WindowReleasedOnCloseFxTest` holds a weak reference to a closed window's controller and fails if either
 route comes back.
 
+## A RichTextFX area's default undo history is unlimited
+
+`GenericStyledArea` installs an unlimited undo manager that records programmatic `appendText` /
+`deleteText` / `clear` calls even when the area is not editable. A console that trims to a character cap
+therefore still retains every line it ever showed. Build every area outside `EditorBuffer` through
+`ui/AreaUndo.none(...)` or `AreaUndo.bounded(...)`; `RichTextAreaUndoPolicyTest` fails the build otherwise.
+
 ## Never ask `getCharacterBoundsOnScreen` for an *empty* range
 
 **Symptom:** typing (or some repeated action) gets slower the longer the editor is open, and never

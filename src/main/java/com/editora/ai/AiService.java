@@ -34,7 +34,24 @@ public final class AiService {
         return t;
     });
 
-    private final AiClient client = new AiClient();
+    private final AiClient client;
+    /** False when the client is shared with other services, whose owner closes it. */
+    private final boolean ownsClient;
+
+    public AiService() {
+        this(new AiClient(), true);
+    }
+
+    /** A service on a client shared with others: one connection pool (and selector thread) between them. */
+    public AiService(AiClient shared) {
+        this(shared, false);
+    }
+
+    private AiService(AiClient client, boolean ownsClient) {
+        this.client = client;
+        this.ownsClient = ownsClient;
+    }
+
     private final ObjectMapper mapper = new ObjectMapper();
     private final AtomicLong generation = new AtomicLong();
 
@@ -187,5 +204,8 @@ public final class AiService {
     public void shutdown() {
         cancel();
         exec.shutdownNow();
+        if (ownsClient) {
+            client.close();
+        }
     }
 }

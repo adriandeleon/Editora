@@ -303,6 +303,17 @@ public class QuickOpen<T> {
         });
     }
 
+    /**
+     * Re-reads the items while the picker is open, keeping what was typed — for a source whose content
+     * arrived after {@link #show} (an outline the server had not answered yet).
+     */
+    public void reload() {
+        if (showing) {
+            all = itemsSupplier.get();
+            filter(input.getText());
+        }
+    }
+
     public void hide() {
         if (overlayHost != null) {
             overlayHost.hide();

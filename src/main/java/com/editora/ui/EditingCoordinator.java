@@ -1,6 +1,6 @@
 package com.editora.ui;
 
-import java.util.List;
+import java.lang.ref.WeakReference;
 
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -20,6 +20,10 @@ import static com.editora.i18n.Messages.tr;
 
 /** Owns editing commands and per-window mark, kill/yank, rectangle and query-replace state. */
 final class EditingCoordinator {
+
+    /** An empty buffer slot. */
+    private static final WeakReference<EditorBuffer> NO_BUFFER = new WeakReference<>(null);
+
     interface Host {
         EditorSettingsCoordinator editorSettings();
 
@@ -172,15 +176,19 @@ final class EditingCoordinator {
      * starts a fresh entry. Keying off {@link EditorBuffer#docVersion()} avoids needing a
      * command-sequencing hook (the single {@code CommandRegistry} execution listener belongs to macro
      * recording).
+     *
+     * <p>Held weakly, like {@link #lastYankBuffer}: the slot only answers "is this the same buffer", and a
+     * strong field kept the last killed-in (or yanked-into) buffer — document, undo history and all — alive
+     * after its tab closed, until the next kill somewhere else overwrote it.
      */
-    EditorBuffer lastKillBuffer;
+    WeakReference<EditorBuffer> lastKillBuffer = NO_BUFFER;
 
     long lastKillDocVersion = -1;
 
     int lastKillCaret = -1;
 
     /** The range the last yank/yank-pop inserted, so {@code M-y} knows what to replace. Same guard shape. */
-    EditorBuffer lastYankBuffer;
+    WeakReference<EditorBuffer> lastYankBuffer = NO_BUFFER;
 
     long lastYankDocVersion = -1;
 
@@ -928,7 +936,7 @@ final class EditingCoordinator {
      * in which case the text accumulates into the newest ring entry instead of pushing a new one.
      */
     boolean continuesPreviousKill(EditorBuffer buffer, int caret) {
-        return buffer == lastKillBuffer && buffer.docVersion() == lastKillDocVersion && caret == lastKillCaret;
+        return buffer == lastKillBuffer.get() && buffer.docVersion() == lastKillDocVersion && caret == lastKillCaret;
     }
 
     /**
@@ -944,7 +952,7 @@ final class EditingCoordinator {
         }
         killRing.kill(text, dir, merge);
         setClipboardString(killRing.current()); // the whole accumulated entry, as Emacs does
-        lastKillBuffer = buffer;
+        lastKillBuffer = new WeakReference<>(buffer);
         lastKillDocVersion = buffer.docVersion();
         lastKillCaret = area.getCaretPosition();
         invalidateYank();
@@ -968,20 +976,20 @@ final class EditingCoordinator {
 
     /** Breaks any consecutive-kill run, so the next kill starts a new ring entry. */
     void resetKillAccumulation() {
-        lastKillBuffer = null;
+        lastKillBuffer = NO_BUFFER;
         lastKillDocVersion = -1;
         lastKillCaret = -1;
     }
 
     void invalidateYank() {
-        lastYankBuffer = null;
+        lastYankBuffer = NO_BUFFER;
         lastYankDocVersion = -1;
         lastYankStart = -1;
         lastYankEnd = -1;
     }
 
     void recordYank(EditorBuffer buffer, int start, int end) {
-        lastYankBuffer = buffer;
+        lastYankBuffer = new WeakReference<>(buffer);
         lastYankDocVersion = buffer.docVersion();
         lastYankStart = start;
         lastYankEnd = end;
@@ -1064,7 +1072,7 @@ final class EditingCoordinator {
             return;
         }
         CodeArea area = buffer.getFocusedArea();
-        if (buffer != lastYankBuffer || buffer.docVersion() != lastYankDocVersion || lastYankStart < 0) {
+        if (buffer != lastYankBuffer.get() || buffer.docVersion() != lastYankDocVersion || lastYankStart < 0) {
             host.setStatus(tr("status.yankPop.notAfterYank"));
             return;
         }
@@ -1242,7 +1250,7 @@ final class EditingCoordinator {
                 return false;
             }
             current = m.get();
-            buffer.setSearchMatches(List.of(new int[] {current.start(), current.end()}), 0);
+            buffer.setSearchMatches(com.editora.editor.SearchMatches.of(current.start(), current.end()), 0);
             area.moveTo(current.start());
             area.requestFollowCaret();
             host.setStatus(tr("status.queryReplace.prompt", replaced));
@@ -2076,7 +2084,7 @@ final class EditingCoordinator {
             return;
         }
         int caret = area.getCaretPosition();
-        area.replaceText(after);
+        buffer.replaceVisibleText(area, after); // one undo step holding only the lines whose indent changed
         area.moveTo(Math.min(caret, area.getLength()));
         area.requestFollowCaret();
         host.setStatus(tr(toSpaces ? "status.indent.toSpaces" : "status.indent.toTabs"));

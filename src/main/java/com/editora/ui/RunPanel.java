@@ -43,7 +43,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private static final int MAX_CHARS = 200_000;
 
     private final Label status = new Label();
-    private final CodeArea output = new CodeArea();
+    private final CodeArea output = AreaUndo.none(new CodeArea());
     private final TextField input = new TextField();
     private final Button stopButton = new Button();
     private final Button clearButton = new Button();
@@ -55,6 +55,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     private Consumer<String> onUrl;
 
     private final OutputStyle lineStyle = OutputStyle.console();
+    private final ConsoleAppender appender = new ConsoleAppender(output, MAX_CHARS);
 
     public RunPanel(Runnable onStop) {
         getStyleClass().add("run-panel");
@@ -199,12 +200,13 @@ public final class RunPanel extends VBox implements ToolWindowContent {
 
     /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
     public void clearConsole() {
+        appender.discard();
         output.clear();
     }
 
     /** A run started: clears the console, shows the command, enables Stop + the stdin field. */
     public void started(String commandLine) {
-        output.clear();
+        clearConsole();
         status.setText(tr("run.running", commandLine));
         stopButton.setDisable(false);
         input.setDisable(false);
@@ -221,10 +223,7 @@ public final class RunPanel extends VBox implements ToolWindowContent {
     }
 
     private void appendOutput(String line, boolean stderr, boolean completeLine) {
-        int start = output.getLength();
-        int caretBefore = output.getCaretPosition();
-        boolean follow = caretBefore >= start; // scrolled back? stay put
-        output.appendText(line + (completeLine ? "\n" : ""));
+        StyleSpans<Collection<String>> spans = null;
         if (!line.isEmpty()) {
             String styleClass = stderr ? "run-stderr" : lineStyle.styleClassFor(line);
             StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
@@ -241,10 +240,9 @@ public final class RunPanel extends VBox implements ToolWindowContent {
             if (offset < line.length()) {
                 builder.add(styleClass == null ? List.of() : List.of(styleClass), line.length() - offset);
             }
-            StyleSpans<Collection<String>> spans = builder.create();
-            output.setStyleSpans(start, spans);
+            spans = builder.create();
         }
-        ConsoleNav.afterAppend(output, caretBefore, follow, MAX_CHARS);
+        appender.append(line + (completeLine ? "\n" : ""), spans);
     }
 
     /** The process exited; shows the exit code (or a "stopped" note for a killed run) and disables Stop. */
