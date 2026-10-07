@@ -566,15 +566,26 @@ Editora is built with the help of AI coding tools.
   the `vc` chords (`C-x v v` commit, `C-x v P` push, `C-x v +` pull, `C-x v b s` switch branch, `C-x v l` /
   `C-x v L` file / branch log, `C-x v g` blame); the IntelliJ keymap adds Commit (`Ctrl+K`), Push
   (`Ctrl+Shift+K`), Update (`Ctrl+T`) and Branches (``Ctrl+Shift+` ``). A **Git Log** tool window (`M-g h`,
-  or *Show File History* on a tab) lists the checked-out branch's commits — short hash, the branches and tags
-  pointing at each commit, subject, author and relative date, one line per commit — and reloads after every
-  Git command; select a commit to see its files. It loads the newest 200 commits and says so when the history
-  is longer. In a file-filtered history,
+  or *Show File History* on a tab) lists the checked-out branch's commits — a commit graph, short hash, the
+  branches and tags pointing at each commit, subject, author and relative date, one line per commit — and
+  reloads after every Git command. It loads 200 commits at a time and fetches the next page as you scroll
+  (or from *Load More*); a toolbar toggle (*Git Log: Toggle All Branches*) switches to every branch, remote
+  and tag. Select a commit to see its full message, author and e-mail, date, hash, parents (click one to
+  jump to it) and refs above its files. The filter box narrows the loaded rows as you type, and **Enter
+  searches the whole history**: plain words match the commit message, `author:name`, `content:text` (or
+  `-Stext`: commits that add or remove the text), `since:`/`until:` dates and `path:glob` narrow further —
+  the active search is shown in the header with a button to clear it. **Enter** (or a double-click) on a
+  commit opens everything it changed as one multi-file review; select two commits and choose **Compare
+  Selected Commits** to review what differs between them. A file history **follows renames**. In a
+  file-filtered history,
   double-click a revision's file to compare it with the editable working copy and apply individual lines,
   hunks, or the whole revision; in the full repository log, double-click keeps the read-only parent-to-commit
   diff and **Compare with Working Tree** is available from the file menu. Right-click a commit to Copy Hash /
   Checkout / Reset / Revert / Cherry-Pick / New Branch (the same actions are on the palette as *Git Log: …*;
-  they act on the commit selected in the visible log, and open the log first when it is hidden). **Blame**
+  they act on the commit selected in the visible log, and open the log first when it is hidden). Reverting a
+  merge commit asks which parent is the mainline. **Tags**: *New Tag…* on a commit (lightweight, or annotated
+  when you give a message) and *Checkout / Push / Delete* on a tagged one; *Git: New Tag…*, *Push Tag…*,
+  *Delete Tag…* (palette and VCS menu) and *Checkout Tag…* (palette) pick from the repository's tags. **Blame**
   (`M-g a`) adds a gutter column showing every line's author and commit date, shaded by age, with the
   commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default). **Stash**
   push / pop-latest / apply / drop from the palette and the VCS menu; the branch dropdown (branches first,
