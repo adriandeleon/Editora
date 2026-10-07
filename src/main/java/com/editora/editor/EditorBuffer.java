@@ -9427,7 +9427,7 @@ public class EditorBuffer implements TabContent {
             documentSnapshots.expect(null);
             documentSnapshots.invalidate();
         }
-        forgetHistoryAtNarrowBoundary(); // the load is the baseline, not an undo step: undoing it emptied the file
+        forgetHistoryAtNarrowBoundary(false); // the load is the baseline, not an undo step: undoing it emptied the file
         captureUndoCheckpoint(); // ...and the Undo History baseline is the loaded text, not the loading shell
         refilter.run();
         dirty.set(false);
@@ -9542,8 +9542,9 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = full.substring(0, s);
         narrowSuffix = full.substring(e);
+        boolean hadHistory = hasUndoHistory();
         LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes, gitLines);
-        forgetHistoryAtNarrowBoundary();
+        forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
         moveSplitCaret(caret2 - s);
@@ -9572,8 +9573,9 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
         narrowSuffix = null;
+        boolean hadHistory = hasUndoHistory();
         LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes, gitLines);
-        forgetHistoryAtNarrowBoundary();
+        forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
         moveSplitCaret(prefix.length() + caret2);
@@ -9587,8 +9589,23 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Something an undo or an Undo History restore could bring back (more than the load's own baseline). */
+    private boolean hasUndoHistory() {
+        return area.isUndoAvailable() || area.isRedoAvailable() || undoHistory.size() > 1;
+    }
+
+    /** Whether a narrow/widen swap cleared a non-empty undo history since the last call: the UI says so. */
+    public boolean takeHistoryDropped() {
+        boolean dropped = historyDropped;
+        historyDropped = false;
+        return dropped;
+    }
+
+    private boolean historyDropped;
+
     /** The undo stack and the Undo History checkpoints: neither may be replayed across the boundary. */
-    private void forgetHistoryAtNarrowBoundary() {
+    private void forgetHistoryAtNarrowBoundary(boolean hadHistory) {
+        historyDropped |= hadHistory;
         area.getUndoManager().forgetHistory();
         undoHistory.clear();
         if (onUndoHistoryChanged != null) {

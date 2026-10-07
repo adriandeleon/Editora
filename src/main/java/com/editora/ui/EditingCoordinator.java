@@ -1448,6 +1448,16 @@ final class EditingCoordinator {
         host.statusBar().setNarrowed(buffer.isNarrowed());
         host.updateWindowTitle();
         host.git().refresh();
+        // Narrowing and widening start a new undo history (see EditorBuffer.narrowTo). Say so when there was
+        // one to lose — deferred, so it is not overwritten by the status of the narrowing command or of the
+        // programmatic writer (Replace in Files, a lint fix, an agent edit) that had to widen the buffer first.
+        boolean narrowed = buffer.isNarrowed();
+        javafx.application.Platform.runLater(() -> {
+            if (buffer.takeHistoryDropped()) {
+                host.setStatus(
+                        tr(narrowed ? "status.narrow.narrowedHistoryCleared" : "status.narrow.widenedHistoryCleared"));
+            }
+        });
     }
 
     /**
