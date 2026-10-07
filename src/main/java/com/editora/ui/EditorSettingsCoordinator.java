@@ -952,6 +952,13 @@ final class EditorSettingsCoordinator {
         }
     }
 
+    /** Re-reads the status bar when {@code buffer} is the one it shows (its file's state on disk changed). */
+    void refreshStatusBarFor(EditorBuffer buffer) {
+        if (buffer == host.activeBuffer() && host.statusBar() != null) {
+            host.statusBar().refresh();
+        }
+    }
+
     /** Applies an already-resolved EditorConfig result without touching the filesystem. */
     void applyResolvedEditorConfig(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties properties) {
         com.editora.editorconfig.EditorConfigProperties p =

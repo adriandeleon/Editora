@@ -64,11 +64,12 @@ final class FileWorkflowCoordinator {
             DocumentWriteSequencer.Ticket ticket,
             boolean saveAs,
             String lineEnding,
-            String charsetFallback) {}
+            String charsetFallback,
+            SaveNotes notes) {}
 
     private record SaveAsOrigin(Path path) {}
 
-    private record SavePayload(String text, SaveEncoding.Plan encoding) {}
+    private record SavePayload(String text, SaveEncoding.Plan encoding, SaveNotes notes) {}
 
     private record DiskWrite(long modifiedMillis, long size, boolean inPlace) {
         DiskWrite(long modifiedMillis, long size) {
@@ -218,7 +219,7 @@ final class FileWorkflowCoordinator {
             // A file that cannot be replaced (read-only folder, hard links, another owner) is overwritten in
             // place; its previous bytes wait here, on a disk that survives a crash, until the write is done.
             return AtomicFileWrite.writeDocument(
-                    target, bytes, commit, host.config().getConfigDir().resolve("save-backups"));
+                    target, bytes, commit, host.config().getConfigDir().resolve(SaveBackupRecovery.FOLDER));
         }
     };
 
@@ -926,6 +927,17 @@ final class FileWorkflowCoordinator {
         } else {
             buffer.setInitialContent(load.content(), load.longLine());
         }
+        // A mixed file's bytes are kept: its document cannot say which terminator each line had.
+        MixedLineEndings.loaded(
+                buffer,
+                load.file(),
+                load.truncated() ? null : load.sourceBytes(),
+                load.document() != null
+                        ? load.document().lineEnding()
+                        : com.editora.editor.LineEndings.dominant(load.content()),
+                load.document() != null
+                        ? load.document().mixedLineEndings()
+                        : com.editora.editor.LineEndings.mixed(load.content()));
         if (load.log()) {
             host.logViewer().recordLoadOffset(buffer, load.logOffset());
         } else if (!load.truncated()) {
@@ -938,17 +950,23 @@ final class FileWorkflowCoordinator {
                     StatusBar.formatSize(load.size()),
                     StatusBar.formatSize(load.content().length()));
         }
+        MixedLineEndings.Source mixed = MixedLineEndings.of(buffer);
         if (load.charsetAssumed()) {
+            // "…so no bytes are lost" is only true of a file whose line endings are uniform.
             return tr(
-                    "status.charsetAssumed",
+                    mixed == null
+                            ? "status.charsetAssumed"
+                            : mixed.binary() ? "status.charsetAssumedMixedBinary" : "status.charsetAssumedMixed",
                     load.file().getFileName(),
                     com.editora.editorconfig.EditorConfigCharset.displayName(load.declaredCharset()),
-                    com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()));
+                    com.editora.editorconfig.EditorConfigCharset.displayName(load.charset()),
+                    buffer.getLineEnding());
         }
-        if (load.document() != null
-                ? load.document().mixedLineEndings()
-                : com.editora.editor.LineEndings.mixed(load.content())) {
-            return tr("status.mixedLineEndings", load.file().getFileName(), buffer.getLineEnding());
+        if (mixed != null) {
+            return tr(
+                    mixed.binary() ? "status.mixedLineEndingsBinary" : "status.mixedLineEndings",
+                    load.file().getFileName(),
+                    buffer.getLineEnding());
         }
         if (load.large()) {
             return largeFileNote(load.file(), load.size());
@@ -1502,7 +1520,8 @@ final class FileWorkflowCoordinator {
      * Writes {@code buffer} to its (e.g. root-owned) file via the OS auth agent ({@code pkexec}/polkit),
      * which prompts for the password itself — Editora never handles it. The bytes go to a private temp
      * file, then {@code cat tmp > target} runs as root, truncating the target in place so its owner and
-     * permissions are preserved. Runs off the FX thread (the auth dialog blocks); the result is applied back
+     * permissions are preserved — after the same script has copied the target aside, so a copy that fails
+     * part-way can be undone (see {@link com.editora.process.ElevatedSave#SCRIPT}). Runs off the FX thread (the auth dialog blocks); the result is applied back
      * on the FX thread.
      */
     void saveAsAdmin(EditorBuffer buffer) {
@@ -1531,6 +1550,10 @@ final class FileWorkflowCoordinator {
                                                     .proceed()) {
                                         return new AdminResult(-2, "conflict", -1, -1);
                                     }
+                                    if (!mayNormaliseBinary(request, true)) {
+                                        return new AdminResult(-2, "refused", -1, -1);
+                                    }
+                                    keepMixedOriginal(request);
                                     return elevatedWriter.write(request.target(), request.bytes());
                                 });
                                 AdminResult result = outcome.executed()
@@ -1581,8 +1604,10 @@ final class FileWorkflowCoordinator {
             if (result.exit() == 0) {
                 host.historyCoordinator().record(target, request.content(), HistoryRevision.REASON_SAVE);
                 acknowledgeLatestCommit(buffer);
+                settleSaveNotes(request);
                 if (request.ticket().isCurrent() && !buffer.isDisposed()) {
-                    host.setStatus(tr("status.admin.saved", com.editora.config.PathDisplay.of(target)));
+                    host.setStatus(request.notes()
+                            .appendTo(tr("status.admin.saved", com.editora.config.PathDisplay.of(target))));
                     host.git().refresh();
                     host.lspCoordinator().notifyDocumentSaved(buffer, request.content());
                     Tab tab = host.tabForBuffer(buffer);
@@ -1596,15 +1621,26 @@ final class FileWorkflowCoordinator {
                     System.getProperty("os.name"), result.exit(), result.error())) {
                 host.setStatus(tr("status.admin.cancelled"));
             } else {
-                host.setStatus(tr(
-                        "status.admin.failed",
-                        result.error() == null || result.error().isBlank()
-                                ? String.valueOf(result.exit())
-                                : result.error()));
+                host.setStatus(adminFailureStatus(target, result));
             }
         } finally {
             finishRequest(request);
         }
+    }
+
+    /** What a failed elevated save says: above all, where the file's previous bytes are now. */
+    static String adminFailureStatus(Path target, AdminResult result) {
+        String reason = com.editora.process.ElevatedSave.reason(result.error());
+        String why = reason.isBlank() ? String.valueOf(result.exit()) : reason;
+        String file = com.editora.config.PathDisplay.of(target);
+        String backup = com.editora.config.PathDisplay.of(com.editora.process.ElevatedSave.backupOf(target));
+        return switch (com.editora.process.ElevatedSave.failureOf(result.exit(), result.error())) {
+            case RESTORED -> tr("status.admin.failedRestored", file, why);
+            case BACKUP_KEPT -> tr("status.admin.failedBackupKept", file, backup, why);
+            case NO_BACKUP -> tr("status.admin.failedNoBackup", file, why);
+            case STALE_BACKUP -> tr("status.admin.failedStaleBackup", file, backup);
+            case OTHER -> tr("status.admin.failed", why);
+        };
     }
 
     boolean saveAs(EditorBuffer buffer) {
@@ -1760,10 +1796,20 @@ final class FileWorkflowCoordinator {
      * content in the file's own line ending and detected charset.
      */
     byte[] saveBytes(EditorBuffer buffer) {
-        return savePayload(buffer, buffer.getContent()).encoding().bytes();
+        return savePayload(buffer, buffer.getContent(), buffer.getPath())
+                .encoding()
+                .bytes();
     }
 
-    private SavePayload savePayload(EditorBuffer buffer, String content) {
+    private SavePayload savePayload(EditorBuffer buffer, String content, Path target) {
+        MixedLineEndings.Source mixedSource = MixedLineEndings.of(buffer);
+        MixedLineEndings.Decision mixed = MixedLineEndings.decide(
+                mixedSource, content, buffer.getLineEnding(), buffer.isLineEndingForced(), target);
+        if (mixed == MixedLineEndings.Decision.KEEP_BYTES) {
+            // Unedited, and the document cannot reproduce the file's terminators: its own bytes go back.
+            return new SavePayload(
+                    content, new SaveEncoding.Plan(mixedSource.bytes(), null, null), SaveNotes.keptBytes(mixedSource));
+        }
         com.editora.editorconfig.EditorConfigProperties p =
                 host.editorSettings().editorConfigEnabled()
                         ? buffer.getEditorConfigProps()
@@ -1780,7 +1826,18 @@ final class FileWorkflowCoordinator {
         // SaveEncoding decides what is written instead, and refuses when nothing safe can be.
         String charset = buffer.getEffectiveCharset();
         boolean bom = !(isUtf16(charset) && bomlessUtf16.contains(buffer));
-        return new SavePayload(text, SaveEncoding.plan(text, charset, buffer.isCharsetAssumed(), bom));
+        SaveEncoding.Plan plan = SaveEncoding.plan(text, charset, buffer.isCharsetAssumed(), bom);
+        SaveNotes notes = SaveNotes.of(
+                mixed,
+                mixedSource,
+                buffer.getLineEnding(),
+                content,
+                text,
+                p,
+                buffer.getDetectedCharset(),
+                charset,
+                !buffer.isCharsetAssumed() && plan.fallbackFrom() == null);
+        return new SavePayload(text, plan, notes);
     }
 
     private static String fingerprint(byte[] bytes) {
@@ -1896,15 +1953,23 @@ final class FileWorkflowCoordinator {
             host.editorSettings().refreshEditorConfig(buffer);
         }
         String content = buffer.getContent();
-        SavePayload payload = savePayload(buffer, content);
+        SavePayload payload = savePayload(buffer, content, file);
         if (payload.encoding().bytes() == null) {
             SaveEncoding.Unencodable first = payload.encoding().refused();
-            host.setStatus(tr(
-                    "status.save.cannotEncodeAssumed",
-                    buffer.getTitle(),
-                    com.editora.editorconfig.EditorConfigCharset.displayName(buffer.getEffectiveCharset()),
-                    first == null ? "?" : first.character(),
-                    first == null ? "?" : String.valueOf(first.line())));
+            host.setStatus(
+                    first != null && first.unpairedSurrogate()
+                            ? tr(
+                                    "status.save.cannotEncodeSurrogate",
+                                    buffer.getTitle(),
+                                    String.valueOf(first.line()),
+                                    first.display())
+                            : tr(
+                                    "status.save.cannotEncodeAssumed",
+                                    buffer.getTitle(),
+                                    com.editora.editorconfig.EditorConfigCharset.displayName(
+                                            buffer.getEffectiveCharset()),
+                                    first == null ? "?" : first.character(),
+                                    first == null ? "?" : String.valueOf(first.line())));
             return null;
         }
         pendingSaves.merge(buffer, 1, Integer::sum);
@@ -1924,7 +1989,8 @@ final class FileWorkflowCoordinator {
                 host.config().shared().documentWrites().begin(file),
                 saveAs,
                 buffer.getLineEnding(),
-                payload.encoding().fallbackFrom());
+                payload.encoding().fallbackFrom(),
+                payload.notes());
         activeSaveRequests.add(request);
         return request;
     }
@@ -1938,6 +2004,7 @@ final class FileWorkflowCoordinator {
                 && (plan.expectedAbsent()
                         ? Files.notExists(request.target())
                         : plan.expectedBytes() == null || diskBytesEqual(request.target(), plan.expectedBytes()));
+        keepMixedOriginal(request);
         AtomicFileWrite.Outcome written = documentWriter.writeDocument(request.target(), request.bytes(), commit);
         if (written == AtomicFileWrite.Outcome.SKIPPED) {
             return null;
@@ -1946,6 +2013,87 @@ final class FileWorkflowCoordinator {
                 lastModifiedMillis(request.target()),
                 fileSize(request.target()),
                 written == AtomicFileWrite.Outcome.IN_PLACE);
+    }
+
+    /**
+     * Before a save rewrites a mixed file's line terminators, its loaded bytes are copied into the config
+     * folder: local history records text, which is already normalised. No copy, no rewrite.
+     */
+    private void keepMixedOriginal(SaveRequest request) throws IOException {
+        if (request.notes().normalisesMixed()) {
+            MixedLineEndings.keepOriginal(
+                    host.config().getConfigDir().resolve(MixedLineEndings.ORIGINALS_FOLDER),
+                    request.notes().source());
+        }
+    }
+
+    /**
+     * Asks before an edit to a file that mixes line endings <em>and</em> holds binary data is saved:
+     * writing one terminator throughout changes the binary bytes. Replaced by tests; FX thread.
+     *
+     * <p>Arguments: the file, and the line ending that would be written on every line.
+     */
+    volatile java.util.function.BiPredicate<Path, String> mixedBinaryConsent = this::askMixedBinaryConsent;
+
+    /** Buffers the user agreed to normalise although they hold binary data. FX-thread only. */
+    private final Set<EditorBuffer> mixedBinaryAgreed = Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    private boolean askMixedBinaryConsent(Path target, String lineEnding) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.initOwner(host.stage());
+        alert.setTitle(tr("dialog.saveMixedBinary.title"));
+        alert.setHeaderText(tr("dialog.saveMixedBinary.header", target.getFileName()));
+        alert.setContentText(tr("dialog.saveMixedBinary.content", lineEnding));
+        ButtonType rewrite = new ButtonType(tr("dialog.saveMixedBinary.save"), ButtonBar.ButtonData.OTHER);
+        ButtonType cancel = new ButtonType(tr("dialog.cancel"), ButtonBar.ButtonData.CANCEL_CLOSE);
+        alert.getButtonTypes().setAll(cancel, rewrite);
+        return Dialogs.styled(alert).showAndWait().orElse(cancel) == rewrite;
+    }
+
+    /**
+     * Whether {@code request} may rewrite the terminators of a mixed file that holds binary data: an explicit
+     * save asks once per buffer; a background save never asks and never writes, it says why.
+     */
+    private boolean mayNormaliseBinary(SaveRequest request, boolean mayAsk) throws IOException {
+        if (!request.notes().needsConsent()) {
+            return true;
+        }
+        CompletableFuture<Boolean> answer = new CompletableFuture<>();
+        Runnable decide = () -> {
+            try {
+                EditorBuffer buffer = request.buffer();
+                if (buffer.isDisposed() || !request.ticket().isCurrent()) {
+                    answer.complete(false);
+                } else if (mixedBinaryAgreed.contains(buffer)) {
+                    answer.complete(true);
+                } else if (mayAsk && mixedBinaryConsent.test(request.target(), request.lineEnding())) {
+                    mixedBinaryAgreed.add(buffer);
+                    answer.complete(true);
+                } else {
+                    host.setStatus(tr(
+                            "status.save.cannotSaveMixedBinary",
+                            request.target().getFileName(),
+                            request.lineEnding(),
+                            tr("command.file.saveAs")));
+                    answer.complete(false);
+                }
+            } catch (Throwable failure) {
+                answer.completeExceptionally(failure);
+            }
+        };
+        if (Platform.isFxApplicationThread()) {
+            decide.run();
+        } else {
+            Platform.runLater(decide);
+        }
+        try {
+            return answer.get();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (java.util.concurrent.ExecutionException failed) {
+            throw new IOException(String.valueOf(failed.getCause()), failed.getCause());
+        }
     }
 
     private static boolean diskBytesEqual(Path target, byte[] expected) {
@@ -2142,6 +2290,9 @@ final class FileWorkflowCoordinator {
                     if (state == SaveTarget.PRESENT && attempt == 0 && !mayReplaceReadOnly(request, autoSave)) {
                         return null;
                     }
+                    if (attempt == 0 && !mayNormaliseBinary(request, !autoSave)) {
+                        return null;
+                    }
                     RemoteWritePlan plan = state == SaveTarget.PRESENT
                             ? prepareRemoteWrite(request, autoSave, attempt > 0, autoSaveBlocked)
                             : new RemoteWritePlan(true, null, true);
@@ -2233,6 +2384,7 @@ final class FileWorkflowCoordinator {
             // The file on disk is UTF-8 with a BOM now; the status bar and the next save must agree with it.
             host.editorSettings().charsetFellBackToUtf8(request.buffer());
         }
+        settleSaveNotes(request);
         if (".editorconfig".equals(String.valueOf(request.target().getFileName()))) {
             host.editorConfigSaved(); // its rules reach the files already open, in every window
         }
@@ -2248,19 +2400,48 @@ final class FileWorkflowCoordinator {
         }
     }
 
+    /**
+     * Brings the buffer's bookkeeping in line with what a completed save put on disk: a file whose mixed
+     * line endings were rewritten is uniform now, one whose bytes were written back unchanged is still
+     * mixed (at the saved path), and a re-encoded file is in its new charset — so that is said once.
+     */
+    private void settleSaveNotes(SaveRequest request) {
+        EditorBuffer buffer = request.buffer();
+        SaveNotes notes = request.notes();
+        if (buffer.isDisposed()
+                || buffer.getPath() == null
+                || !com.editora.config.PathKeys.sameNormalized(buffer.getPath(), request.target())) {
+            return;
+        }
+        if (notes.keepsBytes()) {
+            MixedLineEndings.movedTo(buffer, request.target());
+        } else if (notes.normalisesMixed() && MixedLineEndings.of(buffer) == notes.source()) {
+            MixedLineEndings.forget(buffer);
+            mixedBinaryAgreed.remove(buffer);
+            host.editorSettings().refreshStatusBarFor(buffer);
+        }
+        if (notes.charsetChanged()) {
+            buffer.setDetectedCharset(notes.charsetTo());
+        }
+    }
+
     /** What a finished save says: the warnings a plain "Saved" used to overwrite a few milliseconds later. */
     private static String savedStatus(SaveRequest request, DiskWrite disk, boolean autoSave) {
         if (request.charsetFallback() != null) {
-            return tr(
-                    "status.charsetFallback",
-                    com.editora.editorconfig.EditorConfigCharset.displayName(request.charsetFallback()));
+            return request.notes()
+                    .appendTo(tr(
+                            "status.charsetFallback",
+                            com.editora.editorconfig.EditorConfigCharset.displayName(request.charsetFallback())));
         }
         if (disk.inPlace()) {
-            return tr("status.savedInPlace", com.editora.config.PathDisplay.of(request.target()));
+            return request.notes()
+                    .appendTo(tr("status.savedInPlace", com.editora.config.PathDisplay.of(request.target())));
         }
-        return autoSave
-                ? tr("status.autoSaved", request.target().getFileName())
-                : tr("status.saved", com.editora.config.PathDisplay.of(request.target()));
+        return request.notes()
+                .appendTo(
+                        autoSave
+                                ? tr("status.autoSaved", request.target().getFileName())
+                                : tr("status.saved", com.editora.config.PathDisplay.of(request.target())));
     }
 
     private void rollbackFailedSaveAs(SaveRequest request) {
@@ -2361,8 +2542,11 @@ final class FileWorkflowCoordinator {
     void shutdown() {
         shutdown = true;
         autoSaveIdleTimer.stop();
-        autoSaveExecutor.shutdownNow();
-        remoteSaveExecutors.values().forEach(ExecutorService::shutdownNow);
+        // Not shutdownNow: that interrupts the write that is running, and an interrupt in the middle of an
+        // in-place overwrite leaves the user's file truncated. The tickets closed below already stop every
+        // write that has not reached its commit point; one that has is allowed to finish.
+        autoSaveExecutor.shutdown();
+        remoteSaveExecutors.values().forEach(ExecutorService::shutdown);
         fileLoadExecutor.shutdownNow();
         List.copyOf(activeSaveRequests).forEach(this::finishRequest);
         committedSaves.clear();

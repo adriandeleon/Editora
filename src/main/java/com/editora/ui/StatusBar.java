@@ -734,7 +734,7 @@ public final class StatusBar extends HBox {
         }
         refreshPositionAndCsv(buffer, buffer.getFocusedArea());
         language.setText(displayLanguage(buffer.getLanguage()));
-        endings.setText(buffer.getLineEnding());
+        endings.setText(MixedLineEndings.label(buffer)); // "Mixed (LF)" while the file on disk mixes them
         refreshSize(buffer);
     }
 
