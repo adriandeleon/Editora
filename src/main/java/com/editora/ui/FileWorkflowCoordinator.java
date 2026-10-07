@@ -2050,6 +2050,10 @@ final class FileWorkflowCoordinator {
                         return null;
                     }
                     DiskWrite disk = writeToDisk(request, plan);
+                    if (disk != null) {
+                        // Local History keeps what this save replaced when it was not our own earlier save.
+                        host.historyCoordinator().saveReplaced(target, plan.expectedBytes(), request.bytes());
+                    }
                     if (disk != null || !request.ticket().isCurrent()) {
                         return disk;
                     }

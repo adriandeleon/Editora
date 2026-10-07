@@ -561,6 +561,60 @@ final class HistoryCoordinator {
         });
     }
 
+    /**
+     * Per file: the length and CRC-32 of what this window's last save wrote there. Read and written on the
+     * save worker, so a later save can tell "the bytes I am replacing are my own" without hashing them twice.
+     */
+    private final Map<String, Long> lastSavedStamps = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static long stamp(byte[] bytes) {
+        java.util.zip.CRC32 crc = new java.util.zip.CRC32();
+        crc.update(bytes, 0, bytes.length);
+        return ((long) bytes.length << 32) | crc.getValue();
+    }
+
+    /**
+     * A save has just replaced {@code replaced} (the bytes that were on disk; {@code null} for a new file)
+     * with {@code written}. Called from the save worker, right after the write committed and before the save
+     * is acknowledged on the FX thread.
+     *
+     * <p>Local History records what a save <em>wrote</em>. What the first save of a session <em>replaced</em>
+     * — the file as it was opened, or as Git, a formatter or another editor left it — was in no revision, so
+     * once the tab's undo history was gone it could not be brought back. Those bytes are recorded here, as an
+     * {@link HistoryRevision#REASON_EXTERNAL external} revision ordered before the save's own, when they are
+     * not this window's previous save of the file: the first save of a path in a session, and any later one
+     * that finds the file changed underneath. The usual save — replacing our own bytes — costs one CRC of
+     * each side and records nothing; the decode and hash of a capture happen once, and a body equal to the
+     * newest revision is dropped by the history worker.
+     *
+     * <p>The bytes were already read by the save for its conflict check: nothing is read from disk here.
+     */
+    void saveReplaced(Path target, byte[] replaced, byte[] written) {
+        if (target == null || written == null || !Vfs.isLocal(target)) {
+            return;
+        }
+        Long previous = lastSavedStamps.put(historyKey(target), stamp(written));
+        if (replaced == null
+                || replaced.length > EditorBuffer.LARGE_FILE_BYTES
+                || (previous != null && previous >>> 32 == replaced.length && previous == stamp(replaced))) {
+            return;
+        }
+        Platform.runLater(() -> recordReplaced(target, replaced));
+    }
+
+    /** FX half of {@link #saveReplaced}: the same text contract as a pre-delete capture, in the editor's form. */
+    private void recordReplaced(Path file, byte[] replaced) {
+        if (!isEnabled()) {
+            return;
+        }
+        String charsetRule = charsetRuleFor(file);
+        if (isBinary(replaced, charsetRule)) {
+            return;
+        }
+        String text = LineEndings.toLf(decodeCaptured(replaced, charsetRule));
+        recordFor(file, text, HistoryRevision.REASON_EXTERNAL, "", false, null);
+    }
+
     /** A NUL byte marks a binary file — except in UTF-16 text, where every ASCII character has one. */
     private static boolean isBinary(byte[] bytes, String charsetRule) {
         if (EditorConfigCharset.resolveName(bytes, charsetRule).startsWith("utf-16")) {
