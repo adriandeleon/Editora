@@ -17,6 +17,7 @@ import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 
 import com.editora.build.OutputStyle;
+import com.editora.git.GitOutputDiffs;
 import com.editora.git.GitOutputHighlights;
 import com.editora.git.GitOutputLinks;
 import com.editora.run.ConsoleUrls;
@@ -48,6 +49,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private final Button clearButton = new Button();
     private Consumer<StackTraceLinks.Link> onLink;
     private Consumer<String> onUrl;
+    private Consumer<GitOutputDiffs.Target> onGitDiff;
     private boolean gitTranscript;
 
     /** This tool's output style (set per run by {@link #started}). */
@@ -56,6 +58,14 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
     private Runnable onStop;
 
     private final ConsoleAppender appender = new ConsoleAppender(output, MAX_CHARS);
+
+    /** A transcript tab ({@link #setLogMode}), and whether a cancellable command is running in it. */
+    private boolean logMode;
+
+    private boolean logRunning;
+
+    /** The last line is progress its command will overwrite ({@link #appendProgress}). */
+    private boolean transientTail;
 
     public BuildToolPanel() {
         getStyleClass().add("run-panel");
@@ -98,6 +108,12 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
                 e.consume();
                 return;
             }
+            GitOutputDiffs.Target diff = gitTranscript ? GitOutputDiffs.at(output.getText(), offset) : null;
+            if (diff != null && onGitDiff != null) {
+                onGitDiff.accept(diff);
+                e.consume();
+                return;
+            }
             GitOutputLinks.Link file = gitTranscript ? GitOutputLinks.at(output.getText(), offset) : null;
             if (file != null && onLink != null) {
                 onLink.accept(new StackTraceLinks.Link(file.file(), 1));
@@ -107,7 +123,9 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_MOVED, e -> {
             int offset = output.hit(e.getX(), e.getY()).getInsertionIndex();
             boolean linked = ConsoleUrls.at(output.getText(), offset) != null
-                    || (gitTranscript && GitOutputLinks.at(output.getText(), offset) != null);
+                    || (gitTranscript
+                            && (GitOutputLinks.at(output.getText(), offset) != null
+                                    || GitOutputDiffs.at(output.getText(), offset) != null));
             output.setCursor(linked ? Cursor.HAND : Cursor.TEXT);
         });
         output.addEventHandler(javafx.scene.input.MouseEvent.MOUSE_EXITED, e -> output.setCursor(null));
@@ -128,6 +146,11 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
         this.onUrl = onUrl;
     }
 
+    /** The clicked change graph of a pulled file ({@code 4 ++--}): open its diff across the pull. */
+    public void setOnGitDiff(Consumer<GitOutputDiffs.Target> onGitDiff) {
+        this.onGitDiff = onGitDiff;
+    }
+
     /** Matches the console font to the editor's code-area font (family + effective size). */
     public void setOutputFont(String family, int size) {
         output.setStyle("-fx-font-family: \"" + family + "\"; -fx-font-size: " + size + "px;");
@@ -145,11 +168,27 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * instead of sitting permanently disabled.
      */
     public void setLogMode(boolean logMode) {
-        stopButton.setVisible(!logMode);
-        stopButton.setManaged(!logMode);
+        this.logMode = logMode;
+        showStop(!logMode || logRunning);
         if (logMode) {
             status.setText(tr("console.log.idle"));
         }
+    }
+
+    /**
+     * In log mode: a long command (a clone, a fetch) is running and {@code onStop} cancels it, so the Stop
+     * button is there for as long as it runs; {@code null} when it has ended.
+     */
+    public void setLogStop(Runnable onStop) {
+        this.onStop = onStop;
+        logRunning = onStop != null;
+        stopButton.setDisable(!logRunning);
+        showStop(!logMode || logRunning);
+    }
+
+    private void showStop(boolean show) {
+        stopButton.setVisible(show);
+        stopButton.setManaged(show);
     }
 
     /** Enables file-path links for the Git transcript without treating GitHub's plain CLI output as paths. */
@@ -170,6 +209,7 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
 
     /** Clears the console output (the Clear button + the {@code run.clear} palette command). */
     public void clearConsole() {
+        transientTail = false;
         appender.discard();
         output.clear();
     }
@@ -199,13 +239,21 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
      * colouring comes from {@code CommandLogFormat} rather than a build tool's {@link OutputStyle}.
      */
     public void appendStyled(String line, String styleClass) {
+        transientTail = false; // anything appended after a progress line leaves it standing
         StyleSpans<Collection<String>> spans = null;
         if (!line.isEmpty()) {
             StyleSpansBuilder<Collection<String>> builder = new StyleSpansBuilder<>();
             List<GitOutputLinks.Link> fileLinks = gitTranscript ? GitOutputLinks.find(line) : List.of();
             List<GitOutputHighlights.Span> highlights = gitTranscript ? GitOutputHighlights.find(line) : List.of();
             List<ConsoleUrls.Link> urlLinks = ConsoleUrls.find(line);
+            // Underlined as a link whether or not an "Updating a..b" stands above it: that is the
+            // transcript's to say, at click time.
+            int[] graph = gitTranscript ? GitOutputDiffs.graph(line) : null;
             TreeSet<Integer> boundaries = new TreeSet<>(List.of(0, line.length()));
+            if (graph != null) {
+                boundaries.add(graph[0]);
+                boundaries.add(graph[1]);
+            }
             for (ConsoleUrls.Link link : urlLinks) {
                 boundaries.add(link.start());
                 boundaries.add(link.end());
@@ -239,6 +287,9 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
                     if (linked) {
                         classes.add("console-url");
                     }
+                    if (graph != null && graph[0] <= begin && begin < graph[1]) {
+                        classes.add("git-output-diff-link");
+                    }
                     builder.add(classes, end - begin);
                 }
                 previous = end;
@@ -246,6 +297,24 @@ public final class BuildToolPanel extends VBox implements ToolWindowContent {
             spans = builder.create();
         }
         appender.append(line + "\n", spans);
+    }
+
+    /**
+     * Appends one line of a running command's output. A {@code transientLine} is progress the command
+     * overwrites ({@code Receiving objects:  12%}): the next line passed here takes its place, as it would in
+     * a terminal, instead of a clone leaving hundreds of percentages behind it.
+     */
+    public void appendProgress(String line, String styleClass, boolean transientLine) {
+        if (transientTail) {
+            appender.flush();
+            int paragraphs = output.getParagraphs().size();
+            if (paragraphs >= 2) {
+                // The console ends in a newline, so the last line is the paragraph before the empty one.
+                output.deleteText(output.getAbsolutePosition(paragraphs - 2, 0), output.getLength());
+            }
+        }
+        appendStyled(line, styleClass);
+        transientTail = transientLine;
     }
 
     public void finished(int code) {

@@ -20,10 +20,27 @@ class GitServiceLimitsTest {
     }
 
     @Test
+    void theStreamedNetworkCommandsAskGitForProgress() {
+        // Off a terminal git reports none unless told to; the option goes right after the subcommand.
+        assertEquals(
+                java.util.List.of("pull", "--progress", "--ff-only"),
+                java.util.List.of(GitService.withProgress("pull", "--ff-only")));
+        assertEquals(
+                java.util.List.of("push", "--progress", "--set-upstream", "origin", "main"),
+                java.util.List.of(GitService.withProgress("push", "--set-upstream", "origin", "main")));
+        assertEquals(java.util.List.of("fetch", "--progress"), java.util.List.of(GitService.withProgress("fetch")));
+        assertEquals(
+                java.util.List.of("fetch", "--progress", "--all"),
+                java.util.List.of(GitService.withProgress("fetch", "--progress", "--all")));
+        assertEquals(
+                java.util.List.of("remote", "update"), java.util.List.of(GitService.withProgress("remote", "update")));
+    }
+
+    @Test
     void cloneNeverReadsThePastedUrlAsAnOption() {
         // `git clone --upload-pack=<program> <repo>` runs the program; after "--" it is only a (bad) URL.
         assertEquals(
-                java.util.List.of("clone", "--", "--upload-pack=touch /tmp/x", "/dest"),
+                java.util.List.of("clone", "--progress", "--", "--upload-pack=touch /tmp/x", "/dest"),
                 java.util.List.of(GitService.cloneArgs("--upload-pack=touch /tmp/x", "/dest")));
     }
 

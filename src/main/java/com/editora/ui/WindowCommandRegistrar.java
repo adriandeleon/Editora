@@ -1939,6 +1939,8 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("git.switchBranch", () -> host.git().ifEnabled(host.gitWindows()::chooseBranch)));
         host.registry().register(Command.of("git.newBranch", () -> host.git().ifEnabled(host.git()::newBranch)));
+        // No ifEnabled: a clone runs with no repository at all.
+        host.registry().register(Command.of("git.cancel", () -> host.git().cancelNetworkCommand()));
         host.registry()
                 .register(Command.of(
                         "git.fetch", () -> host.git().ifEnabled(() -> host.git().gitSync("Fetch", "fetch", "--all"))));

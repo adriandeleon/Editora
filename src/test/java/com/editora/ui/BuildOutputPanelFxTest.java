@@ -114,6 +114,170 @@ class BuildOutputPanelFxTest {
         assertTrue(text.contains("exit 0"), "and its exit code");
     }
 
+    /** A clone is shown while it runs: echoed at once, progress overwritten in place, then only the exit. */
+    @Test
+    void aStreamedCommandIsEchoedAtOnceAndItsProgressOverwritesItself() throws Exception {
+        String[] text = FxTestSupport.callOnFx(() -> {
+            BuildOutputPanel p = new BuildOutputPanel();
+            List<String> argv = List.of("git", "clone", "--progress", "--", "https://example.test/r.git", "/tmp/r");
+            p.commandStarted(GIT, "Git", argv, () -> {});
+            BuildToolPanel console = (BuildToolPanel) p.getTabs().get(0).getContent();
+            String running = consoleText(console);
+            p.commandProgress(GIT, "Cloning into '/tmp/r'...", false);
+            p.commandProgress(GIT, "Receiving objects:  12% (12/100)", true);
+            p.commandProgress(GIT, "Receiving objects:  50% (50/100)   ", true);
+            p.commandProgress(GIT, "Receiving objects: 100% (100/100), done.", false);
+            p.logCommand(GIT, "Git", new CommandLog.Entry(argv, 0, "", "", 7, true));
+            return new String[] {running, consoleText(console)};
+        });
+        assertEquals("$ git clone --progress -- https://example.test/r.git /tmp/r\n", text[0]);
+        assertEquals(
+                "$ git clone --progress -- https://example.test/r.git /tmp/r\n"
+                        + "Cloning into '/tmp/r'...\n"
+                        + "Receiving objects: 100% (100/100), done.\n"
+                        + "exit 0 · 7 ms\n",
+                text[1]);
+    }
+
+    /** The transcript tab has no Stop button — except while a clone or fetch is running in it. */
+    @Test
+    void theStopButtonIsThereOnlyWhileAStreamedCommandRunsAndCancelsIt() throws Exception {
+        Object[] seen = FxTestSupport.callOnFx(() -> {
+            BuildOutputPanel p = new BuildOutputPanel();
+            int[] stops = {0};
+            p.logCommand(GIT, "Git", entry("git", "status"));
+            javafx.scene.control.Button stop =
+                    FxTestSupport.field((BuildToolPanel) p.getTabs().get(0).getContent(), "stopButton");
+            boolean before = stop.isVisible();
+            p.commandStarted(GIT, "Git", List.of("git", "fetch", "--progress"), () -> stops[0]++);
+            boolean running = stop.isVisible() && stop.isManaged() && !stop.isDisable();
+            p.logCommand(GIT, "Git", entry("git", "add", "-A")); // another command ending leaves it alone
+            boolean stillRunning = stop.isVisible() && !stop.isDisable();
+            stop.fire();
+            p.logCommand(
+                    GIT,
+                    "Git",
+                    new CommandLog.Entry(
+                            List.of("git", "fetch", "--progress"),
+                            -1,
+                            "",
+                            com.editora.process.ProcessRunner.CANCELLED,
+                            900,
+                            true));
+            return new Object[] {
+                before,
+                running,
+                stillRunning,
+                stops[0],
+                stop.isVisible(),
+                consoleText((BuildToolPanel) p.getTabs().get(0).getContent())
+            };
+        });
+        assertEquals(false, seen[0], "nothing to stop in a plain transcript");
+        assertEquals(true, seen[1], "a running fetch can be stopped");
+        assertEquals(true, seen[2]);
+        assertEquals(1, seen[3], "Stop runs the cancel action");
+        assertEquals(false, seen[4], "and goes away when the command has ended");
+        assertTrue(((String) seen[5]).endsWith("cancelled · 900 ms\n"), (String) seen[5]);
+    }
+
+    /**
+     * A real click in the shown console: on a pulled file's change graph it opens that file's diff across
+     * the pull, on the file name it still opens the file, and a graph with no "Updating a..b" above it in
+     * its own command opens nothing.
+     */
+    @Test
+    void clickingAPulledFilesChangeGraphOpensItsDiffAndTheNameStillOpensTheFile() throws Exception {
+        List<String> seen = FxTestSupport.callOnFx(() -> {
+            List<String> events = new java.util.ArrayList<>();
+            BuildOutputPanel panel = new BuildOutputPanel();
+            panel.setOnGitDiff(d -> events.add("diff " + d.oldRev() + ".." + d.newRev() + " " + d.newPath()));
+            panel.setOnLink(l -> events.add("open " + l.file()));
+            panel.logCommand(
+                    GIT,
+                    "Git",
+                    new CommandLog.Entry(
+                            List.of("git", "pull", "--ff-only"),
+                            0,
+                            "Updating 1a2b3c4..5d6e7f8\nFast-forward\n src/Example.java | 4 ++--\n",
+                            "",
+                            7));
+            panel.logCommand(
+                    GIT,
+                    "Git",
+                    new CommandLog.Entry(List.of("git", "stash", "show"), 0, " src/Other.java | 2 +-\n", "", 7));
+            panel.selectTab(GIT);
+            Stage stage = new Stage();
+            try {
+                Scene scene = new Scene(new StackPane(panel), 900, 300);
+                stage.setScene(scene);
+                stage.show();
+                scene.getRoot().applyCss();
+                scene.getRoot().layout();
+                org.fxmisc.richtext.CodeArea out = FxTestSupport.field(
+                        (BuildToolPanel) panel.getTabs().get(0).getContent(), "output");
+                String text = out.getText();
+                boolean underlined =
+                        out.getStyleOfChar(text.indexOf("++--") + 1).contains("git-output-diff-link");
+                click(out, text.indexOf("++--") + 1);
+                click(out, text.indexOf("src/Example.java") + 4);
+                click(out, text.indexOf("+-\n"));
+                click(out, text.indexOf("Fast-forward") + 2);
+                events.add("underlined " + underlined);
+                return events;
+            } finally {
+                stage.hide();
+            }
+        });
+        assertEquals(
+                List.of("diff 1a2b3c4..5d6e7f8 src/Example.java", "open src/Example.java", "underlined true"), seen);
+    }
+
+    /** A primary single click on the left part of the character at {@code offset} of a shown console. */
+    private static void click(org.fxmisc.richtext.CodeArea out, int offset) {
+        javafx.geometry.Bounds onScreen =
+                out.getCharacterBoundsOnScreen(offset, offset + 1).orElseThrow();
+        double screenX = onScreen.getMinX() + onScreen.getWidth() / 4;
+        double screenY = onScreen.getMinY() + onScreen.getHeight() / 2;
+        javafx.geometry.Point2D inScene = out.localToScene(out.screenToLocal(screenX, screenY));
+        javafx.event.Event.fireEvent(
+                out,
+                new javafx.scene.input.MouseEvent(
+                        javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                        inScene.getX(),
+                        inScene.getY(),
+                        screenX,
+                        screenY,
+                        javafx.scene.input.MouseButton.PRIMARY,
+                        1,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        true,
+                        false,
+                        true,
+                        null));
+    }
+
+    /** Another command finishing mid-clone must not have its footer eaten by the next progress update. */
+    @Test
+    void progressNeverOverwritesAnotherCommandsLines() throws Exception {
+        String text = FxTestSupport.callOnFx(() -> {
+            BuildOutputPanel p = new BuildOutputPanel();
+            p.commandStarted(GIT, "Git", List.of("git", "clone"), () -> {});
+            p.commandProgress(GIT, "Receiving objects:  12%", true);
+            p.logCommand(GIT, "Git", entry("git", "add", "-A"));
+            p.commandProgress(GIT, "Receiving objects:  13%", true);
+            return consoleText((BuildToolPanel) p.getTabs().get(0).getContent());
+        });
+        assertTrue(text.contains("Receiving objects:  12%\n$ git add -A\nok\nexit 0"), text);
+        assertTrue(text.endsWith("Receiving objects:  13%\n"), text);
+    }
+
     /** The whole point of a transcript: a second command must add to it, not replace it. */
     @Test
     void aSecondCommandAppendsInsteadOfClearing() throws Exception {

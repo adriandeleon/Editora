@@ -9,7 +9,9 @@ import java.util.List;
  *
  * <p>Deliberately about finished commands, not a stream: {@code git}/{@code gh} calls are short request/reply
  * round-trips whose whole output arrives at once (unlike a build, which streams for minutes and needs
- * {@code BuildService.Listener}). One {@link Entry} is therefore one complete transcript entry.
+ * {@code BuildService.Listener}). One {@link Entry} is therefore one complete transcript entry. The
+ * long-running exceptions — git's network commands (clone, fetch, pull, push) — go through
+ * {@link #started}/{@link #progress}.
  *
  * <p><b>Threading:</b> implementations are called on whichever worker thread ran the command, so a UI sink
  * must marshal to the FX thread itself.
@@ -30,7 +32,25 @@ public interface CommandLog {
      * <p>No working directory: it would be near-constant (a window is one project) and only lengthen every
      * echoed line — the tab is already scoped to the window that ran the command.
      */
-    record Entry(List<String> argv, int exitCode, String out, String err, long millis) {}
+    record Entry(List<String> argv, int exitCode, String out, String err, long millis, boolean streamed) {
+        public Entry(List<String> argv, int exitCode, String out, String err, long millis) {
+            this(argv, exitCode, out, err, millis, false);
+        }
+    }
+
+    /**
+     * A <em>long</em> command is starting — the exception to "finished commands" above. A clone or a fetch
+     * can run for minutes, so the service announces it, streams its {@link #progress}, and finally {@link #record}s an
+     * {@link Entry} marked {@code streamed}: its command and output are already on screen, only the exit is
+     * news.
+     */
+    default void started(List<String> argv) {}
+
+    /**
+     * One line from the command last {@link #started}. A {@code transientLine} is progress the command
+     * overwrites; the next line replaces it. Called on a stream reader thread.
+     */
+    default void progress(String line, boolean transientLine) {}
 
     /** The no-op sink — the default, so a service with no console attached costs one null-free call. */
     static CommandLog none() {

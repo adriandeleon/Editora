@@ -1458,6 +1458,32 @@ final class DiffCoordinator {
     }
 
     /**
+     * Diff a file across a pull: what it was at the commit the branch stood on against what the pull brought,
+     * read-only. Opened from the file's change graph in the Git transcript, which is where the two commits
+     * come from; a file the pull added or deleted has an empty side.
+     */
+    void diffPulledFile(com.editora.git.GitOutputDiffs.Target pulled) {
+        Path root = git.repoRoot();
+        if (root == null) {
+            return;
+        }
+        String newPath = pulled.newPath();
+        String name = newPath.substring(newPath.lastIndexOf('/') + 1);
+        String oldHash = GitFormat.shortHash(pulled.oldRev());
+        String newHash = GitFormat.shortHash(pulled.newRev());
+        openDiff(
+                tr("diff.title.commitFile", name, oldHash + ".." + newHash),
+                tr("diff.title.vsCommitShort", oldHash),
+                tr("diff.title.vsCommitShort", newHash),
+                name,
+                name,
+                blobSide(root, pulled.oldRev() + ":" + pulled.oldPath(), root.resolve(newPath)),
+                blobSide(root, pulled.newRev() + ":" + newPath, root.resolve(newPath)),
+                DiffViewerPane.EditableSide.NONE,
+                null);
+    }
+
+    /**
      * Compares a commit's version of a file with its current working-tree copy. The working side is the
      * editable target, so the normal line, hunk, whole-file, Result, Undo, and Save controls are available.
      * {@code repoRel} names the blob in the selected commit while {@code workingFile} may name the file's

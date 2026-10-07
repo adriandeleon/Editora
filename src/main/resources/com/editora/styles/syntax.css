@@ -114,6 +114,8 @@
 .text.git-output-text.diff-range         { -fx-fill: -color-accent-fg; -fx-font-weight: bold; }
 .text.git-output-text.diff-header        { -fx-fill: -color-fg-muted; -fx-font-weight: bold; }
 .text.git-output-text.console-url        { -fx-fill: -color-accent-fg; -fx-underline: true; }
+/* A pulled file's change graph opens its diff: underlined like a link, keeping its +/- colours. */
+.text.git-output-text.git-output-diff-link { -fx-underline: true; }
 
 /* Rainbow CSV: per-column colors (cycled every 8) when rainbow highlighting is on — computed in Java
    (CsvRainbow), not the grammar. Eight well-separated hues chosen to read on both light and dark editor

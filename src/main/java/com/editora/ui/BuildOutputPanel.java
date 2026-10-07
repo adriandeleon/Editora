@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -8,6 +9,7 @@ import javafx.scene.control.Tab;
 import javafx.scene.control.TabPane;
 
 import com.editora.build.OutputStyle;
+import com.editora.git.GitOutputDiffs;
 import com.editora.process.CommandLog;
 import com.editora.process.CommandLogFormat;
 import com.editora.run.StackTraceLinks;
@@ -41,6 +43,8 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
 
     private Consumer<String> onUrl;
 
+    private Consumer<GitOutputDiffs.Target> onGitDiff;
+
     public BuildOutputPanel() {
         getStyleClass().add("build-output-tabs");
         setTabClosingPolicy(TabPane.TabClosingPolicy.UNAVAILABLE); // one bounded tab per tool; persist for the session
@@ -56,6 +60,12 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
     public void setOnUrl(Consumer<String> onUrl) {
         this.onUrl = onUrl;
         consoles.values().forEach(c -> c.setOnUrl(onUrl));
+    }
+
+    /** Opens a pulled file's diff from its change graph in the Git transcript. */
+    public void setOnGitDiff(Consumer<GitOutputDiffs.Target> onGitDiff) {
+        this.onGitDiff = onGitDiff;
+        consoles.values().forEach(c -> c.setOnGitDiff(onGitDiff));
     }
 
     /** Matches every console's font to the editor's code-area font (family + effective size). */
@@ -80,10 +90,11 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
      * they want to read it; the transcript is waiting.
      */
     public void logCommand(Object owner, String tabTitle, CommandLog.Entry entry) {
-        BuildToolPanel console = consoleFor(owner, tabTitle);
-        console.setLogMode(true);
-        boolean git = isGitCommand(entry);
-        console.setGitTranscript(git);
+        boolean git = isGitCommand(entry.argv());
+        BuildToolPanel console = transcriptFor(owner, tabTitle, git);
+        if (entry.streamed()) {
+            console.setLogStop(null); // the command commandStarted announced has ended
+        }
         OutputStyle outputStyle = git ? OutputStyle.git() : OutputStyle.passthrough();
         for (CommandLogFormat.Line line : CommandLogFormat.format(entry)) {
             String style = line.styleClass() == null ? outputStyle.styleClassFor(line.text()) : line.styleClass();
@@ -100,10 +111,38 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
         }
     }
 
-    private static boolean isGitCommand(CommandLog.Entry entry) {
-        return entry.argv() != null
-                && !entry.argv().isEmpty()
-                && "git".equals(entry.argv().get(0));
+    /**
+     * A long command (a clone) starts: echo it into {@code owner}'s transcript now, so the tab shows what is
+     * running while it runs. Its output follows through {@link #commandProgress} and its exit through
+     * {@link #logCommand} with a {@code streamed} entry. Until then the tab's Stop button runs {@code onStop}.
+     */
+    public void commandStarted(Object owner, String tabTitle, List<String> argv, Runnable onStop) {
+        BuildToolPanel console = transcriptFor(owner, tabTitle, isGitCommand(argv));
+        console.setLogStop(onStop);
+        String echo = CommandLogFormat.commandLine(argv);
+        console.appendStyled(echo, CommandLogFormat.ECHO_STYLE);
+        console.setLogStatus(echo);
+    }
+
+    /** One line of the command last {@link #commandStarted} in {@code owner}'s transcript. */
+    public void commandProgress(Object owner, String line, boolean transientLine) {
+        BuildToolPanel console = consoles.get(owner);
+        if (console != null) {
+            // Off a terminal, git pads the remote's progress lines with spaces to erase the previous one.
+            String text = line.stripTrailing();
+            console.appendProgress(text, OutputStyle.git().styleClassFor(text), transientLine);
+        }
+    }
+
+    private BuildToolPanel transcriptFor(Object owner, String tabTitle, boolean git) {
+        BuildToolPanel console = consoleFor(owner, tabTitle);
+        console.setLogMode(true);
+        console.setGitTranscript(git);
+        return console;
+    }
+
+    private static boolean isGitCommand(List<String> argv) {
+        return argv != null && !argv.isEmpty() && "git".equals(argv.get(0));
     }
 
     /** Whether any tab exists yet — the tool window is worth offering only once something has run. */
@@ -141,6 +180,9 @@ public final class BuildOutputPanel extends TabPane implements ToolWindowContent
             }
             if (onUrl != null) {
                 console.setOnUrl(onUrl);
+            }
+            if (onGitDiff != null) {
+                console.setOnGitDiff(onGitDiff);
             }
             if (fontFamily != null) {
                 console.setOutputFont(fontFamily, fontSize);
