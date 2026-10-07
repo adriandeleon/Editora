@@ -226,7 +226,7 @@ public final class CsvParser {
         return sb.toString();
     }
 
-    private static String quoteField(String s, char delim) {
+    static String quoteField(String s, char delim) {
         boolean needsQuote =
                 s.indexOf(delim) >= 0 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0;
         return needsQuote ? '"' + s.replace("\"", "\"\"") + '"' : s;
