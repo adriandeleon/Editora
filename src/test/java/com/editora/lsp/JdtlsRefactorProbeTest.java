@@ -148,6 +148,17 @@ class JdtlsRefactorProbeTest {
             assertTrue(s.isInitialized());
             get(s.documentSymbol(uri)); // serializes behind the project import
 
+            // Code lenses: resolved to "N references" for the lines asked about, and no others.
+            var lenses = LspManager.codeLensSpans(get(s.codeLens(uri, 0, 9)));
+            record("codeLens", lenses);
+            assertTrue(
+                    lenses.stream().anyMatch(l -> l.line() == 9 && l.title().equals("1 reference")),
+                    "greet is called once: " + lenses);
+            assertTrue(lenses.stream().allMatch(l -> l.line() <= 9), "run() and Inner are outside the window");
+            assertTrue(
+                    lenses.stream().allMatch(l -> l.kind() == LspManager.CodeLensKind.REFERENCES),
+                    "nothing here has an implementation, and a zero count is not shown");
+
             // Getters and setters: the prompt's argument carries the accessor kind and is sent back as is.
             var accessors = JdtlsGenerate.Kind.ACCESSORS;
             var accessorParams = LspManager.commandArguments(action("twice(int", accessors.command(), null))

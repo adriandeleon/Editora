@@ -209,7 +209,19 @@ A backlog of planned features and improvements. Unordered within each section.
       `ui/MultiSelectPicker` (checkbox card in the shared `OverlayHost`) — `QuickOpen` picks exactly one.
       *Deferred to a follow-up: accessors (`advancedGenerateAccessorsSupport` — these work **today** with no
       flag, so declaring it early is a regression, not a gap), delegate methods (two-level field→methods
-      payload) and extract interface (two-stage: members, then destination package).*
+      payload) and extract interface (two-stage: members, then destination package).* — done, see the
+      next entry.
+- [x] **Client-driven jdtls refactorings, the remaining generate prompts, code lenses, nested tests** —
+      accessors and delegate methods are driven by `JdtlsGenerate`; `lsp/JdtlsRefactor` carries out
+      `java.action.applyRefactoringCommand` (Move ×4, Extract Interface, Change Signature, and the extract
+      refactorings `advancedExtractRefactoringSupport` turns into that command — jdtls offers Extract
+      Interface only with that flag too). Change Signature was offered before, with no flag, and failed.
+      Shapes read off jdtls 1.61 and pinned by the opt-in `JdtlsRefactorProbeTest`. Code lenses
+      (`Settings.codeLens`, schema 108→109) ride the inlay mechanism at end of line; `JavaTestScanner`
+      reports `Outer$Inner` targets.
+      *Not done: the rename jdtls proposes after an extract (`RefactorWorkspaceEdit.command`) is ignored;
+      `inferSelectionSupport` (extract with no selection), Introduce Parameter and the ambiguous-import
+      chooser are not declared; a Change Signature preview.*
 - [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
       every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
       generalized into a shared `requestLocations` walk parameterized by which session method runs, so all

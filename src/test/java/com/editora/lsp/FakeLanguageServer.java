@@ -256,6 +256,28 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
                 : CompletableFuture.completedFuture(signatureHelpResponse);
     }
 
+    public final List<org.eclipse.lsp4j.CodeLensParams> codeLenses = new ArrayList<>();
+    /** The lenses {@code codeLens/resolve} was asked about, in order. */
+    public final List<org.eclipse.lsp4j.CodeLens> resolvedCodeLenses = new ArrayList<>();
+    /** Unresolved lenses; resolve gives each one "N references" from the number in its {@code data}. */
+    public List<org.eclipse.lsp4j.CodeLens> codeLensResponse = List.of();
+
+    @Override
+    public CompletableFuture<List<? extends org.eclipse.lsp4j.CodeLens>> codeLens(
+            org.eclipse.lsp4j.CodeLensParams params) {
+        codeLenses.add(params);
+        return answer(codeLensResponse);
+    }
+
+    @Override
+    public CompletableFuture<org.eclipse.lsp4j.CodeLens> resolveCodeLens(org.eclipse.lsp4j.CodeLens unresolved) {
+        resolvedCodeLenses.add(unresolved);
+        var resolved = new org.eclipse.lsp4j.CodeLens(unresolved.getRange(), null, unresolved.getData());
+        resolved.setCommand(
+                new org.eclipse.lsp4j.Command(unresolved.getData() + " references", "java.show.references"));
+        return answer(resolved);
+    }
+
     @Override
     public CompletableFuture<List<InlayHint>> inlayHint(InlayHintParams params) {
         inlayHints.add(params);

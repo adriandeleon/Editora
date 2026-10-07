@@ -1472,6 +1472,86 @@ public final class LspManager {
         }
     }
 
+    /** What a code lens counts — which decides what a click on it opens. */
+    public enum CodeLensKind {
+        REFERENCES,
+        IMPLEMENTATIONS
+    }
+
+    /** One code lens: where its declaration's name starts, what it says, and what it counts. */
+    public record CodeLensSpan(int line, int col, String title, CodeLensKind kind) {}
+
+    /** True if {@code file}'s server is ready and advertises code lenses. */
+    public boolean supportsCodeLens(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && s.capabilities() != null && s.capabilities().getCodeLensProvider() != null;
+    }
+
+    /**
+     * Pure: what a lens counts, read off its command id ({@code java.show.references},
+     * {@code java.show.implementations}, {@code editor.action.showReferences}, …) — or null for a lens that
+     * does something else (a "Run | Debug" lens), which is not shown: its command is the server's own
+     * editor integration and nothing here could carry it out.
+     */
+    static CodeLensKind codeLensKind(org.eclipse.lsp4j.Command command) {
+        String id = command == null || command.getCommand() == null
+                ? ""
+                : command.getCommand().toLowerCase(java.util.Locale.ROOT);
+        if (id.contains("implementation")) {
+            return CodeLensKind.IMPLEMENTATIONS;
+        }
+        return id.contains("reference") ? CodeLensKind.REFERENCES : null;
+    }
+
+    /** Pure: the lenses worth showing, as neutral spans in line order. */
+    static List<CodeLensSpan> codeLensSpans(List<org.eclipse.lsp4j.CodeLens> lenses) {
+        List<CodeLensSpan> out = new ArrayList<>();
+        if (lenses == null) {
+            return out;
+        }
+        for (org.eclipse.lsp4j.CodeLens lens : lenses) {
+            if (lens == null || lens.getRange() == null || lens.getCommand() == null) {
+                continue;
+            }
+            CodeLensKind kind = codeLensKind(lens.getCommand());
+            String title = lens.getCommand().getTitle();
+            if (kind == CodeLensKind.IMPLEMENTATIONS
+                    && title != null
+                    && title.strip().startsWith("0 ")) {
+                continue; // jdtls answers for every type and method; "0 implementations" on each is noise
+            }
+            if (kind != null && title != null && !title.isBlank()) {
+                Position start = lens.getRange().getStart();
+                out.add(new CodeLensSpan(start.getLine(), start.getCharacter(), title.strip(), kind));
+            }
+        }
+        out.sort(java.util.Comparator.comparingInt(CodeLensSpan::line).thenComparing(CodeLensSpan::kind));
+        return out;
+    }
+
+    /**
+     * Requests the code lenses on lines {@code [startLine..endLine]}, delivered as neutral spans on the FX
+     * thread — empty when unsupported or failed.
+     */
+    public void requestCodeLens(Path file, int startLine, int endLine, Consumer<List<CodeLensSpan>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        String uri = uri(file);
+        latest.issue(
+                uri,
+                "codeLens",
+                stamp(s, uri, List.of(startLine, endLine)),
+                true,
+                () -> s.codeLens(uri, startLine, endLine),
+                (lenses, error) -> {
+                    List<CodeLensSpan> out = error == null ? codeLensSpans(lenses) : List.of();
+                    Platform.runLater(() -> cb.accept(out));
+                });
+    }
+
     /** True if {@code file}'s server is ready and advertises inlay hints (#681). */
     public boolean supportsInlayHints(Path file) {
         LanguageServerSession s = sessionFor(file);
@@ -3097,6 +3177,9 @@ public final class LspManager {
         java.put("autobuild", Map.of("enabled", false));
         // jdtls registers textDocument/onTypeFormatting dynamically, and only while this preference is on.
         java.put("format", Map.of("onType", Map.of("enabled", onTypeFormatting)));
+        // Asked for only while Settings.codeLens is on; see LspServerSettings.
+        java.put("referencesCodeLens", Map.of("enabled", true));
+        java.put("implementationCodeLens", "all");
         List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(JavaRuntimes.discover());
         if (!runtimes.isEmpty()) {
             java.put("configuration", Map.of("runtimes", runtimes));

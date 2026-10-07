@@ -644,4 +644,53 @@ class LspManagerTest {
         assertEquals(List.of("/tmp/java-debug.jar"), withBundle.get("bundles"));
         assertFalse(LspManager.javaInitOptions(List.of()).containsKey("bundles"), "no bundles when not debugging");
     }
+
+    // --- code lenses ---------------------------------------------------------------------------------
+
+    private static org.eclipse.lsp4j.CodeLens lens(int line, int col, String title, String command) {
+        var range = new org.eclipse.lsp4j.Range(
+                new org.eclipse.lsp4j.Position(line, col), new org.eclipse.lsp4j.Position(line, col + 3));
+        return new org.eclipse.lsp4j.CodeLens(
+                range, command == null ? null : new org.eclipse.lsp4j.Command(title, command), null);
+    }
+
+    @Test
+    void aLensIsClassifiedByItsCommand() {
+        assertEquals(
+                LspManager.CodeLensKind.REFERENCES,
+                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("2 references", "java.show.references")));
+        assertEquals(
+                LspManager.CodeLensKind.IMPLEMENTATIONS,
+                LspManager.codeLensKind(
+                        new org.eclipse.lsp4j.Command("1 implementation", "java.show.implementations")));
+        assertEquals(
+                LspManager.CodeLensKind.REFERENCES,
+                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("3 references", "editor.action.showReferences")));
+        assertNull(
+                LspManager.codeLensKind(new org.eclipse.lsp4j.Command("Run", "rust-analyzer.runSingle")),
+                "a lens that runs something is the server's own editor integration");
+        assertNull(LspManager.codeLensKind(null));
+    }
+
+    @Test
+    void onlyCountingLensesBecomeSpansInLineOrder() {
+        var spans = LspManager.codeLensSpans(java.util.Arrays.asList(
+                lens(9, 4, "1 implementation", "java.show.implementations"),
+                lens(9, 4, "2 references", "java.show.references"),
+                lens(3, 13, " 5 references ", "java.show.references"),
+                lens(4, 0, "Run", "rust-analyzer.runSingle"),
+                lens(6, 0, "0 implementations", "java.show.implementations"),
+                lens(7, 0, "0 references", "java.show.references"),
+                lens(5, 0, "unresolved", null),
+                null));
+
+        assertEquals(
+                List.of(
+                        new LspManager.CodeLensSpan(3, 13, "5 references", LspManager.CodeLensKind.REFERENCES),
+                        new LspManager.CodeLensSpan(7, 0, "0 references", LspManager.CodeLensKind.REFERENCES),
+                        new LspManager.CodeLensSpan(9, 4, "2 references", LspManager.CodeLensKind.REFERENCES),
+                        new LspManager.CodeLensSpan(9, 4, "1 implementation", LspManager.CodeLensKind.IMPLEMENTATIONS)),
+                spans);
+        assertTrue(LspManager.codeLensSpans(null).isEmpty());
+    }
 }

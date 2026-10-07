@@ -566,7 +566,7 @@ final class LspCoordinator {
         requestFoldingRanges(b);
         boolean sem = host.settings().isSemanticHighlight() && lspManager.supportsSemanticTokens(path);
         b.setSemanticActive(sem);
-        b.setInlayHintsActive(host.settings().isInlayHints());
+        b.setInlayHintsActive(lineAnnotationsOn());
         if (!active) {
             refreshWhenShown.add(b);
             return;
@@ -1477,6 +1477,7 @@ final class LspCoordinator {
      * Rides the same cadence as semantic tokens (didChange debounce, scroll-settle, ready, syncBuffer).
      */
     void requestInlayHints(EditorBuffer buffer) {
+        scheduleCodeLens(buffer); // same cadence, its own (longer) settle and gate
         Path path = buffer.getPath();
         if (path == null
                 || !host.settings().isInlayHints()
@@ -1534,9 +1535,104 @@ final class LspCoordinator {
         return out;
     }
 
+    /** Whether either setting that annotates lines from the server is on: inlay hints or code lenses. */
+    private boolean lineAnnotationsOn() {
+        return host.settings().isInlayHints() || host.settings().isCodeLens();
+    }
+
+    /** Lines requested around the viewport: a lens just off screen is there when the view scrolls to it. */
+    private static final int CODE_LENS_WINDOW_PAD = 30;
+
+    /** Longer than the hint cadence: resolving a lens is a reference search on the server. */
+    private final javafx.animation.PauseTransition codeLensSettle = codeLensSettle();
+
+    private java.lang.ref.WeakReference<EditorBuffer> codeLensTarget = new java.lang.ref.WeakReference<>(null);
+
+    private javafx.animation.PauseTransition codeLensSettle() {
+        var settle = new javafx.animation.PauseTransition(javafx.util.Duration.millis(450));
+        settle.setOnFinished(e -> {
+            EditorBuffer target = codeLensTarget.get();
+            if (target != null && target == host.activeBuffer()) {
+                requestCodeLens(target);
+            }
+        });
+        return settle;
+    }
+
+    /** Asks for {@code buffer}'s code lenses once editing and scrolling have settled; clears them when off. */
+    private void scheduleCodeLens(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null
+                || !host.settings().isCodeLens()
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsCodeLens(path)) {
+            buffer.setCodeLenses(null);
+            return;
+        }
+        codeLensTarget = new java.lang.ref.WeakReference<>(buffer);
+        codeLensSettle.playFromStart();
+    }
+
+    /**
+     * Code lenses: the server's reference and implementation counts for the declarations in view, drawn
+     * after their lines. A click opens what the lens counts.
+     */
+    void requestCodeLens(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null
+                || !host.settings().isCodeLens()
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsCodeLens(path)) {
+            buffer.setCodeLenses(null);
+            return;
+        }
+        int[] window = paddedWindow(buffer.visibleLineWindow(), CODE_LENS_WINDOW_PAD, buffer.lineCount());
+        long version = buffer.docVersion();
+        lspManager.changeDocument(path, buffer.text()); // the counts are for the text on screen
+        lspManager.requestCodeLens(path, window[0], window[1], spans -> {
+            if (buffer != host.activeBuffer() || buffer.docVersion() != version) {
+                return;
+            }
+            List<EditorBuffer.CodeLens> lenses = new java.util.ArrayList<>(spans.size());
+            for (LspManager.CodeLensSpan span : spans) {
+                lenses.add(new EditorBuffer.CodeLens(span.line(), span.title(), span));
+            }
+            buffer.setCodeLensHandler((line, clicked) -> openCodeLens(buffer, line, clicked));
+            buffer.setCodeLenses(lenses);
+        });
+    }
+
+    /** A lens was clicked: with several on the line the user says which one. */
+    private void openCodeLens(EditorBuffer buffer, int line, List<EditorBuffer.CodeLens> clicked) {
+        if (clicked.size() == 1) {
+            openCodeLens(buffer, line, clicked.get(0));
+        } else if (!clicked.isEmpty()) {
+            pickOne(
+                    tr("settings.codeLens"),
+                    tr("palette.setting.pick"),
+                    clicked,
+                    EditorBuffer.CodeLens::label,
+                    l -> "",
+                    chosen -> openCodeLens(buffer, line, chosen));
+        }
+    }
+
+    /** Puts the caret on the declaration's name and runs the navigation the lens stands for. */
+    private void openCodeLens(EditorBuffer buffer, int line, EditorBuffer.CodeLens lens) {
+        if (buffer != host.activeBuffer() || !(lens.token() instanceof LspManager.CodeLensSpan span)) {
+            return;
+        }
+        gotoInBuffer(buffer, line, span.col());
+        if (span.kind() == LspManager.CodeLensKind.IMPLEMENTATIONS) {
+            gotoImplementation();
+        } else {
+            findReferences();
+        }
+    }
+
     /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
     void applyInlayHints() {
-        boolean on = host.settings().isInlayHints();
+        boolean on = lineAnnotationsOn();
         host.forEachBuffer(b -> {
             b.setInlayHintsActive(on && b.getPath() != null && lspManager.isManaged(b.getPath()));
             requestInlayHints(b); // the gate inside clears buffers when toggled off
@@ -1727,7 +1823,7 @@ final class LspCoordinator {
             if (semantic) {
                 requestSemanticTokens(buffer);
             }
-            buffer.setInlayHintsActive(host.settings().isInlayHints()); // decoupled from semantic (#681)
+            buffer.setInlayHintsActive(lineAnnotationsOn()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
         } else {
@@ -1745,6 +1841,7 @@ final class LspCoordinator {
             buffer.clearOccurrenceSpans();
             buffer.setInlayHintsActive(false);
             buffer.setInlayHints(null);
+            buffer.setCodeLenses(null);
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);

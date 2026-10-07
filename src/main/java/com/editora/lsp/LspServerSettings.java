@@ -116,6 +116,11 @@ final class LspServerSettings {
         // On-type formatting: jdtls only registers textDocument/onTypeFormatting while this is on (it
         // merges the pushed keys into its preferences and re-syncs its dynamic registrations).
         java.put("format", Map.of("onType", Map.of("enabled", onTypeFormatting)));
+        // Code lenses are computed only when a client asks for them, and Editora asks only while its own
+        // setting is on — so the server side stays enabled. Without the second key jdtls has no
+        // implementations lens at all.
+        java.put("referencesCodeLens", Map.of("enabled", true));
+        java.put("implementationCodeLens", "all");
         return java;
     }
 }

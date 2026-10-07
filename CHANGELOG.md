@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Java refactorings that ask where to, or what.** With the Java language server, the Code Actions menu
+  now carries out **Move** (a class to another package, a nested class to its own file or another class,
+  a static member to another class, an instance method onto one of its parameters or fields), **Extract
+  Interface** (choose the methods, name the interface, choose its package) and **Change Signature**. The
+  signature is edited as one line — `public String greet(Helper helper, int n)` — where you can rename the
+  method, change its visibility or return type, reorder, rename, retype or remove parameters, and add one
+  as `type name = value` (the value is what existing callers pass).
+- **Generate Getters and Setters** and **Generate Delegate Methods** open the same checkbox list as the
+  other Java generators, so you choose the fields, or the methods of a field, instead of getting all of
+  them.
+- **Code lenses** — the language server's reference and implementation counts, drawn after a declaration
+  (`3 references`). Click one to open the references or implementations. Off by default: Settings → Code
+  Completion, or `View: Toggle Code Lenses`.
+- **Tests in nested classes run from the gutter.** A method inside a JUnit `@Nested` class (or a static
+  nested test class) gets its own ▶, as does the nested class; Run and Debug target it as `Outer$Inner`.
+  A class whose tests are all in nested classes used to get no test markers at all.
+
 ### Changed
 
 - After a pull, clicking a file's change graph (`4 ++--`) in the Git tab opens a diff of that file
@@ -20,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Java's **Change signature** code action was listed and then failed with "Could not apply".
 - The floating controls at the top-right of the editor no longer overlap. In Expert mode the "E" exit
   button sat on top of an HTML file's open-in-browser button, a Markdown file's Editor/Split/Preview
   toggle or a log file's controls; they now share one row. In Zen mode the "Z" also clears the HTML and
