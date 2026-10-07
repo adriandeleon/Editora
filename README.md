@@ -565,10 +565,30 @@ Editora is built with the help of AI coding tools.
   conflicted), in the Project tree's colours; and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. The file list is **multi-select** — extend with
   Shift+Up/Down or Shift/Ctrl-click, then right-click to stage, unstage or discard the whole selection in one
-  `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette). It has a **filter box**
-  (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group. Palette/keys cover commit (`C-x g`), stage
+  `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette); **Space**
+  stages or unstages the selected rows, a group header's menu acts on the whole group (Stage All in Group,
+  Unstage All, Discard All), and *Git: Unstage All* / *Git: Discard All Changes…* do the same for everything —
+  the latter after a confirmation that counts the tracked files reset and the untracked files deleted. Staged
+  and changed rows show their `+added −deleted` line counts. It has a **filter box**
+  (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group.
+  **Commit options** sit above the message box: **Amend** (*Git: Amend Last Commit*) names the commit it will
+  replace, puts its message in an empty box, lets you commit with nothing staged to reword it, and warns in
+  place when that commit is already on the upstream (it will need a force push); **Sign off** (`-s`) is
+  remembered per repository for the session; the Commit button's menu has **Commit and Push** (*Git: Commit
+  and Push* — a failed commit pushes nothing); and *Git: Undo Last Commit…* takes the last commit off the
+  branch (`reset --soft HEAD~1`), keeps its changes staged and puts its message back — refused for a merge or
+  a first commit, and confirmed in stronger words when the commit was already pushed. A **length guide** shows
+  the subject's length (amber past 50, red past 72) and counts body lines over 72 — advice, never a block; a
+  dropdown (*Git: Recent Commit Messages…*) brings back one of the last 20 messages used in the repository this
+  session; and a `commit.template` is put in an empty box, its comment lines stripped at commit. Palette/keys cover commit (`C-x g`), stage
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
-  repo and opens a file from it — independent of projects). Fetch prunes remote-tracking branches that were
+  repo and opens a file from it — independent of projects; the form also takes a **branch** to check out, a
+  shallow **depth**, and *Also clone submodules*). A rebase or merge pull carries uncommitted changes across
+  (`--autostash`) and says whether they were applied back or kept in the stash. **Fetch automatically**
+  (*Settings → Git*, off by default; *Git: Toggle Fetch Automatically*) fetches the active repository in the
+  background every 10 minutes (configurable): it never prompts for a password, stays out of the way of your
+  own network commands, and only runs in a trusted folder or a repository you have fetched, pulled or pushed
+  in during the session. Fetch prunes remote-tracking branches that were
   deleted on the server, so a local branch whose upstream is gone is marked as such. The Emacs keymap adds
   the `vc` chords (`C-x v v` commit, `C-x v P` push, `C-x v +` pull, `C-x v b s` switch branch, `C-x v l` /
   `C-x v L` file / branch log, `C-x v g` blame); the IntelliJ keymap adds Commit (`Ctrl+K`), Push
@@ -614,8 +634,11 @@ Editora is built with the help of AI coding tools.
   and git's reason is shown with the offer of a 3-way merge. In a repository a patch file's review tab
   carries the same *Apply to Working Tree* / *Apply to Index* pair. *Git: Create Patch…* writes the staged
   changes, the unstaged changes or a commit (`format-patch`) to a file or a new untitled buffer.
-  The VCS menu also reaches Stage All, Compare with
-  Branch / Tag / Commit, Resolve Conflicts, Add to .gitignore and Initialize Repository. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
+  The same is on a Git Log row (*Create Patch…*). The **VCS menu** keeps the daily actions at its top level
+  (Commit, Commit and Push, Push, Pull, Fetch, Switch Branch, Git Log, Continue / Skip / Abort, Init, Clone)
+  and groups the rest into submenus: Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches, History &
+  Blame and Compare. Git commands that succeed no longer bring the Output console forward — only network
+  commands (to show progress) and failures do, so an action started from the Git Log leaves the log on screen. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
   **Branch management** is on each row of the branch dropdown (its `⋯` button, a right-click, or the Menu key)
   and on the palette: new branch from any branch or tag (with or without switching), rename, merge into the
   current branch, rebase the current branch onto another, set / unset upstream, compare a branch with the

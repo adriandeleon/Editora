@@ -93,8 +93,17 @@ Matching ignores case.
 
 ## Not done
 
-- A running history search cannot be cancelled.
 - The graph column is capped at `MAX_GRAPH_LANES`; wider rows are clipped, not scrolled.
 - Deleting a tag is local only; there is no "delete on remote".
-- Any Git command shows its transcript in the Output console, which shares the bottom panel with the
-  log — a row action therefore hides the log until it is reopened.
+
+## Since the first version
+
+- **A history search is cancellable.** `logPage` reads with a cancellation handle; a newer listing, a
+  cleared search or a repository change calls `GitService.cancelHistoryRead`, which kills the process
+  (`GitHistorySearchCancelFxTest`). A cancelled or superseded listing never reaches its callback.
+- **A row action no longer hides the log.** The Output console shares the bottom panel; it now comes
+  forward only when a network command starts or a command fails (`GitConsoleLog.raisesConsole`), so
+  New Tag, Revert or Cherry-Pick from a row leave the log where it is.
+- **Create Patch…** on a row (`git.log.createPatch`) hands the commit to `GitPatchCoordinator`.
+- **The commit message in the details pane is selectable**: a read-only `TextArea` sized to its text
+  (`fitMessageHeight`), so the pane still scrolls as a whole.
