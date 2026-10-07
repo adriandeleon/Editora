@@ -2301,6 +2301,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         githubToolWindow = new ToolWindow(
                 "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
+        git.attachWindow(diffCoordinator, buffer -> addBuffer(buffer, true)); // stash review, patches, revision tabs
         fileHistoryToolWindow = new ToolWindow(
                 "fileHistory",
                 tr("toolwindow.fileHistory"),
@@ -5727,8 +5728,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     });
 
-    /** The diff + merge-conflict viewer (open/refresh diffs, apply-change, compare entry points, patch
-     *  export, merge resolution); see {@link DiffCoordinator}. Git-backed diffs reach the repo via {@code git}. */
+    /** The diff + merge-conflict viewer; see {@link DiffCoordinator}. Git-backed diffs reach the repo via {@code git}. */
     private final DiffCoordinator diffCoordinator =
             new DiffCoordinator(coordinatorHost, git, new DiffCoordinator.Ops() {
                 @Override

@@ -2015,10 +2015,26 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("git.toggleBlame", host.git()::toggleBlame));
         host.registry()
                 .register(Command.of("git.blameShowCommit", () -> host.git().ifEnabled(host.git()::blameShowCommit)));
+        host.registry()
+                .register(Command.of(
+                        "git.blamePreviousRevision",
+                        () -> host.git().ifEnabled(host.git().blame()::annotatePreviousRevision)));
+        host.registry()
+                .register(Command.of("git.blame.ignoreWhitespace", host.git().blame()::toggleIgnoreWhitespace));
+        host.registry().register(Command.of("git.blame.detectMoves", host.git().blame()::toggleDetectMoves));
+        host.registry()
+                .register(Command.of(
+                        "git.stashes", () -> host.git().ifEnabled(host.git().stashes()::showList)));
         host.registry().register(Command.of("git.stash", () -> host.git().ifEnabled(host.git()::gitStash)));
         host.registry().register(Command.of("git.stashPop", () -> host.git().ifEnabled(host.git()::gitStashPop)));
         host.registry().register(Command.of("git.unstash", () -> host.git().ifEnabled(host.git()::gitUnstash)));
         host.registry().register(Command.of("git.stashDrop", () -> host.git().ifEnabled(host.git()::gitStashDrop)));
+        host.registry()
+                .register(Command.of(
+                        "git.applyPatch", () -> host.git().ifEnabled(host.git().patches()::applyPatchCommand)));
+        host.registry()
+                .register(Command.of(
+                        "git.createPatch", () -> host.git().ifEnabled(host.git().patches()::createPatchCommand)));
         // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
         // Conflicts" work on any file (no repo needed), so they are not gated.
         host.registry()

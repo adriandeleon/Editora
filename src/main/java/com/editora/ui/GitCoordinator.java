@@ -3,12 +3,8 @@ package com.editora.ui;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
-import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.beans.property.BooleanProperty;
@@ -26,16 +22,11 @@ import javafx.stage.DirectoryChooser;
 
 import com.editora.command.KeymapManager;
 import com.editora.command.TextInputKeymap;
-import com.editora.editor.BlameInfo;
 import com.editora.editor.EditorBuffer;
-import com.editora.git.BlameHeatmap;
-import com.editora.git.BlameParser;
 import com.editora.git.GitChangeBars;
-import com.editora.git.GitFormat;
 import com.editora.git.GitSafety;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
-import com.editora.git.RelativeTime;
 import com.editora.process.ProcessRunner;
 import com.editora.vfs.Vfs;
 
@@ -122,8 +113,14 @@ final class GitCoordinator {
     private final WindowOps ops;
     private final GitService service = new GitService();
 
-    /** Per buffer: commit hash → {the file's path in that commit, its path in the parent} (from blame). */
-    private final Map<EditorBuffer, Map<String, String[]>> blamePaths = new java.util.WeakHashMap<>();
+    /** The blame column, its options and revision tabs; see {@link GitBlameCoordinator}. */
+    private final GitBlameCoordinator blame;
+
+    /** The stash list, stash options and conflict reporting; see {@link GitStashCoordinator}. */
+    private final GitStashCoordinator stashes;
+
+    /** Applying and creating patches; see {@link GitPatchCoordinator}. */
+    private final GitPatchCoordinator patches;
 
     private Path repoRoot;
     /** Complete status snapshot paired with {@link #repoRoot}; consumed by repository-wide diff review. */
@@ -141,6 +138,31 @@ final class GitCoordinator {
     GitCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
         this.ops = ops;
+        this.blame = new GitBlameCoordinator(host, this, ops);
+        this.stashes = new GitStashCoordinator(host, this);
+        this.patches = new GitPatchCoordinator(host, this);
+    }
+
+    GitBlameCoordinator blame() {
+        return blame;
+    }
+
+    GitStashCoordinator stashes() {
+        return stashes;
+    }
+
+    GitPatchCoordinator patches() {
+        return patches;
+    }
+
+    /**
+     * Hands the stash, patch and blame features the two window surfaces they open tabs through. Late-bound:
+     * the diff coordinator is itself built from this one.
+     */
+    void attachWindow(DiffCoordinator diff, Consumer<EditorBuffer> openTab) {
+        blame.attach(openTab);
+        stashes.attach(diff);
+        patches.attach(openTab);
     }
 
     /** The off-thread Git CLI facade (operations in {@code MainController} run their commands through it). */
@@ -226,7 +248,8 @@ final class GitCoordinator {
         if (file != null) {
             return file;
         }
-        return ops.projectRoot();
+        Path revisionRoot = blame.revisionRoot(b); // a "file as of a commit" tab stays in its repository
+        return revisionRoot != null ? revisionRoot : ops.projectRoot();
     }
 
     /**
@@ -313,7 +336,7 @@ final class GitCoordinator {
             ops.setProjectGitStatus(java.util.Map.of()); // clear the tree's file coloring (outside a repo / Git off)
             if (b != null) {
                 b.setChangeBars(null);
-                b.setBlame(null);
+                refreshBlame(b); // clears it, except on a revision tab, which carries its own repository
             }
             return;
         }
@@ -380,165 +403,34 @@ final class GitCoordinator {
         service.shutdown();
     }
 
-    // --- Inline blame annotations (IntelliJ-style gutter column) ---------------------------------
+    // --- Inline blame annotations (IntelliJ-style gutter column): see GitBlameCoordinator -----------
 
-    /** Whether blame annotations are effectively on (Git enabled + the setting + not Simple mode). */
     boolean isBlameEnabled() {
-        return isEnabled() && host.settings().isGitBlameInline();
+        return blame.isEnabled();
     }
 
-    /** Pushes blame to the active buffer (and clears it everywhere else); runs on init / settings apply /
-     *  tab switch / git mutation. Only the focused buffer is annotated (blame is one git call per file). */
     void applyBlame() {
-        EditorBuffer active = host.activeBuffer();
-        host.forEachBuffer(b -> {
-            if (b != active) {
-                b.setBlame(null);
-            }
-        });
-        refreshBlame(active);
+        blame.apply();
     }
 
-    /** Toggles inline blame annotations (palette + {@code M-g a}); persists the setting and re-applies. */
     void toggleBlame() {
-        ifEnabled(() -> {
-            var s = host.settings();
-            s.setGitBlameInline(!s.isGitBlameInline());
-            host.requestSave();
-            applyBlame();
-            ops.syncBlameCheck();
-            host.setStatus(tr("status.toggle.gitBlame", tr(s.isGitBlameInline() ? "common.on" : "common.off")));
-        });
+        blame.toggle();
     }
 
-    /** Annotates the active buffer — enables inline blame if it's off (the project-tree "Annotate" action). */
     void annotateActive() {
-        ifEnabled(() -> {
-            var s = host.settings();
-            if (!s.isGitBlameInline()) {
-                s.setGitBlameInline(true);
-                host.requestSave();
-                ops.syncBlameCheck();
-            }
-            applyBlame();
-        });
+        blame.annotateActive();
     }
 
-    /** Opens the read-only diff of the active file at the caret line's commit vs its parent. */
     void blameShowCommit() {
-        EditorBuffer b = host.activeBuffer();
-        showBlameCommit(b, b == null ? null : b.blameHashAtCaret());
+        blame.showCommitAtCaret();
     }
 
-    /** Clicking a line's blame annotation opens that line's commit (IntelliJ-style). */
     void onGutterBlameClick(EditorBuffer buffer, int line) {
-        showBlameCommit(buffer, buffer == null ? null : buffer.blameHashAt(line));
+        blame.onGutterClick(buffer, line);
     }
 
-    /** Opens the read-only diff of {@code b}'s file at {@code hash} vs its parent (shared by the caret
-     *  command and the gutter-annotation click). */
-    private void showBlameCommit(EditorBuffer b, String hash) {
-        if (b == null || b.getPath() == null || repoRoot == null) {
-            return;
-        }
-        if (hash == null || hash.isBlank()) {
-            host.setStatus(tr("status.git.noBlameLine"));
-            return;
-        }
-        String rel = GitService.repoRelative(repoRoot, b.getPath());
-        if (rel != null) {
-            // Blame follows renames: a line older than a move belongs to the file's OLD path in its commit.
-            String[] blamed = blamePaths.getOrDefault(b, Map.of()).get(hash);
-            String at = blamed == null || blamed[0] == null ? rel : blamed[0];
-            ops.openCommitFileDiff(hash, at, blamed == null ? null : blamed[1]);
-        }
-    }
-
-    /** Fetches blame for {@code b} off-thread and pushes formatted annotations (or clears when ineligible). */
     void refreshBlame(EditorBuffer b) {
-        if (b == null) {
-            return;
-        }
-        if (!isBlameEnabled() || b.getPath() == null || b.isLargeFile() || !host.isLocalBuffer(b) || repoRoot == null) {
-            b.setBlame(null);
-            return;
-        }
-        Path file = b.getPath();
-        service.blameLatest(repoRoot, file, lines -> {
-            if (host.activeBuffer() != b) {
-                return; // the user switched tabs while blame ran
-            }
-            Map<String, String[]> paths = new HashMap<>();
-            for (BlameParser.BlameLine line : lines) {
-                paths.putIfAbsent(line.hash(), new String[] {line.path(), line.previousPath()});
-            }
-            blamePaths.put(b, paths);
-            b.setBlame(toBlameInfos(lines));
-        });
-    }
-
-    /** Maps git blame into the per-line annotation column (author + date, full-commit tooltip, age-heatmap
-     *  background). The heatmap is scaled across this file's oldest→newest committed lines and tinted for
-     *  the current theme. Uncommitted lines get a label only (no heatmap, no commit to open). */
-    private List<BlameInfo> toBlameInfos(List<BlameParser.BlameLine> lines) {
-        long now = System.currentTimeMillis() / 1000L;
-        long min = Long.MAX_VALUE;
-        long max = Long.MIN_VALUE;
-        for (BlameParser.BlameLine bl : lines) {
-            if (!bl.uncommitted()) {
-                min = Math.min(min, bl.epochSeconds());
-                max = Math.max(max, bl.epochSeconds());
-            }
-        }
-        boolean dark = host.appThemeDark();
-        List<BlameInfo> out = new ArrayList<>(lines.size());
-        for (BlameParser.BlameLine bl : lines) {
-            if (bl.uncommitted()) {
-                String label = tr("blame.uncommitted");
-                out.add(new BlameInfo(label, "", label, "", ""));
-                continue;
-            }
-            String date = blameDate(bl.epochSeconds());
-            String shortHash = bl.hash().substring(0, Math.min(8, bl.hash().length()));
-            String tooltip = tr(
-                    "blame.tooltip",
-                    bl.author(),
-                    date,
-                    relativeTimeLabel(bl.epochSeconds(), now),
-                    bl.summary(),
-                    shortHash);
-            double intensity = BlameHeatmap.intensity(bl.epochSeconds(), min, max);
-            out.add(new BlameInfo(
-                    GitFormat.shortAuthor(bl.author()),
-                    date,
-                    tooltip,
-                    BlameHeatmap.heatmapColor(intensity, dark),
-                    bl.hash()));
-        }
-        return out;
-    }
-
-    /** ISO {@code yyyy-MM-dd} commit date for the annotation column (technical, not localized). */
-    private static String blameDate(long epochSeconds) {
-        return Instant.ofEpochSecond(epochSeconds)
-                .atZone(ZoneId.systemDefault())
-                .toLocalDate()
-                .toString();
-    }
-
-    /** Localized "N days ago"-style label from the pure {@link RelativeTime} bucketing. */
-    private static String relativeTimeLabel(long epochSeconds, long nowSeconds) {
-        RelativeTime.Span span = RelativeTime.of(epochSeconds, nowSeconds);
-        long v = span.value();
-        return switch (span.unit()) {
-            case NOW -> tr("blame.now");
-            case MINUTES -> tr("blame.minutesAgo", v);
-            case HOURS -> tr("blame.hoursAgo", v);
-            case DAYS -> tr("blame.daysAgo", v);
-            case WEEKS -> tr("blame.weeksAgo", v);
-            case MONTHS -> tr("blame.monthsAgo", v);
-            case YEARS -> tr("blame.yearsAgo", v);
-        };
+        blame.refresh(b);
     }
 
     // --- user-facing operations (commit / branch / stash / discard) --------------------------------
@@ -574,7 +466,7 @@ final class GitCoordinator {
      *
      * @return false when a buffer could not be saved — the caller must not run its command
      */
-    private boolean saveUnsaved(Path root, List<String> pathspecs) {
+    boolean saveUnsaved(Path root, List<String> pathspecs) {
         List<EditorBuffer> unsaved = new ArrayList<>();
         host.forEachBuffer(buffer -> {
             Path file = buffer.getPath();
@@ -600,7 +492,7 @@ final class GitCoordinator {
      * back. A commit inside slow hooks, a checkout of a large tree or a push to a slow remote can run for
      * minutes; without this the editor looked idle (or hung) for the whole of it.
      */
-    private Consumer<ProcessRunner.Result> running(String[] args, Consumer<ProcessRunner.Result> onResult) {
+    Consumer<ProcessRunner.Result> running(String[] args, Consumer<ProcessRunner.Result> onResult) {
         AutoCloseable task = host.startBackgroundTask(tr("status.gitRunning", "git " + subcommand(args)));
         return result -> {
             try {
@@ -887,7 +779,7 @@ final class GitCoordinator {
      * ref called {@code -f} turns {@code git checkout <name>} into a forced checkout that discards local
      * changes. Returns {@code true} (after reporting) when the name was refused.
      */
-    private boolean rejectUnsafeRevision(String name) {
+    boolean rejectUnsafeRevision(String name) {
         if (GitSafety.isSafeRevision(name)) {
             return false;
         }
@@ -915,7 +807,7 @@ final class GitCoordinator {
         aroundWorkingTreeMutation(repoRoot, operation, report, afterReload);
     }
 
-    private void aroundWorkingTreeMutation(
+    void aroundWorkingTreeMutation(
             Path root,
             Consumer<Consumer<ProcessRunner.Result>> operation,
             Consumer<ProcessRunner.Result> report,
@@ -1283,121 +1175,26 @@ final class GitCoordinator {
         }
     }
 
-    // --- stash -------------------------------------------------------------------------------------
+    // --- stash: see GitStashCoordinator -----------------------------------------------------------
 
-    /** Stashes the working tree (optionally with a message). */
     void gitStash() {
-        if (reportIfNoRepo()) {
-            return;
-        }
-        Path root = repoRoot; // the repository the prompt was opened for, not whichever is active on accept
-        host.promptText(tr("stash.prompt.title"), tr("stash.prompt.label"), "", msg -> {
-            String m = msg.strip();
-            String[] args = m.isEmpty() ? new String[] {"stash", "push"} : new String[] {"stash", "push", "-m", m};
-            invalidatePendingWrites(root, List.of());
-            service.runWorktreeMutation(
-                    root,
-                    running(args, r -> {
-                        invalidatePendingWrites(root, List.of());
-                        if (r.ok()) {
-                            host.setStatus(tr("stash.pushed"));
-                        } else {
-                            gitError(tr("status.git.opFailed"), r.message());
-                        }
-                        afterMutation();
-                        ops.reloadAllFromDiskSilently();
-                    }),
-                    args);
-        });
+        stashes.promptStash();
     }
 
-    /** Pops the most recent stash. */
     void gitStashPop() {
-        if (reportIfNoRepo()) {
-            return;
-        }
-        gitMutateStash(repoRoot, tr("stash.popped"), "stash", "pop");
+        stashes.popLatest();
     }
 
-    /** Opens a picker over the stash list to apply a chosen entry. */
     void gitUnstash() {
-        chooseStash(
-                tr("stash.picker.applyTitle"),
-                (root, entry) -> gitMutateStash(root, tr("stash.applied"), "stash", "apply", entry.ref()));
+        stashes.pickToApply();
     }
 
-    /**
-     * Opens a picker over the stash list to drop a chosen entry. Dropping deletes the stashed changes for
-     * good — there is no undo short of digging the commit out of the object store — so it is confirmed with
-     * the same danger-styled dialog a file discard uses.
-     */
     void gitStashDrop() {
-        chooseStash(tr("stash.picker.dropTitle"), this::dropStash);
+        stashes.pickToDrop();
     }
 
-    /** Confirms, then drops {@code entry} from the repository at {@code root} (the one it was listed from). */
     void dropStash(Path root, com.editora.git.StashParser.StashEntry entry) {
-        String described = entry.subject().isBlank() ? entry.ref() : entry.ref() + " — " + entry.subject();
-        if (confirmDestructive(
-                tr("stash.picker.dropTitle"), tr("dialog.stashDrop.confirm", described), tr("dialog.stashDrop"))) {
-            gitMutateStash(root, tr("stash.dropped"), "stash", "drop", entry.ref());
-        }
-    }
-
-    /**
-     * Lists the stashes of the repository that is active <em>now</em> and hands the pick back together with
-     * that root: {@code stash@{0}} names a different stash in every repository, so the mutation must not
-     * re-read {@code repoRoot} after the picker (or a confirmation) has been on screen.
-     */
-    private void chooseStash(
-            String title, java.util.function.BiConsumer<Path, com.editora.git.StashParser.StashEntry> onPick) {
-        if (reportIfNoRepo()) {
-            return;
-        }
-        Path root = repoRoot;
-        service.stashList(root, stashes -> {
-            if (stashes.isEmpty()) {
-                host.setStatus(tr("stash.empty"));
-                return;
-            }
-            QuickOpen<com.editora.git.StashParser.StashEntry> picker = new QuickOpen<>(
-                    title,
-                    tr("stash.picker.prompt"),
-                    () -> stashes,
-                    e -> e.ref() + "  " + e.subject(),
-                    e -> e.branch(),
-                    e -> e.ref() + " " + e.subject() + " " + e.branch(),
-                    entry -> onPick.accept(root, entry));
-            picker.setOverlayHost(host.overlayHost());
-            picker.show(host.window());
-        });
-    }
-
-    private void gitMutateStash(Path root, String successMessage, String... args) {
-        if (root == null) {
-            return;
-        }
-        boolean changesWorkingTree = args.length < 2 || !"drop".equals(args[1]);
-        if (changesWorkingTree) {
-            invalidatePendingWrites(root, List.of());
-        }
-        service.runWorktreeMutation(
-                root,
-                running(args, r -> {
-                    if (changesWorkingTree) {
-                        invalidatePendingWrites(root, List.of());
-                    }
-                    if (r.ok()) {
-                        host.setStatus(successMessage);
-                    } else {
-                        gitError(tr("status.git.opFailed"), r.message());
-                    }
-                    afterMutation();
-                    if (changesWorkingTree) {
-                        ops.reloadAllFromDiskSilently();
-                    }
-                }),
-                args);
+        stashes.drop(root, entry);
     }
 
     /** Supersedes pending saves for open files selected by the working-tree mutation. Empty means the repo. */
