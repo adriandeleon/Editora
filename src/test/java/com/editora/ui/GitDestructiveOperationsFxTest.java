@@ -86,7 +86,10 @@ class GitDestructiveOperationsFxTest {
             assertEquals("other branch disk text\n", Files.readString(dirtyFile));
             assertFalse(Files.exists(deletedFile));
             assertEquals("recoverable from main\n", FxTestSupport.callOnFx(deleted::getContent));
-            assertFalse(FxTestSupport.callOnFx(deleted::isDirty));
+            SaveGuardsFxTest.awaitOnFx(async, "the removed file's open copy to be marked", deleted::isDirty);
+            assertTrue(
+                    FxTestSupport.callOnFx(deleted::isDirty),
+                    "the working tree no longer has this file: its open copy must not close as if it were saved");
         }
     }
 

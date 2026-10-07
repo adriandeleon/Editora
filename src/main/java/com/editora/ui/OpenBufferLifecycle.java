@@ -50,21 +50,49 @@ final class OpenBufferLifecycle {
         List<ReloadCandidate> candidates = new ArrayList<>();
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf.apply(tab);
-            if (buffer != null && buffer.getPath() != null && !buffer.isDirty()) {
+            if (buffer != null && buffer.getPath() != null && holdsNoEdits(files, buffer)) {
                 candidates.add(new ReloadCandidate(tab, buffer, buffer.getPath(), buffer.diskSnapshot()));
             }
         }
         files.fileLoadExecutor.execute(() -> {
-            List<ReloadCandidate> changed = candidates.stream()
-                    .filter(candidate -> Files.exists(candidate.file())
-                            && candidate
-                                    .disk()
-                                    .differsFrom(
-                                            files.lastModifiedMillis(candidate.file()),
-                                            files.fileSize(candidate.file())))
-                    .toList();
-            Platform.runLater(() -> applyReloads(editorArea, files, lsp, changed));
+            List<ReloadCandidate> gone = new ArrayList<>();
+            List<ReloadCandidate> changed = new ArrayList<>();
+            for (ReloadCandidate candidate : candidates) {
+                if (!Files.exists(candidate.file())) {
+                    // Remote files are not polled for external changes either; a dropped connection is not
+                    // a deleted file.
+                    if (com.editora.vfs.Vfs.isLocal(candidate.file())) {
+                        gone.add(candidate);
+                    }
+                } else if (candidate
+                        .disk()
+                        .differsFrom(files.lastModifiedMillis(candidate.file()), files.fileSize(candidate.file()))) {
+                    changed.add(candidate);
+                }
+            }
+            Platform.runLater(() -> {
+                // The operation removed the file (a branch without it, a stash, a clean): the open buffer is
+                // now the only copy in the working tree, and must not close as if it were saved.
+                for (ReloadCandidate candidate : gone) {
+                    if (current(editorArea, candidate)) {
+                        files.noteMissingOnDisk(candidate.tab(), candidate.buffer());
+                    }
+                }
+                applyReloads(editorArea, files, lsp, changed);
+            });
         });
+    }
+
+    /** Clean, or unsaved only because its file had gone missing: replacing it loses nothing the user typed. */
+    private static boolean holdsNoEdits(FileWorkflowCoordinator files, EditorBuffer buffer) {
+        return !buffer.isDirty() || files.unsavedOnlyBecauseMissing(buffer);
+    }
+
+    private static boolean current(EditorArea editorArea, ReloadCandidate candidate) {
+        EditorBuffer buffer = candidate.buffer();
+        return !buffer.isDisposed()
+                && Objects.equals(candidate.file(), buffer.getPath())
+                && editorArea.tabs().contains(candidate.tab());
     }
 
     static void invalidateGitWrites(
@@ -96,10 +124,7 @@ final class OpenBufferLifecycle {
         AtomicInteger remaining = new AtomicInteger(changed.size());
         for (ReloadCandidate candidate : changed) {
             EditorBuffer buffer = candidate.buffer();
-            if (!buffer.isDisposed()
-                    && !buffer.isDirty()
-                    && Objects.equals(candidate.file(), buffer.getPath())
-                    && editorArea.tabs().contains(candidate.tab())) {
+            if (current(editorArea, candidate) && holdsNoEdits(files, buffer)) {
                 files.reloadFromDisk(candidate.tab(), buffer, applied -> {
                     if (applied) {
                         reloaded.add(candidate.file());

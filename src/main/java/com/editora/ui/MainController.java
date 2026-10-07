@@ -214,6 +214,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private com.editora.completion.CompletionEngine completion;
 
     private ProjectPanel projectPanel;
+    private ProjectDeleteCoordinator projectDeletes;
     private ProjectManager projects;
     /** The multi-window coordinator (null in single-window/test use); set right after {@link #init}. */
     private WindowManager windowManager;
@@ -1669,21 +1670,60 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Syncs editor/session state after the Project tree deletes a file on disk. */
     private void onProjectFileDeleted(Path path) {
+        onProjectFileDeleted(path, buffer -> false); // nobody was asked: an unsaved buffer stays open
+    }
+
+    /** The Project tree deleted {@code path} after its preflight asked every window's unsaved owners. */
+    private void onProjectTreeFileDeleted(Path path) {
+        onProjectFileDeleted(path, buffer -> projectDeletes != null && projectDeletes.covers(buffer));
+    }
+
+    private void onProjectFileDeleted(Path path, java.util.function.Predicate<EditorBuffer> discardApproved) {
         if (windowManager != null) {
-            windowManager.fileDeletedAcrossWindows(path);
+            windowManager.fileDeletedAcrossWindows(path, discardApproved);
         } else {
-            removeProjectFileLocal(path);
+            removeProjectFileLocal(path, discardApproved);
         }
     }
 
-    void removeProjectFileLocal(Path path) {
+    /** The window that holds {@code buffer} in a tab; this one when no other does. */
+    private MainController ownerOf(EditorBuffer buffer) {
+        return windowManager == null ? this : windowManager.ownerOf(buffer, this);
+    }
+
+    boolean holdsBufferLocal(EditorBuffer buffer) {
+        return tabFor(buffer) != null;
+    }
+
+    /** Brings this window and {@code buffer}'s tab forward, so a prompt about it is asked where it lives. */
+    private void revealBufferLocal(EditorBuffer buffer) {
+        Tab tab = tabFor(buffer);
+        if (tab != null) {
+            editorArea.select(tab);
+        }
+        if (stage != null && !stage.isFocused()) {
+            stage.toFront();
+            stage.requestFocus();
+        }
+    }
+
+    void removeProjectFileLocal(Path path, java.util.function.Predicate<EditorBuffer> discardApproved) {
         com.editora.config.PathKeys.invalidateCanonicalCache(); // (#680)
         indexCoordinator.onFileDeleted(path);
         for (EditorBuffer buffer : buffersAtOrUnderLocal(path)) {
             Tab tab = tabFor(buffer);
-            if (tab != null) {
-                editorArea.remove(tab); // resource preflight protected dirty owners before the file vanished
+            if (tab == null) {
+                continue;
             }
+            // Last line of defence, whichever path deleted the file: unsaved text is dropped only when its
+            // owner was asked about exactly this state. Otherwise the tab stays, as the only copy left.
+            if ((buffer.isDirty() || fileWorkflows.hasPendingSave(buffer)) && !discardApproved.test(buffer)) {
+                buffer.markUnsaved();
+                updateTabMeta(tab, buffer);
+                setStatus(tr("status.fileGoneKeptUnsaved", buffer.getTitle()));
+                continue;
+            }
+            editorArea.remove(tab);
         }
         WorkspaceState ws = config.getWorkspaceState();
         String key = path.toString();
@@ -2039,7 +2079,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel = new ProjectPanel(
                 fileWorkflows::openPath,
                 this::onProjectFileRenamed,
-                this::onProjectFileDeleted,
+                this::onProjectTreeFileDeleted,
                 this::isPathModified,
                 this::hasFileOpen,
                 this::projectMapPreviewContent);
@@ -2048,14 +2088,15 @@ public class MainController implements com.editora.mcp.McpBridge {
             config.save();
         });
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
-        projectPanel.setDeletePreparation(new ProjectDeleteCoordinator(
-                path -> bufferOf(tabForPath(path)),
-                path -> editorArea.select(tabForPath(path)),
-                fileWorkflows::hasPendingSave,
-                closes::confirmCloseIfDirty,
+        projectDeletes = new ProjectDeleteCoordinator(
+                path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
+                buffer -> ownerOf(buffer).revealBufferLocal(buffer),
+                buffer -> ownerOf(buffer).fileWorkflows.hasPendingSave(buffer),
+                buffer -> ownerOf(buffer).closes.confirmCloseIfDirty(buffer),
                 fileWorkflows::invalidatePendingWrite,
                 (path, completion) -> historyCoordinator.captureBeforeDeleteDurably(path, completion),
-                this::setStatus));
+                this::setStatus);
+        projectPanel.setDeletePreparation(projectDeletes);
         projectPanel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
         projectPanel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
         projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
