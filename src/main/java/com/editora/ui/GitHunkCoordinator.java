@@ -40,7 +40,9 @@ final class GitHunkCoordinator {
         this.host = host;
         this.git = git;
         this.diff = diff;
-        git.setGutterSink(this::show);
+        if (git != null) { // a DiffCoordinator built without Git (the history-restore harness) has no gutter
+            git.setGutterSink(this::show);
+        }
     }
 
     /** Puts a diff on a buffer's gutter: the bars, and the hunks behind them for the commands here. */
