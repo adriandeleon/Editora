@@ -166,15 +166,21 @@ as a conflict is never merged unseen. It automatically composes disjoint changes
 overlapping changes that produce identical text; only divergent overlapping regions become conflicts. Each
 conflict retains an explicit base-presence bit, because two competing insertions have a real but empty
 ancestor region. Before the stage merge is shown it is compared with the file (`ThreeWayMerge.agreesWith`: taking ours
-everywhere, and theirs everywhere, must give the same lines from both). A file that has moved on — conflicts
-resolved by hand, markers deleted — is not silently replaced: the user chooses between starting again from
-Git's versions and resolving the markers the file still has. If all three Git stages are not available, `ConflictParser` remains the fallback for files
+everywhere, and theirs everywhere, must give the same lines from both). When they disagree and the file still
+has well-formed conflict regions, the resolver opens on the file's own regions without asking
+(`ThreeWayMerge.sourceFor`): they are what Git reported, and conflicts already resolved by hand stay resolved.
+A disagreement is not proof of an edit — Git's merge aligns repeated lines with a different diff algorithm, and
+the recomputed merge can combine cleanly two changes Git marked as a conflict
+(`ThreeWayMergeGitOracleTest` runs the two against each other). Only a file with no conflict left is put to
+the user, who may start again from Git's versions or cancel. If all three Git stages are not available, `ConflictParser` remains the fallback for files
 that already contain standard merge/diff3 markers. It recognises a marker only as Git writes it — a run of
 marker characters followed by a space or the end of the line, and the `=` separator only as a whole line.
 The run is seven long, or longer when the file's `conflict-marker-size` attribute says so: the opening
-marker fixes the size for its conflict, and a longer opening run counts only when its separator and closing
-marker follow. A run of any other length — a Markdown or reStructuredText heading underline inside a
-conflict — stays content, and an unresolved conflict is written back with the marker size it came with.
+marker fixes the size for its conflict, and an opening run counts only as the first line of a well-formed
+set — its separator and then its closing marker follow, with no other opening marker of that size in
+between. A lone marker-looking line (documentation about conflicts, a half-deleted conflict) and a run of
+any other length — a Markdown or reStructuredText heading underline inside a conflict — stay content. A
+conflict left unresolved is written back as the lines it was read from, not regenerated from its parts.
 
 `MergeViewerPane` shows Base/Ours/Theirs for each conflict and a lower editable Result. Acceptance actions
 recompute the Result until the user edits it manually; later acceptance actions are then refused so they

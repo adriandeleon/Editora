@@ -1763,9 +1763,11 @@ final class DiffCoordinator {
     java.util.function.Function<Boolean, MergeSource> mergeSourceChooser = this::askMergeSource;
 
     /**
-     * Opens the resolver on the merge of Git's three versions — unless the file has moved on from it. Then
-     * conflicts resolved by hand (or any other edit since Git wrote the markers) are not in that merge, and
-     * applying its result would silently replace them, so the user chooses what to start from.
+     * Opens the resolver on the merge of Git's three versions when that is the merge the file holds. When it
+     * is not, the conflict regions still written in the file are used as they are ({@link
+     * ThreeWayMerge#sourceFor}): they are Git's own answer, and conflicts already resolved by hand stay
+     * resolved. Only a file with no conflict left is put to the user, because showing one then means starting
+     * again from Git's versions and replacing what the file holds.
      */
     private void openStageMerge(
             EditorBuffer buffer,
@@ -1774,9 +1776,12 @@ final class DiffCoordinator {
             boolean hasMarkers,
             ConflictParser.ConflictFile merged) {
         ConflictParser.ConflictFile written = ConflictParser.parse(format.lines());
-        MergeSource source = ThreeWayMerge.agreesWith(merged, written)
-                ? MergeSource.GIT_VERSIONS
-                : mergeSourceChooser.apply(hasMarkers);
+        MergeSource source =
+                switch (ThreeWayMerge.sourceFor(merged, written)) {
+                    case MERGE -> MergeSource.GIT_VERSIONS;
+                    case FILE_MARKERS -> MergeSource.FILE_MARKERS;
+                    case ASK -> mergeSourceChooser.apply(hasMarkers);
+                };
         switch (source) {
             case GIT_VERSIONS -> openMergePane(buffer, sourceText, format, merged);
             case FILE_MARKERS -> openMergePane(buffer, sourceText, format, written);

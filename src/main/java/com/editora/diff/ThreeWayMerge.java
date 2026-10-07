@@ -127,6 +127,35 @@ public final class ThreeWayMerge {
         return true;
     }
 
+    /** What the conflict resolver opens on for a file whose three Git stages were merged again. */
+    public enum Source {
+        /** The recomputed merge: it is the merge the file holds (and carries the common ancestor). */
+        MERGE,
+        /** The conflict regions written in the file. */
+        FILE_MARKERS,
+        /** Neither can be chosen for the user: the file holds no conflict and differs from the merge. */
+        ASK
+    }
+
+    /**
+     * Which conflicts the resolver shows, given the recomputed {@code merged} and the file as {@code written}.
+     *
+     * <p>When the two {@linkplain #agreesWith agree} the recomputed merge is used. When they do not and the
+     * file still has well-formed conflict regions, those regions win: they are the conflicts Git reported
+     * (or what is left of them after resolving some by hand), and everything outside them is the file's own
+     * text. The recomputed merge is not an authority on where the conflicts are — Git's merge aligns
+     * repeated lines with another diff algorithm, and this one can combine, without a conflict, two changes
+     * Git asked a person to look at. A disagreement is therefore not evidence that the file was edited, and
+     * is not put to the user as such. Only a file with no conflict left needs a decision, because showing
+     * anything then means starting again from Git's versions.
+     */
+    public static Source sourceFor(ConflictFile merged, ConflictFile written) {
+        if (agreesWith(merged, written)) {
+            return Source.MERGE;
+        }
+        return written.hasConflicts() ? Source.FILE_MARKERS : Source.ASK;
+    }
+
     /**
      * One side's changes against the base, in a canonical position.
      *
