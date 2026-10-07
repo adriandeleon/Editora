@@ -7,7 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Git: a merge, rebase, cherry-pick or revert in progress is shown in the status bar (`main · MERGING`)
+  and as a banner in the Commit window with Continue, Skip and Abort (`Git: Continue Operation`,
+  `Git: Skip Commit`, `Git: Abort Operation`). Conflicted files have their own Conflicts group with
+  Resolve (the three-way resolver), keep-one-side actions named for what they are in the current
+  operation, and Mark Resolved. Finishing a resolution saves and stages the file. A merge commit is
+  prefilled with Git's prepared message.
+- Git: a "Pull mode" setting (fast-forward only, which stays the default; rebase; merge) and
+  `Git: Pull (Rebase)` / `Git: Pull (Merge)`. A pull that cannot fast-forward because the branch
+  diverged offers Rebase or Merge instead of an error. Rebase and merge pulls carry uncommitted changes
+  across with `--autostash` and say what happened to them.
+- Git: branch management from the branch dropdown (a row's `⋯`, right-click or the Menu key) and the
+  palette: new branch from any branch or tag, rename, merge into current, rebase onto, set or unset
+  upstream, compare with current, check out a tag or revision by name, delete locally (unmerged commits
+  are confirmed with their count) and delete on the remote. Remote branches are grouped by remote when
+  there are several.
+- Git: `Force Push` (always `--force-with-lease`, confirmed), `Push to…` another remote or branch name,
+  and `Push Tags`. A push rejected as non-fast-forward offers Pull-then-Push, Force-with-Lease or Cancel.
+- Git: `Manage Remotes…` (add, rename, set URL, fetch, prune, remove), `Fetch Remote…`, and
+  `Manage Worktrees…` (list, add, open in a new window, remove, prune).
+- Git Log: history loads a page at a time as you scroll instead of stopping at 200 commits; an
+  all-branches view and a commit graph; a details area with the full message, author, date, hash,
+  parents and refs; Enter in the filter box searches the whole history (message words, `author:`,
+  `content:`, `since:`/`until:`, `path:`); file history follows renames; Enter on a commit opens
+  everything it changed as one review, and two selected commits can be compared.
+- Git: tags. New Tag…, Checkout, Push and Delete from a commit row and from the palette.
+- Git: work on a file's changes in the editor. `Git: Next Change` / `Previous Change`; clicking a gutter
+  change bar (or `Git: Peek Change at Caret`) opens a card with the old and new lines and Revert Hunk,
+  Stage Hunk, Copy Old Text and Open Diff; `Git: Revert Hunk at Caret` is an undoable edit and
+  `Git: Stage Hunk at Caret` stages only that change. Editor tabs are tinted by their file's Git status
+  and the minimap marks changed lines.
+- Git: `Git: Stashes…` lists every stash with its files; Enter shows its changes, and each stash can be
+  applied, popped, dropped, branched from or copied by name. `Stash Changes…` offers include untracked,
+  staged only and keep index.
+- Git blame: ignore-whitespace and detect-moved-lines toggles, automatic use of
+  `.git-blame-ignore-revs`, and `Git: Annotate Previous Revision` to walk a line back through history.
+- Git: `Apply Patch…` (to the working tree or the index, checked first, with a 3-way offer when it does
+  not fit) and `Create Patch…` from staged changes, unstaged changes or a commit.
+- Commit window: Amend, Commit and Push, Sign off, `Git: Undo Last Commit…`, a subject and body length
+  guide, recent messages, `commit.template` support, `Unstage All`, `Discard All Changes…`, Space to
+  stage or unstage the selected rows, and per-file added/removed line counts.
+- Git: "Fetch automatically" (Settings → Git, off by default). The background fetch never prompts and
+  runs only in a trusted folder or in a repository you fetched, pulled or pushed in during the session.
+- Git: the clone form takes a branch, a shallow depth and a submodules option.
+
 ### Changed
+
+- The VCS menu is grouped into submenus (Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches,
+  History & Blame, Compare) with the daily actions at the top level.
+- A Git command that stops on conflicts (pull, merge, rebase, revert, cherry-pick, stash pop, 3-way
+  patch) opens the Commit window with its conflicts instead of an error dialog.
+- A successful local Git command no longer raises the Output console, so a Git Log row action keeps the
+  log visible. Network commands and failures still raise it.
+- Deleted lines are marked in the gutter by a corner flag at the top of the following line instead of a
+  full-height red bar, and change bars have a wider click target.
+- Log reads run on their own lane, so a slow history search no longer delays status and gutter updates,
+  and a running search is cancelled when it is replaced or cleared.
 
 - The `samples/` corpus for manual testing now covers more of the editor. Every syntax sample is a
   complete, commented program instead of a ten-line stub, and there are new fixtures for Astro, JSX and
@@ -42,6 +99,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Git: a repository Git refuses to work in (for example "dubious ownership") says why in the status bar
+  and the Commit window instead of looking like no repository.
+- Git: commands never start an external editor, so continuing a rebase no longer hangs waiting for one.
+- Git: reverting a merge commit asks which parent is the mainline instead of failing.
+- Git: a missing globally configured `blame.ignoreRevsFile` no longer empties the blame column.
+- Git: the Commit window's header no longer cuts the push indicator to "↑…".
 - Following a log through a pattern filter no longer joins lines together (`ERROR bERROR c`), and a line
   written in two parts is no longer missed by the filter.
 - Pausing and resuming Follow no longer skips the lines written in between, and turning Follow on no
