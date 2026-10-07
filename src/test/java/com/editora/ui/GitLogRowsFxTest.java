@@ -204,6 +204,221 @@ class GitLogRowsFxTest {
         });
     }
 
+    /** main ← merge of a side branch: m(b, f), f(a), b(a), a. */
+    private static List<Entry> mergeLog() {
+        long now = System.currentTimeMillis() / 1000;
+        return List.of(
+                new Entry("mmmm", "mmmm", "Merge side", "Ada", now, "2026-10-06", List.of("bbbb", "ffff"), List.of()),
+                new Entry("ffff", "ffff", "Side work", "Ada", now, "2026-10-06", List.of("aaaa"), List.of()),
+                new Entry("bbbb", "bbbb", "Main work", "Ada", now, "2026-10-06", List.of("aaaa"), List.of()),
+                new Entry("aaaa", "aaaa", "Root", "Ada", now, "2026-10-06", List.of(), List.of()));
+    }
+
+    @Test
+    void theGraphColumnLeavesARowOneTextLineHighAndItsStripsTouch() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            GitLogPanel panel = new GitLogPanel(noop(GitLogPanel.Actions.class));
+            Stage stage = show(panel, 700, 420);
+            try {
+                panel.setLog(new GitLog.Page(mergeLog(), false), new GitLogPanel.View(null, "main", false, "", true));
+                panel.applyCss();
+                panel.layout();
+                ListView<Entry> commits = FxTestSupport.field(panel, "commits");
+                double treeRow = treeRowHeight();
+                List<ListCell<?>> rows = filledCells(commits);
+                assertEquals(4, rows.size());
+                rows.sort(java.util.Comparator.comparingDouble(
+                        c -> c.getBoundsInParent().getMinY()));
+                double expectedWidth = 2 * GitLogPanel.GRAPH_LANE_WIDTH; // the merge needs two lanes
+                for (int i = 0; i < rows.size(); i++) {
+                    ListCell<?> row = rows.get(i);
+                    assertEquals(treeRow, row.getHeight(), 2.0, "the graph does not make a commit row taller");
+                    javafx.scene.canvas.Canvas canvas = (javafx.scene.canvas.Canvas) row.lookup(".canvas");
+                    if (canvas == null) {
+                        canvas = row.lookupAll("*").stream()
+                                .filter(n -> n instanceof javafx.scene.canvas.Canvas)
+                                .map(n -> (javafx.scene.canvas.Canvas) n)
+                                .findFirst()
+                                .orElseThrow();
+                    }
+                    assertEquals(expectedWidth, canvas.getWidth(), 0.5, "every row has the same graph column");
+                    assertEquals(
+                            row.getHeight(),
+                            canvas.getHeight(),
+                            0.5,
+                            "the strip is as high as its row, so the lanes of adjacent rows meet");
+                    javafx.geometry.Bounds strip = canvas.localToScene(canvas.getBoundsInLocal());
+                    javafx.geometry.Bounds cell = row.localToScene(row.getBoundsInLocal());
+                    assertEquals(cell.getMinY(), strip.getMinY(), 0.5, "…with no gap above it");
+                    assertEquals(
+                            "mmmm ffff bbbb aaaa".split(" ")[i],
+                            label(row, "git-log-hash").getText());
+                }
+                assertFalse(horizontalBarShowing(commits));
+
+                // Typing a filter shows a subset of the commits: the graph column goes, and comes back.
+                javafx.scene.control.TextField filter = FxTestSupport.field(panel, "filterField");
+                filter.setText("side");
+                panel.applyCss();
+                panel.layout();
+                assertEquals(2, commits.getItems().size());
+                assertEquals(0, (int) FxTestSupport.<Integer>field(panel, "graphColumns"));
+                filter.setText("");
+                assertEquals(2, (int) FxTestSupport.<Integer>field(panel, "graphColumns"));
+
+                // A file history has no graph at all.
+                panel.setLog(new GitLog.Page(mergeLog(), false), "Orders.java", "main");
+                assertEquals(0, (int) FxTestSupport.<Integer>field(panel, "graphColumns"));
+            } finally {
+                stage.hide();
+            }
+        });
+    }
+
+    @Test
+    void scrollingToTheEndAsksForTheNextPageOnceAndAppendingKeepsThePlace() throws Exception {
+        List<String> calls = new ArrayList<>();
+        GitLogPanel.Actions actions = (GitLogPanel.Actions) Proxy.newProxyInstance(
+                GitLogPanel.Actions.class.getClassLoader(), new Class<?>[] {GitLogPanel.Actions.class}, (p, m, a) -> {
+                    calls.add(m.getName());
+                    return null;
+                });
+        FxTestSupport.runOnFx(() -> {
+            GitLogPanel panel = new GitLogPanel(actions);
+            Stage stage = show(panel, 700, 420);
+            try {
+                panel.setLog(
+                        new GitLog.Page(numbered(0, 200), true), new GitLogPanel.View(null, "main", false, "", true));
+                panel.applyCss();
+                panel.layout();
+                ListView<Entry> commits = FxTestSupport.field(panel, "commits");
+                Label truncated = FxTestSupport.field(panel, "truncatedLabel");
+                javafx.scene.control.Button more = FxTestSupport.field(panel, "loadMoreButton");
+                assertFalse(calls.contains("loadMore"), "the top of 200 rows is nowhere near the end");
+                assertTrue(truncated.getParent().isVisible(), "older history exists: the footer offers it");
+                assertEquals(tr("gitlog.loadMore"), more.getText());
+
+                commits.getSelectionModel().select(150);
+                commits.scrollTo(185);
+                panel.applyCss();
+                panel.layout();
+                assertEquals(1, calls.stream().filter("loadMore"::equals).count(), "asked once, however many rows");
+                assertTrue(more.isDisabled(), "…and the footer shows the page is on its way");
+                assertEquals(tr("gitlog.loadingMore"), more.getText());
+
+                calls.clear();
+                panel.appendLog(new GitLog.Page(numbered(200, 260), false));
+                panel.applyCss();
+                panel.layout();
+                assertEquals(260, commits.getItems().size());
+                assertEquals(150, commits.getSelectionModel().getSelectedIndex(), "the selection stays put");
+                assertEquals("c150", panel.selectedHash());
+                assertFalse(calls.contains("selected"), "…and is not re-fetched");
+                assertFalse(truncated.getParent().isVisible(), "the whole history is loaded: no footer");
+                assertEquals(
+                        260, FxTestSupport.<List<?>>field(panel, "graphRows").size());
+                assertEquals("c259", panel.lastLoadedHash());
+            } finally {
+                stage.hide();
+            }
+        });
+    }
+
+    private static List<Entry> numbered(int from, int to) {
+        List<Entry> entries = new ArrayList<>();
+        for (int i = from; i < to; i++) {
+            entries.add(new Entry(
+                    "c" + i, "c" + i, "commit " + i, "Ada", 0L, "2026-10-06", List.of("c" + (i + 1)), List.of()));
+        }
+        return entries;
+    }
+
+    @Test
+    void theDetailsPaneDescribesTheSelectedCommitAndFollowsTheSelection() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            GitLogPanel panel = new GitLogPanel(noop(GitLogPanel.Actions.class));
+            panel.setLog(new GitLog.Page(mergeLog(), false), new GitLogPanel.View(null, "main", false, "", true));
+            ListView<Entry> commits = FxTestSupport.field(panel, "commits");
+            Label hash = FxTestSupport.field(panel, "detailsHash");
+            javafx.scene.control.TextInputControl message = FxTestSupport.field(panel, "detailsMessage");
+            javafx.scene.layout.HBox parents = FxTestSupport.field(panel, "detailsParents");
+            javafx.scene.Node scroll = FxTestSupport.field(panel, "detailsScroll");
+            assertFalse(scroll.isVisible(), "nothing selected: no details");
+
+            commits.getSelectionModel().select(0);
+            assertTrue(scroll.isVisible() && scroll.isManaged());
+            assertEquals("mmmm", hash.getText());
+            assertEquals("Merge side", message.getText(), "the subject at once; the body when git has answered");
+            List<String> links = parents.getChildren().stream()
+                    .filter(n -> n instanceof javafx.scene.control.Hyperlink)
+                    .map(n -> ((javafx.scene.control.Hyperlink) n).getText())
+                    .toList();
+            assertEquals(List.of("bbbb", "ffff"), links, "both parents of a merge");
+
+            // Details for another commit (a slow answer to an earlier selection) are not shown.
+            panel.setCommitDetails(new GitLog.Details(
+                    "ffff",
+                    List.of("aaaa"),
+                    "Ada",
+                    "ada@example.org",
+                    1L,
+                    "Ada",
+                    "ada@example.org",
+                    1L,
+                    List.of(),
+                    "x"));
+            assertEquals("Merge side", message.getText());
+            panel.setCommitDetails(new GitLog.Details(
+                    "mmmm",
+                    List.of("bbbb", "ffff"),
+                    "Ada",
+                    "ada@example.org",
+                    1_791_342_219L,
+                    "Grace",
+                    "grace@example.org",
+                    1_791_342_219L,
+                    List.of(new Ref(RefKind.TAG, "v9", false)),
+                    "Merge side\n\nThe body."));
+            assertEquals("Merge side\n\nThe body.", message.getText());
+            Label author = FxTestSupport.field(panel, "detailsAuthor");
+            assertTrue(author.getText().contains("Ada <ada@example.org>"), author.getText());
+            assertTrue(author.getText().contains(GitLogPanel.absoluteDate(1_791_342_219L)), author.getText());
+            assertTrue(author.getText().contains("Grace <grace@example.org>"), "a different committer is named too");
+
+            // A parent link selects that commit's row.
+            ((javafx.scene.control.Hyperlink) parents.getChildren().get(2)).fire();
+            assertEquals("ffff", panel.selectedHash());
+            assertEquals("ffff", hash.getText());
+
+            commits.getSelectionModel().clearSelection();
+            assertFalse(scroll.isVisible());
+        });
+    }
+
+    @Test
+    void enterOpensACommitAsAReviewAndTwoSelectedCommitsCompare() throws Exception {
+        List<String> calls = new ArrayList<>();
+        GitLogPanel.Actions actions = (GitLogPanel.Actions) Proxy.newProxyInstance(
+                GitLogPanel.Actions.class.getClassLoader(), new Class<?>[] {GitLogPanel.Actions.class}, (p, m, a) -> {
+                    if (m.getName().equals("reviewCommit") || m.getName().equals("compareCommits")) {
+                        calls.add(m.getName() + java.util.Arrays.toString(a));
+                    }
+                    return null;
+                });
+        FxTestSupport.runOnFx(() -> {
+            GitLogPanel panel = new GitLogPanel(actions);
+            panel.setLog(new GitLog.Page(mergeLog(), false), null, "main");
+            ListView<Entry> commits = FxTestSupport.field(panel, "commits");
+            commits.getSelectionModel().select(1);
+            FxTestSupport.call(panel, "openSelectedCommits", new Class<?>[] {});
+            // Selected bottom-up: the older commit is still the left side.
+            commits.getSelectionModel().clearSelection();
+            commits.getSelectionModel().selectIndices(3, 0);
+            FxTestSupport.call(panel, "openSelectedCommits", new Class<?>[] {});
+            assertEquals(List.of("reviewCommit[ffff]", "compareCommits[aaaa, mmmm]"), calls);
+        });
+    }
+
     @Test
     void aNarrowRowDropsColumnsInsteadOfSqueezingThemAll() throws Exception {
         assertEquals(3, GitLogPanel.chipBudget(900));

@@ -393,6 +393,9 @@ public class SettingsWindow {
     private Spinner<Integer> historyMaxTotalSpinner;
     private Label gitStatusLabel;
     private TextField gitPathField;
+    private ComboBox<com.editora.git.GitPullMode> gitPullModeCombo;
+    private CheckBox gitAutoFetchCheck;
+    private Spinner<Integer> gitAutoFetchSpinner;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox htmlPreviewCheck;
@@ -1381,6 +1384,52 @@ public class SettingsWindow {
             config.getSettings().setGitPath(now);
             apply(); // applySupport pushes the command into GitService
             probeGit();
+        });
+
+        gitPullModeCombo = new ComboBox<>();
+        gitPullModeCombo.getItems().setAll(com.editora.git.GitPullMode.values());
+        gitPullModeCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(com.editora.git.GitPullMode mode) {
+                return mode == null ? "" : GitCoordinator.pullModeLabel(mode);
+            }
+
+            @Override
+            public com.editora.git.GitPullMode fromString(String label) {
+                return null; // not editable
+            }
+        });
+        gitPullModeCombo.setMinWidth(170); // no fixed width: the translated items differ a lot in length
+        gitPullModeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setGitPullMode(now.id());
+            apply();
+        });
+
+        gitAutoFetchCheck = new CheckBox(tr("settings.git.autoFetch"));
+        gitAutoFetchCheck.selectedProperty().addListener((obs, was, now) -> {
+            gitAutoFetchSpinner.setDisable(!now);
+            if (loading) {
+                return;
+            }
+            config.getSettings().setGitAutoFetch(now);
+            apply(); // applySupport starts or stops the timer
+        });
+        gitAutoFetchSpinner = IntSpinners.editable(
+                1,
+                com.editora.config.Settings.MAX_GIT_AUTO_FETCH_MINUTES,
+                config.getSettings().getGitAutoFetchMinutes(),
+                1);
+        gitAutoFetchSpinner.setPrefWidth(90);
+        gitAutoFetchSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
+        gitAutoFetchSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setGitAutoFetchMinutes(now);
+            apply();
         });
 
         githubCheck = new CheckBox(tr("settings.enableGithub"));
@@ -3520,6 +3569,21 @@ public class SettingsWindow {
                         tr("settings.git.blameInline.desc"),
                         new HBox(8, chordChip("git.toggleBlame"), switchFor(blameCheck))),
                 "git blame annotate inline author history line");
+        cardRow(
+                c2,
+                Category.GIT,
+                settingRow(tr("settings.git.pullMode"), tr("settings.git.pullMode.desc"), gitPullModeCombo),
+                "git pull mode fast-forward ff-only rebase merge diverged");
+        Label autoFetchUnit = new Label(tr("settings.git.autoFetchMinutes"));
+        autoFetchUnit.setLabelFor(gitAutoFetchSpinner);
+        cardRow(
+                c2,
+                Category.GIT,
+                settingRow(
+                        tr("settings.git.autoFetch"),
+                        tr("settings.git.autoFetch.desc"),
+                        new HBox(8, gitAutoFetchSpinner, autoFetchUnit, switchFor(gitAutoFetchCheck))),
+                "git fetch automatically auto background interval minutes remote prune");
 
         row(p, Category.GIT, null, noteBox(tr("settings.liveNote")), "live apply ok palette command");
         return p;
@@ -7758,6 +7822,10 @@ public class SettingsWindow {
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
             gitPathField.setText(settings.getGitPath());
+            gitPullModeCombo.setValue(com.editora.git.GitPullMode.of(settings.getGitPullMode()));
+            gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
+            gitAutoFetchSpinner.getValueFactory().setValue(settings.getGitAutoFetchMinutes());
+            gitAutoFetchSpinner.setDisable(!settings.isGitAutoFetch());
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());
@@ -8130,6 +8198,11 @@ public class SettingsWindow {
         try {
             blameCheck.setSelected(config.getSettings().isGitBlameInline());
             blameCheck.setDisable(!config.getSettings().isGitSupport());
+            gitPullModeCombo.setValue(
+                    com.editora.git.GitPullMode.of(config.getSettings().getGitPullMode()));
+            gitAutoFetchCheck.setSelected(config.getSettings().isGitAutoFetch());
+            gitAutoFetchSpinner.getValueFactory().setValue(config.getSettings().getGitAutoFetchMinutes());
+            gitAutoFetchSpinner.setDisable(!config.getSettings().isGitAutoFetch());
         } finally {
             loading = prev;
         }

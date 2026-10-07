@@ -17,6 +17,7 @@ import java.util.function.IntPredicate;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
+import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Cursor;
 import javafx.scene.Group;
@@ -33,6 +34,7 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.scene.shape.Polygon;
 import javafx.scene.shape.Rectangle;
 import javafx.scene.shape.SVGPath;
 import javafx.scene.text.Text;
@@ -81,6 +83,8 @@ public final class FoldManager {
     /** Width of the Git change-bar column, reserved on every row while change tracking is on so toggling
      *  a bar never shifts the text indentation (mirrors the bookmark slot). */
     private static final double CHANGE_SLOT_WIDTH = 3;
+    /** Width of a marked row's bar as the mouse sees it (it paints wider on hover). */
+    private static final double CHANGE_HIT_WIDTH = 8;
     /** Width of the Run column, reserved on every row only while this is a compact source file. Snug
      *  around the (narrow) play glyph so it doesn't leave dead space next to the line number. */
     private static final double RUN_SLOT_WIDTH = 13;
@@ -143,6 +147,8 @@ public final class FoldManager {
     private IntFunction<String> changeClass = i -> null;
     /** Hunk text (unified diff) for a line's change bar hover tooltip, or {@code null} for none. */
     private IntFunction<String> changeTooltip = i -> null;
+    /** A line's change bar was clicked. */
+    private IntConsumer onChangeClick = i -> {};
 
     /** Whether the IntelliJ-style blame "Annotate" column is shown (reserve the leftmost annotation slot). */
     private BooleanSupplier blameEnabled = () -> false;
@@ -691,7 +697,12 @@ public final class FoldManager {
      * reserved on every row, and {@code classFor} returns the CSS style class for a line's bar
      * (e.g. {@code git-modified}) or {@code null} when the line is unchanged.
      */
-    public void setChangeHook(BooleanSupplier enabled, IntFunction<String> classFor, IntFunction<String> tooltipFor) {
+    public void setChangeHook(
+            BooleanSupplier enabled,
+            IntFunction<String> classFor,
+            IntFunction<String> tooltipFor,
+            IntConsumer onClick) {
+        this.onChangeClick = onClick == null ? i -> {} : onClick;
         this.changeBarsEnabled = enabled == null ? () -> false : enabled;
         this.changeClass = classFor == null ? i -> null : classFor;
         this.changeTooltip = tooltipFor == null ? i -> null : tooltipFor;
@@ -1602,15 +1613,35 @@ public final class FoldManager {
         // IntelliJ-style. The slot is reserved on every row while tracking is on, so a bar
         // appearing/disappearing never shifts the line's text indentation.
         if (changeBarsEnabled.getAsBoolean()) {
-            javafx.scene.layout.Region bar = new javafx.scene.layout.Region();
-            bar.getStyleClass().add("git-change-bar");
-            bar.setMinWidth(CHANGE_SLOT_WIDTH);
-            bar.setPrefWidth(CHANGE_SLOT_WIDTH);
-            bar.setMaxWidth(CHANGE_SLOT_WIDTH);
-            bar.setMaxHeight(Double.MAX_VALUE);
             String cls = changeClass.apply(idx);
+            StackPane bar = new StackPane();
+            bar.getStyleClass().add("git-change-bar");
+            // A marked row's bar is wider than the slot it paints in: 3 px is not something a mouse lands
+            // on. The extra width reaches back over the fold column's padding (a negative margin, so the
+            // row's width — the text's left inset — is the same with and without a bar).
+            double width = cls == null ? CHANGE_SLOT_WIDTH : CHANGE_HIT_WIDTH;
+            bar.setMinWidth(width);
+            bar.setPrefWidth(width);
+            bar.setMaxWidth(width);
+            bar.setMaxHeight(Double.MAX_VALUE);
             if (cls != null) {
                 bar.getStyleClass().add(cls);
+                HBox.setMargin(bar, new Insets(0, 0, 0, CHANGE_SLOT_WIDTH - CHANGE_HIT_WIDTH));
+                if (cls.equals("git-deleted")) {
+                    // Lines were removed *above* this one: a corner flag on the row's top edge, against the
+                    // text, not a full-height stripe that reads as "this line changed".
+                    Polygon wedge = new Polygon(0, 0, CHANGE_HIT_WIDTH, 0, CHANGE_HIT_WIDTH, CHANGE_HIT_WIDTH);
+                    wedge.getStyleClass().add("git-deleted-wedge");
+                    StackPane.setAlignment(wedge, Pos.TOP_RIGHT);
+                    bar.getChildren().add(wedge);
+                }
+                ownPointer(bar);
+                bar.setOnMouseClicked(e -> {
+                    if (e.getButton() == MouseButton.PRIMARY) {
+                        onChangeClick.accept(idx);
+                        e.consume();
+                    }
+                });
             }
             String hunk = changeTooltip.apply(idx);
             if (hunk != null && !hunk.isBlank()) {

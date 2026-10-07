@@ -19,7 +19,9 @@ public final class BlameParser {
      * One blamed line: the commit it last changed in, the author, commit time (epoch seconds), and subject.
      * {@code path} is the file's repo-relative name <em>in that commit</em> — blame follows whole-file renames,
      * so for a line older than a move it is the old path, the only one {@code <hash>:<path>} resolves.
-     * {@code previousPath} is its name in the commit's parent ({@code null} when the commit added the file).
+     * {@code previousPath} is its name in the commit's parent ({@code null} when the commit added the file),
+     * and {@code previousHash} that parent commit — together the file "as of the commit before", which is
+     * what annotating the previous revision opens.
      */
     public record BlameLine(
             String hash,
@@ -28,10 +30,22 @@ public final class BlameParser {
             String summary,
             boolean uncommitted,
             String path,
-            String previousPath) {
+            String previousPath,
+            String previousHash) {
 
         public BlameLine(String hash, String author, long epochSeconds, String summary, boolean uncommitted) {
-            this(hash, author, epochSeconds, summary, uncommitted, null, null);
+            this(hash, author, epochSeconds, summary, uncommitted, null, null, null);
+        }
+
+        public BlameLine(
+                String hash,
+                String author,
+                long epochSeconds,
+                String summary,
+                boolean uncommitted,
+                String path,
+                String previousPath) {
+            this(hash, author, epochSeconds, summary, uncommitted, path, previousPath, null);
         }
     }
 
@@ -45,6 +59,7 @@ public final class BlameParser {
         long time;
         String path;
         String previousPath;
+        String previousHash;
     }
 
     private BlameParser() {}
@@ -63,17 +78,26 @@ public final class BlameParser {
         String hash = null;
         CommitInfo info = null;
         String blockPrevious = null;
+        String blockPreviousHash = null;
         for (String line : porcelain.split("\n", -1)) {
             if (line.startsWith("\t")) {
                 // The content line terminates the current block: emit it.
                 if (hash != null) {
                     boolean uncommitted = hash.chars().allMatch(c -> c == '0');
                     out.add(new BlameLine(
-                            hash, info.author, info.time, info.summary, uncommitted, info.path, info.previousPath));
+                            hash,
+                            info.author,
+                            info.time,
+                            info.summary,
+                            uncommitted,
+                            info.path,
+                            info.previousPath,
+                            info.previousHash));
                 }
                 hash = null;
                 info = null;
                 blockPrevious = null;
+                blockPreviousHash = null;
                 continue;
             }
             if (info == null) {
@@ -100,11 +124,13 @@ public final class BlameParser {
                 int space = line.indexOf(' ', "previous ".length());
                 if (space > 0 && space + 1 < line.length()) {
                     blockPrevious = StatusParser.unquotePath(line.substring(space + 1));
+                    blockPreviousHash = line.substring("previous ".length(), space);
                 }
             } else if (line.startsWith("filename ")) {
                 // Git writes "previous" (when there is one) immediately before "filename", as a pair.
                 info.path = StatusParser.unquotePath(line.substring("filename ".length()));
                 info.previousPath = blockPrevious;
+                info.previousHash = blockPrevious == null ? null : blockPreviousHash;
             }
         }
         return out;

@@ -1965,10 +1965,76 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("git.switchBranch", () -> host.git().ifEnabled(host.gitWindows()::chooseBranch)));
         host.registry().register(Command.of("git.newBranch", () -> host.git().ifEnabled(host.git()::newBranch)));
+        registerGitBranchCommands();
         // No ifEnabled: a clone runs with no repository at all.
         host.registry().register(Command.of("git.cancel", () -> host.git().cancelNetworkCommand()));
         host.registry().register(Command.of("git.fetch", () -> host.git().ifEnabled(host.gitWindows()::fetch)));
         host.registry().register(Command.of("git.pull", () -> host.git().ifEnabled(host.gitWindows()::pull)));
+        // The two ways out of a diverged branch, whatever the "Pull mode" setting says.
+        host.registry()
+                .register(Command.of(
+                        "git.pullRebase",
+                        () -> host.git().ifEnabled(() -> host.git().gitPull(com.editora.git.GitPullMode.REBASE))));
+        host.registry()
+                .register(Command.of(
+                        "git.pullMerge",
+                        () -> host.git().ifEnabled(() -> host.git().gitPull(com.editora.git.GitPullMode.MERGE))));
+        host.registry()
+                .register(Command.of(
+                        "git.setPullMode",
+                        () -> host.editorSettings()
+                                .chooseSetting(
+                                        "git.setPullMode",
+                                        () -> java.util.Arrays.stream(com.editora.git.GitPullMode.values())
+                                                .map(com.editora.git.GitPullMode::id)
+                                                .toList(),
+                                        id -> GitCoordinator.pullModeLabel(com.editora.git.GitPullMode.of(id)),
+                                        () -> host.git().pullMode().id(),
+                                        host.git()::setPullMode)));
+        // "Fetch automatically" and its interval; the timer is re-read through applySupport.
+        host.registry()
+                .register(Command.of(
+                        "git.toggleAutoFetch",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "git.toggleAutoFetch",
+                                        () -> host.config().getSettings().isGitAutoFetch(),
+                                        v -> host.config().getSettings().setGitAutoFetch(v),
+                                        host.git()::applySupport)));
+        host.registry()
+                .register(Command.of(
+                        "git.setAutoFetchInterval",
+                        () -> host.editorSettings()
+                                .promptIntSetting(
+                                        "git.setAutoFetchInterval",
+                                        () -> host.config().getSettings().getGitAutoFetchMinutes(),
+                                        1,
+                                        Settings.MAX_GIT_AUTO_FETCH_MINUTES,
+                                        v -> host.config().getSettings().setGitAutoFetchMinutes(v),
+                                        host.git()::applySupport)));
+        // An automatic fetch only runs where the user has vouched for the folder (or fetched there by hand).
+        host.git().autoFetch().setTrust(root -> host.config().getTrustStore().isTrusted(root));
+        // The Commit window's options, as commands.
+        GitCommitCoordinator commits = host.git().commits();
+        host.registry().register(Command.of("git.commitAmend", () -> host.git().ifEnabled(commits::toggleAmend)));
+        host.registry()
+                .register(Command.of("git.commitAndPush", () -> host.git().ifEnabled(commits::commitAndPush)));
+        host.registry()
+                .register(Command.of("git.undoLastCommit", () -> host.git().ifEnabled(commits::undoLastCommit)));
+        host.registry()
+                .register(
+                        Command.of("git.commitMessageHistory", () -> host.git().ifEnabled(commits::pickRecentMessage)));
+        host.registry().register(Command.of("git.unstageAll", () -> host.git().ifEnabled(host.git()::gitUnstageAll)));
+        host.registry().register(Command.of("git.discardAll", () -> host.git().ifEnabled(host.git()::gitDiscardAll)));
+        // A merge, rebase, cherry-pick or revert that stopped (on a conflict): the Commit window's banner
+        // buttons, as commands. Each reports "nothing in progress" when there is no such operation.
+        host.registry()
+                .register(
+                        Command.of("git.continueOperation", () -> host.git().ifEnabled(host.git()::continueOperation)));
+        host.registry()
+                .register(Command.of("git.skipOperation", () -> host.git().ifEnabled(host.git()::skipOperation)));
+        host.registry()
+                .register(Command.of("git.abortOperation", () -> host.git().ifEnabled(host.git()::abortOperation)));
         host.registry().register(Command.of("git.push", () -> host.git().ifEnabled(host.git()::gitPush)));
         // Git Log: act on the commit selected in the Git Log tool window (parity with its right-click menu).
         // withSelectedCommit never runs on a hidden log: it opens and focuses it and asks for a commit.
@@ -1983,6 +2049,10 @@ final class WindowCommandRegistrar {
                         "git.log.revert", () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::revert)));
         host.registry()
                 .register(Command.of(
+                        "git.log.createPatch",
+                        () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::createPatch)));
+        host.registry()
+                .register(Command.of(
                         "git.log.cherryPick",
                         () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::cherryPick)));
         host.registry()
@@ -1992,6 +2062,42 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "git.log.copyHash", () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::copyHash)));
+        host.registry()
+                .register(Command.of(
+                        "git.log.reviewCommit",
+                        () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::reviewCommit)));
+        host.registry().register(Command.of("git.log.compareSelected", host.gitWindows()::compareSelectedCommits));
+        host.registry()
+                .register(Command.of(
+                        "git.log.toggleAllBranches", () -> host.git().ifEnabled(host.gitWindows()::toggleAllBranches)));
+        host.registry()
+                .register(
+                        Command.of("git.log.search", () -> host.git().ifEnabled(host.gitWindows()::focusGitLogSearch)));
+        host.registry()
+                .register(
+                        Command.of("git.log.loadMore", () -> host.git().ifEnabled(host.gitWindows()::loadMoreCommand)));
+        // Tags: at the commit selected in the visible log (else HEAD), or picked from the repository's tags.
+        host.registry()
+                .register(
+                        Command.of("git.tag.create", () -> host.git().ifEnabled(host.gitWindows()::createTagCommand)));
+        host.registry()
+                .register(Command.of(
+                        "git.tag.delete",
+                        () -> host.git()
+                                .ifEnabled(() -> host.gitWindows()
+                                        .pickTagThen("dialog.deleteTag.title", host.gitWindows()::deleteTagIn))));
+        host.registry()
+                .register(Command.of(
+                        "git.tag.push",
+                        () -> host.git()
+                                .ifEnabled(() -> host.gitWindows()
+                                        .pickTagThen("dialog.pushTag.title", host.gitWindows()::pushTagIn))));
+        host.registry()
+                .register(Command.of(
+                        "git.tag.checkout",
+                        () -> host.git()
+                                .ifEnabled(() -> host.gitWindows()
+                                        .pickTagThen("dialog.checkoutTag.title", host.gitWindows()::checkoutTagIn))));
         host.registry()
                 .register(Command.of(
                         "git.refresh",
@@ -2036,10 +2142,52 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("git.toggleBlame", host.git()::toggleBlame));
         host.registry()
                 .register(Command.of("git.blameShowCommit", () -> host.git().ifEnabled(host.git()::blameShowCommit)));
+        // The active file's changes, worked on in the editor (GitHunkCoordinator).
+        host.registry()
+                .register(Command.of(
+                        "git.nextChange",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().nextChange())));
+        host.registry()
+                .register(Command.of(
+                        "git.previousChange",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().previousChange())));
+        host.registry()
+                .register(Command.of(
+                        "git.peekChange",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().peekChange())));
+        host.registry()
+                .register(Command.of(
+                        "git.revertHunk",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().revertHunk())));
+        host.registry()
+                .register(Command.of(
+                        "git.stageHunk",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().stageHunk())));
+        host.registry()
+                .register(Command.of(
+                        "git.blamePreviousRevision",
+                        () -> host.git().ifEnabled(host.git().blame()::annotatePreviousRevision)));
+        host.registry()
+                .register(Command.of("git.blame.ignoreWhitespace", host.git().blame()::toggleIgnoreWhitespace));
+        host.registry().register(Command.of("git.blame.detectMoves", host.git().blame()::toggleDetectMoves));
+        host.registry()
+                .register(Command.of(
+                        "git.stashes", () -> host.git().ifEnabled(host.git().stashes()::showList)));
         host.registry().register(Command.of("git.stash", () -> host.git().ifEnabled(host.git()::gitStash)));
         host.registry().register(Command.of("git.stashPop", () -> host.git().ifEnabled(host.git()::gitStashPop)));
         host.registry().register(Command.of("git.unstash", () -> host.git().ifEnabled(host.git()::gitUnstash)));
         host.registry().register(Command.of("git.stashDrop", () -> host.git().ifEnabled(host.git()::gitStashDrop)));
+        host.registry()
+                .register(Command.of(
+                        "git.applyPatch", () -> host.git().ifEnabled(host.git().patches()::applyPatchCommand)));
+        host.registry()
+                .register(Command.of(
+                        "git.createPatch", () -> host.git().ifEnabled(host.git().patches()::createPatchCommand)));
         // Diff viewer + merge. The git-backed diffs are ifGit-gated; "Compare With…" and "Resolve
         // Conflicts" work on any file (no repo needed), so they are not gated.
         host.registry()
@@ -2527,5 +2675,38 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "nav.endOfDefun", () -> host.editing().sexpMove(com.editora.editops.SexpNav::endOfDefun)));
         host.registry().register(Command.of("nav.moveToWindowLine", host.editing()::moveToWindowLine));
+    }
+
+    /** Branch, push-variant, remote and work-tree commands ({@link GitBranchCoordinator}); all Git-gated. */
+    private void registerGitBranchCommands() {
+        GitBranchCoordinator branches = host.gitWindows().branches;
+        // A work tree opens as a project in its own window, like any other folder.
+        branches.setWindowOpener(folder -> host.windowManager()
+                .openOrFocus(host.config()
+                        .projects()
+                        .createOrGet(
+                                folder.getFileName() == null
+                                        ? folder.toString()
+                                        : folder.getFileName().toString(),
+                                folder)));
+        java.util.Map<String, Runnable> commands = new java.util.LinkedHashMap<>();
+        commands.put("git.newBranchFrom", branches::newBranchFrom);
+        commands.put("git.checkoutRevision", branches::checkoutRevision);
+        commands.put("git.renameBranch", branches::renameBranch);
+        commands.put("git.deleteBranch", branches::deleteBranch);
+        commands.put("git.deleteRemoteBranch", branches::deleteRemoteBranch);
+        commands.put("git.mergeBranch", branches::mergeBranch);
+        commands.put("git.rebaseOnto", branches::rebaseOnto);
+        commands.put("git.compareBranch", branches::compareWithCurrent);
+        commands.put("git.setUpstream", branches::setUpstream);
+        commands.put("git.unsetUpstream", branches::unsetUpstream);
+        commands.put("git.pushTo", branches::pushTo);
+        commands.put("git.pushForce", branches::pushForce);
+        commands.put("git.pushTags", branches::pushTags);
+        commands.put("git.fetchRemote", branches::fetchRemote);
+        commands.put("git.remotes", branches::manageRemotes);
+        commands.put("git.worktrees", branches::manageWorktrees);
+        commands.forEach((id, action) ->
+                host.registry().register(Command.of(id, () -> host.git().ifEnabled(action))));
     }
 }

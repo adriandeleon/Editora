@@ -147,10 +147,75 @@ final class DiffCoordinator {
     });
     private DiffEngine.DiffOptions lastDiffOptions = DiffEngine.DiffOptions.DEFAULT;
 
+    /** The editor-side change commands (next/previous, peek, revert, stage); they stage through this class. */
+    private final GitHunkCoordinator hunks;
+
     DiffCoordinator(CoordinatorHost host, GitCoordinator git, Ops ops) {
         this.host = host;
         this.git = git;
         this.ops = ops;
+        this.hunks = new GitHunkCoordinator(host, git, this);
+    }
+
+    GitHunkCoordinator hunks() {
+        return hunks;
+    }
+
+    /** Saves {@code buffer} through the window's normal save path; false when it could not be saved. */
+    boolean saveBuffer(EditorBuffer buffer) {
+        return ops.saveBuffer(buffer);
+    }
+
+    /**
+     * Stages part of {@code file}'s unstaged changes on behalf of the editor's Stage Hunk: the index entry
+     * becomes {@code edit(index text, working text)}, written through the same blob rewrite and index
+     * compare-and-swap as the diff viewer's Stage Hunk (so a CRLF or Latin-1 blob keeps its bytes). The
+     * working text is read from disk — what git diffed — not from the buffer. {@code edit} answering
+     * {@code null} means the hunk no longer fits and nothing is staged.
+     */
+    void stageFromEditor(
+            Path root, String repoRel, Path file, java.util.function.BinaryOperator<String> edit, Runnable staged) {
+        String ecCharset = ops.editorConfigCharset(file);
+        String openCharset = openCharset(file);
+        git.service().showBlob(root, ":" + repoRel, index -> {
+            if (index.truncated() || !index.found()) {
+                host.setStatus(tr("status.diff.hunkStale", repoRel));
+                return;
+            }
+            submitFileRead(() -> {
+                byte[] working;
+                try {
+                    working = Files.size(file) > MAX_SIDE_BYTES ? null : Files.readAllBytes(file);
+                } catch (IOException unreadable) {
+                    working = null;
+                }
+                byte[] bytes = working;
+                javafx.application.Platform.runLater(() -> {
+                    String before = DiffSideText.decode(index.bytes(), ecCharset, openCharset)
+                            .text();
+                    String after = bytes == null
+                            ? null
+                            : edit.apply(
+                                    before,
+                                    DiffSideText.decode(bytes, ecCharset, openCharset)
+                                            .text());
+                    if (after == null) {
+                        host.setStatus(tr("status.diff.hunkStale", repoRel));
+                        return;
+                    }
+                    stageRewritten(
+                            root, repoRel, index, index.bytes(), before, ecCharset, openCharset, after, result -> {
+                                if (result.ok()) {
+                                    host.setStatus(tr("status.diff.hunkStaged"));
+                                    git.afterMutation();
+                                    staged.run();
+                                } else {
+                                    host.setStatus(tr("status.diff.hunkStale", result.message()));
+                                }
+                            });
+                });
+            });
+        });
     }
 
     /**
@@ -683,10 +748,22 @@ final class DiffCoordinator {
             });
             entries.add(new PatchReviewPane.Entry(rightName, fp.additions(), fp.deletions(), pane));
         }
-        if (entries.size() == 1) {
+        // Inside a repository the patch can be applied, so it always opens as a review tab, which carries
+        // the two Apply buttons; elsewhere a one-file patch stays the plain diff it always was.
+        boolean applicable = git.isAvailable();
+        if (entries.size() == 1 && !applicable) {
             ops.addDiffTab(entries.get(0).pane());
         } else {
-            ops.addDiffTab(new PatchReviewPane(tr("diff.title.patchSet", entries.size()), entries));
+            PatchReviewPane review = new PatchReviewPane(tr("diff.title.patchSet", entries.size()), entries);
+            if (applicable) {
+                // The text that was parsed for this tab: what is applied is what is being reviewed.
+                byte[] patch = GitPatchCoordinator.patchBytes(buffer);
+                Path root = git.repoRoot(); // the repository it was opened in; see GitPatchCoordinator.apply
+                review.setApplyActions(
+                        () -> git.patches().apply(root, patch, false),
+                        () -> git.patches().apply(root, patch, true));
+            }
+            ops.addDiffTab(review);
         }
         host.setStatus(tr("status.diff.patchFilesOpened", entries.size()));
     }
@@ -1059,6 +1136,23 @@ final class DiffCoordinator {
         });
     }
 
+    /**
+     * Lets the user pick one of {@code root}'s tags (newest first) for a tag command; reports when there are
+     * none. {@code onChoose} runs with the tag's short name.
+     */
+    void pickTag(Path root, String title, Consumer<String> onChoose) {
+        git.service().tags(root, tags -> {
+            if (tags.isEmpty()) {
+                host.setStatus(tr("status.git.noTags"));
+                return;
+            }
+            QuickOpen<String> picker = new QuickOpen<>(
+                    title, tr("diff.tagPickerPrompt"), () -> tags, tag -> tag, tag -> tr("diff.tag"), onChoose);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
     private void openPathVsRef(Path path, Path root, String rel, String ref, String displayRef) {
         if (Files.isDirectory(path)) {
             diffDirectoryVsRef(path, root, rel, ref, displayRef);
@@ -1084,17 +1178,42 @@ final class DiffCoordinator {
                 host.setStatus(tr("status.diff.gitFolderFailed", result.error()));
                 return;
             }
-            openGitDirectoryReview(folder, root, rel, ref, displayRef, result);
+            openGitDirectoryReview(folder, root, rel, ref, displayRef, null, result);
         });
     }
 
+    /**
+     * Opens the changed-files review between two revisions of the repository at {@code root} — the ref↔ref
+     * form of "compare with branch", on the same review surface. Both sides are blobs, so nothing is editable.
+     */
+    void compareRefs(Path root, String leftRef, String rightRef) {
+        if (root == null) {
+            git.reportIfNoRepo();
+            return;
+        }
+        host.setStatus(tr("status.diff.comparingRefs", leftRef, rightRef));
+        git.service().refDiff(root, leftRef, rightRef, result -> {
+            if (!result.ok()) {
+                host.setStatus(tr("status.diff.gitFolderFailed", result.error()));
+                return;
+            }
+            openGitDirectoryReview(root, root, "", leftRef, leftRef, rightRef, result);
+        });
+    }
+
+    /**
+     * The review of {@code result}: {@code ref} on the left and, on the right, the working tree
+     * ({@code rightRef == null}, editable) or another revision (read-only).
+     */
     private void openGitDirectoryReview(
             Path folder,
             Path root,
             String folderRel,
             String ref,
             String displayRef,
+            String rightRef,
             GitService.WorkingTreeDiff result) {
+        boolean working = rightRef == null;
         String prefix = folderRel.isEmpty() ? "" : folderRel + "/";
         List<DirectoryReviewPane.Entry> entries = result.files().stream()
                 .map(file -> new DirectoryReviewPane.Entry(
@@ -1107,41 +1226,47 @@ final class DiffCoordinator {
                         -1,
                         -1))
                 .toList();
-        String summary = tr("diff.directory.gitSummary", entries.size(), displayRef)
+        String summary = (working
+                        ? tr("diff.directory.gitSummary", entries.size(), displayRef)
+                        : tr("diff.directory.refSummary", entries.size(), displayRef, rightRef))
                 + (result.truncated() ? " · " + tr("diff.directory.truncated") : "");
-        DirectoryReviewPane review = new DirectoryReviewPane(
-                tr("diff.title.vsBranch", pathName(folder), displayRef), entries, summary, (entry, ready) -> {
-                    String repoPath = prefix + entry.label();
-                    Path workingFile = root.resolve(repoPath);
-                    DiffSide leftSide = entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
-                            ? callback -> callback.accept(DiffContent.text(""))
-                            : blobSide(root, ref + ":" + repoPath, workingFile);
-                    DiffSide rightSide = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
-                            ? callback -> callback.accept(DiffContent.text(""))
-                            : fileSide(workingFile);
-                    buildDiffPane(
-                            tr("diff.title.vsBranch", entry.label(), displayRef),
-                            displayRef + ":" + repoPath,
-                            workingFile.toString(),
-                            entry.label(),
-                            entry.label(),
-                            leftSide,
-                            rightSide,
-                            DiffViewerPane.EditableSide.RIGHT,
-                            workingFile,
-                            pane -> pane.setExitDiffUiAction(null),
-                            built -> ready.accept(
-                                    built == null
-                                            ? null
-                                            : new DirectoryReviewPane.Loaded(
-                                                    built.pane(),
-                                                    built.model().added(),
-                                                    built.model().removed())));
-                });
+        String reviewTitle = working
+                ? tr("diff.title.vsBranch", pathName(folder), displayRef)
+                : tr("diff.title.refVsRef", displayRef, rightRef);
+        DirectoryReviewPane review = new DirectoryReviewPane(reviewTitle, entries, summary, (entry, ready) -> {
+            String repoPath = prefix + entry.label();
+            Path workingFile = root.resolve(repoPath);
+            DiffSide leftSide = entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
+                    ? callback -> callback.accept(DiffContent.text(""))
+                    : blobSide(root, ref + ":" + repoPath, workingFile);
+            DiffSide rightSide = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
+                    ? callback -> callback.accept(DiffContent.text(""))
+                    : working ? fileSide(workingFile) : blobSide(root, rightRef + ":" + repoPath, workingFile);
+            buildDiffPane(
+                    tr("diff.title.vsBranch", entry.label(), working ? displayRef : rightRef),
+                    displayRef + ":" + repoPath,
+                    working ? workingFile.toString() : rightRef + ":" + repoPath,
+                    entry.label(),
+                    entry.label(),
+                    leftSide,
+                    rightSide,
+                    working ? DiffViewerPane.EditableSide.RIGHT : DiffViewerPane.EditableSide.NONE,
+                    working ? workingFile : null,
+                    pane -> pane.setExitDiffUiAction(null),
+                    built -> ready.accept(
+                            built == null
+                                    ? null
+                                    : new DirectoryReviewPane.Loaded(
+                                            built.pane(),
+                                            built.model().added(),
+                                            built.model().removed())));
+        });
         ops.addDiffTab(review);
         host.setStatus(
                 entries.isEmpty()
-                        ? tr("status.diff.gitFolderIdentical", displayRef)
+                        ? (working
+                                ? tr("status.diff.gitFolderIdentical", displayRef)
+                                : tr("status.diff.refsIdentical", displayRef, rightRef))
                         : tr("status.diff.directoryOpened", entries.size()));
     }
 
@@ -1266,6 +1391,67 @@ final class DiffCoordinator {
         String title = tr(staged ? "diff.title.gitStagedReview" : "diff.title.gitWorkingReview", entries.size());
         ops.addDiffTab(new PatchReviewPane(title, entries));
         host.setStatus(tr("status.diff.reviewOpened", entries.size()));
+    }
+
+    /**
+     * One file of a review between two sets of Git blobs: {@code leftSpec}/{@code rightSpec} are
+     * {@code <rev>:<path>} blob specs, {@code null} for a side on which the file does not exist.
+     */
+    record BlobReviewTarget(String path, char status, String leftSpec, String rightSpec) {}
+
+    /**
+     * Opens a read-only multi-file review tab — the one {@link #reviewGitChanges} builds — for files given
+     * as pairs of blob specs in the repository at {@code root}: a stash against the commit it was made on,
+     * or any two revisions.
+     */
+    void openBlobReview(
+            String title, String headerLeft, String headerRight, Path root, List<BlobReviewTarget> targets) {
+        if (root == null || targets.isEmpty()) {
+            return;
+        }
+        host.setStatus(tr("status.diff.preparingReview", targets.size()));
+        List<BuiltDiff> built = new ArrayList<>(Collections.nCopies(targets.size(), null));
+        AtomicInteger remaining = new AtomicInteger(targets.size());
+        DiffSide absent = callback -> callback.accept(DiffContent.text(""));
+        for (int i = 0; i < targets.size(); i++) {
+            int index = i;
+            BlobReviewTarget target = targets.get(i);
+            Path file = root.resolve(target.path());
+            String name = target.path().substring(target.path().lastIndexOf('/') + 1);
+            buildDiffPane(
+                    name,
+                    headerLeft,
+                    headerRight,
+                    target.path(),
+                    target.path(),
+                    target.leftSpec() == null ? absent : blobSide(root, target.leftSpec(), file),
+                    target.rightSpec() == null ? absent : blobSide(root, target.rightSpec(), file),
+                    DiffViewerPane.EditableSide.NONE,
+                    null,
+                    pane -> {},
+                    result -> {
+                        built.set(index, result);
+                        if (remaining.decrementAndGet() > 0) {
+                            return;
+                        }
+                        List<PatchReviewPane.Entry> entries = new ArrayList<>();
+                        for (int j = 0; j < targets.size(); j++) {
+                            BuiltDiff diff = built.get(j);
+                            if (diff != null) {
+                                entries.add(new PatchReviewPane.Entry(
+                                        targets.get(j).path(),
+                                        String.valueOf(targets.get(j).status()),
+                                        diff.model().added(),
+                                        diff.model().removed(),
+                                        diff.pane()));
+                            }
+                        }
+                        if (!entries.isEmpty()) {
+                            ops.addDiffTab(new PatchReviewPane(title, entries));
+                            host.setStatus(tr("status.diff.reviewOpened", entries.size()));
+                        }
+                    });
+        }
     }
 
     /** Selects one side of the porcelain status and resolves rename/copy source paths for blob lookup. */
@@ -1401,7 +1587,7 @@ final class DiffCoordinator {
                     request.beforeText(),
                     ecCharset,
                     openCharset,
-                    request,
+                    request.afterText(),
                     done);
             return;
         }
@@ -1409,7 +1595,8 @@ final class DiffCoordinator {
             byte[] working = EditorConfigCharset.encode(
                     com.editora.editor.LineEndings.apply(open.getContent(), open.getLineEnding()),
                     open.getEffectiveCharset());
-            stageRewritten(root, repoRel, expectedBlob, working, null, ecCharset, openCharset, request, done);
+            stageRewritten(
+                    root, repoRel, expectedBlob, working, null, ecCharset, openCharset, request.afterText(), done);
             return;
         }
         submitFileRead(() -> {
@@ -1420,8 +1607,8 @@ final class DiffCoordinator {
                 working = new byte[0];
             }
             byte[] bytes = working;
-            javafx.application.Platform.runLater(
-                    () -> stageRewritten(root, repoRel, expectedBlob, bytes, null, ecCharset, null, request, done));
+            javafx.application.Platform.runLater(() -> stageRewritten(
+                    root, repoRel, expectedBlob, bytes, null, ecCharset, null, request.afterText(), done));
         });
     }
 
@@ -1438,7 +1625,7 @@ final class DiffCoordinator {
             String shownText,
             String ecCharset,
             String openCharset,
-            DiffViewerPane.GitHunkRequest request,
+            String afterText,
             Consumer<com.editora.process.ProcessRunner.Result> done) {
         EditorConfigCharset.Decoded decoded = DiffSideText.decodeRaw(original, ecCharset, openCharset);
         byte[] blob = BlobRewrite.rewrite(
@@ -1446,7 +1633,7 @@ final class DiffCoordinator {
                 EditorConfigCharset.charsetFor(decoded.charset()),
                 EditorConfigCharset.bomFor(decoded.charset()),
                 shownText == null ? decoded.text() : shownText,
-                request.afterText());
+                afterText);
         if (blob == null) {
             host.setStatus(tr("status.diff.hunkEncoding"));
             return;
@@ -1486,6 +1673,75 @@ final class DiffCoordinator {
                 blobSide(root, hash + ":" + repoRel, root.resolve(repoRel)),
                 DiffViewerPane.EditableSide.NONE,
                 null);
+    }
+
+    /**
+     * Opens the files that differ between two commits as one navigable review tab — a whole commit against
+     * its parent, or two commits picked in the Git Log. Read-only; each file's diff is built when it is first
+     * selected ({@link DirectoryReviewPane}), so a commit touching thousands of files opens at once. A
+     * renamed file's left side is read at its old path; an added or deleted file has an empty side.
+     *
+     * @param leftRev the older side; never read for an added file, so {@code <root commit>^1} is harmless
+     */
+    void reviewRevisions(
+            Path root,
+            String title,
+            String leftRev,
+            String leftLabel,
+            String rightRev,
+            String rightLabel,
+            List<GitService.CommitFile> files,
+            boolean truncated) {
+        if (root == null) {
+            return;
+        }
+        java.util.Map<String, GitService.CommitFile> byPath = new java.util.HashMap<>();
+        List<DirectoryReviewPane.Entry> entries = new ArrayList<>(files.size());
+        for (GitService.CommitFile file : files) {
+            byPath.put(file.path(), file);
+            entries.add(new DirectoryReviewPane.Entry(
+                    file.path(),
+                    switch (file.status()) {
+                        case 'A' -> DirectoryDiff.Kind.RIGHT_ONLY;
+                        case 'D' -> DirectoryDiff.Kind.LEFT_ONLY;
+                        default -> DirectoryDiff.Kind.MODIFIED;
+                    },
+                    -1,
+                    -1));
+        }
+        String summary = tr("diff.revisions.summary", entries.size(), leftLabel, rightLabel)
+                + (truncated ? " · " + tr("diff.directory.truncated") : "");
+        DiffSide empty = callback -> callback.accept(DiffContent.text(""));
+        DirectoryReviewPane review = new DirectoryReviewPane(title, entries, summary, (entry, ready) -> {
+            GitService.CommitFile file = byPath.get(entry.label());
+            Path workingFile = root.resolve(file.path());
+            String leftPath = sourcePath(file.path(), file.origPath(), file.status());
+            String name = file.path().substring(file.path().lastIndexOf('/') + 1);
+            buildDiffPane(
+                    tr("diff.title.commitFile", name, rightLabel),
+                    leftLabel,
+                    rightLabel,
+                    leftPath.substring(leftPath.lastIndexOf('/') + 1),
+                    name,
+                    entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
+                            ? empty
+                            : blobSide(root, leftRev + ":" + leftPath, workingFile),
+                    entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
+                            ? empty
+                            : blobSide(root, rightRev + ":" + file.path(), workingFile),
+                    DiffViewerPane.EditableSide.NONE,
+                    null,
+                    pane -> pane.setExitDiffUiAction(null),
+                    built -> ready.accept(
+                            built == null
+                                    ? null
+                                    : new DirectoryReviewPane.Loaded(
+                                            built.pane(),
+                                            built.model().added(),
+                                            built.model().removed())));
+        });
+        ops.addDiffTab(review);
+        host.setStatus(tr("status.diff.reviewOpened", entries.size()));
     }
 
     /**
@@ -1897,6 +2153,7 @@ final class DiffCoordinator {
         }
         target.replaceWholeDocument(resolvedText);
         host.setStatus(tr("status.merge.applied"));
+        git.resolutionApplied(target); // a finished resolution of an unmerged path is saved and staged
         return true;
     }
 

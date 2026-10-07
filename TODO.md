@@ -45,6 +45,22 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Commit options, bulk actions and the remaining Git items** — in the Commit window: Amend (names the
+      commit, prefills its message, message-only amend, in-place warning when it is already pushed), Commit
+      and Push, Sign-off (per repository, session), *Undo Last Commit*, a subject/body length guide, the last
+      20 messages per repository, `commit.template`, Unstage All / Discard All, group-row menus, Space to
+      stage/unstage, and per-file `+/−` line counts; `--autostash` for rebase and merge pulls; "Fetch
+      automatically" (off by default; trusted folder or a repository the user fetched/pulled/pushed in this
+      session; never prompts — ADR 0002); clone options (branch, depth, submodules); *Create Patch* on a Git
+      Log row. Cleanup: the VCS menu in submenus, one ref-name validator (`GitRefNames`), one conflict
+      classifier, a Git console that only comes forward for network commands and failures, a cancellable
+      history search, rebase-aware "accept side" labels, a selectable commit message in the Git Log.
+      Settings schema 110→111 (additive ×2). i18n ×6.
+- [ ] Git follow-ups left by that pass: persist the recent commit messages (they are session memory —
+      no existing store fitted; a small `git-commit-messages.json` would), a real wrap-column ruler in the
+      message box (needs a monospaced box), `GitStatus` knowing an unborn branch so Amend can be disabled
+      rather than refused on click, auto-fetch of *every* open repository rather than the active one, and
+      "delete tag on remote".
 - [x] Preserve preceding save identities in queued autosaves across UI acknowledgment, with deterministic
       coverage for both successful persistence and same-metadata external-change protection.
 - [x] **Global and project settings use JSON instead of TOML** — `settings.json` now shares the same

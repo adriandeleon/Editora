@@ -35,6 +35,8 @@
   "C-S-k": "git.push",
   "C-t": "git.pull",
   "C-S-back-quote": "git.switchBranch",
+  "C-M-S-down": "git.nextChange",
+  "C-M-S-up": "git.previousChange",
   "M-6": "tool.problems",
   "M-4": "tool.run",
   "M-5": "tool.debug",

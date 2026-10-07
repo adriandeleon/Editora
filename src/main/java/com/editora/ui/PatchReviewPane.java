@@ -38,6 +38,7 @@ final class PatchReviewPane implements TabContent {
     private final StackPane content = new StackPane();
     private final ListView<Entry> files = new ListView<>();
     private final Label position = new Label();
+    private HBox applyBar;
 
     PatchReviewPane(String title, List<Entry> entries) {
         this.title = title;
@@ -66,6 +67,31 @@ final class PatchReviewPane implements TabContent {
         if (!entries.isEmpty()) {
             files.getSelectionModel().select(0);
         }
+    }
+
+    /**
+     * Adds the "Apply to Working Tree" / "Apply to Index" pair above the review — for a tab that shows a
+     * patch <em>file</em>, inside a repository. The other reviews (staged changes, a stash, a folder) show
+     * what git already has and get no such bar.
+     */
+    void setApplyActions(Runnable toWorkingTree, Runnable toIndex) {
+        Button worktree = new Button(tr("diff.patch.applyWorktree"));
+        worktree.getStyleClass().add("accent");
+        worktree.setOnAction(e -> toWorkingTree.run());
+        Button index = new Button(tr("diff.patch.applyIndex"));
+        index.setOnAction(e -> toIndex.run());
+        applyBar = new HBox(8, worktree, index);
+        applyBar.setAlignment(Pos.CENTER_LEFT);
+        applyBar.setPadding(new Insets(6, 8, 6, 8));
+        applyBar.getStyleClass().addAll("diff-toolbar", "patch-apply-bar");
+        root.setTop(applyBar);
+    }
+
+    /** The Apply bar's buttons (working tree, then index), or an empty list when there is none. */
+    List<Button> applyButtons() {
+        return applyBar == null
+                ? List.of()
+                : applyBar.getChildren().stream().map(Button.class::cast).toList();
     }
 
     List<DiffViewerPane> panes() {

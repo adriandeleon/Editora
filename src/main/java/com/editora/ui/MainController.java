@@ -1056,7 +1056,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b != null && b.hasPreview(),
                 debugActive,
                 dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED,
-                debugCoordinator == null || debugCoordinator.restartAvailable());
+                debugCoordinator == null || debugCoordinator.restartAvailable(),
+                git.operationInProgress());
     }
 
     private void setupRecentFiles() {
@@ -2302,60 +2303,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::history,
                 undoHistoryPanel,
                 "tool.undoHistory");
-        gitPanel = new GitPanel(new GitPanel.Actions() {
-            @Override
-            public void open(String path) {
-                if (git.repoRoot() != null) {
-                    fileWorkflows.openPath(git.repoRoot().resolve(path));
-                }
-            }
-
-            @Override
-            public void stage(List<String> paths) {
-                git.gitStagePaths(paths);
-            }
-
-            @Override
-            public void unstage(List<String> paths) {
-                git.gitUnstagePaths(paths);
-            }
-
-            @Override
-            public void discard(List<String> tracked, List<String> untracked) {
-                git.discardChanges(tracked, untracked);
-            }
-
-            @Override
-            public void stageAll() {
-                git.gitStageAll();
-            }
-
-            @Override
-            public void commit(String message, java.util.function.Consumer<Boolean> onDone) {
-                git.gitCommit(message, onDone);
-            }
-
-            @Override
-            public void push() {
-                git.gitPush();
-            }
-
-            @Override
-            public void refresh() {
-                git.invalidateCaches();
-                git.afterMutation();
-            }
-
-            @Override
-            public void review(boolean staged) {
-                diffCoordinator.reviewGitChanges(staged);
-            }
-
-            @Override
-            public void diff(String path, boolean staged) {
-                diffCoordinator.diffGitPanelFile(path, staged);
-            }
-        });
+        gitPanel = new GitPanel(new GitPanelActions(git, diffCoordinator, fileWorkflows));
         gitPanel.setOnClone(git::cloneRepo);
         gitPanel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
         commitToolWindow = new ToolWindow(
@@ -2369,6 +2317,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
         noUndoGuard = new NoUndoGuard(historyCoordinator::recordSafetyCopy, coordinatorHost::setStatus);
+        git.attachWindow(diffCoordinator, buffer -> addBuffer(buffer, true)); // stash review, patches, revision tabs
         fileHistoryToolWindow = new ToolWindow(
                 "fileHistory",
                 tr("toolwindow.fileHistory"),
@@ -5729,10 +5678,28 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void setGitOperation(com.editora.git.GitOperation operation, int conflicts) {
+            statusBar.setGitOperation(operation);
+            gitPanel.setOperation(operation);
+        }
+
+        @Override
+        public void setGitRefusal(String reason) {
+            statusBar.setGitRefusal(reason);
+            gitPanel.setRefusal(reason);
+        }
+
+        @Override
+        public boolean commitFromPanel() {
+            return gitPanel.commitNow();
+        }
+
+        @Override
         public void setProjectGitStatus(java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> byPath) {
             if (projectPanel != null) {
                 projectPanel.setGitStatus(byPath);
             }
+            TabGitStatus.apply(editorArea.tabs(), byPath); // tab titles take the same status colours
         }
 
         @Override
@@ -6210,16 +6177,15 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void logCliCommand(Object owner, String tabTitle, com.editora.process.CommandLog.Entry entry) {
         buildOutputPanel.logCommand(owner, tabTitle, entry);
-        showCliTranscript(owner);
+        showCliTranscript(GitConsoleLog.raisesConsole(entry) ? owner : null);
     }
 
     private void showCliTranscript(Object owner) {
         // The console's stripe is gated on a build tool being detected; a repo with no build file still has
         // git, so the first logged command is what makes the window reachable there.
         refreshBuildOutputAvailability();
-        // Native Git commands are explicit user actions: show their transcript immediately, including after
-        // pull/merge, rather than leaving the result hidden behind the Output stripe. GitHub's background
-        // queries remain quiet so they do not steal focus from a build or editor task.
+        // A Git network command (as it starts) and a Git command that failed bring their transcript forward;
+        // a local command that worked does not (GitConsoleLog.raisesConsole), nor do GitHub's queries.
         if (owner == gitConsoleOwner && buildOutputToolWindow != null) {
             buildOutputPanel.selectTab(owner);
             toolWindows.open(buildOutputToolWindow);
@@ -8275,8 +8241,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab tab = new Tab();
         DeferredTabContent.install(tab, content.node()); // a restored background tab attaches when shown
         tab.setUserData(content);
-        // Title lives in a graphic header (not tab.setText) so it's a drag handle for mouse reorder, like
-        // buffer tabs. Buffer tabs replace this header via updateTabMeta; non-buffer tabs (Welcome) keep it.
+        // The title is a graphic header (a drag handle); buffer tabs replace it via updateTabMeta.
         Label title = new Label(content.title());
         title.getStyleClass().add("tab-title");
         HBox header = new HBox(6);

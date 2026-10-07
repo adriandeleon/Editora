@@ -115,7 +115,7 @@ Records are restored into the window that shows the offer, whichever window they
 
 ## Setting and commands
 
-- `Settings.crashRecovery` (default on; schema v110, additive). Settings → Workspace, and
+- `Settings.crashRecovery` (default on; schema v112, additive). Settings → Workspace, and
   `view.toggleCrashRecovery`. Off: each window drops its copies on its next tick and takes none. Leftovers
   from an earlier run are still offered; restoring one while recovery is off deletes its record.
 - `file.recoverUnsavedEdits` reopens the offer.

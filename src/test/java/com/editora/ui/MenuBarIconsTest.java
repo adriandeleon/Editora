@@ -22,7 +22,7 @@ class MenuBarIconsTest {
     private static List<String> menuCommandIds() {
         List<String> ids = new ArrayList<>();
         for (MenuBarModel.MenuSpec spec : MenuBarModel.menus()) {
-            for (String entry : spec.entries()) {
+            for (String entry : spec.allEntries()) {
                 if (!MenuBarModel.SEPARATOR.equals(entry)) {
                     ids.add(entry);
                 }

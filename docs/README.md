@@ -62,6 +62,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   integration, and the `process/ProcessRegistry` lifecycle that owns spawned servers.
 - [subsystems/log-viewer.md](subsystems/log-viewer.md) — level detection, the record-aware filter,
   tail-follow offsets and rotation, and the rules a filtered view depends on.
+- [subsystems/git-log.md](subsystems/git-log.md) — the Git Log's paging, graph layout, history
+  search syntax and argv safety, file history across renames, and tags.
 - [subsystems/java-editing-review.md](subsystems/java-editing-review.md) — Java typing/completion
   pipeline, IntelliJ comparison, regression coverage, performance evidence and remaining server gaps.
 

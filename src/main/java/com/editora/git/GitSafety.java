@@ -134,12 +134,54 @@ public final class GitSafety {
         env.put("COLUMNS", "1000");
         env.put("LC_MESSAGES", "C");
         env.put("LANGUAGE", "C");
+        // No command Editora runs wants an editor: a commit gets its message with -m, and continuing a
+        // rebase or concluding a merge keeps the prepared one. Left to git, those two open $EDITOR — with no
+        // terminal a vi simply waits, holding the lane until the mutation ceiling. ":" is git's own "no
+        // editor": the prepared message is used as it is. The environment variable outranks core.editor.
+        env.put("GIT_EDITOR", ":");
         String all = inherited == null ? null : inherited.get("LC_ALL");
         if (all != null && !all.isEmpty()) {
             env.put("LC_ALL", "");
             env.put("LC_CTYPE", all);
         }
         return java.util.Collections.unmodifiableMap(env);
+    }
+
+    /**
+     * Extra {@code -c} overrides of the automatic fetch: no askpass program from configuration (an empty
+     * value is "none" to git, where an unset one falls through to {@code SSH_ASKPASS}), and a credential
+     * helper that would open a window is told not to.
+     */
+    static final List<String> AUTO_FETCH_CONFIG = List.of("-c", "core.askPass=", "-c", "credential.interactive=false");
+
+    /**
+     * Environment of the automatic background fetch: a background read's, plus everything that keeps a
+     * command nobody asked for from asking for anything. {@code GIT_ASKPASS} and {@code SSH_ASKPASS} are set
+     * to the empty string (git and ssh both read that as "no askpass program"), {@code SSH_ASKPASS_REQUIRE}
+     * to {@code never} (OpenSSH 8.4+), and Git Credential Manager is told not to interact.
+     *
+     * <p>ssh itself is put in batch mode — no passphrase or host-key question, it fails instead — through
+     * {@code GIT_SSH_COMMAND}, but only when the user has not chosen an ssh command of their own:
+     * {@code GIT_SSH_COMMAND} outranks {@code core.sshCommand}, so setting it would replace theirs.
+     * {@code userSshCommand} says the repository or the user's configuration has one; an exported
+     * {@code GIT_SSH_COMMAND} or {@code GIT_SSH} is read from {@code inherited}. Pure.
+     */
+    static Map<String, String> autoFetchEnv(Map<String, String> inherited, boolean userSshCommand) {
+        Map<String, String> env = new java.util.LinkedHashMap<>(BACKGROUND_ENV);
+        env.put("GIT_ASKPASS", "");
+        env.put("SSH_ASKPASS", "");
+        env.put("SSH_ASKPASS_REQUIRE", "never");
+        env.put("GCM_INTERACTIVE", "never");
+        boolean exported =
+                inherited != null && (notBlank(inherited.get("GIT_SSH_COMMAND")) || notBlank(inherited.get("GIT_SSH")));
+        if (!userSshCommand && !exported) {
+            env.put("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+        }
+        return java.util.Collections.unmodifiableMap(env);
+    }
+
+    private static boolean notBlank(String value) {
+        return value != null && !value.isBlank();
     }
 
     /** {@code -c key=value} pairs that neutralise repository-controlled program execution. */
@@ -213,6 +255,11 @@ public final class GitSafety {
 
     /** Whether {@code git --version} output names a release with {@code --end-of-options} (2.24 or later). */
     static boolean supportsEndOfOptions(String versionOutput) {
+        return versionAtLeast(versionOutput, 2, 24);
+    }
+
+    /** Whether {@code git --version} output names release {@code major.minor} or a later one. */
+    public static boolean versionAtLeast(String versionOutput, int major, int minor) {
         if (versionOutput == null) {
             return false;
         }
@@ -221,9 +268,9 @@ public final class GitSafety {
             return false;
         }
         try {
-            int major = Integer.parseInt(m.group(1));
-            int minor = Integer.parseInt(m.group(2));
-            return major > 2 || (major == 2 && minor >= 24);
+            int foundMajor = Integer.parseInt(m.group(1));
+            int foundMinor = Integer.parseInt(m.group(2));
+            return foundMajor > major || (foundMajor == major && foundMinor >= minor);
         } catch (NumberFormatException tooLong) {
             return false;
         }

@@ -187,9 +187,15 @@ public enum ConfigSchema {
                     Map.entry(107, (Migration) ConfigMigrations::identity),
                     // v108→109: + codeLens (additive, off by default).
                     Map.entry(108, (Migration) ConfigMigrations::identity),
-                    // v109→110: + crashRecovery (additive; nobody could have turned it off before it existed,
+                    // v109→110: + gitPullMode (additive; absent means "ff-only", which is what pull did
+                    // before the setting existed — nobody's pull starts rebasing or merging on upgrade).
+                    Map.entry(109, (Migration) ConfigMigrations::identity),
+                    // v110→111: + gitAutoFetch / gitAutoFetchMinutes (additive; absent means off — nobody's
+                    // editor starts talking to a remote on upgrade — with the 10-minute default interval).
+                    Map.entry(110, (Migration) ConfigMigrations::identity),
+                    // v111→112: + crashRecovery (additive; nobody could have turned it off before it existed,
                     // so every user gets the default — unsaved text is kept for recovery).
-                    Map.entry(109, (Migration) ConfigMigrations::identity)),
+                    Map.entry(111, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
