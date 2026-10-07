@@ -223,7 +223,9 @@ public enum ConfigSchema {
                     // v10→v11: + projectMapFlow (additive; right-to-left is the default canvas layout)
                     Map.entry(10, ConfigMigrations::identity),
                     Map.entry(11, ConfigMigrations::identity))), // v11→12: + RunConfiguration.jdkHome
-    BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
+    // set the file aside rather than rewrite it without the field.
+    BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),
@@ -302,6 +304,19 @@ public enum ConfigSchema {
      */
     public boolean keepsCopyOfUndecodableFile() {
         return this != HISTORY;
+    }
+
+    /**
+     * Top-level keys the app rewrites by itself, without the user changing anything: update-check bookkeeping
+     * in the preferences, the open-window set in the projects index. A file that differs from the defaults
+     * only in these still counts as untouched (see {@link ConfigMigrations#restoreSetAsideCopy}).
+     */
+    public java.util.Set<String> selfMaintainedKeys() {
+        return switch (this) {
+            case SETTINGS -> java.util.Set.of("lastUpdateCheckEpoch", "dismissedUpdateVersion");
+            case PROJECTS -> java.util.Set.of("activeProjectId", "openProjectIds");
+            default -> java.util.Set.of();
+        };
     }
 
     /** The step that upgrades {@code fromVersion → fromVersion+1}, or {@code null} if none is registered. */

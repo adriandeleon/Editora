@@ -15,10 +15,12 @@ import java.util.logging.Logger;
  * An advisory, process-lifetime claim on a config directory, so that two Editora processes sharing one
  * directory can tell which of them may do the things only one process can safely do.
  *
- * <p>A second process on the same directory is normal, not an error: a launch with no file argument,
- * {@code --project}, {@code --new-file}, {@code --new-instance} and {@code --diff-ui} are deliberately not
- * forwarded to the running editor. The stores under the directory are nevertheless written whole from each
- * process's own in-memory copy, so the processes need a way to know about each other.
+ * <p>A second process on the same directory is unusual but not an error: {@code --new-instance},
+ * {@code --new-file} and {@code --diff-ui} launches are deliberately not forwarded to the running editor, and
+ * neither is one that arrives before the first process has published its endpoint. Each process holds its
+ * own in-memory copy of the stores under the directory (it writes only what it changed — see
+ * {@link StoreSync} — but does not see the other's changes), so the processes need a way to know about each
+ * other.
  *
  * <p>The lock file carries two byte-range locks, both released by the operating system when their holder
  * dies — so, unlike a pid written to a file, neither a crash nor a reused process id can leave a stale claim:

@@ -1429,8 +1429,16 @@ public class WindowManager {
      * Deletes {@code windows/<uuid>.json} session files for untitled windows that are no longer in the
      * open set (i.e. closed in a previous session) — so they don't accumulate. Best-effort; a missing dir
      * or an unreadable file is ignored. Run once at launch against the set being restored.
+     *
+     * <p>Not when the projects index failed to load, or a copy of one that did is still kept
+     * ({@link ProjectManager#openSetIsComplete()}): the open set is then the empty default, not "every
+     * untitled window was closed", and sweeping against it deleted every untitled window's tabs, layout and
+     * run configurations because {@code projects.json} was zero-length, truncated or written by a newer build.
      */
     private void gcOrphanWindowSessions(java.util.Collection<String> openKeys) {
+        if (!projects().openSetIsComplete()) {
+            return;
+        }
         Path dir = windowsDir();
         if (!java.nio.file.Files.isDirectory(dir)) {
             return;
@@ -1485,6 +1493,27 @@ public class WindowManager {
         }
         stage.toFront();
         stage.requestFocus();
+    }
+
+    /**
+     * Brings the editor forward for a launch that carried nothing to open — the launcher clicked again, or
+     * {@code editora} run with no file while it is already running. That launch is handed to this process
+     * instead of starting a second one on the same configuration ({@code App.shouldForwardLaunch}); showing
+     * the window the user last worked in is all it asks for.
+     */
+    public void presentForExternalLaunch() {
+        if (restorePending()) {
+            deferredExternalLaunches.add(this::presentForExternalLaunch);
+            return;
+        }
+        Holder target = focusedHolder();
+        if (target == null) {
+            openOrFocusGlobal();
+            target = focusedHolder();
+        }
+        if (target != null) {
+            presentForExternalLaunch(target.stage());
+        }
     }
 
     /** How long the window is pinned above others while the compositor settles the raise; see below. */

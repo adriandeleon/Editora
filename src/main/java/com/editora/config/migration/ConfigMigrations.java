@@ -102,7 +102,11 @@ public final class ConfigMigrations {
      */
     public static <T> T readVersioned(
             Path file, ObjectMapper mapper, T defaults, ConfigSchema schema, Consumer<ConfigLoadProblem> problems) {
-        if (file == null || !Files.isReadable(file)) {
+        if (file == null) {
+            return defaults;
+        }
+        restoreSetAsideCopy(file, mapper, defaults, schema, problems);
+        if (!Files.isReadable(file)) {
             return defaults;
         }
         JsonNode tree;
@@ -114,11 +118,16 @@ public final class ConfigMigrations {
         } catch (IOException e) {
             // Unreadable, or not even valid JSON/TOML. Returning defaults means the next save writes an EMPTY
             // store straight over it — so preserve what's there first (see keepCorrupt).
-            reportUnreadable(file, problems);
+            problems.accept(unreadable(file));
             return defaults;
         }
-        if (tree == null || tree.isMissingNode()) {
-            return defaults; // an empty file — nothing to preserve
+        if (!isStoreShape(tree, schema)) {
+            // Empty, blank, or valid JSON that is not a store ("null", a string, a number). A store that
+            // exists is never written empty, so this is damage — a write the OS never flushed before a power
+            // cut, a sync tool's placeholder, an emptied buffer saved by another editor — not "no config
+            // yet". Loading defaults in silence let the next save make the loss permanent.
+            problems.accept(unreadable(file));
+            return defaults;
         }
         ObjectNode migrated;
         try {
@@ -130,7 +139,7 @@ public final class ConfigMigrations {
         } catch (RuntimeException e) {
             // A misconfigured migration: fall back to defaults rather than crash — but keep a copy first,
             // because the very next save overwrites the file.
-            reportUnreadable(file, problems);
+            problems.accept(unreadable(file));
             return defaults;
         }
         if (bytesReplaced) {
@@ -192,11 +201,19 @@ public final class ConfigMigrations {
     /** A config file's text and whether decoding it had to replace bytes that are not UTF-8. */
     private record Decoded(String text, boolean bytesReplaced) {}
 
+    /** {@link #readText} for bytes already in hand (a store re-read in order to merge with it). */
+    public static String decodeText(byte[] bytes) {
+        return decode(null, bytes).text();
+    }
+
     private static Decoded decode(Path file) throws IOException {
-        byte[] bytes = Files.readAllBytes(file);
+        return decode(file, Files.readAllBytes(file));
+    }
+
+    private static Decoded decode(Path file, byte[] bytes) {
         String text = new String(bytes, StandardCharsets.UTF_8);
         boolean replaced = text.indexOf('\uFFFD') >= 0 && !isValidUtf8(bytes);
-        if (replaced) {
+        if (replaced && file != null) {
             LOG.log(
                     java.util.logging.Level.WARNING,
                     "Config file {0} is not valid UTF-8; the undecodable bytes were replaced",
@@ -214,15 +231,154 @@ public final class ConfigMigrations {
         }
     }
 
-    private static void reportUnreadable(Path file, Consumer<ConfigLoadProblem> problems) {
+    /** {@code .v<n>.bak}, optionally numbered ({@code .v<n>.bak.2}): a file {@link #backup} moved aside. */
+    private static final java.util.regex.Pattern SET_ASIDE =
+            java.util.regex.Pattern.compile("\\.v(\\d+)\\.bak(\\.\\d+)?");
+
+    /**
+     * Brings back a copy of {@code file} that an older build moved aside, when this build can read it.
+     *
+     * <p>Running an older Editora once moves every store it does not understand to {@code <name>.v<n>.bak}
+     * and starts that store from defaults. Going back to the newer build used to leave things that way for
+     * good: the defaults file loads as a perfectly valid older config, and nothing ever read the
+     * {@code .bak} again — preferences, key bindings, API keys, notes and projects stayed "lost" until the
+     * user found the copies and renamed them by hand.
+     *
+     * <p>So, before a store is read: if a set-aside copy with a schema this build supports is beside it, and
+     * the file in its place is absent, empty or still holds nothing but defaults, the copy is moved back
+     * ({@link ConfigLoadProblem.Kind#NEWER_COPY_RESTORED}). When the file in its place has been changed, there
+     * are two sets of data and no way to choose for the user; the file in use is loaded and the copy is
+     * reported ({@link ConfigLoadProblem.Kind#NEWER_COPY_KEPT}). A copy newer than this build is left alone.
+     * Called by {@link #readVersioned}; public for an owner that must decide something before it reads.
+     */
+    public static <T> void restoreSetAsideCopy(
+            Path file, ObjectMapper mapper, T defaults, ConfigSchema schema, Consumer<ConfigLoadProblem> problems) {
+        Path copy;
         try {
-            if (!Files.exists(file) || Files.size(file) == 0) {
-                return; // nothing worth keeping, so nothing was lost
-            }
-        } catch (IOException ignored) {
-            // cannot tell — treat it as content worth keeping
+            copy = newestSetAsideCopy(file, schema.currentVersion());
+        } catch (IOException | RuntimeException e) {
+            return;
         }
-        problems.accept(unreadable(file));
+        if (copy == null) {
+            return;
+        }
+        try {
+            if (holdsOnlyDefaults(file, mapper, defaults, schema)) {
+                try {
+                    Files.move(
+                            copy,
+                            file,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                            java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                } catch (java.nio.file.AtomicMoveNotSupportedException notAtomic) {
+                    Files.move(copy, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+                LOG.log(java.util.logging.Level.INFO, "Restored config file {0} from {1}", new Object[] {file, copy});
+                problems.accept(
+                        new ConfigLoadProblem(file, ConfigLoadProblem.Kind.NEWER_COPY_RESTORED, List.of(), null));
+            } else {
+                problems.accept(new ConfigLoadProblem(file, ConfigLoadProblem.Kind.NEWER_COPY_KEPT, List.of(), copy));
+            }
+        } catch (IOException | RuntimeException e) {
+            LOG.log(java.util.logging.Level.WARNING, "Could not restore config file {0} from {1}: {2}", new Object[] {
+                file, copy, e
+            });
+            problems.accept(new ConfigLoadProblem(file, ConfigLoadProblem.Kind.NEWER_COPY_KEPT, List.of(), copy));
+        }
+    }
+
+    /**
+     * The set-aside copy of {@code file} to restore: of those whose schema version this build supports, the
+     * one with the newest version, then the one moved aside last. {@code null} when there is none.
+     */
+    static Path newestSetAsideCopy(Path file, int currentVersion) throws IOException {
+        Path dir = file.toAbsolutePath().getParent();
+        if (dir == null || !Files.isDirectory(dir)) {
+            return null;
+        }
+        String name = file.getFileName().toString();
+        Path best = null;
+        int bestVersion = -1;
+        long bestTime = Long.MIN_VALUE;
+        try (java.nio.file.DirectoryStream<Path> copies = Files.newDirectoryStream(dir, name + ".v*.bak*")) {
+            for (Path candidate : copies) {
+                String suffix = candidate.getFileName().toString().substring(name.length());
+                java.util.regex.Matcher m = SET_ASIDE.matcher(suffix);
+                if (!m.matches() || !Files.isRegularFile(candidate)) {
+                    continue;
+                }
+                int version;
+                try {
+                    version = Integer.parseInt(m.group(1));
+                } catch (NumberFormatException tooLong) {
+                    continue;
+                }
+                if (version > currentVersion) {
+                    continue; // still newer than this build: it stays where it is
+                }
+                long time = Files.getLastModifiedTime(candidate).toMillis();
+                if (version > bestVersion || (version == bestVersion && time >= bestTime)) {
+                    best = candidate;
+                    bestVersion = version;
+                    bestTime = time;
+                }
+            }
+        }
+        return best;
+    }
+
+    /**
+     * Whether {@code file} is absent, has no content, or holds only values equal to {@code defaults}' —
+     * apart from its version stamp and the keys the app maintains by itself
+     * ({@link ConfigSchema#selfMaintainedKeys}). A file that cannot be parsed is not "only defaults".
+     */
+    static <T> boolean holdsOnlyDefaults(Path file, ObjectMapper mapper, T defaults, ConfigSchema schema)
+            throws IOException {
+        if (!Files.exists(file)) {
+            return true;
+        }
+        String text = readText(file);
+        if (text.isBlank()) {
+            return true;
+        }
+        JsonNode live = mapper.readTree(text);
+        if (live == null || !live.isObject()) {
+            return false;
+        }
+        live = upgrade(schema, live, mapper);
+        JsonNode pristine = mapper.readTree(mapper.writeValueAsBytes(defaults));
+        for (Map.Entry<String, JsonNode> property : live.properties()) {
+            String key = property.getKey();
+            if ("schemaVersion".equals(key) || schema.selfMaintainedKeys().contains(key)) {
+                continue;
+            }
+            if (!property.getValue().equals(pristine.get(key))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Whether a parsed file can be a store at all: a JSON object, or — for the one store whose first format
+     * was one ({@code recent-files.json}, schema 0) — a bare array. Everything else, including "no content",
+     * is damage.
+     */
+    static boolean isStoreShape(JsonNode tree, ConfigSchema schema) {
+        if (tree == null || tree.isMissingNode()) {
+            return false;
+        }
+        return tree.isObject() || (tree.isArray() && schema.step(0) != null);
+    }
+
+    /**
+     * Keeps a copy of {@code file} beside it ({@code <name>.corrupt.bak}, numbered when taken, reused when
+     * identical) before something replaces content that could not be read.
+     *
+     * @return the copy's path, or {@code null} when no copy could be made
+     */
+    public static Path keepCopy(Path file) {
+        return keepCorrupt(file);
     }
 
     /**
