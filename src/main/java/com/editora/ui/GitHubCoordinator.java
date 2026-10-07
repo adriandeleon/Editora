@@ -489,6 +489,7 @@ final class GitHubCoordinator {
         boolean branchSwitch = sameRoot && root != null && !seenBranch.isEmpty();
         seenRoot = root;
         seenBranch = now;
+        pushPanelContext(); // the tool window names the branch
         if (!isEnabled()) {
             return;
         }
@@ -748,26 +749,54 @@ final class GitHubCoordinator {
     /** The repository {@code gh} resolved, per working directory — one {@code gh repo view} each. */
     private final java.util.Map<Path, com.editora.github.RepoViewParser.RepoInfo> repoInfos = new java.util.HashMap<>();
 
+    /** Where the tool window's context row is told what to show (see {@link #panelContext}). */
+    private Consumer<GitHubPanel.Context> contextSink;
+
+    /** The branch last seen checked out in {@link #panelBranchDir} — kept while another repository is active. */
+    private String panelBranch = "";
+
+    private Path panelBranchDir;
+
     /**
-     * Tells {@code onName} which repository the tool window's rows belong to ({@code owner/name}; {@code ""}
-     * while unknown). With a fork's {@code origin} and an {@code upstream} remote {@code gh} lists — and
-     * reruns and cancels in — the upstream repository, so the window names it rather than leave it implied.
+     * Tells {@code sink} what the tool window's rows belong to: the repository {@code gh} resolved (its
+     * {@code owner/name} and URL), the branch checked out there, and the account {@code gh} is signed in
+     * with on that host — each {@code ""} while unknown. With a fork's {@code origin} and an {@code upstream}
+     * remote {@code gh} lists — and reruns and cancels in — the upstream repository, so the window names it
+     * rather than leave it implied. The sink is kept: a branch switch tells it again.
      */
-    void resolvedRepository(Consumer<String> onName) {
+    void panelContext(Consumer<GitHubPanel.Context> sink) {
+        contextSink = sink;
         Path dir = panelDir;
-        com.editora.github.RepoViewParser.RepoInfo known = dir == null ? null : repoInfos.get(dir);
-        onName.accept(known == null ? "" : known.nameWithOwner());
-        if (dir == null || known != null || !isEnabled() || !ready()) {
+        pushPanelContext();
+        if (dir == null || repoInfos.containsKey(dir) || !isEnabled() || !ready()) {
             return;
         }
         service.repoInfo(dir, info -> {
             if (info != null) {
                 repoInfos.put(dir, info);
                 if (dir.equals(panelDir)) {
-                    onName.accept(info.nameWithOwner());
+                    pushPanelContext();
                 }
             }
         });
+    }
+
+    private void pushPanelContext() {
+        if (contextSink == null) {
+            return;
+        }
+        Path dir = panelDir;
+        com.editora.github.RepoViewParser.RepoInfo repo = dir == null ? null : repoInfos.get(dir);
+        if (dir != null && dir.equals(seenRoot)) {
+            panelBranchDir = dir;
+            panelBranch = seenBranch;
+        }
+        String branch = dir != null && dir.equals(panelBranchDir) ? panelBranch : "";
+        GitHubService.Availability a = service.availability();
+        String url = repo == null ? "" : repo.url();
+        String host = GitHubRemote.hostOf(url);
+        String account = a == null || !a.ready() ? "" : a.account(host);
+        contextSink.accept(new GitHubPanel.Context(repo == null ? "" : repo.nameWithOwner(), url, branch, account));
     }
 
     private void listFailed(String summary, String detail, Consumer<String> onError) {

@@ -147,6 +147,11 @@ final class Icons {
         return line("M5.4 8.0a2.6 2.6 0 1 0 5.2 0a2.6 2.6 0 1 0 -5.2 0M8 1.5v4M8 10.5v4");
     }
 
+    /** A person (head and shoulders) — the account the GitHub tool window is signed in with. */
+    static Node account() {
+        return line("M5.6 5.2a2.4 2.4 0 1 0 4.8 0a2.4 2.4 0 1 0 -4.8 0M3.2 13.6c0-2.6 2.1-4.2 4.8-4.2s4.8 1.6 4.8 4.2");
+    }
+
     /** The GitHub "octocat" mark (Simple Icons, CC0) — the GitHub tool window stripe. */
     static Node github() {
         return of("M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 "

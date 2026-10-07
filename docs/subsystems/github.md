@@ -81,7 +81,11 @@ Four single-thread lanes, so one slow call cannot hold up the rest:
 ## Lists, checks, forms
 
 - Lists take a `GitHubListQuery` (state, "mine", limit **+1** so a "load more" row can appear; paging raises
-  the limit). The toolbar names the repository gh resolved (`repoInfo`, cached per directory).
+  the limit). A context row under the toolbar
+  (`GitHubPanel.Context`, pushed by `GitHubCoordinator.panelContext`) shows the URL of the repository gh
+  resolved (`repoInfo`, cached per directory; a link), the branch checked out (told again on
+  `repositoryChanged`), and the account gh uses on that repository's host (the `login` of
+  `gh auth status --json hosts`, kept in `Availability.accounts`; absent with a gh older than 2.81).
 - The checks segment is fetched once per (repository, branch) and polled while pending with the back-off of
   the pure `ChecksPoll` (capped; a poll due in an unfocused window waits for focus) — the one bounded
   exception to "no background polling".

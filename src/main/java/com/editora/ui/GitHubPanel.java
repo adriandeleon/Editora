@@ -18,6 +18,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ChoiceBox;
 import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.ContextMenu;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
@@ -57,9 +58,10 @@ import static com.editora.i18n.Messages.tr;
  * narrows the visible rows via {@link GitHubItemFilter}, {@code C-n}/{@code C-p} (and bare {@code n}/{@code p},
  * which are free — the list holds no text input) move the selection, and Enter activates.
  *
- * <p>The toolbar names the repository {@code gh} resolved for the folder (with a fork that is the upstream
- * repository, where every row action then runs), and carries the server-side filter: a state (open / closed
- * / merged / all) and "mine". A list longer than its limit ends in a "load more" row instead of stopping
+ * <p>A context row under the toolbar says what the rows belong to ({@link Context}): the URL of the repository
+ * {@code gh} resolved for the folder (with a fork that is the upstream repository, where every row action
+ * then runs), the branch checked out, and the account {@code gh} is signed in with. The toolbar carries the
+ * server-side filter: a state (open / closed / merged / all) and "mine". A list longer than its limit ends in a "load more" row instead of stopping
  * silently. A row's menu opens from the keyboard too (Menu key / Shift+F10), and the run actions are palette
  * commands that act on the selected row ({@link #rowAnswer}).
  */
@@ -194,8 +196,37 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
     private final Label placeholder = new Label(tr("github.panel.noPrs"));
     private final VBox loading = buildLoading();
 
-    /** {@code owner/name} of the repository {@code gh} resolved; empty until known. */
-    private final Label repository = new Label();
+    /**
+     * What the rows belong to; each part is {@code ""} while unknown.
+     *
+     * @param repository {@code owner/name} of the repository {@code gh} resolved
+     * @param url that repository's URL on GitHub
+     * @param branch the branch checked out in the working copy
+     * @param account the login {@code gh} is signed in with on the repository's host
+     */
+    public record Context(String repository, String url, String branch, String account) {
+        public static final Context UNKNOWN = new Context("", "", "", "");
+
+        public Context {
+            repository = repository == null ? "" : repository;
+            url = url == null ? "" : url;
+            branch = branch == null ? "" : branch;
+            account = account == null ? "" : account;
+        }
+
+        /** The repository as the row shows it: its URL, else {@code owner/name}. */
+        String repositoryText() {
+            return url.isBlank() ? repository : url;
+        }
+    }
+
+    private Context context = Context.UNKNOWN;
+    /** The repository {@code gh} resolved: its URL, which opens it on GitHub; hidden until known. */
+    private final Hyperlink repository = new Hyperlink();
+
+    private final Label branch = new Label();
+    private final Label account = new Label();
+    private final HBox contextRow = new HBox(14, repository, branch, account);
 
     private final ChoiceBox<GitHubListQuery.State> stateFilter = new ChoiceBox<>();
     private final ToggleButton mineToggle = new ToggleButton(tr("github.panel.mine"));
@@ -251,12 +282,30 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         Button createPr = iconButton(Icons.newFile(), tr("github.panel.createPrTip"), actions::createPr);
         Button refresh = iconButton(Icons.refresh(), tr("github.panel.refreshTip"), actions::refresh);
         repository.getStyleClass().add("github-repository");
+        repository.setGraphic(Icons.github());
         repository.setMinWidth(0);
-        repository.setMaxWidth(Double.MAX_VALUE);
         repository.setTextOverrun(OverrunStyle.LEADING_ELLIPSIS);
         repository.setTooltip(new Tooltip(tr("github.panel.repositoryTip")));
-        HBox.setHgrow(repository, Priority.ALWAYS);
-        HBox.setMargin(repository, new Insets(0, 8, 0, 8));
+        repository.setOnAction(e -> {
+            repository.setVisited(false);
+            if (!context.url().isBlank()) {
+                actions.openUrl(context.url());
+            }
+        });
+        repository.setContextMenu(new ContextMenu(
+                item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(context.url())),
+                item(tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(context.url()))));
+        branch.setGraphic(Icons.git());
+        branch.setTooltip(new Tooltip(tr("github.panel.branchTip")));
+        branch.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+        account.setGraphic(Icons.account());
+        account.setTooltip(new Tooltip(tr("github.panel.accountTip")));
+        account.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+        contextRow.getStyleClass().add("github-context");
+        contextRow.setAlignment(Pos.CENTER_LEFT);
+        setContext(Context.UNKNOWN);
+        javafx.scene.layout.Region spacer = new javafx.scene.layout.Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
 
         stateFilter.setConverter(new javafx.util.StringConverter<>() {
             @Override
@@ -296,7 +345,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         syncFilterControls(Mode.PRS);
 
         HBox toolbar = new HBox(
-                2, prsToggle, issuesToggle, runsToggle, repository, busy, stateFilter, mineToggle, createPr, refresh);
+                2, prsToggle, issuesToggle, runsToggle, spacer, busy, stateFilter, mineToggle, createPr, refresh);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
@@ -334,7 +383,7 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         RowContextMenu.install(list);
         VBox.setVgrow(list, Priority.ALWAYS);
 
-        getChildren().setAll(toolbar, filterRow, list);
+        getChildren().setAll(toolbar, contextRow, filterRow, list);
     }
 
     /** Applies the filter box to the showing segment's rows. */
@@ -421,14 +470,35 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
                 });
     }
 
-    /** Names the repository {@code gh} resolved ({@code owner/name}; blank while unknown). */
-    public void setRepository(String nameWithOwner) {
-        repository.setText(nameWithOwner == null ? "" : nameWithOwner);
+    /** Says what the rows belong to; a part that is not known is left out, and the row with all of them. */
+    public void setContext(Context now) {
+        context = now == null ? Context.UNKNOWN : now;
+        show(repository, context.repositoryText());
+        repository.setDisable(context.url().isBlank()); // owner/name alone is nothing to open
+        show(branch, context.branch());
+        show(account, context.account());
+        boolean any = repository.isVisible() || branch.isVisible() || account.isVisible();
+        contextRow.setVisible(any);
+        contextRow.setManaged(any);
     }
 
-    /** The repository named in the toolbar. For tests. */
-    String repositoryText() {
-        return repository.getText();
+    private static void show(javafx.scene.control.Labeled part, String text) {
+        part.setText(text);
+        part.setVisible(!text.isBlank());
+        part.setManaged(!text.isBlank());
+    }
+
+    /** What the context row shows. For tests. */
+    Context context() {
+        return context;
+    }
+
+    /** The context row's texts, left to right, without the parts that are hidden. For tests. */
+    List<String> contextTexts() {
+        return contextRow.getChildren().stream()
+                .filter(javafx.scene.Node::isVisible)
+                .map(n -> ((javafx.scene.control.Labeled) n).getText())
+                .toList();
     }
 
     /**

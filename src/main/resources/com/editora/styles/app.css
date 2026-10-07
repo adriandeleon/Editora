@@ -1587,10 +1587,21 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
-/* The repository gh resolved, named in the GitHub tool window's toolbar. */
-.github-repository {
+/* The GitHub tool window's context row: the repository gh resolved (a link), the branch, the account. */
+.github-context {
+    -fx-padding: 0 4 0 4;
+}
+.github-context .label {
     -fx-text-fill: -color-fg-muted;
-    -fx-font-family: monospace;
+    -fx-graphic-text-gap: 5;
+}
+.github-repository {
+    -fx-padding: 0;
+    -fx-graphic-text-gap: 5;
+}
+.github-repository:disabled {
+    -fx-opacity: 1;
+    -fx-text-fill: -color-fg-muted;
 }
 /* Compact, so the state filter does not make the one-line toolbar taller than its segment buttons. */
 .github-state-filter { -fx-padding: 0; }

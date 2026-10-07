@@ -1,8 +1,10 @@
 package com.editora.github;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,9 +35,10 @@ public final class GhAuthStatus {
 
     /**
      * The parsed status: the overall {@code state}; the {@code hosts} gh has a usable-looking account on (not
-     * the rejected ones), lower-cased; and {@code detail}, gh's own error text for the first failed check.
+     * the rejected ones), lower-cased; {@code detail}, gh's own error text for the first failed check; and
+     * {@code accounts}, the login gh uses on each of those hosts (a host whose login gh did not say is absent).
      */
-    public record Parsed(State state, List<String> hosts, String detail) {}
+    public record Parsed(State state, List<String> hosts, String detail, Map<String, String> accounts) {}
 
     /**
      * Parses the JSON document; {@code null} when {@code json} is not one (an older gh that has no
@@ -56,6 +59,7 @@ public final class GhAuthStatus {
             return null;
         }
         List<String> hosts = new ArrayList<>();
+        Map<String, String> accounts = new LinkedHashMap<>();
         boolean anySignedIn = false;
         boolean anyUnverified = false;
         boolean anyRejected = false;
@@ -81,12 +85,21 @@ public final class GhAuthStatus {
                     detail = error;
                 }
             }
-            hosts.add(entry.getKey().strip().toLowerCase(Locale.ROOT));
+            String host = entry.getKey().strip().toLowerCase(Locale.ROOT);
+            hosts.add(host);
+            String login = account.path("login").asText("").strip();
+            if (!login.isEmpty()) {
+                accounts.put(host, login);
+            }
         }
         State overall = anySignedIn
                 ? State.SIGNED_IN
                 : anyUnverified ? State.UNVERIFIED : anyRejected ? State.REJECTED : State.SIGNED_OUT;
-        return new Parsed(overall, List.copyOf(hosts), overall == State.SIGNED_IN ? "" : firstLine(detail));
+        return new Parsed(
+                overall,
+                List.copyOf(hosts),
+                overall == State.SIGNED_IN ? "" : firstLine(detail),
+                java.util.Collections.unmodifiableMap(accounts));
     }
 
     /** The host's active account (the one gh uses), else its first; {@code null} when it has none. */

@@ -20,6 +20,7 @@ class GhAuthStatusTest {
         assertEquals(GhAuthStatus.State.SIGNED_IN, p.state());
         assertEquals(List.of("github.com"), p.hosts());
         assertEquals("", p.detail());
+        assertEquals(java.util.Map.of("github.com", "octocat"), p.accounts(), "the login gh uses there");
     }
 
     /** G1: with no network gh still knows the account; that is "could not check", not "not logged in". */
@@ -71,6 +72,7 @@ class GhAuthStatusTest {
 
         assertEquals(GhAuthStatus.State.SIGNED_IN, p.state());
         assertEquals(List.of("ghe.corp.example"), p.hosts());
+        assertEquals(java.util.Map.of(), p.accounts(), "gh named no login: none is made up");
     }
 
     /** An older gh has no {@code --json} here; a stand-in prints nothing: the caller falls back. */

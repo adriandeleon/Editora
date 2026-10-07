@@ -119,6 +119,9 @@ class GitHubServiceFxTest {
         assertTrue(a.found());
         assertTrue(a.authenticated());
         assertEquals(List.of("github.com"), a.hosts());
+        assertEquals("octocat", a.account("github.com"), "the account the tool window names");
+        assertEquals("octocat", a.account(""), "the only account, while the repository's host is not known");
+        assertEquals("", a.account("ghe.example.com"));
         assertEquals("gh version 2.96.0 (test stand-in)", a.version());
     }
 
