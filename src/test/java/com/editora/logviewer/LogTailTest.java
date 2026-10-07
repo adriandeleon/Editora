@@ -152,4 +152,43 @@ class LogTailTest {
         assertEquals("bb\ncc", a.text());
         assertEquals(bytes.size() - 2, a.offset(), "the two bytes of the unfinished character are read next time");
     }
+
+    @Test
+    void appendedTextIsDecodedWithTheFilesCharset(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("latin1.log");
+        Files.write(file, "INFO caf\u00e9 d\u00e9marr\u00e9\n".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+        LogTail.Append a = LogTail.readAppended(file, 0, 1 << 20, java.nio.charset.StandardCharsets.ISO_8859_1, null);
+        assertEquals("INFO caf\u00e9 d\u00e9marr\u00e9\n", a.text());
+
+        Path wide = dir.resolve("utf16.log");
+        byte[] bytes = "INFO utf16 \u20ac\n".getBytes(java.nio.charset.StandardCharsets.UTF_16LE);
+        Files.write(wide, java.util.Arrays.copyOf(bytes, bytes.length - 1)); // the last unit is half written
+        LogTail.Append half = LogTail.readAppended(wide, 0, 1 << 20, java.nio.charset.StandardCharsets.UTF_16LE, null);
+        assertEquals("INFO utf16 \u20ac", half.text(), "the half-written code unit is left for the next read");
+        assertEquals(bytes.length - 2, half.offset());
+    }
+
+    @Test
+    void aByteOrderMarkAtTheStartOfTheFileIsNotText(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("bom.log");
+        Files.write(file, "\uFEFFINFO a\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertEquals("INFO a\n", LogTail.readAppended(file, 99, 1 << 20).text(), "after a reset to the top");
+    }
+
+    @Test
+    void aReplacedFileIsARotationEvenWhenItIsAlreadyLongerThanTheOldOffset(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("r.log");
+        Files.writeString(file, "old1\nold2\n");
+        LogTail.Append first = LogTail.readAppended(file, 0, 1 << 20, java.nio.charset.StandardCharsets.UTF_8, null);
+        org.junit.jupiter.api.Assumptions.assumeTrue(first.fileKey() != null, "no file identity on this platform");
+
+        Files.move(file, dir.resolve("r.log.1")); // logrotate: rename the old file, create a new one
+        Files.writeString(file, "new1\nnew2\nnew3\nnew4\n");
+
+        LogTail.Append next = LogTail.readAppended(
+                file, first.offset(), 1 << 20, java.nio.charset.StandardCharsets.UTF_8, first.fileKey());
+        assertTrue(next.reset(), "a different file under the same name, though not smaller than the offset");
+        assertEquals("new1\nnew2\nnew3\nnew4\n", next.text(), "read from its first byte, not from the middle");
+        assertEquals(Files.size(file), next.size());
+    }
 }

@@ -180,6 +180,10 @@ public final class LanguageRegistry {
         if (special != null) {
             return special;
         }
+        // Rotated and extensionless logs (app.log.1, access_log, syslog): the extension is a number or absent.
+        if (com.editora.logviewer.LogFileNames.isLog(base)) {
+            return "log";
+        }
         int dot = base.lastIndexOf('.');
         if (dot < 0 || dot == base.length() - 1) {
             return PLAINTEXT;

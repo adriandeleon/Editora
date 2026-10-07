@@ -126,6 +126,54 @@ final class OverlayPalette {
         return cached;
     }
 
+    /**
+     * The log viewer's level colours: a gutter bar per level and a row wash for the levels worth a row.
+     * Six levels need to stay apart, so they differ in more than hue — FATAL is the error colour at full
+     * strength with the heaviest wash, DEBUG and TRACE are two steps of the neutral.
+     */
+    record LogTints(
+            Color fatal,
+            Color error,
+            Color warn,
+            Color info,
+            Color debug,
+            Color trace,
+            Color fatalWash,
+            Color errorWash,
+            Color warnWash) {}
+
+    /** The log tints for an editor painted on {@code background}. Pure. */
+    static LogTints logTints(Color background) {
+        Color ground = background == null
+                ? Color.WHITE
+                : Color.color(background.getRed(), background.getGreen(), background.getBlue());
+        boolean dark = isDark(ground);
+        Colors base = of(ground);
+        Color neutral = ground.interpolate(ink(ground), 0.5);
+        // A wash is a tint under text, so it is weighed by what is left of the ground, not by contrast: a dark
+        // ground swallows a translucent colour that is plain on a light one.
+        double wash = dark ? 0.20 : 0.09;
+        return new LogTints(
+                base.error(),
+                base.error(),
+                base.warning(),
+                reach(Color.web(dark ? "#4cc38a" : "#2da44e"), ground, INDICATOR),
+                reach(neutral, ground, INDICATOR),
+                reach(ground.interpolate(ink(ground), 0.25), ground, 1.6),
+                alpha(base.error(), wash * 1.8),
+                alpha(base.error(), wash),
+                alpha(base.warning(), wash * 0.85));
+    }
+
+    /** {@link #logTints(Color)} for {@code area}'s current background. */
+    static LogTints logTints(Region area) {
+        return logTints(backgroundOf(area));
+    }
+
+    private static Color alpha(Color c, double opacity) {
+        return Color.color(c.getRed(), c.getGreen(), c.getBlue(), Math.min(1, opacity));
+    }
+
     private static Color backgroundOf(Region area) {
         Background background = area.getBackground();
         if (background != null && !background.getFills().isEmpty()) {

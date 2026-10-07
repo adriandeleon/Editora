@@ -1,16 +1,13 @@
 package com.editora.logviewer;
 
+import java.util.Arrays;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 /**
- * Pure line-level filtering for the log viewer: keep only the lines whose (inherited) severity is at
- * least {@code minLevel} and which match an optional {@code regex}. java.base only, so it is unit-tested.
- *
- * <p>A line with no level of its own (a stack-trace frame, a wrapped message) <em>inherits</em> the
- * preceding line's level — so filtering to {@code ERROR+} keeps an exception's full stack trace, not
- * just its first line. The regex, when present, is applied to each line's literal text and combined
- * with the level test by AND.
+ * Filtering a whole log document for the viewer: the lines of the records whose (inherited) severity is at
+ * least {@code minLevel} and which match an optional pattern. Pure (java.base only), so it is unit-tested and
+ * can run off the FX thread; the per-line rules are {@link LogRecordFilter}'s.
  */
 public final class LogFilter {
 
@@ -33,75 +30,97 @@ public final class LogFilter {
         }
     }
 
-    /** The effective level of {@code line}: its own level, or {@code carry} (the previous line's) when it has none. */
-    public static LogLevel effectiveLevel(String line, LogLevel carry) {
-        LogLevel own = LogPatterns.levelOf(line);
-        return own != null ? own : carry;
-    }
-
-    /** Whether a line with effective level {@code effective} passes the {@code minLevel} + {@code regex} filter. */
-    public static boolean keep(String line, LogLevel effective, LogLevel minLevel, Pattern regex) {
-        if (minLevel != null) {
-            // Unknown-level lines (no level seen yet at the top of a file) are kept only when no level
-            // floor is set; under a floor they are hidden until a record establishes a level to inherit.
-            if (effective == null || !effective.atLeast(minLevel)) {
-                return false;
-            }
+    /** Whether {@code query} is a valid regular expression (an invalid one is matched as plain text). */
+    public static boolean isValidRegex(String query) {
+        if (query == null || query.isEmpty()) {
+            return true;
         }
-        return regex == null || regex.matcher(line).find();
+        try {
+            Pattern.compile(query);
+            return true;
+        } catch (PatternSyntaxException e) {
+            return false;
+        }
     }
 
     /**
-     * Filters {@code text} (a whole document or an appended chunk), returning only the kept lines joined
-     * by {@code '\n'}. {@code startCarry} is the inherited level entering the first line (null for a fresh
-     * document; the previous chunk's {@link #endCarry} when filtering an appended tail).
+     * The outcome of filtering {@code source}: the kept lines, each one terminated by {@code '\n'}, with the
+     * source line and level of each, and the filter itself — positioned after the last complete line, ready
+     * for the lines a followed log appends.
+     *
+     * <p>Only complete lines are judged. An unfinished last line (a file that does not end in a newline, or a
+     * line still being written) is the caller's to show: {@code source.substring(consumed)}.
+     *
+     * @param source the text that was filtered — the identity a caller checks before installing the result
+     * @param text the kept lines, each followed by {@code '\n'}
+     * @param lines for each kept line, its 0-based line index in {@code source}
+     * @param levels for each kept line, its inherited level as an ordinal, or {@code -1} for none
+     * @param kept number of kept lines
+     * @param total number of complete lines in {@code source}
+     * @param consumed length of the prefix of {@code source} made of complete lines
+     * @param filter the filter state after those lines
      */
-    public static String filter(String text, LogLevel minLevel, Pattern regex, LogLevel startCarry) {
-        if (text == null || text.isEmpty()) {
-            return "";
-        }
-        StringBuilder out = new StringBuilder(text.length());
-        LogLevel carry = startCarry;
+    public record Run(
+            String source,
+            String text,
+            int[] lines,
+            byte[] levels,
+            int kept,
+            int total,
+            int consumed,
+            LogRecordFilter filter) {}
+
+    /** Filters every complete line of {@code source}. Safe on any thread: it touches nothing but its arguments. */
+    public static Run run(String source, LogLevel minLevel, Pattern pattern) {
+        String text = source == null ? "" : source;
+        LogRecordFilter filter = new LogRecordFilter(minLevel, pattern);
+        Collector out = new Collector(Math.min(text.length(), 1 << 16));
         int pos = 0;
-        int len = text.length();
-        boolean first = true;
-        while (pos <= len) {
-            int nl = text.indexOf('\n', pos);
-            int end = nl < 0 ? len : nl;
-            String line = text.substring(pos, end);
-            carry = effectiveLevel(line, carry);
-            if (keep(line, carry, minLevel, regex)) {
-                if (!first) {
-                    out.append('\n');
-                }
-                out.append(line);
-                first = false;
-            }
-            if (nl < 0) {
-                break;
-            }
+        int index = 0;
+        for (int nl = text.indexOf('\n'); nl >= 0; nl = text.indexOf('\n', pos)) {
+            filter.accept(text.substring(pos, nl), index++, out);
             pos = nl + 1;
         }
-        return out.toString();
+        return new Run(text, out.text.toString(), out.lines(), out.levels(), out.count, index, pos, filter);
     }
 
-    /** The inherited level after scanning all of {@code text} starting from {@code startCarry} (for incremental appends). */
-    public static LogLevel endCarry(String text, LogLevel startCarry) {
-        if (text == null || text.isEmpty()) {
-            return startCarry;
+    /** Accumulates kept lines as text plus the parallel line/level arrays. */
+    public static final class Collector implements LogRecordFilter.Sink {
+        public final StringBuilder text;
+        private int[] lines = new int[64];
+        private byte[] levels = new byte[64];
+        public int count;
+
+        public Collector(int capacity) {
+            text = new StringBuilder(capacity);
         }
-        LogLevel carry = startCarry;
-        int pos = 0;
-        int len = text.length();
-        while (pos <= len) {
-            int nl = text.indexOf('\n', pos);
-            int end = nl < 0 ? len : nl;
-            carry = effectiveLevel(text.substring(pos, end), carry);
-            if (nl < 0) {
-                break;
+
+        @Override
+        public void keep(String line, int index, LogLevel level) {
+            if (count == lines.length) {
+                lines = Arrays.copyOf(lines, count * 2);
+                levels = Arrays.copyOf(levels, count * 2);
             }
-            pos = nl + 1;
+            lines[count] = index;
+            levels[count] = (byte) (level == null ? -1 : level.ordinal());
+            count++;
+            text.append(line).append('\n');
         }
-        return carry;
+
+        public int[] lines() {
+            return Arrays.copyOf(lines, count);
+        }
+
+        public byte[] levels() {
+            return Arrays.copyOf(levels, count);
+        }
+
+        public int lineAt(int i) {
+            return lines[i];
+        }
+
+        public byte levelAt(int i) {
+            return levels[i];
+        }
     }
 }

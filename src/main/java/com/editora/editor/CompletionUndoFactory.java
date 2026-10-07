@@ -52,10 +52,25 @@ final class CompletionUndoFactory implements UndoManagerFactory {
      * (the idle break of {@link UndoMerge}).
      */
     static UndoManager<?> forDocument(CodeArea view, Supplier<CodeArea> target, int capacity, Duration pause) {
+        return forDocument(view, target, capacity, pause, () -> false);
+    }
+
+    /**
+     * As above, leaving out of the history every change made while {@code untracked} holds: text the editor
+     * put there itself and the user never typed (a followed log's new lines). Recorded, one Undo would take
+     * the newest lines of the log back out and mark the file modified. The owner of such a change keeps the
+     * history consistent — a change that moves earlier text must forget it.
+     */
+    static UndoManager<?> forDocument(
+            CodeArea view,
+            Supplier<CodeArea> target,
+            int capacity,
+            Duration pause,
+            java.util.function.BooleanSupplier untracked) {
         var factory = new CompletionUndoFactory(capacity);
         return view.isPreserveStyle()
                 ? factory.createMultiChangeUM(
-                        view.multiRichChanges(),
+                        view.multiRichChanges().filter(changes -> !untracked.getAsBoolean()),
                         TextChange::invert,
                         changes ->
                                 UndoUtils.applyMultiRichTextChange(target.get()).accept(changes),
@@ -63,7 +78,7 @@ final class CompletionUndoFactory implements UndoManagerFactory {
                         TextChange::isIdentity,
                         pause)
                 : factory.createMultiChangeUM(
-                        view.multiPlainChanges(),
+                        view.multiPlainChanges().filter(changes -> !untracked.getAsBoolean()),
                         TextChange::invert,
                         changes -> UndoUtils.applyMultiPlainTextChange(target.get())
                                 .accept(changes),

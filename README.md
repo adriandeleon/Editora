@@ -115,15 +115,19 @@ Editora is built with the help of AI coding tools.
   round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save
   `trim_trailing_whitespace` / `insert_final_newline`. On by default; toggle via Settings → Editor or the
   "View: Toggle EditorConfig" palette command.
-- **Server log viewer** — `.log` files get severity highlighting (ERROR/WARN/INFO/DEBUG/TRACE, both inline
-  and as a left-edge bar that works even on huge logs), a floating **Follow** toggle (`tail -f` — streams new
-  lines as the file grows and auto-scrolls), **open-the-tail** for very large logs (opens read-only at the
-  end), and **live level + regex filtering** (filter as you type by a level floor and a regex — or a literal
-  substring when it isn't valid regex; a stack trace inherits its record's level so it stays visible).
-  Detects Logback/Log4j, `java.util.logging`, syslog, nginx, structured/JSON, zerolog, and access logs. Logs
-  open in **View mode** (read-only with an "Enable Editing" banner) by default — follow still streams while
-  read-only. On by default (Settings → Editor → Logs, "View: Toggle Log Viewer"); `Log: Toggle Follow` / `Filter by Level` /
-  `Filter by Pattern` / `Clear Filter` / `View as Log` in the palette.
+- **Server log viewer** — log files get severity highlighting (FATAL/ERROR/WARN/INFO/DEBUG/TRACE, both inline
+  and as a left-edge bar that works even on huge logs) and a control bar above the text: a **Follow** toggle
+  (`tail -f` — streams new lines, survives log rotation, and only auto-scrolls while you are at the end),
+  a **level floor**, and a **live pattern filter** (a regular expression, or plain text when it isn't a
+  valid one) with a count of the lines shown. Filters work on whole records — a stack trace stays with the
+  line it belongs to — and filtered lines keep their real line numbers. Very large logs open read-only at
+  their **tail**. Recognised by name (`*.log`, rotated `app.log.1`, `access_log`, `syslog`, `catalina.out`)
+  or by content (`server.out`, extensionless files); `Log: View as Log` toggles it for anything else.
+  Detects Logback/Log4j, `java.util.logging`, syslog, nginx, .NET, klog, structured/JSON (including pino's
+  numeric levels), zerolog, and access logs. Logs open in **View mode** (read-only with an "Enable Editing"
+  banner) by default — follow still streams while read-only. On by default (Settings → Editor → Logs,
+  "View: Toggle Log Viewer"); `Log: Toggle Follow` / `Filter by Level` / `Filter by Pattern` / `Focus Filter` /
+  `Clear Filter` / `Next Warning or Error` in the palette.
 - **Word/line-level undo** — undo/redo breaks at word, whitespace, and newline boundaries (and after a typing pause), so one undo removes a word or line rather than a whole typing burst.
 - **Undo History** — an *Undo History* tool window (`M-g u`) lists in-session document checkpoints; double-click or Enter jumps back to any recent state.
 - **Auto Close Tags** — typing the `>` of an HTML/XML open tag inserts the matching closing tag and
