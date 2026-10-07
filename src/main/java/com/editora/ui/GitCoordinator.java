@@ -93,6 +93,14 @@ final class GitCoordinator {
         void reloadAllFromDiskSilently();
 
         /**
+         * Copies {@code files} into Local History as pre-delete revisions, then reports — on the FX thread —
+         * whether every one that Local History can hold is safely stored. Untracked files have no other copy.
+         */
+        default void captureBeforeDelete(List<Path> files, Consumer<Boolean> completion) {
+            completion.accept(true);
+        }
+
+        /**
          * Saves {@code buffer} through the window's ordinary save path (encoding, line endings, format on
          * save) and waits for the write; false when it is not on disk afterwards.
          */
@@ -771,11 +779,49 @@ final class GitCoordinator {
             host.setStatus(tr("status.git.discardConflict", conflicted));
             return;
         }
-        if (!confirmDestructive(tr("dialog.discard.title"), discardPrompt(discard), tr("dialog.discard"))) {
+        List<String> untracked = discard.untracked();
+        int folders = GitUntrackedDelete.folders(root, untracked);
+        if (folders > 0) {
+            // Git shows a wholly untracked folder as one row; ask it what deleting that row removes.
+            service.untrackedFiles(root, untracked, files -> {
+                if (files == null) {
+                    host.setError(tr("status.git.opFailed"));
+                    return;
+                }
+                boolean historyOn = host.settings().isLocalHistory() && !host.simpleModeActive();
+                String prompt = GitUntrackedDelete.prompt(
+                        discard.worktree().size() + discard.head().size(), untracked, folders, files, historyOn);
+                confirmAndDiscard(root, discard, prompt, GitUntrackedDelete.captures(root, files));
+            });
+            return;
+        }
+        confirmAndDiscard(root, discard, discardPrompt(discard), GitUntrackedDelete.captures(root, untracked));
+    }
+
+    /**
+     * Confirms, copies the untracked files about to be deleted into Local History (they are in no commit, so
+     * nothing else could bring them back), and only then runs the commands.
+     */
+    private void confirmAndDiscard(Path root, Discard discard, String prompt, List<Path> untrackedFiles) {
+        if (!confirmDestructive(tr("dialog.discard.title"), prompt, tr("dialog.discard"))) {
             return;
         }
         List<String> affected = discard.affected();
         invalidatePendingWrites(root, affected);
+        if (untrackedFiles.isEmpty()) {
+            runDiscard(root, discard, affected);
+            return;
+        }
+        ops.captureBeforeDelete(untrackedFiles, kept -> {
+            if (kept) {
+                runDiscard(root, discard, affected);
+            } else {
+                host.setStatus(tr("project.deleteHistoryFailed"));
+            }
+        });
+    }
+
+    private void runDiscard(Path root, Discard discard, List<String> affected) {
         List<String[]> commands = new ArrayList<>(3);
         if (!discard.worktree().isEmpty()) {
             commands.add(argv(discard.worktree(), "checkout", "--"));
