@@ -32,6 +32,8 @@ import static com.editora.i18n.Messages.tr;
  * few lines with a Show more/less toggle when long), Open-on-GitHub / Open-all / Submit-review / Refresh
  * links, and a list of clickable file rows (status letter + {@link FileIcons} glyph colored via the shared
  * {@code .git-status-*} classes + path + per-file {@code +a −d}). Clicking a file opens its read-only diff.
+ * Every pull request with changes opens here, a one-file one included — the description and the actions are
+ * not reachable from a bare file diff.
  *
  * <p>Kept decoupled from the coordinator: all actions are injected callbacks and {@link #update} feeds it the
  * already-fetched {@link PrDetail} (nullable — a degraded header renders from just the number) + parsed
@@ -61,6 +63,8 @@ public final class PrReviewPane extends Region implements TabContent {
 
     private PrDetail detail;
     private List<FilePatch> files = List.of();
+    /** Shown under the header when non-blank — e.g. that the files come from the fallback listing. */
+    private String notice = "";
     /** Whether the (long) PR description is expanded; sticky across a Refresh of the same tab. */
     private boolean bodyExpanded;
 
@@ -107,14 +111,31 @@ public final class PrReviewPane extends Region implements TabContent {
 
     /** Feeds fresh data (first build + Refresh-in-place); {@code detail} may be null (degraded header). */
     void update(PrDetail detail, List<FilePatch> files) {
+        update(detail, files, "");
+    }
+
+    /** As {@link #update(PrDetail, List)}, with a {@code notice} line (blank for none) under the header. */
+    void update(PrDetail detail, List<FilePatch> files, String notice) {
         this.detail = detail;
         this.files = files == null ? List.of() : files;
+        this.notice = notice == null ? "" : notice.strip();
         rebuild();
+    }
+
+    /** The notice line on screen ({@code ""} when there is none). For tests. */
+    String notice() {
+        return notice;
     }
 
     private void rebuild() {
         List<FileRow> rows = PrReviewSummary.rows(files);
         content.getChildren().setAll(header(rows));
+        if (!notice.isEmpty()) {
+            Label note = new Label(notice);
+            note.getStyleClass().add("pr-review-notice");
+            note.setWrapText(true);
+            content.getChildren().add(note);
+        }
         Node description = descriptionBlock();
         if (description != null) {
             content.getChildren().add(description);

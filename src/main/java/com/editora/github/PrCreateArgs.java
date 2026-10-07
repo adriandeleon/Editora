@@ -86,8 +86,13 @@ public final class PrCreateArgs {
      */
     static List<String> handles(String raw) {
         List<String> out = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
         for (String v : split(raw)) {
-            out.add(v.length() > 1 && v.charAt(0) == '@' && !"@me".equalsIgnoreCase(v) ? v.substring(1) : v);
+            String handle = v.length() > 1 && v.charAt(0) == '@' && !"@me".equalsIgnoreCase(v) ? v.substring(1) : v;
+            // De-duplicated again after the strip: "@a, a" names one person, and gh would be told twice.
+            if (seen.add(handle.toLowerCase(Locale.ROOT))) {
+                out.add(handle);
+            }
         }
         return out;
     }
