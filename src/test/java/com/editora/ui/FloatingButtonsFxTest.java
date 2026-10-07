@@ -84,9 +84,10 @@ class FloatingButtonsFxTest {
         try {
             FxTestSupport.runOnFx(() -> {
                 AnchorPane root = FxTestSupport.field(buffer, "root");
-                assertTrue(root.getChildren().contains(expertExit), "E is owned by the active code pane");
+                javafx.scene.Node row = expertExit.getParent(); // the code pane's shared corner row
+                assertTrue(root.getChildren().contains(row), "E is owned by the active code pane");
                 assertTrue(
-                        AnchorPane.getRightAnchor(expertExit) > 14,
+                        AnchorPane.getRightAnchor(row) > 14,
                         "E clears the editor scrollbar and the minimap rather than floating over them");
             });
         } finally {

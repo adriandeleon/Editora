@@ -34,7 +34,6 @@ import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -187,17 +186,17 @@ class PolishFxTest {
                 MarkdownViewToggle toggle = new MarkdownViewToggle(buffer);
                 buffer.setViewModeControl(toggle);
                 Region codePane = FxTestSupport.field(buffer, "root");
-                assertSame(codePane, toggle.getParent(), "Editor mode: top-right of the code pane");
+                // In the code pane the toggle lives in the shared corner row, one level below the pane itself.
+                assertSame(codePane, toggle.getParent().getParent(), "Editor mode: top-right of the code pane");
 
                 buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
-                assertNotSame(codePane, toggle.getParent(), "Split: not over the half-width code pane's first line");
                 Node previewHost = FxTestSupport.field(buffer, "previewHost");
                 assertSame(previewHost, toggle.getParent(), "Split: it rides the preview side");
 
                 buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.PREVIEW);
                 assertSame(previewHost, toggle.getParent());
                 buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.EDITOR);
-                assertSame(codePane, toggle.getParent(), "back in Editor mode it returns to the code pane");
+                assertSame(codePane, toggle.getParent().getParent(), "back in Editor mode it returns to the code pane");
 
                 buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.SPLIT);
                 List<Button> zoom = new ArrayList<>();

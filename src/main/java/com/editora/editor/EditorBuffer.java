@@ -261,6 +261,12 @@ public class EditorBuffer implements TabContent {
     /** Expert-mode exit control hosted over this buffer's primary code viewport, when it is active. */
     private Node expertExitControl;
 
+    /**
+     * The one row holding every floating control at the top-right of the code pane (view-mode toggle,
+     * open-in-browser, log controls, Expert exit). Sharing a row is what keeps them from overlapping.
+     */
+    private final HBox cornerControls = cornerControlRow();
+
     private Label viewModeNote;
     /** When true, a non-writable-on-disk file offers "Edit as Administrator" instead of a dead-end note. */
     private boolean adminEditAvailable;
@@ -6383,7 +6389,10 @@ public class EditorBuffer implements TabContent {
         if (control == null) {
             return;
         }
-        root.getChildren().remove(control);
+        cornerControls.getChildren().remove(control);
+        if (cornerControls.getChildren().isEmpty()) {
+            root.getChildren().remove(cornerControls);
+        }
         if (previewHost != null) {
             previewHost.getChildren().remove(control);
         }
@@ -6393,7 +6402,7 @@ public class EditorBuffer implements TabContent {
     }
 
     /** Overlays the corner control(s) at the top-right of the code pane ({@link #root}), clear of its minimap.
-     *  A buffer is Markdown <em>or</em> HTML, so at most one of the two controls is non-null. */
+     *  They share one row ({@link #cornerControls}), so however many are present they sit side by side. */
     private void attachControlToCodePane() {
         placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
         placeCornerControl(htmlPreviewControl);
@@ -6414,33 +6423,31 @@ public class EditorBuffer implements TabContent {
             // The bar is attached lazily when scrolling first produces pinned lines, while file-specific
             // controls may already be present. AnchorPane paints later children on top, so without an
             // explicit order that timing lets the full-width bar cover Markdown's view-mode toggle or
-            // HTML's browser button. A control attached after the bar is added last and so is above it.
-            bringCornerControlsToFront();
+            // HTML's browser button. A control row attached after the bar is added last and so is above it.
+            if (cornerControls.getParent() == root) {
+                cornerControls.toFront();
+            }
         }
     }
 
-    private void bringCornerControlsToFront() {
-        bringCornerControlToFront(viewModeControl);
-        bringCornerControlToFront(htmlPreviewControl);
-        bringCornerControlToFront(logControl);
-        bringCornerControlToFront(expertExitControl);
-    }
-
-    private void bringCornerControlToFront(Node control) {
-        if (control != null && root.getChildren().contains(control)) {
-            control.toFront();
-        }
-    }
-
+    /**
+     * Adds {@code control} to the shared top-right row, mounting the row on first use. The Expert exit
+     * control stays outermost so it does not move when a file-specific control comes and goes.
+     */
     private void placeCornerControl(Node control) {
         if (control == null) {
             return;
         }
-        if (!root.getChildren().contains(control)) {
-            root.getChildren().add(control);
+        List<Node> row = cornerControls.getChildren();
+        if (!row.contains(control)) {
+            int expert = control == expertExitControl ? -1 : row.indexOf(expertExitControl);
+            row.add(expert < 0 ? row.size() : expert, control);
         }
-        AnchorPane.setTopAnchor(control, 6d);
-        AnchorPane.setRightAnchor(control, codePaneControlInset());
+        if (cornerControls.getParent() != root) {
+            root.getChildren().add(cornerControls);
+            AnchorPane.setTopAnchor(cornerControls, 6d);
+        }
+        AnchorPane.setRightAnchor(cornerControls, codePaneControlInset());
     }
 
     /**
@@ -6456,39 +6463,31 @@ public class EditorBuffer implements TabContent {
 
     /** Keeps every floating editor control clear of the minimap when it toggles (no full view rebuild). */
     private void positionCornerControls() {
-        if (viewModeControl != null && root.getChildren().contains(viewModeControl)) {
-            AnchorPane.setRightAnchor(viewModeControl, codePaneControlInset());
-        }
-        if (htmlPreviewControl != null && root.getChildren().contains(htmlPreviewControl)) {
-            AnchorPane.setRightAnchor(htmlPreviewControl, codePaneControlInset());
-        }
-        if (logControl != null && root.getChildren().contains(logControl)) {
-            AnchorPane.setRightAnchor(logControl, codePaneControlInset());
-        }
-        if (expertExitControl != null && root.getChildren().contains(expertExitControl)) {
-            AnchorPane.setRightAnchor(expertExitControl, codePaneControlInset());
+        if (cornerControls.getParent() == root) {
+            AnchorPane.setRightAnchor(cornerControls, codePaneControlInset());
         }
     }
 
     /**
-     * Mounts the Expert-mode exit control inside the primary code pane, clear of its scrollbar and minimap.
-     * Passing {@code null} detaches the current control. A controller moves the one shared button as the
-     * active tab changes, so inactive buffers retain no overlay node.
+     * Mounts the Expert-mode exit control inside the primary code pane, clear of its scrollbar and minimap,
+     * beside any file-specific corner control. Passing {@code null} detaches the current control. A
+     * controller moves the one shared button as the active tab changes, so inactive buffers retain no
+     * overlay node.
      */
     public void setExpertExitControl(Node control) {
-        if (expertExitControl != null) {
-            root.getChildren().remove(expertExitControl);
+        if (expertExitControl != control) {
+            removeCornerControl(expertExitControl);
         }
         expertExitControl = control;
-        if (control == null) {
-            return;
-        }
-        if (control.getParent() instanceof javafx.scene.layout.Pane parent) {
-            parent.getChildren().remove(control);
-        }
-        root.getChildren().add(control);
-        AnchorPane.setTopAnchor(control, 8d);
-        AnchorPane.setRightAnchor(control, codePaneControlInset());
+        placeCornerControl(control);
+    }
+
+    private static HBox cornerControlRow() {
+        HBox row = new HBox(6);
+        row.setAlignment(Pos.CENTER_RIGHT);
+        row.setFillHeight(false); // each control keeps its own height
+        row.setPickOnBounds(false); // clicks between controls fall through to the editor
+        return row;
     }
 
     /** Lazily builds the secondary view (scroll pane + its own minimap) sharing this document. */
