@@ -190,7 +190,7 @@ final class GitPatchCoordinator {
         switch (PatchOutcome.classify(result.ok(), result.out(), result.err())) {
             case APPLIED -> host.setStatus(tr(cached ? "status.git.patchAppliedIndex" : "status.git.patchApplied"));
             // The files are written, with markers: the Commit window lists them as conflicted after the refresh.
-            case CONFLICTS -> host.setError(tr("status.git.patchConflicts"));
+            case CONFLICTS -> git.conflictsNeedAttention(tr("status.git.patchConflicts"));
             case REJECTED -> {
                 if (ProcessRunner.CANCELLED.equals(result.message())) {
                     host.setStatus(tr("status.git.cancelled"));

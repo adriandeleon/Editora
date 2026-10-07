@@ -6096,16 +6096,15 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void logCliCommand(Object owner, String tabTitle, com.editora.process.CommandLog.Entry entry) {
         buildOutputPanel.logCommand(owner, tabTitle, entry);
-        showCliTranscript(owner);
+        showCliTranscript(GitConsoleLog.raisesConsole(entry) ? owner : null);
     }
 
     private void showCliTranscript(Object owner) {
         // The console's stripe is gated on a build tool being detected; a repo with no build file still has
         // git, so the first logged command is what makes the window reachable there.
         refreshBuildOutputAvailability();
-        // Native Git commands are explicit user actions: show their transcript immediately, including after
-        // pull/merge, rather than leaving the result hidden behind the Output stripe. GitHub's background
-        // queries remain quiet so they do not steal focus from a build or editor task.
+        // A Git network command (as it starts) and a Git command that failed bring their transcript forward;
+        // a local command that worked does not (GitConsoleLog.raisesConsole), nor do GitHub's queries.
         if (owner == gitConsoleOwner && buildOutputToolWindow != null) {
             buildOutputPanel.selectTab(owner);
             toolWindows.open(buildOutputToolWindow);

@@ -377,8 +377,9 @@ class GitLogHistoryFxTest {
                     () -> FxTestSupport.<Label>field(log.panel, "detailsHash").getText());
             String author = FxTestSupport.callOnFx(
                     () -> FxTestSupport.<Label>field(log.panel, "detailsAuthor").getText());
-            String message = FxTestSupport.callOnFx(() ->
-                    FxTestSupport.<Label>field(log.panel, "detailsMessage").getText());
+            String message = FxTestSupport.callOnFx(
+                    () -> FxTestSupport.<javafx.scene.control.TextInputControl>field(log.panel, "detailsMessage")
+                            .getText());
             assertEquals(head, hash, "the full hash");
             assertTrue(author.contains("Editora Test <editora-test@example.invalid>"), author);
             assertTrue(author.contains(GitLogPanel.absoluteDate(

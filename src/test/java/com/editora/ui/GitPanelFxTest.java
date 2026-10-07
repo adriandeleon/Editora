@@ -915,7 +915,9 @@ class GitPanelFxTest {
         }
         javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
             javafx.stage.Stage s = new javafx.stage.Stage();
-            s.setScene(new javafx.scene.Scene(p, 320, 400));
+            // Wide enough that the header (which wraps its buttons rather than cut a label) is on one line
+            // whatever the unstyled scene measures its labels at: this test is about the list.
+            s.setScene(new javafx.scene.Scene(p, 420, 400));
             s.show();
             return s;
         });
@@ -966,5 +968,48 @@ class GitPanelFxTest {
                     (javafx.scene.control.skin.VirtualFlow<?>) tree(p).lookup(".virtual-flow");
             return flow.getFirstVisibleCell().getIndex();
         });
+    }
+
+    /**
+     * The push indicator ("↑ publish" on a branch without an upstream) used to be cut to "↑…" at the
+     * window's default width. It keeps its whole text now; the branch name gives way, and the buttons wrap
+     * to a second line before anything is cut.
+     */
+    @Test
+    void thePushIndicatorIsNeverCutInANarrowDock() throws Exception {
+        GitPanel p = panel();
+        javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
+            javafx.stage.Stage s = new javafx.stage.Stage();
+            s.setScene(new javafx.scene.Scene(p, 250, 400));
+            s.show();
+            return s;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> {
+                p.setStatus(new GitStatus(
+                        true,
+                        "feature/a-long-branch-name-that-will-not-fit",
+                        null,
+                        0,
+                        0,
+                        List.of(new FileEntry("a.txt", '.', 'M', null))));
+                p.applyCss();
+                p.layout();
+                p.layout();
+                javafx.scene.control.Label ahead = FxTestSupport.field(p, "aheadLabel");
+                javafx.scene.control.Label branch = FxTestSupport.field(p, "branchLabel");
+                assertEquals(com.editora.i18n.Messages.tr("gitpanel.publish"), ahead.getText());
+                assertTrue(
+                        ahead.getWidth() >= Math.floor(ahead.prefWidth(-1)),
+                        "the indicator has its full width: " + ahead.getWidth() + " of " + ahead.prefWidth(-1));
+                assertTrue(branch.getWidth() >= GitPanel.BRANCH_MIN_WIDTH - 0.5, "branch was " + branch.getWidth());
+                for (javafx.scene.Node button : p.lookupAll(".git-toolbar-button")) {
+                    javafx.geometry.Bounds b = button.localToScene(button.getBoundsInLocal());
+                    assertTrue(b.getMaxX() <= p.getWidth() + 0.5, "a header button is inside the panel: " + b);
+                }
+            });
+        } finally {
+            FxTestSupport.runOnFx(stage::hide);
+        }
     }
 }

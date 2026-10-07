@@ -352,6 +352,8 @@ final class Chrome {
             "git.cancel",
             "git.setCommand",
             "git.setPullMode",
+            "git.toggleAutoFetch",
+            "git.setAutoFetchInterval",
             "git.switchBranch",
             "tool.commit");
 

@@ -597,6 +597,11 @@ final class GitWindowCoordinator {
             }
 
             @Override
+            public void createPatch(String hash) {
+                host.git().patches().createCommitPatch(gitLogRoot, hash);
+            }
+
+            @Override
             public void cherryPick(String hash) {
                 gitMutate(
                         tr("status.git.cherryPicked", com.editora.git.GitFormat.shortHash(hash)), "cherry-pick", hash);
@@ -749,6 +754,7 @@ final class GitWindowCoordinator {
         String branch = host.git().branchName();
         gitLogBranch = branch;
         if (root == null) {
+            host.git().service().cancelHistoryRead(); // a search still running is for a repository that is gone
             host.gitLogPanel().setLog(List.of(), null);
             gitLogListing = null;
             host.git().reportIfNoRepo(); // echoes "not a repo" / "git not installed"
@@ -997,7 +1003,7 @@ final class GitWindowCoordinator {
 
     /**
      * {@code git tag} arguments for a new tag at {@code revision} (null: {@code HEAD}): lightweight, or
-     * annotated when a message is given. The name has passed {@link com.editora.git.GitRefName#isValid}, so
+     * annotated when a message is given. The name has passed {@link com.editora.git.GitRefNames#isValidTag}, so
      * it cannot be an option; the message follows {@code -m} as its value whatever it begins with.
      */
     static String[] tagArgs(String name, String message, String revision) {
@@ -1034,7 +1040,7 @@ final class GitWindowCoordinator {
             if (name.isEmpty()) {
                 return;
             }
-            if (!com.editora.git.GitRefName.isValid(name)) {
+            if (!com.editora.git.GitRefNames.isValidTag(name)) {
                 host.setStatus(tr("status.git.tag.invalidName", name));
                 return;
             }
@@ -1049,7 +1055,7 @@ final class GitWindowCoordinator {
 
     /** Creates the tag (validated here too: this is the one place the name reaches a command line). */
     void createTag(Path root, String name, String message, String hash) {
-        if (!com.editora.git.GitRefName.isValid(name)
+        if (!com.editora.git.GitRefNames.isValidTag(name)
                 || (hash != null && !com.editora.git.GitSafety.isSafeRevision(hash))) {
             host.setStatus(tr("status.git.tag.invalidName", name));
             return;
@@ -1092,7 +1098,7 @@ final class GitWindowCoordinator {
 
     /** A tag name comes from repository data; one git itself would refuse to create is not passed on. */
     private boolean validTag(String tag) {
-        if (com.editora.git.GitRefName.isValid(tag)) {
+        if (com.editora.git.GitRefNames.isValidTag(tag)) {
             return true;
         }
         host.setStatus(tr("status.git.unsafeRef", String.valueOf(tag)));

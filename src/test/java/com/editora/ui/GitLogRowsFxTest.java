@@ -340,7 +340,7 @@ class GitLogRowsFxTest {
             panel.setLog(new GitLog.Page(mergeLog(), false), new GitLogPanel.View(null, "main", false, "", true));
             ListView<Entry> commits = FxTestSupport.field(panel, "commits");
             Label hash = FxTestSupport.field(panel, "detailsHash");
-            Label message = FxTestSupport.field(panel, "detailsMessage");
+            javafx.scene.control.TextInputControl message = FxTestSupport.field(panel, "detailsMessage");
             javafx.scene.layout.HBox parents = FxTestSupport.field(panel, "detailsParents");
             javafx.scene.Node scroll = FxTestSupport.field(panel, "detailsScroll");
             assertFalse(scroll.isVisible(), "nothing selected: no details");

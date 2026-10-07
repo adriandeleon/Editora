@@ -146,6 +146,12 @@ final class GitCoordinator {
     /** Applying and creating patches; see {@link GitPatchCoordinator}. */
     private final GitPatchCoordinator patches;
 
+    /** Amend, sign-off, commit-and-push, undo, template, recent messages; see {@link GitCommitCoordinator}. */
+    private final GitCommitCoordinator commits;
+
+    /** "Fetch automatically"; see {@link GitAutoFetch}. */
+    private final GitAutoFetch autoFetch;
+
     private Path repoRoot;
     /** Complete status snapshot paired with {@link #repoRoot}; consumed by repository-wide diff review. */
     private GitStatus lastStatus = GitStatus.NOT_A_REPO;
@@ -183,6 +189,16 @@ final class GitCoordinator {
         this.blame = new GitBlameCoordinator(host, this, ops);
         this.stashes = new GitStashCoordinator(host, this);
         this.patches = new GitPatchCoordinator(host, this);
+        this.commits = new GitCommitCoordinator(host, this, ops);
+        this.autoFetch = new GitAutoFetch(host, this);
+    }
+
+    GitCommitCoordinator commits() {
+        return commits;
+    }
+
+    GitAutoFetch autoFetch() {
+        return autoFetch;
     }
 
     GitBlameCoordinator blame() {
@@ -320,6 +336,7 @@ final class GitCoordinator {
         // service's availability cache, so the re-probe below sees the new command.
         service.setCommand(host.settings().getGitPath());
         boolean on = isEnabled();
+        autoFetch.apply();
         ops.setStatusBarGitEnabled(on);
         if (!on) {
             service.invalidateRefreshes();
@@ -405,6 +422,7 @@ final class GitCoordinator {
                 b.setChangeBars(null);
                 refreshBlame(b); // clears it, except on a revision tab, which carries its own repository
             }
+            commits.repositoryApplied(null);
             return;
         }
         var status = state.status();
@@ -415,6 +433,7 @@ final class GitCoordinator {
         ops.setGitRefusal("");
         ops.setGitOperation(operation, GitConflicts.unmerged(status).size());
         ops.setGitPanelStatus(status);
+        commits.repositoryApplied(repoRoot); // the template of a new repository, the line counts of this status
         lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, state.root());
         ops.setProjectGitStatus(lastStatusByPath); // color the tree
         if (b != null && b.isNarrowed()) {
@@ -466,9 +485,11 @@ final class GitCoordinator {
 
     void invalidateCaches() {
         service.invalidateCaches();
+        commits.invalidate();
     }
 
     void shutdown() {
+        autoFetch.stop();
         service.shutdown();
     }
 
@@ -784,6 +805,11 @@ final class GitCoordinator {
         if (!confirmDestructive(tr("dialog.discard.title"), discardPrompt(discard), tr("dialog.discard"))) {
             return;
         }
+        runDiscard(root, discard, discardSuccessMessage(discard));
+    }
+
+    /** Runs a confirmed discard: one command per kind of path, then one refresh and reload. */
+    private void runDiscard(Path root, Discard discard, String successMessage) {
         List<String> affected = discard.affected();
         invalidatePendingWrites(root, affected);
         List<String[]> commands = new ArrayList<>(3);
@@ -798,13 +824,15 @@ final class GitCoordinator {
         }
         // Mixed sets run in order; one refresh/reload after every requested path was attempted.
         service.runWorktreeMutation(
-                root, commands, running(commands.get(0), result -> finishDiscard(root, result, discard, affected)));
+                root,
+                commands,
+                running(commands.get(0), result -> finishDiscard(root, result, successMessage, affected)));
     }
 
-    private void finishDiscard(Path root, ProcessRunner.Result result, Discard discard, List<String> affected) {
+    private void finishDiscard(Path root, ProcessRunner.Result result, String successMessage, List<String> affected) {
         invalidatePendingWrites(root, affected);
         if (result != null && result.ok()) {
-            host.setStatus(discardSuccessMessage(discard));
+            host.setStatus(successMessage);
         } else {
             gitError(tr("status.git.opFailed"), result == null ? tr("status.git.opFailed") : result.message());
         }
@@ -854,24 +882,93 @@ final class GitCoordinator {
      * so the Commit window can re-enable itself and clear the message it submitted (and only that).
      */
     void gitCommit(String message, Consumer<Boolean> onDone) {
-        Path root = repoRoot;
-        if (root == null || !saveUnsaved(root, List.of())) {
-            onDone.accept(false);
+        commits.commit(new GitPanel.CommitRequest(message, false, false, false), onDone);
+    }
+
+    // --- bulk: unstage all, discard all --------------------------------------------------------------
+
+    /**
+     * {@code git.unstageAll} / the Staged group's Unstage All: every staged path goes back to unstaged, as
+     * if each had been unstaged by hand (rename sources included; unmerged paths are never touched).
+     */
+    void gitUnstageAll() {
+        if (reportIfNoRepo()) {
             return;
         }
-        String[] args = {"commit", "-m", message};
-        service.runWorktreeMutation(
+        List<String> staged = lastStatus.files().stream()
+                .filter(GitStatus.FileEntry::staged)
+                .map(GitStatus.FileEntry::path)
+                .toList();
+        if (staged.isEmpty()) {
+            host.setStatus(tr("status.git.nothingStaged"));
+            return;
+        }
+        Path root = repoRoot;
+        gitOpIn(
                 root,
-                running(args, r -> {
-                    onDone.accept(r.ok());
-                    if (r.ok()) {
-                        host.setStatus(tr("status.committed"));
-                    } else {
-                        gitError(tr("status.git.commitFailed"), r.message());
-                    }
-                    afterMutation();
-                }),
-                args);
+                tr("status.git.unstagedMany", staged.size()),
+                argv(withRenameSources(lastStatus, staged), "reset", "-q", "HEAD", "--"));
+    }
+
+    /**
+     * What Discard All runs: each changed path sorted by what its status needs ({@link GitDiscardPlan}) —
+     * back to the index, back to HEAD, or deleted. {@code conflict} names the first unmerged path, which
+     * stops the whole thing: a conflict is resolved, not discarded. Pure.
+     */
+    record DiscardAll(List<String> worktree, List<String> head, List<String> untracked, String conflict) {
+        int tracked() {
+            return worktree.size() + head.size();
+        }
+
+        static DiscardAll of(GitStatus status) {
+            java.util.LinkedHashSet<String> worktree = new java.util.LinkedHashSet<>();
+            java.util.LinkedHashSet<String> head = new java.util.LinkedHashSet<>();
+            java.util.LinkedHashSet<String> untracked = new java.util.LinkedHashSet<>();
+            String conflict = null;
+            for (GitStatus.FileEntry entry : status == null ? List.<GitStatus.FileEntry>of() : status.files()) {
+                GitDiscardPlan plan = GitDiscardPlan.of(status, entry.path());
+                switch (plan.kind()) {
+                    case CONFLICT -> conflict = conflict == null ? plan.subject() : conflict;
+                    case UNTRACKED -> untracked.addAll(plan.specs());
+                    case WORKTREE -> worktree.addAll(plan.specs());
+                    case HEAD -> head.addAll(plan.specs());
+                    case NOTHING -> {}
+                }
+            }
+            return new DiscardAll(List.copyOf(worktree), List.copyOf(head), List.copyOf(untracked), conflict);
+        }
+    }
+
+    /**
+     * {@code git.discardAll}: throws away every local change — staged and unstaged edits go back to the
+     * last commit and untracked files are deleted. Confirmed once, danger-styled, with both counts in the
+     * message. Refused while a file is unmerged.
+     */
+    void gitDiscardAll() {
+        if (reportIfNoRepo()) {
+            return;
+        }
+        Path root = repoRoot;
+        DiscardAll all = DiscardAll.of(lastStatus);
+        if (all.conflict() != null) {
+            host.setStatus(tr("status.git.discardConflict", all.conflict()));
+            return;
+        }
+        Discard discard = new Discard(all.worktree(), all.head(), all.untracked());
+        if (discard.isEmpty()) {
+            host.setStatus(tr("status.git.nothingToDiscard"));
+            return;
+        }
+        if (!confirmDestructive(
+                tr("dialog.discardAll.title"),
+                tr("dialog.discardAll.message", all.tracked(), all.untracked().size()),
+                tr("dialog.discardAll.action"))) {
+            return;
+        }
+        runDiscard(
+                root,
+                discard,
+                tr("status.git.discardedAll", all.tracked(), all.untracked().size()));
     }
 
     void checkoutBranch(String name) {
@@ -990,13 +1087,8 @@ final class GitCoordinator {
 
     /** As {@link #reportConflictStop}, for a caller that classified the stop itself and has its own message. */
     void conflictsNeedAttention(String status) {
+        ops.openCommitWindow();
         host.setStatus(status);
-        ops.openCommitWindow();
-    }
-
-    /** Opens the Commit window, whose Conflicts group lists the files a command left unmerged. */
-    void showConflicts() {
-        ops.openCommitWindow();
     }
 
     // --- the operation in progress: continue / skip / abort ----------------------------------------
@@ -1135,7 +1227,7 @@ final class GitCoordinator {
         if (commands.isEmpty()) {
             return;
         }
-        String side = tr(ours ? "gitpanel.menu.acceptOurs" : "gitpanel.menu.acceptTheirs");
+        String side = tr(acceptSideKey(operation.kind(), ours));
         String message = entries.size() == 1
                 ? tr("dialog.acceptSide.message", side, entries.get(0).path())
                 : tr("dialog.acceptSide.messageMany", side, entries.size());
@@ -1157,6 +1249,21 @@ final class GitCoordinator {
             afterMutation();
             ops.reloadAllFromDiskSilently();
         }));
+    }
+
+    /**
+     * The label of "take this whole side" for a conflict of the operation in progress. Git's "ours" is the
+     * side HEAD was on when the conflict arose: the checked-out branch in a merge, cherry-pick or revert —
+     * but during a rebase HEAD is the branch being rebased <em>onto</em>, so "ours" is the upstream's version
+     * and "theirs" the user's own commit, the opposite of what the words suggest. The labels therefore say
+     * what each side is; git's term stays in the tooltip. Pure.
+     */
+    static String acceptSideKey(GitOperation.Kind kind, boolean ours) {
+        return switch (kind) {
+            case REBASE -> ours ? "gitpanel.menu.acceptOurs.rebase" : "gitpanel.menu.acceptTheirs.rebase";
+            case CHERRY_PICK, REVERT -> ours ? "gitpanel.menu.acceptOurs" : "gitpanel.menu.acceptTheirs.commit";
+            default -> ours ? "gitpanel.menu.acceptOurs" : "gitpanel.menu.acceptTheirs";
+        };
     }
 
     /**
@@ -1254,8 +1361,17 @@ final class GitCoordinator {
                 ops.reloadAllFromDiskSilently();
             }
             afterMutation();
-            if (r.ok()) {
-                host.setStatus(tr("status.gitDone", label));
+            GitPullMode.Autostash autostash =
+                    changesWorkingTree ? GitPullMode.autostash(r) : GitPullMode.Autostash.NONE;
+            if (autostash == GitPullMode.Autostash.KEPT_IN_STASH) {
+                // The pull itself may well have succeeded; what needs attention is the user's own changes:
+                // applying them back conflicted, and git kept them as a stash entry.
+                conflictsNeedAttention(tr("status.git.pullAutostashKept"));
+            } else if (r.ok()) {
+                host.setStatus(
+                        autostash == GitPullMode.Autostash.APPLIED
+                                ? tr("status.git.pullAutostashApplied")
+                                : tr("status.gitDone", label));
             } else if ((onFailure == null || !onFailure.test(r))
                     && !reportConflictStop(r, "status.git.stoppedOnConflicts")) {
                 gitError(tr("status.git.syncFailed", label), r.message());
@@ -1743,6 +1859,20 @@ final class GitCoordinator {
         TextInputKeymap.install(dirField, keymap);
         Button browse = new Button(tr("dialog.clone.browse"));
         browse.setFocusTraversable(false);
+        // The options: a branch to check out, a shallow depth, and the submodules. All optional.
+        TextField branchField = new TextField();
+        branchField.setPromptText(tr("dialog.clone.branchPrompt"));
+        TextInputKeymap.install(branchField, keymap);
+        TextField depthField = new TextField();
+        depthField.setPromptText(tr("dialog.clone.depthPrompt"));
+        depthField.setPrefColumnCount(8);
+        TextInputKeymap.install(depthField, keymap);
+        javafx.scene.control.CheckBox submodules = new javafx.scene.control.CheckBox(tr("dialog.clone.submodules"));
+        urlField.setId("clone-url");
+        dirField.setId("clone-directory");
+        branchField.setId("clone-branch");
+        depthField.setId("clone-depth");
+        submodules.setId("clone-submodules");
 
         String defaultParent = System.getProperty("user.home", "");
         boolean[] dirEdited = {false};
@@ -1779,15 +1909,23 @@ final class GitCoordinator {
         grid.add(new Label(tr("dialog.clone.directory")), 0, 1);
         grid.add(dirField, 1, 1);
         grid.add(browse, 2, 1);
+        grid.add(new Label(tr("dialog.clone.branch")), 0, 2);
+        grid.add(branchField, 1, 2, 2, 1);
+        grid.add(new Label(tr("dialog.clone.depth")), 0, 3);
+        grid.add(depthField, 1, 3);
+        grid.add(submodules, 1, 4, 2, 1);
         GridPane.setHgrow(urlField, Priority.ALWAYS);
         GridPane.setHgrow(dirField, Priority.ALWAYS);
 
-        // Enable Clone only when both fields are filled (mirrors the old dialog's validation).
+        // Enable Clone only when both fields are filled (mirrors the old dialog's validation) and the
+        // depth, when there is one, is a number of commits.
         BooleanProperty valid = new SimpleBooleanProperty(false);
-        Runnable revalidate = () ->
-                valid.set(!urlField.getText().isBlank() && !dirField.getText().isBlank());
+        Runnable revalidate = () -> valid.set(!urlField.getText().isBlank()
+                && !dirField.getText().isBlank()
+                && cloneDepth(depthField.getText()) >= 0);
         urlField.textProperty().addListener((o, a, b) -> revalidate.run());
         dirField.textProperty().addListener((o, a, b) -> revalidate.run());
+        depthField.textProperty().addListener((o, a, b) -> revalidate.run());
         revalidate.run();
 
         OverlayInput.show(
@@ -1808,8 +1946,12 @@ final class GitCoordinator {
                         return;
                     }
                     Path destination = target.path();
+                    GitService.CloneOptions options = new GitService.CloneOptions(
+                            Math.max(0, cloneDepth(depthField.getText())),
+                            branchField.getText(),
+                            submodules.isSelected());
                     host.setStatus(tr("status.cloning", url));
-                    service.clone(url, destination, running(new String[] {"clone"}, r -> {
+                    service.clone(url, destination, options, running(new String[] {"clone"}, r -> {
                         if (r.ok()) {
                             host.setStatus(tr("status.clonedInto", destination));
                             openClonedEntry(destination);
@@ -1820,6 +1962,23 @@ final class GitCoordinator {
                 },
                 null,
                 false);
+    }
+
+    /**
+     * The clone form's depth field: 0 when it is blank (all history), the number of commits when it holds a
+     * positive whole number, and -1 for anything else — which keeps the Clone button disabled. Pure.
+     */
+    static int cloneDepth(String text) {
+        String typed = text == null ? "" : text.strip();
+        if (typed.isEmpty()) {
+            return 0;
+        }
+        try {
+            int depth = Integer.parseInt(typed);
+            return depth > 0 ? depth : -1;
+        } catch (NumberFormatException notANumber) {
+            return -1;
+        }
     }
 
     /**

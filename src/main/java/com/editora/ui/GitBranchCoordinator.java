@@ -731,9 +731,10 @@ final class GitBranchCoordinator {
      */
     private void pullThenPush(Path root, String branch, String upstream) {
         // The configured pull mode, except fast-forward only, which cannot succeed on a diverged branch.
-        String[] pull = git().pullMode() == com.editora.git.GitPullMode.REBASE
-                ? com.editora.git.GitPullMode.REBASE.args()
-                : new String[] {"pull", "--no-rebase", "--no-edit"};
+        String[] pull = (git().pullMode() == com.editora.git.GitPullMode.REBASE
+                        ? com.editora.git.GitPullMode.REBASE
+                        : com.editora.git.GitPullMode.MERGE)
+                .args();
         String label = tr("gitlabel.pull");
         ui().setStatus(tr("status.gitRunning", label));
         git().aroundWorkingTreeMutation(

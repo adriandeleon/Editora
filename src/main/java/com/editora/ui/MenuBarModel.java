@@ -25,8 +25,30 @@ final class MenuBarModel {
     /** Placeholder entry rendering a separator line rather than a command. */
     static final String SEPARATOR = "---";
 
-    /** One top-level menu: an i18n key for its title, and its ordered entries (command ids / separators). */
-    record MenuSpec(String titleKey, List<String> entries) {}
+    /**
+     * One menu: an i18n key for its title, its ordered entries (command ids / separators), and — after
+     * those, below a separator — its submenus. A submenu is a {@code MenuSpec} too (it has none of its own).
+     *
+     * <p>Submenus exist for the one menu that outgrew a flat list: VCS had some sixty entries. The daily
+     * actions stay in {@link #entries}; everything else is one level down, grouped by what it acts on.
+     */
+    record MenuSpec(String titleKey, List<String> entries, List<MenuSpec> submenus) {
+        MenuSpec(String titleKey, List<String> entries) {
+            this(titleKey, entries, List.of());
+        }
+
+        /** Every entry of the menu and of its submenus, top level first. */
+        List<String> allEntries() {
+            if (submenus.isEmpty()) {
+                return entries;
+            }
+            List<String> all = new java.util.ArrayList<>(entries);
+            for (MenuSpec submenu : submenus) {
+                all.addAll(submenu.allEntries());
+            }
+            return all;
+        }
+    }
 
     private MenuBarModel() {}
 
@@ -198,83 +220,112 @@ final class MenuBarModel {
                                 "test.rerunFailed")),
                 new MenuSpec(
                         "menubar.vcs",
+                        // What is used every day stays at the top level; the rest is grouped below.
                         List.of(
                                 "git.commit",
-                                "git.stageAll",
+                                "git.commitAndPush",
                                 "git.push",
                                 "git.pull",
-                                "git.pullRebase",
-                                "git.pullMerge",
                                 "git.fetch",
+                                SEPARATOR,
+                                "git.switchBranch",
+                                "tool.gitLog",
                                 SEPARATOR,
                                 // Lit only while a merge, rebase, cherry-pick or revert waits to be finished.
                                 "git.continueOperation",
                                 "git.skipOperation",
                                 "git.abortOperation",
                                 SEPARATOR,
-                                "git.switchBranch",
-                                "git.newBranch",
-                                // The branch dropdown's per-row actions, for whoever looks in the menu.
-                                "git.newBranchFrom",
-                                "git.checkoutRevision",
-                                "git.mergeBranch",
-                                "git.rebaseOnto",
-                                "git.compareBranch",
-                                "git.renameBranch",
-                                "git.deleteBranch",
-                                SEPARATOR,
-                                "git.pushTo",
-                                "git.pushForce",
-                                "git.pushTags",
-                                "git.fetchRemote",
-                                "git.remotes",
-                                "git.worktrees",
-                                "git.tag.create",
-                                "git.tag.push",
-                                "git.tag.delete",
-                                SEPARATOR,
-                                "diff.vsHead",
-                                // The Project tree's "Compare with Branch / Tag / Revision", for the active
-                                // file: they were reachable from that context menu only.
-                                "diff.vsBranch",
-                                "diff.vsTag",
-                                "diff.vsCommit",
-                                "diff.compareWith",
-                                "diff.compareClipboard",
-                                "diff.compareBlank",
-                                "diff.compareDirectories",
-                                "diff.reviewUnstaged",
-                                "diff.reviewStaged",
-                                "merge.resolve",
-                                SEPARATOR,
-                                "tool.gitLog",
-                                "git.log.search",
-                                "git.log.toggleAllBranches",
-                                "git.fileHistory",
-                                "git.toggleBlame",
-                                "git.blamePreviousRevision",
-                                SEPARATOR,
-                                "git.nextChange",
-                                "git.previousChange",
-                                "git.peekChange",
-                                "git.revertHunk",
-                                "git.stageHunk",
-                                SEPARATOR,
-                                "git.stashes",
-                                "git.stash",
-                                "git.stashPop",
-                                // The picker, beside pop-latest: both are listed in the branch dropdown,
-                                // and the menu offered only one of the two.
-                                "git.unstash",
-                                "git.stashDrop",
-                                SEPARATOR,
-                                "git.applyPatch",
-                                "git.createPatch",
-                                SEPARATOR,
-                                "git.addToGitignore",
-                                SEPARATOR,
                                 "git.init",
-                                "git.clone")),
+                                "git.clone"),
+                        List.of(
+                                new MenuSpec(
+                                        "menubar.vcs.changes",
+                                        List.of(
+                                                "git.stageAll",
+                                                "git.unstageAll",
+                                                "git.discardAll",
+                                                SEPARATOR,
+                                                "git.commitAmend",
+                                                "git.undoLastCommit",
+                                                "git.commitMessageHistory",
+                                                SEPARATOR,
+                                                "git.nextChange",
+                                                "git.previousChange",
+                                                "git.peekChange",
+                                                "git.revertHunk",
+                                                "git.stageHunk",
+                                                SEPARATOR,
+                                                "diff.reviewUnstaged",
+                                                "diff.reviewStaged",
+                                                "merge.resolve",
+                                                SEPARATOR,
+                                                "git.addToGitignore")),
+                                new MenuSpec(
+                                        "menubar.vcs.branches",
+                                        // The branch dropdown's per-row actions, for whoever looks in the menu.
+                                        List.of(
+                                                "git.newBranch",
+                                                "git.newBranchFrom",
+                                                "git.checkoutRevision",
+                                                SEPARATOR,
+                                                "git.mergeBranch",
+                                                "git.rebaseOnto",
+                                                "git.compareBranch",
+                                                SEPARATOR,
+                                                "git.renameBranch",
+                                                "git.deleteBranch")),
+                                new MenuSpec(
+                                        "menubar.vcs.remotes",
+                                        List.of(
+                                                "git.pullRebase",
+                                                "git.pullMerge",
+                                                SEPARATOR,
+                                                "git.pushTo",
+                                                "git.pushForce",
+                                                "git.pushTags",
+                                                "git.fetchRemote",
+                                                "git.toggleAutoFetch",
+                                                SEPARATOR,
+                                                "git.remotes",
+                                                "git.worktrees")),
+                                new MenuSpec(
+                                        "menubar.vcs.tags",
+                                        List.of("git.tag.create", "git.tag.push", "git.tag.delete")),
+                                new MenuSpec(
+                                        "menubar.vcs.stash",
+                                        List.of(
+                                                "git.stashes",
+                                                "git.stash",
+                                                "git.stashPop",
+                                                // The picker, beside pop-latest: both are listed in the branch
+                                                // dropdown.
+                                                "git.unstash",
+                                                "git.stashDrop")),
+                                new MenuSpec("menubar.vcs.patches", List.of("git.applyPatch", "git.createPatch")),
+                                new MenuSpec(
+                                        "menubar.vcs.history",
+                                        List.of(
+                                                "git.log.search",
+                                                "git.log.toggleAllBranches",
+                                                "git.fileHistory",
+                                                SEPARATOR,
+                                                "git.toggleBlame",
+                                                "git.blamePreviousRevision")),
+                                new MenuSpec(
+                                        "menubar.vcs.compare",
+                                        List.of(
+                                                "diff.vsHead",
+                                                // The Project tree's "Compare with Branch / Tag / Revision",
+                                                // for the active file.
+                                                "diff.vsBranch",
+                                                "diff.vsTag",
+                                                "diff.vsCommit",
+                                                SEPARATOR,
+                                                "diff.compareWith",
+                                                "diff.compareClipboard",
+                                                "diff.compareBlank",
+                                                "diff.compareDirectories")))),
                 new MenuSpec(
                         "menubar.tools",
                         List.of(
@@ -370,7 +421,7 @@ final class MenuBarModel {
      */
     static List<String> allCommandIds() {
         return java.util.stream.Stream.concat(fullMenus().stream(), simpleMenus().stream())
-                .flatMap(m -> m.entries().stream())
+                .flatMap(m -> m.allEntries().stream())
                 .filter(e -> !SEPARATOR.equals(e))
                 .distinct()
                 .toList();

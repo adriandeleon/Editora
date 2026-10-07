@@ -285,10 +285,9 @@ final class GitStashCoordinator {
         }
         switch (StashOutcome.classify(result.ok(), result.out(), result.err())) {
             case APPLIED -> host.setStatus(tr(pop ? "stash.popped" : "stash.applied"));
-            case CONFLICT -> {
-                git.showConflicts(); // the Conflicts group is where they are resolved
-                host.setError(tr(pop ? "stash.conflict.pop" : "stash.conflict.apply"));
-            }
+            // Like every command that stops on conflicts: a status message and the Commit window, whose
+            // Conflicts group is where they are resolved. No dialog.
+            case CONFLICT -> git.conflictsNeedAttention(tr(pop ? "stash.conflict.pop" : "stash.conflict.apply"));
             case WOULD_OVERWRITE -> git.gitError(tr("stash.wouldOverwrite"), result.message());
             case UNTRACKED_EXISTS -> git.gitError(tr("stash.untrackedExists"), result.message());
             case EMPTY -> host.setStatus(tr("stash.empty"));

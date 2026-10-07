@@ -31,6 +31,7 @@ import javafx.scene.control.ScrollPane;
 import javafx.scene.control.SelectionMode;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.SplitPane;
+import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
@@ -126,6 +127,9 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         void newTag(String hash);
 
+        /** Writes the commit as a patch ({@code git format-patch}), to a file or a new buffer. */
+        default void createPatch(String hash) {}
+
         void checkoutTag(String tag);
 
         void pushTag(String tag);
@@ -215,7 +219,12 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     private final HBox detailsParents = new HBox(6);
     private final Label detailsAuthor = new Label();
     private final HBox detailsRefs = new HBox(4);
-    private final Label detailsMessage = new Label();
+    /**
+     * The commit message. A read-only text area rather than a label, so it can be selected and copied — with
+     * the mouse or, focused, from the keyboard; it is as tall as its text ({@link #fitMessageHeight}).
+     */
+    private final TextArea detailsMessage = new TextArea();
+
     private final VBox details = new VBox(2);
     private final ScrollPane detailsScroll = new ScrollPane(details);
     /** The commit {@link #details} describes. */
@@ -373,6 +382,17 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         detailsRefs.setAlignment(Pos.CENTER_LEFT);
         detailsMessage.getStyleClass().add("git-log-message");
         detailsMessage.setWrapText(true);
+        detailsMessage.setEditable(false);
+        detailsMessage.setPrefRowCount(1);
+        detailsMessage.setAccessibleText(tr("gitlog.details.message"));
+        // The text node exists once the skin does; from then on the area follows its height.
+        detailsMessage.skinProperty().addListener((o, was, now) -> {
+            javafx.scene.Node text = detailsMessage.lookup(".text");
+            if (text != null) {
+                text.boundsInLocalProperty().addListener((b, before, after) -> fitMessageHeight());
+            }
+            fitMessageHeight();
+        });
         details.getChildren().setAll(hashRow, detailsAuthor, detailsRefs, detailsMessage);
         details.getStyleClass().add("git-log-details");
         detailsScroll.setFitToWidth(true);
@@ -721,6 +741,19 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         detailsMessage.setText(d.message());
         showParents(d.parents());
         showRefs(d.refs());
+    }
+
+    /** Sizes the message area to its text: no inner scroll bar, the details pane scrolls as a whole. */
+    private void fitMessageHeight() {
+        javafx.scene.Node text = detailsMessage.lookup(".text");
+        if (text == null) {
+            return;
+        }
+        Insets insets = detailsMessage.getInsets();
+        double height = Math.ceil(text.getBoundsInLocal().getHeight()) + insets.getTop() + insets.getBottom() + 4;
+        detailsMessage.setMinHeight(height);
+        detailsMessage.setPrefHeight(height);
+        detailsMessage.setMaxHeight(height);
     }
 
     /** Fills the details pane from the row at once; {@link #setCommitDetails} adds the rest. */
@@ -1184,6 +1217,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             MenuItem newTag = item(tr("gitlog.menu.newTag"), Icons.bookmark(), () -> actions.newTag(h));
             MenuItem revert = item(tr("gitlog.menu.revert"), Icons.refresh(), () -> actions.revert(h));
             MenuItem cherry = item(tr("gitlog.menu.cherryPick"), Icons.stageAll(), () -> actions.cherryPick(h));
+            MenuItem patch = item(tr("gitlog.menu.createPatch"), Icons.diff(), () -> actions.createPatch(h));
             Menu reset = new Menu(tr("gitlog.menu.reset"));
             reset.setGraphic(Icons.refresh());
             reset.getItems()
@@ -1192,7 +1226,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                             item(tr("gitlog.menu.resetMixed"), null, () -> actions.reset(h, "mixed")),
                             item(tr("gitlog.menu.resetHard"), null, () -> actions.reset(h, "hard")));
             ContextMenu menu =
-                    new ContextMenu(copy, review, compare, new SeparatorMenuItem(), checkout, newBranch, newTag);
+                    new ContextMenu(copy, review, compare, patch, new SeparatorMenuItem(), checkout, newBranch, newTag);
             // One submenu per tag on the row: which tag is meant is never a guess.
             for (String tag : c.tags()) {
                 Menu tagMenu = new Menu(tr("gitlog.menu.tag", tag));

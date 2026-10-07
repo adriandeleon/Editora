@@ -379,6 +379,32 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v109→110: the automatic fetch is new — and off: nobody's editor starts talking to a remote on upgrade. */
+    @Test
+    void theAutomaticFetchArrivesSwitchedOffForExistingUsers() throws Exception {
+        JsonNode v109 = mapper.readTree("{\"schemaVersion\":109,\"gitSupport\":true,\"gitPullMode\":\"rebase\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v109.deepCopy(), mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt(),
+                "stamped current");
+        assertEquals("rebase", out.get("gitPullMode").asText(), "nothing else changes");
+        assertFalse(out.has("gitAutoFetch"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertFalse(loaded.isGitAutoFetch(), "off unless the user switches it on");
+        assertEquals(10, loaded.getGitAutoFetchMinutes());
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":110,\"gitAutoFetch\":true,\"gitAutoFetchMinutes\":3}");
+        com.editora.config.Settings kept = mapper.treeToValue(chosen, com.editora.config.Settings.class);
+        assertTrue(kept.isGitAutoFetch());
+        assertEquals(3, kept.getGitAutoFetchMinutes());
+        // A hand-edited zero or a huge value is clamped rather than fetching in a tight loop.
+        kept.setGitAutoFetchMinutes(0);
+        assertEquals(1, kept.getGitAutoFetchMinutes());
+        kept.setGitAutoFetchMinutes(1_000_000);
+        assertEquals(com.editora.config.Settings.MAX_GIT_AUTO_FETCH_MINUTES, kept.getGitAutoFetchMinutes());
+    }
+
     /** v108→109: gitPullMode is new — an existing user's pull stays fast-forward only. */
     @Test
     void thePullModeSettingArrivesAsFastForwardOnlyForExistingUsers() throws Exception {

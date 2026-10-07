@@ -10,6 +10,7 @@ import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
+import javafx.scene.control.CheckBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.MenuButton;
@@ -26,12 +27,16 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.git.CommitMessages;
 import com.editora.git.GitConflicts;
 import com.editora.git.GitFileStatus;
+import com.editora.git.GitNumstat;
 import com.editora.git.GitOperation;
+import com.editora.git.GitService;
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
 
@@ -79,6 +84,40 @@ public final class GitPanel extends VBox implements ToolWindowContent {
          */
         void commit(String message, java.util.function.Consumer<Boolean> onDone);
 
+        /**
+         * Commits with the options of the Commit window: amend, sign-off, and a push afterwards. The default
+         * is the plain {@link #commit(String, java.util.function.Consumer)}.
+         */
+        default void commit(CommitRequest request, java.util.function.Consumer<Boolean> onDone) {
+            commit(request.message(), onDone);
+        }
+
+        /** Told once, from the panel's constructor, which panel these actions serve. */
+        default void attached(GitPanel panel) {}
+
+        /**
+         * Amend was switched on: answers with the commit that would be amended, or {@code null} (having said
+         * why) when there is none to amend — a branch with no commits, an operation in progress.
+         */
+        default void amendTarget(java.util.function.Consumer<GitService.HeadCommit> onResult) {
+            onResult.accept(null);
+        }
+
+        /** Whether commits in this repository are signed off ({@code -s}); remembered for the session. */
+        default boolean signOff() {
+            return false;
+        }
+
+        default void setSignOff(boolean signOff) {}
+
+        /** The messages recently committed in this repository, newest first. */
+        default List<String> messageHistory() {
+            return List.of();
+        }
+
+        /** Unstages everything that is staged. */
+        default void unstageAll() {}
+
         void push();
 
         void refresh();
@@ -104,6 +143,16 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         /** Aborts the operation in progress (the controller confirms first). */
         default void abortOperation() {}
     }
+
+    /**
+     * One commit as the Commit window asks for it.
+     *
+     * @param message the message as typed (stripped of leading and trailing white space)
+     * @param amend replace the last commit instead of adding one
+     * @param signOff add a {@code Signed-off-by} trailer ({@code -s})
+     * @param push push the branch once the commit is made
+     */
+    public record CommitRequest(String message, boolean amend, boolean signOff, boolean push) {}
 
     /** Which group a file row sits under. */
     private enum Group {
@@ -131,6 +180,32 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final HBox filterBar;
     private final TextArea message = new TextArea();
     private final Button commitButton = new Button(tr("gitpanel.commit"));
+    /** The secondary half of the Commit button: Commit and Push. */
+    private final MenuItem commitAndPushItem = new MenuItem(tr("gitpanel.commitAndPush"));
+
+    private final MenuButton commitMenu = new MenuButton();
+    /** Replace the last commit instead of adding one; see {@link #setAmending}. */
+    private final CheckBox amendCheck = new CheckBox(tr("gitpanel.amend"));
+
+    private final CheckBox signOffCheck = new CheckBox(tr("gitpanel.signOff"));
+    /** Names the commit being amended; under it, the warning when that commit is already on the upstream. */
+    private final Label amendInfo = new Label();
+
+    private final Label amendWarning = new Label();
+    private final VBox amendBox = new VBox(2, amendInfo, amendWarning);
+    /** The subject-length guide: advice next to the message box, never a reason to refuse a commit. */
+    private final Label guideLabel = new Label();
+
+    private final MenuButton historyButton = new MenuButton();
+    /** The commit Amend is about to replace; null while Amend is off (or its commit is still being read). */
+    private GitService.HeadCommit amending;
+    /** The message this panel put in the box for an amend, taken out again if Amend is switched off untouched. */
+    private String amendPrefill;
+    /** The repository's commit template, put in an empty box; see {@link #setCommitTemplate}. */
+    private GitService.CommitTemplate template = GitService.CommitTemplate.NONE;
+    /** Lines added and deleted per file, when they have been read for the status on show. */
+    private GitNumstat.Changes lineCounts = GitNumstat.Changes.NONE;
+
     private final Label branchLabel = new Label();
     /** Push indicator: "↑N" (commits to push), "↑ publish" (no upstream), or "✓ pushed". */
     private final Label aheadLabel = new Label();
@@ -149,7 +224,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     private final Button aiCommitButton =
             iconButton(Icons.aiGenerate(), tr("gitpanel.aiCommitTip"), () -> onGenerateCommitMessage.run());
 
-    private final HBox messageToolbar = new HBox(aiCommitButton);
+    /** Amend and Sign-off, the length guide, and the message helpers (recent messages, AI); it wraps. */
+    private final WrapRow messageToolbar;
 
     /** The status last pushed by the controller, so a filter change can re-render without a fresh {@code
      *  git status} (filtering is a view, not a refresh). */
@@ -199,15 +275,14 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         branchLabel.getStyleClass().add("git-branch-label");
         branchLabel.setMaxWidth(Double.MAX_VALUE);
         HBox.setHgrow(branchLabel, Priority.ALWAYS);
-        // In a narrow dock the branch name wins: it keeps a readable minimum (the full name is in its
-        // tooltip) while the push indicator gives way, down to its arrow ("↑ …") — both used to collapse
-        // to a bare "…".
+        // The branch name keeps a readable minimum; its full text is in the tooltip.
         branchLabel.setMinWidth(BRANCH_MIN_WIDTH);
+        branchLabel.setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
         Tooltip branchTip = new Tooltip();
         branchTip.textProperty().bind(branchLabel.textProperty());
         branchLabel.setTooltip(branchTip);
-        aheadLabel.setMinWidth(AHEAD_MIN_WIDTH);
-        aheadLabel.setTextOverrun(javafx.scene.control.OverrunStyle.WORD_ELLIPSIS);
+        // The push indicator is a few characters ("↑2 ↓1", "↑ publish") and is never cut: cut, it read "↑…".
+        aheadLabel.setMinWidth(Region.USE_PREF_SIZE);
         aheadLabel.getStyleClass().add("git-ahead");
         Button stageAll = iconButton(Icons.stageAll(), tr("gitpanel.stageAllTip"), actions::stageAll);
         reviewWorkingItem = new MenuItem(tr("gitpanel.reviewWorking"));
@@ -224,14 +299,22 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         reviewButton.setDisable(true);
         pushButton = iconButton(Icons.gitPush(), tr("gitpanel.pushTip"), actions::push);
         Button refresh = iconButton(Icons.refresh(), tr("gitpanel.refreshTip"), actions::refresh);
-        HBox header = new HBox(2, branchLabel, aheadLabel, reviewButton, stageAll, pushButton, refresh);
+        HBox headerButtons = new HBox(2, reviewButton, stageAll, pushButton, refresh);
+        headerButtons.setAlignment(Pos.CENTER_LEFT);
+        // The branch name gives way first (down to BRANCH_MIN_WIDTH, its full text in the tooltip); when
+        // even that does not make room — a long translation of "publish", a very narrow dock — the buttons
+        // move to a second line instead of anything being cut to "…".
+        WrapRow header = new WrapRow(2, 2, WrapRow.setGrow(branchLabel), aheadLabel, headerButtons);
         header.getStyleClass().add("git-toolbar");
-        header.setAlignment(Pos.CENTER_LEFT);
 
         // Filter/search row, mirroring the Bookmarks / Personal Notes tool windows (same style classes, the
         // same Down/Enter + C-n/C-p hand-off into the results via FilterFieldNav).
         filterField.setPromptText(tr("gitpanel.filterPrompt"));
         filterField.getStyleClass().add("bookmarks-filter");
+        // Where the list's own key is written down: on the field focus lands on, and for a screen reader on
+        // the list itself. (Rows keep their tooltip for the path.)
+        filterField.setTooltip(new Tooltip(tr("gitpanel.spaceHint")));
+        tree.setAccessibleHelp(tr("gitpanel.spaceHint"));
         filterField.textProperty().addListener((o, w, n) -> renderFiles());
         FilterFieldNav.install(filterField, tree, this::openSelected);
         HBox.setHgrow(filterField, Priority.ALWAYS);
@@ -267,7 +350,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         tree.setOnContextMenuRequested(e -> {
             TreeItem<Row> focused =
                     tree.getFocusModel() == null ? null : tree.getFocusModel().getFocusedItem();
-            if (focused != null && focused.getValue() instanceof FileRow) {
+            if (focused != null && focused.getValue() != null) {
                 showMenu(tree, focused, e.getScreenX(), e.getScreenY());
                 e.consume();
             }
@@ -276,9 +359,37 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
         aiCommitButton.setVisible(false); // hidden until setAiAvailable(true) — off by default
         aiCommitButton.setManaged(false);
-        messageToolbar.setVisible(false);
-        messageToolbar.setManaged(false);
-        messageToolbar.setAlignment(Pos.CENTER_RIGHT);
+        amendCheck.getStyleClass().add("git-commit-option");
+        amendCheck.setTooltip(new Tooltip(tr("gitpanel.amendTip")));
+        amendCheck.setOnAction(e -> setAmending(amendCheck.isSelected()));
+        signOffCheck.getStyleClass().add("git-commit-option");
+        signOffCheck.setTooltip(new Tooltip(tr("gitpanel.signOffTip")));
+        signOffCheck.setOnAction(e -> actions.setSignOff(signOffCheck.isSelected()));
+        guideLabel.getStyleClass().add("git-message-guide");
+        guideLabel.setMinWidth(Region.USE_PREF_SIZE);
+        guideLabel.setTooltip(new Tooltip(tr("gitpanel.guide.tip")));
+        historyButton.setGraphic(Icons.history());
+        historyButton.getStyleClass().addAll("flat", "git-toolbar-button");
+        historyButton.setFocusTraversable(false);
+        historyButton.setAccessibleText(tr("gitpanel.historyTip"));
+        historyButton.setTooltip(new Tooltip(tr("gitpanel.historyTip")));
+        // Filled when it opens: the list changes with every commit and with the active repository. A
+        // placeholder item keeps the button clickable while there is nothing to list.
+        historyButton.getItems().setAll(new MenuItem(tr("gitpanel.historyEmpty")));
+        historyButton.setOnShowing(e -> fillHistoryMenu());
+        Region toolbarGap = new Region();
+        toolbarGap.setMinWidth(0);
+        messageToolbar = new WrapRow(
+                8, 2, amendCheck, signOffCheck, WrapRow.setGrow(toolbarGap), historyButton, aiCommitButton, guideLabel);
+        messageToolbar.getStyleClass().add("git-message-toolbar");
+        amendInfo.getStyleClass().add("git-amend-info");
+        amendInfo.setWrapText(true);
+        amendInfo.setMinHeight(Region.USE_PREF_SIZE);
+        amendWarning.getStyleClass().add("git-amend-warning");
+        amendWarning.setWrapText(true);
+        amendWarning.setMinHeight(Region.USE_PREF_SIZE);
+        show(amendWarning, false);
+        show(amendBox, false);
 
         message.setPromptText(tr("gitpanel.commitPrompt"));
         message.getStyleClass().add("git-commit-message");
@@ -291,9 +402,19 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 e.consume();
             }
         });
+        message.textProperty().addListener((o, was, now) -> updateGuide());
         commitButton.setMaxWidth(Double.MAX_VALUE);
         commitButton.setDefaultButton(false);
-        commitButton.setOnAction(e -> doCommit());
+        commitButton.setOnAction(e -> doCommit(false));
+        HBox.setHgrow(commitButton, Priority.ALWAYS);
+        commitAndPushItem.setGraphic(Icons.gitPush());
+        commitAndPushItem.setOnAction(e -> doCommit(true));
+        commitMenu.getItems().setAll(commitAndPushItem);
+        commitMenu.getStyleClass().add("git-commit-more");
+        commitMenu.setAccessibleText(tr("gitpanel.commitMoreTip"));
+        commitMenu.setTooltip(new Tooltip(tr("gitpanel.commitMoreTip")));
+        commitRow.getChildren().setAll(new HBox(2, commitButton, commitMenu));
+        updateGuide();
 
         operationBanner.getStyleClass().add("git-operation-banner");
         operationLabel.getStyleClass().add("git-operation-label");
@@ -320,6 +441,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         getChildren().setAll(placeholderPane);
         // Start with no repo until the controller pushes a status.
         getProperties().put("git.header", header);
+        actions.attached(this);
     }
 
     /** A compact, legible icon button for the panel toolbar (graphic + tooltip, no truncated text). */
@@ -333,21 +455,45 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * and during a slow hook a second press queued a second commit.
      */
     private void doCommit() {
+        doCommit(false);
+    }
+
+    /** {@code push}: Commit and Push — the push follows only a commit that was made. */
+    private boolean doCommit(boolean push) {
         String submitted = message.getText() == null ? "" : message.getText();
         String msg = submitted.strip();
-        if (msg.isEmpty() || committing || commitButton.isDisabled()) {
-            return;
+        if (messageIsEmpty() || committing || commitButton.isDisabled()) {
+            return false;
         }
         committing = true;
         updateCommitEnabled();
-        actions.commit(msg, committed -> {
+        boolean amend = amending != null;
+        actions.commit(new CommitRequest(msg, amend, signOffCheck.isSelected(), push), committed -> {
             committing = false;
+            if (committed) {
+                // One amend per tick of the box: the next commit is an ordinary one again.
+                amendPrefill = null;
+                clearAmend();
+            }
             updateCommitEnabled();
             // Clear only the message that was committed: text typed while the commit ran is the next one.
             if (committed && submitted.equals(message.getText())) {
                 message.clear();
+                applyTemplate();
             }
         });
+        return true;
+    }
+
+    /**
+     * Whether the box holds nothing git would commit: blank, or — in a repository with a commit template —
+     * only the template's comment lines.
+     */
+    private boolean messageIsEmpty() {
+        String text = message.getText() == null ? "" : message.getText();
+        return template.configured()
+                ? CommitMessages.strip(text, template.commentChar()).isEmpty()
+                : text.isBlank();
     }
 
     private void updateCommitEnabled() {
@@ -355,7 +501,12 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         // equals HEAD), so it does not need staged changes; unmerged files block every commit — git refuses
         // it, and used to say so in an error dialog after the click.
         boolean concludesMerge = operation.kind() == GitOperation.Kind.MERGE;
-        commitButton.setDisable(conflicts > 0 || committing || !(hasStaged || concludesMerge));
+        // An amend needs nothing staged either: rewording the last commit is the commonest reason for one.
+        commitButton.setDisable(conflicts > 0 || committing || !(hasStaged || concludesMerge || amending != null));
+        commitMenu.setDisable(commitButton.isDisabled());
+        commitButton.setText(tr(amending != null ? "gitpanel.commitAmend" : "gitpanel.commit"));
+        // Amend rewrites HEAD: not while a merge, rebase, cherry-pick or revert is using it.
+        amendCheck.setDisable(committing || operation.inProgress() || conflicts > 0);
         if (conflicts > 0) {
             commitBlockedTip.setText(tr("gitpanel.commitBlockedConflicts", conflicts));
             Tooltip.install(commitRow, commitBlockedTip);
@@ -374,12 +525,165 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * box is empty, a commit is running or the button is disabled.
      */
     public boolean commitNow() {
-        String text = message.getText() == null ? "" : message.getText().strip();
-        if (text.isEmpty() || committing || commitButton.isDisabled()) {
+        return doCommit(false);
+    }
+
+    /** {@link #commitNow}, followed by a push when the commit is made ({@code git.commitAndPush}). */
+    public boolean commitAndPushNow() {
+        return doCommit(true);
+    }
+
+    // --- amend ---------------------------------------------------------------------------------------
+
+    /** Whether the next commit replaces the last one. */
+    public boolean isAmending() {
+        return amendCheck.isSelected();
+    }
+
+    /**
+     * Switches Amend on or off ({@code git.commitAmend}, the checkbox). On: the commit to amend is read, named
+     * under the options, and its message put in the box when the box is empty (or holds only the template);
+     * a commit already on the upstream gets a warning in place, not a dialog. Off: the message is taken out
+     * again if it was not edited.
+     */
+    public void setAmending(boolean on) {
+        amendCheck.setSelected(on);
+        if (!on) {
+            String current = message.getText() == null ? "" : message.getText();
+            if (amendPrefill != null && amendPrefill.equals(current)) {
+                message.clear();
+                applyTemplate();
+            }
+            amendPrefill = null;
+            clearAmend();
+            updateCommitEnabled();
+            return;
+        }
+        actions.amendTarget(head -> {
+            if (!amendCheck.isSelected()) {
+                return; // switched off again while the commit was being read
+            }
+            if (head == null) {
+                clearAmend();
+                updateCommitEnabled();
+                return;
+            }
+            boolean first = amending == null;
+            amending = head;
+            amendInfo.setText(tr("gitpanel.amending", head.shortHash(), head.subject()));
+            amendWarning.setText(head.pushed() ? tr("gitpanel.amendPushed", head.upstream()) : "");
+            show(amendWarning, head.pushed());
+            show(amendBox, true);
+            String current = message.getText() == null ? "" : message.getText();
+            if (first && (current.isBlank() || current.equals(template.text()))) {
+                amendPrefill = head.message();
+                setCommitMessage(amendPrefill);
+            }
+            updateCommitEnabled();
+        });
+    }
+
+    private void clearAmend() {
+        amending = null;
+        amendCheck.setSelected(false);
+        show(amendBox, false);
+    }
+
+    // --- message aids --------------------------------------------------------------------------------
+
+    /**
+     * The repository's {@code commit.template} (and comment character). The template is put in the box when
+     * it is empty — or still holds the previous repository's untouched template — and its comment lines are
+     * not part of the message: a box with nothing else in it cannot be committed.
+     */
+    public void setCommitTemplate(GitService.CommitTemplate next) {
+        GitService.CommitTemplate previous = template;
+        template = next == null ? GitService.CommitTemplate.NONE : next;
+        String current = message.getText() == null ? "" : message.getText();
+        if (previous.configured() && current.equals(previous.text()) && !current.equals(template.text())) {
+            message.clear();
+        }
+        applyTemplate();
+        updateGuide();
+        updateCommitEnabled();
+    }
+
+    private void applyTemplate() {
+        String current = message.getText() == null ? "" : message.getText();
+        if (template.configured() && current.isBlank() && amending == null) {
+            message.setText(template.text());
+            message.positionCaret(0); // the first line is where the subject goes
+        }
+    }
+
+    /** Puts {@code text} in the message box unless something is being written there; true when it was put. */
+    public boolean restoreCommitMessage(String text) {
+        String current = message.getText() == null ? "" : message.getText();
+        if (!current.isBlank() && !current.equals(template.text())) {
             return false;
         }
-        doCommit();
+        setCommitMessage(text);
         return true;
+    }
+
+    private void updateGuide() {
+        String text = message.getText() == null ? "" : message.getText();
+        CommitMessages.Guide guide = CommitMessages.guide(text, template.commentChar());
+        guideLabel.getStyleClass().removeAll("git-guide-long", "git-guide-too-long");
+        if (guide.subjectLength() == 0) {
+            guideLabel.setText("");
+            return;
+        }
+        guideLabel.setText(
+                guide.longBodyLines() > 0
+                        ? tr("gitpanel.guide.subjectAndBody", guide.subjectLength(), guide.longBodyLines())
+                        : tr("gitpanel.guide.subject", guide.subjectLength()));
+        switch (guide.subject()) {
+            case LONG -> guideLabel.getStyleClass().add("git-guide-long");
+            case TOO_LONG -> guideLabel.getStyleClass().add("git-guide-too-long");
+            case OK -> {
+                if (guide.longBodyLines() > 0) {
+                    guideLabel.getStyleClass().add("git-guide-long");
+                }
+            }
+        }
+    }
+
+    /** Longest subject shown for a recent message in the dropdown. */
+    private static final int HISTORY_LABEL_MAX = 60;
+
+    private void fillHistoryMenu() {
+        List<String> history = actions.messageHistory();
+        if (history.isEmpty()) {
+            MenuItem none = new MenuItem(tr("gitpanel.historyEmpty"));
+            none.setDisable(true);
+            historyButton.getItems().setAll(none);
+            return;
+        }
+        List<MenuItem> items = new ArrayList<>(history.size());
+        for (String entry : history) {
+            String subject = CommitMessages.subject(entry);
+            MenuItem item = new MenuItem(
+                    subject.length() > HISTORY_LABEL_MAX ? subject.substring(0, HISTORY_LABEL_MAX - 1) + "…" : subject);
+            item.setMnemonicParsing(false); // a subject is text: "fix_a" must not lose its underscore
+            item.setOnAction(e -> {
+                setCommitMessage(entry);
+                message.requestFocus();
+            });
+            items.add(item);
+        }
+        historyButton.getItems().setAll(items);
+    }
+
+    /** Shows the lines added and deleted next to each staged and changed file ({@code NONE} hides them). */
+    public void setLineCounts(GitNumstat.Changes counts) {
+        lineCounts = counts == null ? GitNumstat.Changes.NONE : counts;
+        tree.refresh();
+    }
+
+    /** Whether the panel is on screen — reads only worth making for a visible list are skipped otherwise. */
+    public boolean isOnScreen() {
+        return getScene() != null && isVisible();
     }
 
     /**
@@ -467,8 +771,6 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     public void setAiAvailable(boolean available) {
         aiCommitButton.setVisible(available);
         aiCommitButton.setManaged(available);
-        messageToolbar.setVisible(available);
-        messageToolbar.setManaged(available);
     }
 
     /**
@@ -480,6 +782,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             lastStatus = null;
             hasStaged = false;
             conflicts = 0;
+            lineCounts = GitNumstat.Changes.NONE;
+            if (amendCheck.isSelected()) {
+                setAmending(false);
+            }
             updateBanner();
             updateCommitEnabled();
             reviewButton.setDisable(true);
@@ -501,8 +807,13 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         reviewStagedItem.setDisable(!hasStaged);
         reviewWorkingItem.setDisable(!hasWorking);
         reviewButton.setDisable(!hasStaged && !hasWorking);
+        signOffCheck.setSelected(actions.signOff());
+        if (amendCheck.isSelected() && (operation.inProgress() || conflicts > 0)) {
+            setAmending(false);
+        } else if (amendCheck.isSelected()) {
+            setAmending(true); // HEAD may have moved (a commit from a terminal): name the commit it is now
+        }
         updateCommitEnabled();
-        commitButton.setText(tr("gitpanel.commit"));
         // Nothing to summarize without a staged diff — grey it out instead of silently no-op'ing on click.
         aiCommitButton.setDisable(!hasStaged);
 
@@ -519,7 +830,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (lastStatus == null) {
             return;
         }
-        HBox header = (HBox) getProperties().get("git.header");
+        Node header = (Node) getProperties().get("git.header");
         String query = filterQuery();
         // The rows are rebuilt on every status push — tab switch, save, window focus, each stage — so what
         // the user had in hand is carried across by row identity (group + path), in the SAME root: replacing
@@ -547,9 +858,11 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             VBox.setVgrow(notePane, Priority.ALWAYS);
             // The filter bar stays even with nothing to show, or a filter that matches nothing would remove
             // the only control that can clear it.
-            getChildren().setAll(header, operationBanner, filterBar, notePane, messageToolbar, message, commitRow);
+            getChildren()
+                    .setAll(header, operationBanner, filterBar, notePane, messageToolbar, amendBox, message, commitRow);
         } else {
-            getChildren().setAll(header, operationBanner, filterBar, tree, messageToolbar, message, commitRow);
+            getChildren()
+                    .setAll(header, operationBanner, filterBar, tree, messageToolbar, amendBox, message, commitRow);
         }
     }
 
@@ -691,6 +1004,11 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (e.getCode() == KeyCode.ENTER) {
             openSelected();
             e.consume();
+            return;
+        }
+        if (e.getCode() == KeyCode.SPACE && !e.isControlDown() && !e.isAltDown() && !e.isMetaDown()) {
+            toggleStagedOfSelection();
+            e.consume(); // also when there was nothing to toggle: Space must not fall through to the tree
             return;
         }
         if (!e.isControlDown()) {
@@ -855,15 +1173,92 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     /** Builds and shows the context menu for {@code clicked}'s action targets at the given screen point. */
     private void showMenu(Node anchor, TreeItem<Row> clicked, double screenX, double screenY) {
-        List<FileRow> targets = actionTargets(clicked);
-        if (targets.isEmpty()) {
+        ContextMenu menu;
+        if (clicked != null && clicked.getValue() instanceof GroupRow group) {
+            tree.getSelectionModel().clearSelection();
+            tree.getSelectionModel().select(clicked);
+            menu = buildGroupMenu(group.group());
+        } else {
+            List<FileRow> targets = actionTargets(clicked);
+            menu = targets.isEmpty() ? null : buildMenu(targets);
+        }
+        if (menu == null || menu.getItems().isEmpty()) {
             return;
         }
         if (openMenu != null) {
             openMenu.hide();
         }
-        openMenu = buildMenu(targets);
+        openMenu = menu;
         openMenu.show(anchor, screenX, screenY);
+    }
+
+    /**
+     * The context menu of a group header: the whole group at once — Stage All for Changes and Untracked,
+     * Unstage All for Staged, Discard All / Delete All for what is not staged. It acts on every file of the
+     * group, whatever the filter shows. The Conflicts group has none: conflicts are resolved one by one.
+     */
+    private ContextMenu buildGroupMenu(Group group) {
+        ContextMenu menu = new ContextMenu();
+        if (lastStatus == null || group == Group.CONFLICTS) {
+            return menu;
+        }
+        List<String> all = allIn(group).stream().map(FileEntry::path).toList();
+        if (all.isEmpty()) {
+            return menu;
+        }
+        if (group == Group.STAGED) {
+            MenuItem unstage = new MenuItem(tr("gitpanel.menu.unstageAll"));
+            unstage.setGraphic(Icons.remove());
+            unstage.setOnAction(a -> actions.unstageAll());
+            menu.getItems().add(unstage);
+            return menu;
+        }
+        MenuItem stage = new MenuItem(tr("gitpanel.menu.stageGroup"));
+        stage.setGraphic(Icons.stageAll());
+        stage.setOnAction(a -> actions.stage(all));
+        boolean untracked = group == Group.UNTRACKED;
+        MenuItem discard = new MenuItem(tr(untracked ? "gitpanel.menu.deleteGroup" : "gitpanel.menu.discardGroup"));
+        discard.setGraphic(Icons.trash());
+        discard.setOnAction(a -> actions.discard(untracked ? List.of() : all, untracked ? all : List.of()));
+        menu.getItems().addAll(stage, discard);
+        return menu;
+    }
+
+    /**
+     * Space in the list: stages the selected rows that are not staged and unstages the ones that are — on a
+     * group header, the whole group. Conflicted rows are left alone (staging one declares it resolved; that
+     * is its own menu item). False when the selection has nothing to toggle.
+     */
+    boolean toggleStagedOfSelection() {
+        LinkedHashSet<String> stage = new LinkedHashSet<>();
+        LinkedHashSet<String> unstage = new LinkedHashSet<>();
+        boolean wholeStagedGroup = false;
+        for (TreeItem<Row> item : tree.getSelectionModel().getSelectedItems()) {
+            if (item == null || lastStatus == null) {
+                continue;
+            }
+            if (item.getValue() instanceof FileRow file && file.group() != Group.CONFLICTS) {
+                (file.group() == Group.STAGED ? unstage : stage)
+                        .add(file.entry().path());
+            } else if (item.getValue() instanceof GroupRow group && group.group() != Group.CONFLICTS) {
+                wholeStagedGroup |= group.group() == Group.STAGED;
+                for (FileEntry entry : allIn(group.group())) {
+                    (group.group() == Group.STAGED ? unstage : stage).add(entry.path());
+                }
+            }
+        }
+        if (stage.isEmpty() && unstage.isEmpty()) {
+            return false;
+        }
+        if (!stage.isEmpty()) {
+            actions.stage(List.copyOf(stage));
+        }
+        if (wholeStagedGroup) {
+            actions.unstageAll();
+        } else if (!unstage.isEmpty()) {
+            actions.unstage(List.copyOf(unstage));
+        }
+        return true;
     }
 
     /**
@@ -896,9 +1291,11 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         }
         List<String> conflicted = conflictPaths(targets);
         if (!conflicted.isEmpty()) {
-            MenuItem ours = new MenuItem(tr("gitpanel.menu.acceptOurs"));
+            // Named by what each side is in the operation in progress: during a rebase git's "ours" is the
+            // branch being rebased onto, so the labels say that and carry git's term in parentheses.
+            MenuItem ours = new MenuItem(tr(GitCoordinator.acceptSideKey(operation.kind(), true)));
             ours.setOnAction(a -> actions.acceptSide(conflicted, true));
-            MenuItem theirs = new MenuItem(tr("gitpanel.menu.acceptTheirs"));
+            MenuItem theirs = new MenuItem(tr(GitCoordinator.acceptSideKey(operation.kind(), false)));
             theirs.setOnAction(a -> actions.acceptSide(conflicted, false));
             // Staging is how git is told a conflict is resolved; the controller asks first when the file
             // still has conflict markers in it.
@@ -1016,12 +1413,17 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     };
 
     /** Narrowest the branch label gets in the header (room for the glyph and a short branch name). */
-    static final double BRANCH_MIN_WIDTH = 88;
-
-    /** Room for the push indicator's arrow and an ellipsis when its word no longer fits. */
-    private static final double AHEAD_MIN_WIDTH = 30;
+    static final double BRANCH_MIN_WIDTH = 64;
 
     private final class GitCell extends TreeCell<Row> {
+
+        /** A file row: glyph and status letter, the path (elided from its start), then the line counts. */
+        private final Label pathLabel = new Label();
+
+        private final Label addedLabel = new Label();
+        private final Label deletedLabel = new Label();
+        private final StackPane glyph = new StackPane();
+        private final HBox fileRow = new HBox(6, glyph, pathLabel, addedLabel, deletedLabel);
 
         GitCell() {
             // Rows are as wide as the tree, never wider: a long path is elided (see updateItem) instead of
@@ -1030,11 +1432,26 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             // Built per request rather than stored via setContextMenu: the items depend on the current
             // selection, which changes long after updateItem last ran for this cell.
             setOnContextMenuRequested(e -> {
-                if (getItem() instanceof FileRow) {
+                if (getItem() != null) {
                     showMenu(this, getTreeItem(), e.getScreenX(), e.getScreenY());
                     e.consume();
                 }
             });
+            fileRow.setAlignment(Pos.CENTER_LEFT);
+            // The row takes the cell's width, whatever its content would like: the path gives way.
+            fileRow.setMinWidth(0);
+            fileRow.setMaxWidth(Double.MAX_VALUE);
+            fileRow.setMouseTransparent(true);
+            pathLabel.setMinWidth(0);
+            pathLabel.setMaxWidth(Double.MAX_VALUE);
+            pathLabel.setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS);
+            // The path is drawn in the cell's own colour — status tint, selection — like the text it replaces.
+            pathLabel.textFillProperty().bind(textFillProperty());
+            HBox.setHgrow(pathLabel, Priority.ALWAYS);
+            addedLabel.getStyleClass().addAll("git-count", "git-count-added");
+            deletedLabel.getStyleClass().addAll("git-count", "git-count-deleted");
+            addedLabel.setMinWidth(Region.USE_PREF_SIZE);
+            deletedLabel.setMinWidth(Region.USE_PREF_SIZE);
         }
 
         @Override
@@ -1044,6 +1461,7 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             // Cells are recycled: a group row or an empty one must not keep the path of the file row this
             // cell showed before.
             setTooltip(null);
+            setContentDisplay(javafx.scene.control.ContentDisplay.LEFT);
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
@@ -1056,16 +1474,49 @@ public final class GitPanel extends VBox implements ToolWindowContent {
                 setTextOverrun(javafx.scene.control.OverrunStyle.ELLIPSIS);
             } else if (item instanceof FileRow f) {
                 FileEntry e = f.entry();
-                // The status letter rides in the graphic, not the text, so it can be bold on its own.
-                setText(f.entry().path());
+                // The cell keeps the path as its text (what assistive technology reads), but draws the row
+                // itself: the status letter can be bold on its own, and the line counts sit at the right edge.
+                setText(e.path());
+                setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS);
+                setContentDisplay(javafx.scene.control.ContentDisplay.GRAPHIC_ONLY);
                 // Elide the leading directories, so the file name — the part that identifies the row —
                 // stays visible; the tooltip below has the whole path.
-                setTextOverrun(javafx.scene.control.OverrunStyle.LEADING_ELLIPSIS);
-                setGraphic(FileIcons.withStatusLetter(Icons.fileSheet(), statusLetter(e)));
+                pathLabel.setText(e.path());
+                glyph.getChildren().setAll(FileIcons.withStatusLetter(Icons.fileSheet(), statusLetter(e)));
+                showCounts(countsOf(f));
+                setGraphic(fileRow);
                 // Color the row by status (same palette as the Project tree) so the two windows match.
                 getStyleClass().add(GitFileStatus.of(e).cssClass());
                 setTooltip(new Tooltip(e.path()));
             }
         }
+
+        private void showCounts(GitNumstat.Counts counts) {
+            boolean lines = counts != null && !counts.binary();
+            addedLabel.setText(lines && counts.added() > 0 ? "+" + counts.added() : "");
+            deletedLabel.setText(lines && counts.deleted() > 0 ? "\u2212" + counts.deleted() : "");
+            show(addedLabel, !addedLabel.getText().isEmpty());
+            show(deletedLabel, !deletedLabel.getText().isEmpty());
+        }
+    }
+
+    /** The line counts of a row: the staged change for a Staged row, the unstaged one for a Changes row. */
+    private GitNumstat.Counts countsOf(FileRow row) {
+        return switch (row.group()) {
+            case STAGED -> lineCounts.staged().get(row.entry().path());
+            case MODIFIED -> lineCounts.unstaged().get(row.entry().path());
+            default -> null;
+        };
+    }
+
+    /** What a file row shows for its line counts ("+3 −1"), or {@code ""}; for tests and tooltips. */
+    String countsText(String group, String path) {
+        GitNumstat.Counts counts = countsOf(new FileRow(Group.valueOf(group), new FileEntry(path, '.', '.', null)));
+        if (counts == null || counts.binary()) {
+            return "";
+        }
+        return ((counts.added() > 0 ? "+" + counts.added() : "") + " "
+                        + (counts.deleted() > 0 ? "\u2212" + counts.deleted() : ""))
+                .strip();
     }
 }

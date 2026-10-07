@@ -54,6 +54,41 @@ final class GitPanelActions implements GitPanel.Actions {
     }
 
     @Override
+    public void commit(GitPanel.CommitRequest request, Consumer<Boolean> onDone) {
+        git.commits().commit(request, onDone);
+    }
+
+    @Override
+    public void attached(GitPanel panel) {
+        git.commits().attach(panel);
+    }
+
+    @Override
+    public void amendTarget(Consumer<com.editora.git.GitService.HeadCommit> onResult) {
+        git.commits().amendTarget(onResult);
+    }
+
+    @Override
+    public boolean signOff() {
+        return git.commits().signOff();
+    }
+
+    @Override
+    public void setSignOff(boolean signOff) {
+        git.commits().setSignOff(signOff);
+    }
+
+    @Override
+    public List<String> messageHistory() {
+        return git.commits().messageHistory();
+    }
+
+    @Override
+    public void unstageAll() {
+        git.gitUnstageAll();
+    }
+
+    @Override
     public void push() {
         git.gitPush();
     }

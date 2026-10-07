@@ -1970,6 +1970,41 @@ final class WindowCommandRegistrar {
                                         id -> GitCoordinator.pullModeLabel(com.editora.git.GitPullMode.of(id)),
                                         () -> host.git().pullMode().id(),
                                         host.git()::setPullMode)));
+        // "Fetch automatically" and its interval; the timer is re-read through applySupport.
+        host.registry()
+                .register(Command.of(
+                        "git.toggleAutoFetch",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "git.toggleAutoFetch",
+                                        () -> host.config().getSettings().isGitAutoFetch(),
+                                        v -> host.config().getSettings().setGitAutoFetch(v),
+                                        host.git()::applySupport)));
+        host.registry()
+                .register(Command.of(
+                        "git.setAutoFetchInterval",
+                        () -> host.editorSettings()
+                                .promptIntSetting(
+                                        "git.setAutoFetchInterval",
+                                        () -> host.config().getSettings().getGitAutoFetchMinutes(),
+                                        1,
+                                        Settings.MAX_GIT_AUTO_FETCH_MINUTES,
+                                        v -> host.config().getSettings().setGitAutoFetchMinutes(v),
+                                        host.git()::applySupport)));
+        // An automatic fetch only runs where the user has vouched for the folder (or fetched there by hand).
+        host.git().autoFetch().setTrust(root -> host.config().getTrustStore().isTrusted(root));
+        // The Commit window's options, as commands.
+        GitCommitCoordinator commits = host.git().commits();
+        host.registry().register(Command.of("git.commitAmend", () -> host.git().ifEnabled(commits::toggleAmend)));
+        host.registry()
+                .register(Command.of("git.commitAndPush", () -> host.git().ifEnabled(commits::commitAndPush)));
+        host.registry()
+                .register(Command.of("git.undoLastCommit", () -> host.git().ifEnabled(commits::undoLastCommit)));
+        host.registry()
+                .register(
+                        Command.of("git.commitMessageHistory", () -> host.git().ifEnabled(commits::pickRecentMessage)));
+        host.registry().register(Command.of("git.unstageAll", () -> host.git().ifEnabled(host.git()::gitUnstageAll)));
+        host.registry().register(Command.of("git.discardAll", () -> host.git().ifEnabled(host.git()::gitDiscardAll)));
         // A merge, rebase, cherry-pick or revert that stopped (on a conflict): the Commit window's banner
         // buttons, as commands. Each reports "nothing in progress" when there is no such operation.
         host.registry()
@@ -1991,6 +2026,10 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "git.log.revert", () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::revert)));
+        host.registry()
+                .register(Command.of(
+                        "git.log.createPatch",
+                        () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::createPatch)));
         host.registry()
                 .register(Command.of(
                         "git.log.cherryPick",

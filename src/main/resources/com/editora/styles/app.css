@@ -431,6 +431,37 @@
 .git-commit-message {
     -fx-font-size: 14px;
 }
+/* The options above the commit message: Amend and Sign-off, the subject-length guide, recent messages. */
+.git-message-toolbar { -fx-padding: 2 0 0 0; }
+.git-commit-option { -fx-font-size: 12px; }
+/* The length guide is advice: muted while the subject is short, amber past 50, red past 72. */
+.git-message-guide {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.git-message-guide.git-guide-long { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
+.git-message-guide.git-guide-too-long { -fx-text-fill: -state-red; -fx-font-weight: bold; }
+/* Which commit Amend replaces, and — in place, not in a dialog — that it is already pushed. */
+.git-amend-info {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-muted;
+}
+.git-amend-warning {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 4;
+    -fx-border-color: -state-amber;
+    -fx-border-radius: 4;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 3 6 3 6;
+}
+/* The secondary half of the Commit button (Commit and Push). */
+.git-commit-more { -fx-padding: 0; }
+/* Lines added / deleted at the right edge of a Commit-window row. */
+.git-tree .git-count { -fx-font-size: 11px; }
+.git-tree .git-count-added { -fx-text-fill: -state-green; }
+.git-tree .git-count-deleted { -fx-text-fill: -state-red; }
 /* Commit tool window toolbar: compact icon buttons (legible, no truncated text labels). */
 .git-toolbar-button {
     -fx-padding: 3 5 3 5;
@@ -1525,7 +1556,21 @@
 }
 .git-log-panel .git-log-details-scroll > .viewport { -fx-background-color: transparent; }
 .git-log-panel .git-log-details { -fx-padding: 4 8 6 8; }
-.git-log-panel .git-log-message { -fx-text-fill: -color-fg-default; -fx-padding: 4 0 0 0; }
+/* The commit message is a read-only text area (selectable, copyable) dressed as the label it replaced. */
+.git-log-panel .git-log-message,
+.git-log-panel .git-log-message:focused {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 4 0 0 0;
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+}
+.git-log-panel .git-log-message .content,
+.git-log-panel .git-log-message .scroll-pane,
+.git-log-panel .git-log-message .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
 .git-log-panel .git-log-parent { -fx-padding: 0; -fx-border-width: 0; }
 /* GitHub tool window: the Pull Requests | Issues segmented toggle needs a clearly-visible selected state
    (a flat toggle's selected look was barely distinguishable from the unselected one). */
