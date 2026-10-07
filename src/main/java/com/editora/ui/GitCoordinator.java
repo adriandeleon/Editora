@@ -131,6 +131,7 @@ final class GitCoordinator {
 
     private String branchName = "";
     private java.util.function.BiConsumer<Path, String> repositoryListener = (root, branch) -> {};
+    private Runnable mutationListener = () -> {};
     private String upstream = "";
     private boolean supportApplied;
 
@@ -195,6 +196,11 @@ final class GitCoordinator {
      */
     void onRepositoryChanged(java.util.function.BiConsumer<Path, String> listener) {
         repositoryListener = listener;
+    }
+
+    /** Told (on the FX thread) at every {@link #afterMutation()} — the Git Log reloads an open history. */
+    void onMutation(Runnable listener) {
+        mutationListener = listener;
     }
 
     boolean reportIfNoRepo() {
@@ -333,6 +339,7 @@ final class GitCoordinator {
      */
     void afterMutation() {
         refresh(); // status bar + tool window + active buffer's gutter
+        mutationListener.run();
         Path root = repoRoot;
         if (root == null) {
             return;

@@ -3,12 +3,12 @@ package com.editora.ui;
 import java.lang.reflect.Proxy;
 
 import javafx.scene.Node;
+import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.text.Text;
-import javafx.scene.text.TextFlow;
+import javafx.scene.layout.HBox;
 
-import com.editora.git.GitService.Commit;
+import com.editora.git.GitLog.Entry;
 import com.editora.git.GitService.CommitFile;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
@@ -63,20 +63,19 @@ class GitLogColorFxTest {
         Node[] graphic = new Node[1];
         FxTestSupport.runOnFx(() -> {
             GitLogPanel panel = new GitLogPanel(noopActions());
-            ListView<Commit> commits = FxTestSupport.field(panel, "commits");
-            ListCell<Commit> cell = commits.getCellFactory().call(commits);
+            ListView<Entry> commits = FxTestSupport.field(panel, "commits");
+            ListCell<Entry> cell = commits.getCellFactory().call(commits);
             FxTestSupport.call(
                     cell,
                     "updateItem",
                     new Class[] {Object.class, boolean.class},
-                    new Commit("abc1234def", "abc1234", "Fix the thing", "Ada", "2026-07-18"),
+                    new Entry("abc1234def", "abc1234", "Fix the thing", "Ada", "2026-07-18"),
                     false);
             graphic[0] = cell.getGraphic();
         });
 
-        TextFlow flow =
-                assertInstanceOf(TextFlow.class, graphic[0], "commit row is a TextFlow (colored hash + subject)");
-        Text hash = (Text) flow.getChildren().get(0);
+        HBox row = assertInstanceOf(HBox.class, graphic[0], "commit row is one line of labels (hash, subject, …)");
+        Label hash = (Label) row.getChildren().get(0);
         assertNotNull(hash);
         assertTrue(hash.getStyleClass().contains("git-log-hash"), "the short hash carries the git-log-hash class");
         assertTrue(hash.getText().startsWith("abc1234"), "the hash text is the short hash: " + hash.getText());

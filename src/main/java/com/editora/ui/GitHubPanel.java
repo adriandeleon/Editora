@@ -8,11 +8,13 @@ import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ProgressIndicator;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
@@ -24,8 +26,6 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Text;
-import javafx.scene.text.TextFlow;
 
 import com.editora.github.GitHubItemFilter;
 import com.editora.github.IssueListParser.Issue;
@@ -368,7 +368,37 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         filterField.requestFocus();
     }
 
+    /**
+     * One pull request, issue or workflow run, on one line: a key column (number / workflow), then the title,
+     * which takes the remaining width and ellipsizes. An {@code HBox} of labels: the {@code TextFlow} these
+     * rows used could not ellipsize and made the list as wide as its longest title. {@code prefWidth 0} makes
+     * the list size the cell to its viewport. The one-line row height is CSS
+     * ({@code .git-log-panel .git-tree .list-cell}).
+     */
     private final class ItemCell extends ListCell<Object> {
+        ItemCell() {
+            setPrefWidth(0);
+            setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+        }
+
+        /** {@code lead…} at their natural width, then {@code title} growing and ellipsizing. */
+        private void setRow(Label title, Label... lead) {
+            title.getStyleClass().add("git-log-subject");
+            title.setMinWidth(0);
+            title.setPrefWidth(0);
+            title.setMaxWidth(Double.MAX_VALUE);
+            title.setTextOverrun(OverrunStyle.ELLIPSIS);
+            HBox.setHgrow(title, Priority.ALWAYS);
+            HBox row = new HBox(8);
+            row.setAlignment(Pos.CENTER_LEFT);
+            for (Label l : lead) {
+                l.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+                row.getChildren().add(l);
+            }
+            row.getChildren().add(title);
+            setGraphic(row);
+        }
+
         @Override
         protected void updateItem(Object item, boolean empty) {
             super.updateItem(item, empty);
@@ -391,13 +421,11 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
 
         private void renderRun(WorkflowRun run) {
             RunState state = run.state();
-            Text glyph = new Text(state.glyph() + " ");
+            Label glyph = new Label(state.glyph());
             glyph.getStyleClass().add(state.cssClass());
-            Text workflow = new Text(run.workflowName());
+            Label workflow = new Label(run.workflowName());
             workflow.getStyleClass().add("git-log-hash"); // the "key" column, like #123 for a PR
-            Text title = new Text("  " + run.displayTitle());
-            title.getStyleClass().add("git-log-subject");
-            setGraphic(new TextFlow(glyph, workflow, title));
+            setRow(new Label(run.displayTitle()), glyph, workflow);
             setTooltip(new Tooltip(run.event() + " · " + run.headBranch() + "\n" + run.createdAt()));
 
             List<MenuItem> items = new java.util.ArrayList<>();
@@ -426,17 +454,9 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
 
         private void renderPr(PullRequest pr) {
-            Text number = new Text("#" + pr.number());
+            Label number = new Label("#" + pr.number());
             number.getStyleClass().add("git-log-hash");
-            Text title = new Text("  " + pr.title());
-            title.getStyleClass().add("git-log-subject");
-            TextFlow flow = new TextFlow(number, title);
-            if (pr.draft()) {
-                Text draft = new Text("  " + tr("github.draft"));
-                draft.getStyleClass().add("git-log-subject");
-                flow.getChildren().add(draft);
-            }
-            setGraphic(flow);
+            setRow(new Label(pr.draft() ? pr.title() + "  " + tr("github.draft") : pr.title()), number);
             setTooltip(new Tooltip(
                     pr.authorLogin() + " · " + pr.headRefName() + " → " + pr.baseRefName() + "\n" + pr.updatedAt()));
             MenuItem checkout =
@@ -448,12 +468,10 @@ public final class GitHubPanel extends VBox implements ToolWindowContent {
         }
 
         private void renderIssue(Issue issue) {
-            Text number = new Text("#" + issue.number());
+            Label number = new Label("#" + issue.number());
             number.getStyleClass().add("git-log-hash");
             String labels = issue.labels().isEmpty() ? "" : "  [" + String.join(", ", issue.labels()) + "]";
-            Text title = new Text("  " + issue.title() + labels);
-            title.getStyleClass().add("git-log-subject");
-            setGraphic(new TextFlow(number, title));
+            setRow(new Label(issue.title() + labels), number);
             setTooltip(new Tooltip(issue.authorLogin() + " · " + issue.state() + "\n" + issue.updatedAt()));
             MenuItem open = item(tr("github.panel.menu.open"), Icons.github(), () -> actions.openUrl(issue.url()));
             MenuItem copy = item(tr("github.panel.menu.copyUrl"), Icons.copy(), () -> actions.copyUrl(issue.url()));
