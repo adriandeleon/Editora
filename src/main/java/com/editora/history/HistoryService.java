@@ -187,24 +187,86 @@ public final class HistoryService {
         }
     }
 
+    /**
+     * Records a revision and <b>waits for its content to be on disk</b> before returning: for the caller
+     * that is about to make a change it cannot take back (an edit in a buffer with no undo) and must not
+     * start until the previous text is recoverable. The blob is written on the worker like any other — so it
+     * stays ordered with garbage collection — while the calling thread blocks for at most
+     * {@code timeoutMillis}. {@code onRecorded} then runs on the <em>calling</em> thread, where the caller
+     * folds the revision into the index, exactly as in {@link #snapshotWithOutcome}. A write that fails or
+     * does not finish in time is reported as unsuccessful, never as a revision. Content equal to the newest
+     * revision is still written and recorded: the point is a revision the caller can name.
+     */
+    public void snapshotBlocking(
+            Path file,
+            String content,
+            String reason,
+            String label,
+            long now,
+            long timeoutMillis,
+            Consumer<SnapshotOutcome> onRecorded) {
+        synchronized (publicationLock) {
+            publicationsInFlight++;
+        }
+        SnapshotOutcome outcome = new SnapshotOutcome(null, false);
+        java.util.concurrent.Future<HistoryRevision> written = null;
+        try {
+            written = exec.submit(() -> {
+                String sha = HistoryBlobStore.sha256(content);
+                synchronized (publicationLock) { // as in snapshotWithOutcome: keep a deferred GC off this blob
+                    publicationHashes.add(sha);
+                    if (deferredLiveHashes != null && !deferredLiveHashes.contains(sha)) {
+                        var protectedHashes = new LinkedHashSet<>(deferredLiveHashes);
+                        protectedHashes.add(sha);
+                        deferredLiveHashes = Set.copyOf(protectedHashes);
+                    }
+                }
+                blobs.put(content, sha);
+                long size = content.getBytes(StandardCharsets.UTF_8).length;
+                return new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
+            });
+            outcome = new SnapshotOutcome(written.get(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS), true);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            written.cancel(false);
+        } catch (RejectedExecutionException
+                | java.util.concurrent.ExecutionException
+                | java.util.concurrent.TimeoutException failure) {
+            LOG.log(Level.WARNING, "Failed to record a history revision for " + file, failure);
+            if (written != null) {
+                written.cancel(false); // not started yet: do not write it after the caller gave up
+            }
+        }
+        try {
+            onRecorded.accept(outcome);
+        } finally {
+            publicationFinished();
+        }
+    }
+
     private void deliver(SnapshotOutcome outcome, Consumer<SnapshotOutcome> onRecorded) {
         Platform.runLater(() -> {
             try {
                 onRecorded.accept(outcome);
             } finally {
-                synchronized (publicationLock) {
-                    publicationsInFlight--;
-                    if (publicationsInFlight == 0 && deferredLiveHashes != null) {
-                        Set<String> live = deferredLiveHashes;
-                        deferredLiveHashes = null;
-                        queueGc(live);
-                    }
-                    if (publicationsInFlight == 0) {
-                        publicationHashes.clear();
-                    }
-                }
+                publicationFinished();
             }
         });
+    }
+
+    /** One record's revision has reached the index (or failed): release a GC that was waiting for it. */
+    private void publicationFinished() {
+        synchronized (publicationLock) {
+            publicationsInFlight--;
+            if (publicationsInFlight == 0 && deferredLiveHashes != null) {
+                Set<String> live = deferredLiveHashes;
+                deferredLiveHashes = null;
+                queueGc(live);
+            }
+            if (publicationsInFlight == 0) {
+                publicationHashes.clear();
+            }
+        }
     }
 
     /** Fetches a revision's body off the FX thread and delivers it (or {@code null}) on the FX thread. */

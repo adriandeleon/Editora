@@ -50,11 +50,16 @@ class AiRewriteStopFxTest {
 
     /** Selects all of {@code doc}, runs the rewrite against a server answering {@code sse}, returns the result. */
     private static Run rewrite(String doc, String sse) throws Exception {
+        return rewrite(doc, sse, false);
+    }
+
+    private static Run rewrite(String doc, String sse, boolean largeFile) throws Exception {
         try (AsyncTestScope scope = new AsyncTestScope()) {
             AtomicInteger requests = new AtomicInteger();
             Settings settings = settings(scope, sse, requests);
             EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
                 EditorBuffer b = new EditorBuffer();
+                b.setLargeFile(largeFile);
                 b.setContent(doc);
                 b.getArea().selectAll();
                 return b;
@@ -89,6 +94,14 @@ class AiRewriteStopFxTest {
                     },
                     new Ops()));
             scope.onClose(() -> FxTestSupport.runOnFx(coordinator::shutdown));
+            if (largeFile) {
+                // No undo here, and nowhere to keep a copy: the guard refuses and says so through the window.
+                FxTestSupport.runOnFx(() ->
+                        NoUndoGuard.install(buffer, new NoUndoGuard((b, label) -> NoUndoGuard.Copy.FAILED, message -> {
+                            status.set(message);
+                            done.countDown();
+                        })));
+            }
             FxTestSupport.runOnFx(coordinator::rewriteSelection);
             scope.await(done, "the rewrite to finish");
             return new Run(
@@ -159,6 +172,13 @@ class AiRewriteStopFxTest {
         assertEquals(big, run.content());
         assertEquals(0, run.requests(), "the truncated head is never sent");
         assertEquals(tr("status.ai.cannotRewriteLarge", big.length(), AiRequests.MAX_INPUT_CHARS), run.status());
+    }
+
+    @Test
+    void aCompleteAnswerIsNotAppliedToABufferWithNoUndoAndNoSafetyCopy() throws Exception {
+        Run run = rewrite(DOC, chunk("LINE 1\n", "stop") + DONE, true);
+        assertEquals(DOC, run.content());
+        assertEquals(tr("status.noUndo.cannotCopy", tr("command.ai.rewriteSelection")), run.status());
     }
 
     @Test

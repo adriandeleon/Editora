@@ -256,6 +256,9 @@ final class MavenProjectCoordinator {
                     host.setError(tr("status.mavenVersions.readOnly"));
                     return;
                 }
+                if (!NoUndoGuard.allow(open, tr("command.maven.updateVersions"))) {
+                    return;
+                }
                 // One replacement, so the whole update is a single undo step rather than one per artifact —
                 // and the buffer goes dirty, so it is the user who decides to save it.
                 open.replaceWholeDocument(out);

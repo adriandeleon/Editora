@@ -475,6 +475,46 @@ final class HistoryCoordinator {
         recordFor(file, content, reason, "", false, completion);
     }
 
+    /** How long {@link #recordSafetyCopy} lets the FX thread wait for the previous text to reach the disk. */
+    private static final long SAFETY_COPY_TIMEOUT_MILLIS = 15_000;
+
+    /**
+     * Stores {@code buffer}'s current text — unsaved edits included — as a labelled (and therefore
+     * retention-protected) revision, and returns only once its content is on disk and the revision is in the
+     * index. This is the recovery copy {@link NoUndoGuard} requires before a bulk edit in a buffer that has
+     * no undo; anything other than {@link NoUndoGuard.Copy#STORED} means there is none and the edit must not
+     * happen. Blocks the FX thread for the blob write (bounded), which is the point: the edit comes after.
+     */
+    NoUndoGuard.Copy recordSafetyCopy(EditorBuffer buffer, String label) {
+        if (!isEnabled()) {
+            return NoUndoGuard.Copy.HISTORY_OFF;
+        }
+        if (buffer == null || buffer.getPath() == null || !host.isLocalBuffer(buffer)) {
+            return NoUndoGuard.Copy.NO_LOCAL_FILE;
+        }
+        String key = historyKey(buffer.getPath());
+        var policy = retentionPolicy();
+        long now = System.currentTimeMillis();
+        boolean[] stored = {false};
+        historyService.snapshotBlocking(
+                buffer.getPath(),
+                buffer.getContent(),
+                HistoryRevision.REASON_LABEL,
+                label,
+                now,
+                SAFETY_COPY_TIMEOUT_MILLIS,
+                outcome -> {
+                    if (outcome.successful() && outcome.revision() != null) {
+                        applyRecorded(key, HistoryMoves.at(key, outcome.revision()), policy, now, null);
+                        stored[0] = true;
+                    }
+                });
+        if (stored[0]) {
+            refresh();
+        }
+        return stored[0] ? NoUndoGuard.Copy.STORED : NoUndoGuard.Copy.FAILED;
+    }
+
     /**
      * Records a snapshot of arbitrary {@code content} for {@code file} (not necessarily an open buffer — e.g.
      * a manual label, or a file captured at delete time), folding the pruned result into the per-project

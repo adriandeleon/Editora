@@ -189,6 +189,31 @@ class ExternalToolTruncatedOutputFxTest {
     }
 
     @Test
+    void aBufferWithNoUndoAndNoSafetyCopyIsNotOverwritten() throws Exception {
+        RecordingHost host = new RecordingHost();
+        ExternalToolCoordinator c = FxTestSupport.callOnFx(() -> new ExternalToolCoordinator(host, new Ops()));
+        // Large-file mode has no undo; this detached buffer has no window to keep a Local History copy.
+        EditorBuffer document = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setLargeFile(true);
+            buffer.setContent("before\n");
+            return buffer;
+        });
+        try {
+            for (ExternalTool.OutputTarget target : List.of(
+                    ExternalTool.OutputTarget.REPLACE_BUFFER,
+                    ExternalTool.OutputTarget.REPLACE_SELECTION,
+                    ExternalTool.OutputTarget.INSERT_AT_CARET)) {
+                apply(c, tool(target), new ProcessRunner.Result(0, "after\n", ""), document);
+                assertEquals("before\n", FxTestSupport.callOnFx(document::getContent), target.name());
+            }
+        } finally {
+            FxTestSupport.runOnFx(document::dispose);
+            c.shutdown();
+        }
+    }
+
+    @Test
     void theDecisionIsTheCaptureFlagNotTheSize() {
         assertTrue(ExternalToolCoordinator.outputIncomplete(new ProcessRunner.Result(0, "x", "", true, false)));
         assertFalse(ExternalToolCoordinator.outputIncomplete(new ProcessRunner.Result(0, "x", "", false, true)));

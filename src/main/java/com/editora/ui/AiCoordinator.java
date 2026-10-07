@@ -401,6 +401,9 @@ final class AiCoordinator {
                                     host.setStatus(tr("status.ai.bufferChanged"));
                                     return;
                                 }
+                                if (!NoUndoGuard.allow(b, tr("command.ai.rewriteSelection"))) {
+                                    return; // no undo here and no safety copy could be taken: the guard said why
+                                }
                                 area.replaceText(start, end, replacement);
                                 area.selectRange(start, start + replacement.length());
                                 host.setStatus(ChordHint.tr("status.ai.rewritten", "edit.undo"));

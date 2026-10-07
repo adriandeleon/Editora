@@ -309,6 +309,9 @@ final class ExternalToolCoordinator {
             host.setStatus(tr("status.externalTool.bufferChanged", tool.getName()));
             return;
         }
+        if (!NoUndoGuard.allow(b, tool.getName())) {
+            return; // no undo here and no safety copy could be taken: the guard said why
+        }
         var area = b.getArea();
         switch (tool.getOutput()) {
             // stdin was getContent() (the whole file), so the result replaces the whole file: widen first.

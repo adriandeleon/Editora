@@ -171,6 +171,12 @@ Undo is bounded by text as well as by count: the queue holds 300 entries and 64 
 `ui/AreaUndo.none(...)` (read-only: no history) or `AreaUndo.bounded(...)`; the default undo manager is
 unlimited and records programmatic edits. `RichTextAreaUndoPolicyTest` enforces this.
 
+Large-file mode has **no** undo, so "it is one undo step" is not a safety net there. A programmatic bulk or
+whole-document edit (Replace in Files, a line transform, tool/AI/agent/plugin/LSP output) must ask
+`ui/NoUndoGuard.allow(buffer, operationName)` immediately before it edits: on a no-undo buffer the guard
+first stores the buffer text in Local History as a labelled revision (blocking until it is on disk) and
+tells the user, or returns false — and then the edit must not happen.
+
 Build `HttpClient`s through `io/LazyHttpClient`, never in a field initializer: each one starts a selector
 thread when built.
 

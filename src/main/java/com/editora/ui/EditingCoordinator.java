@@ -2093,6 +2093,10 @@ final class EditingCoordinator {
             host.setStatus(tr("status.indent.noChange"));
             return;
         }
+        if (!NoUndoGuard.allow(
+                buffer, tr(toSpaces ? "command.edit.indentationToSpaces" : "command.edit.indentationToTabs"))) {
+            return;
+        }
         int caret = area.getCaretPosition();
         buffer.replaceVisibleText(area, after); // one undo step holding only the lines whose indent changed
         area.moveTo(Math.min(caret, area.getLength()));
@@ -2126,6 +2130,9 @@ final class EditingCoordinator {
         String after = com.editora.editor.LineEndings.toLf(op.apply(before));
         if (after.equals(before)) {
             host.setStatus(tr("status.stringops.noChange"));
+            return;
+        }
+        if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lineTransform"))) {
             return;
         }
         boolean hadSelection = sel.getLength() > 0;

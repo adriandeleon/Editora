@@ -716,7 +716,7 @@ final class PluginCoordinator {
         @Override
         public void replaceSelection(String replacement) {
             EditorBuffer b = buf();
-            if (b != null && b.isEditable() && replacement != null) {
+            if (b != null && b.isEditable() && replacement != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
                 b.getArea().replaceSelection(replacement);
             }
         }
@@ -732,7 +732,7 @@ final class PluginCoordinator {
         @Override
         public void setText(String text) {
             EditorBuffer b = buf();
-            if (b != null && b.isEditable() && text != null) {
+            if (b != null && b.isEditable() && text != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
                 // text() is the whole file, so this widens a narrowed buffer first (undoable, marks dirty).
                 b.replaceWholeDocument(text);
             }
