@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** JUnit test detection: annotation kinds, FQCN derivation, comment/string safety, nested-class skipping. */
+/** JUnit test detection: annotation kinds, FQCN derivation, comment/string safety, nested classes. */
 class JavaTestScannerTest {
 
     private static String src(String... lines) {
@@ -108,22 +108,85 @@ class JavaTestScannerTest {
         assertEquals("real", t.get(1).methodName());
     }
 
+    private static List<String> names(List<JavaTestScanner.TestTarget> targets) {
+        return targets.stream()
+                .map(t -> t.line() + ":" + t.className() + (t.methodName() == null ? "" : "#" + t.methodName()))
+                .toList();
+    }
+
     @Test
-    void nestedClassMethodsAreSkippedButOuterFound() {
+    void nestedClassMethodsCarryTheNestedBinaryName() {
         List<JavaTestScanner.TestTarget> t = JavaTestScanner.scan(src(
-                "class Outer {",
-                "  @Nested",
-                "  class Inner {",
-                "    @Test",
-                "    void inner1() {}",
-                "  }",
-                "  @Test",
-                "  void outer1() {}",
+                "package com.x;", // 0
+                "class Outer {", // 1
+                "  @Nested", // 2
+                "  class Inner {", // 3
+                "    @Test", // 4
+                "    void inner1() {}", // 5
+                "  }", // 6
+                "  @Test", // 7
+                "  void outer1() {}", // 8
                 "}"));
         assertEquals(
-                List.of("outer1"),
-                t.stream().skip(1).map(JavaTestScanner.TestTarget::methodName).toList());
-        assertEquals("Outer", t.get(0).className());
+                List.of("1:com.x.Outer", "3:com.x.Outer$Inner", "5:com.x.Outer$Inner#inner1", "8:com.x.Outer#outer1"),
+                names(t));
+    }
+
+    @Test
+    void deeperNestingAndAnOuterClassWithNoTestsOfItsOwn() {
+        List<JavaTestScanner.TestTarget> t = JavaTestScanner.scan(src(
+                "class Outer {", // 0
+                "  @Nested class WhenEmpty", // 1
+                "  {", // 2
+                "    @Nested", // 3
+                "    class AndClosed {", // 4
+                "      @ParameterizedTest", // 5
+                "      void rejects(int n) {}", // 6
+                "    }", // 7
+                "  }", // 8
+                "  static class Fixture {", // 9 — no tests: no target
+                "    void helper() {}", // 10
+                "  }", // 11
+                "}"));
+        assertEquals(
+                List.of(
+                        "0:Outer",
+                        "1:Outer$WhenEmpty",
+                        "4:Outer$WhenEmpty$AndClosed",
+                        "6:Outer$WhenEmpty$AndClosed#rejects"),
+                names(t));
+        assertTrue(t.get(3).dynamic());
+    }
+
+    @Test
+    void anAnnotationOnANestedClassIsNotCarriedToItsFirstMethod() {
+        List<JavaTestScanner.TestTarget> t = JavaTestScanner.scan(src(
+                "class Outer {",
+                "  @Test",
+                "  class NotAMethod {",
+                "    void helper() {}",
+                "  }",
+                "  @Test void real() {}",
+                "}"));
+        assertEquals(List.of("0:Outer", "5:Outer#real"), names(t));
+    }
+
+    @Test
+    void localAndAnonymousClassesAreNotWalked() {
+        List<JavaTestScanner.TestTarget> t = JavaTestScanner.scan(src(
+                "class Outer {",
+                "  @Test",
+                "  void outer1() {",
+                "    class Local {",
+                "      @Test void notATest() {}",
+                "    }",
+                "    Runnable r = new Runnable() {",
+                "      @Test public void run() {}",
+                "    };",
+                "  }",
+                "  @Test void outer2() {}",
+                "}"));
+        assertEquals(List.of("0:Outer", "2:Outer#outer1", "10:Outer#outer2"), names(t));
     }
 
     @Test

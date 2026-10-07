@@ -3947,7 +3947,7 @@ public class EditorBuffer implements TabContent {
             return null; // the plain script/Makefile/.http ▶ keeps its untooltipped look
         }
         return t.methodName() == null
-                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.simpleName(t.className()))
+                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.displayName(t.className()))
                 : tr("testrunner.gutter.runMethod", t.methodName());
     }
 
