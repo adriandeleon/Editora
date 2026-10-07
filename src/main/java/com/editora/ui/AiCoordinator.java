@@ -9,6 +9,7 @@ import javafx.util.Duration;
 import com.editora.ai.AiProvider;
 import com.editora.ai.AiRequests;
 import com.editora.ai.AiService;
+import com.editora.ai.AiStop;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 
@@ -250,7 +251,8 @@ final class AiCoordinator {
                             @Override
                             public void onDone(String stopReason) {
                                 busy = false;
-                                if (!checkStop(stopReason)) {
+                                // The message box may hold the user's own draft: only a whole answer replaces it.
+                                if (!usable(stopReason, out.toString())) {
                                     return;
                                 }
                                 ops.setCommitMessage(out.toString().strip());
@@ -308,9 +310,15 @@ final class AiCoordinator {
                         public void onDone(String stopReason) {
                             busy = false;
                             target.setPreviewLoading(false, null);
-                            if (checkStop(stopReason)) {
-                                target.getArea().appendText(explanationProvenance(actionProvider, usedModel[0]));
-                                host.setStatus(tr("status.ai.done"));
+                            // The text streamed into its own buffer and stays there; only say what it is.
+                            switch (AiStop.classify(stopReason)) {
+                                case COMPLETE -> {
+                                    target.getArea().appendText(explanationProvenance(actionProvider, usedModel[0]));
+                                    host.setStatus(tr("status.ai.done"));
+                                }
+                                case REFUSED -> host.setStatus(tr("status.ai.refused"));
+                                case CANCELLED -> host.setStatus(tr("status.ai.cancelled"));
+                                default -> host.setStatus(tr("status.ai.explainIncomplete"));
                             }
                         }
 
@@ -352,6 +360,12 @@ final class AiCoordinator {
                 host.setStatus(tr("status.ai.needSelection"));
                 return;
             }
+            // The request carries at most MAX_INPUT_CHARS of the selection, but the answer replaces all of
+            // it: sending the head would trade the rest of the selection for a rewrite of its beginning.
+            if (!AiRequests.fitsInput(selection)) {
+                host.setStatus(tr("status.ai.cannotRewriteLarge", selection.length(), AiRequests.MAX_INPUT_CHARS));
+                return;
+            }
             host.promptText(tr("command.ai.rewriteSelection"), tr("ai.rewritePrompt"), "", instruction -> {
                 if (instruction == null || instruction.isBlank()) {
                     return;
@@ -372,7 +386,13 @@ final class AiCoordinator {
                             @Override
                             public void onDone(String stopReason) {
                                 busy = false;
-                                if (!checkStop(stopReason)) {
+                                // The document stores CRLF as one newline: the selection below is measured on the LF
+                                // form.
+                                String replacement =
+                                        com.editora.editor.LineEndings.toLf(AiRequests.stripCodeFence(out.toString()));
+                                // Only a whole, non-empty answer may replace the selection: a reply cut off at the
+                                // output limit or by a closed connection is the start of a rewrite, not a rewrite.
+                                if (!usable(stopReason, replacement)) {
                                     return;
                                 }
                                 // Abort if the buffer changed under us — the range no longer means the same text.
@@ -381,10 +401,6 @@ final class AiCoordinator {
                                     host.setStatus(tr("status.ai.bufferChanged"));
                                     return;
                                 }
-                                // The document stores CRLF as one newline: the selection below is measured on the LF
-                                // form.
-                                String replacement =
-                                        com.editora.editor.LineEndings.toLf(AiRequests.stripCodeFence(out.toString()));
                                 area.replaceText(start, end, replacement);
                                 area.selectRange(start, start + replacement.length());
                                 host.setStatus(ChordHint.tr("status.ai.rewritten", "edit.undo"));
@@ -446,13 +462,32 @@ final class AiCoordinator {
         host.setStatus(tr("status.ai.failed", message));
     }
 
-    /** True when the turn ended normally; a refusal/max-tokens stop gets its own status. */
-    private boolean checkStop(String stopReason) {
-        if ("refusal".equals(stopReason)) {
-            host.setStatus(tr("status.ai.refused"));
-            return false;
+    /**
+     * Whether {@code text} may be applied: the generation ended with an explicit normal stop and produced
+     * something. Otherwise sets the status that says why nothing was applied and returns false.
+     */
+    private boolean usable(String stopReason, String text) {
+        String refusal = refusalKey(stopReason, text);
+        if (refusal == null) {
+            return true;
         }
-        return true;
+        host.setStatus("status.ai.cannotApplyStopped".equals(refusal) ? tr(refusal, stopReason) : tr(refusal));
+        return false;
+    }
+
+    /**
+     * The message key explaining why a generation's text must not be applied, or {@code null} when it may
+     * be ({@link AiStop#usable}). Pure.
+     */
+    static String refusalKey(String stopReason, String text) {
+        return switch (AiStop.classify(stopReason)) {
+            case COMPLETE -> text == null || text.isBlank() ? "status.ai.cannotApplyEmpty" : null;
+            case TRUNCATED -> "status.ai.cannotApplyTruncated";
+            case INCOMPLETE -> "status.ai.cannotApplyIncomplete";
+            case REFUSED -> "status.ai.refused";
+            case CANCELLED -> "status.ai.cancelled";
+            case OTHER -> "status.ai.cannotApplyStopped";
+        };
     }
 
     /** The API key: the current provider's Settings override, else the {@code ANTHROPIC_API_KEY} environment
