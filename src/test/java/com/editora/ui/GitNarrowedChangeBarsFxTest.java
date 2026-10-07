@@ -71,7 +71,7 @@ class GitNarrowedChangeBarsFxTest {
     }
 
     private static Map<Integer, String> bars(EditorBuffer buffer) {
-        return FxTestSupport.field(buffer, "changeBars");
+        return FxTestSupport.field(FxTestSupport.field(buffer, "gitLines"), "bars");
     }
 
     /** Lets the refresh in flight finish and its result reach the FX thread. */
