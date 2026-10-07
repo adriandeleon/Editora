@@ -716,10 +716,27 @@ public class WindowManager {
         }
     }
 
-    void fileDeletedAcrossWindows(Path path) {
+    /**
+     * Closes the tabs of a deleted file (or of everything under a deleted folder) in every window.
+     *
+     * @param discardApproved the buffers whose owner was asked and agreed to lose them; an unsaved buffer
+     *     this does not accept stays open, wherever it is
+     */
+    void fileDeletedAcrossWindows(
+            Path path, java.util.function.Predicate<com.editora.editor.EditorBuffer> discardApproved) {
         for (Holder holder : List.copyOf(windows)) {
-            holder.controller().removeProjectFileLocal(path);
+            holder.controller().removeProjectFileLocal(path, discardApproved);
         }
+    }
+
+    /** The window whose tab holds {@code buffer}, or {@code fallback} when no live window does. */
+    MainController ownerOf(com.editora.editor.EditorBuffer buffer, MainController fallback) {
+        for (Holder holder : windows) {
+            if (holder.controller() != null && holder.controller().holdsBufferLocal(buffer)) {
+                return holder.controller();
+            }
+        }
+        return fallback;
     }
 
     void invalidatePendingGitWrites(MainController initiator, Path root, List<String> pathspecs) {
