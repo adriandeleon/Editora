@@ -188,6 +188,32 @@ public final class GitHubService {
         });
     }
 
+    /**
+     * {@link #prList(Path, Consumer)} for a {@link GitHubListQuery} (state, "mine", limit). The answer holds up
+     * to {@link GitHubListQuery#fetchLimit()} rows — one more than is shown — for {@link GitHubListQuery#page}.
+     */
+    public void listPrs(Path dir, GitHubListQuery query, Consumer<PrListResult> onResult) {
+        listPrs(dir, query, prListGen, onResult);
+    }
+
+    /** {@link #listPrs(Path, GitHubListQuery, Consumer)} for a one-shot consumer; see {@link #prListOnce(Path, Consumer)}. */
+    public void listPrsOnce(Path dir, GitHubListQuery query, Consumer<PrListResult> onResult) {
+        listPrs(dir, query, null, onResult);
+    }
+
+    private void listPrs(Path dir, GitHubListQuery query, AtomicLong generation, Consumer<PrListResult> onResult) {
+        long gen = generation == null ? 0 : generation.incrementAndGet();
+        submit(() -> {
+            ProcessRunner.Result r = gh(dir, NETWORK, query.prArgs().toArray(new String[0]));
+            PrListResult res = r.ok()
+                    ? new PrListResult(true, PrListParser.parse(r.out()), "")
+                    : new PrListResult(false, List.of(), r.message());
+            if (generation == null || gen == generation.get()) {
+                Platform.runLater(() -> onResult.accept(res));
+            }
+        });
+    }
+
     /** A PR's detail ({@code gh pr view <n> --json …}); posts {@code null} on failure. */
     public void prView(Path dir, int number, Consumer<PrViewParser.PrDetail> onResult) {
         submit(() -> {
@@ -214,6 +240,27 @@ public final class GitHubService {
             DiffResult res = r.ok()
                     ? new DiffResult(true, PatchParser.parseAllSections(r.out()), "")
                     : new DiffResult(false, List.of(), r.message());
+            Platform.runLater(() -> onResult.accept(res));
+        });
+    }
+
+    /** Result of {@link #prFiles}: the per-file patches, how many files came without one, or an error. */
+    public record PrFilesResult(boolean ok, PrFilesParser.Result files, String error) {}
+
+    /**
+     * A PR's files from the REST API ({@code gh api repos/{owner}/{repo}/pulls/<n>/files --paginate}) — what
+     * {@link #prDiff} falls back to when GitHub refuses the whole diff for its size (HTTP 406). {@code gh}
+     * fills {@code {owner}/{repo}} and the host in from the working directory's repository, as it does for
+     * {@code gh pr diff}, so a fork or a GitHub Enterprise host needs nothing extra and no ref is fetched
+     * into the user's repository.
+     */
+    public void prFiles(Path dir, int number, Consumer<PrFilesResult> onResult) {
+        submit(() -> {
+            ProcessRunner.Result r = gh(
+                    dir, NETWORK, "api", "repos/{owner}/{repo}/pulls/" + number + "/files?per_page=100", "--paginate");
+            PrFilesResult res = r.ok()
+                    ? new PrFilesResult(true, PrFilesParser.parse(r.out()), "")
+                    : new PrFilesResult(false, new PrFilesParser.Result(List.of(), 0), r.message());
             Platform.runLater(() -> onResult.accept(res));
         });
     }
@@ -267,6 +314,54 @@ public final class GitHubService {
         });
     }
 
+    /**
+     * The current branch's pull request and its checks.
+     *
+     * @param ok whether the branch has a pull request ({@code false}: none, or {@code gh} failed)
+     * @param pr the pull request ({@code null} when {@code !ok})
+     * @param runs its check runs, with names and links; empty when it has none
+     */
+    public record BranchChecks(boolean ok, PrViewParser.PrDetail pr, List<ChecksParser.CheckRun> runs) {
+        public static final BranchChecks NONE = new BranchChecks(false, null, List.of());
+    }
+
+    /**
+     * Which pull request the checked-out branch belongs to ({@code gh pr view}, no number) and that pull
+     * request's checks ({@code gh pr checks <n>}) — {@link #prChecks} alone cannot say which pull request it
+     * answered for. A branch without a pull request costs the one {@code gh pr view} call.
+     */
+    public void branchChecks(Path dir, Consumer<BranchChecks> onResult) {
+        submit(() -> {
+            BranchChecks res = BranchChecks.NONE;
+            PrViewParser.PrDetail pr = currentBranchPr(dir);
+            if (pr != null && pr.number() > 0) {
+                ProcessRunner.Result r = gh(
+                        dir,
+                        NETWORK,
+                        "pr",
+                        "checks",
+                        String.valueOf(pr.number()),
+                        "--json",
+                        "name,state,bucket,link,workflow");
+                res = new BranchChecks(true, pr, ChecksParser.parse(r.out())); // exits 1 / 8 with the JSON
+            }
+            BranchChecks posted = res;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** The pull request of the checked-out branch, or {@code null} when it has none. Runs on the lane. */
+    private PrViewParser.PrDetail currentBranchPr(Path dir) {
+        ProcessRunner.Result r = gh(
+                dir,
+                NETWORK,
+                "pr",
+                "view",
+                "--json",
+                "number,title,body,author,baseRefName,headRefName,state,url,additions,deletions");
+        return r.ok() ? PrViewParser.parse(r.out()) : null;
+    }
+
     // --- issues ----------------------------------------------------------------------------------
 
     /** Result of an issue list. */
@@ -285,6 +380,20 @@ public final class GitHubService {
                     "50",
                     "--json",
                     "number,title,author,state,labels,updatedAt,url");
+            IssueListResult res = r.ok()
+                    ? new IssueListResult(true, IssueListParser.parse(r.out()), "")
+                    : new IssueListResult(false, List.of(), r.message());
+            if (gen == issueListGen.get()) {
+                Platform.runLater(() -> onResult.accept(res));
+            }
+        });
+    }
+
+    /** {@link #issueList(Path, Consumer)} for a {@link GitHubListQuery}; see {@link #listPrs(Path, GitHubListQuery, Consumer)}. */
+    public void listIssues(Path dir, GitHubListQuery query, Consumer<IssueListResult> onResult) {
+        long gen = issueListGen.incrementAndGet();
+        submit(() -> {
+            ProcessRunner.Result r = gh(dir, NETWORK, query.issueArgs().toArray(new String[0]));
             IssueListResult res = r.ok()
                     ? new IssueListResult(true, IssueListParser.parse(r.out()), "")
                     : new IssueListResult(false, List.of(), r.message());
@@ -321,6 +430,29 @@ public final class GitHubService {
                     "30",
                     "--json",
                     "databaseId,displayTitle,workflowName,headBranch,status,conclusion,event,createdAt,url");
+            RunListResult res = r.ok()
+                    ? new RunListResult(true, RunListParser.parse(r.out()), "")
+                    : new RunListResult(false, List.of(), r.message());
+            if (generation == null || gen == generation.get()) {
+                Platform.runLater(() -> onResult.accept(res));
+            }
+        });
+    }
+
+    /** {@link #runList(Path, Consumer)} for a {@link GitHubListQuery} (only its limit applies to runs). */
+    public void listRuns(Path dir, GitHubListQuery query, Consumer<RunListResult> onResult) {
+        listRuns(dir, query, runListGen, onResult);
+    }
+
+    /** {@link #listRuns(Path, GitHubListQuery, Consumer)} for a one-shot consumer (a picker). */
+    public void listRunsOnce(Path dir, GitHubListQuery query, Consumer<RunListResult> onResult) {
+        listRuns(dir, query, null, onResult);
+    }
+
+    private void listRuns(Path dir, GitHubListQuery query, AtomicLong generation, Consumer<RunListResult> onResult) {
+        long gen = generation == null ? 0 : generation.incrementAndGet();
+        submit(() -> {
+            ProcessRunner.Result r = gh(dir, NETWORK, query.runArgs().toArray(new String[0]));
             RunListResult res = r.ok()
                     ? new RunListResult(true, RunListParser.parse(r.out()), "")
                     : new RunListResult(false, List.of(), r.message());
@@ -404,6 +536,42 @@ public final class GitHubService {
     private boolean hasAnyRun(Path dir) {
         ProcessRunner.Result r = ghSilent(dir, NETWORK, "run", "list", "--limit", "1", "--json", "databaseId");
         return r.ok() && !RunListParser.parse(r.out()).isEmpty();
+    }
+
+    // --- the resolved repository, and what the create-PR form needs to know ----------------------
+
+    /**
+     * The repository {@code gh} resolves for {@code dir} ({@code gh repo view --json nameWithOwner,…}), or
+     * {@code null} when it cannot tell. With a fork's {@code origin} and an {@code upstream} remote this is
+     * the upstream repository — the one every list and run action of the tool window then addresses.
+     */
+    public void repoInfo(Path dir, Consumer<RepoViewParser.RepoInfo> onResult) {
+        submit(() -> {
+            RepoViewParser.RepoInfo info = repoInfoNow(dir);
+            Platform.runLater(() -> onResult.accept(info));
+        });
+    }
+
+    private RepoViewParser.RepoInfo repoInfoNow(Path dir) {
+        ProcessRunner.Result r = gh(dir, NETWORK, "repo", "view", "--json", "nameWithOwner,defaultBranchRef,url");
+        return r.ok() ? RepoViewParser.parse(r.out()) : null;
+    }
+
+    /**
+     * What is looked up before the create-PR form opens.
+     *
+     * @param repo the resolved repository with its default branch, or {@code null} when unknown
+     * @param existing the checked-out branch's pull request, or {@code null} when it has none
+     * @param template the repository's pull-request template, {@code ""} when it has none
+     */
+    public record CreateContext(RepoViewParser.RepoInfo repo, PrViewParser.PrDetail existing, String template) {}
+
+    /** Gathers the {@link CreateContext} for the repository at {@code root} ({@code gh} runs in {@code dir}). */
+    public void prCreateContext(Path dir, Path root, Consumer<CreateContext> onResult) {
+        submit(() -> {
+            CreateContext ctx = new CreateContext(repoInfoNow(dir), currentBranchPr(dir), PrDraft.template(root));
+            Platform.runLater(() -> onResult.accept(ctx));
+        });
     }
 
     // --- open on github --------------------------------------------------------------------------
