@@ -40,6 +40,24 @@ class MenuBarModelTest {
         assertTrue(unknown.isEmpty(), "menu entries naming commands that do not exist: " + unknown);
     }
 
+    /** Finished Git features that were reachable from a context menu or the palette only. */
+    @Test
+    void theVcsMenuReachesEveryFinishedGitFeature() {
+        List<String> all = MenuBarModel.allCommandIds();
+        for (String id : List.of(
+                "git.stageAll",
+                "diff.vsBranch",
+                "diff.vsTag",
+                "diff.vsCommit",
+                "merge.resolve",
+                "git.toggleBlame",
+                "git.stashDrop",
+                "git.addToGitignore",
+                "git.init")) {
+            assertTrue(all.contains(id), id + " is missing from the menu bar");
+        }
+    }
+
     @Test
     void everyMenuTitleIsLocalized() throws Exception {
         Properties messages = messages();
