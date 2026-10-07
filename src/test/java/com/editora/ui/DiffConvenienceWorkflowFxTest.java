@@ -82,7 +82,11 @@ class DiffConvenienceWorkflowFxTest {
 
         FxTestSupport.runOnFx(() -> {
             buffer.getArea().replaceText("updated\n");
+            // The clipboard diff's tab is not the selected one, where refresh() only notes it is pending;
+            // run the re-fetch itself, as showing the tab would.
             clipboard.refresh();
+            assertTrue(clipboard.isRefreshPending());
+            ((Runnable) FxTestSupport.field(clipboard, "refresher")).run();
         });
         awaitCondition(() -> "updated\n".equals(FxTestSupport.field(clipboard, "leftText")));
         assertEquals("clipboard\n", FxTestSupport.field(clipboard, "rightText"));

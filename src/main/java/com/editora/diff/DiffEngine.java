@@ -111,7 +111,7 @@ public final class DiffEngine {
         List<String> dr = normalizeAll(right, o);
         Patch<String> patch = BoundedDiff.diff(dl, dr, MAX_LINE_EDITS);
         if (patch == null) {
-            return coarse(left, right, false, false);
+            return coarse(left, right, dl, dr, false, false);
         }
         List<Row> rows = new ArrayList<>();
         int li = 0; // 0-based pointer into left (original)
@@ -177,29 +177,41 @@ public final class DiffEngine {
     public static DiffModel computeCoarse(String left, String right) {
         DiffText l = DiffText.parse(left);
         DiffText r = DiffText.parse(right);
-        return coarse(l.lines(), r.lines(), l.finalNewline(), r.finalNewline());
+        return coarse(l.lines(), r.lines(), l.lines(), r.lines(), l.finalNewline(), r.finalNewline());
     }
 
+    /**
+     * {@code keysA}/{@code keysB} are the lines as the comparison rules see them (whitespace, case); the rows
+     * carry the original text. Compared by the text itself, a file re-indented under "ignore whitespace"
+     * fell back to this alignment and showed every line as changed.
+     */
     private static DiffModel coarse(
-            List<String> a, List<String> b, boolean leftFinalNewline, boolean rightFinalNewline) {
+            List<String> a,
+            List<String> b,
+            List<String> keysA,
+            List<String> keysB,
+            boolean leftFinalNewline,
+            boolean rightFinalNewline) {
         int prefix = 0;
-        while (prefix < a.size() && prefix < b.size() && a.get(prefix).equals(b.get(prefix))) {
+        while (prefix < a.size() && prefix < b.size() && keysA.get(prefix).equals(keysB.get(prefix))) {
             prefix++;
         }
         int suffix = 0;
         while (suffix < a.size() - prefix
                 && suffix < b.size() - prefix
-                && a.get(a.size() - 1 - suffix).equals(b.get(b.size() - 1 - suffix))) {
+                && keysA.get(a.size() - 1 - suffix).equals(keysB.get(b.size() - 1 - suffix))) {
             suffix++;
         }
         List<Row> rows = new ArrayList<>();
         for (int i = 0; i < prefix; i++) {
-            rows.add(Row.equal(a.get(i), i + 1, i + 1));
+            rows.add(Row.equal(a.get(i), i + 1, b.get(i), i + 1));
         }
         int alen = a.size() - prefix - suffix;
         int blen = b.size() - prefix - suffix;
         for (int i = 0; i < Math.max(alen, blen); i++) {
-            if (i < alen && i < blen) {
+            if (i < alen && i < blen && keysA.get(prefix + i).equals(keysB.get(prefix + i))) {
+                rows.add(Row.equal(a.get(prefix + i), prefix + i + 1, b.get(prefix + i), prefix + i + 1));
+            } else if (i < alen && i < blen) {
                 rows.add(Row.modified(
                         a.get(prefix + i),
                         prefix + i + 1,
@@ -216,7 +228,7 @@ public final class DiffEngine {
         for (int i = suffix; i > 0; i--) {
             int ai = a.size() - i;
             int bi = b.size() - i;
-            rows.add(Row.equal(a.get(ai), ai + 1, bi + 1));
+            rows.add(Row.equal(a.get(ai), ai + 1, b.get(bi), bi + 1));
         }
         return finish(rows, leftFinalNewline, rightFinalNewline, Quality.LINE_ONLY);
     }
@@ -308,7 +320,10 @@ public final class DiffEngine {
                 double add = costs[i][j - 1] + GAP_COST;
                 costs[i][j] = remove;
                 steps[i][j] = 1;
-                if (add < costs[i][j]) {
+                // On a tie the block ends with the addition, so read forwards the removed lines come first
+                // and their replacements follow — the order every diff shows. Preferring the removal here
+                // listed a rewritten block's new lines above the old ones.
+                if (add <= costs[i][j]) {
                     costs[i][j] = add;
                     steps[i][j] = 2;
                 }
@@ -404,6 +419,9 @@ public final class DiffEngine {
         int removed = 0;
         List<Integer> changeStarts = new ArrayList<>();
         List<UnifiedRow> unified = new ArrayList<>();
+        // A block's additions wait here until its removals are out: unified rows read "- - - + + +" per
+        // change block, not "- + - + - +" for a run of modified lines.
+        List<UnifiedRow> pendingAdds = new ArrayList<>();
         boolean prevChanged = false;
         for (int i = 0; i < rows.size(); i++) {
             Row r = rows.get(i);
@@ -413,11 +431,14 @@ public final class DiffEngine {
             }
             prevChanged = changed;
             switch (r.type()) {
-                case EQUAL ->
+                case EQUAL -> {
+                    unified.addAll(pendingAdds);
+                    pendingAdds.clear();
                     unified.add(new UnifiedRow(UnifiedType.CONTEXT, r.left(), r.leftLine(), r.rightLine(), null));
+                }
                 case ADDED -> {
                     added++;
-                    unified.add(new UnifiedRow(UnifiedType.ADD, r.right(), -1, r.rightLine(), null));
+                    pendingAdds.add(new UnifiedRow(UnifiedType.ADD, r.right(), -1, r.rightLine(), null));
                 }
                 case REMOVED -> {
                     removed++;
@@ -427,11 +448,12 @@ public final class DiffEngine {
                     added++;
                     removed++;
                     unified.add(new UnifiedRow(UnifiedType.REMOVE, r.left(), r.leftLine(), -1, r.leftWordRanges()));
-                    unified.add(new UnifiedRow(UnifiedType.ADD, r.right(), -1, r.rightLine(), r.rightWordRanges()));
+                    pendingAdds.add(new UnifiedRow(UnifiedType.ADD, r.right(), -1, r.rightLine(), r.rightWordRanges()));
                 }
                 default -> {}
             }
         }
+        unified.addAll(pendingAdds);
         return new DiffModel(rows, unified, added, removed, changeStarts, leftFinalNewline, rightFinalNewline, quality);
     }
 

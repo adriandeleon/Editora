@@ -391,6 +391,83 @@ class DiffViewerBehaviorFxTest {
         assertEquals(working, request.get().afterText());
     }
 
+    /** A pane nobody can see skips the refresh and runs it once when it is shown. */
+    @Test
+    void aHiddenPaneDefersItsRefreshUntilItIsShown() throws Exception {
+        DiffViewerPane pane = pane("a\n", "b\n");
+        AtomicInteger refreshes = new AtomicInteger();
+        FxTestSupport.runOnFx(() -> {
+            pane.setRefresher(refreshes::incrementAndGet);
+            pane.refresh();
+            pane.refresh();
+        });
+        assertEquals(0, refreshes.get(), "a detached pane must not re-fetch its sides");
+        assertTrue(FxTestSupport.callOnFx(pane::isRefreshPending));
+
+        StackPane holder = FxTestSupport.callOnFx(() -> new StackPane(pane.node()));
+        Stage stage = FxTestSupport.callOnFx(() -> {
+            holder.setVisible(false); // as an unselected tab's content is
+            Stage window = new Stage();
+            window.setScene(new Scene(new StackPane(holder), 600, 400));
+            window.show();
+            return window;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> {});
+            FxTestSupport.runOnFx(() -> {});
+            assertEquals(0, refreshes.get(), "still hidden behind an invisible ancestor");
+
+            FxTestSupport.runOnFx(() -> holder.setVisible(true));
+            FxTestSupport.runOnFx(() -> {});
+            assertEquals(1, refreshes.get(), "the skipped refreshes run once when the pane is shown");
+            assertFalse(FxTestSupport.callOnFx(pane::isRefreshPending));
+
+            FxTestSupport.runOnFx(pane::refresh);
+            assertEquals(2, refreshes.get(), "a visible pane refreshes at once");
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    @Test
+    void exportIsDisabledWhileASideIsADescriptionRatherThanText() throws Exception {
+        DiffViewerPane pane = pane("⟦Binary 1 B⟧", "b\n");
+        javafx.scene.control.Button export = FxTestSupport.field(pane, "exportButton");
+        assertFalse(export.isDisable());
+        FxTestSupport.runOnFx(() -> pane.setMutationAllowed(false));
+        assertTrue(export.isDisable());
+        FxTestSupport.runOnFx(() -> pane.setMutationAllowed(true));
+        assertFalse(export.isDisable());
+    }
+
+    /** Undoing after a Save leaves the buffer changed again, so Save must come back. */
+    @Test
+    void saveIsOfferedAgainAfterAnUndoAndUndoStopsWhenNothingIsLeftToUndo() throws Exception {
+        DiffViewerPane pane = pane("one\nsource\n", "one\ntarget\n");
+        AtomicInteger undone = new AtomicInteger();
+        boolean[] available = {true};
+        javafx.scene.control.Button undo = FxTestSupport.field(pane, "undoButton");
+        javafx.scene.control.Button save = FxTestSupport.field(pane, "saveButton");
+        FxTestSupport.runOnFx(() -> {
+            pane.setEditable(DiffViewerPane.EditableSide.RIGHT, text -> true, undone::incrementAndGet, () -> {});
+            pane.setUndoAvailable(() -> available[0]);
+            FxTestSupport.call(pane, "applyRow", new Class<?>[] {int.class}, 1);
+        });
+        assertFalse(save.isDisable());
+        FxTestSupport.runOnFx(save::fire);
+        assertTrue(save.isDisable());
+        FxTestSupport.runOnFx(undo::fire);
+        assertEquals(1, undone.get());
+        assertFalse(save.isDisable(), "the undo changed the saved buffer");
+        assertTrue(undo.isDisable());
+
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(pane, "applyRow", new Class<?>[] {int.class}, 1));
+        available[0] = false;
+        FxTestSupport.runOnFx(undo::fire);
+        assertEquals(1, undone.get(), "nothing to undo: the action must not be counted as one");
+        assertTrue(undo.isDisable());
+    }
+
     private static int nonTransparentPixels(WritableImage image) {
         int count = 0;
         for (int y = 0; y < (int) image.getHeight(); y++) {

@@ -214,6 +214,32 @@ class PatchWriterTest {
         }
     }
 
+    /** Past the edit budget the patch is one whole-middle hunk — coarse, but it must still apply. */
+    @Test
+    void textsBeyondTheEditBudgetStillExportAnApplicablePatch(@TempDir Path dir) throws Exception {
+        String before = "head\na\nb\nc\nd\ntail\nend";
+        String after = "head\nw\nx\ny\nz\nv\ntail\nend";
+        String patch = PatchWriter.unifiedDiff("a/f.txt", "b/f.txt", before, after, 2);
+
+        assertTrue(patch.contains("@@ -1,7 +1,8 @@"), patch);
+        assertEquals(1, patch.lines().filter(line -> line.startsWith("@@")).count(), patch);
+        Assumptions.assumeTrue(gitAvailable(), "git is not installed");
+        run(dir, null, "git", "init", "-q");
+        Path file = dir.resolve("f.txt");
+        Files.writeString(file, before);
+        assertEquals(0, run(dir, patch, "git", "apply", "-").exit(), patch);
+        assertEquals(after, Files.readString(file));
+    }
+
+    @Test
+    void pureInsertionAndDeletionBeyondTheBudgetMatchTheSearchedPatch() {
+        String lines = "a\nb\nc\nd\ne\n";
+        assertEquals(
+                PatchWriter.unifiedDiff("a/f", "b/f", "", lines), PatchWriter.unifiedDiff("a/f", "b/f", "", lines, 2));
+        assertEquals(
+                PatchWriter.unifiedDiff("a/f", "b/f", lines, ""), PatchWriter.unifiedDiff("a/f", "b/f", lines, "", 2));
+    }
+
     private record Outcome(int exit, String output) {}
 
     private static boolean gitAvailable() {

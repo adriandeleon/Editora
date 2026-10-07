@@ -69,12 +69,46 @@ class ThreeWayMergeTest {
         assertEquals(List.of("one", "TWO"), conflict.theirs());
     }
 
+    /** Git reports changes that touch as one conflict; merging them unseen hid a region Git had flagged. */
     @Test
-    void adjacentEditsRemainIndependent() {
+    void touchingEditsAreOneConflictAsInGit() {
         var result = ThreeWayMerge.merge("one\ntwo\nthree", "ONE\ntwo\nthree", "one\nTWO\nthree");
 
+        assertEquals(1, result.file().conflictCount());
+        Conflict conflict = ((ConflictSegment) result.file().segments().get(0)).conflict();
+        assertEquals(List.of("ONE", "two"), conflict.ours());
+        assertEquals(List.of("one", "TWO"), conflict.theirs());
+        assertEquals(List.of("one", "two"), conflict.base());
+    }
+
+    @Test
+    void editsSeparatedByAnUntouchedLineStayIndependent() {
+        var result = ThreeWayMerge.merge("one\ntwo\nthree", "ONE\ntwo\nthree", "one\ntwo\nTHREE");
+
         assertFalse(result.file().hasConflicts());
-        assertEquals(List.of("ONE", "TWO", "three"), ConflictParser.resolve(result.file(), List.of()));
+        assertEquals(List.of("ONE", "two", "THREE"), ConflictParser.resolve(result.file(), List.of()));
+    }
+
+    /** Each side deleted a different one of two identical neighbours: neither meant to delete both. */
+    @Test
+    void deletingDifferentCopiesOfARepeatedLineIsNotMergedIntoDeletingBoth() {
+        var result = ThreeWayMerge.merge("a\na\nd\na\na\nc", "a\nd\nd\na\nc", "a\na\nd\na\nc\nc");
+
+        assertTrue(result.file().hasConflicts());
+    }
+
+    @Test
+    void aFileStillHoldingGitsMarkersAgreesWithTheStageMerge() {
+        var merged = ThreeWayMerge.merge("a\nb\nc\nd\ne", "a\nB1\nc\nd\nE", "a\nB2\nc\nd\ne")
+                .file();
+        List<String> written = List.of("a", "<<<<<<< HEAD", "B1", "=======", "B2", ">>>>>>> topic", "c", "d", "E");
+        assertTrue(ThreeWayMerge.agreesWith(merged, ConflictParser.parse(written)));
+
+        // The conflict was resolved by hand, or the file edited elsewhere: no longer the same merge.
+        assertFalse(ThreeWayMerge.agreesWith(merged, ConflictParser.parse(List.of("a", "mine", "c", "d", "E"))));
+        List<String> edited = new java.util.ArrayList<>(written);
+        edited.set(7, "d edited");
+        assertFalse(ThreeWayMerge.agreesWith(merged, ConflictParser.parse(edited)));
     }
 
     // --- runs of identical lines: the raw differ's deltas are not where the edit was made -------------------

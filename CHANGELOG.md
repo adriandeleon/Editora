@@ -20,6 +20,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An exported patch now applies to a file with Windows (CRLF) line endings. The diff viewer compares text
+  with plain line feeds, and the patch was written from that text, so Git rejected it for a CRLF file.
+  Each side's own line ending is put back, and a Latin-1 / Windows-1252 file's patch is written in that
+  encoding rather than UTF-8.
+- Export Patch no longer freezes the window on a large rewritten file (a re-indented 40,000-line file took
+  27 seconds). The patch is computed in the background, and two texts too far apart to search are exported
+  as one hunk.
+- In a block of rewritten lines the diff viewer lists the removed lines first and their replacements
+  after them. With smart alignment on, unrelated new lines were shown above the lines they replaced.
+- A `.patch`/`.diff` file opened as a diff shows the line numbers its hunk headers state, so a hunk at
+  line 500 is no longer numbered from 1 and the jump between two hunks is visible.
+- The merge resolver treats changes on neighbouring lines as one conflict, as Git does. It used to merge
+  them on its own, so a region Git had reported as a conflict could be resolved without ever being shown.
+- The merge resolver no longer silently discards conflicts you already resolved by hand. When the file has
+  moved on from Git's merge of the three versions, it asks whether to start again from Git's versions or
+  to resolve the markers the file still has.
+- Open diffs you cannot see — other tabs, the other files of a review — are no longer re-read on every
+  window focus, file change and apply; each catches up when it is shown.
+- Export Patch is disabled when a side is binary or too large to load, instead of exporting a patch of the
+  placeholder text.
+- In a diff, Save becomes available again after an Undo that follows a Save, and Undo no longer counts an
+  undo when the file has nothing left to undo.
+- "Ignore whitespace" and "Ignore case" now also apply to very large rewrites that use the simplified
+  comparison.
+- The unified view lists a change block's removed lines before its added lines instead of alternating them.
 - The floating controls at the top-right of the editor no longer overlap. In Expert mode the "E" exit
   button sat on top of an HTML file's open-in-browser button, a Markdown file's Editor/Split/Preview
   toggle or a log file's controls; they now share one row. In Zen mode the "Z" also clears the HTML and
