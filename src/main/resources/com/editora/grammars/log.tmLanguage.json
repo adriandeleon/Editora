@@ -22,11 +22,11 @@
       "name": "markup.info.log"
     },
     {
-      "match": "\\b(?:DEBUG|DBG|FINE|CONFIG)\\b",
+      "match": "\\b(?:DEBUG|DBG|DBUG|FINE|CONFIG)\\b",
       "name": "markup.debug.log"
     },
     {
-      "match": "\\b(?:TRACE|TRC|FINEST|FINER|VERBOSE)\\b",
+      "match": "\\b(?:TRACE|TRC|TRCE|FINEST|FINER|VERBOSE)\\b",
       "name": "markup.trace.log"
     },
     {

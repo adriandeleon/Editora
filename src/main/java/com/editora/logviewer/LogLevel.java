@@ -6,8 +6,8 @@ import java.util.Locale;
  * A normalized server-log severity level, ordered least-to-most severe by {@link #rank()}.
  *
  * <p>{@link #fromToken(String)} maps the many spellings emitted by real-world frameworks — Logback /
- * Log4j ({@code TRACE..ERROR}), {@code java.util.logging} ({@code FINEST..SEVERE}), and syslog
- * ({@code debug..emerg}) — onto these six buckets. Pure (java.base only) so it is unit-tested.
+ * Log4j ({@code TRACE..ERROR}), {@code java.util.logging} ({@code FINEST..SEVERE}), syslog
+ * ({@code debug..emerg}), and the .NET console logger ({@code trce..crit}) — onto these six buckets. Pure (java.base only) so it is unit-tested.
  */
 public enum LogLevel {
     TRACE(0),
@@ -41,8 +41,8 @@ public enum LogLevel {
 
     private static java.util.Map<String, LogLevel> tokens() {
         java.util.Map<String, LogLevel> map = new java.util.LinkedHashMap<>();
-        put(map, TRACE, "TRACE", "TRC", "FINEST", "FINER", "VERBOSE");
-        put(map, DEBUG, "DEBUG", "DBG", "FINE", "CONFIG");
+        put(map, TRACE, "TRACE", "TRC", "TRCE", "FINEST", "FINER", "VERBOSE");
+        put(map, DEBUG, "DEBUG", "DBG", "DBUG", "FINE", "CONFIG");
         put(map, INFO, "INFO", "INF", "INFORMATION", "NOTICE");
         put(map, WARN, "WARN", "WRN", "WARNING");
         put(map, ERROR, "ERROR", "ERR", "SEVERE", "FAILURE", "FAIL");
