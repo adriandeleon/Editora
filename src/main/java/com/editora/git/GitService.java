@@ -49,7 +49,7 @@ import com.editora.process.ProcessRunner;
  * </ul>
  *
  * <p>Reads and local mutations share one serial lane; network commands have their own, so a slow remote
- * does not hold up status. Working-tree mutations are additionally serialised across both, and user commands
+ * does not hold up status, and so do the Git Log's reads, so a slow history search does not either. Working-tree mutations are additionally serialised across both, and user commands
  * keep the order they were requested in: a fetch, pull or push is handed to the network lane only once the
  * local lane has reached it (so a push never overtakes the commit clicked just before it), and a local
  * mutation that finds a pull in the working tree waits behind it on the network lane instead of blocking
@@ -127,11 +127,19 @@ public final class GitService {
     static final Duration MUTATION = Duration.ofMinutes(15);
     /** Clone / fetch / pull / push: a large repository over a slow link legitimately takes many minutes. */
     static final Duration NETWORK = Duration.ofMinutes(30);
+    /** A history search through file contents ({@code git log -S}): slow by nature, on its own lane. */
+    static final Duration HISTORY_SEARCH = Duration.ofMinutes(2);
 
     /** Reads and local mutations, strictly serial (a stale-diff check and its mutation share this lane). */
     private final ExecutorService exec = lane("git-service");
     /** Clone / fetch / pull / push, so a slow remote never queues status and gutter work behind it. */
     private final ExecutorService networkExec = lane("git-network");
+    /**
+     * The Git Log's reads (pages, searches, commit details). A history search that reads file contents runs
+     * for seconds on a small repository and far longer on a large one; on the shared lane every status and
+     * gutter refresh would wait behind it. Read-only, so it needs no ordering against the other lanes.
+     */
+    private final ExecutorService historyExec = lane("git-history");
     /** Serialises working-tree mutations across the two lanes ({@code pull} runs on the network lane). */
     private final ReentrantLock worktreeLock = new ReentrantLock();
     /** User commands currently running per lane; {@link #shutdown()} lets these finish instead of killing them. */
@@ -682,33 +690,98 @@ public final class GitService {
     }
 
     /**
-     * The Git Log's rows: up to {@code max} commits (of {@code file} when given) with author time and ref
-     * decorations, parsed by the pure {@link GitLog#parse}. One extra commit is requested so the page can
-     * say whether the history was cut off. Posts on the FX thread.
+     * One page of the Git Log ({@link GitLog.Request}): rows with parents, author time and ref decorations,
+     * parsed by the pure {@link GitLog#parse} / {@link GitLog#parseFollow}. One extra commit is requested so
+     * the page can say whether more history follows. Posts on the FX thread.
+     *
+     * <p>Only the newest request is answered: one still queued when another arrives is dropped without
+     * running and <em>its callback is never invoked</em> (as {@link #blameLatest}). The log shows one listing
+     * at a time, so an older request's rows would be discarded anyway — after a slow search had been run for
+     * them.
      */
-    public void logPage(Path root, Path file, int max, Consumer<GitLog.Page> onResult) {
-        submit(exec, () -> {
+    public void logPage(Path root, GitLog.Request request, Consumer<GitLog.Page> onResult) {
+        long gen = logGen.incrementAndGet();
+        submit(historyExec, () -> {
+            if (gen != logGen.get()) {
+                return;
+            }
             GitLog.Page page = GitLog.Page.EMPTY;
             if (gitAvailable() && root != null) {
-                List<String> args = new ArrayList<>(List.of(
-                        GitSafety.LITERAL_PATHSPECS,
-                        "log",
-                        "--no-color",
-                        "--decorate=full",
-                        GitLog.FORMAT,
-                        "--date=short",
-                        "-n",
-                        String.valueOf(max + 1)));
-                if (file != null) {
-                    args.add("--");
-                    args.add(file.toAbsolutePath().toString());
-                }
-                ProcessRunner.Result r = git(root, QUICK, args.toArray(new String[0]));
-                if (r.ok()) {
-                    page = GitLog.parse(r.out(), max);
+                ProcessRunner.Result r = git(
+                        root,
+                        request.query().readsContent() ? HISTORY_SEARCH : QUICK,
+                        GitLog.logArgs(request).toArray(new String[0]));
+                if (!r.ok()) {
+                    page = noCommitsYet(r) ? GitLog.Page.EMPTY : GitLog.Page.failed(r.message());
+                } else if (request.follows()) {
+                    page = GitLog.parseFollow(r.out(), request.max());
+                } else {
+                    page = GitLog.parse(r.out(), request.max());
                 }
             }
             GitLog.Page posted = page;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    private final AtomicLong logGen = new AtomicLong();
+
+    /**
+     * Whether a failed {@code git log} only says that the branch is unborn (a repository straight after
+     * {@code git init}) — an empty history, not an error to show. Read in the C locale.
+     */
+    static boolean noCommitsYet(ProcessRunner.Result r) {
+        return r.err() != null && r.err().contains("does not have any commits yet");
+    }
+
+    /**
+     * The full message, author, committer, parents and refs of one commit ({@code git show -s}), parsed by
+     * the pure {@link GitLog#parseDetails}; null when the commit cannot be read. Posts on the FX thread.
+     */
+    public void commitDetails(Path root, String hash, Consumer<GitLog.Details> onResult) {
+        submit(historyExec, () -> {
+            GitLog.Details details = null;
+            if (gitAvailable() && root != null && GitSafety.isSafeRevision(hash)) {
+                List<String> args =
+                        new ArrayList<>(List.of("show", "-s", "--no-color", "--decorate=full", GitLog.DETAILS_FORMAT));
+                args.addAll(GitSafety.revisionArgs(endOfOptions, hash));
+                ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
+                if (r.ok()) {
+                    details = GitLog.parseDetails(r.out());
+                }
+            }
+            GitLog.Details posted = details;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /**
+     * The files that differ between two commits ({@code git diff --name-status -M from to}), renames
+     * detected so a moved file is one row whose left side is read at its old path. A failure — an unsafe or
+     * unknown revision — is reported in the result, not as an empty list. Posts on the FX thread.
+     */
+    public void diffFiles(Path root, String from, String to, Consumer<WorkingTreeDiff> onResult) {
+        submit(historyExec, () -> {
+            WorkingTreeDiff result = new WorkingTreeDiff(List.of(), false, "Git is not available");
+            if (gitAvailable() && root != null) {
+                if (!GitSafety.isSafeRevision(from) || !GitSafety.isSafeRevision(to)) {
+                    result = new WorkingTreeDiff(List.of(), false, "Unsafe revision name: " + from + " " + to);
+                } else {
+                    List<String> args = new ArrayList<>(List.of("diff", "--name-status", "-z", "-M"));
+                    args.addAll(GitSafety.revisionArgs(endOfOptions, from, to));
+                    args.add("--");
+                    ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
+                    if (r.ok()) {
+                        List<CommitFile> files = parseNameStatusZ(r.out());
+                        boolean truncated = files.size() > MAX_WORKING_TREE_DIFF_FILES;
+                        result = new WorkingTreeDiff(
+                                truncated ? files.subList(0, MAX_WORKING_TREE_DIFF_FILES) : files, truncated, "");
+                    } else {
+                        result = new WorkingTreeDiff(List.of(), false, r.message());
+                    }
+                }
+            }
+            WorkingTreeDiff posted = result;
             Platform.runLater(() -> onResult.accept(posted));
         });
     }
@@ -2041,6 +2114,7 @@ public final class GitService {
         closing = true;
         stop(exec, localCommands);
         stop(networkExec, networkCommands);
+        historyExec.shutdownNow(); // reads only: nothing to leave half-done
     }
 
     private static void stop(ExecutorService lane, AtomicInteger running) {

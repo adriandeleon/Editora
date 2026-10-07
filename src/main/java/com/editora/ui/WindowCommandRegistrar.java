@@ -1973,6 +1973,42 @@ final class WindowCommandRegistrar {
                         "git.log.copyHash", () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::copyHash)));
         host.registry()
                 .register(Command.of(
+                        "git.log.reviewCommit",
+                        () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::reviewCommit)));
+        host.registry().register(Command.of("git.log.compareSelected", host.gitWindows()::compareSelectedCommits));
+        host.registry()
+                .register(Command.of(
+                        "git.log.toggleAllBranches", () -> host.git().ifEnabled(host.gitWindows()::toggleAllBranches)));
+        host.registry()
+                .register(
+                        Command.of("git.log.search", () -> host.git().ifEnabled(host.gitWindows()::focusGitLogSearch)));
+        host.registry()
+                .register(
+                        Command.of("git.log.loadMore", () -> host.git().ifEnabled(host.gitWindows()::loadMoreCommand)));
+        // Tags: at the commit selected in the visible log (else HEAD), or picked from the repository's tags.
+        host.registry()
+                .register(
+                        Command.of("git.tag.create", () -> host.git().ifEnabled(host.gitWindows()::createTagCommand)));
+        host.registry()
+                .register(Command.of(
+                        "git.tag.delete",
+                        () -> host.git()
+                                .ifEnabled(() -> host.gitWindows()
+                                        .pickTagThen("dialog.deleteTag.title", host.gitWindows()::deleteTagIn))));
+        host.registry()
+                .register(Command.of(
+                        "git.tag.push",
+                        () -> host.git()
+                                .ifEnabled(() -> host.gitWindows()
+                                        .pickTagThen("dialog.pushTag.title", host.gitWindows()::pushTagIn))));
+        host.registry()
+                .register(Command.of(
+                        "git.tag.checkout",
+                        () -> host.git()
+                                .ifEnabled(() -> host.gitWindows()
+                                        .pickTagThen("dialog.checkoutTag.title", host.gitWindows()::checkoutTagIn))));
+        host.registry()
+                .register(Command.of(
                         "git.refresh",
                         () -> host.git().ifEnabled(() -> {
                             host.git().invalidateCaches();

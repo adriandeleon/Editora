@@ -207,6 +207,9 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "git.switchBranch",
                                 "git.newBranch",
+                                "git.tag.create",
+                                "git.tag.push",
+                                "git.tag.delete",
                                 SEPARATOR,
                                 "diff.vsHead",
                                 // The Project tree's "Compare with Branch / Tag / Revision", for the active
@@ -223,6 +226,8 @@ final class MenuBarModel {
                                 "merge.resolve",
                                 SEPARATOR,
                                 "tool.gitLog",
+                                "git.log.search",
+                                "git.log.toggleAllBranches",
                                 "git.fileHistory",
                                 "git.toggleBlame",
                                 SEPARATOR,
