@@ -19,8 +19,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class HistoryStore {
 
-    /** Current on-disk schema version of {@code history/index.json}. (v1→v2: added the per-revision label.) */
-    public static final int SCHEMA_VERSION = 2;
+    /**
+     * Current on-disk schema version of {@code history/index.json}. (v1→v2: added the per-revision label;
+     * v2→v3: a pre-delete revision records its file's charset, byte-order mark and line ending.)
+     */
+    public static final int SCHEMA_VERSION = 3;
 
     private int schemaVersion = SCHEMA_VERSION;
 

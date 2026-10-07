@@ -234,7 +234,8 @@ public enum ConfigSchema {
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added the per-revision label (additive; absent rows default to "").
-    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
+    // v2 → v3 added charset/bom/lineEnding on pre-delete revisions (additive; absent ⇒ unknown, restore as before).
+    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity)),
     SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 backfilled agentId ("claude") on every session predating multi-agent support.
     AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::addDefaultAgentIdToSessions)),

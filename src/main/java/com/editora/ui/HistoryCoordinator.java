@@ -492,6 +492,37 @@ final class HistoryCoordinator {
             String label,
             boolean force,
             java.util.function.Consumer<Boolean> durableCompletion) {
+        recordFor(file, content, reason, label, force, null, durableCompletion);
+    }
+
+    /** How a captured file was written, kept on its pre-delete revision (see {@link HistoryRevision}). */
+    record Encoding(String charset, boolean bom, String lineEnding) {
+
+        /** The encoding of {@code bytes}, read the way the editor reads a file under {@code editorConfigCharset}. */
+        static Encoding of(byte[] bytes, String editorConfigCharset) {
+            return of(bytes, DiffSideText.decodeRaw(bytes, editorConfigCharset, null));
+        }
+
+        private static Encoding of(byte[] bytes, EditorConfigCharset.Decoded decoded) {
+            return new Encoding(
+                    decoded.charset(),
+                    EditorConfigCharset.detectByBom(bytes) != null,
+                    LineEndings.dominant(decoded.text()));
+        }
+
+        HistoryRevision on(HistoryRevision revision) {
+            return revision.withEncoding(charset, bom, lineEnding);
+        }
+    }
+
+    private void recordFor(
+            Path file,
+            String content,
+            String reason,
+            String label,
+            boolean force,
+            Encoding encoding,
+            java.util.function.Consumer<Boolean> durableCompletion) {
         if (!isEnabled() || file == null || content == null || !com.editora.vfs.Vfs.isLocal(file)) {
             if (durableCompletion != null) {
                 durableCompletion.accept(true);
@@ -508,7 +539,8 @@ final class HistoryCoordinator {
             // to the file, so it lands under the name the file has now, not the one it had when submitted.
             String key = keyAfterRenamesSince(renamesSeen, submittedKey);
             boolean adopted = outcome.successful() && adoptSaveAsOrigin(key);
-            HistoryRevision rev = outcome.revision() == null ? null : HistoryMoves.at(key, outcome.revision());
+            HistoryRevision moved = outcome.revision() == null ? null : HistoryMoves.at(key, outcome.revision());
+            HistoryRevision rev = moved == null || encoding == null ? moved : encoding.on(moved);
             if (rev != null) {
                 applyRecorded(key, rev, policy, now, durableCompletion);
             } else {
@@ -527,6 +559,19 @@ final class HistoryCoordinator {
                 refresh();
             }
         });
+    }
+
+    /** A NUL byte marks a binary file — except in UTF-16 text, where every ASCII character has one. */
+    private static boolean isBinary(byte[] bytes, String charsetRule) {
+        if (EditorConfigCharset.resolveName(bytes, charsetRule).startsWith("utf-16")) {
+            return false;
+        }
+        for (byte b : bytes) {
+            if (b == 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** One rename this window was told about; {@link #renames} keeps them in order. */
@@ -686,9 +731,7 @@ final class HistoryCoordinator {
             List<HistoryRevision> list = e.getValue();
             for (int i = 0; i < list.size(); i++) {
                 if (list.get(i) == revision) {
-                    HistoryRevision old = list.get(i);
-                    HistoryRevision relabeled = new HistoryRevision(
-                            old.path(), old.timestamp(), old.sizeBytes(), old.sha256(), old.reason(), label);
+                    HistoryRevision relabeled = list.get(i).withLabel(label);
                     List<HistoryRevision> copy = new ArrayList<>(list);
                     copy.set(i, relabeled);
                     bucket.put(e.getKey(), copy);
@@ -821,7 +864,11 @@ final class HistoryCoordinator {
                                     return;
                                 }
                                 recordBeforeOverwrite(file, target);
-                                byte[] replacement = restoredBytes(text, target.expectedBytes(), charsetRuleFor(file));
+                                byte[] replacement = restoredBytes(
+                                        encodingSourceFor(revision),
+                                        text,
+                                        target.expectedBytes(),
+                                        charsetRuleFor(file));
                                 if (!submitRestoreWork(
                                         completion,
                                         () -> commitDiskRestore(file, target, replacement, ticket, completion))) {
@@ -921,6 +968,47 @@ final class HistoryCoordinator {
     }
 
     /**
+     * As {@link #restoredBytes(String, byte[], String)}, for a file that no longer exists and whose
+     * {@code recorded} revision says how it was written (a pre-delete capture, schema 3 on): the charset and
+     * byte-order mark it had, so a UTF-8-with-BOM, UTF-16 or legacy single-byte file comes back as the bytes
+     * that were deleted rather than as BOM-less UTF-8. The line terminators are the revision's own, which a
+     * pre-delete capture keeps verbatim; the recorded line ending is applied only to a body that has none of
+     * its own form left ({@code \n} only). A revision without the metadata, a file that still exists (its
+     * bytes are the better witness) and text the recorded charset cannot hold all fall back to the rule above.
+     */
+    static byte[] restoredBytes(HistoryRevision recorded, String text, byte[] existing, String editorConfigCharset) {
+        if (existing != null || recorded == null || !recorded.hasEncoding()) {
+            return restoredBytes(text, existing, editorConfigCharset);
+        }
+        String body = text;
+        String ending = recorded.lineEnding();
+        if (LineEndings.isLabel(ending) && !LineEndings.LF.equals(ending) && text.indexOf('\r') < 0) {
+            body = LineEndings.apply(text, ending);
+        }
+        if (!EditorConfigCharset.canEncode(body, recorded.charset())) {
+            return restoredBytes(text, null, editorConfigCharset);
+        }
+        return EditorConfigCharset.encode(body, recorded.charset(), recorded.bom());
+    }
+
+    /**
+     * The revision whose recorded encoding a restore of {@code revision} uses: itself when it has one, else
+     * the newest revision of the same file that does. Restoring an older save of a deleted file should give
+     * the file the form it had when it was deleted, not UTF-8 because that older row predates the capture.
+     */
+    private HistoryRevision encodingSourceFor(HistoryRevision revision) {
+        if (revision.hasEncoding()) {
+            return revision;
+        }
+        for (HistoryRevision other : ops.historyMap().getOrDefault(revision.path(), List.of())) {
+            if (other.hasEncoding()) {
+                return other;
+            }
+        }
+        return revision;
+    }
+
+    /**
      * Decodes a file captured just before deletion the way the editor would have read it (BOM, then the
      * {@code .editorconfig} charset, then UTF-8, then the editor's lossless stand-in when the bytes are not
      * valid in that charset). The history store keeps text, so a decode that substitutes U+FFFD destroyed
@@ -985,25 +1073,25 @@ final class HistoryCoordinator {
             }
             byte[] bytes = Files.readAllBytes(file);
             String charsetRule = charsetRuleFor(file);
-            // A NUL byte marks a binary file — except in UTF-16 text, where every ASCII character has one.
-            boolean utf16 = EditorConfigCharset.resolveName(bytes, charsetRule).startsWith("utf-16");
-            for (byte b : bytes) {
-                if (b == 0 && !utf16) {
-                    completion.accept(new DeleteCapture(true, bytes));
-                    return;
-                }
+            if (isBinary(bytes, charsetRule)) {
+                completion.accept(new DeleteCapture(true, bytes));
+                return;
             }
             if (!historyEnabled) {
                 completion.accept(new DeleteCapture(true, bytes));
                 return;
             }
-            String content = decodeCaptured(bytes, charsetRule);
+            EditorConfigCharset.Decoded decoded = DiffSideText.decodeRaw(bytes, charsetRule, null);
+            String content = decoded.text();
+            // The body is text; with the file gone, these are all that say which bytes it was.
+            Encoding encoding = Encoding.of(bytes, decoded);
             recordFor(
                     file,
                     content,
                     HistoryRevision.REASON_DELETE,
                     "",
                     true,
+                    encoding,
                     durable -> onFx(() -> completion.accept(new DeleteCapture(durable, bytes))));
         } catch (IOException e) {
             completion.accept(new DeleteCapture(!historyEnabled, null));
