@@ -6919,6 +6919,36 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public EditorBuffer bufferInAnotherWindow(Path file) {
+            if (windowManager != null) {
+                Path key = canonicalPath(file);
+                for (EditorBuffer other : windowManager.buffersAtOrUnder(file)) {
+                    if (other.getPath() != null
+                            && com.editora.config.PathKeys.samePath(canonicalPath(other.getPath()), key)) {
+                        return other;
+                    }
+                }
+            }
+            return null;
+        }
+
+        @Override
+        public void recordHistory(Path file, String content, java.util.function.Consumer<Boolean> completion) {
+            historyCoordinator.recordDurably(
+                    file, content, com.editora.config.HistoryRevision.REASON_EXTERNAL, completion);
+        }
+
+        @Override
+        public String editorConfigCharset(Path file) {
+            return editorConfigCharsetFor(file);
+        }
+
+        @Override
+        public com.editora.io.DocumentWriteSequencer.Ticket beginDocumentWrite(Path file) {
+            return config.shared().documentWrites().begin(file);
+        }
+
+        @Override
         public void toggleToolWindow() {
             toolWindows.toggle(agentToolWindow);
         }
