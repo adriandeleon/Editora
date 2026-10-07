@@ -975,6 +975,7 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
         installOccurrenceTrigger(area); // LSP document highlight (#675)
+        installCodeLensClick(area);
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -1023,6 +1024,7 @@ public class EditorBuffer implements TabContent {
         // order HighlightDirty maps its range through them.
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
+            shiftCodeLenses(changes);
             gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
@@ -2806,12 +2808,144 @@ public class EditorBuffer implements TabContent {
             return;
         }
         inlayFactoryInstalled = true;
-        java.util.function.IntFunction<java.util.List<org.fxmisc.richtext.Inlay>> factory =
-                line -> inlayHintsByLine.get(line);
+        java.util.function.IntFunction<java.util.List<org.fxmisc.richtext.Inlay>> factory = this::inlaysOn;
         area.setInlayFactory(factory);
         if (area2 != null) {
             area2.setInlayFactory(factory);
         }
+    }
+
+    /** The inlays of one line: its hints, then — after the last character — its code lens. */
+    private java.util.List<org.fxmisc.richtext.Inlay> inlaysOn(int line) {
+        java.util.List<org.fxmisc.richtext.Inlay> hints = inlayHintsByLine.get(line);
+        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
+        if (lenses == null || line < 0 || line >= area.getParagraphs().size()) {
+            return hints;
+        }
+        StringBuilder lens = new StringBuilder();
+        for (CodeLens l : lenses) {
+            lens.append(lens.isEmpty() ? "" : "  ·  ").append(l.label());
+        }
+        java.util.List<org.fxmisc.richtext.Inlay> out =
+                hints == null ? new java.util.ArrayList<>(1) : new java.util.ArrayList<>(hints);
+        out.add(new org.fxmisc.richtext.Inlay(area.getParagraphLength(line), lens.toString(), CODE_LENS_STYLE));
+        return out;
+    }
+
+    /**
+     * One code lens: the 0-based line it annotates, what it says ({@code 3 references}), and an opaque
+     * token the click handler gets back (the coordinator's own description of what the lens does).
+     */
+    public record CodeLens(int line, String label, Object token) {}
+
+    private static final String CODE_LENS_STYLE = "code-lens";
+
+    /** 0-based line → the lenses drawn after it, joined. Read live by the areas' inlay factory. */
+    private java.util.Map<Integer, java.util.List<CodeLens>> codeLensByLine = java.util.Map.of();
+
+    private java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> codeLensHandler = (line, lenses) -> {};
+
+    /**
+     * Sets the code lenses, each drawn after the end of its line through the same inlay mechanism as the
+     * hints (so it is not part of the document either). Several lenses on one line are joined. Null or
+     * empty clears them.
+     */
+    public void setCodeLenses(java.util.List<CodeLens> lenses) {
+        java.util.Map<Integer, java.util.List<CodeLens>> byLine = new java.util.HashMap<>();
+        if (lenses != null) {
+            for (CodeLens lens : lenses) {
+                byLine.computeIfAbsent(lens.line(), k -> new java.util.ArrayList<>(1))
+                        .add(lens);
+            }
+        }
+        if (byLine.equals(codeLensByLine)) {
+            return;
+        }
+        codeLensByLine = byLine.isEmpty() ? java.util.Map.of() : byLine;
+        ensureInlayFactory();
+        refreshInlayAreas();
+    }
+
+    /** What a click on a line's code lens does: gets the line as it is now, and the lenses on it. */
+    public void setCodeLensHandler(java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> handler) {
+        this.codeLensHandler = handler == null ? (line, lenses) -> {} : handler;
+    }
+
+    /** The lenses on {@code line} (0-based) — empty when it has none. */
+    public java.util.List<CodeLens> codeLensesOn(int line) {
+        return codeLensByLine.getOrDefault(line, java.util.List.of());
+    }
+
+    /** Runs the click action of the lenses on {@code line}, as a click on them does. */
+    public void activateCodeLens(int line) {
+        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
+        if (lenses != null) {
+            codeLensHandler.accept(line, lenses);
+        }
+    }
+
+    /**
+     * Keeps the lenses on their declarations while the answer to the next request is on its way: a change
+     * that adds or removes lines moves the lenses below it, and drops those inside the removed text.
+     */
+    private void shiftCodeLenses(java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
+        if (codeLensByLine.isEmpty()) {
+            return;
+        }
+        java.util.Map<Integer, java.util.List<CodeLens>> moved = codeLensByLine;
+        if (changes.size() == 1) {
+            var change = changes.get(0);
+            int removedLines = newlines(change.getRemoved());
+            int delta = newlines(change.getInserted()) - removedLines;
+            if (delta == 0 && removedLines == 0) {
+                return;
+            }
+            var at = area.offsetToPosition(
+                    Math.min(change.getPosition(), area.getLength()),
+                    org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+            moved = CodeLensShift.shift(
+                    codeLensByLine,
+                    at.getMajor(),
+                    at.getMinor() == 0,
+                    removedLines,
+                    change.getRemoved().endsWith("\n"),
+                    delta);
+        } else if (changes.stream().anyMatch(c -> newlines(c.getRemoved()) + newlines(c.getInserted()) > 0)) {
+            // Each change of a batch is in the coordinates of the step it ran in; rather than replay
+            // them, drop the lenses until the next answer.
+            moved = java.util.Map.of();
+        } else {
+            return;
+        }
+        codeLensByLine = moved.isEmpty() ? java.util.Map.of() : moved;
+        refreshInlayAreas();
+    }
+
+    private static int newlines(String text) {
+        int n = 0;
+        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+            n++;
+        }
+        return n;
+    }
+
+    /** A click on a code lens runs its action instead of placing the caret. */
+    private void installCodeLensClick(CodeArea a) {
+        a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || codeLensByLine.isEmpty()) {
+                return;
+            }
+            for (javafx.scene.Node n = e.getPickResult().getIntersectedNode(); n != null && n != a; n = n.getParent()) {
+                if (n.getStyleClass().contains(CODE_LENS_STYLE)) {
+                    int offset = a.hit(e.getX(), e.getY()).getInsertionIndex();
+                    int line = a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                            .getMajor();
+                    e.consume();
+                    activateCodeLens(line);
+                    return;
+                }
+            }
+        });
     }
 
     private void refreshInlayAreas() {
@@ -3956,7 +4090,7 @@ public class EditorBuffer implements TabContent {
             return null; // the plain script/Makefile/.http ▶ keeps its untooltipped look
         }
         return t.methodName() == null
-                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.simpleName(t.className()))
+                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.displayName(t.className()))
                 : tr("testrunner.gutter.runMethod", t.methodName());
     }
 
@@ -6566,6 +6700,7 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area2);
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
+        installCodeLensClick(area2);
         installImageDrop(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view

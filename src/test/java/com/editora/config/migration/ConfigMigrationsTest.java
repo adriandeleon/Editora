@@ -379,12 +379,26 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v108→109: codeLens is new and off — nothing else in the file changes. */
+    @Test
+    void theCodeLensSettingArrivesOffWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v108 = mapper.readTree("{\"schemaVersion\":108,\"inlayHints\":true,\"lspEnabled\":true}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v108.deepCopy(), mapper);
+        assertEquals(109, out.get("schemaVersion").asInt());
+        assertTrue(out.get("inlayHints").asBoolean());
+        assertFalse(out.has("codeLens"), "left to the default");
+        assertFalse(mapper.treeToValue(out, com.editora.config.Settings.class).isCodeLens());
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":109,\"codeLens\":true}");
+        assertTrue(mapper.treeToValue(chosen, com.editora.config.Settings.class).isCodeLens());
+    }
+
     /** v107→108: debugProgramConsole is new — nothing else in the file changes, and it starts at its default. */
     @Test
     void theProgramConsoleSettingArrivesWithoutTouchingAnythingElse() throws Exception {
         JsonNode v107 = mapper.readTree("{\"schemaVersion\":107,\"debugSupport\":true,\"javaDebugPluginPath\":\"/x\"}");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v107.deepCopy(), mapper);
-        assertEquals(108, out.get("schemaVersion").asInt());
+        assertEquals(109, out.get("schemaVersion").asInt());
         assertTrue(out.get("debugSupport").asBoolean());
         assertEquals("/x", out.get("javaDebugPluginPath").asText());
         assertFalse(out.has("debugProgramConsole"), "left to the default");

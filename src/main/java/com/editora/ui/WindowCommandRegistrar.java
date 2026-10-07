@@ -1906,6 +1906,15 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isInlayHints(),
                                         host.config().getSettings()::setInlayHints,
                                         host.lspCoordinator()::applyInlayHints)));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleCodeLens",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "view.toggleCodeLens",
+                                        () -> host.config().getSettings().isCodeLens(),
+                                        host.config().getSettings()::setCodeLens,
+                                        host.lspCoordinator()::applyInlayHints)));
         host.registry().register(Command.of("lsp.setInlayHintMode", host.editorSettings()::chooseInlayHintMode));
         host.registry()
                 .register(Command.of(

@@ -14,9 +14,9 @@ import java.util.regex.Pattern;
  * ({@code @Test}/{@code @ParameterizedTest}/{@code @RepeatedTest}/{@code @TestFactory}/{@code @TestTemplate})
  * and JUnit 4 ({@code @Test}), simple or fully-qualified.
  *
- * <p>v1 deliberately reports only methods declared <b>directly</b> in the top-level class (depth 1) — methods
- * inside a {@code @Nested} inner class are skipped (their build-tool filters need {@code Outer$Inner} forms);
- * the class-level ▶ still runs them via the whole-class run. Pure — no toolkit.
+ * <p>Methods of a nested class ({@code @Nested}, or a static nested test class) are reported under that
+ * class's binary name, {@code Outer$Inner}, and the nested class gets a class-level target of its own.
+ * Local and anonymous classes are not walked. Pure — no toolkit.
  */
 public final class JavaTestScanner {
 
@@ -51,7 +51,27 @@ public final class JavaTestScanner {
     private static final Pattern METHOD =
             Pattern.compile("^\\s*(?:[\\p{L}_$][\\p{L}\\p{N}_$.<>\\[\\],?\\s]*?\\s+)(" + ID + ")\\s*\\(");
 
-    /** Ordered targets: the class-level target first (only when ≥1 test method was found), then the methods. */
+    /** A type whose body is being walked: its binary name, where it is declared, and its body's brace depth. */
+    private static final class Frame {
+        final String binaryName;
+        final int line;
+        final int bodyDepth;
+        boolean entered;
+        boolean hasTests;
+
+        Frame(String binaryName, int line, int bodyDepth) {
+            this.binaryName = binaryName;
+            this.line = line;
+            this.bodyDepth = bodyDepth;
+        }
+    }
+
+    /**
+     * Ordered targets: the top-level class first (only when a test was found anywhere in it), then every
+     * nested class that holds tests and every test method, in source order. A method in a nested class
+     * carries that class's binary name ({@code pkg.Outer$Inner}), which is the name its results are reported
+     * under and the one a Surefire or Gradle filter needs.
+     */
     public static List<TestTarget> scan(String source) {
         if (source == null || source.isBlank()) {
             return List.of();
@@ -59,12 +79,12 @@ public final class JavaTestScanner {
         String[] lines = blank(source).split("\n", -1);
 
         String pkg = "";
-        String outerClass = null;
-        int outerLine = -1;
-        int classBodyDepth = -1;
         boolean pendingAnno = false;
         boolean pendingDynamic = false;
         int depth = 0;
+        Frame outer = null;
+        java.util.ArrayDeque<Frame> stack = new java.util.ArrayDeque<>();
+        List<Frame> nested = new ArrayList<>();
         List<TestTarget> methods = new ArrayList<>();
 
         for (int li = 0; li < lines.length; li++) {
@@ -77,49 +97,68 @@ public final class JavaTestScanner {
                     pkg = pm.group(1);
                 }
             }
-            if (outerClass == null && depth == 0) {
+            Frame top = stack.peek();
+            if (outer == null && depth == 0) {
                 Matcher tm = TYPE_DECL.matcher(line);
                 if (tm.find()) {
-                    outerClass = tm.group(1);
-                    outerLine = li;
+                    outer = new Frame(fqcn(pkg, tm.group(1)), li, 1);
+                    stack.push(outer);
                 }
-            }
-            // Detection at the outer class body depth only (nested-class methods sit one level deeper).
-            if (classBodyDepth >= 0 && depth == classBodyDepth) {
+            } else if (top != null && top.entered && depth == top.bodyDepth) {
+                // Detection at a type's own body depth only: a method body, a lambda or an anonymous class
+                // sits deeper, so neither its annotations nor a local class are mistaken for members.
                 Matcher am = TEST_ANNO.matcher(trimmed);
                 if (am.find()) {
                     pendingAnno = true;
                     pendingDynamic = !"Test".equals(am.group(1)); // parameterized family → dynamic case ids
                 }
+                boolean method = false;
                 if (pendingAnno) {
                     String afterAnno = LEADING_ANNOTATIONS.matcher(trimmed).replaceFirst("");
                     Matcher mm = METHOD.matcher(afterAnno);
-                    if (mm.find() && outerClass != null) {
-                        methods.add(new TestTarget(li, fqcn(pkg, outerClass), mm.group(1), pendingDynamic));
+                    if (mm.find()) {
+                        methods.add(new TestTarget(li, top.binaryName, mm.group(1), pendingDynamic));
+                        stack.forEach(f -> f.hasTests = true);
                         pendingAnno = false;
+                        method = true;
                     }
+                }
+                Matcher tm = method ? null : TYPE_DECL.matcher(line);
+                if (tm != null && tm.find()) {
+                    Frame inner = new Frame(top.binaryName + "$" + tm.group(1), li, depth + 1);
+                    nested.add(inner);
+                    stack.push(inner);
+                    pendingAnno = false; // an annotation on the class is not one on its first method
                 }
             }
 
-            int delta = braceDelta(line);
-            depth += delta;
-            if (depth < 0) {
-                depth = 0;
-            }
-            if (outerClass != null && classBodyDepth < 0 && depth >= 1) {
-                classBodyDepth = 1; // the top-level class body — its methods live here
-            }
-            if (classBodyDepth >= 0 && depth < classBodyDepth) {
-                pendingAnno = false; // fell out of the class body without a method — drop a dangling annotation
+            depth = Math.max(0, depth + braceDelta(line));
+            while (!stack.isEmpty()) {
+                Frame f = stack.peek();
+                if (depth >= f.bodyDepth) {
+                    f.entered = true;
+                    break;
+                }
+                if (!f.entered) {
+                    break; // declared, its opening brace is on a later line
+                }
+                stack.pop();
+                pendingAnno = false; // fell out of a body without a method — drop a dangling annotation
             }
         }
 
-        if (methods.isEmpty()) {
+        if (methods.isEmpty() || outer == null) {
             return List.of();
         }
-        List<TestTarget> out = new ArrayList<>(methods.size() + 1);
-        out.add(new TestTarget(outerLine, fqcn(pkg, outerClass), null, false));
-        out.addAll(methods);
+        List<TestTarget> out = new ArrayList<>(methods);
+        for (Frame f : nested) {
+            if (f.hasTests) {
+                out.add(new TestTarget(f.line, f.binaryName, null, false));
+            }
+        }
+        // Stable, so a class declared on the line of its first method (a one-liner) stays ahead of it.
+        out.sort(java.util.Comparator.comparingInt(TestTarget::line).thenComparing(t -> t.methodName() != null));
+        out.add(0, new TestTarget(outer.line, outer.binaryName, null, false));
         return out;
     }
 
