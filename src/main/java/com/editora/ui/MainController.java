@@ -5833,7 +5833,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public void setStatusBarChecks(com.editora.github.ChecksParser.ChecksSummary summary) {
-                    statusBar.setGitHubChecks(summary);
+                    statusBar.setGitHubChecks(github.checksPrNumber(), summary);
                 }
 
                 @Override

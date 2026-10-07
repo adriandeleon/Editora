@@ -1587,6 +1587,30 @@
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;
 }
+/* The repository gh resolved, named in the GitHub tool window's toolbar. */
+.github-repository {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-family: monospace;
+}
+/* Compact, so the state filter does not make the one-line toolbar taller than its segment buttons. */
+.github-state-filter { -fx-padding: 0; }
+/* The "showing the first N — load more" row at the end of a truncated list. */
+.git-tree .github-more-row { -fx-text-fill: -color-accent-fg; }
+/* The checks list behind the status bar's roll-up. */
+.github-checks-card .github-checks-scroll,
+.github-checks-card .github-checks-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+.github-check-row { -fx-padding: 1 4 1 4; -fx-background-radius: 4; }
+.github-check-row:hover { -fx-background-color: -color-bg-subtle; }
+/* What a review tab shows instead of the plain diff — e.g. the files-API fallback for a huge pull request. */
+.pr-review-notice {
+    -fx-text-fill: -color-fg-muted;
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 4;
+    -fx-padding: 6 8 6 8;
+}
 /* Workflow-run state glyphs in the GitHub tool window's Runs segment — same semantic palette as the
    .git-status-* file colors, so every AtlantaFX theme inherits correctly. */
 .git-tree .github-run-success { -fx-text-fill: -color-success-fg; }
@@ -2617,6 +2641,11 @@
 .overlay-form {
     -fx-padding: 14;
     -fx-spacing: 10;
+}
+/* The reason a stay-open form's action failed (create pull request, submit review), above its buttons. */
+.overlay-form-error {
+    -fx-text-fill: -state-red;
+    -fx-max-width: 460;
 }
 /* Checkbox multi-select card (jdtls "pick which members to generate", #741). Reuses the palette card
    chrome via .command-palette-style padding; only the title/hint need their own colors. */

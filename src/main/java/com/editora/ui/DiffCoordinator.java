@@ -683,64 +683,8 @@ final class DiffCoordinator {
         List<PatchReviewPane.Entry> entries = new ArrayList<>();
         for (int i = 0; i < files.size(); i++) {
             PatchParser.FilePatch fp = files.get(i);
-            String oldLabel = cleanPatchLabel(fp.oldPath());
-            String newLabel = cleanPatchLabel(fp.newPath());
-            String fallback = buffer.getTitle();
-            String leftName = !oldLabel.isEmpty() ? oldLabel : (!newLabel.isEmpty() ? newLabel : fallback);
-            String rightName = !newLabel.isEmpty() ? newLabel : leftName;
-            String leftText = patchText(fp.oldLines(), fp.oldFinalNewline());
-            String rightText = patchText(fp.newLines(), fp.newFinalNewline());
-            DiffViewerPane pane = new DiffViewerPane(
-                    tr("diff.title.patch", rightName),
-                    null,
-                    null,
-                    leftName,
-                    rightName,
-                    leftText,
-                    rightText,
-                    models.get(i),
-                    host.settings().getFontFamily(),
-                    host.settings().getFontSize(),
-                    host.settings().isShowLineNumbers(),
-                    rightName);
-            pane.setOnExportPatch(this::exportPatch);
-            pane.setOptions(lastDiffOptions);
-            String[] current = {leftText, rightText};
-            // One generation for both requests, as in buildDiffPane: an option toggle issued while a swap
-            // was pending was computed for the unswapped texts and then installed beside the swapped ones.
-            AtomicLong generation = new AtomicLong();
-            // The patch's own line numbers, in the order the sides are displayed now.
-            List<List<Integer>> numbers = new ArrayList<>(List.of(fp.oldLineNumbers(), fp.newLineNumbers()));
-            pane.setOnSwapRequested((newLeft, newRight) -> {
-                long requested = generation.incrementAndGet();
-                diffService.compute(newLeft, newRight, lastDiffOptions, model -> {
-                    if (requested != generation.get()) {
-                        pane.cancelSwap();
-                        return;
-                    }
-                    if (model == null) {
-                        pane.cancelSwap();
-                        host.setStatus(tr("status.diff.tooLarge"));
-                        return;
-                    }
-                    current[0] = newLeft;
-                    current[1] = newRight;
-                    Collections.reverse(numbers);
-                    pane.swapSides(PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
-                });
-            });
-            pane.setOnOptionsChanged(opts -> {
-                lastDiffOptions = opts;
-                long requested = generation.incrementAndGet();
-                String left = current[0];
-                String right = current[1];
-                diffService.compute(left, right, opts, model -> {
-                    if (model != null && requested == generation.get()) {
-                        pane.updateContent(
-                                left, right, PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
-                    }
-                });
-            });
+            DiffViewerPane pane = patchPane(null, null, null, buffer.getTitle(), fp, models.get(i));
+            String rightName = patchNames(fp, buffer.getTitle())[1];
             entries.add(new PatchReviewPane.Entry(rightName, fp.additions(), fp.deletions(), pane));
         }
         // Inside a repository the patch can be applied, so it always opens as a review tab, which carries
@@ -761,6 +705,113 @@ final class DiffCoordinator {
             ops.addDiffTab(review);
         }
         host.setStatus(tr("status.diff.patchFilesOpened", entries.size()));
+    }
+
+    /** The left and right file names of a patch section; {@code fallback} when it names neither. */
+    private static String[] patchNames(PatchParser.FilePatch fp, String fallback) {
+        String oldLabel = cleanPatchLabel(fp.oldPath());
+        String newLabel = cleanPatchLabel(fp.newPath());
+        String leftName = !oldLabel.isEmpty() ? oldLabel : (!newLabel.isEmpty() ? newLabel : fallback);
+        String rightName = !newLabel.isEmpty() ? newLabel : leftName;
+        return new String[] {leftName, rightName};
+    }
+
+    /**
+     * The read-only diff pane of one patch section: its reconstructed sides, numbered as the patch numbers
+     * them ({@code initial} is already {@linkplain PatchLineNumbers#renumber renumbered}), and re-numbered again
+     * whenever the sides are swapped or a diff option changes. {@code title} / the headers default to the
+     * patch-file wording when {@code null}.
+     */
+    private DiffViewerPane patchPane(
+            String title,
+            String headerLeft,
+            String headerRight,
+            String fallback,
+            PatchParser.FilePatch fp,
+            com.editora.diff.DiffModels.DiffModel initial) {
+        String[] names = patchNames(fp, fallback);
+        String leftName = names[0];
+        String rightName = names[1];
+        String leftText = patchText(fp.oldLines(), fp.oldFinalNewline());
+        String rightText = patchText(fp.newLines(), fp.newFinalNewline());
+        DiffViewerPane pane = new DiffViewerPane(
+                title != null ? title : tr("diff.title.patch", rightName),
+                headerLeft,
+                headerRight,
+                leftName,
+                rightName,
+                leftText,
+                rightText,
+                initial,
+                host.settings().getFontFamily(),
+                host.settings().getFontSize(),
+                host.settings().isShowLineNumbers(),
+                rightName);
+        pane.setOnExportPatch(this::exportPatch);
+        pane.setOptions(lastDiffOptions);
+        String[] current = {leftText, rightText};
+        // One generation for both requests, as in buildDiffPane: an option toggle issued while a swap
+        // was pending was computed for the unswapped texts and then installed beside the swapped ones.
+        AtomicLong generation = new AtomicLong();
+        // The patch's own line numbers, in the order the sides are displayed now.
+        List<List<Integer>> numbers = new ArrayList<>(List.of(fp.oldLineNumbers(), fp.newLineNumbers()));
+        pane.setOnSwapRequested((newLeft, newRight) -> {
+            long requested = generation.incrementAndGet();
+            diffService.compute(newLeft, newRight, lastDiffOptions, model -> {
+                if (requested != generation.get()) {
+                    pane.cancelSwap();
+                    return;
+                }
+                if (model == null) {
+                    pane.cancelSwap();
+                    host.setStatus(tr("status.diff.tooLarge"));
+                    return;
+                }
+                current[0] = newLeft;
+                current[1] = newRight;
+                Collections.reverse(numbers);
+                pane.swapSides(PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
+            });
+        });
+        pane.setOnOptionsChanged(opts -> {
+            lastDiffOptions = opts;
+            long requested = generation.incrementAndGet();
+            String left = current[0];
+            String right = current[1];
+            diffService.compute(left, right, opts, model -> {
+                if (model != null && requested == generation.get()) {
+                    pane.updateContent(left, right, PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
+                }
+            });
+        });
+        return pane;
+    }
+
+    /**
+     * Opens one file of a change set that exists only as a patch — a pull request's file — as a read-only
+     * diff tab, through the same path as a {@code .patch} file: each hunk keeps the line numbers its header
+     * states (so separate hunks do not read as one contiguous block starting at line 1) and a side that does
+     * not end in a newline says so.
+     */
+    void openPatchFileDiff(
+            String title, String headerLeft, String headerRight, String fallback, PatchParser.FilePatch fp) {
+        diffService.compute(
+                patchText(fp.oldLines(), fp.oldFinalNewline()),
+                patchText(fp.newLines(), fp.newFinalNewline()),
+                lastDiffOptions,
+                model -> {
+                    if (model == null) {
+                        host.setStatus(tr("status.diff.tooLarge"));
+                        return;
+                    }
+                    ops.addDiffTab(patchPane(
+                            title,
+                            headerLeft,
+                            headerRight,
+                            fallback,
+                            fp,
+                            PatchLineNumbers.renumber(model, fp.oldLineNumbers(), fp.newLineNumbers())));
+                });
     }
 
     private static String patchText(List<String> lines, boolean finalNewline) {
