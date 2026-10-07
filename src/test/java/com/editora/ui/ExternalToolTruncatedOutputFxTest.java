@@ -78,19 +78,58 @@ class ExternalToolTruncatedOutputFxTest {
     }
 
     private static void apply(
-            ExternalToolCoordinator c, ExternalTool tool, ProcessRunner.Result result, EditorBuffer target)
+            ExternalToolCoordinator c,
+            ExternalTool tool,
+            ProcessRunner.Result result,
+            ExternalToolCoordinator.Launch launch)
             throws Exception {
         FxTestSupport.runOnFx(() -> FxTestSupport.call(
                 c,
                 "applyResult",
                 new Class[] {
-                    ExternalTool.class, ToolInvocation.class, ProcessRunner.Result.class, EditorBuffer.class, long.class
+                    ExternalTool.class,
+                    ToolInvocation.class,
+                    ProcessRunner.Result.class,
+                    ExternalToolCoordinator.Launch.class
                 },
                 tool,
                 INVOCATION,
                 result,
-                target,
-                target.docVersion()));
+                launch));
+    }
+
+    private static void apply(
+            ExternalToolCoordinator c, ExternalTool tool, ProcessRunner.Result result, EditorBuffer target)
+            throws Exception {
+        apply(c, tool, result, FxTestSupport.callOnFx(() -> ExternalToolCoordinator.Launch.of(target)));
+    }
+
+    @Test
+    void replaceSelectionGoesToTheRangeSelectedAtLaunchNotTheLiveSelection() throws Exception {
+        RecordingHost host = new RecordingHost();
+        ExternalToolCoordinator c = FxTestSupport.callOnFx(() -> new ExternalToolCoordinator(host, new Ops()));
+        EditorBuffer document = buffer("alpha beta gamma\n");
+        try {
+            // The tool is started on "beta"; while it runs the user selects "gamma".
+            ExternalToolCoordinator.Launch launch = FxTestSupport.callOnFx(() -> {
+                document.getArea().selectRange(6, 10);
+                return ExternalToolCoordinator.Launch.of(document);
+            });
+            FxTestSupport.runOnFx(() -> document.getArea().selectRange(11, 16));
+
+            apply(
+                    c,
+                    tool(ExternalTool.OutputTarget.REPLACE_SELECTION),
+                    new ProcessRunner.Result(0, "BETA\n", ""),
+                    launch);
+
+            assertEquals("alpha BETA gamma\n", FxTestSupport.callOnFx(document::getContent));
+            FxTestSupport.runOnFx(() -> document.getArea().undo());
+            assertEquals("alpha beta gamma\n", FxTestSupport.callOnFx(document::getContent), "one undo step");
+        } finally {
+            FxTestSupport.runOnFx(document::dispose);
+            c.shutdown();
+        }
     }
 
     @Test
