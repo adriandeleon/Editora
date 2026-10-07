@@ -1951,6 +1951,23 @@ public class SettingsWindow {
      * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
      * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
      */
+    /** Asks before Templates → Remove deletes a user template file. Replaceable so a test can answer. */
+    private java.util.function.Predicate<com.editora.template.Template> confirmTemplateRemoval =
+            this::confirmTemplateRemovalDialog;
+
+    private boolean confirmTemplateRemovalDialog(com.editora.template.Template t) {
+        String name = t.name() == null || t.name().isBlank() ? t.id() : t.name();
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("settings.template.removeConfirm", name, t.id() + ".json"),
+                ButtonType.OK,
+                ButtonType.CANCEL));
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("settings.template.remove"));
+        confirm.setHeaderText(null);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
     private boolean confirmResetAllShortcuts() {
         Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION, tr("dialog.shortcut.resetAll.body"), ButtonType.OK, ButtonType.CANCEL));
@@ -4341,6 +4358,10 @@ public class SettingsWindow {
         remove.setOnAction(e -> {
             com.editora.template.Template t = list.getSelectionModel().getSelectedItem();
             if (t == null || !templateUserIds.contains(t.id()) || templateRegistry == null) {
+                return;
+            }
+            // The file is deleted outright, and a multi-file template cannot be rebuilt from this form.
+            if (!confirmTemplateRemoval.test(t)) {
                 return;
             }
             try {
