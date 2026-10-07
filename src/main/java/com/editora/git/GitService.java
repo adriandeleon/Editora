@@ -325,6 +325,9 @@ public final class GitService {
     /** Whether the probed git understands {@code --end-of-options} (2.24+); see {@link GitSafety}. */
     private static volatile boolean endOfOptions;
 
+    /** The probed git's {@code --version} output ("" until probed); decides version-gated options. */
+    private static volatile String gitVersion = "";
+
     /**
      * Where completed, <em>user-initiated</em> git commands are reported (the Output "Git" tab).
      * Volatile: installed from the FX thread, read on {@link #exec}.
@@ -402,6 +405,7 @@ public final class GitService {
             if (ok) {
                 version = r.out().strip();
                 endOfOptions = GitSafety.supportsEndOfOptions(r.out());
+                gitVersion = version;
             }
         } catch (RuntimeException e) {
             ok = false;
@@ -878,17 +882,52 @@ public final class GitService {
         });
     }
 
+    /**
+     * Blame of {@code path} (repo-relative) <em>as of</em> {@code revision} — the annotations of a read-only
+     * "file at this commit" tab. Same supersession rule as {@link #blameLatest} (one annotated buffer is on
+     * screen at a time); a commit never changes, so the result is cached for as long as the options hold.
+     */
+    public void blameRevisionLatest(
+            Path root, String revision, String path, Consumer<List<BlameParser.BlameLine>> onResult) {
+        long gen = blameGen.incrementAndGet();
+        submit(exec, () -> {
+            if (gen != blameGen.get()) {
+                return;
+            }
+            List<BlameParser.BlameLine> posted = computeRevisionBlame(root, revision, path);
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
     private final AtomicLong blameGen = new AtomicLong();
 
-    /** What one blame run was computed from: its result is good for as long as none of these change. */
-    record BlameKey(String head, Path file, long modifiedMillis, long size) {}
+    /** How this window's blame attributes lines; read on the git lane, set from the FX thread. */
+    private volatile BlameOptions blameOptions = BlameOptions.NONE;
+
+    /** Sets {@code -w} / {@code -M -C} for every later blame of this service (a per-window toggle). */
+    public void setBlameOptions(BlameOptions options) {
+        blameOptions = options == null ? BlameOptions.NONE : options;
+    }
+
+    public BlameOptions blameOptions() {
+        return blameOptions;
+    }
+
+    /**
+     * What one blame run was computed from: its result is good for as long as none of these change.
+     * {@code source} is the working file's path, or {@code <revision>:<path>} for a blame at a commit (then
+     * {@code head}, {@code modifiedMillis} and {@code size} do not apply). {@code ignoreRevs} describes the
+     * ignore-revs files in play — their paths, sizes and modification times.
+     */
+    record BlameKey(
+            String head, String source, long modifiedMillis, long size, BlameOptions options, String ignoreRevs) {}
 
     private record CachedBlame(BlameKey key, List<BlameParser.BlameLine> lines) {}
 
-    /** The last few files annotated, by path. Touched only on the git lane. */
-    private final Map<Path, CachedBlame> blameCache = new LinkedHashMap<>(16, 0.75f, true) {
+    /** The last few files annotated, by {@link BlameKey#source}. Touched only on the git lane. */
+    private final Map<String, CachedBlame> blameCache = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
-        protected boolean removeEldestEntry(Map.Entry<Path, CachedBlame> eldest) {
+        protected boolean removeEldestEntry(Map.Entry<String, CachedBlame> eldest) {
             return size() > BLAME_CACHE_FILES;
         }
     };
@@ -902,39 +941,170 @@ public final class GitService {
         return blameRuns.get();
     }
 
+    /**
+     * Why the last blame produced nothing because of an ignore-revs file (git's own message), or {@code ""}.
+     * A configured {@code blame.ignoreRevsFile} that is missing or malformed makes {@code git blame} fail
+     * outright, in a terminal too; the annotations would otherwise just not appear, with nothing to say why.
+     */
+    public String blameIgnoreRevsProblem() {
+        return blameIgnoreRevsProblem;
+    }
+
+    private volatile String blameIgnoreRevsProblem = "";
+
     private List<BlameParser.BlameLine> computeBlame(Path root, Path file) {
         if (!gitAvailable() || root == null || file == null) {
             return List.of();
         }
+        BlameOptions options = blameOptions;
+        BlameIgnoreRevs.Plan plan = ignoreRevsPlan(root);
         // Blame of the working file depends on the commit graph (HEAD) and on the file's bytes. Asking for
         // HEAD is one short process; the blame it saves walks the file's whole history.
-        BlameKey key = blameKey(root, file);
+        BlameKey key = blameKey(root, file, options, plan);
         Path abs = file.toAbsolutePath();
-        CachedBlame cached;
-        synchronized (blameCache) {
-            cached = blameCache.get(abs);
+        List<BlameParser.BlameLine> cached = cachedBlame(abs.toString(), key);
+        if (cached != null) {
+            return cached;
         }
-        if (key != null && cached != null && cached.key().equals(key)) {
-            return cached.lines();
-        }
-        blameRuns.incrementAndGet();
-        ProcessRunner.Result r =
-                git(root, QUICK, GitSafety.LITERAL_PATHSPECS, "blame", "--porcelain", "--", abs.toString());
+        ProcessRunner.Result r = runBlame(root, options, plan, List.of("--", abs.toString()));
         if (!r.ok()) {
             return List.of(); // includes a capture that was cut off: never parsed, never cached
         }
         List<BlameParser.BlameLine> lines = BlameParser.parse(r.out());
         // Cache only when the file is the same after the run as before it: a save in between would store
         // the old bytes' blame under a key that no longer describes them.
-        if (key != null && key.equals(blameKey(root, file))) {
+        if (key != null && key.equals(blameKey(root, file, options, plan))) {
             synchronized (blameCache) {
-                blameCache.put(abs, new CachedBlame(key, lines));
+                blameCache.put(abs.toString(), new CachedBlame(key, lines));
             }
         }
         return lines;
     }
 
-    private BlameKey blameKey(Path root, Path file) {
+    private List<BlameParser.BlameLine> computeRevisionBlame(Path root, String revision, String path) {
+        if (!gitAvailable() || root == null || path == null || !GitSafety.isSafeRevision(revision)) {
+            return List.of();
+        }
+        BlameOptions options = blameOptions;
+        BlameIgnoreRevs.Plan plan = ignoreRevsPlan(root);
+        String source = revision + ":" + path;
+        BlameKey key = new BlameKey("", root + "\u0000" + source, 0L, 0L, options, ignoreRevsSignature(plan));
+        List<BlameParser.BlameLine> cached = cachedBlame(key.source(), key);
+        if (cached != null) {
+            return cached;
+        }
+        // The revision goes before "--": after it git would read it as a second path.
+        ProcessRunner.Result r = runBlame(root, options, plan, List.of(revision, "--", path));
+        if (!r.ok()) {
+            return List.of();
+        }
+        List<BlameParser.BlameLine> lines = BlameParser.parse(r.out());
+        synchronized (blameCache) {
+            blameCache.put(key.source(), new CachedBlame(key, lines));
+        }
+        return lines;
+    }
+
+    private List<BlameParser.BlameLine> cachedBlame(String source, BlameKey key) {
+        CachedBlame cached;
+        synchronized (blameCache) {
+            cached = blameCache.get(source);
+        }
+        return key != null && cached != null && cached.key().equals(key) ? cached.lines() : null;
+    }
+
+    /**
+     * One {@code git blame --porcelain} with the options and the ignore-revs {@code plan}. A run that fails
+     * <em>because of</em> an ignore-revs file — one we passed whose contents are not object names, or the
+     * global one git opened by itself — is repeated without any that can be left out, so a broken list costs
+     * the user the "ignore" and not the whole annotation column.
+     */
+    private ProcessRunner.Result runBlame(
+            Path root, BlameOptions options, BlameIgnoreRevs.Plan plan, List<String> target) {
+        ProcessRunner.Result r = blameOnce(root, options, plan, target);
+        if (!r.ok() && BlameIgnoreRevs.isIgnoreRevsFailure(r.err())) {
+            blameIgnoreRevsProblem = r.err().strip();
+            BlameIgnoreRevs.Plan bare = new BlameIgnoreRevs.Plan(List.of(), true, null);
+            // A file the repository's own config names cannot be left out: the retry would fail the same way.
+            return plan.unreadable() != null || plan.equals(bare) ? r : blameOnce(root, options, bare, target);
+        }
+        blameIgnoreRevsProblem = "";
+        return r;
+    }
+
+    private ProcessRunner.Result blameOnce(
+            Path root, BlameOptions options, BlameIgnoreRevs.Plan plan, List<String> target) {
+        List<String> args = new ArrayList<>(List.of(GitSafety.LITERAL_PATHSPECS, "blame", "--porcelain"));
+        args.addAll(options.args());
+        args.addAll(plan.args());
+        args.addAll(target);
+        blameRuns.incrementAndGet();
+        Map<String, String> env = plan.withoutGlobalConfig() ? envWithoutGlobalIgnoreRevs(root) : READ_ENV;
+        return completeOrFailed(ProcessRunner.run(root, QUICK, backgroundArgv(args.toArray(String[]::new)), env));
+    }
+
+    /** How long a repository's {@code blame.ignoreRevsFile} configuration is believed before it is re-read. */
+    static final Duration IGNORE_REVS_CONFIG_TTL = Duration.ofSeconds(30);
+
+    private record CachedIgnoreRevs(List<BlameIgnoreRevs.Configured> configured, long readNanos) {}
+
+    /** Repository root → its configured ignore-revs files. Blame is re-requested after every status refresh. */
+    private final Map<Path, CachedIgnoreRevs> ignoreRevsConfig = new ConcurrentHashMap<>();
+
+    /** The ignore-revs plan for {@code root}: the configuration (briefly cached) against the files as they are now. */
+    private BlameIgnoreRevs.Plan ignoreRevsPlan(Path root) {
+        long now = System.nanoTime();
+        CachedIgnoreRevs cached = ignoreRevsConfig.get(root);
+        if (cached == null || now - cached.readNanos() > IGNORE_REVS_CONFIG_TTL.toNanos()) {
+            // Exit code 1 is "not set". --show-scope needs Git 2.26; an older git fails, which reads as unset.
+            ProcessRunner.Result r =
+                    git(root, QUICK, "config", "--show-scope", "--get-all", "--path", "-z", "blame.ignoreRevsFile");
+            cached = new CachedIgnoreRevs(r.ok() ? BlameIgnoreRevs.parseScoped(r.out()) : List.of(), now);
+            ignoreRevsConfig.put(root, cached);
+        }
+        return BlameIgnoreRevs.plan(cached.configured(), root, p -> Files.isRegularFile(p) && Files.isReadable(p));
+    }
+
+    /** The part of a blame cache key that changes when an ignore-revs file in play is edited. */
+    private static String ignoreRevsSignature(BlameIgnoreRevs.Plan plan) {
+        StringBuilder sb = new StringBuilder(plan.withoutGlobalConfig() ? "g" : "");
+        for (String file : plan.files()) {
+            try {
+                java.nio.file.attribute.BasicFileAttributes attrs =
+                        Files.readAttributes(Path.of(file), java.nio.file.attribute.BasicFileAttributes.class);
+                sb.append('|').append(file).append(':').append(attrs.size()).append(':');
+                sb.append(attrs.lastModifiedTime().toMillis());
+            } catch (IOException | RuntimeException gone) {
+                sb.append('|').append(file).append(":?");
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * {@link #READ_ENV} for one blame that must not see the user's global {@code blame.ignoreRevsFile}:
+     * {@code GIT_CONFIG_GLOBAL} points at a copy of the global configuration without that key
+     * ({@link BlameIgnoreRevs#globalConfigWithoutIgnoreRevs}). Git older than 2.32 ignores the variable;
+     * blame then fails as it does in a terminal.
+     */
+    private Map<String, String> envWithoutGlobalIgnoreRevs(Path root) {
+        try {
+            ProcessRunner.Result global = git(root, QUICK, "config", "--global", "--includes", "-z", "--list");
+            Path config = Files.createTempFile("editora-git-global", ".config");
+            config.toFile().deleteOnExit();
+            Files.writeString(
+                    config,
+                    BlameIgnoreRevs.globalConfigWithoutIgnoreRevs(
+                            global.ok() ? global.out() : "", root.toString().replace('\\', '/')));
+            Map<String, String> env = new LinkedHashMap<>(READ_ENV);
+            env.put("GIT_CONFIG_GLOBAL", config.toString());
+            return env;
+        } catch (IOException | RuntimeException e) {
+            return READ_ENV; // blame then fails the way it does in a terminal
+        }
+    }
+
+    private BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {
         try {
             ProcessRunner.Result head = git(root, QUICK, "rev-parse", "--verify", "HEAD");
             if (!head.ok()) {
@@ -944,9 +1114,11 @@ public final class GitService {
                     Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
             return new BlameKey(
                     head.out().strip(),
-                    file.toAbsolutePath(),
+                    file.toAbsolutePath().toString(),
                     attrs.lastModifiedTime().toMillis(),
-                    attrs.size());
+                    attrs.size(),
+                    options,
+                    ignoreRevsSignature(plan));
         } catch (IOException | RuntimeException e) {
             return null;
         }
@@ -991,19 +1163,97 @@ public final class GitService {
         return merge.ok() ? parseNameStatusZ(merge.out()) : List.of();
     }
 
-    /** Lists the working-tree stashes via {@code git stash list}, parsed by the pure {@link StashParser}. */
+    /**
+     * Lists the stashes via {@code git stash list}, parsed by the pure {@link StashParser}: each with its
+     * commit and time, so a stash can be read by a name that does not move ({@link StashParser.StashEntry}).
+     */
     public void stashList(Path root, Consumer<List<StashParser.StashEntry>> onResult) {
         submit(exec, () -> {
             List<StashParser.StashEntry> list = List.of();
             if (gitAvailable() && root != null) {
-                ProcessRunner.Result r = git(root, QUICK, "stash", "list");
+                ProcessRunner.Result r = git(root, QUICK, "stash", "list", StashParser.DETAILED_FORMAT);
                 if (r.ok()) {
-                    list = StashParser.parse(r.out());
+                    list = StashParser.parseDetailed(r.out());
                 }
             }
             List<StashParser.StashEntry> posted = list;
             Platform.runLater(() -> onResult.accept(posted));
         });
+    }
+
+    /**
+     * The files a stash holds: its tracked changes against the commit it was made on (the stash commit's
+     * first parent), then — status {@code '?'} — the untracked files of a stash made with
+     * {@code --include-untracked}, which live in a third parent whose tree is nothing but those files. Built
+     * from plumbing rather than {@code stash show --include-untracked}, which needs Git 2.32. {@code stash}
+     * is the stash commit (or a {@code stash@{N}} ref). Posts on the FX thread; empty when it cannot be read.
+     */
+    public void stashFiles(Path root, String stash, Consumer<List<CommitFile>> onResult) {
+        submit(exec, () -> {
+            List<CommitFile> files = new ArrayList<>();
+            if (gitAvailable() && root != null && GitSafety.isSafeRevision(stash)) {
+                List<String> diff = new ArrayList<>(List.of("diff-tree", "--name-status", "-z", "-r", "-M"));
+                diff.addAll(GitSafety.revisionArgs(endOfOptions, stash + "^1", stash));
+                ProcessRunner.Result tracked = git(root, QUICK, diff.toArray(String[]::new));
+                if (tracked.ok()) {
+                    files.addAll(parseNameStatusZ(tracked.out()));
+                }
+                List<String> tree = new ArrayList<>(List.of("ls-tree", "-r", "-z", "--name-only"));
+                tree.addAll(GitSafety.revisionArgs(endOfOptions, stash + "^3"));
+                ProcessRunner.Result untracked = git(root, QUICK, tree.toArray(String[]::new));
+                if (untracked.ok()) { // fails when there is no third parent: a stash without untracked files
+                    for (String path : nulTokens(untracked.out())) {
+                        files.add(new CommitFile('?', path, null));
+                    }
+                }
+            }
+            List<CommitFile> posted = List.copyOf(files);
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** The {@code err} of a stash command refused because {@code stash@{N}} no longer names the listed stash. */
+    public static final String STASH_MOVED = "the stash list changed";
+
+    /** The {@code err} of a staged-only stash refused because the installed Git is older than 2.35. */
+    public static final String STASH_STAGED_UNSUPPORTED = "stash --staged needs Git 2.35 or later";
+
+    /**
+     * Runs a stash command ({@code apply}/{@code pop}/{@code drop}/{@code branch} …) that names {@code entry}
+     * by its {@code stash@{N}} ref — the only name {@code pop} and {@code drop} accept. The ref is a position
+     * in a list any other window or terminal can change, so the job first checks, holding the working tree,
+     * that it still resolves to the commit that was listed; otherwise nothing runs and the result's
+     * {@code err} is {@link #STASH_MOVED}. An entry without a hash (an older listing) is not checked.
+     */
+    public void runStashMutation(
+            Path root, StashParser.StashEntry entry, Consumer<ProcessRunner.Result> onResult, String... args) {
+        Supplier<String> refusal = () -> {
+            if (entry == null || entry.hash().isBlank()) {
+                return null;
+            }
+            ProcessRunner.Result now = git(root, QUICK, "rev-parse", "--verify", "--quiet", entry.ref());
+            return now.ok() && now.out().strip().equals(entry.hash()) ? null : STASH_MOVED;
+        };
+        runWorktreeMutation(
+                exec, localCommands, root, MUTATION, java.util.Collections.singletonList(args), refusal, onResult);
+    }
+
+    /**
+     * {@code git stash push} with {@code options}. A staged-only stash on a Git without {@code --staged}
+     * (before 2.35) is refused here with {@link #STASH_STAGED_UNSUPPORTED} rather than left to git's
+     * "unknown option" usage text.
+     */
+    public void stashPush(Path root, StashOptions options, Consumer<ProcessRunner.Result> onResult) {
+        Supplier<String> refusal = () ->
+                options.stagedOnly() && !StashOptions.stagedSupported(gitVersion) ? STASH_STAGED_UNSUPPORTED : null;
+        runWorktreeMutation(
+                exec,
+                localCommands,
+                root,
+                MUTATION,
+                java.util.Collections.singletonList(options.args()),
+                refusal,
+                onResult);
     }
 
     /**
@@ -1621,18 +1871,19 @@ public final class GitService {
 
     /** Runs a working-tree mutation on the service's serial command executor. */
     public void runWorktreeMutation(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
-        runWorktreeMutation(exec, localCommands, root, MUTATION, java.util.Collections.singletonList(args), onResult);
+        runWorktreeMutation(
+                exec, localCommands, root, MUTATION, java.util.Collections.singletonList(args), null, onResult);
     }
 
     /** Runs several related working-tree commands as one serial executor job. */
     public void runWorktreeMutation(Path root, List<String[]> commands, Consumer<ProcessRunner.Result> onResult) {
-        runWorktreeMutation(exec, localCommands, root, MUTATION, commands, onResult);
+        runWorktreeMutation(exec, localCommands, root, MUTATION, commands, null, onResult);
     }
 
     /** Network form used by pull; fetch and push do not need the working-tree boundary. */
     public void runNetworkWorktreeMutation(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
         runWorktreeMutation(
-                networkExec, networkCommands, root, NETWORK, java.util.Collections.singletonList(args), onResult);
+                networkExec, networkCommands, root, NETWORK, java.util.Collections.singletonList(args), null, onResult);
     }
 
     /**
@@ -1654,18 +1905,99 @@ public final class GitService {
      * different file state. {@code cached} targets the index; otherwise the working tree is targeted.
      */
     public void applyPatch(Path root, String patch, boolean cached, Consumer<ProcessRunner.Result> onResult) {
+        byte[] bytes = (patch == null ? "" : patch).getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        applyPatch(root, bytes, cached, false, onResult);
+    }
+
+    /**
+     * Applies {@code patch} — the patch file's own bytes, so a patch of Latin-1 or CRLF text reaches git as
+     * it was written — to the working tree, or to the index only ({@code cached}).
+     *
+     * <p>Plain: {@code git apply --check} first, then the apply, as one job; a patch that does not fit
+     * applies nothing and the result carries git's reason. {@code threeWay} ({@code --3way}) is the fallback
+     * for such a patch: git merges it against the blobs it names, which can leave conflict markers and then
+     * exits 1 having written the files ({@link PatchOutcome#CONFLICTS}). There is no pre-flight for it —
+     * {@code --check --3way} succeeds for a patch that will conflict. Without {@code cached} a three-way
+     * apply also updates the index, as git defines it.
+     */
+    public void applyPatch(
+            Path root, byte[] patch, boolean cached, boolean threeWay, Consumer<ProcessRunner.Result> onResult) {
         submit(exec, () -> {
             List<String> base = new ArrayList<>();
             base.add("apply");
+            if (threeWay) {
+                base.add("--3way");
+            }
             if (cached) {
                 base.add("--cached");
             }
             List<String> check = new ArrayList<>(base);
             check.add("--check");
-            ProcessRunner.Result posted = userCommand(localCommands, () -> {
-                ProcessRunner.Result checked = gitWithInput(root, patch, check);
-                return checked.ok() ? gitWithInput(root, patch, base) : checked;
-            });
+            byte[] input = patch == null ? new byte[0] : patch;
+            ProcessRunner.Result posted = !gitAvailable() || root == null
+                    ? NOT_INSTALLED
+                    : userCommand(localCommands, () -> {
+                        if (threeWay) {
+                            return gitWithInput(root, input, base, USER_ENV);
+                        }
+                        ProcessRunner.Result checked = gitWithInput(root, input, check, USER_ENV);
+                        return checked.ok() ? gitWithInput(root, input, base, USER_ENV) : checked;
+                    });
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** A patch read from git: its bytes, or why there are none. */
+    public record PatchText(byte[] bytes, String error) {
+        public boolean ok() {
+            return error == null;
+        }
+
+        /** The patch as text (patches are UTF-8 unless the files in them are not). */
+        public String text() {
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * The staged ({@code git diff --cached}) or unstaged ({@code git diff}) changes as a patch that
+     * {@code git apply} takes back: {@code --binary} so a changed image is carried rather than replaced by
+     * "Binary files differ". A background read — no external diff driver, no textconv.
+     */
+    public void diffPatch(Path root, boolean staged, Consumer<PatchText> onResult) {
+        List<String> args = new ArrayList<>(List.of("diff", "--binary"));
+        if (staged) {
+            args.add("--cached");
+        }
+        readPatch(root, args, onResult);
+    }
+
+    /** One commit as a mailbox patch with its message and author ({@code git format-patch -1 --stdout}). */
+    public void commitPatch(Path root, String hash, Consumer<PatchText> onResult) {
+        if (!GitSafety.isSafeRevision(hash)) {
+            Platform.runLater(() -> onResult.accept(new PatchText(new byte[0], "invalid revision")));
+            return;
+        }
+        List<String> args = new ArrayList<>(List.of("format-patch", "-1", "--stdout"));
+        args.addAll(GitSafety.revisionArgs(endOfOptions, hash));
+        readPatch(root, args, onResult);
+    }
+
+    private void readPatch(Path root, List<String> args, Consumer<PatchText> onResult) {
+        submit(exec, () -> {
+            PatchText posted;
+            if (!gitAvailable() || root == null) {
+                posted = new PatchText(new byte[0], NOT_INSTALLED.err());
+            } else {
+                ProcessRunner.BytesResult r =
+                        ProcessRunner.runBytes(root, QUICK, backgroundArgv(args.toArray(String[]::new)), READ_ENV);
+                posted = !r.ok()
+                        ? new PatchText(
+                                new byte[0], r.err() == null ? "" : r.err().strip())
+                        : r.outTruncated()
+                                ? new PatchText(new byte[0], OUTPUT_TOO_LARGE)
+                                : new PatchText(r.out(), null);
+            }
             Platform.runLater(() -> onResult.accept(posted));
         });
     }
@@ -1962,20 +2294,22 @@ public final class GitService {
             Path root,
             Duration timeout,
             List<String[]> commands,
+            Supplier<String> refusal,
             Consumer<ProcessRunner.Result> onResult) {
         if (lane == networkExec) {
-            submitNetworkInRequestOrder(() -> mutateWorktree(running, root, timeout, commands, onResult, false));
+            submitNetworkInRequestOrder(
+                    () -> mutateWorktree(running, root, timeout, commands, refusal, onResult, false));
             return;
         }
         submit(lane, () -> {
             if (parkedMutations.get() == 0 && worktreeLock.tryLock()) {
-                mutateWorktree(running, root, timeout, commands, onResult, true);
+                mutateWorktree(running, root, timeout, commands, refusal, onResult, true);
                 return;
             }
             parkedMutations.incrementAndGet();
             boolean queued = submit(networkExec, () -> {
                 try {
-                    mutateWorktree(networkCommands, root, timeout, commands, onResult, false);
+                    mutateWorktree(networkCommands, root, timeout, commands, refusal, onResult, false);
                 } finally {
                     parkedMutations.decrementAndGet();
                 }
@@ -1986,12 +2320,17 @@ public final class GitService {
         });
     }
 
-    /** Runs {@code commands} holding {@link #worktreeLock} ({@code locked}: the caller already took it). */
+    /**
+     * Runs {@code commands} holding {@link #worktreeLock} ({@code locked}: the caller already took it).
+     * {@code refusal} (may be null) is asked first, with the working tree held: a non-null answer is the
+     * reason nothing is run, and becomes the failed result's {@code err}.
+     */
     private void mutateWorktree(
             AtomicInteger running,
             Path root,
             Duration timeout,
             List<String[]> commands,
+            Supplier<String> refusal,
             Consumer<ProcessRunner.Result> onResult,
             boolean locked) {
         ProcessRunner.Result result;
@@ -2011,6 +2350,10 @@ public final class GitService {
                 result = NOT_INSTALLED;
             } else {
                 result = userCommand(running, () -> {
+                    String refused = refusal == null ? null : refusal.get();
+                    if (refused != null) {
+                        return new ProcessRunner.Result(1, "", refused);
+                    }
                     ProcessRunner.Result combined = new ProcessRunner.Result(0, "", "");
                     for (String[] command : commands) {
                         // The network lane's commands (pull) are the slow ones: watched as they run.
@@ -2339,11 +2682,6 @@ public final class GitService {
         return new ProcessRunner.Result(1, "", OUTPUT_TOO_LARGE, true, r.errTruncated());
     }
 
-    private ProcessRunner.Result gitWithInput(Path dir, String stdin, List<String> args) {
-        byte[] bytes = (stdin == null ? "" : stdin).getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        return gitWithInput(dir, bytes, args, USER_ENV);
-    }
-
     /** Runs a logged user command with raw {@code stdin} bytes (a blob body must reach Git unre-encoded). */
     private ProcessRunner.Result gitWithInput(
             Path dir, byte[] stdin, List<String> args, Map<String, String> environment) {
@@ -2369,6 +2707,7 @@ public final class GitService {
         synchronized (blameCache) {
             blameCache.clear();
         }
+        ignoreRevsConfig.clear();
     }
 
     /**

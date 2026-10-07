@@ -218,6 +218,11 @@ public final class GitSafety {
 
     /** Whether {@code git --version} output names a release with {@code --end-of-options} (2.24 or later). */
     static boolean supportsEndOfOptions(String versionOutput) {
+        return versionAtLeast(versionOutput, 2, 24);
+    }
+
+    /** Whether {@code git --version} output names release {@code major.minor} or a later one. */
+    public static boolean versionAtLeast(String versionOutput, int major, int minor) {
         if (versionOutput == null) {
             return false;
         }
@@ -226,9 +231,9 @@ public final class GitSafety {
             return false;
         }
         try {
-            int major = Integer.parseInt(m.group(1));
-            int minor = Integer.parseInt(m.group(2));
-            return major > 2 || (major == 2 && minor >= 24);
+            int foundMajor = Integer.parseInt(m.group(1));
+            int foundMinor = Integer.parseInt(m.group(2));
+            return foundMajor > major || (foundMajor == major && foundMinor >= minor);
         } catch (NumberFormatException tooLong) {
             return false;
         }

@@ -743,10 +743,22 @@ final class DiffCoordinator {
             });
             entries.add(new PatchReviewPane.Entry(rightName, fp.additions(), fp.deletions(), pane));
         }
-        if (entries.size() == 1) {
+        // Inside a repository the patch can be applied, so it always opens as a review tab, which carries
+        // the two Apply buttons; elsewhere a one-file patch stays the plain diff it always was.
+        boolean applicable = git.isAvailable();
+        if (entries.size() == 1 && !applicable) {
             ops.addDiffTab(entries.get(0).pane());
         } else {
-            ops.addDiffTab(new PatchReviewPane(tr("diff.title.patchSet", entries.size()), entries));
+            PatchReviewPane review = new PatchReviewPane(tr("diff.title.patchSet", entries.size()), entries);
+            if (applicable) {
+                // The text that was parsed for this tab: what is applied is what is being reviewed.
+                byte[] patch = GitPatchCoordinator.patchBytes(buffer);
+                Path root = git.repoRoot(); // the repository it was opened in; see GitPatchCoordinator.apply
+                review.setApplyActions(
+                        () -> git.patches().apply(root, patch, false),
+                        () -> git.patches().apply(root, patch, true));
+            }
+            ops.addDiffTab(review);
         }
         host.setStatus(tr("status.diff.patchFilesOpened", entries.size()));
     }
@@ -1357,6 +1369,67 @@ final class DiffCoordinator {
         String title = tr(staged ? "diff.title.gitStagedReview" : "diff.title.gitWorkingReview", entries.size());
         ops.addDiffTab(new PatchReviewPane(title, entries));
         host.setStatus(tr("status.diff.reviewOpened", entries.size()));
+    }
+
+    /**
+     * One file of a review between two sets of Git blobs: {@code leftSpec}/{@code rightSpec} are
+     * {@code <rev>:<path>} blob specs, {@code null} for a side on which the file does not exist.
+     */
+    record BlobReviewTarget(String path, char status, String leftSpec, String rightSpec) {}
+
+    /**
+     * Opens a read-only multi-file review tab — the one {@link #reviewGitChanges} builds — for files given
+     * as pairs of blob specs in the repository at {@code root}: a stash against the commit it was made on,
+     * or any two revisions.
+     */
+    void openBlobReview(
+            String title, String headerLeft, String headerRight, Path root, List<BlobReviewTarget> targets) {
+        if (root == null || targets.isEmpty()) {
+            return;
+        }
+        host.setStatus(tr("status.diff.preparingReview", targets.size()));
+        List<BuiltDiff> built = new ArrayList<>(Collections.nCopies(targets.size(), null));
+        AtomicInteger remaining = new AtomicInteger(targets.size());
+        DiffSide absent = callback -> callback.accept(DiffContent.text(""));
+        for (int i = 0; i < targets.size(); i++) {
+            int index = i;
+            BlobReviewTarget target = targets.get(i);
+            Path file = root.resolve(target.path());
+            String name = target.path().substring(target.path().lastIndexOf('/') + 1);
+            buildDiffPane(
+                    name,
+                    headerLeft,
+                    headerRight,
+                    target.path(),
+                    target.path(),
+                    target.leftSpec() == null ? absent : blobSide(root, target.leftSpec(), file),
+                    target.rightSpec() == null ? absent : blobSide(root, target.rightSpec(), file),
+                    DiffViewerPane.EditableSide.NONE,
+                    null,
+                    pane -> {},
+                    result -> {
+                        built.set(index, result);
+                        if (remaining.decrementAndGet() > 0) {
+                            return;
+                        }
+                        List<PatchReviewPane.Entry> entries = new ArrayList<>();
+                        for (int j = 0; j < targets.size(); j++) {
+                            BuiltDiff diff = built.get(j);
+                            if (diff != null) {
+                                entries.add(new PatchReviewPane.Entry(
+                                        targets.get(j).path(),
+                                        String.valueOf(targets.get(j).status()),
+                                        diff.model().added(),
+                                        diff.model().removed(),
+                                        diff.pane()));
+                            }
+                        }
+                        if (!entries.isEmpty()) {
+                            ops.addDiffTab(new PatchReviewPane(title, entries));
+                            host.setStatus(tr("status.diff.reviewOpened", entries.size()));
+                        }
+                    });
+        }
     }
 
     /** Selects one side of the porcelain status and resolves rename/copy source paths for blob lookup. */

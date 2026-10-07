@@ -200,7 +200,7 @@ class GitDestructiveOperationsFxTest {
     }
 
     @Test
-    void stashPopConflictShowsTheConflictsRetainsTheStashAndReloadsCleanBuffer(@TempDir Path dir) throws Exception {
+    void stashPopConflictSaysTheStashWasKeptAndReloadsCleanBuffer(@TempDir Path dir) throws Exception {
         Path repo = initRepo(dir);
         Path file = Files.writeString(repo.resolve("story.txt"), "base\n");
         commitAll(repo, "base");
@@ -213,12 +213,11 @@ class GitDestructiveOperationsFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             EditorBuffer buffer = open(fx.controller, file);
             GitCoordinator coordinator = applyRepo(fx, repo, "main");
-            // A pop that stops on conflicts is a state to resolve (the Commit window's Conflicts group), not a
-            // failure: it is said in the status bar, with no error dialog to dismiss.
-            CountDownLatch stopped = watchStatus(fx, tr("status.git.stashConflicts")::equals);
+            // Not "Git command failed" in an error dialog: the stash was applied, with conflicts, and kept.
+            CountDownLatch told = watchStatus(fx, tr("stash.conflict.pop")::equals);
 
             FxTestSupport.runOnFx(coordinator::gitStashPop);
-            async.await(stopped, "stash conflict feedback");
+            async.await(told, "stash conflict feedback");
             async.awaitFx();
 
             assertTrue(git(repo, "status", "--porcelain=v1").out().contains("UU story.txt"));

@@ -583,9 +583,27 @@ Editora is built with the help of AI coding tools.
   Checkout / Reset / Revert / Cherry-Pick / New Branch (the same actions are on the palette as *Git Log: …*;
   they act on the commit selected in the visible log, and open the log first when it is hidden). **Blame**
   (`M-g a`) adds a gutter column showing every line's author and commit date, shaded by age, with the
-  commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default). **Stash**
-  push / pop-latest / apply / drop from the palette and the VCS menu; the branch dropdown (branches first,
-  then the actions) offers *Stash Changes* and *Unstash…*. The VCS menu also reaches Stage All, Compare with
+  commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default).
+  *Git: Blame — Ignore Whitespace Changes* (`-w`) and *Git: Blame — Detect Moved and Copied Lines* (`-M -C`)
+  are per-window toggles for seeing past reformatting and refactoring commits; a `.git-blame-ignore-revs`
+  file at the repository root (or the file `blame.ignoreRevsFile` names) is used automatically, and a broken
+  one is reported instead of silently emptying the column. *Git: Annotate Previous Revision* opens the file
+  as it was before the commit the caret line is blamed on — read-only, annotated in turn, following
+  renames — so a line can be walked back through its history.
+  **Stashes** (*Git: Stashes…*) lists every stash with its message, branch, age and files (untracked ones
+  included): Enter shows its changes in the multi-file review tab, and the Menu key or a right-click offers
+  Apply, Pop, Drop, Branch from Stash and Copy Name. *Git: Stash Changes…* takes a message and three
+  options — include untracked files, staged changes only (Git 2.35+), keep the index — and saves unsaved
+  buffers first, so the stash holds what is on screen. A stash that applies with conflicts says so, says
+  the stash was kept, and lists the conflicted files. Pop-latest / apply / drop pickers remain on the
+  palette and the VCS menu; the branch dropdown (branches first, then the actions) offers *Stash Changes*
+  and *Unstash…*.
+  **Patches:** *Git: Apply Patch…* applies a `.patch`/`.diff` file, or the active buffer when it is a
+  patch, to the working tree or the index — checked first, so a patch that does not fit changes nothing
+  and git's reason is shown with the offer of a 3-way merge. In a repository a patch file's review tab
+  carries the same *Apply to Working Tree* / *Apply to Index* pair. *Git: Create Patch…* writes the staged
+  changes, the unstaged changes or a commit (`format-patch`) to a file or a new untitled buffer.
+  The VCS menu also reaches Stage All, Compare with
   Branch / Tag / Commit, Resolve Conflicts, Add to .gitignore and Initialize Repository. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
   **Branch management** is on each row of the branch dropdown (its `⋯` button, a right-click, or the Menu key)
   and on the palette: new branch from any branch or tag (with or without switching), rename, merge into the
