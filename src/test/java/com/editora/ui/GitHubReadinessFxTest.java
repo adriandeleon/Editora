@@ -13,6 +13,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 
 import com.editora.config.Settings;
+import com.editora.github.GitHubListQuery;
 import com.editora.github.GitHubService;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
@@ -52,7 +53,10 @@ class GitHubReadinessFxTest {
             #!/bin/sh
             D="$(dirname "$0")"
             printf '%s\\n' "$*" >> "$D/gh.log"
-            if [ "$1" = "--version" ]; then echo "gh version 2.96.0 (test stand-in)"; exit 0; fi
+            if [ "$1" = "--version" ]; then
+              if [ -f "$D/version.old" ]; then echo "gh version 2.40.1 (2023-12-13)"; exit 0; fi
+              echo "gh version 2.96.0 (test stand-in)"; exit 0
+            fi
             if [ "$1 $2" = "auth status" ]; then
               if [ "$3" = "--json" ]; then cat "$D/auth.json"; exit 0; fi
               exit 1
@@ -195,9 +199,12 @@ class GitHubReadinessFxTest {
             await("the status", () -> tr("status.github.unverified").equals(echo.getText()));
 
             AtomicReference<Object> answer = new AtomicReference<>();
-            FxTestSupport.runOnFx(() -> github.fetchPrs(answer::set, answer::set));
+            FxTestSupport.runOnFx(() -> github.fetchPrs(GitHubListQuery.open(50), answer::set, answer::set));
             await("the list fetch", () -> answer.get() != null);
-            assertTrue(answer.get() instanceof java.util.List<?> prs && prs.size() == 1, "ran gh: " + answer.get());
+            assertTrue(
+                    answer.get() instanceof GitHubListQuery.Page<?> page
+                            && page.items().size() == 1,
+                    "ran gh: " + answer.get());
         } finally {
             Files.writeString(bin.resolve("auth.json"), SIGNED_IN);
         }
@@ -214,7 +221,7 @@ class GitHubReadinessFxTest {
 
         Files.writeString(bin.resolve("auth.json"), SIGNED_IN); // the user ran `gh auth login` in a terminal
         AtomicReference<String> refused = new AtomicReference<>();
-        FxTestSupport.runOnFx(() -> github.fetchPrs(prs -> {}, refused::set));
+        FxTestSupport.runOnFx(() -> github.fetchPrs(GitHubListQuery.open(50), prs -> {}, refused::set));
         assertEquals(tr("status.github.notAuthenticated"), refused.get(), "answered from the cache this once");
 
         await(
@@ -239,7 +246,7 @@ class GitHubReadinessFxTest {
             FxTestSupport.runOnFx(github::refresh);
             assertEquals(expected, FxTestSupport.callOnFx(echo::getText));
             AtomicReference<String> refused = new AtomicReference<>();
-            FxTestSupport.runOnFx(() -> github.fetchPrs(prs -> {}, refused::set));
+            FxTestSupport.runOnFx(() -> github.fetchPrs(GitHubListQuery.open(50), prs -> {}, refused::set));
             assertEquals(expected, refused.get());
         } finally {
             FxTestSupport.runOnFx(() -> settings.setGitSupport(true));
@@ -251,8 +258,16 @@ class GitHubReadinessFxTest {
     @Order(6)
     void stoppingTheCiLogKillsGh() throws Exception {
         BuildOutputPanel output = FxTestSupport.field(fx.controller, "buildOutputPanel");
+        GitHubPanel panel = FxTestSupport.field(fx.controller, "githubPanel");
+        Node spinner = FxTestSupport.field(panel, "busy");
+        FxTestSupport.runOnFx(() -> toolWindows.open(githubWindow)); // its first fetch binds the spinner
+        await(
+                "the panel's own fetches to end",
+                () -> github.callsInFlightProperty().get() == 0);
+        await("the spinner to rest", () -> !spinner.isVisible());
         FxTestSupport.runOnFx(() -> github.viewRunLog(42L, "CI"));
         long first = awaitPid(1);
+        await("the tool window's spinner to show that gh is running", spinner::isVisible);
         assertTrue(FxTestSupport.callOnFx(() -> github.callsInFlightProperty().get() > 0), "the busy signal is up");
 
         // Asking for another log supersedes the first: its gh is killed, not left to finish.
@@ -273,6 +288,38 @@ class GitHubReadinessFxTest {
 
         awaitOffFx("gh to be killed by Stop", () -> !alive(second));
         await("the busy signal to clear", () -> github.callsInFlightProperty().get() == 0);
+        await("the spinner to stop", () -> !spinner.isVisible());
+    }
+
+    /** G19: a gh before 2.50 has no `pr checks --json` — it is not asked, and the command says what it needs. */
+    @Test
+    @Order(7)
+    void anOldGhIsNotAskedForChecksAndTheCommandSaysWhy() throws Exception {
+        Files.writeString(bin.resolve("version.old"), "1");
+        try {
+            FxTestSupport.runOnFx(github::refresh);
+            await(
+                    "the old gh to be probed",
+                    () -> !github.service().availability().supportsChecks());
+            FxTestSupport.drainFx();
+            Thread.sleep(300); // anything the refresh itself started has reached gh by now
+            long viewsBefore = logged("pr view");
+            long checksBefore = logged("pr checks");
+
+            FxTestSupport.runOnFx(github::showChecks);
+
+            await(
+                    "the reason",
+                    () -> tr("status.github.checksCannotUseGh", "2.40.1", "2.50")
+                            .equals(echo.getText()));
+            Thread.sleep(300);
+            assertEquals(viewsBefore, logged("pr view"), "no lookup of the branch's pull request");
+            assertEquals(checksBefore, logged("pr checks"), "and no gh pr checks --json it would reject");
+        } finally {
+            Files.delete(bin.resolve("version.old"));
+            FxTestSupport.runOnFx(github::refresh);
+            await("the current gh again", () -> github.service().availability().supportsChecks());
+        }
     }
 
     private static boolean alive(long pid) {

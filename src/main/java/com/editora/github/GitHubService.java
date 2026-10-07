@@ -25,13 +25,15 @@ import com.editora.process.ProcessRunner;
 /**
  * The native-{@code gh} facade — a structural clone of {@code GitService}. Every GitHub command shells out via
  * {@link ProcessRunner} on a daemon executor thread and posts results back on the JavaFX thread, so the UI
- * thread is never blocked. There are three lanes, so one slow call cannot hold up the rest: working-tree and
+ * thread is never blocked. There are four lanes, so one slow call cannot hold up the rest: working-tree and
  * remote <em>mutations</em> (checkout, create, review, rerun, cancel) in order on one; <em>reads</em> (lists,
- * a PR's detail / diff / checks, a CI log) on another; and the silent <em>probes</em> (is gh there and signed
- * in, does the repository have anything to show) on a third, with a short timeout. Every read returns a
- * {@link ProcessRunner.Cancellation}: cancelling it kills {@code gh} and its consumer is never called — a
- * newer request for the same list does that to the older one. Availability is probed and cached
- * ({@link #detect}); {@link #activeCallsProperty()} says how many calls are queued or running.
+ * a PR's detail / diff / files, a CI log) on another; small <em>lookups</em> (the status bar's checks poll,
+ * the resolved repository, what the create-PR form needs) on a third; and the silent <em>probes</em> (is gh
+ * there and signed in, does the repository have anything to show) on a fourth, with a short timeout. Every
+ * read and lookup returns a {@link ProcessRunner.Cancellation}: cancelling it kills {@code gh} and its
+ * consumer is never called — a newer request for the same list does that to the older one. Availability is
+ * probed and cached ({@link #detect}); {@link #activeCallsProperty()} says how many of the user's calls are
+ * queued or running (background polls and probes are not counted).
  *
  * <p>Every editor read (owner/repo resolution) is delegated to {@code gh} itself: commands run with a
  * working directory inside the repo, so {@code gh} resolves the host + owner/repo from the git remote — no
@@ -44,6 +46,8 @@ public final class GitHubService {
     private static final Duration NETWORK = Duration.ofSeconds(120);
     /** Ceiling for one background probe call: nobody is waiting for it, and two more may queue behind it. */
     private static final Duration PROBE = Duration.ofSeconds(20);
+    /** Ceiling for one call on the lookup lane: a single small JSON answer. */
+    private static final Duration LOOKUP = Duration.ofSeconds(30);
     /** Ceiling for downloading a failed run's log — long, because the fetch can be stopped ({@link #runFailedLog}). */
     private static final Duration LOG = Duration.ofMinutes(5);
     /**
@@ -73,6 +77,15 @@ public final class GitHubService {
 
     /** The probe lane ({@link #detect}, {@link #openActivity}): background checks never delay a user's call. */
     private final ThreadPoolExecutor probes = lane("github-probe");
+
+    /**
+     * The lookup lane: small metadata queries that something is waiting on but that must neither wait behind
+     * a big read (a diff, a CI log) nor delay one — the status bar's checks poll ({@link #branchChecks}), the
+     * tool window's repository name ({@link #repoInfo}), what the create-PR form needs
+     * ({@link #prCreateContext}). They queue only behind each other, and each is short ({@link #LOOKUP}).
+     * (Not the probe lane: a checks poll there would hold up the "is gh usable" answer commands wait for.)
+     */
+    private final ThreadPoolExecutor lookups = lane("github-lookup");
 
     private static ThreadPoolExecutor lane(String name) {
         return new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>(), r -> {
@@ -120,6 +133,7 @@ public final class GitHubService {
 
     private final AtomicReference<ProcessRunner.Cancellation> issueListCall = new AtomicReference<>();
     private final AtomicReference<ProcessRunner.Cancellation> runListCall = new AtomicReference<>();
+    private final AtomicReference<ProcessRunner.Cancellation> branchChecksCall = new AtomicReference<>();
 
     /** What is known about {@code gh}'s sign-in; see {@link GhAuthStatus.State}. */
     public enum AuthState {
@@ -340,65 +354,38 @@ public final class GitHubService {
     /** Result of a PR list: {@code ok} distinguishes a failed {@code gh} call from a genuinely empty list. */
     public record PrListResult(boolean ok, List<PrListParser.PullRequest> prs, String error) {}
 
-    /** Lists open PRs ({@code gh pr list --json …}); a newer request supersedes (and kills) an older one. */
-    public ProcessRunner.Cancellation prList(Path dir, Consumer<PrListResult> onResult) {
-        return prList(dir, prListCall, onResult);
+    /**
+     * Lists pull requests for a {@link GitHubListQuery} (state, "mine", limit) with {@code gh pr list --json …};
+     * a newer request supersedes (and kills) an older one. The answer holds up to
+     * {@link GitHubListQuery#fetchLimit()} rows — one more than is shown — for {@link GitHubListQuery#page}.
+     */
+    public ProcessRunner.Cancellation listPrs(Path dir, GitHubListQuery query, Consumer<PrListResult> onResult) {
+        return listPrs(dir, query, prListCall, onResult);
     }
 
     /**
-     * {@link #prList} for a one-shot consumer (a picker) that must get its answer whatever the tool window
+     * {@link #listPrs} for a one-shot consumer (a picker) that must get its answer whatever the tool window
      * asks for meanwhile — and must not take the tool window's answer away either.
      */
-    public ProcessRunner.Cancellation prListOnce(Path dir, Consumer<PrListResult> onResult) {
-        return prList(dir, null, onResult);
+    public ProcessRunner.Cancellation listPrsOnce(Path dir, GitHubListQuery query, Consumer<PrListResult> onResult) {
+        return listPrs(dir, query, null, onResult);
     }
 
-    private ProcessRunner.Cancellation prList(
-            Path dir, AtomicReference<ProcessRunner.Cancellation> slot, Consumer<PrListResult> onResult) {
+    private ProcessRunner.Cancellation listPrs(
+            Path dir,
+            GitHubListQuery query,
+            AtomicReference<ProcessRunner.Cancellation> slot,
+            Consumer<PrListResult> onResult) {
         return read(
                 slot,
                 cancel -> {
-                    ProcessRunner.Result r = gh(
-                            dir,
-                            NETWORK,
-                            cancel,
-                            "pr",
-                            "list",
-                            "--limit",
-                            "50",
-                            "--json",
-                            "number,title,author,headRefName,baseRefName,state,isDraft,updatedAt,url");
+                    ProcessRunner.Result r =
+                            gh(dir, NETWORK, cancel, query.prArgs().toArray(new String[0]));
                     return r.ok()
                             ? new PrListResult(true, PrListParser.parse(r.out()), "")
                             : new PrListResult(false, List.of(), r.message());
                 },
                 onResult);
-    }
-
-    /**
-     * {@link #prList(Path, Consumer)} for a {@link GitHubListQuery} (state, "mine", limit). The answer holds up
-     * to {@link GitHubListQuery#fetchLimit()} rows — one more than is shown — for {@link GitHubListQuery#page}.
-     */
-    public void listPrs(Path dir, GitHubListQuery query, Consumer<PrListResult> onResult) {
-        listPrs(dir, query, prListGen, onResult);
-    }
-
-    /** {@link #listPrs(Path, GitHubListQuery, Consumer)} for a one-shot consumer; see {@link #prListOnce(Path, Consumer)}. */
-    public void listPrsOnce(Path dir, GitHubListQuery query, Consumer<PrListResult> onResult) {
-        listPrs(dir, query, null, onResult);
-    }
-
-    private void listPrs(Path dir, GitHubListQuery query, AtomicLong generation, Consumer<PrListResult> onResult) {
-        long gen = generation == null ? 0 : generation.incrementAndGet();
-        submit(() -> {
-            ProcessRunner.Result r = gh(dir, NETWORK, query.prArgs().toArray(new String[0]));
-            PrListResult res = r.ok()
-                    ? new PrListResult(true, PrListParser.parse(r.out()), "")
-                    : new PrListResult(false, List.of(), r.message());
-            if (generation == null || gen == generation.get()) {
-                Platform.runLater(() -> onResult.accept(res));
-            }
-        });
     }
 
     /** A PR's detail ({@code gh pr view <n> --json …}); posts {@code null} on failure. */
@@ -456,8 +443,16 @@ public final class GitHubService {
         return last < 0 ? "" : cutDiff.substring(0, last + 1);
     }
 
-    /** Result of {@link #prFiles}: the per-file patches, how many files came without one, or an error. */
-    public record PrFilesResult(boolean ok, PrFilesParser.Result files, String error) {}
+    /**
+     * Result of {@link #prFiles}: the per-file patches, how many files came without one, or an error.
+     * {@code truncated} means the API's answer was larger than {@link ProcessRunner} captures (10 MB):
+     * {@code files} then holds only the files read before the cut, and the review must say so.
+     */
+    public record PrFilesResult(boolean ok, PrFilesParser.Result files, String error, boolean truncated) {
+        public PrFilesResult(boolean ok, PrFilesParser.Result files, String error) {
+            this(ok, files, error, false);
+        }
+    }
 
     /**
      * A PR's files from the REST API ({@code gh api repos/{owner}/{repo}/pulls/<n>/files --paginate}) — what
@@ -466,15 +461,22 @@ public final class GitHubService {
      * {@code gh pr diff}, so a fork or a GitHub Enterprise host needs nothing extra and no ref is fetched
      * into the user's repository.
      */
-    public void prFiles(Path dir, int number, Consumer<PrFilesResult> onResult) {
-        submit(() -> {
-            ProcessRunner.Result r = gh(
-                    dir, NETWORK, "api", "repos/{owner}/{repo}/pulls/" + number + "/files?per_page=100", "--paginate");
-            PrFilesResult res = r.ok()
-                    ? new PrFilesResult(true, PrFilesParser.parse(r.out()), "")
-                    : new PrFilesResult(false, new PrFilesParser.Result(List.of(), 0), r.message());
-            Platform.runLater(() -> onResult.accept(res));
-        });
+    public ProcessRunner.Cancellation prFiles(Path dir, int number, Consumer<PrFilesResult> onResult) {
+        return read(
+                null,
+                cancel -> {
+                    ProcessRunner.Result r = gh(
+                            dir,
+                            NETWORK,
+                            cancel,
+                            "api",
+                            "repos/{owner}/{repo}/pulls/" + number + "/files?per_page=100",
+                            "--paginate");
+                    return r.ok()
+                            ? new PrFilesResult(true, PrFilesParser.parse(r.out()), "", r.outTruncated())
+                            : new PrFilesResult(false, new PrFilesParser.Result(List.of(), 0), r.message());
+                },
+                onResult);
     }
 
     /** Checks out a PR branch ({@code gh pr checkout <n>}); posts the raw result for status/error reporting. */
@@ -501,35 +503,6 @@ public final class GitHubService {
         run(dir, NETWORK, onResult, ghArgs.toArray(new String[0]));
     }
 
-    /** Result of a PR checks query: the runs, or an error. Parsed regardless of exit code (see {@link ChecksParser}). */
-    public record ChecksResult(boolean ok, List<ChecksParser.CheckRun> runs, String error) {}
-
-    /**
-     * A PR's CI checks ({@code gh pr checks --json …}, gh 2.50+ — see {@link Availability#supportsChecks()});
-     * the JSON is parsed even on a non-zero exit. A {@code number <= 0} omits the PR argument, so {@code gh}
-     * resolves the checks for the current branch's PR.
-     */
-    public ProcessRunner.Cancellation prChecks(Path dir, int number, Consumer<ChecksResult> onResult) {
-        return read(
-                null,
-                cancel -> {
-                    List<String> args = new ArrayList<>(List.of("pr", "checks"));
-                    if (number > 0) {
-                        args.add(String.valueOf(number));
-                    }
-                    args.add("--json");
-                    args.add("name,state,bucket,link,workflow");
-                    ProcessRunner.Result r = gh(dir, NETWORK, cancel, args.toArray(new String[0]));
-                    // gh pr checks exits 1 (failing) / 8 (pending) with the JSON still on stdout — parse it
-                    // regardless.
-                    List<ChecksParser.CheckRun> runs = ChecksParser.parse(r.out());
-                    return !runs.isEmpty() || r.ok()
-                            ? new ChecksResult(true, runs, "")
-                            : new ChecksResult(false, List.of(), r.message());
-                },
-                onResult);
-    }
-
     /**
      * The current branch's pull request and its checks.
      *
@@ -543,38 +516,46 @@ public final class GitHubService {
 
     /**
      * Which pull request the checked-out branch belongs to ({@code gh pr view}, no number) and that pull
-     * request's checks ({@code gh pr checks <n>}) — {@link #prChecks} alone cannot say which pull request it
-     * answered for. A branch without a pull request costs the one {@code gh pr view} call.
+     * request's checks ({@code gh pr checks <n> --json …}, gh 2.50+ — the caller asks
+     * {@link Availability#supportsChecks()} first). A branch without a pull request costs the one
+     * {@code gh pr view} call. The JSON is parsed whatever the exit code: {@code gh pr checks} exits 1
+     * (failing) / 8 (pending) with it still on stdout.
+     *
+     * <p>This is what the status bar polls, so it is a background call in every respect: it runs on the
+     * lookup lane (never ahead of, or behind, a list the user asked for), is not counted in
+     * {@link #activeCallsProperty()}, is not written to the {@link CommandLog} (a poll every few minutes
+     * would bury the commands the user ran), and a newer request kills an older one still running.
      */
-    public void branchChecks(Path dir, Consumer<BranchChecks> onResult) {
-        submit(() -> {
-            BranchChecks res = BranchChecks.NONE;
-            PrViewParser.PrDetail pr = currentBranchPr(dir);
-            if (pr != null && pr.number() > 0) {
-                ProcessRunner.Result r = gh(
-                        dir,
-                        NETWORK,
-                        "pr",
-                        "checks",
-                        String.valueOf(pr.number()),
-                        "--json",
-                        "name,state,bucket,link,workflow");
-                res = new BranchChecks(true, pr, ChecksParser.parse(r.out())); // exits 1 / 8 with the JSON
-            }
-            BranchChecks posted = res;
-            Platform.runLater(() -> onResult.accept(posted));
-        });
+    public ProcessRunner.Cancellation branchChecks(Path dir, Consumer<BranchChecks> onResult) {
+        return call(
+                lookups,
+                false,
+                branchChecksCall,
+                cancel -> {
+                    PrViewParser.PrDetail pr = currentBranchPr(dir, cancel, false);
+                    if (pr == null || pr.number() <= 0) {
+                        return BranchChecks.NONE;
+                    }
+                    ProcessRunner.Result r = ghSilent(
+                            dir,
+                            LOOKUP,
+                            cancel,
+                            "pr",
+                            "checks",
+                            String.valueOf(pr.number()),
+                            "--json",
+                            "name,state,bucket,link,workflow");
+                    return new BranchChecks(true, pr, ChecksParser.parse(r.out()));
+                },
+                onResult);
     }
 
     /** The pull request of the checked-out branch, or {@code null} when it has none. Runs on the lane. */
-    private PrViewParser.PrDetail currentBranchPr(Path dir) {
-        ProcessRunner.Result r = gh(
-                dir,
-                NETWORK,
-                "pr",
-                "view",
-                "--json",
-                "number,title,body,author,baseRefName,headRefName,state,url,additions,deletions");
+    private PrViewParser.PrDetail currentBranchPr(Path dir, ProcessRunner.Cancellation cancel, boolean logged) {
+        String[] args = {
+            "pr", "view", "--json", "number,title,body,author,baseRefName,headRefName,state,url,additions,deletions"
+        };
+        ProcessRunner.Result r = logged ? gh(dir, LOOKUP, cancel, args) : ghSilent(dir, LOOKUP, cancel, args);
         return r.ok() ? PrViewParser.parse(r.out()) : null;
     }
 
@@ -583,21 +564,16 @@ public final class GitHubService {
     /** Result of an issue list. */
     public record IssueListResult(boolean ok, List<IssueListParser.Issue> issues, String error) {}
 
-    /** Lists open issues ({@code gh issue list --json …}); a newer request supersedes an older one. */
-    public ProcessRunner.Cancellation issueList(Path dir, Consumer<IssueListResult> onResult) {
+    /**
+     * Lists issues for a {@link GitHubListQuery} ({@code gh issue list --json …}); a newer request supersedes
+     * an older one. See {@link #listPrs(Path, GitHubListQuery, Consumer)}.
+     */
+    public ProcessRunner.Cancellation listIssues(Path dir, GitHubListQuery query, Consumer<IssueListResult> onResult) {
         return read(
                 issueListCall,
                 cancel -> {
-                    ProcessRunner.Result r = gh(
-                            dir,
-                            NETWORK,
-                            cancel,
-                            "issue",
-                            "list",
-                            "--limit",
-                            "50",
-                            "--json",
-                            "number,title,author,state,labels,updatedAt,url");
+                    ProcessRunner.Result r =
+                            gh(dir, NETWORK, cancel, query.issueArgs().toArray(new String[0]));
                     return r.ok()
                             ? new IssueListResult(true, IssueListParser.parse(r.out()), "")
                             : new IssueListResult(false, List.of(), r.message());
@@ -605,78 +581,39 @@ public final class GitHubService {
                 onResult);
     }
 
-    /** {@link #issueList(Path, Consumer)} for a {@link GitHubListQuery}; see {@link #listPrs(Path, GitHubListQuery, Consumer)}. */
-    public void listIssues(Path dir, GitHubListQuery query, Consumer<IssueListResult> onResult) {
-        long gen = issueListGen.incrementAndGet();
-        submit(() -> {
-            ProcessRunner.Result r = gh(dir, NETWORK, query.issueArgs().toArray(new String[0]));
-            IssueListResult res = r.ok()
-                    ? new IssueListResult(true, IssueListParser.parse(r.out()), "")
-                    : new IssueListResult(false, List.of(), r.message());
-            if (gen == issueListGen.get()) {
-                Platform.runLater(() -> onResult.accept(res));
-            }
-        });
-    }
-
     // --- workflow runs (GitHub Actions) ----------------------------------------------------------
 
     /** Result of a run list: {@code ok} distinguishes a failed {@code gh} call from a genuinely empty list. */
     public record RunListResult(boolean ok, List<RunListParser.WorkflowRun> runs, String error) {}
 
-    /** Lists recent workflow runs ({@code gh run list --json …}); superseding like {@link #prList}. */
-    public ProcessRunner.Cancellation runList(Path dir, Consumer<RunListResult> onResult) {
-        return runList(dir, runListCall, onResult);
+    /**
+     * Lists recent workflow runs for a {@link GitHubListQuery} (only its limit applies to runs) with
+     * {@code gh run list --json …}; superseding like {@link #listPrs(Path, GitHubListQuery, Consumer)}.
+     */
+    public ProcessRunner.Cancellation listRuns(Path dir, GitHubListQuery query, Consumer<RunListResult> onResult) {
+        return listRuns(dir, query, runListCall, onResult);
     }
 
-    /** {@link #runList} for a one-shot consumer (a picker); see {@link #prListOnce}. */
-    public ProcessRunner.Cancellation runListOnce(Path dir, Consumer<RunListResult> onResult) {
-        return runList(dir, null, onResult);
+    /** {@link #listRuns(Path, GitHubListQuery, Consumer)} for a one-shot consumer (a picker); see {@link #listPrsOnce}. */
+    public ProcessRunner.Cancellation listRunsOnce(Path dir, GitHubListQuery query, Consumer<RunListResult> onResult) {
+        return listRuns(dir, query, null, onResult);
     }
 
-    private ProcessRunner.Cancellation runList(
-            Path dir, AtomicReference<ProcessRunner.Cancellation> slot, Consumer<RunListResult> onResult) {
+    private ProcessRunner.Cancellation listRuns(
+            Path dir,
+            GitHubListQuery query,
+            AtomicReference<ProcessRunner.Cancellation> slot,
+            Consumer<RunListResult> onResult) {
         return read(
                 slot,
                 cancel -> {
-                    ProcessRunner.Result r = gh(
-                            dir,
-                            NETWORK,
-                            cancel,
-                            "run",
-                            "list",
-                            "--limit",
-                            "30",
-                            "--json",
-                            "databaseId,displayTitle,workflowName,headBranch,status,conclusion,event,createdAt,url");
+                    ProcessRunner.Result r =
+                            gh(dir, NETWORK, cancel, query.runArgs().toArray(new String[0]));
                     return r.ok()
                             ? new RunListResult(true, RunListParser.parse(r.out()), "")
                             : new RunListResult(false, List.of(), r.message());
                 },
                 onResult);
-    }
-
-    /** {@link #runList(Path, Consumer)} for a {@link GitHubListQuery} (only its limit applies to runs). */
-    public void listRuns(Path dir, GitHubListQuery query, Consumer<RunListResult> onResult) {
-        listRuns(dir, query, runListGen, onResult);
-    }
-
-    /** {@link #listRuns(Path, GitHubListQuery, Consumer)} for a one-shot consumer (a picker). */
-    public void listRunsOnce(Path dir, GitHubListQuery query, Consumer<RunListResult> onResult) {
-        listRuns(dir, query, null, onResult);
-    }
-
-    private void listRuns(Path dir, GitHubListQuery query, AtomicLong generation, Consumer<RunListResult> onResult) {
-        long gen = generation == null ? 0 : generation.incrementAndGet();
-        submit(() -> {
-            ProcessRunner.Result r = gh(dir, NETWORK, query.runArgs().toArray(new String[0]));
-            RunListResult res = r.ok()
-                    ? new RunListResult(true, RunListParser.parse(r.out()), "")
-                    : new RunListResult(false, List.of(), r.message());
-            if (generation == null || gen == generation.get()) {
-                Platform.runLater(() -> onResult.accept(res));
-            }
-        });
     }
 
     /** How many trailing log lines are kept — the failure tail is what matters, and this keeps the FX thread
@@ -777,15 +714,14 @@ public final class GitHubService {
      * {@code null} when it cannot tell. With a fork's {@code origin} and an {@code upstream} remote this is
      * the upstream repository — the one every list and run action of the tool window then addresses.
      */
-    public void repoInfo(Path dir, Consumer<RepoViewParser.RepoInfo> onResult) {
-        submit(() -> {
-            RepoViewParser.RepoInfo info = repoInfoNow(dir);
-            Platform.runLater(() -> onResult.accept(info));
-        });
+    public ProcessRunner.Cancellation repoInfo(Path dir, Consumer<RepoViewParser.RepoInfo> onResult) {
+        // Asked for by the tool window itself, once per repository: a background lookup (see branchChecks).
+        return call(lookups, false, null, cancel -> repoInfoNow(dir, cancel, false), onResult);
     }
 
-    private RepoViewParser.RepoInfo repoInfoNow(Path dir) {
-        ProcessRunner.Result r = gh(dir, NETWORK, "repo", "view", "--json", "nameWithOwner,defaultBranchRef,url");
+    private RepoViewParser.RepoInfo repoInfoNow(Path dir, ProcessRunner.Cancellation cancel, boolean logged) {
+        String[] args = {"repo", "view", "--json", "nameWithOwner,defaultBranchRef,url"};
+        ProcessRunner.Result r = logged ? gh(dir, LOOKUP, cancel, args) : ghSilent(dir, LOOKUP, cancel, args);
         return r.ok() ? RepoViewParser.parse(r.out()) : null;
     }
 
@@ -798,12 +734,19 @@ public final class GitHubService {
      */
     public record CreateContext(RepoViewParser.RepoInfo repo, PrViewParser.PrDetail existing, String template) {}
 
-    /** Gathers the {@link CreateContext} for the repository at {@code root} ({@code gh} runs in {@code dir}). */
-    public void prCreateContext(Path dir, Path root, Consumer<CreateContext> onResult) {
-        submit(() -> {
-            CreateContext ctx = new CreateContext(repoInfoNow(dir), currentBranchPr(dir), PrDraft.template(root));
-            Platform.runLater(() -> onResult.accept(ctx));
-        });
+    /**
+     * Gathers the {@link CreateContext} for the repository at {@code root} ({@code gh} runs in {@code dir}).
+     * The user is waiting for a form, so this is a counted, logged call — but on the lookup lane: two small
+     * metadata queries must not wait behind a diff or a CI log still downloading on the read lane.
+     */
+    public ProcessRunner.Cancellation prCreateContext(Path dir, Path root, Consumer<CreateContext> onResult) {
+        return call(
+                lookups,
+                true,
+                null,
+                cancel -> new CreateContext(
+                        repoInfoNow(dir, cancel, true), currentBranchPr(dir, cancel, true), PrDraft.template(root)),
+                onResult);
     }
 
     // --- open on github --------------------------------------------------------------------------
@@ -884,6 +827,19 @@ public final class GitHubService {
             AtomicReference<ProcessRunner.Cancellation> slot,
             Function<ProcessRunner.Cancellation, T> work,
             Consumer<T> onResult) {
+        return call(reads, true, slot, work, onResult);
+    }
+
+    /**
+     * {@link #read} on a given {@code lane}; {@code counted} says whether the call shows in
+     * {@link #activeCallsProperty()} (a user's call does, a background poll does not).
+     */
+    private <T> ProcessRunner.Cancellation call(
+            ThreadPoolExecutor lane,
+            boolean counted,
+            AtomicReference<ProcessRunner.Cancellation> slot,
+            Function<ProcessRunner.Cancellation, T> work,
+            Consumer<T> onResult) {
         ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
         if (slot != null) {
             ProcessRunner.Cancellation superseded = slot.getAndSet(cancel);
@@ -891,14 +847,19 @@ public final class GitHubService {
                 superseded.cancel();
             }
         }
-        submitCall(reads, () -> {
+        Runnable task = () -> {
             T result = work.apply(cancel);
             Platform.runLater(() -> {
                 if (!cancel.cancelled()) {
                     onResult.accept(result);
                 }
             });
-        });
+        };
+        if (counted) {
+            submitCall(lane, task);
+        } else {
+            submit(lane, task);
+        }
         return cancel;
     }
 
@@ -999,6 +960,7 @@ public final class GitHubService {
     public void shutdown() {
         reads.shutdownNow();
         probes.shutdownNow();
+        lookups.shutdownNow();
         if (runningMutations.get() > 0) {
             exec.shutdown();
             exec.getQueue().clear();

@@ -601,7 +601,11 @@ final class GitHubCoordinator {
                         ghError(tr("status.github.diffFailed"), files.error());
                         return;
                     }
-                    openReview(dir, number, detailSlot[0], files.files().files(), fallbackNotice(files.files()));
+                    String notice = fallbackNotice(files.files());
+                    if (files.truncated()) { // the API's answer itself passed the capture limit
+                        notice += " " + tr("status.github.diffCannotShowAll");
+                    }
+                    openReview(dir, number, detailSlot[0], files.files().files(), notice);
                 });
             } else {
                 ghError(tr("status.github.diffFailed"), res.error());
@@ -1036,6 +1040,21 @@ final class GitHubCoordinator {
         if (dir == null) {
             shownChecks = null;
             ops.setStatusBarChecks(null);
+            return;
+        }
+        GitHubService.Availability gh = service.availability();
+        if (gh != null && !gh.supportsChecks()) {
+            // `gh pr checks --json` arrived in gh 2.50: an older gh is neither asked nor polled, and the
+            // command that wanted the checks is told which gh it needs instead of "no checks".
+            shownChecks = null;
+            ops.setStatusBarChecks(null);
+            if (checksAnnounce) {
+                checksAnnounce = false;
+                host.setStatus(tr(
+                        "status.github.checksCannotUseGh",
+                        com.editora.github.GhVersion.number(gh.version()),
+                        com.editora.github.GhVersion.MINIMUM));
+            }
             return;
         }
         checksWanted = true;

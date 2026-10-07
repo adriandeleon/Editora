@@ -398,6 +398,9 @@ final class GitWindowCoordinator {
         };
     }
 
+    /** Whether the GitHub panel's busy indicator follows {@code GitHubCoordinator.callsInFlightProperty()} yet. */
+    private boolean githubBusyBound;
+
     /** Re-fetches the GitHub tool window's current segment (PRs, Issues, or Runs). */
     void reloadGithubPanel() {
         host.githubPanel().showLoading();
@@ -407,6 +410,13 @@ final class GitWindowCoordinator {
     /** Fetches one segment of the GitHub tool window; a failure is shown in the list, not as an empty one. */
     void fetchGithub(GitHubPanel.Mode mode) {
         GitHubPanel panel = host.githubPanel();
+        if (!githubBusyBound) {
+            // The toolbar spinner follows the user's gh calls queued or running (not the background polls).
+            githubBusyBound = true;
+            javafx.beans.property.ReadOnlyIntegerProperty calls = host.github().callsInFlightProperty();
+            calls.addListener((o, was, now) -> panel.setBusy(now.intValue() > 0));
+            panel.setBusy(calls.get() > 0);
+        }
         java.util.function.Consumer<String> failed = message -> panel.showError(mode, message);
         com.editora.github.GitHubListQuery query = panel.query(mode); // state / mine / how many rows
         switch (mode) {

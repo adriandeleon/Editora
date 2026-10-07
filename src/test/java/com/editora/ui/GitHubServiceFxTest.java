@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.editora.github.GitHubListQuery;
 import com.editora.github.GitHubService;
 import com.editora.github.GitHubService.Activity;
 import com.editora.github.GitHubService.AuthState;
@@ -59,6 +60,7 @@ class GitHubServiceFxTest {
               if [ -f "$D/auth.plain.nologin" ]; then echo "You are not logged into any GitHub hosts. Run gh auth login to authenticate." >&2; exit 1; fi
               echo "X Failed to log in to github.com account octocat (keyring)" >&2; exit 1
             fi
+            if [ "$1" = "api" ]; then cat "$D/big.files"; exit 0; fi
             case "$1 $2" in
               "pr list")
                 if [ -f "$D/pr.fail" ]; then echo "error connecting to api.github.com" >&2; exit 1; fi
@@ -70,6 +72,9 @@ class GitHubServiceFxTest {
                 if [ -f "$D/log.slow" ]; then echo $$ >> "$D/pids"; sleep 30; fi
                 cat "$D/big.log"; exit 0;;
               "pr diff") cat "$D/big.diff"; exit 0;;
+              "pr view") echo '{"number":7,"title":"Fix","state":"OPEN","headRefName":"fix","baseRefName":"main"}'; exit 0;;
+              "pr checks") echo '[{"name":"build","state":"PENDING","bucket":"pending","link":"","workflow":"CI"}]'; exit 8;;
+              "repo view") echo '{"nameWithOwner":"o/r","defaultBranchRef":{"name":"main"},"url":"https://github.com/o/r"}'; exit 0;;
             esac
             exit 0
             """;
@@ -313,12 +318,12 @@ class GitHubServiceFxTest {
     void aNewerListRequestKillsTheOlderOne() throws Exception {
         Files.writeString(dir.resolve("pr.slow"), "1");
         AtomicBoolean firstDelivered = new AtomicBoolean();
-        service.prList(dir, res -> firstDelivered.set(true));
+        service.listPrs(dir, GitHubListQuery.open(50), res -> firstDelivered.set(true));
         long pid = awaitPid(1);
 
         Files.delete(dir.resolve("pr.slow"));
         CompletableFuture<GitHubService.PrListResult> second = new CompletableFuture<>();
-        service.prList(dir, second::complete);
+        service.listPrs(dir, GitHubListQuery.open(50), second::complete);
 
         assertTrue(second.get(20, TimeUnit.SECONDS).ok(), "the newer request did not wait 30 s behind the older");
         assertFalse(ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false), "the superseded gh was killed");
@@ -330,10 +335,71 @@ class GitHubServiceFxTest {
     @Test
     void probesDoNotQueueBehindASlowRead() throws Exception {
         Files.writeString(dir.resolve("pr.slow"), "1");
-        ProcessRunner.Cancellation slow = service.prList(dir, res -> {});
+        ProcessRunner.Cancellation slow = service.listPrs(dir, GitHubListQuery.open(50), res -> {});
         awaitPid(1);
 
         assertTrue(detect().found(), "answered while the read lane is busy");
+
+        slow.cancel();
+    }
+
+    /** G3: the files-API fallback obeys the same rule — an answer over the capture limit says it is cut. */
+    @Test
+    void anOversizedFilesAnswerIsReportedAsTruncated() throws Exception {
+        StringBuilder json = new StringBuilder("[");
+        String patch = "@@ -0,0 +1 @@\\n+" + "x".repeat(20_000);
+        for (int f = 0; f < 600; f++) {
+            json.append(f == 0 ? "" : ",")
+                    .append("{\"filename\":\"f")
+                    .append(f)
+                    .append(".txt\",\"status\":\"added\",\"additions\":1,\"deletions\":0,\"patch\":\"")
+                    .append(patch)
+                    .append("\"}");
+        }
+        json.append("]");
+        assertTrue(json.length() > 11 * 1024 * 1024, "the fixture must exceed the capture limit");
+        Files.writeString(dir.resolve("big.files"), json);
+
+        CompletableFuture<GitHubService.PrFilesResult> got = new CompletableFuture<>();
+        service.prFiles(dir, 7, got::complete);
+        GitHubService.PrFilesResult res = got.get(60, TimeUnit.SECONDS);
+
+        assertTrue(res.ok(), res.error());
+        assertTrue(res.truncated(), "the review must be able to say the file list is incomplete");
+    }
+
+    /**
+     * G16: the status bar's checks poll and the repository lookup are background calls — they answer while
+     * the read lane is busy, do not hold up a list, and do not spin the busy indicator.
+     */
+    @Test
+    void lookupsNeitherWaitBehindAReadNorCountAsBusy() throws Exception {
+        AtomicInteger maxInFlight = new AtomicInteger();
+        FxTestSupport.runOnFx(() -> service.activeCallsProperty()
+                .addListener((o, was, now) -> maxInFlight.accumulateAndGet(now.intValue(), Math::max)));
+
+        CompletableFuture<GitHubService.BranchChecks> idle = new CompletableFuture<>();
+        service.branchChecks(dir, idle::complete);
+        assertTrue(idle.get(20, TimeUnit.SECONDS).ok());
+        FxTestSupport.drainFx();
+        assertEquals(0, maxInFlight.get(), "a background poll does not spin the indicator");
+        assertEquals(0, logged("pr list"));
+
+        Files.writeString(dir.resolve("pr.slow"), "1");
+        ProcessRunner.Cancellation slow = service.listPrs(dir, GitHubListQuery.open(50), res -> {});
+        awaitPid(1);
+        CompletableFuture<GitHubService.BranchChecks> checks = new CompletableFuture<>();
+        CompletableFuture<Object> repo = new CompletableFuture<>();
+        CompletableFuture<GitHubService.CreateContext> context = new CompletableFuture<>();
+        service.branchChecks(dir, checks::complete);
+        service.repoInfo(dir, repo::complete);
+        service.prCreateContext(dir, dir, context::complete);
+
+        GitHubService.BranchChecks answered = checks.get(20, TimeUnit.SECONDS);
+        assertEquals(7, answered.pr().number());
+        assertEquals(1, answered.runs().size(), "parsed although gh exits 8 while a check is pending");
+        assertNotNull(repo.get(20, TimeUnit.SECONDS), "the repository name did not wait for the list");
+        assertEquals(7, context.get(20, TimeUnit.SECONDS).existing().number(), "nor did the create-PR lookups");
 
         slow.cancel();
     }
