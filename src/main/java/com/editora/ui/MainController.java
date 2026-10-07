@@ -431,11 +431,12 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     public void startup(Path projectDir, List<OpenTarget> targets, String newFile) {
-        sessions.startup(projectDir, targets, newFile);
+        startup(projectDir, targets, newFile, false);
     }
 
     public void startup(Path projectDir, List<OpenTarget> targets, String newFile, boolean noSession) {
         sessions.startup(projectDir, targets, newFile, noSession);
+        recovery.offerLeftovers(); // unsaved edits a previous run did not get to close with (first window only)
     }
 
     public void startupDiffUi(Path left, Path right) {
@@ -447,7 +448,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Wrap the FXML-injected tab strip before anything reads tabs; every later access goes through this.
         this.editorArea = new EditorArea(tabPane);
         this.closes = new CloseCoordinator(
-                stage, editorArea, pinned, MainController::bufferOf, fileWorkflows, sessions::persistSession);
+                stage, editorArea, pinned, MainController::bufferOf, fileWorkflows, this::persistSessionForClose);
         stage.setOnCloseRequest(e -> {
             // Save/prompt this window's dirty buffers + persist its session; cancel the close if the
             // user backs out. (No separate "Quit?" prompt — each window closes independently now.)
@@ -791,6 +792,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         });
         setupMruTracking();
         windowCommands.registerCommands();
+        recovery.registerCommands(registry);
         setupToolbar();
         runConfigurations.refreshRunConfigs(); // populate the selector + register run.config.<slug> for the saved set
         setupRecentFiles();
@@ -1136,6 +1138,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.windowManager = windowManager;
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
+        recovery.attach(windowManager == null ? null : windowManager.recovery());
         projectPanel.setRoot(project == null ? null : Path.of(project.root()));
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
         searchCoordinator
@@ -1242,6 +1245,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Releases this window's resources on close: language servers, debug session, and worker threads. */
     void disposeWindow() {
         sessionClosed = true; // no further session writes from this window (see requestSave)
+        WindowDisposal.runAll(() -> recovery.dispose()); // stops copying; deletes nothing (see closedByUser)
         // Every step is isolated (WindowDisposal): one shutdown that throws used to skip all the later ones.
         WindowDisposal.runAll(() -> sessions.flushPendingMarks()); // while the buffers still hold their marks
         for (Tab tab : editorArea.tabs()) {
@@ -1900,6 +1904,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         if (b != null && added != selected) {
                             b.setRenderingActive(false);
                         }
+                        recovery.track(b); // unsaved text of this buffer is kept for crash recovery
                     }
                 }
                 // A pin reorder removes+re-adds the same tab, and so does moving one between editor groups
@@ -1925,6 +1930,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             logViewer.onBufferClosed(closed); // cancel tail-follow + drop per-buffer state
                             csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
                             httpClient.onBufferClosed(closed); // drop this buffer's HTTP response panel
+                            recovery.untrack(closed); // closed by choice: its recovery copy goes with it
                             closed.dispose();
                         } else {
                             // Tab.setOnClosed only fires for a click on the ✕ — never for a programmatic
@@ -5496,6 +5502,10 @@ public class MainController implements com.editora.mcp.McpBridge {
             });
 
     private final CoordinatorHost coordinatorHost = new Services();
+
+    /** Crash recovery for this window's unsaved buffers (see {@link RecoveryCoordinator}). */
+    private final RecoveryCoordinator recovery =
+            new RecoveryCoordinator(coordinatorHost, fileWorkflows, this::restorePerFileState, () -> projectKey);
 
     /** Implements {@link CoordinatorHost} by delegating to this controller's private helpers. */
     private final class Services implements CoordinatorHost {
@@ -9081,6 +9091,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     void persistSessionForClose() {
         sessions.persistSession();
+        recovery.closedByUser(); // every unsaved buffer was answered for: drop this window's recovery copies
     }
 
     /** Records the open files (in tab order) and their carets so the next launch can restore them. */

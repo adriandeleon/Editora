@@ -224,6 +224,26 @@ final class FileWorkflowCoordinator {
 
     /** UTF-16 buffers whose file had no byte-order mark, so a save does not add one. FX-thread only. */
     private final Set<EditorBuffer> bomlessUtf16 = Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /** The window this coordinator works in (crash recovery opens its buffers through the same operations). */
+    Host host() {
+        return host;
+    }
+
+    /** Whether a save of {@code buffer} writes a byte-order mark where its charset has one (crash recovery). */
+    boolean writesBom(EditorBuffer buffer) {
+        return !bomlessUtf16.contains(buffer);
+    }
+
+    /** Restores what {@link #writesBom} reported for a buffer that was not loaded from its file. */
+    void setWritesBom(EditorBuffer buffer, boolean bom) {
+        if (bom) {
+            bomlessUtf16.remove(buffer);
+        } else {
+            bomlessUtf16.add(buffer);
+        }
+    }
+
     /** Buffers the user agreed to save over a file that is read-only on disk, and that file. FX-thread only. */
     private final Map<EditorBuffer, Path> readOnlyOverwrites = new java.util.WeakHashMap<>();
     /** Buffers whose changed disk metadata is being compared by content off the FX thread. FX-thread only. */

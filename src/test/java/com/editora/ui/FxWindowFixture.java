@@ -28,6 +28,9 @@ final class FxWindowFixture implements AutoCloseable {
     final WindowManager windowManager;
     final MainController controller;
 
+    /** Set to leave the config directory in place on {@link #dispose()} — for a test that starts again on it. */
+    boolean keepConfigDir;
+
     private boolean disposed;
 
     private FxWindowFixture(Path configDir, SharedConfig shared, WindowManager wm, MainController controller) {
@@ -191,7 +194,14 @@ final class FxWindowFixture implements AutoCloseable {
             failure = combine(failure, e);
         }
         try {
-            deleteRecursively(configDir);
+            windowManager.recovery().close(); // its worker thread and session lock; a no-op if never used
+        } catch (RuntimeException e) {
+            failure = combine(failure, e);
+        }
+        try {
+            if (!keepConfigDir) {
+                deleteRecursively(configDir);
+            }
         } catch (IOException e) {
             failure = combine(failure, e);
         }

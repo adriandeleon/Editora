@@ -379,12 +379,29 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v108→109: crashRecovery is new — nothing else in the file changes, and it starts on. */
+    @Test
+    void theCrashRecoverySettingArrivesOnWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v108 = mapper.readTree("{\"schemaVersion\":108,\"localHistory\":false,\"autoSave\":\"afterDelay\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v108.deepCopy(), mapper);
+        assertEquals(109, out.get("schemaVersion").asInt());
+        assertFalse(out.get("localHistory").asBoolean());
+        assertEquals("afterDelay", out.get("autoSave").asText());
+        assertFalse(out.has("crashRecovery"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertTrue(loaded.isCrashRecovery(), "on for everyone who never chose");
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":109,\"crashRecovery\":false}");
+        assertFalse(
+                mapper.treeToValue(chosen, com.editora.config.Settings.class).isCrashRecovery());
+    }
+
     /** v107→108: debugProgramConsole is new — nothing else in the file changes, and it starts at its default. */
     @Test
     void theProgramConsoleSettingArrivesWithoutTouchingAnythingElse() throws Exception {
         JsonNode v107 = mapper.readTree("{\"schemaVersion\":107,\"debugSupport\":true,\"javaDebugPluginPath\":\"/x\"}");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v107.deepCopy(), mapper);
-        assertEquals(108, out.get("schemaVersion").asInt());
+        assertEquals(109, out.get("schemaVersion").asInt()); // the pipeline runs on to the current version
         assertTrue(out.get("debugSupport").asBoolean());
         assertEquals("/x", out.get("javaDebugPluginPath").asText());
         assertFalse(out.has("debugProgramConsole"), "left to the default");

@@ -37,6 +37,7 @@ Two serialization formats, chosen per file:
 | `search-history.json` | JSON | `SearchHistory` | Find-in-Files history. One shared instance. |
 | `agent-sessions.json` | JSON | `AgentSessionHistory` | AI Agent chat sessions. One shared instance. |
 | `dictionary.txt` | plain text | (in-memory `Set<String>`) | User spell-check words, one per line. |
+| `recovery/<session>/<buffer>.rec` | own format | `RecoveryRecord` | Unsaved buffer text for [crash recovery](crash-recovery.md); unversioned, per process. |
 
 On first launch after the format change, `SharedConfig.loadSettings()` converts a legacy
 `settings.toml` when `settings.json` is absent. It reads the TOML through the ordinary versioned
