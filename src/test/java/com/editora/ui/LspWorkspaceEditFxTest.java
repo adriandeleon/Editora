@@ -166,6 +166,27 @@ class LspWorkspaceEditFxTest {
             invalidated.add(file);
             onInvalidate.accept(file);
         }
+
+        /** What Local History was asked to keep, with the content each file had at that moment. */
+        final Map<Path, String> captured = new java.util.LinkedHashMap<>();
+
+        boolean captureSucceeds = true;
+        Path projectRoot;
+
+        @Override
+        public void captureBeforeDestruction(Path file, Consumer<Boolean> completion) {
+            try {
+                captured.put(file, Files.readString(file));
+            } catch (IOException e) {
+                captured.put(file, null);
+            }
+            completion.accept(captureSucceeds);
+        }
+
+        @Override
+        public Path lspProjectRoot() {
+            return projectRoot;
+        }
     }
 
     private static final class ManualExecutor implements Executor {
@@ -189,7 +210,7 @@ class LspWorkspaceEditFxTest {
 
     private static final class ThrowingEditorBuffer extends EditorBuffer {
         @Override
-        public void applyLspEdits(List<LspTextEdit> edits) {
+        public boolean applyLspEditsAtomically(List<LspTextEdit> edits) {
             throw new IllegalStateException("injected FX edit failure");
         }
     }
@@ -1131,5 +1152,336 @@ class LspWorkspaceEditFxTest {
                         Path.of("/p/C.java"),
                         Path.of("/p/D.java"),
                         Path.of("/p/E.java"))));
+    }
+
+    // --- data-loss review: E8, E18, E19, E20 ---------------------------------------------------------
+
+    private static WorkspaceEditMapper.Mapped deleting(Path... files) {
+        return new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(),
+                List.of(),
+                java.util.Arrays.stream(files)
+                        .map(file -> new WorkspaceEditMapper.FileDelete(file, true, false))
+                        .toList());
+    }
+
+    private List<String> hiddenStages() throws IOException {
+        try (var tree = Files.walk(root)) {
+            return tree.map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith(".editora-lsp-"))
+                    .toList();
+        }
+    }
+
+    /**
+     * E8. The dirty-buffer check ran once, before files were loaded and staged; a keystroke that landed in
+     * the delete target after it closed the tab with its unsaved text and removed the file.
+     */
+    @Test
+    void aDeleteTargetThatBecomesDirtyAfterThePreflightIsNotDeleted() throws Exception {
+        EditorBuffer victim = openBuffer("Victim.java", "saved line\n");
+        ManualExecutor executor = new ManualExecutor();
+        useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, executor);
+
+        CompletableFuture<Boolean> result = applyAsync(deleting(victim.getPath()));
+        FxTestSupport.runOnFx(() -> {
+            executor.runNext(); // stage the delete; the finish is now queued behind this FX turn…
+            victim.getArea().insertText(0, "UNSAVED WORK "); // …and so is a keystroke already in the queue
+        });
+        FxTestSupport.drainFx();
+        assertFalse(result.isDone(), "the refusal is reported only after the staged file is back");
+        executor.runNext(); // rollback
+        FxTestSupport.drainFx();
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("saved line\n", Files.readString(victim.getPath()), "the file is back where it was");
+        assertTrue(ops.deleted.isEmpty(), "the tab must not be closed");
+        assertEquals("UNSAVED WORK saved line\n", FxTestSupport.callOnFx(victim::getContent));
+        assertTrue(host.error != null && host.error.contains("Victim.java"), "the user is told why: " + host.error);
+        assertEquals(List.of(), hiddenStages());
+    }
+
+    /** E8, the same race for a buffer under a deleted folder and for an overwritten create target. */
+    @Test
+    void aBufferUnderADeletedFolderThatBecomesDirtyAfterThePreflightBlocksTheEdit() throws Exception {
+        Files.createDirectories(root.resolve("pkg"));
+        EditorBuffer inside = openBuffer("pkg/Inside.java", "class Inside {}\n");
+        ManualExecutor executor = new ManualExecutor();
+        useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, executor);
+
+        CompletableFuture<Boolean> result = applyAsync(deleting(root.resolve("pkg")));
+        executor.runNext(); // list the folder for Local History
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> {
+            executor.runNext(); // stage
+            inside.getArea().insertText(0, "// typed\n");
+        });
+        FxTestSupport.drainFx();
+        executor.runNext(); // rollback
+        FxTestSupport.drainFx();
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("class Inside {}\n", Files.readString(inside.getPath()));
+        assertTrue(ops.deleted.isEmpty());
+    }
+
+    /** E19. One edit that cannot be placed used to be skipped while the rest was applied and reported done. */
+    @Test
+    void anEditThatCannotBePlacedAppliesNothingAnywhere() throws Exception {
+        String firstOriginal = "class First {}\n";
+        EditorBuffer first = openBuffer("First.java", firstOriginal);
+        EditorBuffer second = openBuffer("Second.java", "abcdef\n");
+        Path created = root.resolve("MustNotSurvive.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(
+                        new WorkspaceEditMapper.FileEdit(
+                                first.getPath(), List.of(new LspTextEdit(0, 6, 0, 11, "Changed")), null, firstOriginal),
+                        new WorkspaceEditMapper.FileEdit(
+                                second.getPath(),
+                                List.of(new LspTextEdit(0, 0, 0, 3, "X"), new LspTextEdit(0, 2, 0, 4, "Y")),
+                                null,
+                                "abcdef\n")),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(created, false, false)),
+                List.of());
+
+        CompletableFuture<Boolean> result = applyAsync(mapped);
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(firstOriginal, FxTestSupport.callOnFx(first::getContent), "the valid file is not edited either");
+        assertFalse(FxTestSupport.callOnFx(first::isDirty));
+        assertEquals("abcdef\n", FxTestSupport.callOnFx(second::getContent));
+        assertFalse(Files.exists(created), "the staged create is rolled back");
+        assertTrue(host.error != null && host.error.contains("Second.java"), "the user is told which: " + host.error);
+
+        assertFalse(FxTestSupport.callOnFx(() -> coordinator.applyWorkspaceEdits(mapped)), "the direct path too");
+        assertEquals(firstOriginal, FxTestSupport.callOnFx(first::getContent));
+    }
+
+    /** E18. A code action that deletes a folder or replaces a file is applied only after the user agreed. */
+    @Test
+    void anUnpreviewedDestructiveEditAsksFirstAndIsNotAppliedWhenDeclined() throws Exception {
+        Path folder = Files.createDirectories(root.resolve("pkg"));
+        Path inside = Files.writeString(folder.resolve("Inside.java"), "class Inside {}\n");
+        Path existing = Files.writeString(root.resolve("Existing.java"), "precious existing content\n");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(existing, true, false)),
+                List.of(new WorkspaceEditMapper.FileDelete(folder, true, false)));
+        List<List<com.editora.lsp.WorkspaceEditHazards.Hazard>> asked = new ArrayList<>();
+        AtomicReference<Boolean> answer = new AtomicReference<>(false);
+        FxTestSupport.runOnFx(() -> coordinator.destructiveEditConfirmer = hazards -> {
+            asked.add(hazards);
+            return answer.get();
+        });
+
+        CompletableFuture<Boolean> declined = new CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsConfirmed(mapped, declined::complete));
+
+        assertFalse(declined.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals(1, asked.size());
+        assertEquals(
+                List.of(folder, existing),
+                asked.get(0).stream()
+                        .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
+                        .toList(),
+                "the question names every path that would be lost");
+        assertEquals("class Inside {}\n", Files.readString(inside));
+        assertEquals("precious existing content\n", Files.readString(existing));
+        assertTrue(ops.captured.isEmpty());
+
+        answer.set(true);
+        CompletableFuture<Boolean> accepted = new CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsConfirmed(mapped, accepted::complete));
+
+        assertTrue(accepted.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(Files.exists(folder));
+        assertEquals("", Files.readString(existing));
+        // E18: what the edit destroyed was copied to Local History while it still had its content.
+        assertEquals("class Inside {}\n", ops.captured.get(inside));
+        assertEquals("precious existing content\n", ops.captured.get(existing));
+    }
+
+    @Test
+    void anEditThatDestroysNothingIsNotAskedAbout() throws Exception {
+        Path old = Files.writeString(root.resolve("Old.java"), "old");
+        Path fresh = root.resolve("Fresh.java");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileCreate(fresh, true, false)), // nothing there to replace
+                List.of(new WorkspaceEditMapper.FileDelete(old, false, false))); // one file: captured, not asked
+        FxTestSupport.runOnFx(() -> coordinator.destructiveEditConfirmer = hazards -> {
+            throw new AssertionError("must not ask: " + hazards);
+        });
+
+        CompletableFuture<Boolean> result = new CompletableFuture<>();
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsConfirmed(mapped, result::complete));
+
+        assertTrue(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertFalse(Files.exists(old));
+        assertEquals(Map.of(old, "old"), ops.captured, "the deleted file is in Local History");
+    }
+
+    /** E18. With history on, a file whose copy could not be kept is not deleted. */
+    @Test
+    void aFailedLocalHistoryCopyRefusesTheEdit() throws Exception {
+        Path old = Files.writeString(root.resolve("Old.java"), "only copy");
+        ops.captureSucceeds = false;
+
+        CompletableFuture<Boolean> result = applyAsync(deleting(old));
+
+        assertFalse(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertEquals("only copy", Files.readString(old));
+        assertTrue(host.error != null && host.error.contains("Old.java"), host.error);
+    }
+
+    /** E18, the reviewer's probe: unticking a file kept it in a folder the same edit then deleted. */
+    @Test
+    void aPreviewedRenameIsRefusedWhenATickedDeleteWouldRemoveAnUntickedFile() throws Exception {
+        Path p = Files.createDirectories(root.resolve("p"));
+        Path q = root.resolve("q");
+        Path a = Files.writeString(p.resolve("A.java"), "class A {}\n");
+        Path b = Files.writeString(p.resolve("B.java"), "class B { /* the user unticked this file */ }\n");
+        Path existing = Files.writeString(root.resolve("Existing.java"), "precious existing content\n");
+        var mapped = new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(
+                        new WorkspaceEditMapper.FileRename(a, q.resolve("A.java"), false),
+                        new WorkspaceEditMapper.FileRename(b, q.resolve("B.java"), false)),
+                List.of(new WorkspaceEditMapper.FileCreate(existing, true, false)),
+                List.of(new WorkspaceEditMapper.FileDelete(p, true, false)));
+        java.util.Set<Path> listed = new java.util.LinkedHashSet<>(List.of(a, b, p, existing));
+
+        FxTestSupport.runOnFx(() -> coordinator.applyPreviewed(mapped, java.util.Set.of(a, p, existing), listed, "q"));
+        FxTestSupport.drainFx();
+
+        assertEquals("class B { /* the user unticked this file */ }\n", Files.readString(b));
+        assertTrue(Files.exists(a), "nothing of the edit is applied");
+        assertEquals("precious existing content\n", Files.readString(existing));
+        assertTrue(host.error != null && host.error.contains("B.java"), host.error);
+
+        // Unticking the delete and the overwrite as well leaves a plain move of A.
+        CompletableFuture<Boolean> moved = new CompletableFuture<>();
+        var onlyA = com.editora.lsp.RenamePreview.filter(mapped, java.util.Set.of(a), listed);
+        FxTestSupport.runOnFx(() -> coordinator.applyWorkspaceEditsAsync(onlyA, moved::complete));
+        assertTrue(moved.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        assertTrue(Files.exists(q.resolve("A.java")));
+        assertTrue(Files.exists(b));
+        assertEquals("precious existing content\n", Files.readString(existing));
+    }
+
+    @Test
+    void previewRowsSpellOutDeletesAndReplacements() throws Exception {
+        Path p = Files.createDirectories(root.resolve("p"));
+        Path existing = Files.writeString(root.resolve("Existing.java"), "x");
+        var deleted = new com.editora.lsp.RenamePreview.FileChange(
+                p, 0, null, com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY, false);
+        var replaced = new com.editora.lsp.RenamePreview.FileChange(existing, 0, null, null, true);
+
+        assertTrue(coordinator.previewLabel(deleted).contains("deleted"), coordinator.previewLabel(deleted));
+        assertTrue(coordinator.previewLabel(replaced).contains("replaces"), coordinator.previewLabel(replaced));
+    }
+
+    /** E20. A finished transaction leaves no journal; one that could not roll back keeps it for recovery. */
+    @Test
+    void theJournalLivesExactlyAsLongAsFilesAreStaged() throws Exception {
+        Path journals = root.resolve("journals");
+        Path old = Files.writeString(root.resolve("Old.java"), "old");
+        ManualExecutor executor = new ManualExecutor();
+        useControlledCoordinator(LspCoordinator.WorkspaceFileOperations.SYSTEM, executor);
+        FxTestSupport.runOnFx(() -> coordinator.workspaceEditJournalDir = journals);
+
+        CompletableFuture<Boolean> result = applyAsync(deleting(old));
+        executor.runNext(); // stage
+        try (var files = Files.list(journals)) {
+            assertEquals(1, files.count(), "a journal exists while the file is moved aside");
+        }
+        assertEquals(1, hiddenStages().size());
+        assertEquals(
+                List.of(),
+                com.editora.lsp.WorkspaceEditJournal.pending(journals),
+                "a transaction still running is not offered for recovery");
+        FxTestSupport.drainFx();
+        executor.runNext(); // commit
+        assertTrue(result.get(10, java.util.concurrent.TimeUnit.SECONDS));
+
+        try (var files = Files.list(journals)) {
+            assertEquals(0, files.count(), "the journal goes with the staged file");
+        }
+        assertEquals(List.of(), hiddenStages());
+    }
+
+    /** E20. Files an interrupted transaction left staged are offered at the next project open, and restored. */
+    @Test
+    void anInterruptedTransactionIsOfferedAndRestoredWhenItsProjectOpens() throws Exception {
+        Path journals = root.resolve("journals");
+        Path project = Files.createDirectories(root.resolve("project"));
+        Path lost = Files.writeString(project.resolve("Lost.java"), "class Lost {}\n");
+        Path stage = project.resolve(".editora-lsp-123.deleted");
+        var journal = com.editora.lsp.WorkspaceEditJournal.begin(journals);
+        journal.deleting(lost, stage);
+        Files.move(lost, stage);
+        journal.abandon(); // the process died here
+
+        List<List<Path>> offered = new ArrayList<>();
+        ops.projectRoot = root.resolve("another-project");
+        FxTestSupport.runOnFx(() -> {
+            coordinator.workspaceEditJournalDir = journals;
+            coordinator.interruptedEditPrompt = interrupted -> {
+                offered.add(interrupted.originals());
+                return LspCoordinator.InterruptedEditChoice.RESTORE;
+            };
+            coordinator.offerInterruptedEdits();
+        });
+        Thread.sleep(300);
+        FxTestSupport.drainFx();
+        assertTrue(offered.isEmpty(), "another project's leftovers are not this window's to offer");
+        assertTrue(Files.exists(stage), "and nothing is touched without being asked");
+
+        ops.projectRoot = project;
+        FxTestSupport.runOnFx(() -> coordinator.offerInterruptedEdits());
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (!Files.exists(lost) && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+            FxTestSupport.drainFx();
+        }
+
+        assertEquals(List.of(List.of(lost)), offered);
+        assertEquals("class Lost {}\n", Files.readString(lost));
+        assertFalse(Files.exists(stage));
+    }
+
+    @Test
+    void decliningARecoveryLeavesEveryFileWhereItIs() throws Exception {
+        Path journals = root.resolve("journals");
+        Path project = Files.createDirectories(root.resolve("project"));
+        Path lost = Files.writeString(project.resolve("Lost.java"), "class Lost {}\n");
+        Path stage = project.resolve(".editora-lsp-456.deleted");
+        var journal = com.editora.lsp.WorkspaceEditJournal.begin(journals);
+        journal.deleting(lost, stage);
+        Files.move(lost, stage);
+        journal.abandon();
+        CompletableFuture<Boolean> asked = new CompletableFuture<>();
+        ops.projectRoot = project;
+
+        FxTestSupport.runOnFx(() -> {
+            coordinator.workspaceEditJournalDir = journals;
+            coordinator.interruptedEditPrompt = interrupted -> {
+                asked.complete(true);
+                return LspCoordinator.InterruptedEditChoice.LATER;
+            };
+            coordinator.offerInterruptedEdits();
+        });
+
+        assertTrue(asked.get(10, java.util.concurrent.TimeUnit.SECONDS));
+        FxTestSupport.drainFx();
+        assertEquals("class Lost {}\n", Files.readString(stage));
+        assertFalse(Files.exists(lost));
+        try (var files = Files.list(journals)) {
+            assertEquals(1, files.count(), "\"not now\" keeps the journal for the next project open");
+        }
     }
 }

@@ -6858,6 +6858,12 @@ public class MainController implements com.editora.mcp.McpBridge {
                 }
 
                 @Override
+                public void captureBeforeDestruction(Path file, java.util.function.Consumer<Boolean> completion) {
+                    historyCoordinator.captureBeforeDeleteDurably(
+                            file, capture -> completion.accept(capture.durable()));
+                }
+
+                @Override
                 public void setStatusBarLsp(String label) {
                     statusBar.setLsp(label);
                 }
