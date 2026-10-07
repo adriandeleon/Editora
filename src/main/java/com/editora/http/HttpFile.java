@@ -47,7 +47,7 @@ public final class HttpFile {
      * One request: its 0-based {@code startLine} (the method/URL line — where the ▶ goes) through
      * {@code endLine} (the last non-blank line of its section), the {@code method} (defaulting to
      * {@code GET} when omitted), the raw {@code url} (may contain {@code {{vars}}}), an optional
-     * {@code name} (from a {@code ### name} separator or a {@code # @name x} comment), the per-request
+     * {@code name} (a {@code # @name x} comment, else the {@code ### name} separator label), the per-request
      * {@code directives}, and the raw {@code block} text (the request, from start to end line).
      */
     public record Request(
@@ -72,6 +72,7 @@ public final class HttpFile {
             while (sectionEnd < n && !isSeparator(lines[sectionEnd])) {
                 sectionEnd++;
             }
+            String referenceName = null;
             int reqLine = -1;
             for (int k = i; k < sectionEnd; k++) {
                 String t = lines[k].strip();
@@ -80,8 +81,8 @@ public final class HttpFile {
                 }
                 if (isComment(t)) {
                     String cn = commentName(t);
-                    if (cn != null && name == null) {
-                        name = cn;
+                    if (cn != null && referenceName == null) {
+                        referenceName = cn;
                     }
                     continue;
                 }
@@ -95,6 +96,9 @@ public final class HttpFile {
                 int last = sectionEnd - 1;
                 while (last > reqLine && lines[last].strip().isEmpty()) {
                     last--;
+                }
+                if (referenceName != null) {
+                    name = referenceName; // @name is what {{name.response…}} refers to, whatever the title says
                 }
                 String[] mu = methodUrl(lines[reqLine]);
                 Directives directives = directivesOf(lines, i, sectionEnd);
@@ -324,6 +328,7 @@ public final class HttpFile {
         return line.stripLeading().startsWith("###");
     }
 
+    /** The label after {@code ###}, or null for a bare separator. */
     private static String separatorName(String line) {
         String s = line.stripLeading();
         s = s.substring(3); // drop "###"
@@ -331,7 +336,8 @@ public final class HttpFile {
         while (s.startsWith("#")) {
             s = s.substring(1);
         }
-        return s.strip();
+        s = s.strip();
+        return s.isEmpty() ? null : s;
     }
 
     private static boolean isComment(String stripped) {

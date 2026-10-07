@@ -162,6 +162,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In an `.http` / `.rest` file, a `# @name x` comment now names the request wherever it appears. After a
+  `###` separator, with or without a title, it was ignored, so `{{x.response.body.$.id}}` in a later
+  request resolved to nothing unless the named request was the first in the file. A request with a
+  `### Title` and no `@name` can still be referred to by its title.
 - GitHub: being offline when Editora starts no longer disables the integration for the session as "not
   authenticated". A missing or signed-out `gh` is checked again when a command needs it, and a rejected
   token is reported as such.
