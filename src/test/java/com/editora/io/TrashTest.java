@@ -56,6 +56,9 @@ class TrashTest {
     }
 
     @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(
+            value = org.junit.jupiter.api.condition.OS.WINDOWS,
+            disabledReason = "the FreeDesktop trash records POSIX paths")
     void aSecondFileOfTheSameNameNeverReplacesTheOneAlreadyInTheTrash() throws Exception {
         Path trash = dir.resolve("Trash");
         Trash.Bin bin = Trash.freedesktop(trash, null);

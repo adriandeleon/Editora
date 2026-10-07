@@ -116,6 +116,9 @@ class ElevatedSaveTest {
     }
 
     @Test
+    @org.junit.jupiter.api.condition.DisabledOnOs(
+            value = org.junit.jupiter.api.condition.OS.WINDOWS,
+            disabledReason = "pkexec and osascript paths; a quote is not a legal Windows path character")
     void bothLaunchersRunTheSameScriptWithThePathsAsArguments() {
         Path source = Path.of("/tmp/it's a $source.tmp");
         Path target = Path.of("/etc/odd \"name\"");

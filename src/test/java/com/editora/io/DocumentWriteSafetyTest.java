@@ -105,6 +105,8 @@ class DocumentWriteSafetyTest {
 
     @Test
     void aNamedPipeIsNotReplacedByARegularFile() throws Exception {
+        Assumptions.assumeTrue(
+                Files.getFileStore(dir).supportsFileAttributeView("unix"), "no named pipes on this file system");
         Path fifo = dir.resolve("pipe");
         try {
             Process mkfifo = new ProcessBuilder("mkfifo", fifo.toString()).start();
@@ -227,6 +229,9 @@ class DocumentWriteSafetyTest {
     // --- S2: an interrupted in-place write -------------------------------------------------------------
 
     private Path hardLinked(String content) throws IOException {
+        // A second name is only detected (and the file then written in place) where link counts are readable.
+        Assumptions.assumeTrue(
+                Files.getFileStore(dir).supportsFileAttributeView("unix"), "no link counts on this file system");
         Path file = dir.resolve("hard.txt");
         Files.writeString(file, content);
         try {
@@ -312,7 +317,7 @@ class DocumentWriteSafetyTest {
                 backups);
 
         assertEquals(1, during.size());
-        assertEquals(file.toRealPath().toString(), during.get(0).target());
+        assertEquals(file.toRealPath(), Path.of(during.get(0).target()).toRealPath());
         assertArrayEquals(bytes("previous contents\n"), held[0]);
         assertEquals(List.of(), SaveBackups.scan(backups), "nothing is left once the write is done");
         try (var left = Files.list(backups)) {
