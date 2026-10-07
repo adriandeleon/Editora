@@ -829,7 +829,7 @@ final class EditingCoordinator {
         if (edit == null) {
             return;
         }
-        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
         area.moveTo(edit.caret());
         area.requestFocus();
     }
@@ -889,7 +889,7 @@ final class EditingCoordinator {
             boolean caretFirst = area.getCaretPosition() == start;
             buffer.getFoldManager().expandHeaderAt(start);
             buffer.getFoldManager().expandHeaderAt(end);
-            area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+            area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
             area.selectRange(
                     caretFirst ? edit.selEnd() : edit.selStart(), caretFirst ? edit.selStart() : edit.selEnd());
             area.requestFocus();
@@ -902,7 +902,7 @@ final class EditingCoordinator {
         // The duplicate/moved block ends up expanded: its copy would otherwise be inserted into the hidden
         // run (and the caret with it).
         buffer.getFoldManager().expandHeaderAt(area.getCaretPosition());
-        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
         area.moveTo(edit.caret());
         area.requestFocus();
     }
@@ -1027,7 +1027,7 @@ final class EditingCoordinator {
         }
         boolean merge = continuesPreviousKill(buffer, area.getCaretPosition()); // decide before the edit
         String killed = area.getText(edit.from(), edit.to());
-        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
         area.moveTo(edit.caret());
         pushKill(buffer, area, killed, dir, merge);
         deactivateMark();
