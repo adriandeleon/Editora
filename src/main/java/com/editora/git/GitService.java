@@ -1842,6 +1842,33 @@ public final class GitService {
     }
 
     /**
+     * The messages of the commits on {@code HEAD} that {@code base} does not have ({@code git log
+     * base..HEAD}), newest first, at most {@code max} — what a pull request from this branch would contain.
+     * Each is {@code {subject, body}}. Empty when {@code base} is not a safe revision or git fails.
+     */
+    public void commitMessagesSince(Path root, String base, int max, Consumer<List<String[]>> onResult) {
+        submit(exec, () -> {
+            List<String[]> commits = new ArrayList<>();
+            String range = base + "..HEAD";
+            if (gitAvailable() && root != null && base != null && !base.isBlank() && GitSafety.isSafeRevision(range)) {
+                List<String> args = new ArrayList<>(
+                        List.of("log", "--no-color", "--max-count=" + Math.max(1, max), "--format=%s%x00%b%x1e"));
+                args.addAll(GitSafety.revisionArgs(endOfOptions, range));
+                ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
+                if (r.ok()) {
+                    for (String record : r.out().split("\036")) {
+                        String[] parts = record.strip().split("\0", 2);
+                        if (!parts[0].isBlank()) {
+                            commits.add(new String[] {parts[0].strip(), parts.length > 1 ? parts[1].strip() : ""});
+                        }
+                    }
+                }
+            }
+            Platform.runLater(() -> onResult.accept(commits));
+        });
+    }
+
+    /**
      * Lists the files that differ between two revisions ({@code git diff --name-status <left> <right>}) — the
      * ref↔ref form of {@link #workingTreeDiff}, with the same result type, limit and disabled rename
      * detection, so one review surface serves both.

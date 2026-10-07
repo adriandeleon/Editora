@@ -408,11 +408,13 @@ final class GitWindowCoordinator {
     void fetchGithub(GitHubPanel.Mode mode) {
         GitHubPanel panel = host.githubPanel();
         java.util.function.Consumer<String> failed = message -> panel.showError(mode, message);
+        com.editora.github.GitHubListQuery query = panel.query(mode); // state / mine / how many rows
         switch (mode) {
-            case PRS -> host.github().fetchPrs(panel::setPrs, failed);
-            case ISSUES -> host.github().fetchIssues(panel::setIssues, failed);
-            case RUNS -> host.github().fetchRuns(panel::setRuns, failed);
+            case PRS -> host.github().fetchPrs(query, page -> panel.setPrs(page.items(), page.more()), failed);
+            case ISSUES -> host.github().fetchIssues(query, page -> panel.setIssues(page.items(), page.more()), failed);
+            case RUNS -> host.github().fetchRuns(query, page -> panel.setRuns(page.items(), page.more()), failed);
         }
+        host.github().resolvedRepository(panel::setRepository); // whose rows these are (cached per repository)
     }
 
     /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */

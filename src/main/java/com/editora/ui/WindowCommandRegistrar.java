@@ -2100,15 +2100,17 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("github.createPr", host.github()::createPr));
         host.registry().register(Command.of("github.submitReview", host.github()::submitReviewPicked));
         host.registry().register(Command.of("github.openOnGitHub", host.github()::openOnGitHub));
-        host.registry()
-                .register(Command.of(
-                        "github.showRuns",
-                        () -> host.github().ifEnabled(() -> {
-                            host.toolWindows().open(host.githubToolWindow());
-                            host.githubPanel().selectRuns();
-                            host.gitWindows().fetchGithub(GitHubPanel.Mode.RUNS);
-                        })));
+        host.registry().register(Command.of("github.showPrs", () -> showGithubSegment(GitHubPanel.Mode.PRS)));
+        host.registry().register(Command.of("github.showIssues", () -> showGithubSegment(GitHubPanel.Mode.ISSUES)));
+        host.registry().register(Command.of("github.showRuns", () -> showGithubSegment(GitHubPanel.Mode.RUNS)));
         host.registry().register(Command.of("github.viewRunLog", host.github()::viewRunLogPicked));
+        // The run actions of the tool window's row menu, on the selected row (never on a hidden selection).
+        host.registry().register(Command.of("github.rerunRun", () -> onGithubRow(GitHubPanel.RowAction.RERUN)));
+        host.registry()
+                .register(Command.of("github.rerunFailedJobs", () -> onGithubRow(GitHubPanel.RowAction.RERUN_FAILED)));
+        host.registry().register(Command.of("github.cancelRun", () -> onGithubRow(GitHubPanel.RowAction.CANCEL)));
+        host.registry().register(Command.of("github.copyUrl", () -> onGithubRow(GitHubPanel.RowAction.COPY_URL)));
+        host.registry().register(Command.of("github.showChecks", host.github()::showChecks));
         host.registry().register(Command.of("github.refresh", host.github()::refresh));
         host.registry().register(Command.of("view.toggleGithub", host.github()::toggleSupport));
         host.registry()
@@ -2696,5 +2698,32 @@ final class WindowCommandRegistrar {
         commands.put("git.worktrees", branches::manageWorktrees);
         commands.forEach((id, action) ->
                 host.registry().register(Command.of(id, () -> host.git().ifEnabled(action))));
+    }
+
+    /** Opens the GitHub tool window on {@code mode}'s segment (the {@code github.show*} commands). */
+    private void showGithubSegment(GitHubPanel.Mode mode) {
+        host.github().ifEnabled(() -> {
+            host.toolWindows().open(host.githubToolWindow(), true);
+            host.githubPanel().select(mode);
+            host.gitWindows().fetchGithub(mode);
+        });
+    }
+
+    /**
+     * Runs a palette command on the GitHub tool window's selected row. With the window closed it is opened
+     * instead and the user asked to choose — a command must not act on a selection nobody can see.
+     */
+    private void onGithubRow(GitHubPanel.RowAction action) {
+        host.github().ifEnabled(() -> {
+            GitHubPanel panel = host.githubPanel();
+            GitHubPanel.RowAnswer answer =
+                    panel.rowAnswer(action, host.toolWindows().isOpen(host.githubToolWindow()));
+            if (answer == GitHubPanel.RowAnswer.RUN) {
+                panel.perform(action);
+                return;
+            }
+            host.toolWindows().open(host.githubToolWindow(), true); // opening it loads the list
+            host.setStatus(tr(answer.messageKey()));
+        });
     }
 }

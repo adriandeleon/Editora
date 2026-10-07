@@ -63,9 +63,12 @@ public final class StatusBar extends HBox {
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
     /** Git branch + ahead/behind, "No VCS" outside a repository, "Git off" when disabled; opens the dropdown. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
-    /** GitHub PR CI checks roll-up (✓/✗/○ + fail count); clickable → refresh. Hidden unless the current
-     *  branch has a PR with checks. */
-    private final Label githubChecks = segment("github.refresh", tr("statusbar.tip.githubChecks"));
+    /** The node id of the checks segment — the checks list card anchors itself to it. */
+    static final String GITHUB_CHECKS_ID = "status-github-checks";
+
+    /** GitHub PR CI checks roll-up (✓/✗/○ + PR number + counts); clickable → the list of checks. Hidden
+     *  unless the current branch has a PR with checks. */
+    private final Label githubChecks = segment("github.showChecks", tr("statusbar.tip.githubChecks"));
     /** Active language server for the current file (e.g. "LSP: jdtls"); clickable → Problems. Hidden when
      *  the active buffer isn't served by LSP. */
     private final Label lsp = segment("tool.problems", tr("statusbar.tip.lsp"));
@@ -198,6 +201,7 @@ public final class StatusBar extends HBox {
         git.setText(tr("statusbar.noVcs")); // always shown; updated by setGitBranch
 
         githubChecks.getStyleClass().add("status-git");
+        githubChecks.setId(GITHUB_CHECKS_ID);
         githubChecks.setVisible(false); // shown only when the current branch's PR has checks
         githubChecks.setManaged(false);
 
@@ -582,27 +586,59 @@ public final class StatusBar extends HBox {
     }
 
     /**
-     * Updates the GitHub PR CI-checks roll-up ({@code ✓/✗/○} + fail count). A {@code null} summary (or one with
-     * no meaningful runs) hides the segment; otherwise it shows the overall status. Hidden in Simple UI mode.
+     * Updates the GitHub PR CI-checks roll-up. A {@code null} summary (or one with no meaningful runs) hides
+     * the segment; otherwise it shows the overall status. Hidden in Simple UI mode.
      */
     public void setGitHubChecks(com.editora.github.ChecksParser.ChecksSummary summary) {
+        setGitHubChecks(0, summary);
+    }
+
+    /**
+     * As {@link #setGitHubChecks(com.editora.github.ChecksParser.ChecksSummary)}, naming the pull request the
+     * checks belong to ({@code prNumber <= 0}: unknown, not shown) — the branch name beside it does not say
+     * which pull request that is. The tooltip carries the full roll-up.
+     */
+    public void setGitHubChecks(int prNumber, com.editora.github.ChecksParser.ChecksSummary summary) {
         githubChecksSummary =
                 summary == null || summary.overall() == com.editora.github.ChecksParser.Overall.NONE ? null : summary;
         if (githubChecksSummary != null) {
-            String glyph =
-                    switch (githubChecksSummary.overall()) {
-                        case PASS -> "✓"; // ✓
-                        case FAIL -> "✗"; // ✗
-                        case PENDING -> "○"; // ○
-                        case NONE -> "";
-                    };
-            String text = glyph + " " + tr("statusbar.checks");
-            if (githubChecksSummary.fail() > 0) {
-                text += " " + githubChecksSummary.fail();
-            }
-            githubChecks.setText(text);
+            githubChecks.setText(checksText(prNumber, githubChecksSummary, tr("statusbar.checks")));
+            githubChecks
+                    .getTooltip()
+                    .setText(tr(
+                            "statusbar.tip.githubChecksRollup",
+                            summary.pass(),
+                            summary.fail(),
+                            summary.pending(),
+                            summary.skipped()));
         }
         applyChecksVisibility();
+    }
+
+    /**
+     * The segment's text: {@code ✓ #12 Checks}, {@code ✗ #12 Checks 2} (how many failed) or
+     * {@code ○ #12 Checks 5/9} (how many of the checks that will run have finished). Pure.
+     */
+    static String checksText(int prNumber, com.editora.github.ChecksParser.ChecksSummary summary, String word) {
+        String glyph =
+                switch (summary.overall()) {
+                    case PASS -> "✓"; // ✓
+                    case FAIL -> "✗"; // ✗
+                    case PENDING -> "○"; // ○
+                    case NONE -> "";
+                };
+        StringBuilder text = new StringBuilder(glyph);
+        if (prNumber > 0) {
+            text.append(" #").append(prNumber);
+        }
+        text.append(' ').append(word);
+        if (summary.fail() > 0) {
+            text.append(' ').append(summary.fail());
+        } else if (summary.pending() > 0) {
+            int done = summary.pass();
+            text.append(' ').append(done).append('/').append(done + summary.pending());
+        }
+        return text.toString();
     }
 
     private void applyChecksVisibility() {

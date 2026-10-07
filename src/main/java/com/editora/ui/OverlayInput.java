@@ -22,7 +22,8 @@ import static com.editora.i18n.Messages.tr;
  * keyboard-friendly replacement for a {@link javafx.scene.control.Dialog} / {@link javafx.scene.control.TextInputDialog}
  * (which open a separate native window that, on Windows, doesn't reliably take OS keyboard focus). The
  * caller builds the form body (labels + fields) and reads the field values inside {@code onAccept}, which
- * runs <em>after</em> the card hides (so focus is already back in the editor). {@code Esc} or the keymap's
+ * runs <em>after</em> the card hides (so focus is already back in the editor) — or, for an action that can
+ * fail slowly, {@link #showSubmitting} keeps the card open until the action reports its outcome. {@code Esc} or the keymap's
  * cancel chord cancels (handled by the {@link OverlayHost}, which also keeps Tab inside the card);
  * {@code Enter} (or {@code Ctrl/Cmd+Enter} for a multi-line body) accepts — unless a button has the focus,
  * in which case Enter activates that button (see {@link #onEnter}).
@@ -73,13 +74,50 @@ public final class OverlayInput {
     }
 
     /**
+     * The outcome of a form shown with {@link #showSubmitting}: the form stays on screen — its fields
+     * disabled, a progress indicator beside the buttons — until the caller reports how the work it started
+     * ended. Both methods must be called on the FX thread, and one of them exactly once per submit.
+     */
+    public interface Submission {
+        /** The work succeeded: the form closes. */
+        void done();
+
+        /**
+         * The work failed: the form is editable again with everything the user typed still in it and
+         * {@code message} shown above the buttons. A form the user dismissed while it was busy is shown again,
+         * so a failure never costs the text.
+         */
+        void failed(String message);
+    }
+
+    /**
+     * Shows an input form card that stays open while its action runs — for an action that can fail after
+     * seconds (a network call), where closing first would throw the typed text away. Everything else is as
+     * {@link #show(OverlayHost, String, Node, Node, String, ObservableValue, Runnable, Extra, boolean)}.
+     *
+     * @param onSubmit run when the user accepts; it must eventually call exactly one {@link Submission} method
+     */
+    public static void showSubmitting(
+            OverlayHost host,
+            String title,
+            Node body,
+            Node focus,
+            String okLabel,
+            ObservableValue<? extends Boolean> okEnabled,
+            java.util.function.Consumer<Submission> onSubmit,
+            boolean ctrlEnterToSubmit) {
+        show(host, title, body, focus, okLabel, okEnabled, null, onSubmit, null, ctrlEnterToSubmit, false);
+    }
+
+    /**
      * Shows an input form card.
      *
      * @param host               the shared overlay host
      * @param title              card title (shown bold/muted at the top)
      * @param body               the caller-built form body (labels + fields); fills the card width
      * @param focus              the field to focus on show (a {@link TextField} is select-all'd, a
-     *                           {@link TextArea} gets the caret at the end)
+     *                           {@link TextArea} gets the caret at the end); {@code null} for a card with
+     *                           no field — a message and its buttons — where the primary button gets it
      * @param okLabel            text for the primary (accept) button
      * @param okEnabled          nullable; when set, the primary button is enabled only while it is true
      * @param onAccept           run when the user accepts (after the card hides)
@@ -113,6 +151,22 @@ public final class OverlayInput {
             Extra extra,
             boolean ctrlEnterToSubmit,
             boolean centered) {
+        show(host, title, body, focus, okLabel, okEnabled, onAccept, null, extra, ctrlEnterToSubmit, centered);
+    }
+
+    /** The one builder: {@code onSubmit} non-null selects the stay-open mode of {@link #showSubmitting}. */
+    private static void show(
+            OverlayHost host,
+            String title,
+            Node body,
+            Node focus,
+            String okLabel,
+            ObservableValue<? extends Boolean> okEnabled,
+            Runnable onAccept,
+            java.util.function.Consumer<Submission> onSubmit,
+            Extra extra,
+            boolean ctrlEnterToSubmit,
+            boolean centered) {
         if (host == null) {
             return;
         }
@@ -123,12 +177,78 @@ public final class OverlayInput {
         ok.getStyleClass().add(okLabel.equals(tr("dialog.save")) ? "success" : "accent");
         Button cancel = new Button(tr("dialog.cancel"));
 
+        // Stay-open mode only: whether the action is running, whether the card is on screen, and the nodes
+        // that show either. (Declared for both modes; the plain mode never touches them.)
+        boolean[] busy = {false};
+        boolean[] onScreen = {false};
+        Label error = new Label();
+        error.getStyleClass().add("overlay-form-error");
+        error.setWrapText(true);
+        error.setMaxWidth(Double.MAX_VALUE);
+        error.setVisible(false);
+        error.setManaged(false);
+        javafx.scene.control.ProgressIndicator progress = new javafx.scene.control.ProgressIndicator();
+        progress.setPrefSize(16, 16);
+        progress.setMaxSize(16, 16);
+        progress.setVisible(false);
+        progress.setManaged(false);
+        Runnable syncOk =
+                () -> ok.setDisable(busy[0] || (okEnabled != null && !Boolean.TRUE.equals(okEnabled.getValue())));
+        Runnable[] reshow = new Runnable[1];
+
         Runnable accept = () -> {
-            if (okEnabled != null && !Boolean.TRUE.equals(okEnabled.getValue())) {
+            if (busy[0] || (okEnabled != null && !Boolean.TRUE.equals(okEnabled.getValue()))) {
                 return;
             }
-            host.hide();
-            onAccept.run();
+            if (onSubmit == null) {
+                host.hide();
+                onAccept.run();
+                return;
+            }
+            busy[0] = true;
+            body.setDisable(true);
+            error.setVisible(false);
+            error.setManaged(false);
+            progress.setVisible(true);
+            progress.setManaged(true);
+            syncOk.run();
+            boolean[] reported = {false};
+            onSubmit.accept(new Submission() {
+                private boolean end() {
+                    if (reported[0]) {
+                        return false;
+                    }
+                    reported[0] = true;
+                    busy[0] = false;
+                    body.setDisable(false);
+                    progress.setVisible(false);
+                    progress.setManaged(false);
+                    syncOk.run();
+                    return true;
+                }
+
+                @Override
+                public void done() {
+                    if (end() && onScreen[0]) {
+                        host.hide();
+                    }
+                }
+
+                @Override
+                public void failed(String message) {
+                    if (!end()) {
+                        return;
+                    }
+                    error.setText(message == null ? "" : message.strip());
+                    error.setVisible(!error.getText().isEmpty());
+                    error.setManaged(error.isVisible());
+                    if (onScreen[0]) {
+                        (focus == null ? ok : focus).requestFocus();
+                    } else {
+                        reshow[0].run(); // dismissed while busy: bring the typed text back with the reason
+                    }
+                }
+            });
         };
         ok.setOnAction(e -> accept.run());
         cancel.setOnAction(e -> host.hide());
@@ -151,12 +271,15 @@ public final class OverlayInput {
         // Enable/disable the primary button as the form's validity changes (no binding so nothing is left
         // attached to a discarded card).
         if (okEnabled != null) {
-            Runnable sync = () -> ok.setDisable(!Boolean.TRUE.equals(okEnabled.getValue()));
-            okEnabled.addListener((o, a, b) -> sync.run());
-            sync.run();
+            okEnabled.addListener((o, a, b) -> syncOk.run());
+            syncOk.run();
         }
 
         VBox card = new VBox(10, titleLabel, body, footer);
+        if (onSubmit != null) {
+            footer.getChildren().add(footer.getChildren().indexOf(cancel), progress);
+            card.getChildren().add(2, error);
+        }
         card.getStyleClass().addAll("command-palette", "overlay-form");
         card.setPadding(new Insets(14));
         card.setMinWidth(380);
@@ -180,17 +303,22 @@ public final class OverlayInput {
             e.consume();
         });
 
-        host.show(
-                card,
-                centered,
-                () -> {
-                    focus.requestFocus();
-                    if (focus instanceof TextField tf) {
-                        tf.selectAll();
-                    } else if (focus instanceof TextArea ta) {
-                        ta.positionCaret(ta.getLength());
-                    }
-                },
-                () -> {});
+        Runnable display = () -> {
+            host.show(
+                    card,
+                    centered,
+                    () -> {
+                        (focus == null ? ok : focus).requestFocus();
+                        if (focus instanceof TextField tf) {
+                            tf.selectAll();
+                        } else if (focus instanceof TextArea ta) {
+                            ta.positionCaret(ta.getLength());
+                        }
+                    },
+                    () -> onScreen[0] = false);
+            onScreen[0] = true;
+        };
+        reshow[0] = display;
+        display.run();
     }
 }
