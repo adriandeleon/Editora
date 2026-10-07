@@ -108,6 +108,14 @@ final class GitCoordinator {
         void reloadAllFromDiskSilently();
 
         /**
+         * Copies {@code files} into Local History as pre-delete revisions, then reports — on the FX thread —
+         * whether every one that Local History can hold is safely stored. Untracked files have no other copy.
+         */
+        default void captureBeforeDelete(List<Path> files, Consumer<Boolean> completion) {
+            completion.accept(true);
+        }
+
+        /**
          * Saves {@code buffer} through the window's ordinary save path (encoding, line endings, format on
          * save) and waits for the write; false when it is not on disk afterwards.
          */
@@ -802,16 +810,55 @@ final class GitCoordinator {
             host.setStatus(tr("status.git.discardConflict", conflicted));
             return;
         }
-        if (!confirmDestructive(tr("dialog.discard.title"), discardPrompt(discard), tr("dialog.discard"))) {
+        List<String> untracked = discard.untracked();
+        int folders = GitUntrackedDelete.folders(root, untracked);
+        if (folders > 0) {
+            // Git shows a wholly untracked folder as one row; ask it what deleting that row removes.
+            service.untrackedFiles(root, untracked, files -> {
+                if (files == null) {
+                    host.setError(tr("status.git.opFailed"));
+                    return;
+                }
+                boolean historyOn = host.settings().isLocalHistory() && !host.simpleModeActive();
+                String prompt = GitUntrackedDelete.prompt(
+                        discard.worktree().size() + discard.head().size(), untracked, folders, files, historyOn);
+                confirmAndDiscard(root, discard, prompt, GitUntrackedDelete.captures(root, files));
+            });
             return;
         }
-        runDiscard(root, discard, discardSuccessMessage(discard));
+        confirmAndDiscard(root, discard, discardPrompt(discard), GitUntrackedDelete.captures(root, untracked));
+    }
+
+    /**
+     * Confirms, copies the untracked files about to be deleted into Local History (they are in no commit, so
+     * nothing else could bring them back), and only then runs the commands.
+     */
+    private void confirmAndDiscard(Path root, Discard discard, String prompt, List<Path> untrackedFiles) {
+        if (!confirmDestructive(tr("dialog.discard.title"), prompt, tr("dialog.discard"))) {
+            return;
+        }
+        captureThenDiscard(root, discard, discardSuccessMessage(discard), untrackedFiles);
+    }
+
+    /** Copies the untracked files about to be deleted into Local History, then runs the confirmed discard. */
+    private void captureThenDiscard(Path root, Discard discard, String successMessage, List<Path> untrackedFiles) {
+        List<String> affected = discard.affected();
+        invalidatePendingWrites(root, affected);
+        if (untrackedFiles.isEmpty()) {
+            runDiscard(root, discard, successMessage, affected);
+            return;
+        }
+        ops.captureBeforeDelete(untrackedFiles, kept -> {
+            if (kept) {
+                runDiscard(root, discard, successMessage, affected);
+            } else {
+                host.setStatus(tr("project.deleteHistoryFailed"));
+            }
+        });
     }
 
     /** Runs a confirmed discard: one command per kind of path, then one refresh and reload. */
-    private void runDiscard(Path root, Discard discard, String successMessage) {
-        List<String> affected = discard.affected();
-        invalidatePendingWrites(root, affected);
+    private void runDiscard(Path root, Discard discard, String successMessage, List<String> affected) {
         List<String[]> commands = new ArrayList<>(3);
         if (!discard.worktree().isEmpty()) {
             commands.add(argv(discard.worktree(), "checkout", "--"));
@@ -965,10 +1012,21 @@ final class GitCoordinator {
                 tr("dialog.discardAll.action"))) {
             return;
         }
-        runDiscard(
-                root,
-                discard,
-                tr("status.git.discardedAll", all.tracked(), all.untracked().size()));
+        String successMessage =
+                tr("status.git.discardedAll", all.tracked(), all.untracked().size());
+        List<String> untracked = discard.untracked();
+        if (GitUntrackedDelete.folders(root, untracked) > 0) {
+            // A wholly untracked folder is one row: ask Git which files deleting it removes, to copy them.
+            service.untrackedFiles(root, untracked, files -> {
+                if (files == null) {
+                    host.setError(tr("status.git.opFailed"));
+                    return;
+                }
+                captureThenDiscard(root, discard, successMessage, GitUntrackedDelete.captures(root, files));
+            });
+            return;
+        }
+        captureThenDiscard(root, discard, successMessage, GitUntrackedDelete.captures(root, untracked));
     }
 
     void checkoutBranch(String name) {

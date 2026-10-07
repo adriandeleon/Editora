@@ -79,7 +79,10 @@ class ConfigManagerTest {
         assertEquals("light", settings.getTheme());
         assertEquals("file.save", settings.getKeybindings().get("C-x C-s"));
         assertTrue(Files.exists(dir.resolve("settings.json")), "JSON replacement written");
-        assertFalse(Files.exists(legacy), "legacy file removed only after replacement");
+        assertFalse(Files.exists(legacy), "the legacy name is retired only after the replacement is written");
+        assertTrue(
+                Files.exists(dir.resolve("settings.toml.migrated")),
+                "but the file itself is kept: its comments and unmodelled keys exist nowhere else");
         var json = new ObjectMapper().readTree(dir.resolve("settings.json").toFile());
         assertEquals(20, json.get("fontSize").asInt());
         assertEquals("light", json.get("theme").asText());

@@ -486,6 +486,8 @@
                         <glass.platform>Headless</glass.platform>
                         <prism.order>sw</prism.order>
                         <java.awt.headless>true</java.awt.headless>
+                        <!-- Project-tree deletes in tests must not land in the developer's real trash. -->
+                        <editora.trash>off</editora.trash>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

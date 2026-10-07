@@ -379,6 +379,23 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v111→112: crashRecovery is new — nothing else in the file changes, and it starts on. */
+    @Test
+    void theCrashRecoverySettingArrivesOnWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v111 = mapper.readTree("{\"schemaVersion\":111,\"localHistory\":false,\"autoSave\":\"afterDelay\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v111.deepCopy(), mapper);
+        assertEquals(112, out.get("schemaVersion").asInt());
+        assertFalse(out.get("localHistory").asBoolean());
+        assertEquals("afterDelay", out.get("autoSave").asText());
+        assertFalse(out.has("crashRecovery"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertTrue(loaded.isCrashRecovery(), "on for everyone who never chose");
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":112,\"crashRecovery\":false}");
+        assertFalse(
+                mapper.treeToValue(chosen, com.editora.config.Settings.class).isCrashRecovery());
+    }
+
     /** v110→111: the automatic fetch is new — and off: nobody's editor starts talking to a remote on upgrade. */
     @Test
     void theAutomaticFetchArrivesSwitchedOffForExistingUsers() throws Exception {

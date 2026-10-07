@@ -79,4 +79,77 @@ class HistoryCharsetTest {
                 HistoryCoordinator.restoredBytes("café € más\n", existing, null),
                 "restoring over a windows-1252 file must not rewrite it as UTF-8");
     }
+
+    // --- a deleted file comes back as the bytes that were deleted (V6) --------------------------------
+
+    /** Capture → index row (through JSON, as it is stored) → restore with the file gone. */
+    private static byte[] deletedThenRestored(byte[] original, String editorConfigCharset) throws Exception {
+        String captured = HistoryCoordinator.decodeCaptured(original, editorConfigCharset);
+        com.editora.config.HistoryRevision recorded = HistoryCoordinator.Encoding.of(original, editorConfigCharset)
+                .on(new com.editora.config.HistoryRevision(
+                        "/p/f.txt", 1L, 1L, "sha", com.editora.config.HistoryRevision.REASON_DELETE));
+        var json = new com.fasterxml.jackson.databind.ObjectMapper();
+        com.editora.config.HistoryRevision stored =
+                json.readValue(json.writeValueAsString(recorded), com.editora.config.HistoryRevision.class);
+        assertEquals(recorded, stored);
+        return HistoryCoordinator.restoredBytes(stored, captured, null, editorConfigCharset);
+    }
+
+    @Test
+    void aDeletedFileIsRestoredInTheEncodingItWasDeletedIn() throws Exception {
+        byte[] utf8Bom =
+                withBom(new byte[] {(byte) 0xEF, (byte) 0xBB, (byte) 0xBF}, "héllo\n".getBytes(StandardCharsets.UTF_8));
+        assertArrayEquals(utf8Bom, deletedThenRestored(utf8Bom, null), "the byte-order mark was dropped");
+
+        byte[] utf16le = withBom(new byte[] {(byte) 0xFF, (byte) 0xFE}, TEXT.getBytes(StandardCharsets.UTF_16LE));
+        assertArrayEquals(utf16le, deletedThenRestored(utf16le, null), "UTF-16 LE came back as UTF-8");
+        byte[] utf16be = withBom(new byte[] {(byte) 0xFE, (byte) 0xFF}, TEXT.getBytes(StandardCharsets.UTF_16BE));
+        assertArrayEquals(utf16be, deletedThenRestored(utf16be, null));
+        byte[] utf16NoBom = "plain\r\n".getBytes(StandardCharsets.UTF_16LE);
+        assertArrayEquals(
+                utf16NoBom,
+                deletedThenRestored(utf16NoBom, "utf-16le"),
+                "no byte-order mark is added to a file without one");
+
+        byte[] cp1252 = {'h', (byte) 0xE9, 'l', 'l', 'o', ' ', (byte) 0x80, '\n'}; // no rule, not valid UTF-8
+        assertArrayEquals(cp1252, deletedThenRestored(cp1252, null), "windows-1252 came back as UTF-8");
+
+        for (String text : new String[] {"héllo\nx\n", "héllo\r\nx\r\n", "a\r\nb\nc\r\n", "old mac\rline\r", ""}) {
+            byte[] utf8 = text.getBytes(StandardCharsets.UTF_8);
+            assertArrayEquals(utf8, deletedThenRestored(utf8, null), text);
+            byte[] latin1 = text.getBytes(StandardCharsets.ISO_8859_1);
+            assertArrayEquals(latin1, deletedThenRestored(latin1, "latin1"), text);
+        }
+    }
+
+    @Test
+    void aRevisionWithoutRecordedEncodingRestoresAsBefore() {
+        var old = new com.editora.config.HistoryRevision(
+                "/p/f.txt", 1L, 1L, "sha", com.editora.config.HistoryRevision.REASON_DELETE);
+        assertArrayEquals(
+                TEXT.getBytes(StandardCharsets.UTF_8), HistoryCoordinator.restoredBytes(old, TEXT, null, null));
+        assertArrayEquals(
+                TEXT.getBytes(StandardCharsets.ISO_8859_1),
+                HistoryCoordinator.restoredBytes(old, TEXT, null, "latin1"));
+    }
+
+    @Test
+    void recordedEncodingYieldsToAFileThatExistsAndToTextItCannotHold() {
+        var utf16 = new com.editora.config.HistoryRevision(
+                "/p/f.txt", 1L, 1L, "sha", "DELETE", "", "utf-16le", true, "CRLF");
+        assertArrayEquals(
+                "one\nTWO\n".getBytes(StandardCharsets.UTF_8),
+                HistoryCoordinator.restoredBytes(utf16, "one\nTWO\n", "x\ny\n".getBytes(StandardCharsets.UTF_8), null),
+                "a file now at the path decides, as for any other restore");
+        var latin1 =
+                new com.editora.config.HistoryRevision("/p/f.txt", 1L, 1L, "sha", "DELETE", "", "latin1", false, "LF");
+        assertArrayEquals(
+                "price €\n".getBytes(StandardCharsets.UTF_8),
+                HistoryCoordinator.restoredBytes(latin1, "price €\n", null, null),
+                "never '?' for a character the recorded charset cannot hold");
+        // A body that lost its terminators' form (LF only) gets the recorded one back.
+        assertArrayEquals(
+                withBom(new byte[] {(byte) 0xFF, (byte) 0xFE}, "a\r\nb\r\n".getBytes(StandardCharsets.UTF_16LE)),
+                HistoryCoordinator.restoredBytes(utf16, "a\nb\n", null, null));
+    }
 }

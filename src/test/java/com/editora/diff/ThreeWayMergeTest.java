@@ -5,6 +5,7 @@ import java.util.List;
 
 import com.editora.diff.ConflictParser.Choice;
 import com.editora.diff.ConflictParser.Conflict;
+import com.editora.diff.ConflictParser.ConflictFile;
 import com.editora.diff.ConflictParser.ConflictSegment;
 import org.junit.jupiter.api.Test;
 
@@ -222,5 +223,42 @@ class ThreeWayMergeTest {
             }
         }
         return edits;
+    }
+
+    // --- the file's own conflict regions outrank the recomputed merge (V8) -----------------------------
+
+    /** The reviewer's case: Git's merge marks a conflict where this merge combines both sides cleanly. */
+    @Test
+    void aConflictGitWroteIsShownEvenWhenTheRecomputedMergeIsClean() {
+        ThreeWayMerge.Result merged = ThreeWayMerge.merge("a\nb\na\nb\n", "X\na\nb\na\nY\n", "a\na\nb\n");
+        ConflictFile written = ConflictParser.parse(
+                List.of("<<<<<<< ours", "X", "a", "b", "=======", "a", ">>>>>>> theirs", "a", "Y"));
+        if (!merged.file().hasConflicts()) {
+            assertFalse(ThreeWayMerge.agreesWith(merged.file(), written));
+        }
+        ThreeWayMerge.Source source = ThreeWayMerge.sourceFor(merged.file(), written);
+        ConflictFile shown = source == ThreeWayMerge.Source.MERGE ? merged.file() : written;
+        assertTrue(shown.hasConflicts(), "a region Git reported as a conflict is never merged unseen");
+        assertTrue(source != ThreeWayMerge.Source.ASK, "an alignment difference is not a changed file");
+    }
+
+    @Test
+    void sourceIsTheMergeWhenItAgreesTheMarkersWhenItDoesNotAndAQuestionOnlyWithoutMarkers() {
+        ConflictFile merged = ThreeWayMerge.merge("a\nb\nc\n", "a\nours\nc\n", "a\ntheirs\nc\n")
+                .file();
+        List<String> asGitWroteIt = List.of("a", "<<<<<<< HEAD", "ours", "=======", "theirs", ">>>>>>> br", "c");
+        assertEquals(ThreeWayMerge.Source.MERGE, ThreeWayMerge.sourceFor(merged, ConflictParser.parse(asGitWroteIt)));
+
+        // Another line was edited by hand since: the file's regions (and that edit) are what is resolved.
+        List<String> editedElsewhere =
+                List.of("a edited", "<<<<<<< HEAD", "ours", "=======", "theirs", ">>>>>>> br", "c");
+        assertEquals(
+                ThreeWayMerge.Source.FILE_MARKERS,
+                ThreeWayMerge.sourceFor(merged, ConflictParser.parse(editedElsewhere)));
+
+        // Nothing left to resolve in the file: only now is there a real question.
+        assertEquals(
+                ThreeWayMerge.Source.ASK,
+                ThreeWayMerge.sourceFor(merged, ConflictParser.parse(List.of("a", "mine", "c"))));
     }
 }

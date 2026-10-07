@@ -55,6 +55,9 @@ public final class SingleInstance implements AutoCloseable {
 
     private static final String ACK_OK = MAGIC + " OK";
 
+    /** Endpoint-file value: this instance handles launches with nothing to open and {@code --project} ones. */
+    private static final String ACCEPTS_ANY = "any";
+
     /** How long to wait for the running instance: generous enough for a busy FX thread, short enough that a
      *  dead endpoint doesn't visibly stall the launch we're about to do ourselves instead. */
     private static final int CONNECT_TIMEOUT_MS = 700;
@@ -150,13 +153,24 @@ public final class SingleInstance implements AutoCloseable {
      * this existed. Starting a second editor is a far better outcome than failing to start one.
      */
     public static Result start(Path configDir, List<String> args, boolean allowForward) {
+        return start(configDir, args, allowForward, true);
+    }
+
+    /**
+     * As {@link #start(Path, List, boolean)}. {@code filesOnly} says the launch is purely "open these files",
+     * which every running instance understands. Anything else — a launch with nothing to open, or one that
+     * names a project — is only delivered to an instance that advertises it handles every kind of launch
+     * ({@code accepts=any} in the endpoint file): an older build, still running across an upgrade, would
+     * acknowledge such a launch and then do nothing visible with it.
+     */
+    public static Result start(Path configDir, List<String> args, boolean allowForward, boolean filesOnly) {
         if (configDir == null) {
             return new Result(Role.STANDALONE, null);
         }
         Path endpoint = configDir.resolve(ENDPOINT_FILE);
         Endpoint existing = read(endpoint);
         if (existing != null) {
-            if (allowForward && forward(existing, args)) {
+            if (allowForward && (filesOnly || existing.acceptsAnyLaunch) && forward(existing, args)) {
                 return new Result(Role.FORWARDED, null);
             }
             // Either we may not forward, or nobody answered — a crash leaves the file advertising a dead
@@ -217,6 +231,7 @@ public final class SingleInstance implements AutoCloseable {
             props.setProperty("port", String.valueOf(socket.getLocalPort()));
             props.setProperty("token", newToken);
             props.setProperty("pid", String.valueOf(ProcessHandle.current().pid()));
+            props.setProperty("accepts", ACCEPTS_ANY); // see start(…, filesOnly)
             // The token is a credential for "make this editor open files", so it gets the same owner-only
             // treatment as everything else derived from the config dir.
             ConfigWriter.createOwnerOnly(tmp);
@@ -409,7 +424,7 @@ public final class SingleInstance implements AutoCloseable {
     }
 
     /** The endpoint file's contents; {@code null} from {@link #read} when absent or unusable. */
-    private record Endpoint(int port, String token) {}
+    private record Endpoint(int port, String token, boolean acceptsAnyLaunch) {}
 
     private static Endpoint read(Path file) {
         if (!Files.isRegularFile(file)) {
@@ -430,7 +445,7 @@ public final class SingleInstance implements AutoCloseable {
             if (port <= 0 || port > 65535 || token == null || token.isBlank()) {
                 return null;
             }
-            return new Endpoint(port, token);
+            return new Endpoint(port, token, ACCEPTS_ANY.equals(props.getProperty("accepts")));
         } catch (NumberFormatException e) {
             return null;
         }

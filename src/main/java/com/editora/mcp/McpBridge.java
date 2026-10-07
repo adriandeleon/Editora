@@ -91,15 +91,25 @@ public interface McpBridge {
     boolean openFile(String path, int line, int col);
 
     /**
-     * Applies an undoable text edit to the open buffer for {@code path} (or the active buffer when null).
-     * An empty/absent {@code oldText} replaces the whole buffer with {@code newText}; otherwise
-     * {@code oldText} must occur exactly once unless {@code replaceAll}. Returns null on success, else a
-     * human-readable error.
+     * Replaces {@code oldText} — never null or empty — in the open buffer for {@code path} (or the active
+     * buffer when null) with {@code newText}. {@code oldText} must occur exactly once in the <em>whole
+     * document</em> (also when the buffer is narrowed) unless {@code replaceAll}. Returns null on success,
+     * else a human-readable error.
      */
     String editBuffer(String path, String oldText, String newText, boolean replaceAll);
 
-    /** Saves the open buffer for {@code path} (or the active buffer when null) to its file. Returns null
-     *  on success, else a human-readable error (untitled buffers can't be saved over MCP). */
+    /**
+     * Replaces the entire text of the open buffer for {@code path} (or the active buffer when null) with
+     * {@code newText}. Only ever called for an explicit {@code replace_whole_buffer} request; refused when
+     * the buffer changed since the caller last read it. Returns null on success, else a human-readable error.
+     */
+    String replaceBuffer(String path, String newText);
+
+    /**
+     * Saves the open buffer for {@code path} (or the active buffer when null) to its file and waits for the
+     * write. Returns null only when the bytes are on disk; else a human-readable error (untitled buffers
+     * can't be saved over MCP).
+     */
     String saveBuffer(String path);
 
     /** The active buffer's caret + selection, or null when there is no active buffer. */

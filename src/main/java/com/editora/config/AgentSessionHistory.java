@@ -115,11 +115,18 @@ public class AgentSessionHistory {
                         e != null && e.sessionId() != null && !e.sessionId().isBlank())
                 .limit(MAX_ENTRIES)
                 .toList());
+        Stored baseline = snapshot();
+        sink.loaded(file, () -> mapper.writeValueAsBytes(baseline));
     }
 
     private void save() {
+        Stored snapshot = snapshot();
+        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
+    }
+
+    private Stored snapshot() {
         Stored snapshot = new Stored();
         snapshot.sessions = List.copyOf(sessions);
-        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
+        return snapshot;
     }
 }

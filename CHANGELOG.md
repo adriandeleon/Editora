@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Crash recovery.** Unsaved edits, including untitled buffers, in every window, are kept in the config
+  folder while you work and offered back on the next launch if Editora did not close normally (crash,
+  kill, logout, power loss). Restoring opens the text as unsaved tabs and never writes your files; a file
+  that changed on disk in the meantime is flagged. Copies are removed when you save, revert or close.
+  Buffers over 16 million characters are not covered. New setting **Keep a recovery copy of unsaved
+  edits** (Settings → Workspace, on by default) and commands `File: Recover Unsaved Edits…` and
+  `View: Toggle Crash Recovery`. Settings schema 112.
+- If Editora is interrupted in the middle of a refactoring that moves or deletes files, the next time
+  the project is opened it offers to put the files back.
+- Project tree: Delete moves files to the trash on Linux and macOS (the dialog says which will happen;
+  a permanent delete now defaults to Cancel), and a new "Undo Move" in the tree menu reverses the last
+  drag-move. Windows still deletes permanently.
 - Git: a merge, rebase, cherry-pick or revert in progress is shown in the status bar (`main · MERGING`)
   and as a banner in the Commit window with Continue, Skip and Abort (`Git: Continue Operation`,
   `Git: Skip Commit`, `Git: Abort Operation`). Conflicted files have their own Conflicts group with
@@ -88,6 +100,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub: the checks indicator requires `gh` 2.50 (Settings said 2.4). An older `gh` is detected, and
   Settings, Doctor and the checks command say which version is needed.
 
+- Launching Editora again (no file, `--project`, `--dev`) now goes to the running editor on the same
+  config directory instead of starting a second process; `--new-instance` starts a separate one.
+- "Reset to Defaults" first saves the previous settings as `settings.json.before-reset-<date>.bak` and
+  names the file in the status bar; it no longer lowers Local History limits.
+- Lowering a Local History limit (Settings or the `history.setMax*` commands) asks first, stating how
+  many revisions from how many files would be removed, instead of deleting them at once.
+- The Rename preview lists files and folders a rename would delete and files it would replace; a code
+  action or refactoring that deletes a folder or replaces an existing file asks first, naming the paths.
+- Git Log: Reset states how many commits leave the branch and how many are not on the upstream; Soft
+  and Mixed ask before stranding commits; checking out a commit reports the detached HEAD. "Delete" on
+  an untracked folder says it is a folder and how many files it removes.
+- MCP: `edit_buffer` replaces a whole buffer only with `replace_whole_buffer: true`; unknown arguments
+  and empty or relative paths are rejected for every tool; `save_buffer` reports `saved` only once the
+  file is written.
+- Typst: a one-page PNG/SVG export is written under the chosen name, and the export asks before
+  replacing existing page files (`name-1.png`, …).
+- Dragging a folder or several items in the Project tree asks first; Settings → Templates → Remove asks
+  for confirmation.
 - The VCS menu is grouped into submenus (Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches,
   History & Blame, Compare) with the daily actions at the top level.
 - A Git command that stops on conflicts (pull, merge, rebase, revert, cherry-pick, stash pop, 3-way
@@ -149,6 +179,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   not the active tab's. Open on GitHub works for files whose name starts with `-`. A reviewer typed as
   `@a, a` is added once. Workflow run ids are no longer digit-grouped, and tooltips show relative and
   local times.
+- **Data-loss review fixes.** A review of every path that writes, deletes, replaces or discards user
+  data found 58 issues; this release fixes them, with the limits noted at the end of this entry.
+  - *Unsaved edits.* Deleting a file from the Project tree now asks every window that has unsaved edits
+    to it, and a tab with unsaved text is never closed by a delete it was not asked about. Text typed
+    while a file is being reloaded (after a Git operation, or after choosing Reload) is no longer
+    replaced by the disk copy. In the "File Changed on Disk" prompt, Enter keeps your version when the
+    buffer has unsaved edits. A file deleted outside Editora leaves its tab marked unsaved, and
+    auto-save does not recreate it. Following a log no longer replaces text you typed into it when the
+    log rotates.
+  - *Saving.* Saving a file with mixed line endings without editing it no longer rewrites it; an edited
+    save still normalises to the dominant ending but says so, keeps the original bytes in
+    `<config>/line-ending-originals`, and asks first when the file contains binary data. The status bar
+    shows "Mixed (LF)" for such a file, and a non-UTF-8 mixed file is no longer told that "no bytes are
+    lost". The save status says when an `.editorconfig` rule changed a file's encoding or byte-order
+    mark. A document containing half of a split emoji is refused instead of being saved as `?`. Saving
+    through a dangling symlink creates its target; pipes, devices and directories are not replaced.
+    Saves keep extended attributes and setuid/setgid/sticky bits. An interrupted in-place save no longer
+    leaves the file empty, and a backup left by a killed save is offered at the next launch. Save as
+    Administrator backs the file up before overwriting it.
+  - *Editora's own files.* Two Editora processes on one config directory no longer revert each other's
+    settings, sessions, projects, notes, bookmarks, breakpoints, macros, dictionary or Local History.
+    Two windows with the same file open no longer overwrite each other's notes, bookmarks or
+    breakpoints. "Project: Delete" no longer deletes the project's notes, bookmarks, breakpoints and
+    Local History. An unreadable `projects.json` no longer deletes untitled windows' sessions. Config
+    writes are flushed to disk before being renamed into place and retried after a failure; an empty or
+    damaged config file is preserved and reported instead of silently reset; config set aside by an
+    older build is restored by the newer one; `settings.toml` is kept as `settings.toml.migrated`.
+  - *Bulk edits.* AI "Rewrite Selection" and "Generate Commit Message" apply a reply only when it is
+    complete and refuse a selection too large to send whole. Large files and files with very long lines
+    have no undo: bulk edits there (Replace in Files, line transforms, external tools, AI, agent, MCP,
+    language-server edits, apply-from-diff) save the previous text to Local History first or are
+    refused. CSV grid edits change the row shown, also when narrowed, and only the edited field. Line
+    commands no longer split a line containing NUL characters. Narrowing says so when it clears the
+    undo history. An external tool replaces the text that was selected when it started.
+  - *Agents and language servers.* An agent's relative path is no longer written relative to the
+    editor's working directory; an agent write keeps a Local History copy, the file's encoding and line
+    endings, never touches `.git/`, and cannot replace text typed since the agent's last read. The
+    permission dialog opens on the rejecting choice. A request that timed out is not applied afterwards.
+    A language-server edit no longer deletes a file whose tab became unsaved while it was applied, is
+    never half-applied, and copies what it deletes or replaces to Local History.
+  - *Files on disk.* An HTTP `>>!` redirect no longer writes an error response over an existing file and
+    records the replaced file in Local History. Exports are written to a temporary file and renamed, so
+    a failed export cannot truncate the file it was replacing. Updating a plugin keeps its `data/`
+    folder; a plugin with an invalid id is not loaded and Remove can only delete the plugin's own folder.
+  - *Git, merge and Local History.* Local History keeps the text a file held before the first save of a
+    session. Restoring a deleted file writes it back in its original encoding. Untracked files are
+    copied to Local History before "Delete" removes them. The merge resolver writes an unresolved
+    conflict back exactly as it was, a stray marker-looking line no longer swallows the rest of the
+    file, and the file's own conflict regions are used when the recomputed merge disagrees.
+  - *Not fully fixed.* Linux POSIX ACLs are still dropped on save. Switching branch from a detached HEAD
+    with unreferenced commits does not warn. Tree delete has no trash on Windows. A config write that
+    still fails at quit is not reported before the window closes.
 - Git: a repository Git refuses to work in (for example "dubious ownership") says why in the status bar
   and the Commit window instead of looking like no repository.
 - Git: commands never start an external editor, so continuing a rebase no longer hangs waiting for one.

@@ -142,6 +142,8 @@ public class RecentFiles {
                     .forEach(stored::add);
         }
         publish(null, null);
+        Stored baseline = snapshot();
+        sink.loaded(file, () -> mapper.writeValueAsBytes(baseline));
     }
 
     /**
@@ -169,8 +171,13 @@ public class RecentFiles {
     }
 
     private void save() {
+        Stored snapshot = snapshot();
+        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
+    }
+
+    private Stored snapshot() {
         Stored snapshot = new Stored();
         snapshot.files = List.copyOf(stored);
-        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
+        return snapshot;
     }
 }

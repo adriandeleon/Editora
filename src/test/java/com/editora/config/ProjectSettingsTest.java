@@ -85,6 +85,10 @@ class ProjectSettingsTest {
         assertEquals(ProjectSettings.fileFor(root), json);
         assertTrue(Files.exists(json));
         assertFalse(Files.exists(legacy));
+        // Kept, not deleted: this file lives in the user's repository and may carry comments.
+        assertEquals(
+                "[lspCommands]\njava = \"legacy-jdtls\"\n",
+                Files.readString(legacy.resolveSibling("settings.toml.migrated")));
         assertEquals("legacy-jdtls", ProjectSettings.load(root).commandFor("java", "global-jdtls"));
     }
 

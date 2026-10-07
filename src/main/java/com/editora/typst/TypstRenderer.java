@@ -170,28 +170,201 @@ public final class TypstRenderer {
     }
 
     /**
-     * Exports {@code source} to {@code dest} (format inferred from the destination extension). PDF is a
-     * single native file (Typst's natural output); PNG/SVG multi-page docs write one numbered file per page
-     * ({@code dest-1.png}, {@code dest-2.png}, …). {@code fileDir}/{@code root} as in {@link #renderPages}.
-     * Blocking.
+     * A finished export that has not touched its destination yet: typst wrote into a private staging
+     * directory, and {@link #commit()} moves the result into place.
+     *
+     * <p>Two losses came from writing straight to the destination. A PNG/SVG export is one file per page, so
+     * {@code report.png} — the only name the Save dialog asked about — became {@code report-1.png},
+     * {@code report-2.png}, …, replacing whatever already had those names without a question. And any export
+     * that failed partway left the file it was replacing truncated. Staging lets the caller see the real
+     * targets first ({@link #existingTargets()}) and keeps the previous files until the new ones are complete.
+     *
+     * <p>A one-page PNG/SVG is written under the chosen name itself; only a multi-page document is numbered.
      */
-    public static ProcessRunner.Result exportTo(List<String> cmd, String source, Path dest, Path fileDir, Path root) {
+    public static final class PendingExport implements AutoCloseable {
+        private final ProcessRunner.Result result;
+        private final Path stagingDir;
+        private final Path dest;
+        private final List<Path> staged;
+        private final List<Path> targets;
+        private boolean closed;
+
+        private PendingExport(
+                ProcessRunner.Result result, Path stagingDir, Path dest, List<Path> staged, List<Path> targets) {
+            this.result = result;
+            this.stagingDir = stagingDir;
+            this.dest = dest;
+            this.staged = List.copyOf(staged);
+            this.targets = List.copyOf(targets);
+        }
+
+        /** typst's own result (exit code and diagnostics). */
+        public ProcessRunner.Result result() {
+            return result;
+        }
+
+        /** True when typst succeeded <em>and</em> produced at least one file. */
+        public boolean ok() {
+            return result.ok() && !targets.isEmpty();
+        }
+
+        /** The files {@link #commit()} will write, in page order. */
+        public List<Path> targets() {
+            return targets;
+        }
+
+        /**
+         * The targets that already exist and that nobody was asked about: every existing target except the
+         * chosen destination itself, whose replacement the Save dialog confirmed.
+         */
+        public List<Path> existingTargets() {
+            List<Path> existing = new ArrayList<>();
+            for (Path target : targets) {
+                if (!target.equals(dest) && Files.exists(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                    existing.add(target);
+                }
+            }
+            return existing;
+        }
+
+        /** Moves the staged files to their targets (replacing them) and returns the targets. */
+        public List<Path> commit() throws IOException {
+            if (closed) {
+                throw new IOException("export already finished");
+            }
+            try {
+                if (!ok()) {
+                    throw new IOException("the export produced no file");
+                }
+                for (int i = 0; i < staged.size(); i++) {
+                    Path from = staged.get(i);
+                    Path to = targets.get(i);
+                    try {
+                        Files.move(
+                                from,
+                                to,
+                                java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+                    } catch (java.nio.file.AtomicMoveNotSupportedException otherVolume) {
+                        Files.move(from, to, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+                return targets;
+            } finally {
+                close();
+            }
+        }
+
+        /** Discards the staged files; the destination folder is untouched. Safe to call repeatedly. */
+        @Override
+        public void close() {
+            if (!closed) {
+                closed = true;
+                deleteRecursively(stagingDir);
+            }
+        }
+    }
+
+    /**
+     * Exports {@code source} for {@code dest} (format inferred from the destination extension) into a staging
+     * directory beside it, and returns the {@link PendingExport} to commit or discard. PDF is a single native
+     * file; a PNG/SVG document is one file per page. {@code fileDir}/{@code root} as in {@link #renderPages}.
+     * Blocking. The caller must {@link PendingExport#commit()} or {@link PendingExport#close()} the result.
+     */
+    public static PendingExport stageExport(List<String> cmd, String source, Path dest, Path fileDir, Path root) {
         Prep p = null;
         Path input = null;
+        Path staging = null;
+        Path target = dest.toAbsolutePath();
         try {
+            staging = stagingDirFor(target);
             p = prepare(fileDir, root);
             input = p.inputDir().resolve(".editora-typst-" + UUID.randomUUID() + ".typ");
             Files.writeString(input, source);
-            String output = exportOutput(dest);
-            return ProcessRunner.runScrubbed(
+            String output = exportOutput(staging.resolve(target.getFileName().toString()));
+            ProcessRunner.Result result = ProcessRunner.runScrubbed(
                     p.root(), RENDER_TIMEOUT, exportArgs(cmd, p.root(), input, output, renderPpi()), Map.of());
+            return pending(result, staging, target);
         } catch (IOException e) {
-            return new ProcessRunner.Result(-1, "", e.getMessage() == null ? "export failed" : e.getMessage());
+            deleteRecursively(staging);
+            return new PendingExport(
+                    new ProcessRunner.Result(-1, "", e.getMessage() == null ? "export failed" : e.getMessage()),
+                    null,
+                    target,
+                    List.of(),
+                    List.of());
         } finally {
             deleteIfExists(input);
             if (p != null && p.temp()) {
                 deleteRecursively(p.inputDir());
             }
+        }
+    }
+
+    /** A private directory next to {@code dest} (same volume, so the final move is a rename), else a temp one. */
+    private static Path stagingDirFor(Path dest) throws IOException {
+        Path parent = dest.getParent();
+        try {
+            if (parent == null) {
+                throw new IOException("no parent directory");
+            }
+            Files.createDirectories(parent);
+            return Files.createTempDirectory(parent, ".editora-export-");
+        } catch (IOException | RuntimeException besideUnavailable) {
+            return Files.createTempDirectory("editora-typst-export");
+        }
+    }
+
+    /**
+     * Pairs what typst left in {@code stagingDir} with the files it stands for beside {@code dest}: the PDF
+     * itself; or for PNG/SVG the chosen name when there is one page, else {@code base-<n>.ext} per page.
+     * Public so the naming and overwrite rules are testable without the typst binary.
+     */
+    public static PendingExport pending(ProcessRunner.Result result, Path stagingDir, Path dest) {
+        Path target = dest.toAbsolutePath();
+        String name = target.getFileName().toString();
+        String fmt = formatFor(name);
+        List<Path> staged = new ArrayList<>();
+        List<Path> targets = new ArrayList<>();
+        if (result.ok() && stagingDir != null) {
+            if ("pdf".equals(fmt)) {
+                Path file = stagingDir.resolve(name);
+                if (Files.isRegularFile(file)) {
+                    staged.add(file);
+                    targets.add(target);
+                }
+            } else {
+                int dot = name.lastIndexOf('.');
+                String base = dot >= 0 ? name.substring(0, dot) : name;
+                String ext = dot >= 0 ? name.substring(dot) : "." + fmt;
+                Pattern numbered = Pattern.compile("^" + Pattern.quote(base) + "-(\\d+)" + Pattern.quote(ext) + "$");
+                try (var files = Files.list(stagingDir)) {
+                    staged.addAll(files.filter(Files::isRegularFile)
+                            .filter(f ->
+                                    numbered.matcher(f.getFileName().toString()).matches())
+                            .sorted(Comparator.comparingInt(f -> pageNumber(numbered, f)))
+                            .toList());
+                } catch (IOException unreadable) {
+                    staged.clear();
+                }
+                if (staged.size() == 1) {
+                    targets.add(target); // one page: the name the user chose (and the dialog asked about)
+                } else {
+                    for (Path page : staged) {
+                        targets.add(target.resolveSibling(page.getFileName().toString()));
+                    }
+                }
+            }
+        }
+        return new PendingExport(result, stagingDir, target, staged, targets);
+    }
+
+    private static int pageNumber(Pattern numbered, Path file) {
+        Matcher m = numbered.matcher(file.getFileName().toString());
+        try {
+            return m.find() ? Integer.parseInt(m.group(1)) : Integer.MAX_VALUE;
+        } catch (NumberFormatException e) {
+            return Integer.MAX_VALUE;
         }
     }
 
@@ -252,52 +425,9 @@ public final class TypstRenderer {
     }
 
     /**
-     * The files an export to {@code dest} actually produced, in page order — {@code dest} itself for a PDF,
-     * else the {@code base-<n>.ext} files {@link #exportOutput}'s {@code {p}} template makes typst write.
-     *
-     * <p>Needed because the caller cannot name the result: typst rewrites {@code report.png} to
-     * {@code report-1.png} — <b>even for a single-page document</b> — so reporting the chooser's own path
-     * told the user "Exported to …/report.png" about a file that does not exist. An empty result also means
-     * the tool exited 0 having written nothing, which must not read as success.
-     */
-    public static List<Path> exportedFiles(Path dest) {
-        String fmt = formatFor(dest.getFileName().toString());
-        if ("pdf".equals(fmt)) {
-            return Files.isRegularFile(dest) ? List.of(dest) : List.of();
-        }
-        Path parent = dest.toAbsolutePath().getParent();
-        if (parent == null) {
-            return List.of();
-        }
-        String name = dest.getFileName().toString();
-        int dot = name.lastIndexOf('.');
-        String base = dot >= 0 ? name.substring(0, dot) : name;
-        String ext = dot >= 0 ? name.substring(dot) : "." + fmt;
-        Pattern numbered = Pattern.compile(Pattern.quote(base) + "-(\\d+)" + Pattern.quote(ext) + "$");
-        try (var files = Files.list(parent)) {
-            List<Path> out = new ArrayList<>(files.filter(Files::isRegularFile)
-                    .filter(f -> numbered.matcher(f.getFileName().toString()).find())
-                    .toList());
-            out.sort(java.util.Comparator.comparingInt(f -> pageNumber(numbered, f)));
-            return List.copyOf(out);
-        } catch (IOException e) {
-            return List.of();
-        }
-    }
-
-    private static int pageNumber(Pattern numbered, Path file) {
-        Matcher m = numbered.matcher(file.getFileName().toString());
-        try {
-            return m.find() ? Integer.parseInt(m.group(1)) : Integer.MAX_VALUE;
-        } catch (NumberFormatException e) {
-            return Integer.MAX_VALUE;
-        }
-    }
-
-    /**
-     * The output path string for {@code dest}. A single-file PDF stays as-is; a PNG/SVG export becomes a
-     * {@code {p}}-templated name ({@code report.png} → {@code report-{p}.png}) so a multi-page document
-     * writes one numbered file per page. Pure.
+     * The output path string typst is given for {@code dest}. A single-file PDF stays as-is; a PNG/SVG export
+     * becomes a {@code {p}}-templated name ({@code report.png} → {@code report-{p}.png}) so a multi-page
+     * document writes one numbered file per page. Used on the staging path — see {@link #stageExport}. Pure.
      */
     static String exportOutput(Path dest) {
         String fmt = formatFor(dest.getFileName().toString());

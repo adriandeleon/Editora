@@ -110,6 +110,12 @@ final class DebugCoordinator {
 
         /** Writes {@code breakpoints.json}. */
         void saveBreakpoints();
+
+        /**
+         * This window rewrote {@code fileKey}'s breakpoints ({@code null}: several files) in its bucket: the
+         * other windows re-read them (see {@link DebugCoordinator#breakpointsChangedElsewhere}).
+         */
+        default void breakpointsStored(Map<String, ?> bucket, String fileKey) {}
     }
 
     /** Debug adapters whose enable can be toggled ("java" has no enable — gated by the Java LSP server). */
@@ -600,6 +606,8 @@ final class DebugCoordinator {
             }
             ops.saveBreakpoints();
         } else {
+            // The buffer now IS this file: breakpoints stored for a file it overwrote are replaced, not merged.
+            seenInStore.put(buffer, MarkMerge.keys(map.get(newPath.toString()), Breakpoint::line));
             persistBreakpoints(buffer); // writes the file, also when the buffer has none (the old key is gone)
         }
         if (dapManager.isActive()) {
@@ -621,6 +629,7 @@ final class DebugCoordinator {
         String sep = old.getFileSystem().getSeparator();
         if (RenamedFileState.rekey(ops.breakpointMap(), old.toString(), target.toString(), sep)) {
             ops.saveBreakpoints();
+            ops.breakpointsStored(ops.breakpointMap(), null);
         }
     }
 
@@ -632,14 +641,57 @@ final class DebugCoordinator {
         if (file == null) {
             return;
         }
-        List<Breakpoint> bps = buffer.getBreakpointManager().snapshot();
         var map = ops.breakpointMap();
+        String key = file.toString();
+        List<Breakpoint> stored = map.get(key);
+        // Not the snapshot alone: a second window on this file has its own copy of the breakpoints, and
+        // writing this one as the whole list deleted every breakpoint the other had set.
+        List<Breakpoint> bps = MarkMerge.withForeign(
+                stored, seenInStore.get(buffer), buffer.getBreakpointManager().snapshot(), Breakpoint::line);
         if (bps.isEmpty()) {
-            map.remove(file.toString());
+            map.remove(key);
         } else {
-            map.put(file.toString(), BreakpointStore.mergePreservingOrder(map.get(file.toString()), bps));
+            map.put(key, BreakpointStore.mergePreservingOrder(stored, bps));
         }
+        seenInStore.put(buffer, MarkMerge.keys(map.get(key), Breakpoint::line));
         ops.saveBreakpoints();
+        ops.breakpointsStored(map, key);
+    }
+
+    /**
+     * The breakpoint lines each buffer last saw in the store for its file (when it loaded or wrote them):
+     * what {@link MarkMerge} needs to tell "this buffer removed it" from "another window set it".
+     */
+    private final Map<EditorBuffer, Set<Integer>> seenInStore = new java.util.WeakHashMap<>();
+
+    /**
+     * Another window rewrote {@code fileKey}'s breakpoints ({@code null}: several files) in {@code bucket}.
+     * A buffer of this window on that file shows them now — it would otherwise keep its stale copy and
+     * write it back — and a live session of this window is told the file's new set.
+     */
+    void breakpointsChangedElsewhere(Map<String, ?> bucket, String fileKey) {
+        if (bucket != ops.breakpointMap()) {
+            return;
+        }
+        host.forEachBuffer(b -> {
+            if (b.getPath() == null || b.isNarrowed()) {
+                return; // a narrowed buffer's lines are region-relative; it merges when it next writes
+            }
+            String key = b.getPath().toString();
+            if (fileKey != null && !fileKey.equals(key)) {
+                return;
+            }
+            List<Breakpoint> stored = ops.breakpointMap().get(key);
+            b.applyBreakpoints(stored);
+            seenInStore.put(b, MarkMerge.keys(stored, Breakpoint::line));
+            if (dapManager.isActive()) {
+                DapModels.FileBreakpoints now = fileBreakpoints(b);
+                if (!now.equals(sentBreakpoints.put(b.getPath(), now))) {
+                    dapManager.updateBreakpoints(now);
+                }
+            }
+            showBreakpointStates(b);
+        });
     }
 
     void restoreBreakpoints(EditorBuffer buffer) {
@@ -647,7 +699,9 @@ final class DebugCoordinator {
         if (file == null) {
             return;
         }
-        if (buffer.applyBreakpoints(ops.breakpointMap().get(file.toString()))) {
+        List<Breakpoint> stored = ops.breakpointMap().get(file.toString());
+        seenInStore.put(buffer, MarkMerge.keys(stored, Breakpoint::line));
+        if (buffer.applyBreakpoints(stored)) {
             persistBreakpoints(buffer); // self-heal re-anchored indices once
         }
         showBreakpointStates(buffer); // opened during a session: it shows what the adapter already said

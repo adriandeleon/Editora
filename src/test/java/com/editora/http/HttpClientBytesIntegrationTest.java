@@ -86,6 +86,13 @@ class HttpClientBytesIntegrationTest {
             ex.getResponseBody().write(BINARY);
             ex.close();
         });
+        server.createContext("/missing", ex -> {
+            byte[] body = "404 page not found".getBytes(StandardCharsets.UTF_8);
+            ex.getResponseHeaders().add("Content-Type", "text/plain");
+            ex.sendResponseHeaders(404, body.length);
+            ex.getResponseBody().write(body);
+            ex.close();
+        });
         server.createContext("/big", ex -> {
             byte[] big = "0123456789".repeat(1000).getBytes(StandardCharsets.UTF_8); // 10 000 bytes
             ex.getResponseHeaders().add("Content-Type", "text/plain");
@@ -151,6 +158,76 @@ class HttpClientBytesIntegrationTest {
                     BINARY,
                     Files.readAllBytes(dir.resolve("out/download.bin")),
                     ">> must write the bytes received, not a re-encoded String");
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    /**
+     * The reproduced loss: a {@code >>!} wrote the body of a 404 over {@code src/Main.java}, kept no copy and
+     * mentioned no file. The error body now leaves the file alone, and the result says so.
+     */
+    @Test
+    void anErrorBodyIsNotWrittenOverAnExistingFileAndTheResultSaysWhy(@TempDir Path dir) throws Exception {
+        Path source = Files.createDirectories(dir.resolve("src")).resolve("Main.java");
+        Files.writeString(source, "class Main {}");
+        HttpClientService svc = new HttpClientService();
+        try {
+            HttpResult r = run(svc, "GET " + url("/missing") + "\n\n>>! src/Main.java\n", dir)
+                    .result();
+            assertEquals(404, r.status());
+            assertEquals("class Main {}", Files.readString(source), "the user's file must survive a 404");
+            assertTrue(r.written().isEmpty(), r.written().toString());
+            assertTrue(
+                    r.warnings().stream().anyMatch(w -> w.contains("src/Main.java") && w.contains("not replaced")),
+                    r.warnings().toString());
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    /** A body cut at the size cap is half a file: it must not replace a whole one. */
+    @Test
+    void aTruncatedBodyIsNotWrittenOverAnExistingFile(@TempDir Path dir) throws Exception {
+        Path out = Files.writeString(dir.resolve("big.txt"), "the complete earlier download");
+        HttpClientService svc = new HttpClientService(1000, Duration.ofMinutes(1));
+        try {
+            HttpResult r =
+                    run(svc, "GET " + url("/big") + "\n\n>>! big.txt\n", dir).result();
+            assertTrue(r.truncated());
+            assertEquals("the complete earlier download", Files.readString(out));
+            assertTrue(
+                    r.warnings().stream().anyMatch(w -> w.contains("big.txt")),
+                    r.warnings().toString());
+        } finally {
+            svc.shutdown();
+        }
+    }
+
+    /** A successful {@code >>!} still replaces — after the guard preserved the file — and the result lists it. */
+    @Test
+    void aSuccessfulForcedRedirectAsksTheGuardFirstAndListsTheFile(@TempDir Path dir) throws Exception {
+        Path out = Files.writeString(dir.resolve("out.txt"), "previous");
+        AtomicReference<String> preserved = new AtomicReference<>();
+        HttpClientService svc = new HttpClientService();
+        svc.setRedirectGuard(target -> {
+            try {
+                byte[] before = Files.readAllBytes(target);
+                preserved.set(new String(before, StandardCharsets.UTF_8));
+                return new ResponseRedirects.Decision(ResponseRedirects.Verdict.KEPT_IN_HISTORY, before);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+        try {
+            HttpResult r =
+                    run(svc, "GET " + url("/echo") + "\n\n>>! out.txt\n", dir).result();
+            assertEquals("previous", preserved.get(), "the guard saw the content that was about to be replaced");
+            assertEquals("ok", Files.readString(out));
+            assertEquals(1, r.written().size(), r.written().toString());
+            assertTrue(r.written().get(0).contains("out.txt"), r.written().get(0));
+            assertTrue(
+                    HttpResponseFormat.render(r).contains(r.written().get(0)), "the saved report lists the file too");
         } finally {
             svc.shutdown();
         }

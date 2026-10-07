@@ -612,35 +612,47 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "history.setMaxPerFile",
                         () -> host.editorSettings()
-                                .promptIntSetting(
+                                .promptIntValue(
                                         "history.setMaxPerFile",
                                         () -> host.config().getSettings().getHistoryMaxPerFile(),
                                         1,
                                         Settings.MAX_HISTORY_PER_FILE,
-                                        v -> host.config().getSettings().setHistoryMaxPerFile(v),
-                                        host.historyCoordinator()::applySupport)));
+                                        // not written directly: a lower limit deletes revisions, so it asks first
+                                        v -> host.historyCoordinator()
+                                                .changeLimit(
+                                                        host.editorSettings().titleOf("history.setMaxPerFile"),
+                                                        HistoryCoordinator.Limit.MAX_PER_FILE,
+                                                        v))));
         host.registry()
                 .register(Command.of(
                         "history.setMaxAgeDays",
                         () -> host.editorSettings()
-                                .promptIntSetting(
+                                .promptIntValue(
                                         "history.setMaxAgeDays",
                                         () -> host.config().getSettings().getHistoryMaxAgeDays(),
                                         0, // 0 = keep revisions whatever their age, as the Settings spinner allows
                                         Settings.MAX_HISTORY_AGE_DAYS,
-                                        v -> host.config().getSettings().setHistoryMaxAgeDays(v),
-                                        host.historyCoordinator()::applySupport)));
+                                        // not written directly: a lower limit deletes revisions, so it asks first
+                                        v -> host.historyCoordinator()
+                                                .changeLimit(
+                                                        host.editorSettings().titleOf("history.setMaxAgeDays"),
+                                                        HistoryCoordinator.Limit.MAX_AGE_DAYS,
+                                                        v))));
         host.registry()
                 .register(Command.of(
                         "history.setMaxTotalMb",
                         () -> host.editorSettings()
-                                .promptIntSetting(
+                                .promptIntValue(
                                         "history.setMaxTotalMb",
                                         () -> host.config().getSettings().getHistoryMaxTotalMb(),
                                         1,
                                         Settings.MAX_HISTORY_TOTAL_MB,
-                                        v -> host.config().getSettings().setHistoryMaxTotalMb(v),
-                                        host.historyCoordinator()::applySupport)));
+                                        // not written directly: a lower limit deletes revisions, so it asks first
+                                        v -> host.historyCoordinator()
+                                                .changeLimit(
+                                                        host.editorSettings().titleOf("history.setMaxTotalMb"),
+                                                        HistoryCoordinator.Limit.MAX_TOTAL_MB,
+                                                        v))));
         host.registry()
                 .register(Command.of(
                         "editor.setLargeFileThreshold",

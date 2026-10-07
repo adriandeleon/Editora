@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 111;
+    public static final int SCHEMA_VERSION = 112;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -286,6 +286,9 @@ public class Settings {
     /** Local File History: on by default — silently snapshots local files on save/auto-save/external
      *  reload so prior versions can be browsed, diffed, and restored independently of VCS. */
     private boolean localHistory = true;
+    /** Crash recovery: on by default — while a buffer has unsaved changes a copy of its text is kept under
+     *  {@code <config>/recovery/} and offered back on the next launch if Editora did not close normally. */
+    private boolean crashRecovery = true;
     /** Max revisions kept per file (oldest pruned beyond this); ≤0 = unbounded. */
     private int historyMaxPerFile = 50;
     /** Max age in days for a revision (older pruned, newest always kept); ≤0 = no age limit. */
@@ -1725,6 +1728,14 @@ public class Settings {
 
     public void setLocalHistory(boolean localHistory) {
         this.localHistory = localHistory;
+    }
+
+    public boolean isCrashRecovery() {
+        return crashRecovery;
+    }
+
+    public void setCrashRecovery(boolean crashRecovery) {
+        this.crashRecovery = crashRecovery;
     }
 
     public int getHistoryMaxPerFile() {

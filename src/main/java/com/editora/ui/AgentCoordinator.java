@@ -1,7 +1,6 @@
 package com.editora.ui;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -42,8 +41,10 @@ import static com.editora.i18n.Messages.tr;
  * Claude Code driven over stdio — the {@code CoordinatorHost} feature-coordinator pattern): the
  * {@link AcpClient} lifecycle (spawn on first prompt, one session per window), the {@link AgentPanel}
  * chat tool window, the {@code session/update} → transcript routing, the agent's fs bridge (reads serve
- * an open buffer's <em>live</em> text; writes to an open buffer go through an <em>undoable</em>
- * {@code replaceText}, disk otherwise), and the {@code session/request_permission} dialog.
+ * an open buffer's <em>live</em> text; writes to a buffer open in any window are an <em>undoable</em>
+ * whole-document edit that is refused when the text changed since the agent read it; a file with no buffer
+ * is snapshotted to Local History and rewritten in its own encoding), and the
+ * {@code session/request_permission} dialog.
  * {@code MainController} keeps the {@code ToolWindow} registration + the {@code agent.*} command
  * registrations and delegates the logic here.
  */
@@ -57,8 +58,36 @@ final class AgentCoordinator implements AcpClient.Host {
         /** This window's project root, or null (no project). */
         Path projectRoot();
 
-        /** The open buffer whose file matches {@code path} (canonical), or null. */
+        /** The open buffer in <em>this window</em> whose file matches {@code path} (canonical), or null. */
         EditorBuffer bufferForPath(String path);
+
+        /**
+         * The buffer another window has open for {@code file}, or null. An agent write must go through it: a
+         * write to disk underneath a buffer — dirty or not — leaves that window holding text the file no
+         * longer has. FX-thread only.
+         */
+        default EditorBuffer bufferInAnotherWindow(Path file) {
+            return null;
+        }
+
+        /**
+         * Records {@code content} — the text of {@code file} about to be replaced — in Local File History and
+         * reports once it is durable ({@code true} also when the feature is off: there is then nothing to
+         * wait for). FX-thread only.
+         */
+        default void recordHistory(Path file, String content, Consumer<Boolean> completion) {
+            completion.accept(true);
+        }
+
+        /** The {@code .editorconfig} charset the editor would read {@code file} with, or null. Any thread. */
+        default String editorConfigCharset(Path file) {
+            return null;
+        }
+
+        /** Takes this file's place in the app-wide document-write order; null = no shared sequencer (tests). */
+        default com.editora.io.DocumentWriteSequencer.Ticket beginDocumentWrite(Path file) {
+            return null;
+        }
 
         /** Toggles the AI Agent tool window. */
         void toggleToolWindow();
@@ -870,46 +899,185 @@ final class AgentCoordinator implements AcpClient.Host {
         });
     }
 
+    /** How long an fs request waits for the FX thread; a request that never started by then is cancelled. */
+    static final long FX_TIMEOUT_MILLIS = 10_000;
+
+    /** What this session's agent was last shown of each file (by {@link PathKeys#key}); see {@link ServedText}. */
+    private final ServedText served = new ServedText();
+
+    /** Orders closed-file writes when the window supplies no app-wide sequencer (tests). */
+    private final com.editora.io.DocumentWriteSequencer localWrites = new com.editora.io.DocumentWriteSequencer();
+
+    /**
+     * The file an fs request names. {@link AcpClient} hands over the absolute path {@link
+     * com.editora.agent.AcpFsGuard} resolved inside the session folder; anything else is refused here rather
+     * than resolved against the editor's own working directory, which is not the project.
+     */
+    static Path sessionPath(String path) throws IOException {
+        Path file;
+        try {
+            file = path == null || path.isBlank() ? null : Path.of(path);
+        } catch (RuntimeException e) {
+            file = null;
+        }
+        if (file == null || !file.isAbsolute()) {
+            throw new IOException("Refused: not an absolute path inside the session folder: " + path);
+        }
+        return file.normalize();
+    }
+
+    /** FX thread: the buffer holding {@code file} — in this window, else in any other — or null. */
+    private EditorBuffer openBuffer(Path file) {
+        EditorBuffer here = ops.bufferForPath(file.toString());
+        return here != null ? here : ops.bufferInAnotherWindow(file);
+    }
+
     @Override
     public String readTextFile(String path, Integer line, Integer limit) throws Exception {
-        EditorBuffer open = fxCall(() -> ops.bufferForPath(path));
-        String text = open != null ? fxCall(open::getContent) : Files.readString(Path.of(path));
+        Path file = sessionPath(path);
+        String key = PathKeys.key(file);
+        String text = fxCall(() -> {
+            EditorBuffer open = openBuffer(file);
+            if (open == null) {
+                return null;
+            }
+            String live = open.getContent();
+            served.served(key, live); // in the same FX turn as the read: nothing can be typed in between
+            return live;
+        });
+        if (text == null) {
+            // Decoded the way the editor opens the file, so a write can put the same encoding back.
+            text = AgentFileWrites.decode(Files.readAllBytes(file), ops.editorConfigCharset(file));
+            served.served(key, text);
+        }
         return slice(text, line, limit);
     }
 
     @Override
     public void writeTextFile(String path, String content) throws Exception {
+        Path file = sessionPath(path);
+        String key = PathKeys.key(file);
         String body = content == null ? "" : content;
-        EditorBuffer open = fxCall(() -> ops.bufferForPath(path));
-        if (open != null) {
-            boolean applied = fxCall(() -> {
-                if (!open.isEditable()) {
-                    return false;
-                }
-                // Undoable, review-first: the buffer goes dirty and the user saves (one C-z reverts the edit).
-                // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in
-                // it.
-                open.replaceWholeDocument(body);
-                host.setStatus(tr("status.agent.editedBuffer", open.getTitle()));
-                return true;
-            });
-            if (!applied) {
-                throw new IOException("Cannot apply an agent edit to read-only buffer " + path);
-            }
-            return;
+        // null = no buffer holds the file; "" = applied to its buffer; anything else = why it was refused.
+        String refusal = fxCall(() -> {
+            EditorBuffer open = openBuffer(file);
+            return open == null ? null : applyToOpenBuffer(open, key, body, path);
+        });
+        if (refusal == null) {
+            writeClosedFile(file, key, body);
+        } else if (!refusal.isEmpty()) {
+            throw new IOException(refusal);
         }
-        Path file = Path.of(path);
-        if (file.getParent() != null) {
+    }
+
+    /**
+     * FX thread: replaces the whole document of {@code open} with the agent's text — in whichever window the
+     * buffer lives. Undoable and review-first: the buffer goes dirty and the user saves (one undo reverts the
+     * edit); nothing is written to disk. Returns {@code ""} when applied, else the reason it was refused.
+     *
+     * <p>This is the one place an ACP write replaces a buffer's text.
+     */
+    private String applyToOpenBuffer(EditorBuffer open, String key, String body, String path) {
+        if (!open.isEditable()) {
+            return "Cannot apply an agent edit to read-only buffer " + path;
+        }
+        // The agent sends the whole file as it believes it to be. Text typed since it last read the buffer —
+        // or unsaved text it never read at all — would be replaced without notice.
+        String stale = served.check(key, open.getContent(), open.isDirty()).refusal(path, "fs/read_text_file");
+        if (stale != null) {
+            return stale;
+        }
+        // A buffer without undo (large-file mode) keeps a Local History copy first, or refuses.
+        NoUndoGuard.Verdict verdict = NoUndoGuard.check(open, tr("noUndo.op.agent"));
+        if (!verdict.allowed()) {
+            return verdict.message();
+        }
+        // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in it.
+        open.replaceWholeDocument(body);
+        served.served(key, open.getContent()); // its own write is text it knows
+        host.setStatus(tr("status.agent.editedBuffer", open.getTitle()));
+        return "";
+    }
+
+    /**
+     * Agent request thread: replaces (or creates) a file no window has open. There is no undo and no review
+     * step on this path, so the previous text goes to Local File History before anything is written, the
+     * bytes keep the file's own encoding, byte-order mark and line endings, and the replacement is
+     * conditional on the file still being what was snapshotted and on no buffer having opened it meanwhile.
+     */
+    private void writeClosedFile(Path file, String key, String body) throws Exception {
+        AgentFileWrites.Plan plan = AgentFileWrites.plan(file, body, ops.editorConfigCharset(file));
+        if (plan.existing() != null) {
+            String stale = served.check(key, plan.currentText(), false).refusal(file.toString(), "fs/read_text_file");
+            if (stale != null) {
+                throw new IOException(stale);
+            }
+            recordBeforeWrite(file, plan.previousText());
+        } else if (file.getParent() != null) {
             documentFiles.createDirectories(file.getParent());
         }
-        AtomicFileWrite.writeIf(file, body.getBytes(StandardCharsets.UTF_8), () -> true, documentFiles);
-        // No open buffer matched this path (a brand-new file, or an unsaved/untitled buffer the agent
-        // couldn't have targeted since it has no path yet) — open it as a background tab so the user
-        // actually sees what the agent wrote, instead of it only landing on disk with no visible tab.
+        java.util.function.BooleanSupplier stillClosed = () -> {
+            try {
+                return fxCall(() -> openBuffer(file) == null);
+            } catch (Exception e) {
+                return false;
+            }
+        };
+        com.editora.io.DocumentWriteSequencer.Ticket shared = ops.beginDocumentWrite(file);
+        boolean written;
+        try (com.editora.io.DocumentWriteSequencer.Ticket ticket = shared != null ? shared : localWrites.begin(file)) {
+            var outcome = ticket.runIfCurrent(() -> plan.existing() != null
+                    ? AtomicFileWrite.replaceIfUnchanged(
+                            file,
+                            plan.existing(),
+                            plan.replacement(),
+                            () -> ticket.isCurrent() && stillClosed.getAsBoolean(),
+                            documentFiles)
+                    : AtomicFileWrite.writeIf(
+                            file,
+                            plan.replacement(),
+                            () -> ticket.isCurrent()
+                                    && !documentFiles.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                                    && stillClosed.getAsBoolean(),
+                            documentFiles));
+            written = outcome.executed() && Boolean.TRUE.equals(outcome.value());
+        }
+        if (!written) {
+            throw new IOException("Refused: " + file + " changed, or was opened in the editor, while this write"
+                    + " was being applied. Read it again and retry.");
+        }
+        served.served(key, plan.replacementText());
+        // No buffer held this path (a brand-new file, or one with no tab) — open it as a background tab so
+        // the user actually sees what the agent wrote, instead of it only landing on disk with no visible tab.
         Platform.runLater(() -> {
             ops.refreshProjectTree();
             ops.openBackgroundBuffer(file);
         });
+    }
+
+    /** Agent request thread: the previous text is in Local File History, durably, or the write does not happen. */
+    private void recordBeforeWrite(Path file, String previousText) throws IOException {
+        CompletableFuture<Boolean> durable = new CompletableFuture<>();
+        Platform.runLater(() -> {
+            try {
+                ops.recordHistory(file, previousText, durable::complete);
+            } catch (RuntimeException failure) {
+                durable.complete(false);
+            }
+        });
+        boolean kept;
+        try {
+            kept = Boolean.TRUE.equals(durable.get(FX_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            kept = false;
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException e) {
+            kept = false;
+        }
+        if (!kept) {
+            throw new IOException("Refused: could not keep a Local History copy of " + file
+                    + " before replacing it, so it was left untouched.");
+        }
     }
 
     /** The agent may edit the project, never the editor's own settings/keymaps/plugins (which can run code). */
@@ -921,6 +1089,31 @@ final class AgentCoordinator implements AcpClient.Host {
     /** Sets the directory agent file writes are refused under (the editor's configuration directory). */
     void protectDirectory(Path dir) {
         this.writeProtectedDir = dir;
+    }
+
+    /**
+     * How long after the permission dialog appears its input is ignored. The dialog opens from an agent
+     * request, at no moment the user chose — usually while they are typing in the editor — and takes the
+     * keyboard focus: the Enter or Space already on its way would otherwise press whatever button has it.
+     */
+    static final long PERMISSION_GRACE_NANOS = TimeUnit.MILLISECONDS.toNanos(700);
+
+    /** The clock the grace period is measured on (a test seam). */
+    java.util.function.LongSupplier permissionClock = System::nanoTime;
+
+    /**
+     * The index of the button that has the focus when the permission dialog opens: the first option that
+     * rejects just this once, else Cancel ({@code options.size()}), which decides nothing. Never an approving
+     * option — agents list "Always Allow" first — and never a standing "reject always" either: whatever a
+     * stray key can reach must be harmless and must not outlive the request. Pure.
+     */
+    static int safePermissionChoice(List<AcpJson.PermissionOption> options) {
+        for (int i = 0; i < options.size(); i++) {
+            if ("reject_once".equals(options.get(i).kind())) {
+                return i;
+            }
+        }
+        return options.size();
     }
 
     @Override
@@ -939,6 +1132,7 @@ final class AgentCoordinator implements AcpClient.Host {
             }
             buttons[options.size()] = ButtonType.CANCEL;
             alert.getButtonTypes().setAll(buttons);
+            guardPermissionDialog(alert, buttons, safePermissionChoice(options));
             var result = alert.showAndWait();
             String optionId = null;
             if (result.isPresent()) {
@@ -952,6 +1146,41 @@ final class AgentCoordinator implements AcpClient.Host {
             f.complete(optionId);
         });
         return f;
+    }
+
+    /**
+     * Makes the dialog safe to appear under the user's hands: no button is the default (Enter from anywhere),
+     * the focus starts on {@code buttons[safe]}, and until {@link #PERMISSION_GRACE_NANOS} after it is shown
+     * every key and every button press is swallowed — so input that was aimed at the editor answers nothing.
+     */
+    private void guardPermissionDialog(Alert alert, ButtonType[] buttons, int safe) {
+        javafx.scene.control.DialogPane pane = alert.getDialogPane();
+        long[] shownAt = {Long.MIN_VALUE};
+        java.util.function.BooleanSupplier armed =
+                () -> shownAt[0] != Long.MIN_VALUE && permissionClock.getAsLong() - shownAt[0] > PERMISSION_GRACE_NANOS;
+        pane.addEventFilter(javafx.scene.input.KeyEvent.ANY, e -> {
+            if (!armed.getAsBoolean()) {
+                e.consume();
+            }
+        });
+        for (ButtonType type : buttons) {
+            if (pane.lookupButton(type) instanceof javafx.scene.control.Button button) {
+                button.setDefaultButton(false);
+                button.addEventFilter(javafx.event.ActionEvent.ACTION, e -> {
+                    if (!armed.getAsBoolean()) {
+                        e.consume(); // DialogPane closes on an unconsumed ACTION only
+                    }
+                });
+            }
+        }
+        javafx.scene.Node safeButton = pane.lookupButton(buttons[safe]);
+        alert.setOnShown(e -> {
+            shownAt[0] = permissionClock.getAsLong();
+            if (safeButton != null) {
+                safeButton.requestFocus();
+                Platform.runLater(safeButton::requestFocus); // after the dialog's own initial focus pass
+            }
+        });
     }
 
     // --- helpers --------------------------------------------------------------------------------------
@@ -996,21 +1225,13 @@ final class AgentCoordinator implements AcpClient.Host {
         return modeId;
     }
 
-    /** Runs {@code task} on the FX thread and blocks (with a timeout) for its result — for the fs bridge,
-     *  which the agent calls on its own request threads. */
+    /**
+     * Runs {@code task} on the FX thread and blocks (with a timeout) for its result — for the fs bridge, which
+     * the agent calls on its own request threads. A task the FX thread has not started when the wait ends is
+     * cancelled, so a request answered with a timeout is not applied afterwards (see {@link FxCall}).
+     */
     private static <T> T fxCall(java.util.function.Supplier<T> task) throws Exception {
-        if (Platform.isFxApplicationThread()) {
-            return task.get();
-        }
-        CompletableFuture<T> f = new CompletableFuture<>();
-        Platform.runLater(() -> {
-            try {
-                f.complete(task.get());
-            } catch (Throwable t) {
-                f.completeExceptionally(t);
-            }
-        });
-        return f.get(10, TimeUnit.SECONDS);
+        return FxCall.call(task, FX_TIMEOUT_MILLIS);
     }
 
     private static Throwable rootCause(Throwable t) {
@@ -1032,6 +1253,7 @@ final class AgentCoordinator implements AcpClient.Host {
         AcpClient c = client;
         client = null;
         sessionId = null;
+        served.clear(); // the next agent process has read nothing yet
         models = List.of();
         modes = List.of();
         currentModelId = null;

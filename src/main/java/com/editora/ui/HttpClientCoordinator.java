@@ -23,6 +23,7 @@ import com.editora.http.HttpFile;
 import com.editora.http.HttpResponseFormat;
 import com.editora.http.HttpResult;
 import com.editora.http.HttpVars;
+import com.editora.http.ResponseRedirects;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -54,6 +55,14 @@ final class HttpClientCoordinator {
 
         /** Persists the selected environment (workspace state + durable save). */
         void persistEnvironment(String env);
+
+        /**
+         * Local File History, which records a file's content before a {@code >>!} redirect replaces it; null
+         * when the window has none (the replace then proceeds unrecorded, and the response view says so).
+         */
+        default HistoryCoordinator history() {
+            return null;
+        }
     }
 
     private final CoordinatorHost host;
@@ -71,6 +80,66 @@ final class HttpClientCoordinator {
     HttpClientCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
         this.ops = ops;
+        service.setRedirectGuard(this::beforeRedirectOverwrite);
+    }
+
+    /** How long a run waits for the previous content of a redirect target to become a durable revision. */
+    private static final long REDIRECT_CAPTURE_TIMEOUT_SECONDS = 30;
+
+    /**
+     * {@link ResponseRedirects.Guard}: called on the request's worker thread before {@code >>!} replaces an
+     * existing file. The decision is made on the FX thread (buffers and history live there) and awaited here;
+     * if it cannot be had — the window is closing, the history store does not answer — the file is left alone.
+     */
+    private ResponseRedirects.Decision beforeRedirectOverwrite(Path target) {
+        java.util.concurrent.CompletableFuture<ResponseRedirects.Decision> decision =
+                new java.util.concurrent.CompletableFuture<>();
+        javafx.application.Platform.runLater(() -> {
+            try {
+                decideRedirectOverwrite(target, decision::complete);
+            } catch (RuntimeException failure) {
+                decision.complete(ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED));
+            }
+        });
+        try {
+            return decision.get(REDIRECT_CAPTURE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException unanswered) {
+            // fall through: not preserved
+        }
+        return ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED);
+    }
+
+    /** FX thread: refuses a target that is open with unsaved changes, else records it in Local History. */
+    private void decideRedirectOverwrite(
+            Path target, java.util.function.Consumer<ResponseRedirects.Decision> completion) {
+        Path wanted = target.toAbsolutePath().normalize();
+        boolean[] unsaved = new boolean[1];
+        host.forEachBuffer(b -> {
+            if (b.getPath() != null
+                    && b.isDirty()
+                    && b.getPath().toAbsolutePath().normalize().equals(wanted)) {
+                unsaved[0] = true;
+            }
+        });
+        if (unsaved[0]) {
+            completion.accept(ResponseRedirects.Decision.of(ResponseRedirects.Verdict.REFUSED_UNSAVED_CHANGES));
+            return;
+        }
+        HistoryCoordinator history = ops.history();
+        if (history == null) {
+            completion.accept(ResponseRedirects.Decision.of(ResponseRedirects.Verdict.NOT_KEPT));
+            return;
+        }
+        history.captureBeforeOverwriteDurably(target, capture -> {
+            ResponseRedirects.Verdict verdict = !capture.safe()
+                    ? ResponseRedirects.Verdict.REFUSED_NOT_PRESERVED
+                    : capture.recorded()
+                            ? ResponseRedirects.Verdict.KEPT_IN_HISTORY
+                            : ResponseRedirects.Verdict.NOT_KEPT;
+            completion.accept(new ResponseRedirects.Decision(verdict, capture.expectedBytes()));
+        });
     }
 
     /** Whether the HTTP Client is enabled (the setting, suppressed in Simple UI mode). */
@@ -428,7 +497,8 @@ final class HttpClientCoordinator {
             return;
         }
         try {
-            Files.writeString(chosen.toPath(), text);
+            // Staged: the Save dialog may have confirmed replacing a file, which a failed write must not empty.
+            com.editora.io.StagedExport.writeString(chosen.toPath(), text);
             host.setStatus(tr("status.http.saved", chosen.toPath().getFileName()));
         } catch (IOException e) {
             host.setStatus(tr("status.http.saveFailed", e.getMessage()));

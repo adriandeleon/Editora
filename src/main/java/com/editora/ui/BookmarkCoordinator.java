@@ -60,6 +60,13 @@ final class BookmarkCoordinator {
 
         /** Persists {@code bookmarks.json}. */
         void saveBookmarks();
+
+        /**
+         * This window rewrote {@code fileKey}'s bookmarks ({@code null}: several files) in {@code bucket} (one
+         * of the per-project maps of {@link #allBookmarks}): the other windows re-read them (see
+         * {@link BookmarkCoordinator#storeChangedElsewhere}).
+         */
+        default void bookmarksStored(Map<String, ?> bucket, String fileKey) {}
     }
 
     /** A bookmark plus the file it belongs to, for the cross-file jump picker. */
@@ -168,6 +175,7 @@ final class BookmarkCoordinator {
             ops.bookmarks().put(key, updated);
             ops.saveBookmarks();
             refreshViews();
+            ops.bookmarksStored(ops.bookmarks(), key);
         }
     }
 
@@ -195,6 +203,7 @@ final class BookmarkCoordinator {
             ops.bookmarks().put(key, updated);
             ops.saveBookmarks();
             refreshViews();
+            ops.bookmarksStored(ops.bookmarks(), key); // another window may have the file open
         }
     }
 
@@ -261,15 +270,50 @@ final class BookmarkCoordinator {
         if (file == null) {
             return;
         }
-        List<Bookmark> marks = buffer.getBookmarkManager().snapshot();
         var map = ops.bookmarks();
+        String key = file.toString();
+        List<Bookmark> stored = map.get(key);
+        // Not the snapshot alone: a second window on this file has its own copy of the bookmarks, and
+        // writing this one as the whole list deleted every bookmark the other had added.
+        List<Bookmark> marks = MarkMerge.withForeign(
+                stored, seenInStore.get(buffer), buffer.getBookmarkManager().snapshot(), Bookmark::line);
         if (marks.isEmpty()) {
-            map.remove(file.toString());
+            map.remove(key);
         } else {
             // Keep any custom order the user set in the Bookmarks tool window (the snapshot is line-order).
-            map.put(file.toString(), BookmarkStore.mergePreservingOrder(map.get(file.toString()), marks));
+            map.put(key, BookmarkStore.mergePreservingOrder(stored, marks));
         }
+        seenInStore.put(buffer, MarkMerge.keys(map.get(key), Bookmark::line));
         ops.saveBookmarks();
+        refreshViews();
+        ops.bookmarksStored(map, key);
+    }
+
+    /**
+     * The bookmark lines each buffer last saw in the store for its file (when it loaded or wrote them): what
+     * {@link MarkMerge} needs to tell "this buffer removed it" from "another window added it".
+     */
+    private final Map<EditorBuffer, java.util.Set<Integer>> seenInStore = new java.util.WeakHashMap<>();
+
+    /**
+     * Another window rewrote {@code fileKey}'s bookmarks ({@code null}: several files) in {@code bucket}. A
+     * buffer of this window on that file shows them now — it would otherwise keep its stale copy and write
+     * it back — and the panel, which lists every project's bookmarks, is redrawn.
+     */
+    void storeChangedElsewhere(Map<String, ?> bucket, String fileKey) {
+        if (bucket == ops.bookmarks()) {
+            host.forEachBuffer(b -> {
+                if (b.getPath() == null || b.isNarrowed()) {
+                    return; // a narrowed buffer's lines are region-relative; it merges when it next writes
+                }
+                String key = b.getPath().toString();
+                if (fileKey == null || fileKey.equals(key)) {
+                    List<Bookmark> stored = ops.bookmarks().get(key);
+                    b.applyBookmarks(stored);
+                    seenInStore.put(b, MarkMerge.keys(stored, Bookmark::line));
+                }
+            });
+        }
         refreshViews();
     }
 
@@ -279,7 +323,9 @@ final class BookmarkCoordinator {
         if (file == null) {
             return;
         }
-        boolean reanchored = buffer.applyBookmarks(ops.bookmarks().get(file.toString()));
+        List<Bookmark> stored = ops.bookmarks().get(file.toString());
+        boolean reanchored = buffer.applyBookmarks(stored);
+        seenInStore.put(buffer, MarkMerge.keys(stored, Bookmark::line));
         // The file changed outside the editor and a bookmark followed its content to a new line —
         // write the corrected indices back so the session self-heals (once; later opens match exactly).
         if (reanchored) {
@@ -296,6 +342,7 @@ final class BookmarkCoordinator {
         if (RenamedFileState.rekey(ops.bookmarks(), old.toString(), target.toString(), sep)) {
             ops.saveBookmarks();
             refreshViews();
+            ops.bookmarksStored(ops.bookmarks(), null);
         }
     }
 
@@ -321,6 +368,8 @@ final class BookmarkCoordinator {
         boolean any = !buffer.getBookmarkManager().snapshot().isEmpty();
         if (now != null && !now.equals(oldPath) && (any || map.containsKey(now.toString()))) {
             pendingPersist.remove(buffer);
+            // The buffer now IS this file: bookmarks stored for a file it overwrote are replaced, not merged in.
+            seenInStore.put(buffer, MarkMerge.keys(map.get(now.toString()), Bookmark::line));
             persistBookmarks(buffer); // also when it has none: bookmarks of a file it overwrote are gone
         }
     }
@@ -444,6 +493,7 @@ final class BookmarkCoordinator {
             ops.saveBookmarks();
             restoreBookmarks(b); // pull the mnemonic back into the live manager
             refreshViews();
+            ops.bookmarksStored(ops.bookmarks(), null); // the mnemonic may have been taken from another file
             host.setStatus(
                     m.isEmpty()
                             ? tr("status.bookmarks.mnemonicCleared")
@@ -576,6 +626,7 @@ final class BookmarkCoordinator {
         if (bucket != null && bucket.remove(file.toString()) != null) {
             ops.saveBookmarks();
             refreshViews();
+            ops.bookmarksStored(bucket, file.toString());
         }
     }
 
@@ -613,5 +664,6 @@ final class BookmarkCoordinator {
         }
         ops.saveBookmarks();
         refreshViews();
+        ops.bookmarksStored(map, file.toString()); // another window may have that file open
     }
 }

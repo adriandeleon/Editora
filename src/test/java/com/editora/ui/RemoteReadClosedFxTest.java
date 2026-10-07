@@ -105,6 +105,8 @@ class RemoteReadClosedFxTest {
 
             // Project tree: listing a folder used to show it as empty, without a word.
             FxTestSupport.runOnFx(() -> {
+                // The open failure above ends in the same words: clear it, or the wait below is already over.
+                FxTestSupport.call(fx.controller, "setStatus", new Class<?>[] {String.class}, "");
                 panel.setRoot(root);
                 FxTestSupport.<javafx.scene.control.TreeView<Path>>field(panel, "tree")
                         .getRoot()

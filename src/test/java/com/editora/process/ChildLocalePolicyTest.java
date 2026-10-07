@@ -57,6 +57,7 @@ class ChildLocalePolicyTest {
             "search/Ripgrep.java", // rg --version
             "search/SearchService.java", // rg matches
             "typst/TypstRenderer.java", // detect()
+            "io/Trash.java", // `gio trash` (exit code)
             "ui/FileWorkflowCoordinator.java"); // pkexec probe + elevated save (exit code)
 
     /**

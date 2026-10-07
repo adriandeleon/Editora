@@ -90,4 +90,19 @@ class ProjectPanelMoveTest {
         assertEquals(List.of(), ProjectPanel.pruneNestedSources(null));
         assertEquals(List.of(p("/proj/a.txt")), ProjectPanel.pruneNestedSources(List.of(p("/proj/a.txt"))));
     }
+
+    /** A single file moves at once; a folder or several items are confirmed first. */
+    @Test
+    void onlyAFolderOrAMultiSelectionNeedsConfirmation(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws java.io.IOException {
+        Path file = java.nio.file.Files.writeString(dir.resolve("a.txt"), "a");
+        Path other = java.nio.file.Files.writeString(dir.resolve("b.txt"), "b");
+        Path folder = java.nio.file.Files.createDirectory(dir.resolve("pkg"));
+
+        assertFalse(ProjectPanel.moveNeedsConfirmation(List.of(file)));
+        assertTrue(ProjectPanel.moveNeedsConfirmation(List.of(folder)));
+        assertTrue(ProjectPanel.moveNeedsConfirmation(List.of(file, other)));
+        assertFalse(ProjectPanel.moveNeedsConfirmation(List.of()));
+        assertFalse(ProjectPanel.moveNeedsConfirmation(null));
+    }
 }
