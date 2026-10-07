@@ -252,18 +252,11 @@ class GitBranchManagementFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             GitBranchCoordinator branches = branches(fx, repo, "main", "");
-            String summary = tr("status.git.stoppedOnConflicts", tr("gitlabel.merge"));
+            String summary = tr("status.git.opStoppedOnConflicts", tr("gitlabel.merge"));
             CountDownLatch stopped = watchStatus(fx, summary::equals);
-            CompletableFuture<Seen> shown = answer(async, OK);
 
             FxTestSupport.runOnFx(() -> branches.merge(repo.root, "main", "topic"));
-            async.await(stopped, "conflict stop");
-            Seen dialog = async.await(shown);
-
-            assertEquals(Alert.AlertType.INFORMATION, dialog.type(), "a conflict stop is not an error");
-            assertEquals(summary, dialog.header());
-            assertTrue(dialog.content().contains("CONFLICT (content): Merge conflict in file.txt"), dialog.content());
-            assertFalse(dialog.content().contains("hint:"));
+            async.await(stopped, "conflict stop"); // a status message and the Commit window, no dialog
             assertTrue(Files.exists(repo.root.resolve(".git/MERGE_HEAD")), "the merge is left in progress");
             assertTrue(Files.readString(repo.root.resolve("file.txt")).contains("<<<<<<<"));
         }
@@ -296,15 +289,11 @@ class GitBranchManagementFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             GitBranchCoordinator branches = branches(fx, conflicting, "topic", "");
-            String summary = tr("status.git.stoppedOnConflicts", tr("gitlabel.rebase"));
+            String summary = tr("status.git.opStoppedOnConflicts", tr("gitlabel.rebase"));
             CountDownLatch stopped = watchStatus(fx, summary::equals);
-            CompletableFuture<Seen> shown = answer(async, OK);
 
             FxTestSupport.runOnFx(() -> branches.rebase(conflicting.root, "topic", "main"));
             async.await(stopped, "rebase conflict stop");
-            Seen dialog = async.await(shown);
-
-            assertEquals(Alert.AlertType.INFORMATION, dialog.type());
             assertTrue(Files.isDirectory(conflicting.root.resolve(".git/rebase-merge")), "the rebase is in progress");
         }
     }

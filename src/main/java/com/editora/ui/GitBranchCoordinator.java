@@ -15,7 +15,6 @@ import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
-import javafx.scene.control.TextArea;
 import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 
@@ -178,23 +177,9 @@ final class GitBranchCoordinator {
      * designed, with the repository left mid-operation: say so, with git's own account of which files.
      */
     private void conflictStop(String operation, ProcessRunner.Result result) {
-        String summary = tr("status.git.stoppedOnConflicts", operation);
-        ui().setStatus(summary);
-        String body = GitOutcome.transcript(result);
-        Platform.runLater(() -> {
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.initOwner(ui().window());
-            alert.setTitle(tr("dialog.git.title"));
-            alert.setHeaderText(summary);
-            TextArea area = new TextArea(body);
-            area.setEditable(false);
-            area.setWrapText(true);
-            area.setPrefColumnCount(52);
-            area.setPrefRowCount(Math.min(14, (int) body.lines().count() + 1));
-            area.getStyleClass().add("git-error-text");
-            alert.getDialogPane().setContent(area);
-            alert.showAndWait();
-        });
+        // No dialog: the Commit window's operation banner and Conflicts group say what happened and offer
+        // Continue / Abort, so it is opened and the status bar names the command that stopped.
+        git().conflictsNeedAttention(tr("status.git.opStoppedOnConflicts", operation));
     }
 
     /** The usual three-way report of a working-tree command: done, stopped on conflicts, or failed. */
@@ -740,12 +725,15 @@ final class GitBranchCoordinator {
     }
 
     /**
-     * The merge pull a rejected push needs — a fast-forward-only pull cannot succeed here, the branch having
+     * The pull a rejected push needs (a rebase when that is the configured pull mode, else a merge) — a fast-forward-only pull cannot succeed here, the branch having
      * commits of its own — then the push again. A pull that stops on conflicts ends there: the push waits
      * for the user to resolve them.
      */
     private void pullThenPush(Path root, String branch, String upstream) {
-        String[] pull = {"pull", "--no-rebase", "--no-edit"};
+        // The configured pull mode, except fast-forward only, which cannot succeed on a diverged branch.
+        String[] pull = git().pullMode() == com.editora.git.GitPullMode.REBASE
+                ? com.editora.git.GitPullMode.REBASE.args()
+                : new String[] {"pull", "--no-rebase", "--no-edit"};
         String label = tr("gitlabel.pull");
         ui().setStatus(tr("status.gitRunning", label));
         git().aroundWorkingTreeMutation(

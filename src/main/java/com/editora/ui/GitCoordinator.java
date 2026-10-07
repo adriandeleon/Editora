@@ -1083,6 +1083,12 @@ final class GitCoordinator {
         return true;
     }
 
+    /** As {@link #reportConflictStop}, for a caller that classified the stop itself and has its own message. */
+    void conflictsNeedAttention(String status) {
+        host.setStatus(status);
+        ops.openCommitWindow();
+    }
+
     // --- the operation in progress: continue / skip / abort ----------------------------------------
 
     /** The display name of an operation ("Merge", "Rebase", …); {@code ""} for none. */
