@@ -27,7 +27,6 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.CustomMenuItem;
 import javafx.scene.control.Label;
-import javafx.scene.control.Menu;
 import javafx.scene.control.MenuButton;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.SeparatorMenuItem;
@@ -331,7 +330,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Most-recently-used tab order, head = most recent. */
     private final LinkedList<Tab> mru = new LinkedList<>();
     /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
-    private final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
+    final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
     /** The tab currently being dragged to reorder the strip, or null. */
     private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
@@ -4618,7 +4617,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     });
 
-    private final GitWindowCoordinator gitWindows = new GitWindowCoordinator(new GitWindowCoordinator.Host() {
+    final GitWindowCoordinator gitWindows = new GitWindowCoordinator(new GitWindowCoordinator.Host() {
         @Override
         public FileWorkflowCoordinator fileWorkflows() {
             return fileWorkflows;
@@ -5000,219 +4999,218 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     });
 
-    private final FileWorkflowCoordinator fileWorkflows =
-            new FileWorkflowCoordinator(new FileWorkflowCoordinator.Host() {
+    final FileWorkflowCoordinator fileWorkflows = new FileWorkflowCoordinator(new FileWorkflowCoordinator.Host() {
 
-                @Override
-                public EditorArea editorArea() {
-                    return editorArea;
-                }
+        @Override
+        public EditorArea editorArea() {
+            return editorArea;
+        }
 
-                @Override
-                public Stage stage() {
-                    return stage;
-                }
+        @Override
+        public Stage stage() {
+            return stage;
+        }
 
-                @Override
-                public ConfigManager config() {
-                    return config;
-                }
+        @Override
+        public ConfigManager config() {
+            return config;
+        }
 
-                @Override
-                public FileBreadcrumb breadcrumb() {
-                    return breadcrumb;
-                }
+        @Override
+        public FileBreadcrumb breadcrumb() {
+            return breadcrumb;
+        }
 
-                @Override
-                public ProjectPanel projectPanel() {
-                    return projectPanel;
-                }
+        @Override
+        public ProjectPanel projectPanel() {
+            return projectPanel;
+        }
 
-                @Override
-                public HistoryCoordinator historyCoordinator() {
-                    return historyCoordinator;
-                }
+        @Override
+        public HistoryCoordinator historyCoordinator() {
+            return historyCoordinator;
+        }
 
-                @Override
-                public RecentFiles recentFiles() {
-                    return recentFiles;
-                }
+        @Override
+        public RecentFiles recentFiles() {
+            return recentFiles;
+        }
 
-                @Override
-                public void updateProjectFolderView() {
-                    MainController.this.updateProjectFolderView();
-                }
+        @Override
+        public void updateProjectFolderView() {
+            MainController.this.updateProjectFolderView();
+        }
 
-                @Override
-                public EditorSettingsCoordinator editorSettings() {
-                    return editorSettings;
-                }
+        @Override
+        public EditorSettingsCoordinator editorSettings() {
+            return editorSettings;
+        }
 
-                @Override
-                public PreviewCoordinator previews() {
-                    return previews;
-                }
+        @Override
+        public PreviewCoordinator previews() {
+            return previews;
+        }
 
-                @Override
-                public GitCoordinator git() {
-                    return git;
-                }
+        @Override
+        public GitCoordinator git() {
+            return git;
+        }
 
-                @Override
-                public HtmlPreviewCoordinator htmlPreview() {
-                    return htmlPreview;
-                }
+        @Override
+        public HtmlPreviewCoordinator htmlPreview() {
+            return htmlPreview;
+        }
 
-                @Override
-                public LogViewerCoordinator logViewer() {
-                    return logViewer;
-                }
+        @Override
+        public LogViewerCoordinator logViewer() {
+            return logViewer;
+        }
 
-                @Override
-                public void refreshBuildTools() {
-                    MainController.this.refreshBuildTools();
-                }
+        @Override
+        public void refreshBuildTools() {
+            MainController.this.refreshBuildTools();
+        }
 
-                @Override
-                public IndexCoordinator indexCoordinator() {
-                    return indexCoordinator;
-                }
+        @Override
+        public IndexCoordinator indexCoordinator() {
+            return indexCoordinator;
+        }
 
-                @Override
-                public LspCoordinator lspCoordinator() {
-                    return lspCoordinator;
-                }
+        @Override
+        public LspCoordinator lspCoordinator() {
+            return lspCoordinator;
+        }
 
-                @Override
-                public boolean isLocalBuffer(EditorBuffer b) {
-                    return MainController.this.isLocalBuffer(b);
-                }
+        @Override
+        public boolean isLocalBuffer(EditorBuffer b) {
+            return MainController.this.isLocalBuffer(b);
+        }
 
-                @Override
-                public void setStatus(String message) {
-                    MainController.this.setStatus(message);
-                }
+        @Override
+        public void setStatus(String message) {
+            MainController.this.setStatus(message);
+        }
 
-                @Override
-                public EditorBuffer activeBuffer() {
-                    return MainController.this.activeBuffer();
-                }
+        @Override
+        public EditorBuffer activeBuffer() {
+            return MainController.this.activeBuffer();
+        }
 
-                @Override
-                public Tab addBuffer(EditorBuffer buffer) {
-                    return MainController.this.addBuffer(buffer);
-                }
+        @Override
+        public Tab addBuffer(EditorBuffer buffer) {
+            return MainController.this.addBuffer(buffer);
+        }
 
-                @Override
-                public Tab addBuffer(EditorBuffer buffer, boolean select) {
-                    return MainController.this.addBuffer(buffer, select);
-                }
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select) {
+            return MainController.this.addBuffer(buffer, select);
+        }
 
-                @Override
-                public Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
-                    return MainController.this.addBuffer(buffer, select, resolvePathSettings);
-                }
+        @Override
+        public Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
+            return MainController.this.addBuffer(buffer, select, resolvePathSettings);
+        }
 
-                @Override
-                public Tab addContentTab(TabContent content, boolean select) {
-                    return MainController.this.addContentTab(content, select);
-                }
+        @Override
+        public Tab addContentTab(TabContent content, boolean select) {
+            return MainController.this.addContentTab(content, select);
+        }
 
-                @Override
-                public void updateTabMeta(Tab tab, EditorBuffer buffer) {
-                    MainController.this.updateTabMeta(tab, buffer);
-                }
+        @Override
+        public void updateTabMeta(Tab tab, EditorBuffer buffer) {
+            MainController.this.updateTabMeta(tab, buffer);
+        }
 
-                @Override
-                public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
-                    lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
-                    debugCoordinator.bufferPathChanged(buffer, oldPath);
-                    bookmarkCoordinator.bufferPathChanged(buffer, oldPath); // Save As: its marks go with it
-                    notesCoordinator.bufferPathChanged(buffer, oldPath);
-                    historyCoordinator.bufferPathChanged(buffer, oldPath);
-                    RenamedFileState.copyWorkspace(config.getWorkspaceState(), oldPath, buffer.getPath());
-                }
+        @Override
+        public void bufferPathChanged(EditorBuffer buffer, Path oldPath, boolean oldAlreadyClosed) {
+            lspCoordinator.documentPathChanged(buffer, oldPath, oldAlreadyClosed);
+            debugCoordinator.bufferPathChanged(buffer, oldPath);
+            bookmarkCoordinator.bufferPathChanged(buffer, oldPath); // Save As: its marks go with it
+            notesCoordinator.bufferPathChanged(buffer, oldPath);
+            historyCoordinator.bufferPathChanged(buffer, oldPath);
+            RenamedFileState.copyWorkspace(config.getWorkspaceState(), oldPath, buffer.getPath());
+        }
 
-                @Override
-                public void promoteTab(Tab tab) {
-                    MainController.this.promoteTab(tab);
-                }
+        @Override
+        public void promoteTab(Tab tab) {
+            MainController.this.promoteTab(tab);
+        }
 
-                @Override
-                public void finishAsyncOpen(Tab tab, EditorBuffer buffer, FileWorkflowCoordinator.PreparedLoad load) {
-                    MainController.this.finishAsyncOpen(tab, buffer, load);
-                }
+        @Override
+        public void finishAsyncOpen(Tab tab, EditorBuffer buffer, FileWorkflowCoordinator.PreparedLoad load) {
+            MainController.this.finishAsyncOpen(tab, buffer, load);
+        }
 
-                @Override
-                public void failAsyncOpen(Tab tab, EditorBuffer buffer, Path file, Exception error) {
-                    MainController.this.failAsyncOpen(tab, buffer, file, error);
-                }
+        @Override
+        public void failAsyncOpen(Tab tab, EditorBuffer buffer, Path file, Exception error) {
+            MainController.this.failAsyncOpen(tab, buffer, file, error);
+        }
 
-                @Override
-                public String autoSaveModeOf(String mode) {
-                    return MainController.this.autoSaveModeOf(mode);
-                }
+        @Override
+        public String autoSaveModeOf(String mode) {
+            return MainController.this.autoSaveModeOf(mode);
+        }
 
-                @Override
-                public String autoSaveLabel(String mode) {
-                    return MainController.this.autoSaveLabel(mode);
-                }
+        @Override
+        public String autoSaveLabel(String mode) {
+            return MainController.this.autoSaveLabel(mode);
+        }
 
-                @Override
-                public EditorBuffer bufferOf(Tab tab) {
-                    return MainController.this.bufferOf(tab);
-                }
+        @Override
+        public EditorBuffer bufferOf(Tab tab) {
+            return MainController.this.bufferOf(tab);
+        }
 
-                @Override
-                public Tab tabFor(EditorBuffer buffer) {
-                    return MainController.this.tabFor(buffer);
-                }
+        @Override
+        public Tab tabFor(EditorBuffer buffer) {
+            return MainController.this.tabFor(buffer);
+        }
 
-                @Override
-                public Tab tabForPath(Path file) {
-                    return MainController.this.tabForPath(file);
-                }
+        @Override
+        public Tab tabForPath(Path file) {
+            return MainController.this.tabForPath(file);
+        }
 
-                @Override
-                public boolean openInAnotherWindow(Path file) {
-                    return windowManager != null && windowManager.openInAnotherWindow(MainController.this, file);
-                }
+        @Override
+        public boolean openInAnotherWindow(Path file) {
+            return windowManager != null && windowManager.openInAnotherWindow(MainController.this, file);
+        }
 
-                @Override
-                public void editorConfigSaved() {
-                    if (windowManager == null) {
-                        applyEditorConfigLocal();
-                    } else {
-                        windowManager.editorConfigSavedAcrossWindows();
-                    }
-                }
+        @Override
+        public void editorConfigSaved() {
+            if (windowManager == null) {
+                applyEditorConfigLocal();
+            } else {
+                windowManager.editorConfigSavedAcrossWindows();
+            }
+        }
 
-                @Override
-                public Path tabPath(Tab tab) {
-                    return MainController.this.tabPath(tab);
-                }
+        @Override
+        public Path tabPath(Tab tab) {
+            return MainController.this.tabPath(tab);
+        }
 
-                @Override
-                public void requestSave() {
-                    MainController.this.requestSave();
-                }
+        @Override
+        public void requestSave() {
+            MainController.this.requestSave();
+        }
 
-                @Override
-                public Tab tabForBuffer(EditorBuffer buffer) {
-                    return MainController.this.tabForBuffer(buffer);
-                }
+        @Override
+        public Tab tabForBuffer(EditorBuffer buffer) {
+            return MainController.this.tabForBuffer(buffer);
+        }
 
-                @Override
-                public void promptText(
-                        String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
-                    MainController.this.promptText(title, label, initial, onAccept);
-                }
+        @Override
+        public void promptText(
+                String title, String label, String initial, java.util.function.Consumer<String> onAccept) {
+            MainController.this.promptText(title, label, initial, onAccept);
+        }
 
-                @Override
-                public Path pathOf(java.io.File file) {
-                    return MainController.this.pathOf(file);
-                }
-            });
+        @Override
+        public Path pathOf(java.io.File file) {
+            return MainController.this.pathOf(file);
+        }
+    });
 
     @FXML
     private void onSave() {
@@ -5697,7 +5695,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
-    private final GitCoordinator git = new GitCoordinator(coordinatorHost, new GitCoordinator.WindowOps() {
+    final GitCoordinator git = new GitCoordinator(coordinatorHost, new GitCoordinator.WindowOps() {
         @Override
         public void setStatusBarGitEnabled(boolean enabled) {
             statusBar.setGitEnabled(enabled);
@@ -5812,96 +5810,95 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The diff + merge-conflict viewer (open/refresh diffs, apply-change, compare entry points, patch
      *  export, merge resolution); see {@link DiffCoordinator}. Git-backed diffs reach the repo via {@code git}. */
-    private final DiffCoordinator diffCoordinator =
-            new DiffCoordinator(coordinatorHost, git, new DiffCoordinator.Ops() {
-                @Override
-                public void addDiffTab(TabContent pane) {
-                    if (pane instanceof DiffViewerPane diffPane) {
-                        diffPane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
-                    } else if (pane instanceof DirectoryReviewPane reviewPane) {
-                        reviewPane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
-                    }
-                    addContentTab(pane, true);
-                }
+    final DiffCoordinator diffCoordinator = new DiffCoordinator(coordinatorHost, git, new DiffCoordinator.Ops() {
+        @Override
+        public void addDiffTab(TabContent pane) {
+            if (pane instanceof DiffViewerPane diffPane) {
+                diffPane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
+            } else if (pane instanceof DirectoryReviewPane reviewPane) {
+                reviewPane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
+            }
+            addContentTab(pane, true);
+        }
 
-                @Override
-                public void prepareDiffPane(DiffViewerPane pane) {
-                    pane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
-                }
+        @Override
+        public void prepareDiffPane(DiffViewerPane pane) {
+            pane.setExitDiffUiAction(chrome.diffUiActive() ? chrome::exitDiffUiMode : null);
+        }
 
-                @Override
-                public EditorBuffer openBufferFor(Path target) {
-                    return MainController.this.openBufferFor(target);
-                }
+        @Override
+        public EditorBuffer openBufferFor(Path target) {
+            return MainController.this.openBufferFor(target);
+        }
 
-                @Override
-                public EditorBuffer openBackgroundBuffer(Path target) {
-                    return MainController.this.openBackgroundBuffer(target);
-                }
+        @Override
+        public EditorBuffer openBackgroundBuffer(Path target) {
+            return MainController.this.openBackgroundBuffer(target);
+        }
 
-                @Override
-                public void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
-                    MainController.this.openBackgroundBufferAsync(target, done);
-                }
+        @Override
+        public void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
+            MainController.this.openBackgroundBufferAsync(target, done);
+        }
 
-                @Override
-                public void discardBackgroundBuffer(EditorBuffer buffer) {
-                    Tab tab = tabFor(buffer);
-                    if (tab != null && !buffer.isDirty()) {
-                        editorArea.remove(tab);
-                    }
-                }
+        @Override
+        public void discardBackgroundBuffer(EditorBuffer buffer) {
+            Tab tab = tabFor(buffer);
+            if (tab != null && !buffer.isDirty()) {
+                editorArea.remove(tab);
+            }
+        }
 
-                @Override
-                public boolean saveBuffer(EditorBuffer buffer) {
-                    return fileWorkflows.saveSynchronously(buffer);
-                }
+        @Override
+        public boolean saveBuffer(EditorBuffer buffer) {
+            return fileWorkflows.saveSynchronously(buffer);
+        }
 
-                @Override
-                public java.util.List<DiffViewerPane> openDiffPanes() {
-                    java.util.List<DiffViewerPane> out = new java.util.ArrayList<>();
-                    for (Tab tab : editorArea.tabs()) {
-                        if (tab.getUserData() instanceof DiffViewerPane dp) {
-                            out.add(dp);
-                        } else if (tab.getUserData() instanceof PatchReviewPane review) {
-                            out.addAll(review.panes());
-                        } else if (tab.getUserData() instanceof DirectoryReviewPane review) {
-                            out.addAll(review.panes());
-                        }
-                    }
-                    return out;
+        @Override
+        public java.util.List<DiffViewerPane> openDiffPanes() {
+            java.util.List<DiffViewerPane> out = new java.util.ArrayList<>();
+            for (Tab tab : editorArea.tabs()) {
+                if (tab.getUserData() instanceof DiffViewerPane dp) {
+                    out.add(dp);
+                } else if (tab.getUserData() instanceof PatchReviewPane review) {
+                    out.addAll(review.panes());
+                } else if (tab.getUserData() instanceof DirectoryReviewPane review) {
+                    out.addAll(review.panes());
                 }
+            }
+            return out;
+        }
 
-                @Override
-                public DiffViewerPane activeDiffPane() {
-                    Tab t = editorArea.selectedTab();
-                    if (t == null) {
-                        return null;
-                    }
-                    if (t.getUserData() instanceof DiffViewerPane dp) {
-                        return dp;
-                    }
-                    if (t.getUserData() instanceof PatchReviewPane review) {
-                        return review.activePane();
-                    }
-                    return t.getUserData() instanceof DirectoryReviewPane review ? review.activePane() : null;
-                }
+        @Override
+        public DiffViewerPane activeDiffPane() {
+            Tab t = editorArea.selectedTab();
+            if (t == null) {
+                return null;
+            }
+            if (t.getUserData() instanceof DiffViewerPane dp) {
+                return dp;
+            }
+            if (t.getUserData() instanceof PatchReviewPane review) {
+                return review.activePane();
+            }
+            return t.getUserData() instanceof DirectoryReviewPane review ? review.activePane() : null;
+        }
 
-                @Override
-                public Path finderStartDir() {
-                    return navigation.finderStartDir();
-                }
+        @Override
+        public Path finderStartDir() {
+            return navigation.finderStartDir();
+        }
 
-                @Override
-                public String editorConfigCharset(Path file) {
-                    return editorConfigCharsetFor(file);
-                }
+        @Override
+        public String editorConfigCharset(Path file) {
+            return editorConfigCharsetFor(file);
+        }
 
-                @Override
-                public void openAt(Path file, int line) {
-                    openAndNavigate(file, Math.max(0, line - 1));
-                }
-            });
+        @Override
+        public void openAt(Path file, int line) {
+            openAndNavigate(file, Math.max(0, line - 1));
+        }
+    });
 
     // --- GitHub (native `gh` CLI: PR checkout/diff/create + open-on-GitHub) ---------------------------
 
@@ -7469,7 +7466,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** True when {@code b}'s file is on the local filesystem (or untitled) — the gate for every feature
      *  that shells out to a local process (LSP/DAP/git/run/HTTP). Remote (SFTP) buffers are text-only. */
-    private boolean isLocalBuffer(EditorBuffer b) {
+    boolean isLocalBuffer(EditorBuffer b) {
         return b != null && com.editora.vfs.Vfs.isLocal(b.getPath());
     }
 
@@ -8730,7 +8727,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Closes a single tab, confirming first if it is pinned and/or has unsaved changes. */
-    private void closeTab(Tab tab) {
+    void closeTab(Tab tab) {
         if (tab != null && closes.confirmClose(tab)) {
             editorArea.remove(tab);
         }
@@ -8763,7 +8760,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Non-pinned tabs whose index is less than {@code pivot}'s. */
-    private List<Tab> eligibleToLeft(Tab pivot) {
+    List<Tab> eligibleToLeft(Tab pivot) {
         int idx = editorArea.indexOf(pivot);
         List<Tab> out = new ArrayList<>();
         for (int i = 0; i < idx; i++) {
@@ -8776,7 +8773,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Non-pinned tabs whose index is greater than {@code pivot}'s. */
-    private List<Tab> eligibleToRight(Tab pivot) {
+    List<Tab> eligibleToRight(Tab pivot) {
         int idx = editorArea.indexOf(pivot);
         List<Tab> out = new ArrayList<>();
         for (int i = idx + 1; i < editorArea.size(); i++) {
@@ -8788,7 +8785,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         return out;
     }
 
-    private void closeOtherTabs(Tab keep) {
+    void closeOtherTabs(Tab keep) {
         List<Tab> targets = new ArrayList<>();
         for (Tab t : editorArea.tabs()) {
             if (t != keep && !pinned.contains(t)) {
@@ -8798,7 +8795,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         closeTabs(targets);
     }
 
-    private void closeAllTabs() {
+    void closeAllTabs() {
         List<Tab> targets = new ArrayList<>();
         for (Tab t : editorArea.tabs()) {
             if (!pinned.contains(t)) {
@@ -8808,7 +8805,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         closeTabs(targets);
     }
 
-    private void closeUnmodifiedTabs() {
+    void closeUnmodifiedTabs() {
         List<Tab> targets = new ArrayList<>();
         for (Tab t : editorArea.tabs()) {
             EditorBuffer buffer = bufferOf(t);
@@ -8819,20 +8816,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         closeTabs(targets);
     }
 
-    private void closeTabsToLeft(Tab pivot) {
+    void closeTabsToLeft(Tab pivot) {
         if (pivot != null) {
             closeTabs(eligibleToLeft(pivot));
         }
     }
 
-    private void closeTabsToRight(Tab pivot) {
+    void closeTabsToRight(Tab pivot) {
         if (pivot != null) {
             closeTabs(eligibleToRight(pivot));
         }
     }
 
     /** Copies the buffer's absolute path to the system clipboard. */
-    private void copyPath(EditorBuffer buffer) {
+    void copyPath(EditorBuffer buffer) {
         if (buffer == null || buffer.getPath() == null) {
             return;
         }
@@ -8864,7 +8861,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Reveals {@code path} in the OS file manager. Used by the palette command, the tab context menu,
      * and the Project tool window. No-op (with a status hint) for an unsaved or remote file.
      */
-    private void revealInFileManager(Path path, boolean isDir, boolean local) {
+    void revealInFileManager(Path path, boolean isDir, boolean local) {
         if (path == null) {
             setStatus(tr("status.reveal.noFile"));
             return;
@@ -8880,7 +8877,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Opens a terminal at {@code path}'s containing folder. Shared by the command, tab menu, and tree. */
-    private void openTerminalAt(Path path, boolean isDir, boolean local) {
+    void openTerminalAt(Path path, boolean isDir, boolean local) {
         if (path == null) {
             setStatus(tr("status.reveal.noFile"));
             return;
@@ -8899,7 +8896,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Toggles a tab's pinned state. Pinned tabs are kept grouped at the front of the strip (in pin
      * order) and skipped by the bulk-close actions.
      */
-    private void togglePin(Tab tab) {
+    void togglePin(Tab tab) {
         if (tab == null) {
             return;
         }
@@ -8914,7 +8911,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /** Prompts for a new name for the buffer's file; see {@link #renameFileTo}. */
-    private void renameFile(EditorBuffer buffer, Tab tab) {
+    void renameFile(EditorBuffer buffer, Tab tab) {
         if (buffer != null && buffer.getPath() != null) {
             Path old = buffer.getPath();
             String name = old.getFileName().toString();
@@ -8963,148 +8960,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Builds and attaches the right-click context menu for a tab. */
     private void installTabMenu(Tab tab, EditorBuffer buffer) {
-        tab.setContextMenu(LazyContextMenu.of(menu -> buildTabMenu(tab, buffer, menu))); // built on first use
-    }
-
-    private void buildTabMenu(Tab tab, EditorBuffer buffer, ContextMenu menu) {
-        MenuItem save = LazyContextMenu.item(tr("menu.save"), Icons.save(), () -> fileWorkflows.save(buffer));
-        MenuItem saveAs = LazyContextMenu.item(tr("menu.saveAs"), Icons.saveAs(), () -> fileWorkflows.saveAs(buffer));
-        MenuItem close = LazyContextMenu.item(tr("menu.close"), Icons.closeTab(), () -> closeTab(tab));
-        MenuItem closeOthers =
-                LazyContextMenu.item(tr("menu.closeOthers"), Icons.closeOtherTabs(), () -> closeOtherTabs(tab));
-        MenuItem closeAll = LazyContextMenu.item(tr("menu.closeAll"), Icons.closeAllTabs(), () -> closeAllTabs());
-        MenuItem closeUnmodified = LazyContextMenu.item(
-                tr("menu.closeUnmodified"), Icons.closeUnmodifiedTabs(), () -> closeUnmodifiedTabs());
-        MenuItem closeLeft =
-                LazyContextMenu.item(tr("menu.closeLeft"), Icons.closeTabsLeft(), () -> closeTabsToLeft(tab));
-        MenuItem closeRight =
-                LazyContextMenu.item(tr("menu.closeRight"), Icons.closeTabsRight(), () -> closeTabsToRight(tab));
-        MenuItem copyPath = LazyContextMenu.item(tr("menu.copyPath"), Icons.copy(), () -> copyPath(buffer));
-        MenuItem pin = LazyContextMenu.item(tr("menu.pin"), Icons.pin(), () -> togglePin(tab));
-        MenuItem rename = LazyContextMenu.item(tr("menu.rename"), Icons.edit(), () -> renameFile(buffer, tab));
-        // Git submenu — mirrors the Project tree's cell "Git" submenu, acting on this tab's file.
-        Menu gitMenu = new Menu(tr("project.menu.git"));
-        gitMenu.setGraphic(Icons.git());
-        MenuItem stage = LazyContextMenu.item(
-                tr("project.menu.git.stage"),
-                Icons.stageAll(),
-                () -> git.ifEnabled(() -> git.gitStagePath(buffer.getPath())));
-        MenuItem unstage = LazyContextMenu.item(
-                tr("project.menu.git.unstage"),
-                Icons.remove(),
-                () -> git.ifEnabled(() -> git.gitUnstagePath(buffer.getPath())));
-        MenuItem revert = LazyContextMenu.item(
-                tr("project.menu.git.revert"),
-                Icons.undo(),
-                () -> git.ifEnabled(() -> git.gitRevertPath(buffer.getPath())));
-        MenuItem ignore = LazyContextMenu.item(
-                tr("project.menu.git.addToGitignore"),
-                Icons.git(),
-                () -> git.ifEnabled(() -> git.addToGitignore(buffer.getPath())));
-        MenuItem diffHead = LazyContextMenu.item(
-                tr("project.menu.git.compareHead"),
-                Icons.diff(),
-                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsHead(buffer.getPath())));
-        MenuItem diffBranch = LazyContextMenu.item(
-                tr("project.menu.git.compareBranch"),
-                Icons.diff(),
-                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsBranch(buffer.getPath())));
-        MenuItem diffTag = LazyContextMenu.item(
-                tr("project.menu.git.compareTag"),
-                Icons.diff(),
-                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsTag(buffer.getPath())));
-        MenuItem diffCommit = LazyContextMenu.item(
-                tr("project.menu.git.compareRevision"),
-                Icons.diff(),
-                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsCommit(buffer.getPath())));
-        MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
-        annotate.setGraphic(Icons.blame());
-        annotate.setOnAction(e -> git.ifEnabled(() -> {
-            fileWorkflows.openPath(buffer.getPath());
-            git.annotateActive();
-        }));
-        MenuItem history = LazyContextMenu.item(
-                tr("project.menu.git.fileHistory"),
-                Icons.gitLog(),
-                () -> git.ifEnabled(() -> gitWindows.gitFileHistoryForPath(buffer.getPath())));
-        gitMenu.getItems()
-                .addAll(
-                        stage,
-                        unstage,
-                        revert,
-                        ignore,
-                        new SeparatorMenuItem(),
-                        diffHead,
-                        diffBranch,
-                        diffTag,
-                        diffCommit,
-                        annotate,
-                        history);
-        // "Compare With…" (any two files) and "Open in Diff Viewer" (a .patch/.diff file) are not Git
-        // actions, so they stay outside the Git submenu.
-        MenuItem compareWith = LazyContextMenu.item(
-                tr("menu.compareWith"), Icons.diff(), () -> diffCoordinator.compareActiveWithFile());
-        MenuItem openPatch = LazyContextMenu.item(
-                tr("menu.openInDiffViewer"), Icons.diff(), () -> diffCoordinator.openPatchFile(buffer));
-        MenuItem reveal = LazyContextMenu.item(
-                tr("menu.revealInFileManager"),
-                Icons.revealInFiles(),
-                () -> revealInFileManager(buffer.getPath(), false, isLocalBuffer(buffer)));
-        MenuItem terminal = LazyContextMenu.item(
-                tr("menu.openTerminal"),
-                Icons.terminal(),
-                () -> openTerminalAt(buffer.getPath(), false, isLocalBuffer(buffer)));
-
-        menu.getItems()
-                .setAll(
-                        save,
-                        saveAs,
-                        new SeparatorMenuItem(),
-                        close,
-                        closeOthers,
-                        closeAll,
-                        closeUnmodified,
-                        new SeparatorMenuItem(),
-                        closeLeft,
-                        closeRight,
-                        new SeparatorMenuItem(),
-                        gitMenu,
-                        compareWith,
-                        openPatch,
-                        new SeparatorMenuItem(),
-                        reveal,
-                        terminal,
-                        copyPath,
-                        pin,
-                        rename);
-        menu.setOnShowing(e -> {
-            closeLeft.setDisable(eligibleToLeft(tab).isEmpty());
-            closeRight.setDisable(eligibleToRight(tab).isEmpty());
-            boolean hasPath = buffer.getPath() != null;
-            // Reveal/terminal only make sense for a saved, local file.
-            boolean localPath = hasPath && isLocalBuffer(buffer);
-            reveal.setDisable(!localPath);
-            terminal.setDisable(!localPath);
-            copyPath.setDisable(!hasPath);
-            rename.setDisable(!hasPath);
-            compareWith.setDisable(!hasPath); // not a Git action — works on any two files
-            // Only shown for a .patch/.diff file — parses the buffer's own (possibly unsaved) text.
-            openPatch.setVisible(hasPath
-                    && PatchFiles.isPatchFile(buffer.getPath().getFileName().toString()));
-            // The Git submenu is only shown for a saved file (an untitled buffer can't be in a repo) and is
-            // greyed out when there's no VCS (Git off / not inside a repo) — mirroring the Project tree.
-            gitMenu.setVisible(hasPath);
-            GitPathScope scope = hasPath ? git.scopeOf(buffer.getPath()) : GitPathScope.NONE;
-            gitMenu.setDisable(scope == GitPathScope.NONE);
-            // Nothing to revert on a clean file; ignore is for untracked ones. For a file of another
-            // repository the status is unknown here, so both stay enabled.
-            com.editora.git.GitFileStatus st = git.statusFor(buffer.getPath());
-            revert.setDisable(scope == GitPathScope.ACTIVE && st == null);
-            ignore.setDisable(scope == GitPathScope.ACTIVE && st != com.editora.git.GitFileStatus.UNTRACKED);
-            // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
-            save.setDisable(hasPath && !buffer.isDirty());
-            pin.setText(tr(pinned.contains(tab) ? "menu.unpin" : "menu.pin"));
-        });
+        tab.setContextMenu(
+                LazyContextMenu.of(menu -> TabContextMenu.build(this, tab, buffer, menu))); // built on first use
     }
 
     /** Reflection seam retained for lifecycle tests and project deletion. */
