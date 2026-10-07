@@ -147,11 +147,16 @@ class PaletteContextFxTest {
         Files.writeString(csv, "a,b\n1,2\n");
         FxWindowFixture fx = FxWindowFixture.create(
                 dir, false, false, false, List.of(new MainController.OpenTarget(csv, 0, 0)), c -> {});
+        // As above: opening the file queues recent-files/session writes on the config-writer thread, so the
+        // writer must be stopped before JUnit deletes the @TempDir it is writing into.
+        try {
+            Map<String, Boolean> v = verdicts(fx.controller, "csv.align", "markdown.bold", "edit.cut");
 
-        Map<String, Boolean> v = verdicts(fx.controller, "csv.align", "markdown.bold", "edit.cut");
-
-        assertTrue(v.get("csv.align"), "a CSV buffer makes csv.* actionable");
-        assertTrue(v.get("edit.cut"), "a buffer is open");
-        assertFalse(v.get("markdown.bold"), "a CSV buffer is not a Markdown buffer");
+            assertTrue(v.get("csv.align"), "a CSV buffer makes csv.* actionable");
+            assertTrue(v.get("edit.cut"), "a buffer is open");
+            assertFalse(v.get("markdown.bold"), "a CSV buffer is not a Markdown buffer");
+        } finally {
+            fx.dispose();
+        }
     }
 }
