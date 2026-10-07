@@ -1346,6 +1346,7 @@ public class SettingsWindow {
             apply();
             updateGitRowEnabled(); // reflect on the Tool Windows page's Commit row
             blameCheck.setDisable(!now); // inline blame only matters when Git is on
+            refreshGithubStatus(); // the GitHub page says when it is waiting for Git support
         });
 
         blameCheck = new CheckBox(tr("settings.git.blameInline"));
@@ -6431,21 +6432,53 @@ public class SettingsWindow {
         if (githubStatusLabel == null || githubService == null) {
             return;
         }
-        githubStatusLabel.getStyleClass().setAll("settings-git-status");
-        githubStatusLabel.setText(tr("settings.github.checking"));
+        if (config.getSettings().isGithubSupport() && !config.getSettings().isGitSupport()) {
+            // GitHub rides on the Git integration: say so here rather than report a healthy gh that does nothing.
+            githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-missing");
+            githubStatusLabel.setText(tr("settings.github.needsGit"));
+            return;
+        }
+        // Re-applying an unchanged command keeps the service's cached answer, so it is shown at once and
+        // only replaced when the fresh probe lands — no "Checking…" flash on every Settings sync.
         githubService.setCommand(config.getSettings().getGhPath());
-        githubService.detect(a -> {
-            if (!a.found()) {
-                githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-missing");
-                githubStatusLabel.setText(tr("settings.github.notFound"));
-            } else if (!a.authenticated()) {
-                githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-missing");
-                githubStatusLabel.setText(tr("settings.github.foundNoAuth"));
-            } else {
-                githubStatusLabel.getStyleClass().setAll("settings-git-status", "settings-git-found");
-                githubStatusLabel.setText(tr("settings.github.found", a.version()));
-            }
-        });
+        com.editora.github.GitHubService.Availability cached = githubService.availability();
+        if (cached == null) {
+            githubStatusLabel.getStyleClass().setAll("settings-git-status");
+            githubStatusLabel.setText(tr("settings.github.checking"));
+        } else {
+            showGithubStatus(cached);
+        }
+        githubService.detect(this::showGithubStatus);
+    }
+
+    private void showGithubStatus(com.editora.github.GitHubService.Availability a) {
+        String[] verdict = githubStatus(a);
+        githubStatusLabel.getStyleClass().setAll("settings-git-status", verdict[0]);
+        githubStatusLabel.setText(verdict[1]);
+    }
+
+    /** The GitHub page's status row for a probe result: {@code [style class, text]}. Pure — unit-tested. */
+    static String[] githubStatus(com.editora.github.GitHubService.Availability a) {
+        String missing = "settings-git-missing";
+        if (!a.found()) {
+            return new String[] {missing, tr("settings.github.notFound")};
+        }
+        return switch (a.auth()) {
+            case SIGNED_OUT -> new String[] {missing, tr("settings.github.foundNoAuth")};
+            case REJECTED -> new String[] {missing, tr("settings.github.foundRejected")};
+            // Offline is not a fault of the setup: gh is there and has an account.
+            case UNVERIFIED -> new String[] {"settings-git-found", tr("settings.github.foundUnverified", a.version())};
+            case SIGNED_IN ->
+                a.supportsChecks()
+                        ? new String[] {"settings-git-found", tr("settings.github.found", a.version())}
+                        : new String[] {
+                            missing,
+                            tr(
+                                    "settings.github.foundOld",
+                                    com.editora.github.GhVersion.number(a.version()),
+                                    com.editora.github.GhVersion.MINIMUM)
+                        };
+        };
     }
 
     /** Reads each build coordinator's currently-cached detection (no subprocess probe needed — "found" just
