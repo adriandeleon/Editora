@@ -1061,8 +1061,13 @@ final class FileWorkflowCoordinator {
                             // open file.
                             host.editorSettings().applyRefreshedEditorConfig(buffer, rules);
                         }
-                        if (!exists || !buffer.diskChangedFrom(mtime, size)) {
-                            return; // deleted/renamed externally — keep what's open (no prompt) — or unchanged
+                        if (!exists) {
+                            noteMissingOnDisk(tab, buffer); // keep what's open, but no longer as "saved"
+                            return;
+                        }
+                        if (!buffer.diskChangedFrom(mtime, size)) {
+                            restoreIfBackOnDisk(tab, buffer); // unchanged — and back, if it had gone missing
+                            return;
                         }
                         String loaded = buffer.diskSnapshot().fingerprint();
                         if (loaded != null) {
@@ -1122,6 +1127,7 @@ final class FileWorkflowCoordinator {
                         }
                         if (same) {
                             buffer.setDiskSnapshot(mtime, size, loaded);
+                            restoreIfBackOnDisk(tab, buffer);
                         } else if (host.editorArea().selectedTab() == tab && !checkingExternalChanges) {
                             checkingExternalChanges = true; // the prompt steals focus: do not re-enter
                             try {
@@ -1153,6 +1159,9 @@ final class FileWorkflowCoordinator {
                 buffer.isDirty() ? tr("dialog.externalChange.keepMine") : tr("dialog.externalChange.keep"),
                 ButtonBar.ButtonData.CANCEL_CLOSE);
         alert.getButtonTypes().setAll(reload, keep);
+        if (buffer.isDirty()) {
+            ExternalChangePrompt.keepIsTheKeyboardDefault(alert, reload, keep);
+        }
         if (alert.showAndWait().filter(b -> b == reload).isPresent()) {
             reloadFromDisk(tab, buffer);
         } else {
@@ -1164,6 +1173,57 @@ final class FileWorkflowCoordinator {
         }
     }
 
+    /**
+     * Clean buffers whose file was found missing, with the document version they had then. Such a buffer is
+     * marked unsaved so that closing it asks first — but it holds no edit of the user's, so it becomes clean
+     * again when the same bytes reappear, and a post-Git reload may still replace it. FX thread only.
+     */
+    private final Map<EditorBuffer, Long> missingOnDisk = new java.util.WeakHashMap<>();
+
+    /**
+     * The file of an open, clean buffer is gone (deleted or moved by another program, a {@code git clean}, a
+     * branch switch). The editor now holds what may be the only copy: mark it unsaved and say so, instead of
+     * letting the tab close without a word. FX thread.
+     */
+    void noteMissingOnDisk(Tab tab, EditorBuffer buffer) {
+        if (buffer.isDisposed()
+                || buffer.isDirty()
+                || buffer.diskSnapshot().modifiedMillis() < 0 // never read from or written to disk
+                || loadingBuffers.contains(buffer)
+                || hasPendingSave(buffer)) {
+            return;
+        }
+        buffer.markUnsaved();
+        missingOnDisk.put(buffer, buffer.docVersion());
+        host.updateTabMeta(tab, buffer);
+        host.setStatus(tr("status.fileGoneKeptUnsaved", buffer.getPath().getFileName()));
+    }
+
+    /** Whether {@code buffer} is unsaved only because its file went missing: it carries no edit. FX thread. */
+    boolean unsavedOnlyBecauseMissing(EditorBuffer buffer) {
+        Long version = missingOnDisk.get(buffer);
+        if (version == null) {
+            return false;
+        }
+        if (version != buffer.docVersion() || !buffer.isDirty()) {
+            missingOnDisk.remove(buffer); // edited or saved since: an ordinary buffer again
+            return false;
+        }
+        return true;
+    }
+
+    /** The file is back with the bytes the buffer was loaded from: it is saved again. FX thread. */
+    private void restoreIfBackOnDisk(Tab tab, EditorBuffer buffer) {
+        if (unsavedOnlyBecauseMissing(buffer)) {
+            missingOnDisk.remove(buffer);
+            buffer.markClean();
+            host.updateTabMeta(tab, buffer);
+        }
+    }
+
+    /** Test seam: runs on the worker before {@link #reloadFromDisk} reads the file. */
+    volatile Runnable beforeReloadReadForTest;
+
     /** Reloads a buffer's content from disk, preserving the caret position as best it can. */
     void reloadFromDisk(Tab tab, EditorBuffer buffer) {
         reloadFromDisk(tab, buffer, ignored -> {});
@@ -1173,8 +1233,15 @@ final class FileWorkflowCoordinator {
     void reloadFromDisk(Tab tab, EditorBuffer buffer, java.util.function.Consumer<Boolean> onComplete) {
         Path file = buffer.getPath();
         invalidatePendingWrite(file);
+        // The decision to let the disk win is about the document as it is now. The read comes back on a
+        // later FX turn; whatever was typed in between was never part of that decision and must survive.
+        ReloadGuard guard = ReloadGuard.capture(buffer);
         fileLoadExecutor.execute(() -> {
             try {
+                Runnable hook = beforeReloadReadForTest;
+                if (hook != null) {
+                    hook.run();
+                }
                 PreparedLoad load = prepareLoad(file, false);
                 Platform.runLater(() -> {
                     boolean applied = false;
@@ -1182,8 +1249,15 @@ final class FileWorkflowCoordinator {
                         if (!buffer.isDisposed()
                                 && buffer.getPath() != null
                                 && com.editora.config.PathKeys.sameNormalized(buffer.getPath(), file)) {
-                            applyPreparedReload(tab, buffer, load);
-                            applied = true;
+                            if (guard.stillHolds(buffer)) {
+                                applyPreparedReload(tab, buffer, load);
+                                applied = true;
+                            } else {
+                                // Left as it is: unsaved against a changed disk, which the external-change
+                                // prompt and the save-time conflict check already handle.
+                                host.updateTabMeta(tab, buffer);
+                                host.setStatus(tr("status.reloadSkippedEdited", file.getFileName()));
+                            }
                         }
                     } finally {
                         onComplete.accept(applied);
@@ -1766,6 +1840,9 @@ final class FileWorkflowCoordinator {
      * (so we never mark clean over edits made after the snapshot).
      */
     void autoSaveBuffer(EditorBuffer buffer) {
+        if (unsavedOnlyBecauseMissing(buffer)) {
+            return; // held open because its file was deleted: only an explicit save may bring the file back
+        }
         Path file = buffer.getPath();
         SaveRequest request = captureSave(buffer, file);
         if (request == null) {
