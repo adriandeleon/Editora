@@ -89,4 +89,26 @@ class ProcessRunnerEnvTest {
         assertEquals(ProcessRunner.augmentedPath(), windows.get("Path"));
         assertFalse(windows.containsKey("PATH"));
     }
+
+    @Test
+    void anOverrideWithANullValueRemovesTheVariable() {
+        // Git's children must not inherit GIT_DIR and its relatives; an empty value would not do, git reads
+        // GIT_DIR="" as a (bad) repository path.
+        Map<String, String> inherited = inherited();
+        inherited.put("GIT_DIR", "/elsewhere/.git");
+        inherited.put("GIT_WORK_TREE", "/elsewhere");
+        Map<String, String> overrides = new java.util.HashMap<>();
+        overrides.put("GIT_DIR", null);
+        overrides.put("GIT_WORK_TREE", null);
+        overrides.put("GIT_NEVER_SET", null);
+        overrides.put("GIT_PAGER", "cat");
+        for (boolean userLocale : new boolean[] {true, false}) {
+            Map<String, String> env =
+                    ProcessRunner.childEnvironment(new java.util.HashMap<>(inherited), userLocale, overrides);
+            org.junit.jupiter.api.Assertions.assertFalse(env.containsKey("GIT_DIR"));
+            org.junit.jupiter.api.Assertions.assertFalse(env.containsKey("GIT_WORK_TREE"));
+            org.junit.jupiter.api.Assertions.assertFalse(env.containsKey("GIT_NEVER_SET"));
+            org.junit.jupiter.api.Assertions.assertEquals("cat", env.get("GIT_PAGER"));
+        }
+    }
 }

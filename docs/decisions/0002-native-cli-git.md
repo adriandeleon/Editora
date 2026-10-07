@@ -27,6 +27,21 @@ gutter work behind it. Working-tree mutations are serialised across both.
   status lock-free, and `GIT_TERMINAL_PROMPT=0` makes a missing credential fail at once instead of
   waiting on a terminal nobody can see (askpass and credential helpers are unaffected). Background
   reads keep `LC_ALL=C`: their output is parsed.
+- **No git child inherits the launching shell's repository.** `GIT_DIR`, `GIT_WORK_TREE`,
+  `GIT_INDEX_FILE` and the other variables `git rev-parse --local-env-vars` lists are removed from the
+  environment of every git process (`GitSafety.REPO_LOCAL_ENV`; a `null` override tells
+  `ProcessRunner` to unset a variable). Started from a shell that exports them, every folder
+  otherwise resolved to that one repository.
+- **A read that did not fit the capture is a failure.** Background reads are parsed whole, so stdout
+  cut off at `ProcessRunner`'s limit becomes a failed result (`GitService.completeOrFailed`) instead
+  of a partial blame, status or file list, and nothing cut off is cached.
+- **Negative answers expire; a refusal is its own state.** "Not a repository", "git refuses to work
+  here" (`RepoState.refused()`/`refusal()`: dubious ownership, a bare repository, …) and "git is
+  unavailable" are each believed only for a bounded time, and a cached root is revalidated against
+  the `.git` entries between the folder and that root — stat calls, not a process per refresh.
+- **A running user command can be stopped.** `GitService.cancelRunningCommand()` ends the network
+  command if one is running, otherwise the local one (a commit waiting in a hook, a long checkout),
+  with SIGTERM first so git removes its lock files; the rest of a multi-command job is not started.
 - **User commands keep their request order across the two lanes.** A fetch/pull/push is handed to the
   network lane only when the local lane reaches it, so a push never overtakes the commit requested
   before it; a local mutation that finds a pull holding the working tree queues behind it on the

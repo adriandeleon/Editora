@@ -440,7 +440,8 @@ public final class ProcessRunner {
 
     /**
      * Turns the inherited environment {@code env} into the one a child is started with, in place, and returns
-     * it: the augmented PATH, {@code LC_ALL=C} unless {@code userLocale}, then {@code overrides}.
+     * it: the augmented PATH, {@code LC_ALL=C} unless {@code userLocale}, then {@code overrides}. An override
+     * whose value is {@code null} <em>removes</em> that variable from the inherited environment.
      */
     static Map<String, String> childEnvironment(
             Map<String, String> env, boolean userLocale, Map<String, String> overrides) {
@@ -450,7 +451,14 @@ public final class ProcessRunner {
             applyStandardEnv(env);
         }
         if (overrides != null) {
-            env.putAll(overrides);
+            // A null value removes the variable: git's children must not inherit GIT_DIR and its relatives.
+            overrides.forEach((key, value) -> {
+                if (value == null) {
+                    env.remove(key);
+                } else {
+                    env.put(key, value);
+                }
+            });
         }
         return env;
     }

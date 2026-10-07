@@ -1233,7 +1233,7 @@ final class GitCoordinator {
 
     /** Stops the running clone, fetch, pull or push (the Git console's Stop button and {@code git.cancel}). */
     void cancelNetworkCommand() {
-        host.setStatus(tr(service.cancelNetworkCommand() ? "status.git.cancelling" : "status.git.nothingToCancel"));
+        host.setStatus(tr(service.cancelRunningCommand() ? "status.git.cancelling" : "status.git.nothingToCancel"));
     }
 
     /**

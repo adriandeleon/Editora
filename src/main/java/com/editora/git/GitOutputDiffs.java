@@ -19,7 +19,7 @@ public final class GitOutputDiffs {
     public record Target(int start, int end, String oldRev, String newRev, String oldPath, String newPath) {}
 
     /** Git's --stat row with a graph: a path, a pipe, the change count, then {@code +}/{@code -} marks. */
-    private static final Pattern DIFF_STAT = Pattern.compile("^\\s*(.+?)\\s+\\|\\s+(\\d+\\s+[+\\-]+)\\s*$");
+    private static final Pattern DIFF_STAT = Pattern.compile("^\\s*+(\\S.*?)\\s+\\|\\s+(\\d+\\s+[+\\-]+)\\s*$");
 
     private static final Pattern UPDATING = Pattern.compile("^Updating ([0-9a-f]{4,64})\\.\\.([0-9a-f]{4,64})\\s*$");
 
@@ -39,6 +39,9 @@ public final class GitOutputDiffs {
         if (line == null || line.isEmpty()) {
             return null;
         }
+        if (line.indexOf('|') < 0) {
+            return null; // not a stat row; see GitOutputLinks.DIFF_STAT for why the pattern is not even tried
+        }
         Matcher stat = DIFF_STAT.matcher(line);
         return stat.matches() ? new int[] {stat.start(2), stat.end(2)} : null;
     }
@@ -57,8 +60,12 @@ public final class GitOutputDiffs {
         if (lineEnd < 0) {
             lineEnd = text.length();
         }
-        Matcher stat = DIFF_STAT.matcher(text.substring(lineStart, lineEnd));
-        if (!stat.matches() || offset < lineStart + stat.start(2) || offset >= lineStart + stat.end(2)) {
+        String statLine = text.substring(lineStart, lineEnd);
+        Matcher stat = DIFF_STAT.matcher(statLine);
+        if (statLine.indexOf('|') < 0
+                || !stat.matches()
+                || offset < lineStart + stat.start(2)
+                || offset >= lineStart + stat.end(2)) {
             return null;
         }
         String[] paths = renamedPaths(stat.group(1));
