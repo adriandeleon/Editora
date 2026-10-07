@@ -31,7 +31,10 @@ import com.editora.editor.EditorBuffer;
 import com.editora.git.BlameHeatmap;
 import com.editora.git.BlameParser;
 import com.editora.git.GitChangeBars;
+import com.editora.git.GitConflicts;
 import com.editora.git.GitFormat;
+import com.editora.git.GitOperation;
+import com.editora.git.GitPullMode;
 import com.editora.git.GitSafety;
 import com.editora.git.GitService;
 import com.editora.git.GitStatus;
@@ -73,6 +76,27 @@ final class GitCoordinator {
         void setGitLogWindowAvailable(boolean available);
 
         void setGitPanelStatus(GitStatus status);
+
+        /**
+         * The merge / rebase / cherry-pick / revert the repository is in the middle of
+         * ({@link GitOperation#NONE} for none) and how many files are still unmerged: the status-bar segment
+         * and the Commit window's banner. Sent before {@link #setGitPanelStatus} on every refresh.
+         */
+        default void setGitOperation(GitOperation operation, int conflicts) {}
+
+        /**
+         * Git's reason for refusing to work in the folder ({@code ""} when it does not): shown in the
+         * status-bar segment and as the Commit window's placeholder instead of "not a repository".
+         */
+        default void setGitRefusal(String reason) {}
+
+        /**
+         * Commits with the message typed in the Commit window, as its button does; false when the box is
+         * empty or a commit is already running (the caller then lets git use its prepared message).
+         */
+        default boolean commitFromPanel() {
+            return false;
+        }
 
         /** Pushes the per-file Git working-tree status to the Project tree for IntelliJ-style file coloring. */
         void setProjectGitStatus(java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> byPath);
@@ -136,6 +160,9 @@ final class GitCoordinator {
     private java.util.function.BiConsumer<Path, String> repositoryListener = (root, branch) -> {};
     private Runnable mutationListener = () -> {};
     private String upstream = "";
+    /** The multi-step operation the active repository is in the middle of; pairs with {@link #repoRoot}. */
+    private GitOperation operation = GitOperation.NONE;
+
     private boolean supportApplied;
     /** Replaces the body of {@link #gitPush} once the branch coordinator exists; null in a bare engine. */
     Runnable pushHandler;
@@ -171,6 +198,16 @@ final class GitCoordinator {
 
     String upstream() {
         return upstream;
+    }
+
+    /** The merge, rebase, cherry-pick or revert in progress in the active repository, as of the last refresh. */
+    GitOperation operation() {
+        return operation;
+    }
+
+    /** Whether the abort / continue / skip commands have an operation to act on (palette and menu gating). */
+    boolean operationInProgress() {
+        return repoRoot != null && operation.canContinue();
     }
 
     /** Whether the Git integration is enabled in Settings (default off). Off in Simple UI mode. */
@@ -256,7 +293,10 @@ final class GitCoordinator {
             lastStatus = GitStatus.NOT_A_REPO;
             branchName = "";
             upstream = "";
+            operation = GitOperation.NONE;
             repositoryListener.accept(null, "");
+            ops.setGitRefusal("");
+            ops.setGitOperation(GitOperation.NONE, 0);
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // Git turned off → clear the Project tree coloring
@@ -305,6 +345,9 @@ final class GitCoordinator {
     void applyState(GitService.RepoState state) {
         repoRoot = state.root();
         lastStatus = state.isRepo() ? state.status() : GitStatus.NOT_A_REPO;
+        // Before the window surfaces below are told: they re-evaluate menu and palette enablement, which asks
+        // whether an operation is in progress.
+        operation = state.isRepo() ? state.operation() : GitOperation.NONE;
         EditorBuffer b = host.activeBuffer();
         // The Log needs a repository. The Commit window does not: outside one it shows "Not a Git repository"
         // with a Clone button, which is the way in. (Transient; the user's show/hide preference is untouched.)
@@ -315,6 +358,10 @@ final class GitCoordinator {
             upstream = "";
             repositoryListener.accept(null, "");
             ops.setStatusBarBranch(null, 0, 0);
+            // A folder git refuses to work in (dubious ownership, a bare repository, a corrupt index) is not
+            // "no repository": the segment and the Commit window say what git said.
+            ops.setGitRefusal(state.refusal());
+            ops.setGitOperation(GitOperation.NONE, 0);
             ops.setGitPanelStatus(null);
             lastStatusByPath = java.util.Map.of();
             ops.setProjectGitStatus(java.util.Map.of()); // clear the tree's file coloring (outside a repo / Git off)
@@ -329,6 +376,8 @@ final class GitCoordinator {
         upstream = status.upstream();
         repositoryListener.accept(repoRoot, branchName);
         ops.setStatusBarBranch(status.branch(), status.ahead(), status.behind());
+        ops.setGitRefusal("");
+        ops.setGitOperation(operation, GitConflicts.unmerged(status).size());
         ops.setGitPanelStatus(status);
         lastStatusByPath = com.editora.git.GitFileStatus.byPath(status, state.root());
         ops.setProjectGitStatus(lastStatusByPath); // color the tree
@@ -655,7 +704,11 @@ final class GitCoordinator {
     }
 
     private void stageIn(Path root, List<String> paths) {
-        if (!saveUnsaved(root, paths)) {
+        stageIn(root, root.equals(repoRoot) ? lastStatus : null, paths);
+    }
+
+    private void stageIn(Path root, GitStatus status, List<String> paths) {
+        if (!saveUnsaved(root, paths) || !confirmStagingMarkers(root, status, paths)) {
             return;
         }
         gitOpIn(
@@ -666,9 +719,54 @@ final class GitCoordinator {
 
     /** {@code git add -A}: the Commit window's Stage All. */
     void gitStageAll() {
-        if (!reportIfNoRepo() && saveUnsaved(repoRoot, List.of())) {
-            gitOpIn(repoRoot, tr("status.git.stagedAll"), "add", "-A");
+        Path root = repoRoot; // the confirmation below runs a nested event loop: the root is captured first
+        if (!reportIfNoRepo() && saveUnsaved(root, List.of()) && confirmStagingMarkers(root, lastStatus, List.of())) {
+            gitOpIn(root, tr("status.git.stagedAll"), "add", "-A");
         }
+    }
+
+    /** The largest conflicted file read to look for leftover markers before it is staged. */
+    static final long MARKER_SCAN_MAX_BYTES = 4L * 1024 * 1024;
+
+    /**
+     * Staging an unmerged path tells git "this conflict is resolved". Doing that to a file that still holds
+     * {@code <<<<<<<} markers commits the markers, so it is confirmed first, naming the file. Called after
+     * the unsaved buffers were written, so the disk copy is what git is about to stage.
+     *
+     * @param pathspecs the paths being staged; empty means the whole repository (Stage All)
+     * @return false when the user declined
+     */
+    private boolean confirmStagingMarkers(Path root, GitStatus status, List<String> pathspecs) {
+        List<String> marked = unresolvedAmong(root, status, pathspecs);
+        if (marked.isEmpty()) {
+            return true;
+        }
+        String message = marked.size() == 1
+                ? tr("dialog.stageConflict.message", marked.get(0))
+                : tr("dialog.stageConflict.messageMany", marked.size(), marked.get(0));
+        return confirmDestructive(tr("dialog.stageConflict.title"), message, tr("dialog.stageConflict.action"));
+    }
+
+    /** The unmerged paths {@code pathspecs} select whose file on disk still contains conflict markers. */
+    static List<String> unresolvedAmong(Path root, GitStatus status, List<String> pathspecs) {
+        List<String> marked = new ArrayList<>();
+        for (GitStatus.FileEntry entry : GitConflicts.unmerged(status)) {
+            if (!pathspecs.isEmpty() && pathspecs.stream().noneMatch(spec -> selects(spec, entry.path()))) {
+                continue;
+            }
+            try {
+                Path file = root.resolve(entry.path());
+                if (Files.isRegularFile(file)
+                        && Files.size(file) <= MARKER_SCAN_MAX_BYTES
+                        && com.editora.diff.ConflictParser.hasConflictMarkers(
+                                new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.ISO_8859_1))) {
+                    marked.add(entry.path());
+                }
+            } catch (java.io.IOException | RuntimeException unreadable) {
+                // Deleted on one side, or not readable: nothing to warn about, git decides.
+            }
+        }
+        return marked;
     }
 
     /** {@code git reset -q HEAD} over one or more repo-relative paths; mirrors {@link #gitStagePaths}. */
@@ -962,11 +1060,213 @@ final class GitCoordinator {
                 result -> {
                     if (result.ok()) {
                         host.setStatus(successMessage);
-                    } else {
+                    } else if (!reportConflictStop(result, "status.git.stoppedOnConflicts")) {
                         gitError(tr("status.git.opFailed"), result.message());
                     }
                 },
                 afterCompletion);
+    }
+
+    /**
+     * A command that stopped <em>on conflicts</em> (a revert, cherry-pick, pull, rebase step or stash pop)
+     * did not fail: the repository now waits for them to be resolved, and the Commit window shows that — its
+     * Conflicts group and the operation banner — once the refresh that follows every mutation lands. So
+     * instead of an error dialog quoting git's transcript, the window is opened and the status bar says what
+     * to do. Returns false, having done nothing, for any other failure.
+     */
+    private boolean reportConflictStop(ProcessRunner.Result result, String messageKey) {
+        if (!GitConflicts.stoppedOnConflict(result)) {
+            return false;
+        }
+        host.setStatus(tr(messageKey));
+        ops.openCommitWindow();
+        return true;
+    }
+
+    // --- the operation in progress: continue / skip / abort ----------------------------------------
+
+    /** The display name of an operation ("Merge", "Rebase", …); {@code ""} for none. */
+    static String operationName(GitOperation.Kind kind) {
+        return switch (kind) {
+            case NONE -> "";
+            case MERGE -> tr("git.operation.merge");
+            case REBASE -> tr("git.operation.rebase");
+            case CHERRY_PICK -> tr("git.operation.cherryPick");
+            case REVERT -> tr("git.operation.revert");
+            case BISECT -> tr("git.operation.bisect");
+        };
+    }
+
+    /**
+     * The operation the three commands act on, or null after saying why there is none: no repository,
+     * nothing in progress, or a bisect — which is shown but has no continue, skip or abort here.
+     */
+    private GitOperation drivenOperation() {
+        if (reportIfNoRepo()) {
+            return null;
+        }
+        if (!operation.canContinue()) {
+            host.setStatus(tr("status.git.noOperation"));
+            return null;
+        }
+        return operation;
+    }
+
+    /**
+     * Continues the operation in progress ({@code git.continueOperation}, the banner's Continue). Refused
+     * while files are still unmerged — git would refuse too, with a transcript instead of a sentence. A merge
+     * is concluded by committing: with the message in the Commit window's box when there is one (it is
+     * prefilled with git's prepared message), else with git's.
+     */
+    void continueOperation() {
+        GitOperation op = drivenOperation();
+        if (op == null) {
+            return;
+        }
+        Path root = repoRoot;
+        int conflicts = GitConflicts.unmerged(lastStatus).size();
+        if (conflicts > 0) {
+            host.setStatus(tr("status.git.cannotContinueConflicts", operationName(op.kind()), conflicts));
+            ops.openCommitWindow();
+            return;
+        }
+        if (!saveUnsaved(root, List.of()) || (op.kind() == GitOperation.Kind.MERGE && ops.commitFromPanel())) {
+            return;
+        }
+        runOperationStep(root, op, op.continueArgs(), tr("status.git.operationContinued", operationName(op.kind())));
+    }
+
+    /**
+     * Skips the commit a rebase, cherry-pick or revert stopped at ({@code git <op> --skip}). That commit's
+     * changes — and whatever was resolved or edited since the stop — are dropped, so it is confirmed like
+     * every other action that throws work away. A merge has nothing to skip.
+     */
+    void skipOperation() {
+        GitOperation op = drivenOperation();
+        if (op == null) {
+            return;
+        }
+        if (!op.canSkip()) {
+            host.setStatus(tr("status.git.cannotSkip", operationName(op.kind())));
+            return;
+        }
+        Path root = repoRoot;
+        String name = operationName(op.kind());
+        if (confirmDestructive(
+                tr("dialog.skipOperation.title", name),
+                tr("dialog.skipOperation.message", name),
+                tr("dialog.skipOperation.action"))) {
+            runOperationStep(root, op, op.skipArgs(), tr("status.git.operationSkipped", name));
+        }
+    }
+
+    /**
+     * Aborts the operation in progress ({@code git <op> --abort}): the branch, index and working tree go back
+     * to where they were before it started. Confirmed first — danger-styled, Cancel the default — with a
+     * message that says what is lost for this kind of operation.
+     */
+    void abortOperation() {
+        GitOperation op = drivenOperation();
+        if (op == null) {
+            return;
+        }
+        Path root = repoRoot;
+        String name = operationName(op.kind());
+        String lost =
+                switch (op.kind()) {
+                    case MERGE -> tr("dialog.abortOperation.merge");
+                    case REBASE -> tr("dialog.abortOperation.rebase");
+                    case CHERRY_PICK -> tr("dialog.abortOperation.cherryPick");
+                    default -> tr("dialog.abortOperation.revert");
+                };
+        if (confirmDestructive(
+                tr("dialog.abortOperation.title", name), lost, tr("dialog.abortOperation.action", name))) {
+            runOperationStep(root, op, op.abortArgs(), tr("status.git.operationAborted", name));
+        }
+    }
+
+    /** One continue / skip / abort in {@code root}: pending saves superseded, buffers reloaded afterwards. */
+    private void runOperationStep(Path root, GitOperation op, String[] args, String successMessage) {
+        aroundWorkingTreeMutation(
+                root,
+                done -> service.runWorktreeMutation(root, running(args, done), args),
+                result -> {
+                    if (result.ok()) {
+                        host.setStatus(successMessage);
+                    } else if (!reportConflictStop(result, "status.git.stoppedOnConflicts")) {
+                        gitError(tr("status.git.operationFailed", operationName(op.kind())), result.message());
+                    }
+                },
+                null);
+    }
+
+    // --- conflicts -----------------------------------------------------------------------------------
+
+    /**
+     * Resolves unmerged paths by taking one whole side ({@code checkout --ours/--theirs} then {@code add}, or
+     * {@code rm} when that side deleted the file — {@link GitConflicts#acceptSide}). The other side's changes
+     * to those files are dropped, so it is confirmed.
+     */
+    void acceptConflictSide(List<String> paths, boolean ours) {
+        if (paths.isEmpty() || reportIfNoRepo()) {
+            return;
+        }
+        Path root = repoRoot;
+        List<GitStatus.FileEntry> entries = GitConflicts.unmerged(lastStatus).stream()
+                .filter(entry -> paths.contains(entry.path()))
+                .toList();
+        List<String[]> commands = GitConflicts.acceptSide(entries, ours);
+        if (commands.isEmpty()) {
+            return;
+        }
+        String side = tr(ours ? "gitpanel.menu.acceptOurs" : "gitpanel.menu.acceptTheirs");
+        String message = entries.size() == 1
+                ? tr("dialog.acceptSide.message", side, entries.get(0).path())
+                : tr("dialog.acceptSide.messageMany", side, entries.size());
+        if (!confirmDestructive(tr("dialog.acceptSide.title"), message, side)) {
+            return;
+        }
+        List<String> affected = entries.stream().map(GitStatus.FileEntry::path).toList();
+        invalidatePendingWrites(root, affected);
+        service.runWorktreeMutation(root, commands, running(commands.get(0), result -> {
+            invalidatePendingWrites(root, affected);
+            if (result.ok()) {
+                host.setStatus(
+                        affected.size() == 1
+                                ? tr("status.git.conflictResolved", affected.get(0))
+                                : tr("status.git.conflictsResolved", affected.size()));
+            } else {
+                gitError(tr("status.git.opFailed"), result.message());
+            }
+            afterMutation();
+            ops.reloadAllFromDiskSilently();
+        }));
+    }
+
+    /**
+     * The three-way resolver applied a resolution to {@code buffer}. When its file is an unmerged path of
+     * the active repository and no conflict is left in the text, the resolution is finished the way IntelliJ
+     * and VS Code finish it: the file is saved and staged, which is what marks the conflict resolved for
+     * git. A partial resolution (markers remain) is only written into the buffer, as before.
+     */
+    void resolutionApplied(EditorBuffer buffer) {
+        Path root = repoRoot;
+        Path file = buffer == null ? null : buffer.getPath();
+        if (root == null || file == null || !isEnabled()) {
+            return;
+        }
+        String relative = GitService.repoRelative(root, file);
+        if (relative == null
+                || GitConflicts.unmerged(lastStatus).stream()
+                        .noneMatch(e -> e.path().equals(relative))
+                || com.editora.diff.ConflictParser.hasConflictMarkers(buffer.getContent())) {
+            return;
+        }
+        if (!ops.saveBeforeGit(buffer)) {
+            host.setError(tr("status.git.unsavedFailed", buffer.getTitle()));
+            return;
+        }
+        gitOpIn(root, tr("status.git.conflictResolved", relative), argv(List.of(relative), "add", "--"));
     }
 
     /** Checks out a remote branch (e.g. {@code origin/foo}), creating a local tracking branch. */
@@ -1017,7 +1317,15 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
-        Path root = repoRoot;
+        syncIn(repoRoot, label, null, args);
+    }
+
+    /**
+     * @param onFailure given a failed result first; true means it dealt with it (a diverged pull offering the
+     *     way forward) and nothing more is reported
+     */
+    private void syncIn(
+            Path root, String label, java.util.function.Predicate<ProcessRunner.Result> onFailure, String... args) {
         host.setStatus(tr("status.gitRunning", label));
         boolean changesWorkingTree = args.length > 0 && "pull".equals(args[0]);
         if (changesWorkingTree) {
@@ -1026,22 +1334,96 @@ final class GitCoordinator {
         Consumer<ProcessRunner.Result> finished = running(args, r -> {
             if (changesWorkingTree) {
                 invalidatePendingWrites(root, List.of());
-            }
-            if (r.ok()) {
-                host.setStatus(tr("status.gitDone", label));
-                if (changesWorkingTree) {
-                    ops.reloadAllFromDiskSilently();
-                }
-            } else {
-                gitError(tr("status.git.syncFailed", label), r.message());
+                // Also after a failure: a pull that stopped on conflicts has rewritten files (with markers).
+                ops.reloadAllFromDiskSilently();
             }
             afterMutation();
+            if (r.ok()) {
+                host.setStatus(tr("status.gitDone", label));
+            } else if ((onFailure == null || !onFailure.test(r))
+                    && !reportConflictStop(r, "status.git.stoppedOnConflicts")) {
+                gitError(tr("status.git.syncFailed", label), r.message());
+            }
         });
         if (changesWorkingTree) {
             service.runNetworkWorktreeMutation(root, finished, args);
         } else {
             service.runNetwork(root, finished, args);
         }
+    }
+
+    // --- pull ------------------------------------------------------------------------------------------
+
+    /** The name of a pull mode as Settings and the {@code git.setPullMode} picker show it. */
+    static String pullModeLabel(GitPullMode mode) {
+        return switch (mode) {
+            case FF_ONLY -> tr("settings.git.pullMode.ffOnly");
+            case REBASE -> tr("settings.git.pullMode.rebase");
+            case MERGE -> tr("settings.git.pullMode.merge");
+        };
+    }
+
+    /** Stores the "Pull mode" setting ({@code git.setPullMode}) and keeps an open Settings window in step. */
+    void setPullMode(String id) {
+        GitPullMode mode = GitPullMode.of(id);
+        host.settings().setGitPullMode(mode.id());
+        host.requestSave();
+        ops.syncBlameCheck(); // re-reads the Git page's controls from the settings
+        host.setStatus(tr("status.settingChanged", tr("command.git.setPullMode"), pullModeLabel(mode)));
+    }
+
+    /** The "Pull mode" setting: fast-forward only unless the user chose rebase or merge. */
+    GitPullMode pullMode() {
+        return GitPullMode.of(host.settings().getGitPullMode());
+    }
+
+    /**
+     * Pulls in the configured mode ({@code git.pull}). A fast-forward-only pull of a branch that has
+     * diverged from its upstream cannot succeed, and git's "Not possible to fast-forward" names no way out:
+     * the user is offered the two there are — rebase or merge — instead of the error.
+     */
+    void gitPull() {
+        if (!reportIfNoRepo()) {
+            pullIn(repoRoot, pullMode(), true);
+        }
+    }
+
+    /** Pulls in {@code mode} whatever the setting says ({@code git.pullRebase}, {@code git.pullMerge}). */
+    void gitPull(GitPullMode mode) {
+        if (!reportIfNoRepo()) {
+            pullIn(repoRoot, mode, false);
+        }
+    }
+
+    private void pullIn(Path root, GitPullMode mode, boolean offerOnDivergence) {
+        java.util.function.Predicate<ProcessRunner.Result> diverged = result -> {
+            if (!offerOnDivergence || mode != GitPullMode.FF_ONLY || !GitPullMode.diverged(result)) {
+                return false;
+            }
+            GitPullMode chosen = divergedPullChooser.get();
+            if (chosen == null || chosen == GitPullMode.FF_ONLY) {
+                host.setStatus(tr("status.git.pullDiverged"));
+            } else {
+                pullIn(root, chosen, false); // in the repository the pull was started in, whatever is active now
+            }
+            return true;
+        };
+        syncIn(root, tr("gitlabel.pull"), diverged, mode.args());
+    }
+
+    /** Asks how to pull a diverged branch; null = cancel. Replaceable so a test need not show the dialog. */
+    java.util.function.Supplier<GitPullMode> divergedPullChooser = this::askDivergedPull;
+
+    private GitPullMode askDivergedPull() {
+        ButtonType rebase = new ButtonType(tr("dialog.pullDiverged.rebase"), ButtonBar.ButtonData.OTHER);
+        ButtonType merge = new ButtonType(tr("dialog.pullDiverged.merge"), ButtonBar.ButtonData.OTHER);
+        Alert ask = new Alert(
+                Alert.AlertType.CONFIRMATION, tr("dialog.pullDiverged.message"), rebase, merge, ButtonType.CANCEL);
+        ask.initOwner(host.window());
+        ask.setTitle(tr("dialog.pullDiverged.title"));
+        ask.setHeaderText(null);
+        ButtonType chosen = ask.showAndWait().orElse(ButtonType.CANCEL);
+        return chosen == rebase ? GitPullMode.REBASE : chosen == merge ? GitPullMode.MERGE : null;
     }
 
     /**
@@ -1223,7 +1605,7 @@ final class GitCoordinator {
         inRepositoryOf(file, (root, status) -> {
             String spec = pathspec(root, file);
             if (spec != null) {
-                stageIn(root, List.of(spec));
+                stageIn(root, status, List.of(spec));
             }
         });
     }
@@ -1400,7 +1782,8 @@ final class GitCoordinator {
                     }
                     if (r.ok()) {
                         host.setStatus(successMessage);
-                    } else {
+                    } else if (!reportConflictStop(r, "status.git.stashConflicts")) {
+                        // (A pop or apply that conflicts leaves the stash in place and the files unmerged.)
                         gitError(tr("status.git.opFailed"), r.message());
                     }
                     afterMutation();

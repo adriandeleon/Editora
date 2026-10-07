@@ -184,7 +184,10 @@ public enum ConfigSchema {
                     Map.entry(106, (Migration) ConfigMigrations::blankFrozenDefaultUrls),
                     // v107→108: + debugProgramConsole (additive; no earlier file could have chosen it, so
                     // every user gets the default — the debugged Java program can be typed to).
-                    Map.entry(107, (Migration) ConfigMigrations::identity)),
+                    Map.entry(107, (Migration) ConfigMigrations::identity),
+                    // v108→109: + gitPullMode (additive; absent means "ff-only", which is what pull did
+                    // before the setting existed — nobody's pull starts rebasing or merging on upgrade).
+                    Map.entry(108, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

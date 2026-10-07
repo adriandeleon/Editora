@@ -379,12 +379,42 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /** v108→109: gitPullMode is new — an existing user's pull stays fast-forward only. */
+    @Test
+    void thePullModeSettingArrivesAsFastForwardOnlyForExistingUsers() throws Exception {
+        JsonNode v108 = mapper.readTree("{\"schemaVersion\":108,\"gitSupport\":true,\"gitPath\":\"/opt/git\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v108.deepCopy(), mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt(),
+                "stamped current");
+        assertEquals("/opt/git", out.get("gitPath").asText(), "nothing else changes");
+        assertFalse(out.has("gitPullMode"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertEquals("ff-only", loaded.getGitPullMode(), "what pull did before the setting existed");
+        assertEquals(com.editora.git.GitPullMode.FF_ONLY, com.editora.git.GitPullMode.of(loaded.getGitPullMode()));
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":109,\"gitPullMode\":\"rebase\"}");
+        assertEquals(
+                "rebase",
+                mapper.treeToValue(chosen, com.editora.config.Settings.class).getGitPullMode());
+        // A hand-edited blank or null does not leave the field unusable.
+        com.editora.config.Settings blank = new com.editora.config.Settings();
+        blank.setGitPullMode(" ");
+        assertEquals("ff-only", blank.getGitPullMode());
+        blank.setGitPullMode(null);
+        assertEquals("ff-only", blank.getGitPullMode());
+    }
+
     /** v107→108: debugProgramConsole is new — nothing else in the file changes, and it starts at its default. */
     @Test
     void theProgramConsoleSettingArrivesWithoutTouchingAnythingElse() throws Exception {
         JsonNode v107 = mapper.readTree("{\"schemaVersion\":107,\"debugSupport\":true,\"javaDebugPluginPath\":\"/x\"}");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v107.deepCopy(), mapper);
-        assertEquals(108, out.get("schemaVersion").asInt());
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt(),
+                "stamped current");
         assertTrue(out.get("debugSupport").asBoolean());
         assertEquals("/x", out.get("javaDebugPluginPath").asText());
         assertFalse(out.has("debugProgramConsole"), "left to the default");

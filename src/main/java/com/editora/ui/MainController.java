@@ -1034,7 +1034,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b != null && b.hasPreview(),
                 debugActive,
                 dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED,
-                debugCoordinator == null || debugCoordinator.restartAvailable());
+                debugCoordinator == null || debugCoordinator.restartAvailable(),
+                git.operationInProgress());
     }
 
     private void setupRecentFiles() {
@@ -2235,60 +2236,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::history,
                 undoHistoryPanel,
                 "tool.undoHistory");
-        gitPanel = new GitPanel(new GitPanel.Actions() {
-            @Override
-            public void open(String path) {
-                if (git.repoRoot() != null) {
-                    fileWorkflows.openPath(git.repoRoot().resolve(path));
-                }
-            }
-
-            @Override
-            public void stage(List<String> paths) {
-                git.gitStagePaths(paths);
-            }
-
-            @Override
-            public void unstage(List<String> paths) {
-                git.gitUnstagePaths(paths);
-            }
-
-            @Override
-            public void discard(List<String> tracked, List<String> untracked) {
-                git.discardChanges(tracked, untracked);
-            }
-
-            @Override
-            public void stageAll() {
-                git.gitStageAll();
-            }
-
-            @Override
-            public void commit(String message, java.util.function.Consumer<Boolean> onDone) {
-                git.gitCommit(message, onDone);
-            }
-
-            @Override
-            public void push() {
-                git.gitPush();
-            }
-
-            @Override
-            public void refresh() {
-                git.invalidateCaches();
-                git.afterMutation();
-            }
-
-            @Override
-            public void review(boolean staged) {
-                diffCoordinator.reviewGitChanges(staged);
-            }
-
-            @Override
-            public void diff(String path, boolean staged) {
-                diffCoordinator.diffGitPanelFile(path, staged);
-            }
-        });
+        gitPanel = new GitPanel(new GitPanelActions(git, diffCoordinator, fileWorkflows));
         gitPanel.setOnClone(git::cloneRepo);
         gitPanel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
         commitToolWindow = new ToolWindow(
@@ -5650,6 +5598,23 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void setGitPanelStatus(com.editora.git.GitStatus status) {
             gitPanel.setStatus(status);
+        }
+
+        @Override
+        public void setGitOperation(com.editora.git.GitOperation operation, int conflicts) {
+            statusBar.setGitOperation(operation);
+            gitPanel.setOperation(operation);
+        }
+
+        @Override
+        public void setGitRefusal(String reason) {
+            statusBar.setGitRefusal(reason);
+            gitPanel.setRefusal(reason);
+        }
+
+        @Override
+        public boolean commitFromPanel() {
+            return gitPanel.commitNow();
         }
 
         @Override

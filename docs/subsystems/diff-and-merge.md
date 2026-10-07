@@ -183,7 +183,10 @@ source document's line separator, preserves the edited final-newline state, uses
 whole-document replacement, and refuses to overwrite a buffer that changed after the resolver opened. The
 target is resolved by path at apply time rather than captured when the resolver opened: if the source tab
 was closed meanwhile, the file is reopened in the background and its current text checked, so a resolution
-is never written into a disposed buffer and reported as applied.
+is never written into a disposed buffer and reported as applied. When the file is an unmerged path of
+the active repository and the applied text has no conflict left, the apply also finishes the resolution for
+Git (`GitCoordinator.resolutionApplied`): the buffer is saved and the path staged, which is what clears it
+from the Commit window's Conflicts group. A partial resolution is only written into the buffer.
 
 ## Accessibility
 

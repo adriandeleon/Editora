@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 108;
+    public static final int SCHEMA_VERSION = 109;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -264,6 +264,11 @@ public class Settings {
     private String ghPath = "";
     /** git command/path override; blank = the {@code git} found on the (augmented) PATH. */
     private String gitPath = "";
+    /**
+     * How {@code git pull} integrates the remote's commits: {@code ff-only} (the default, and what every
+     * version before this setting did), {@code rebase} or {@code merge}; see {@code git.GitPullMode}.
+     */
+    private String gitPullMode = "ff-only";
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
@@ -1658,6 +1663,14 @@ public class Settings {
 
     public void setGitPath(String gitPath) {
         this.gitPath = gitPath == null ? "" : gitPath;
+    }
+
+    public String getGitPullMode() {
+        return gitPullMode;
+    }
+
+    public void setGitPullMode(String gitPullMode) {
+        this.gitPullMode = gitPullMode == null || gitPullMode.isBlank() ? "ff-only" : gitPullMode.strip();
     }
 
     public boolean isGitBlameInline() {

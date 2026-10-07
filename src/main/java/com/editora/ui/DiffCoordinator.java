@@ -1911,6 +1911,7 @@ final class DiffCoordinator {
         }
         target.replaceWholeDocument(resolvedText);
         host.setStatus(tr("status.merge.applied"));
+        git.resolutionApplied(target); // a finished resolution of an unmerged path is saved and staged
         return true;
     }
 

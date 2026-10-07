@@ -29,16 +29,20 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 
+import com.editora.git.GitConflicts;
 import com.editora.git.GitFileStatus;
+import com.editora.git.GitOperation;
 import com.editora.git.GitStatus;
 import com.editora.git.GitStatus.FileEntry;
 
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The Git (Commit) tool window: the active repository's changes grouped into <em>Staged</em>,
+ * The Git (Commit) tool window: the active repository's changes grouped into <em>Conflicts</em>
+ * (unmerged paths, with Resolve / Accept Ours / Accept Theirs / Mark Resolved), <em>Staged</em>,
  * <em>Changes</em> (unstaged), and <em>Untracked</em>, with stage/unstage/discard actions and a
- * commit message box. Mirrors {@link BookmarksPanel}'s structure (a {@link TreeView} of rows that
+ * commit message box. While a merge, rebase, cherry-pick or revert is in progress a banner above the list
+ * names it and offers Continue, Skip (where git has one) and Abort. Mirrors {@link BookmarksPanel}'s structure (a {@link TreeView} of rows that
  * route mutations back through an {@link Actions} callback so the controller — which knows the repo
  * root and which files are open — performs the actual {@code git} calls off-thread).
  *
@@ -84,10 +88,27 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
         /** Show a diff for the row: {@code staged} → index↔HEAD, else worktree↔index. */
         void diff(String repoRelativePath, boolean staged);
+
+        /** Opens the three-way resolver for a conflicted path. */
+        default void resolve(String repoRelativePath) {}
+
+        /** Resolves conflicted paths by taking one whole side ({@code ours}, else theirs) and staging it. */
+        default void acceptSide(List<String> paths, boolean ours) {}
+
+        /** Continues the merge / rebase / cherry-pick / revert in progress. */
+        default void continueOperation() {}
+
+        /** Skips the commit the operation in progress stopped at. */
+        default void skipOperation() {}
+
+        /** Aborts the operation in progress (the controller confirms first). */
+        default void abortOperation() {}
     }
 
     /** Which group a file row sits under. */
     private enum Group {
+        /** Unmerged paths: above everything else, because nothing can be committed until they are gone. */
+        CONFLICTS("gitpanel.group.conflicts"),
         STAGED("gitpanel.group.staged"),
         MODIFIED("gitpanel.group.modified"),
         UNTRACKED("gitpanel.group.untracked");
@@ -136,6 +157,27 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
     /** Whether the last status has anything staged — with {@link #committing}, what enables Commit. */
     private boolean hasStaged;
+    /** Unmerged paths in the last status: while there are any, nothing can be committed. */
+    private int conflicts;
+    /** The merge / rebase / cherry-pick / revert the repository is in the middle of. */
+    private GitOperation operation = GitOperation.NONE;
+    /** The merge message this panel put in the box itself; cleared again if the merge ends with it untouched. */
+    private String prefilledMessage;
+
+    private final Label operationLabel = new Label();
+    private final Button continueButton = new Button(tr("gitpanel.operation.continue"));
+    private final Button skipButton = new Button(tr("gitpanel.operation.skip"));
+    private final Button abortButton = new Button(tr("gitpanel.operation.abort"));
+    /**
+     * The banner: what is in progress on a line of its own (it wraps — in a narrow dock it used to be cut
+     * to "Merge in progress — …"), and under it the buttons that move the operation on.
+     */
+    private final VBox operationBanner =
+            new VBox(4, operationLabel, new WrapRow(6, 4, continueButton, skipButton, abortButton));
+    /** Holds the Commit button so a tooltip can explain it while it is disabled (a disabled node shows none). */
+    private final StackPane commitRow = new StackPane(commitButton);
+
+    private final Tooltip commitBlockedTip = new Tooltip();
     /** A commit is running (hooks can take minutes): no second one may start until it reports back. */
     private boolean committing;
     /** Groups the user collapsed; a status update rebuilds the rows but must not reopen them. */
@@ -253,6 +295,19 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         commitButton.setDefaultButton(false);
         commitButton.setOnAction(e -> doCommit());
 
+        operationBanner.getStyleClass().add("git-operation-banner");
+        operationLabel.getStyleClass().add("git-operation-label");
+        operationLabel.setWrapText(true);
+        operationLabel.setMinHeight(javafx.scene.layout.Region.USE_PREF_SIZE); // wrap, never clip a line
+        continueButton.getStyleClass().add("git-operation-continue");
+        continueButton.setOnAction(e -> actions.continueOperation());
+        skipButton.getStyleClass().add("git-operation-skip");
+        skipButton.setOnAction(e -> actions.skipOperation());
+        abortButton.getStyleClass().addAll("git-operation-abort", "danger");
+        abortButton.setOnAction(e -> actions.abortOperation());
+        operationBanner.setVisible(false);
+        operationBanner.setManaged(false);
+
         placeholder.getStyleClass().add("tool-window-placeholder");
         placeholder.setWrapText(true);
         cloneButton.getStyleClass().add("flat");
@@ -296,7 +351,104 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     }
 
     private void updateCommitEnabled() {
-        commitButton.setDisable(!hasStaged || committing);
+        // A merge whose conflicts are all resolved can be concluded with nothing left staged (the result
+        // equals HEAD), so it does not need staged changes; unmerged files block every commit — git refuses
+        // it, and used to say so in an error dialog after the click.
+        boolean concludesMerge = operation.kind() == GitOperation.Kind.MERGE;
+        commitButton.setDisable(conflicts > 0 || committing || !(hasStaged || concludesMerge));
+        if (conflicts > 0) {
+            commitBlockedTip.setText(tr("gitpanel.commitBlockedConflicts", conflicts));
+            Tooltip.install(commitRow, commitBlockedTip);
+        } else {
+            Tooltip.uninstall(commitRow, commitBlockedTip);
+        }
+    }
+
+    /** The reason Commit is unavailable right now, or {@code ""}: what its tooltip says while it is disabled. */
+    String commitBlockedReason() {
+        return conflicts > 0 ? commitBlockedTip.getText() : "";
+    }
+
+    /**
+     * Commits with the typed message exactly as the Commit button would. False — nothing started — when the
+     * box is empty, a commit is running or the button is disabled.
+     */
+    public boolean commitNow() {
+        String text = message.getText() == null ? "" : message.getText().strip();
+        if (text.isEmpty() || committing || commitButton.isDisabled()) {
+            return false;
+        }
+        doCommit();
+        return true;
+    }
+
+    /**
+     * Shows the operation the repository is in the middle of ({@link GitOperation#NONE} hides the banner
+     * unless files are unmerged). Called before {@link #setStatus} on every refresh. A merge brings its
+     * prepared message: it is put in the commit box when the box is empty, because a merge commit should
+     * say what was merged, and taken out again if the merge ends without the user having touched it.
+     */
+    public void setOperation(GitOperation next) {
+        GitOperation previous = operation;
+        operation = next == null ? GitOperation.NONE : next;
+        boolean merging = operation.kind() == GitOperation.Kind.MERGE;
+        String current = message.getText() == null ? "" : message.getText();
+        if (merging) {
+            // Offered once per merge, on the refresh that first sees it: a user who deletes the text must
+            // not find it back after the next status refresh.
+            if (previous.kind() != GitOperation.Kind.MERGE
+                    && !operation.message().isEmpty()
+                    && current.isBlank()) {
+                prefilledMessage = operation.message();
+                setCommitMessage(prefilledMessage);
+            }
+        } else if (previous.kind() == GitOperation.Kind.MERGE) {
+            if (prefilledMessage != null && prefilledMessage.equals(current)) {
+                message.clear();
+            }
+            prefilledMessage = null;
+        }
+        updateBanner();
+        updateCommitEnabled();
+    }
+
+    /**
+     * Git's reason for refusing to work in this folder ({@code ""} when there is none): the placeholder then
+     * says that instead of "Not a Git repository", and does not offer to clone into a folder that already
+     * holds a repository.
+     */
+    public void setRefusal(String reason) {
+        boolean refused = reason != null && !reason.isBlank();
+        placeholder.setText(refused ? tr("gitpanel.refused", reason) : tr("gitpanel.placeholder"));
+        cloneButton.setVisible(!refused);
+        cloneButton.setManaged(!refused);
+    }
+
+    private void updateBanner() {
+        String name = GitCoordinator.operationName(operation.kind());
+        if (operation.kind() == GitOperation.Kind.REBASE && operation.total() > 0) {
+            name = tr("gitpanel.operation.step", name, operation.step(), operation.total());
+        }
+        String text;
+        if (operation.inProgress()) {
+            text = conflicts > 0
+                    ? tr("gitpanel.operation.conflicts", name, conflicts)
+                    : tr("gitpanel.operation.inProgress", name);
+        } else {
+            // Unmerged files with no operation: a stash pop or apply that conflicted. There is nothing to
+            // continue or abort — resolving and staging the files is the whole of it.
+            text = conflicts > 0 ? tr("gitpanel.conflictsOnly", conflicts) : "";
+        }
+        operationLabel.setText(text);
+        show(continueButton, operation.canContinue());
+        show(skipButton, operation.canSkip());
+        show(abortButton, operation.canAbort());
+        show(operationBanner, !text.isEmpty());
+    }
+
+    private static void show(Node node, boolean visible) {
+        node.setVisible(visible);
+        node.setManaged(visible);
     }
 
     /** Sets the action run by the "Clone Repository…" button shown when there's no repo. */
@@ -327,6 +479,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (status == null || !status.isRepo()) {
             lastStatus = null;
             hasStaged = false;
+            conflicts = 0;
+            updateBanner();
             updateCommitEnabled();
             reviewButton.setDisable(true);
             reviewWorkingItem.setDisable(true);
@@ -341,6 +495,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         // The commit affordances read the FULL status, never the filtered view: hiding a staged file behind
         // a filter must not disable Commit.
         hasStaged = status.files().stream().anyMatch(FileEntry::staged);
+        conflicts = GitConflicts.unmerged(status).size();
+        updateBanner();
         boolean hasWorking = status.files().stream().anyMatch(file -> file.unstaged() || file.untracked());
         reviewStagedItem.setDisable(!hasStaged);
         reviewWorkingItem.setDisable(!hasWorking);
@@ -374,9 +530,10 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             root = new TreeItem<>();
             tree.setRoot(root);
         }
-        List<TreeItem<Row>> groups = new ArrayList<>(3);
+        List<TreeItem<Row>> groups = new ArrayList<>(4);
+        addGroup(groups, Group.CONFLICTS, matching(lastStatus.files().stream().filter(FileEntry::unmerged), query));
         addGroup(groups, Group.STAGED, matching(lastStatus.files().stream().filter(FileEntry::staged), query));
-        addGroup(groups, Group.MODIFIED, matching(lastStatus.files().stream().filter(FileEntry::unstaged), query));
+        addGroup(groups, Group.MODIFIED, matching(lastStatus.files().stream().filter(GitPanel::changed), query));
         addGroup(groups, Group.UNTRACKED, matching(lastStatus.files().stream().filter(FileEntry::untracked), query));
         root.getChildren().setAll(groups);
         kept.restore(tree, GitPanel::rowKey);
@@ -390,10 +547,15 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             VBox.setVgrow(notePane, Priority.ALWAYS);
             // The filter bar stays even with nothing to show, or a filter that matches nothing would remove
             // the only control that can clear it.
-            getChildren().setAll(header, filterBar, notePane, messageToolbar, message, commitButton);
+            getChildren().setAll(header, operationBanner, filterBar, notePane, messageToolbar, message, commitRow);
         } else {
-            getChildren().setAll(header, filterBar, tree, messageToolbar, message, commitButton);
+            getChildren().setAll(header, operationBanner, filterBar, tree, messageToolbar, message, commitRow);
         }
+    }
+
+    /** An unstaged change that is not a conflict: unmerged paths have a group of their own. */
+    private static boolean changed(FileEntry entry) {
+        return entry.unstaged() && !entry.unmerged();
     }
 
     /** The filter text, normalized (lower-cased + stripped); empty when nothing is being filtered. */
@@ -494,18 +656,25 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /** Every file of {@code group} in the last status, ignoring the filter (the group-title match). */
     private List<FileEntry> allIn(Group group) {
         return switch (group) {
+            case CONFLICTS ->
+                lastStatus.files().stream().filter(FileEntry::unmerged).toList();
             case STAGED -> lastStatus.files().stream().filter(FileEntry::staged).toList();
             case MODIFIED ->
-                lastStatus.files().stream().filter(FileEntry::unstaged).toList();
+                lastStatus.files().stream().filter(GitPanel::changed).toList();
             case UNTRACKED ->
                 lastStatus.files().stream().filter(FileEntry::untracked).toList();
         };
     }
 
+    /** Double-click / Enter: opens the file — or, for a conflicted one, the three-way resolver on it. */
     private void openSelected() {
         TreeItem<Row> item = tree.getSelectionModel().getSelectedItem();
         if (item != null && item.getValue() instanceof FileRow f) {
-            actions.open(f.entry().path());
+            if (f.group() == Group.CONFLICTS) {
+                actions.resolve(f.entry().path());
+            } else {
+                actions.open(f.entry().path());
+            }
         }
     }
 
@@ -639,7 +808,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
      * selection holds no such row, so the caller can echo why.
      */
     public boolean stageSelected() {
-        List<String> paths = paths(selectedFileRows(), false);
+        LinkedHashSet<String> all = new LinkedHashSet<>(conflictPaths(selectedFileRows())); // = mark resolved
+        all.addAll(paths(selectedFileRows(), false));
+        List<String> paths = List.copyOf(all);
         if (paths.isEmpty()) {
             return false;
         }
@@ -657,11 +828,25 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         return true;
     }
 
-    /** The distinct paths of the rows on the given side of the staged divide (a file can be in both). */
+    /**
+     * The distinct paths of the rows on the given side of the staged divide (a file can be in both).
+     * Conflicted rows are on neither: they are resolved, not staged or unstaged ({@link #conflictPaths}).
+     */
     private static List<String> paths(List<FileRow> rows, boolean staged) {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         for (FileRow r : rows) {
-            if ((r.group() == Group.STAGED) == staged) {
+            if (r.group() != Group.CONFLICTS && (r.group() == Group.STAGED) == staged) {
+                out.add(r.entry().path());
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /** The distinct paths of the conflicted rows among {@code rows}. */
+    private static List<String> conflictPaths(List<FileRow> rows) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        for (FileRow r : rows) {
+            if (r.group() == Group.CONFLICTS) {
                 out.add(r.entry().path());
             }
         }
@@ -691,17 +876,36 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         if (targets.size() == 1) {
             FileRow only = targets.get(0);
             FileEntry e = only.entry();
+            if (only.group() == Group.CONFLICTS) {
+                MenuItem resolve = new MenuItem(tr("gitpanel.menu.resolve"));
+                resolve.setGraphic(Icons.merge());
+                resolve.setOnAction(a -> actions.resolve(e.path()));
+                menu.getItems().add(resolve);
+            }
             MenuItem open = new MenuItem(tr("gitpanel.menu.open"));
             open.setGraphic(Icons.fileSheet());
             open.setOnAction(a -> actions.open(e.path()));
             menu.getItems().add(open);
-            if (!e.untracked()) { // an untracked file has no committed/index version to diff against
+            if (!e.untracked() && !e.unmerged()) { // an untracked file has no committed/index version to diff against
                 MenuItem showDiff = new MenuItem(tr("gitpanel.menu.showDiff"));
                 showDiff.setGraphic(Icons.diff());
                 boolean staged = only.group() == Group.STAGED;
                 showDiff.setOnAction(a -> actions.diff(e.path(), staged));
                 menu.getItems().add(showDiff);
             }
+        }
+        List<String> conflicted = conflictPaths(targets);
+        if (!conflicted.isEmpty()) {
+            MenuItem ours = new MenuItem(tr("gitpanel.menu.acceptOurs"));
+            ours.setOnAction(a -> actions.acceptSide(conflicted, true));
+            MenuItem theirs = new MenuItem(tr("gitpanel.menu.acceptTheirs"));
+            theirs.setOnAction(a -> actions.acceptSide(conflicted, false));
+            // Staging is how git is told a conflict is resolved; the controller asks first when the file
+            // still has conflict markers in it.
+            MenuItem resolved = new MenuItem(tr("gitpanel.menu.markResolved"));
+            resolved.setGraphic(Icons.stageAll());
+            resolved.setOnAction(a -> actions.stage(conflicted));
+            menu.getItems().addAll(ours, theirs, resolved);
         }
         List<String> toStage = paths(targets, false);
         if (!toStage.isEmpty()) {
