@@ -746,6 +746,9 @@ public final class FoldManager {
      *  that contains it is simply not masked. */
     static final char HIDDEN_BREAK = '\u0000';
 
+    /** Whether the last {@link #linesAsUnits} call put a {@link #HIDDEN_BREAK} into the text it returned. */
+    private boolean lastUnitsMasked;
+
     private boolean orphanCheckPending;
 
     /**
@@ -767,10 +770,11 @@ public final class FoldManager {
      * {@code text} as the pure line commands (kill line, duplicate, move, transpose) should see it: a
      * collapsed header and its hidden body are ONE line, as they are on screen. The line breaks inside a
      * fold become {@link #HIDDEN_BREAK}, which keeps every offset unchanged; pass the edit's replacement
-     * through {@link #unmask}. Returns {@code text} itself when no collapsed fold is at, directly above or
-     * directly below the caret's line {@code par} — the only folds such a command can reach.
+     * through {@link #restoreBreaks}. Returns {@code text} itself when no collapsed fold is at, directly
+     * above or directly below the caret's line {@code par} — the only folds such a command can reach.
      */
     public String linesAsUnits(String text, int par) {
+        lastUnitsMasked = false;
         int n = area.getParagraphs().size();
         boolean near = false;
         for (int p = Math.max(0, par - 1); p <= par + 2 && p < n && !near; p++) {
@@ -784,12 +788,22 @@ public final class FoldManager {
         for (int i = 0; i < chars.length; i++) {
             if (chars[i] == '\n' && ++line < n && area.isFolded(line)) {
                 chars[i] = HIDDEN_BREAK;
+                lastUnitsMasked = true;
             }
         }
         return new String(chars);
     }
 
-    /** Undoes {@link #linesAsUnits} on an edit's replacement text. */
+    /**
+     * Undoes the last {@link #linesAsUnits} on that edit's replacement text — and only when that call
+     * actually masked something. A document that contains real NUL characters is never masked, so turning
+     * them into line breaks here split the line a command had merely moved or duplicated.
+     */
+    public String restoreBreaks(String replacement) {
+        return lastUnitsMasked ? unmask(replacement) : replacement;
+    }
+
+    /** Turns every {@link #HIDDEN_BREAK} back into a line break; see {@link #restoreBreaks}. */
     public static String unmask(String replacement) {
         return replacement.indexOf(HIDDEN_BREAK) < 0 ? replacement : replacement.replace(HIDDEN_BREAK, '\n');
     }

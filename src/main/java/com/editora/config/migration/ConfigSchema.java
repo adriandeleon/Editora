@@ -192,7 +192,10 @@ public enum ConfigSchema {
                     Map.entry(109, (Migration) ConfigMigrations::identity),
                     // v110→111: + gitAutoFetch / gitAutoFetchMinutes (additive; absent means off — nobody's
                     // editor starts talking to a remote on upgrade — with the 10-minute default interval).
-                    Map.entry(110, (Migration) ConfigMigrations::identity)),
+                    Map.entry(110, (Migration) ConfigMigrations::identity),
+                    // v111→112: + crashRecovery (additive; nobody could have turned it off before it existed,
+                    // so every user gets the default — unsaved text is kept for recovery).
+                    Map.entry(111, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without
@@ -231,7 +234,9 @@ public enum ConfigSchema {
                     // v10→v11: + projectMapFlow (additive; right-to-left is the default canvas layout)
                     Map.entry(10, ConfigMigrations::identity),
                     Map.entry(11, ConfigMigrations::identity))), // v11→12: + RunConfiguration.jdkHome
-    BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of()),
+    // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
+    // set the file aside rather than rewrite it without the field.
+    BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
     BREAKPOINTS(BreakpointStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added openProjectIds (the multi-window open-set), seeded from the old activeProjectId.
     PROJECTS(ProjectManager.Index.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::seedOpenProjectIds)),
@@ -242,7 +247,8 @@ public enum ConfigSchema {
     CONNECTIONS(ConnectionStore.SCHEMA_VERSION, 1, Map.of()),
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added the per-revision label (additive; absent rows default to "").
-    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
+    // v2 → v3 added charset/bom/lineEnding on pre-delete revisions (additive; absent ⇒ unknown, restore as before).
+    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity)),
     SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 backfilled agentId ("claude") on every session predating multi-agent support.
     AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::addDefaultAgentIdToSessions)),
@@ -310,6 +316,19 @@ public enum ConfigSchema {
      */
     public boolean keepsCopyOfUndecodableFile() {
         return this != HISTORY;
+    }
+
+    /**
+     * Top-level keys the app rewrites by itself, without the user changing anything: update-check bookkeeping
+     * in the preferences, the open-window set in the projects index. A file that differs from the defaults
+     * only in these still counts as untouched (see {@link ConfigMigrations#restoreSetAsideCopy}).
+     */
+    public java.util.Set<String> selfMaintainedKeys() {
+        return switch (this) {
+            case SETTINGS -> java.util.Set.of("lastUpdateCheckEpoch", "dismissedUpdateVersion");
+            case PROJECTS -> java.util.Set.of("activeProjectId", "openProjectIds");
+            default -> java.util.Set.of();
+        };
     }
 
     /** The step that upgrades {@code fromVersion → fromVersion+1}, or {@code null} if none is registered. */

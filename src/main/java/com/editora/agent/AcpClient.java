@@ -51,10 +51,16 @@ public final class AcpClient {
         /** The agent process exited (reader thread). */
         void onExit(int code);
 
-        /** Serve {@code fs/read_text_file}: the file's live text (open-buffer text wins). May block. */
+        /**
+         * Serve {@code fs/read_text_file}: the file's live text (open-buffer text wins). May block.
+         * {@code path} is always the absolute path {@link AcpFsGuard} resolved inside the session folder.
+         */
         String readTextFile(String path, Integer line, Integer limit) throws Exception;
 
-        /** Serve {@code fs/write_text_file}: apply {@code content} to the buffer/file. May block. */
+        /**
+         * Serve {@code fs/write_text_file}: apply {@code content} to the buffer/file. May block.
+         * {@code path} is always the absolute path {@link AcpFsGuard} resolved inside the session folder.
+         */
         void writeTextFile(String path, String content) throws Exception;
 
         /** Serve {@code session/request_permission}: resolve to the chosen optionId, or null = cancelled. */
@@ -339,8 +345,11 @@ public final class AcpClient {
         try {
             switch (method) {
                 case "fs/read_text_file" -> {
-                    String path = textOf(params, "path");
-                    AcpFsGuard.checkRead(fsRoot, path); // confined to the session folder; throws → error reply
+                    // Confined to the session folder; throws → error reply. The host gets the path the guard
+                    // resolved, never the agent's string: a relative one would be resolved a second time,
+                    // against the editor's own working directory.
+                    String path =
+                            AcpFsGuard.checkRead(fsRoot, textOf(params, "path")).toString();
                     Integer line = intOf(params, "line");
                     Integer limit = intOf(params, "limit");
                     String content = host.readTextFile(path, line, limit);
@@ -349,8 +358,8 @@ public final class AcpClient {
                     send(AcpJson.response(mapper, id, result));
                 }
                 case "fs/write_text_file" -> {
-                    String path = textOf(params, "path");
-                    AcpFsGuard.checkWrite(fsRoot, host.writeProtectedDirectory(), path);
+                    String path = AcpFsGuard.checkWrite(fsRoot, host.writeProtectedDirectory(), textOf(params, "path"))
+                            .toString();
                     host.writeTextFile(path, textOf(params, "content"));
                     send(AcpJson.response(mapper, id, null));
                 }

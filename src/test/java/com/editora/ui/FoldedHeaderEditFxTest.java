@@ -96,6 +96,44 @@ class FoldedHeaderEditFxTest {
         return FxTestSupport.callOnFx(() -> Clipboard.getSystemClipboard().getString());
     }
 
+    // --- a NUL in the text is content, not a masked line break ---------------------------------------
+
+    /** A plain buffer whose first line holds real NUL characters, caret on that line. */
+    private EditorBuffer withNuls() throws Exception {
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            buffer.setContent("key=a\u0000b\u0000c\nnext=1\nlast=2\n");
+            FxTestSupport.call(
+                    fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, buffer, true);
+            buffer.getArea().moveTo(0, 2);
+            return buffer;
+        });
+        FxTestSupport.drainFx();
+        return b;
+    }
+
+    @Test
+    void movingALineKeepsItsNulCharacters() throws Exception {
+        EditorBuffer b = withNuls();
+        run("edit.moveLineDown");
+        assertEquals("next=1\nkey=a\u0000b\u0000c\nlast=2\n", text(b));
+    }
+
+    @Test
+    void duplicatingALineKeepsItsNulCharacters() throws Exception {
+        EditorBuffer b = withNuls();
+        run("edit.duplicateLine");
+        assertEquals("key=a\u0000b\u0000c\nkey=a\u0000b\u0000c\nnext=1\nlast=2\n", text(b));
+    }
+
+    @Test
+    void transposingLinesKeepsNulCharacters() throws Exception {
+        EditorBuffer b = withNuls();
+        FxTestSupport.runOnFx(() -> b.getArea().moveTo(1, 0));
+        run("edit.transposeLines");
+        assertEquals("next=1\nkey=a\u0000b\u0000c\nlast=2\n", text(b));
+    }
+
     // --- the line commands take the header together with its hidden body ---------------------------
 
     @Test

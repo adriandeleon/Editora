@@ -70,7 +70,10 @@ public final class HttpResponseFormat {
         for (String w : r.warnings()) {
             sb.append("⚠  ").append(w).append('\n'); // e.g. a header that couldn't be sent — shown, not dropped
         }
-        if (!r.warnings().isEmpty()) {
+        for (String w : r.written()) {
+            sb.append("→  ").append(w).append('\n'); // what a ">>" redirect saved to disk
+        }
+        if (!r.warnings().isEmpty() || !r.written().isEmpty()) {
             sb.append('\n');
         }
         if (r.failed()) {

@@ -126,7 +126,9 @@ class ConflictParserTest {
         assertFalse(ConflictParser.hasConflictMarkers("<<<<<<<<< not a marker\nplain"));
         assertFalse(ConflictParser.hasConflictMarkers("<<<<<<<HEAD"));
         assertTrue(ConflictParser.hasConflictMarkers("<<<<<<<\nours\n=======\ntheirs\n>>>>>>>"));
-        assertTrue(ConflictParser.hasConflictMarkers("<<<<<<< HEAD\r\nours"));
+        assertTrue(ConflictParser.hasConflictMarkers("<<<<<<< HEAD\r\nours\r\n=======\r\ntheirs\r\n>>>>>>> b"));
+        // An opening marker alone is not a conflict: nothing says where its sides end.
+        assertFalse(ConflictParser.hasConflictMarkers("<<<<<<< HEAD\r\nours"));
 
         List<String> lines = List.of(
                 "<<<<<<< HEAD",
@@ -186,5 +188,97 @@ class ConflictParserTest {
         List<String> lines = List.of("<<<<<<<<<<<< decoration", "text", "============", "more");
         assertFalse(ConflictParser.hasConflictMarkers(String.join("\n", lines)));
         assertEquals(0, ConflictParser.parse(lines).conflictCount());
+    }
+
+    // --- text the resolver did not resolve goes back as it was (V7) -----------------------------------
+
+    private static List<String> unresolved(List<String> lines) {
+        ConflictFile file = ConflictParser.parse(lines);
+        return ConflictParser.resolve(file, java.util.Collections.nCopies(file.conflictCount(), Choice.UNRESOLVED));
+    }
+
+    @Test
+    void aStrayOpeningMarkerIsTextAndDoesNotSwallowTheRestOfTheFile() {
+        List<String> doc = List.of("intro", "<<<<<<< HEAD", "means ours", "end of doc");
+        assertEquals(0, ConflictParser.parse(doc).conflictCount());
+        assertEquals(doc, unresolved(doc), "no separator or closing marker may be invented");
+
+        List<String> noSeparator = List.of("<<<<<<< HEAD", "x", ">>>>>>> br");
+        assertEquals(0, ConflictParser.parse(noSeparator).conflictCount());
+        assertEquals(noSeparator, unresolved(noSeparator));
+
+        List<String> noClose = List.of("<<<<<<< HEAD", "x", "=======", "y", "tail");
+        assertEquals(0, ConflictParser.parse(noClose).conflictCount());
+        assertEquals(noClose, unresolved(noClose));
+    }
+
+    @Test
+    void resolvingARealConflictKeepsTheLinesAfterAStrayMarker() {
+        List<String> lines = List.of(
+                "doc line",
+                "<<<<<<< HEAD",
+                "x",
+                "=======",
+                "y",
+                ">>>>>>> br",
+                "more",
+                "A stray marker example:",
+                "<<<<<<< yours",
+                "tail 1",
+                "tail 2");
+        ConflictFile file = ConflictParser.parse(lines);
+        assertEquals(1, file.conflictCount());
+        assertEquals(
+                List.of("doc line", "y", "more", "A stray marker example:", "<<<<<<< yours", "tail 1", "tail 2"),
+                ConflictParser.resolve(file, List.of(Choice.THEIRS)));
+    }
+
+    @Test
+    void aStrayOpeningMarkerBeforeARealConflictDoesNotWidenIt() {
+        List<String> lines = List.of(
+                "An opening marker looks like this:",
+                "<<<<<<< HEAD",
+                "kept text",
+                "<<<<<<< HEAD",
+                "ours",
+                "=======",
+                "theirs",
+                ">>>>>>> feature",
+                "tail");
+        ConflictFile file = ConflictParser.parse(lines);
+        assertEquals(1, file.conflictCount());
+        assertEquals(
+                List.of("An opening marker looks like this:", "<<<<<<< HEAD", "kept text", "theirs", "tail"),
+                ConflictParser.resolve(file, List.of(Choice.THEIRS)),
+                "taking theirs removes only the lines between the well-formed markers");
+        assertEquals(lines, unresolved(lines));
+    }
+
+    @Test
+    void anUnresolvedConflictIsWrittenBackWithTheLinesItWasReadFrom() {
+        // Label spacing and trailing blanks on marker lines are the file's, not the parser's, to choose.
+        List<String> spaced = List.of("<<<<<<<  HEAD", "x", "=======", "y", ">>>>>>>  br");
+        assertEquals(spaced, unresolved(spaced));
+        List<String> trailing = List.of("<<<<<<< ", "x", "=======", "y", ">>>>>>> ");
+        assertEquals(trailing, unresolved(trailing));
+        List<String> diff3 = List.of("<<<<<<< HEAD", "x", "|||||||  base", "was", "=======", "y", ">>>>>>> br\t");
+        assertEquals(diff3, unresolved(diff3));
+
+        // One resolved, one left: the resolved one changes, the other is byte-for-byte the file's.
+        List<String> two = new java.util.ArrayList<>(List.of("<<<<<<< HEAD", "a", "=======", "b", ">>>>>>> br", "mid"));
+        two.addAll(spaced);
+        List<String> expected = new java.util.ArrayList<>(List.of("a", "mid"));
+        expected.addAll(spaced);
+        assertEquals(
+                expected, ConflictParser.resolve(ConflictParser.parse(two), List.of(Choice.OURS, Choice.UNRESOLVED)));
+    }
+
+    @Test
+    void aComputedConflictStillGetsGeneratedMarkers() {
+        ConflictFile computed = new ConflictFile(List.of(
+                new ConflictSegment(new Conflict("ours", List.of("a"), "base", List.of(), "theirs", List.of("b")))));
+        assertEquals(
+                List.of("<<<<<<< ours", "a", "=======", "b", ">>>>>>> theirs"),
+                ConflictParser.resolve(computed, List.of()));
     }
 }

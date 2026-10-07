@@ -25,8 +25,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either;
  * {@code workspaceEdit.documentChanges}).
  *
  * <p><b>All-or-nothing:</b> returns {@code null} when the edit contains anything that can't be applied
- * faithfully — a non-{@code file:} URI, a {@link SnippetTextEdit}, or
- * a text edit trailing a {@code RenameFile} — because applying <i>half</i> a refactoring corrupts the
+ * faithfully — a non-{@code file:} URI, a {@link SnippetTextEdit}, a text edit with a missing range or a
+ * negative position, or a text edit trailing a {@code RenameFile} — because applying <i>half</i> a refactoring corrupts the
  * workspace; the caller then answers {@code applied=false} so the server knows nothing happened.
  * Create, rename, and delete resource operations retain their overwrite/ignore/recursive options; rename and
  * delete are terminal because a following text edit would address the post-operation filesystem. Pure of
@@ -246,7 +246,7 @@ public final class WorkspaceEditMapper {
         List<TextEdit> out = new ArrayList<>(edits.size());
         for (Either<TextEdit, SnippetTextEdit> e : edits) {
             if (e == null) {
-                continue; // tolerated like a null TextEdit below
+                return null; // an edit that cannot be read cannot be placed: refuse, do not drop it
             }
             if (!e.isLeft()) {
                 return null;
@@ -256,7 +256,10 @@ public final class WorkspaceEditMapper {
         return out;
     }
 
-    /** Accumulates one document's edits under its resolved file; false when the URI isn't a local file. */
+    /**
+     * Accumulates one document's edits under its resolved file; false when the URI isn't a local file or
+     * an edit has no usable range.
+     */
     private static boolean addEdits(Map<Path, List<LspTextEdit>> byFile, String uri, List<TextEdit> edits) {
         Path file = filePath(uri);
         if (file == null) {
@@ -265,11 +268,22 @@ public final class WorkspaceEditMapper {
         List<LspTextEdit> bucket = byFile.computeIfAbsent(file, f -> new ArrayList<>());
         if (edits != null) {
             for (TextEdit e : edits) {
+                // An edit with no range, or a negative coordinate, has no place in the document. Leaving
+                // it out applied the rest of the refactoring and reported success; the whole edit is
+                // refused instead (the class's all-or-nothing rule).
                 if (e == null || e.getRange() == null) {
-                    continue;
+                    return false;
                 }
                 var s = e.getRange().getStart();
                 var en = e.getRange().getEnd();
+                if (s == null
+                        || en == null
+                        || s.getLine() < 0
+                        || s.getCharacter() < 0
+                        || en.getLine() < 0
+                        || en.getCharacter() < 0) {
+                    return false;
+                }
                 bucket.add(new LspTextEdit(
                         s.getLine(),
                         s.getCharacter(),

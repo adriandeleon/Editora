@@ -37,6 +37,13 @@ class McpToolsTest {
         String editedNew;
         boolean editedAll;
         String savedPath;
+        String replacedPath;
+        String replacedNew;
+        int replacements;
+        int edits;
+        int saves;
+        String readPath;
+        int reads;
 
         @Override
         public List<OpenFile> listOpenFiles() {
@@ -45,6 +52,8 @@ class McpToolsTest {
 
         @Override
         public BufferContent readBuffer(String path) {
+            readPath = path;
+            reads++;
             return null;
         }
 
@@ -82,11 +91,21 @@ class McpToolsTest {
             editedOld = oldText;
             editedNew = newText;
             editedAll = replaceAll;
+            edits++;
+            return editError;
+        }
+
+        @Override
+        public String replaceBuffer(String path, String newText) {
+            replacedPath = path;
+            replacedNew = newText;
+            replacements++;
             return editError;
         }
 
         @Override
         public String saveBuffer(String path) {
+            saves++;
             savedPath = path;
             return saveError;
         }
@@ -259,6 +278,112 @@ class McpToolsTest {
         ObjectNode r = call("edit_buffer", "{\"old_text\":\"a\",\"new_text\":\"b\"}");
         assertTrue(isError(r));
         assertTrue(r.get("content").get(0).get("text").asText().contains("not found"));
+    }
+
+    // --- a missing, misspelled or empty argument must never widen what a tool does ----------------
+
+    @Test
+    void editBufferWithoutOldTextIsRefusedInsteadOfReplacingTheWholeBuffer() throws Exception {
+        for (String args : List.of(
+                "{\"path\":\"/tmp/a.java\",\"new_text\":\"BETA\"}",
+                "{\"path\":\"/tmp/a.java\",\"old_text\":\"\",\"new_text\":\"BETA\"}",
+                "{\"path\":\"/tmp/a.java\",\"old_text\":null,\"new_text\":\"BETA\"}",
+                "{\"new_text\":\"BETA\",\"replace_all\":true}")) {
+            ObjectNode r = call("edit_buffer", args);
+            assertTrue(isError(r), args);
+            String message = r.get("content").get(0).get("text").asText();
+            assertTrue(message.contains("old_text") && message.contains("replace_whole_buffer"), message);
+        }
+        assertEquals(0, bridge.edits + bridge.replacements, "nothing reached the editor");
+    }
+
+    @Test
+    void aMisspelledArgumentIsRejectedByNameNotIgnored() throws Exception {
+        // find_in_files spells its arguments in camelCase; edit_buffer's are snake_case.
+        ObjectNode r = call("edit_buffer", "{\"path\":\"/tmp/a.java\",\"oldText\":\"beta\",\"new_text\":\"BETA\"}");
+        assertTrue(isError(r));
+        String message = r.get("content").get(0).get("text").asText();
+        assertTrue(message.contains("'oldText'") && message.contains("'old_text'"), message);
+        assertEquals(0, bridge.edits + bridge.replacements);
+
+        // {"file": ...} used to save / read whatever buffer happened to be active.
+        ObjectNode save = call("save_buffer", "{\"file\":\"/tmp/a.java\"}");
+        assertTrue(isError(save));
+        assertTrue(save.get("content").get(0).get("text").asText().contains("'file'"));
+        assertEquals(0, bridge.saves);
+        assertTrue(isError(call("read_buffer", "{\"filePath\":\"/tmp/a.java\"}")));
+        assertEquals(0, bridge.reads);
+        assertTrue(isError(call("find_in_files", "{\"query\":\"x\",\"case_sensitive\":true}")));
+        assertTrue(isError(call("list_open_files", "{\"path\":\"/tmp/a.java\"}")), "a tool with no arguments");
+        assertTrue(isError(call("edit_buffer", "[\"new_text\"]")), "arguments must be an object");
+    }
+
+    @Test
+    void anEmptyOrRelativePathIsRejectedInsteadOfMeaningTheActiveBuffer() throws Exception {
+        for (String tool : List.of("read_buffer", "save_buffer", "get_diagnostics", "document_symbols", "open_file")) {
+            for (String path : List.of("", "  ", "src/Main.java")) {
+                ObjectNode r = call(tool, "{\"path\":\"" + path + "\"}");
+                assertTrue(isError(r), tool + " path='" + path + "'");
+                assertTrue(r.get("content").get(0).get("text").asText().contains("'path'"), tool);
+            }
+        }
+        assertTrue(isError(call("edit_buffer", "{\"path\":\"\",\"old_text\":\"a\",\"new_text\":\"b\"}")));
+        assertEquals(0, bridge.saves + bridge.reads + bridge.edits);
+        assertNull(bridge.openedPath);
+        // Omitting it is still how the active buffer is named.
+        assertFalse(isError(call("save_buffer", "{}")));
+        assertNull(bridge.savedPath);
+        assertFalse(isError(call("save_buffer", null)));
+    }
+
+    @Test
+    void aWronglyTypedArgumentIsRejected() throws Exception {
+        assertTrue(isError(call("edit_buffer", "{\"old_text\":\"a\",\"new_text\":\"b\",\"replace_all\":\"yes\"}")));
+        assertTrue(isError(call("edit_buffer", "{\"old_text\":7,\"new_text\":\"b\"}")));
+        assertTrue(isError(call("open_file", "{\"path\":\"/tmp/x.txt\",\"line\":\"12\"}")));
+        assertEquals(0, bridge.edits);
+        assertNull(bridge.openedPath);
+    }
+
+    @Test
+    void replacingTheWholeBufferTakesAnExplicitArgument() throws Exception {
+        ObjectNode r = call(
+                "edit_buffer", "{\"path\":\"/tmp/a.java\",\"new_text\":\"all new\",\"replace_whole_buffer\":true}");
+        assertFalse(isError(r));
+        assertEquals("/tmp/a.java", bridge.replacedPath);
+        assertEquals("all new", bridge.replacedNew);
+        assertEquals(0, bridge.edits);
+        // ...and is not combined with a targeted edit: which of the two was meant?
+        assertTrue(
+                isError(call("edit_buffer", "{\"old_text\":\"a\",\"new_text\":\"b\",\"replace_whole_buffer\":true}")));
+        assertTrue(isError(
+                call("edit_buffer", "{\"new_text\":\"b\",\"replace_whole_buffer\":true,\"replace_all\":true}")));
+        assertEquals(1, bridge.replacements);
+        // false is the same as absent
+        assertFalse(
+                isError(call("edit_buffer", "{\"old_text\":\"a\",\"new_text\":\"b\",\"replace_whole_buffer\":false}")));
+        assertEquals(1, bridge.edits);
+    }
+
+    /** Every argument a tool accepts is in its published schema, and nothing else is: one list, two uses. */
+    @Test
+    void theEditBufferSchemaDescribesWhatTheToolAccepts() {
+        for (JsonNode t : tools.listToolsResult().get("tools")) {
+            if ("edit_buffer".equals(t.get("name").asText())) {
+                JsonNode props = t.get("inputSchema").get("properties");
+                List<String> names = new java.util.ArrayList<>();
+                props.fieldNames().forEachRemaining(names::add);
+                assertEquals(List.of("path", "old_text", "new_text", "replace_all", "replace_whole_buffer"), names);
+                assertEquals(
+                        "boolean", props.get("replace_whole_buffer").get("type").asText());
+                assertFalse(
+                        props.get("old_text").get("description").asText().contains("Omit or pass"),
+                        "the description no longer advertises the implicit whole-buffer replacement");
+                assertTrue(t.get("description").asText().contains("replace_whole_buffer"));
+                return;
+            }
+        }
+        throw new AssertionError("edit_buffer not listed");
     }
 
     // --- save_buffer --------------------------------------------------------------------------

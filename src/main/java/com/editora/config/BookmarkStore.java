@@ -20,8 +20,13 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class BookmarkStore {
 
-    /** Current on-disk schema version of {@code bookmarks.json}. */
-    public static final int SCHEMA_VERSION = 1;
+    /**
+     * Current on-disk schema version of {@code bookmarks.json}. v1→v2: {@link Bookmark} gained
+     * {@code mnemonic}. The field was added while the version stayed 1, so a build from before it read the
+     * file, did not see the field and wrote every bookmark back without its mnemonic; with the version
+     * raised, such a build sets the file aside instead of rewriting it.
+     */
+    public static final int SCHEMA_VERSION = 2;
 
     private int schemaVersion = SCHEMA_VERSION;
 

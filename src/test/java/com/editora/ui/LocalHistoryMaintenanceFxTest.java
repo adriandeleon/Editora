@@ -217,6 +217,39 @@ class LocalHistoryMaintenanceFxTest {
         }
     }
 
+    /** V6: the pre-delete capture records the file's encoding, and the restore writes the same bytes back. */
+    @Test
+    void aDeletedUtf16FileIsRestoredByteForByte(@TempDir Path dir) throws Exception {
+        byte[] body = "café\r\nsecond line\r\n".getBytes(StandardCharsets.UTF_16LE);
+        byte[] bytes = new byte[body.length + 2];
+        bytes[0] = (byte) 0xFF;
+        bytes[1] = (byte) 0xFE;
+        System.arraycopy(body, 0, bytes, 2, body.length);
+        Path file = Files.write(dir.resolve("settings.reg"), bytes);
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            HistoryCoordinator history = FxTestSupport.field(fx.controller, "historyCoordinator");
+            CountDownLatch captured = new CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> history.captureBeforeDeleteDurably(file, value -> captured.countDown()));
+            async.await(captured, "pre-delete capture");
+            HistoryRevision deleted = FxTestSupport.callOnFx(() -> fx.shared
+                    .historyBucket("")
+                    .get(PathKeys.normalizedKey(file))
+                    .get(0));
+            assertEquals("utf-16le", deleted.charset());
+            assertTrue(deleted.bom());
+            assertEquals("CRLF", deleted.lineEnding());
+            Files.delete(file);
+
+            var restored = FxTestSupport.callOnFx(() -> history.restoreRevisionToDisk(deleted));
+
+            assertEquals(HistoryCoordinator.RestoreResult.RESTORED, async.await(restored));
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    bytes, Files.readAllBytes(file), "restored as BOM-less UTF-8 instead of the deleted bytes");
+        }
+    }
+
     // --- helpers ------------------------------------------------------------------------------------------
 
     private static HistoryRevision rev(String path, long timestamp, String sha) {

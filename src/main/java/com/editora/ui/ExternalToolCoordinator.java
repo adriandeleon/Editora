@@ -193,9 +193,25 @@ final class ExternalToolCoordinator {
         // Capture the buffer the tool ran ON, plus its docVersion. applyResult used to write stdout into
         // whatever tab happened to be active when the subprocess finished — switch tabs during a 600 ms
         // `black -` run and REPLACE_BUFFER overwrote the whole of an unrelated file.
-        EditorBuffer target = active;
-        long version = target == null ? -1 : target.docVersion();
-        service.run(inv, ExternalToolService.DEFAULT_TIMEOUT, r -> applyResult(tool, inv, r, target, version));
+        Launch launch = Launch.of(active);
+        service.run(inv, ExternalToolService.DEFAULT_TIMEOUT, r -> applyResult(tool, inv, r, launch));
+    }
+
+    /**
+     * What a tool was started on: the buffer, its {@code docVersion}, and the selection its {@code $SELECTION}
+     * / stdin was taken from. A "replace selection" result goes back into <em>that</em> range. The version
+     * check only says the text is unchanged — selecting something else while a slow filter runs does not bump
+     * it, and replacing the live selection then overwrote the newly selected text with the transform of the
+     * old one.
+     */
+    record Launch(EditorBuffer target, long version, int selectionStart, int selectionEnd) {
+        static Launch of(EditorBuffer target) {
+            if (target == null) {
+                return new Launch(null, -1, 0, 0);
+            }
+            var selection = target.getArea().getSelection();
+            return new Launch(target, target.docVersion(), selection.getStart(), selection.getEnd());
+        }
     }
 
     /** Captures the macro/stdin context from the active buffer (file fields empty for an unsaved buffer). */
@@ -246,8 +262,7 @@ final class ExternalToolCoordinator {
     }
 
     /** Applies a finished tool's result on the FX thread (console / replace selection / buffer / insert). */
-    private void applyResult(
-            ExternalTool tool, ToolInvocation inv, ProcessRunner.Result r, EditorBuffer target, long version) {
+    private void applyResult(ExternalTool tool, ToolInvocation inv, ProcessRunner.Result r, Launch launch) {
         if (tool.getOutput() == ExternalTool.OutputTarget.CONSOLE) {
             ops.openConsole();
             panel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
@@ -281,12 +296,12 @@ final class ExternalToolCoordinator {
             host.setStatus(tr("status.externalTool.noOutput", tool.getName()));
             return;
         }
-        EditorBuffer b = target;
+        EditorBuffer b = launch.target();
         if (b == null || !b.isEditable()) {
             host.setStatus(tr("status.externalTool.notEditable"));
             return;
         }
-        if (b.docVersion() != version) {
+        if (b.docVersion() != launch.version()) {
             // The file changed while the tool ran — its stdout was computed from text that no longer exists,
             // so applying it would silently revert the edits made meanwhile.
             ops.openConsole();
@@ -294,11 +309,20 @@ final class ExternalToolCoordinator {
             host.setStatus(tr("status.externalTool.bufferChanged", tool.getName()));
             return;
         }
+        if (!NoUndoGuard.allow(b, tool.getName())) {
+            return; // no undo here and no safety copy could be taken: the guard said why
+        }
         var area = b.getArea();
         switch (tool.getOutput()) {
             // stdin was getContent() (the whole file), so the result replaces the whole file: widen first.
             case REPLACE_BUFFER -> b.replaceWholeDocument(r.out());
-            case REPLACE_SELECTION -> area.replaceSelection(stripOneTrailingNewline(r.out()));
+            // The range selected at launch (the text is unchanged, so its offsets still hold) — not whatever
+            // is selected now.
+            case REPLACE_SELECTION -> {
+                String replacement = com.editora.editor.LineEndings.toLf(stripOneTrailingNewline(r.out()));
+                area.replaceText(launch.selectionStart(), launch.selectionEnd(), replacement);
+                area.moveTo(launch.selectionStart() + replacement.length());
+            }
             case INSERT_AT_CARET -> area.insertText(area.getCaretPosition(), stripOneTrailingNewline(r.out()));
             default -> {}
         }

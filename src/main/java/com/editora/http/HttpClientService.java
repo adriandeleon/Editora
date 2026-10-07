@@ -74,6 +74,9 @@ public final class HttpClientService {
     private final int maxResponseBytes;
     private final Duration bodyDeadline;
 
+    /** Preserves a file a {@code >>!} redirect is about to replace; see {@link ResponseRedirects.Guard}. */
+    private volatile ResponseRedirects.Guard guard = ResponseRedirects.Guard.UNPROTECTED;
+
     public HttpClientService() {
         this(DEFAULT_MAX_RESPONSE_BYTES, DEFAULT_BODY_DEADLINE);
     }
@@ -82,6 +85,14 @@ public final class HttpClientService {
     HttpClientService(int maxResponseBytes, Duration bodyDeadline) {
         this.maxResponseBytes = maxResponseBytes;
         this.bodyDeadline = bodyDeadline;
+    }
+
+    /**
+     * Sets who preserves the previous content of a file before a {@code >>!} redirect replaces it. Called on
+     * the worker thread of the run; it may block while a history revision becomes durable.
+     */
+    public void setRedirectGuard(ResponseRedirects.Guard guard) {
+        this.guard = guard == null ? ResponseRedirects.Guard.UNPROTECTED : guard;
     }
 
     /**
@@ -259,15 +270,13 @@ public final class HttpClientService {
                 warnings.add("response still arriving after " + bodyDeadline.toSeconds() + " s — stopped; showing the "
                         + resp.body().length + " bytes received so far");
             }
+            boolean partial = resp.truncated() || resp.expired();
+            List<String> written = new ArrayList<>();
+            // Before the result is built: what the redirects saved (and refused to replace) is part of it.
+            ResponseRedirects.write(
+                    request.redirects(), baseDir, resp.statusCode(), resp.body(), partial, guard, written, warnings);
             HttpResult result = HttpResult.ofBytes(
-                    resp.statusCode(),
-                    respHeaders,
-                    resp.body(),
-                    respType,
-                    ms,
-                    warnings,
-                    resp.truncated() || resp.expired());
-            writeRedirects(request, baseDir, result);
+                    resp.statusCode(), respHeaders, resp.body(), respType, ms, warnings, partial, written);
             return new HttpExchange(label, method, url, headers, bc.display(), result);
         } catch (Exception e) {
             String message = handle.isCancelled() ? CANCELLED : errorMessage(url, e);
@@ -503,38 +512,6 @@ public final class HttpClientService {
     private static String randomHex() {
         return String.format(
                 "%016x", java.util.concurrent.ThreadLocalRandom.current().nextLong());
-    }
-
-    /** Writes the response body to each {@code >>}/{@code >>!} target (force overwrites; plain skips existing). */
-    private static void writeRedirects(HttpFile.Parsed request, Path baseDir, HttpResult result) {
-        if (baseDir == null || result.failed()) {
-            return;
-        }
-        for (HttpFile.Redirect r : request.redirects()) {
-            try {
-                Path target = HttpPaths.containedForWrite(baseDir, r.path());
-                if (target == null) {
-                    continue; // a ">> ../../x" (or a symlink) must not write outside the request file's folder
-                }
-                if (!r.force() && Files.exists(target)) {
-                    continue;
-                }
-                if (target.getParent() != null) {
-                    Files.createDirectories(target.getParent());
-                }
-                // Raw bytes, and never through a symlink: the containment check above ran a moment ago, and
-                // NOFOLLOW makes a link swapped in since then fail the write instead of redirecting it.
-                Files.write(
-                        target,
-                        result.rawBody() == null ? new byte[0] : result.rawBody(),
-                        java.nio.file.StandardOpenOption.CREATE,
-                        java.nio.file.StandardOpenOption.TRUNCATE_EXISTING,
-                        java.nio.file.StandardOpenOption.WRITE,
-                        java.nio.file.LinkOption.NOFOLLOW_LINKS);
-            } catch (Exception ignore) {
-                // best-effort: a failed redirect write never aborts the response
-            }
-        }
     }
 
     private static String headerValue(List<String[]> headers, String name) {

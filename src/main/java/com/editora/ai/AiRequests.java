@@ -175,6 +175,14 @@ public final class AiRequests {
         return t.substring(firstNewline + 1, lastFence).stripTrailing();
     }
 
+    /**
+     * Whether {@code text} is sent whole. A caller that will <em>replace</em> the text with the answer must
+     * refuse when this is false: the model would see only the head, and its answer would overwrite it all.
+     */
+    public static boolean fitsInput(String text) {
+        return text == null || text.length() <= MAX_INPUT_CHARS;
+    }
+
     /** Caps huge inputs (a giant staged diff / selection) with an explicit truncation marker. */
     static String truncate(String text) {
         String t = text == null ? "" : text;

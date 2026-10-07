@@ -109,10 +109,19 @@ public class WindowManager {
     /** A live window: its project key ({@code ""} = the global session), its stage, controller and config. */
     private record Holder(String key, Stage stage, MainController controller, ConfigManager config) {}
 
+    /** Crash recovery for every window of this process; does nothing on disk until a buffer is unsaved. */
+    private final com.editora.recovery.RecoveryService recovery;
+
+    com.editora.recovery.RecoveryService recovery() {
+        return recovery;
+    }
+
     public WindowManager(SharedConfig shared, KeymapManager keymap, HostServices hostServices) {
         this.shared = shared;
         this.keymap = keymap;
         this.hostServices = hostServices;
+        this.recovery =
+                new com.editora.recovery.RecoveryService(shared.getConfigDir(), javafx.application.Platform::runLater);
         // Make the (single, shared) keymap available to plain text fields and consoles, so they can install
         // the configured caret/editing chords without threading it through their constructors (see
         // TextInputKeymap). Done here, by the keymap's owner, so every window this manager builds — including
@@ -716,10 +725,27 @@ public class WindowManager {
         }
     }
 
-    void fileDeletedAcrossWindows(Path path) {
+    /**
+     * Closes the tabs of a deleted file (or of everything under a deleted folder) in every window.
+     *
+     * @param discardApproved the buffers whose owner was asked and agreed to lose them; an unsaved buffer
+     *     this does not accept stays open, wherever it is
+     */
+    void fileDeletedAcrossWindows(
+            Path path, java.util.function.Predicate<com.editora.editor.EditorBuffer> discardApproved) {
         for (Holder holder : List.copyOf(windows)) {
-            holder.controller().removeProjectFileLocal(path);
+            holder.controller().removeProjectFileLocal(path, discardApproved);
         }
+    }
+
+    /** The window whose tab holds {@code buffer}, or {@code fallback} when no live window does. */
+    MainController ownerOf(com.editora.editor.EditorBuffer buffer, MainController fallback) {
+        for (Holder holder : windows) {
+            if (holder.controller() != null && holder.controller().holdsBufferLocal(buffer)) {
+                return holder.controller();
+            }
+        }
+        return fallback;
     }
 
     void invalidatePendingGitWrites(MainController initiator, Path root, List<String> pathspecs) {
@@ -1123,6 +1149,19 @@ public class WindowManager {
         }
     }
 
+    /**
+     * {@code origin} rewrote a file's notes, bookmarks or breakpoints. Each window holds its own buffer for a
+     * file and each buffer its own copy of those marks, so every other window re-reads the store: a buffer
+     * left with a stale copy showed marks that were gone and wrote them back over the other window's.
+     */
+    void broadcastMarksChanged(MainController origin, MarkMerge.Change change) {
+        for (Holder h : new ArrayList<>(windows)) {
+            if (h.controller != origin) {
+                h.controller.marksChangedElsewhere(change);
+            }
+        }
+    }
+
     /** Re-registers the synthetic {@code externalTool.run.*} commands in every window after the set changed. */
     public void broadcastExternalToolsChanged() {
         for (Holder h : new ArrayList<>(windows)) {
@@ -1429,8 +1468,16 @@ public class WindowManager {
      * Deletes {@code windows/<uuid>.json} session files for untitled windows that are no longer in the
      * open set (i.e. closed in a previous session) — so they don't accumulate. Best-effort; a missing dir
      * or an unreadable file is ignored. Run once at launch against the set being restored.
+     *
+     * <p>Not when the projects index failed to load, or a copy of one that did is still kept
+     * ({@link ProjectManager#openSetIsComplete()}): the open set is then the empty default, not "every
+     * untitled window was closed", and sweeping against it deleted every untitled window's tabs, layout and
+     * run configurations because {@code projects.json} was zero-length, truncated or written by a newer build.
      */
     private void gcOrphanWindowSessions(java.util.Collection<String> openKeys) {
+        if (!projects().openSetIsComplete()) {
+            return;
+        }
         Path dir = windowsDir();
         if (!java.nio.file.Files.isDirectory(dir)) {
             return;
@@ -1485,6 +1532,27 @@ public class WindowManager {
         }
         stage.toFront();
         stage.requestFocus();
+    }
+
+    /**
+     * Brings the editor forward for a launch that carried nothing to open — the launcher clicked again, or
+     * {@code editora} run with no file while it is already running. That launch is handed to this process
+     * instead of starting a second one on the same configuration ({@code App.shouldForwardLaunch}); showing
+     * the window the user last worked in is all it asks for.
+     */
+    public void presentForExternalLaunch() {
+        if (restorePending()) {
+            deferredExternalLaunches.add(this::presentForExternalLaunch);
+            return;
+        }
+        Holder target = focusedHolder();
+        if (target == null) {
+            openOrFocusGlobal();
+            target = focusedHolder();
+        }
+        if (target != null) {
+            presentForExternalLaunch(target.stage());
+        }
     }
 
     /** How long the window is pinned above others while the compositor settles the raise; see below. */

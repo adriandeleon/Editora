@@ -80,7 +80,7 @@ class NarrowedWholeBufferWritersFxTest {
         String path = b.getPath().toString();
         McpBridge.BufferContent read = fx.controller.readBuffer(path);
         assertEquals(DOC, read.text(), "read_buffer is the whole file");
-        assertNull(fx.controller.editBuffer(path, "", read.text().replace("three", "THREE"), false));
+        assertNull(fx.controller.replaceBuffer(path, read.text().replace("three", "THREE")));
         assertWholeFileIs(DOC.replace("three", "THREE"), b);
     }
 

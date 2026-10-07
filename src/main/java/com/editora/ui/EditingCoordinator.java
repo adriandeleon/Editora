@@ -829,7 +829,7 @@ final class EditingCoordinator {
         if (edit == null) {
             return;
         }
-        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
         area.moveTo(edit.caret());
         area.requestFocus();
     }
@@ -889,7 +889,7 @@ final class EditingCoordinator {
             boolean caretFirst = area.getCaretPosition() == start;
             buffer.getFoldManager().expandHeaderAt(start);
             buffer.getFoldManager().expandHeaderAt(end);
-            area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+            area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
             area.selectRange(
                     caretFirst ? edit.selEnd() : edit.selStart(), caretFirst ? edit.selStart() : edit.selEnd());
             area.requestFocus();
@@ -902,7 +902,7 @@ final class EditingCoordinator {
         // The duplicate/moved block ends up expanded: its copy would otherwise be inserted into the hidden
         // run (and the caret with it).
         buffer.getFoldManager().expandHeaderAt(area.getCaretPosition());
-        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
         area.moveTo(edit.caret());
         area.requestFocus();
     }
@@ -1027,7 +1027,7 @@ final class EditingCoordinator {
         }
         boolean merge = continuesPreviousKill(buffer, area.getCaretPosition()); // decide before the edit
         String killed = area.getText(edit.from(), edit.to());
-        area.replaceText(edit.from(), edit.to(), FoldManager.unmask(edit.replacement()));
+        area.replaceText(edit.from(), edit.to(), buffer.getFoldManager().restoreBreaks(edit.replacement()));
         area.moveTo(edit.caret());
         pushKill(buffer, area, killed, dir, merge);
         deactivateMark();
@@ -1448,6 +1448,16 @@ final class EditingCoordinator {
         host.statusBar().setNarrowed(buffer.isNarrowed());
         host.updateWindowTitle();
         host.git().refresh();
+        // Narrowing and widening start a new undo history (see EditorBuffer.narrowTo). Say so when there was
+        // one to lose — deferred, so it is not overwritten by the status of the narrowing command or of the
+        // programmatic writer (Replace in Files, a lint fix, an agent edit) that had to widen the buffer first.
+        boolean narrowed = buffer.isNarrowed();
+        javafx.application.Platform.runLater(() -> {
+            if (buffer.takeHistoryDropped()) {
+                host.setStatus(
+                        tr(narrowed ? "status.narrow.narrowedHistoryCleared" : "status.narrow.widenedHistoryCleared"));
+            }
+        });
     }
 
     /**
@@ -2083,6 +2093,10 @@ final class EditingCoordinator {
             host.setStatus(tr("status.indent.noChange"));
             return;
         }
+        if (!NoUndoGuard.allow(
+                buffer, tr(toSpaces ? "command.edit.indentationToSpaces" : "command.edit.indentationToTabs"))) {
+            return;
+        }
         int caret = area.getCaretPosition();
         buffer.replaceVisibleText(area, after); // one undo step holding only the lines whose indent changed
         area.moveTo(Math.min(caret, area.getLength()));
@@ -2116,6 +2130,9 @@ final class EditingCoordinator {
         String after = com.editora.editor.LineEndings.toLf(op.apply(before));
         if (after.equals(before)) {
             host.setStatus(tr("status.stringops.noChange"));
+            return;
+        }
+        if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lineTransform"))) {
             return;
         }
         boolean hadSelection = sel.getLength() > 0;

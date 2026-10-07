@@ -1669,6 +1669,107 @@ public final class GitService {
         });
     }
 
+    /**
+     * The untracked, not ignored files at or below {@code pathspecs} (repo-relative, {@code /}-separated) —
+     * what {@code git clean -f -- <pathspecs>} deletes. Git reports a wholly untracked folder as one status
+     * row, so this is how a caller learns what deleting that row removes. Posts {@code null} on the FX thread
+     * when Git could not say (not installed, the command failed, more names than a read captures).
+     */
+    public void untrackedFiles(Path root, List<String> pathspecs, Consumer<List<String>> onResult) {
+        submit(exec, () -> {
+            List<String> files = null;
+            if (gitAvailable() && root != null) {
+                List<String> args = new ArrayList<>(
+                        List.of(GitSafety.LITERAL_PATHSPECS, "ls-files", "--others", "--exclude-standard", "-z", "--"));
+                args.addAll(pathspecs);
+                ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
+                if (r.ok()) {
+                    // A nested repository is listed as "dir/": git clean leaves it alone, and it is not a file.
+                    files = nulTokens(r.out()).stream()
+                            .filter(path -> !path.endsWith("/"))
+                            .toList();
+                }
+            }
+            List<String> posted = files;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /**
+     * What moving HEAD to another commit would take off the current branch.
+     *
+     * @param known false when Git could not be asked; the counts are then meaningless
+     * @param leaving commits reachable from HEAD and not from the target
+     * @param hasUpstream whether the current branch has an upstream to compare with
+     * @param notOnUpstream how many of {@code leaving} the upstream does not have (all of them without one)
+     * @param unreferenced how many of {@code leaving} no other branch, remote-tracking branch or tag reaches:
+     *     after the move only the reflog leads to them
+     */
+    public record LeftBehind(boolean known, int leaving, boolean hasUpstream, int notOnUpstream, int unreferenced) {
+        public static final LeftBehind UNKNOWN = new LeftBehind(false, 0, false, 0, 0);
+    }
+
+    /**
+     * Counts what moving HEAD to {@code target} would leave behind and posts it on the FX thread. Read-only.
+     * {@code movesBranch} is true for a {@code reset}, which moves the checked-out branch with HEAD — that
+     * branch then no longer keeps the commits alive — and false for a checkout of a commit, which leaves
+     * every branch where it is. On a detached HEAD there is no branch either way, so every commit made
+     * there that no ref reaches is {@link LeftBehind#unreferenced}.
+     */
+    public void commitsLeftBehind(Path root, String target, boolean movesBranch, Consumer<LeftBehind> onResult) {
+        submit(exec, () -> {
+            LeftBehind result = LeftBehind.UNKNOWN;
+            if (gitAvailable() && root != null && GitSafety.isSafeRevision(target)) {
+                result = leftBehindNow(root, target, movesBranch);
+            }
+            LeftBehind posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    private static LeftBehind leftBehindNow(Path root, String target, boolean movesBranch) {
+        String notTarget = "^" + target;
+        Integer leaving = revCount(root, "HEAD", notTarget);
+        if (leaving == null) {
+            return LeftBehind.UNKNOWN;
+        }
+        if (leaving == 0) {
+            return new LeftBehind(true, 0, false, 0, 0);
+        }
+        Integer notOnUpstream = revCount(root, "HEAD", notTarget, "--not", "@{upstream}");
+        List<String> elsewhere = new ArrayList<>(List.of("HEAD", notTarget, "--not"));
+        if (movesBranch) {
+            ProcessRunner.Result head = git(root, QUICK, "symbolic-ref", "--short", "-q", "HEAD");
+            if (head.ok() && !head.out().isBlank()) {
+                elsewhere.add("--exclude=" + head.out().strip()); // the branch that is about to move
+            }
+        }
+        elsewhere.addAll(List.of("--branches", "--tags", "--remotes"));
+        Integer unreferenced = revCount(root, elsewhere.toArray(String[]::new));
+        if (unreferenced == null) {
+            return LeftBehind.UNKNOWN;
+        }
+        return new LeftBehind(
+                true, leaving, notOnUpstream != null, notOnUpstream == null ? leaving : notOnUpstream, unreferenced);
+    }
+
+    /** {@code git rev-list --count <revisions>}, or {@code null} when it fails (an unknown revision, no upstream). */
+    private static Integer revCount(Path root, String... revisions) {
+        String[] args = new String[revisions.length + 2];
+        args[0] = "rev-list";
+        args[1] = "--count";
+        System.arraycopy(revisions, 0, args, 2, revisions.length);
+        ProcessRunner.Result r = git(root, QUICK, args);
+        if (!r.ok()) {
+            return null;
+        }
+        try {
+            return Integer.valueOf(r.out().strip());
+        } catch (NumberFormatException notACount) {
+            return null;
+        }
+    }
+
     /** Lists tag short-names, sorted as returned by Git, and posts them on the FX thread. */
     public void tags(Path root, Consumer<List<String>> onResult) {
         submit(exec, () -> {

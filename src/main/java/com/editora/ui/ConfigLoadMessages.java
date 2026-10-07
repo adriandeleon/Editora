@@ -20,6 +20,17 @@ final class ConfigLoadMessages {
      */
     static String describe(ConfigLoadProblem problem, boolean writeProtected) {
         String name = problem.file().getFileName().toString();
+        if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_RESTORED) {
+            return tr("status.config.newerCopyRestored", name);
+        }
+        if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT) {
+            return tr(
+                    "status.config.newerCopyKept",
+                    name,
+                    problem.backup() == null
+                            ? ""
+                            : problem.backup().getFileName().toString());
+        }
         String what =
                 switch (problem.kind()) {
                     case VALUES_SKIPPED ->
@@ -27,6 +38,7 @@ final class ConfigLoadMessages {
                     case UNREADABLE -> tr("status.config.unreadable", name);
                     case NEWER_VERSION -> tr("status.config.newerVersion", name);
                     case NOT_UTF8 -> tr("status.config.notUtf8", name);
+                    case NEWER_COPY_RESTORED, NEWER_COPY_KEPT -> name; // returned above
                 };
         if (problem.backup() != null) {
             return tr(

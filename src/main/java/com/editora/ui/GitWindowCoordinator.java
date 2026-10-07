@@ -533,7 +533,7 @@ final class GitWindowCoordinator {
 
             @Override
             public void checkout(String hash) {
-                gitMutate(tr("status.git.checkedOut", com.editora.git.GitFormat.shortHash(hash)), "checkout", hash);
+                checkoutCommitIn(gitLogRoot, hash);
             }
 
             @Override
@@ -683,9 +683,10 @@ final class GitWindowCoordinator {
 
     /**
      * {@code git reset --<mode> <hash>} in {@code root} — the repository the commit was listed from, captured
-     * by the caller before any dialog. Hard is the one mode that throws work away: it sits directly under Soft
-     * and Mixed in the menu, so it is confirmed with the dialog a file discard uses, naming what will be lost
-     * and the repository and branch it will be lost from.
+     * by the caller before any dialog. Git is first asked what the reset takes off the branch
+     * ({@link GitHeadMoveWarning}): Hard is always confirmed, with the dialog a file discard uses, naming the
+     * uncommitted work and the commits that will be lost and the repository and branch they are lost from;
+     * Soft and Mixed are confirmed when commits would be left on no other branch or tag.
      */
     private void resetIn(Path root, String branch, String hash, String mode) {
         if (root == null) {
@@ -693,15 +694,40 @@ final class GitWindowCoordinator {
             return;
         }
         String shortHash = com.editora.git.GitFormat.shortHash(hash);
-        if ("hard".equals(mode)
-                && !host.git()
-                        .confirmDestructive(
-                                tr("dialog.gitReset.title"),
-                                tr("dialog.gitReset.hardConfirm", shortHash, branch, root),
-                                tr("dialog.gitReset.hard"))) {
+        host.git().service().commitsLeftBehind(root, hash, true, left -> {
+            if (GitHeadMoveWarning.resetNeedsConfirmation(mode, left)
+                    && !host.git()
+                            .confirmDestructive(
+                                    tr("dialog.gitReset.title"),
+                                    GitHeadMoveWarning.resetPrompt(mode, shortHash, branch, root, left),
+                                    tr("hard".equals(mode) ? "dialog.gitReset.hard" : "dialog.gitReset.title"))) {
+                return;
+            }
+            gitMutateIn(root, tr("status.git.reset", mode, shortHash), "reset", "--" + mode, hash);
+        });
+    }
+
+    /**
+     * {@code git checkout <hash>} in {@code root}: HEAD becomes detached, which the result says. Leaving a
+     * detached HEAD that has commits no branch or tag reaches abandons them, so that is confirmed first.
+     */
+    private void checkoutCommitIn(Path root, String hash) {
+        if (root == null) {
+            host.git().reportIfNoRepo();
             return;
         }
-        gitMutateIn(root, tr("status.git.reset", mode, shortHash), "reset", "--" + mode, hash);
+        String shortHash = com.editora.git.GitFormat.shortHash(hash);
+        host.git().service().commitsLeftBehind(root, hash, false, left -> {
+            if (GitHeadMoveWarning.checkoutNeedsConfirmation(left)
+                    && !host.git()
+                            .confirmDestructive(
+                                    tr("dialog.gitCheckout.title"),
+                                    GitHeadMoveWarning.checkoutPrompt(shortHash, left),
+                                    tr("dialog.gitCheckout.action"))) {
+                return;
+            }
+            gitMutateIn(root, tr("status.git.checkedOutDetached", shortHash), "checkout", hash);
+        });
     }
 
     /**

@@ -132,4 +132,102 @@ class RenamePreviewTest {
         assertEquals(0, RenamePreview.totalEdits(null));
         assertEquals(List.of(), RenamePreview.summarise(mapped(List.of(), List.of())));
     }
+
+    // --- deletes and overwrites are rows the user can see and untick ---------------------------------------
+
+    private static final Path DIR = Path.of("/w/p");
+    private static final Path IN_DIR = Path.of("/w/p/B.java");
+
+    /** The probe's edit: move two files out of a package, replace an existing file, delete the package. */
+    private static WorkspaceEditMapper.Mapped destructive() {
+        return new WorkspaceEditMapper.Mapped(
+                List.of(),
+                List.of(
+                        new WorkspaceEditMapper.FileRename(Path.of("/w/p/A.java"), Path.of("/w/q/A.java"), false),
+                        new WorkspaceEditMapper.FileRename(IN_DIR, Path.of("/w/q/B.java"), false)),
+                List.of(new WorkspaceEditMapper.FileCreate(C, true, false)),
+                List.of(new WorkspaceEditMapper.FileDelete(DIR, true, false)));
+    }
+
+    private static final WorkspaceEditHazards.Disk DISK = new WorkspaceEditHazards.Disk() {
+        @Override
+        public boolean exists(Path path) {
+            return !path.startsWith("/w/q");
+        }
+
+        @Override
+        public boolean isDirectory(Path path) {
+            return path.equals(DIR);
+        }
+    };
+
+    @Test
+    void deletesAndOverwritingCreatesAreRows() {
+        List<RenamePreview.FileChange> rows = RenamePreview.summarise(destructive(), DISK);
+
+        assertEquals(4, rows.size());
+        assertEquals(new RenamePreview.FileChange(C, 0, null, null, true), rows.get(3));
+        assertEquals(
+                new RenamePreview.FileChange(DIR, 0, null, WorkspaceEditHazards.Kind.DELETE_DIRECTORY, false),
+                rows.get(2));
+    }
+
+    @Test
+    void anOverwritingRenameIsMarkedOnTheRowOfTheFileThatMoves() {
+        var m = mapped(List.of(), List.of(new WorkspaceEditMapper.FileRename(A, B, true)));
+
+        assertEquals(List.of(new RenamePreview.FileChange(A, 0, B, null, true)), RenamePreview.summarise(m, DISK));
+    }
+
+    @Test
+    void anEditedFileThatIsThenDeletedIsOneRow() {
+        var m = new WorkspaceEditMapper.Mapped(
+                List.of(fileEdit(A, 2)),
+                List.of(),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileDelete(A, false, false)));
+
+        assertEquals(
+                List.of(new RenamePreview.FileChange(A, 2, null, WorkspaceEditHazards.Kind.DELETE_FILE, false)),
+                RenamePreview.summarise(m, DISK));
+    }
+
+    @Test
+    void anUntickedDeleteOrOverwriteIsDropped() {
+        var m = destructive();
+        Set<Path> listed = new java.util.LinkedHashSet<>();
+        RenamePreview.summarise(m, DISK).forEach(row -> listed.add(row.file()));
+
+        var kept = RenamePreview.filter(m, Set.of(Path.of("/w/p/A.java"), IN_DIR), listed);
+
+        assertEquals(2, kept.renames().size());
+        assertTrue(kept.creates().isEmpty(), "the unticked overwrite must not truncate the file");
+        assertTrue(kept.deletes().isEmpty(), "the unticked delete must not run");
+    }
+
+    @Test
+    void aTickedDeleteThatCoversAnUntickedFileIsReported() {
+        var m = destructive();
+        Set<Path> listed = new java.util.LinkedHashSet<>();
+        RenamePreview.summarise(m, DISK).forEach(row -> listed.add(row.file()));
+        Set<Path> keep = Set.of(Path.of("/w/p/A.java"), C, DIR); // B.java unticked: it stays in /w/p
+
+        var kept = RenamePreview.filter(m, keep, listed);
+
+        assertEquals(List.of(IN_DIR), RenamePreview.excludedButDeleted(kept, keep, listed));
+        assertEquals(List.of(), RenamePreview.excludedButDeleted(kept, listed, listed), "everything ticked");
+    }
+
+    @Test
+    void aSingleFileRenameThatDestroysSomethingIsWorthPreviewing() {
+        var plain = mapped(List.of(fileEdit(A, 1)), List.of());
+        var deleting = new WorkspaceEditMapper.Mapped(
+                List.of(fileEdit(A, 1)),
+                List.of(),
+                List.of(),
+                List.of(new WorkspaceEditMapper.FileDelete(B, false, false)));
+
+        assertFalse(RenamePreview.worthPreviewing(plain, DISK));
+        assertTrue(RenamePreview.worthPreviewing(deleting, DISK));
+    }
 }

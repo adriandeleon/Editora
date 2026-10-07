@@ -52,6 +52,8 @@ class AgentFileWriteFxTest {
             async.onClose(coordinator::shutdown);
             async.onClose(() -> FxTestSupport.runOnFx(buffer::dispose));
 
+            // The agent has to have seen the unsaved text it replaces (an unread dirty buffer is refused).
+            assertEquals("unsaved user edit\n", coordinator.readTextFile(file.toString(), null, null));
             coordinator.writeTextFile(file.toString(), "agent edit\n");
 
             assertEquals("agent edit\n", FxTestSupport.callOnFx(buffer::getContent));
@@ -147,11 +149,199 @@ class AgentFileWriteFxTest {
         }
     }
 
+    private static EditorBuffer openBuffer(Path file, String saved, String unsaved) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            EditorBuffer created = new EditorBuffer();
+            created.setPath(file);
+            created.setContent(saved);
+            created.markClean();
+            if (unsaved != null) {
+                created.replaceWholeDocument(unsaved);
+            }
+            return created;
+        });
+    }
+
+    @Test
+    void aWriteComputedFromAnOlderReadDoesNotReplaceWhatTheUserTypedSince(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Path file = Files.writeString(dir.resolve("typing.txt"), "one\n");
+            EditorBuffer buffer = openBuffer(file, "one\n", null);
+            OpsStub ops = new OpsStub();
+            ops.openBuffer = buffer;
+            AgentCoordinator coordinator = new AgentCoordinator(new CoordinatorHostStub(), ops);
+            async.onClose(coordinator::shutdown);
+            async.onClose(() -> FxTestSupport.runOnFx(buffer::dispose));
+
+            assertEquals("one\n", coordinator.readTextFile(file.toString(), null, null));
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("typed after the agent read\n"));
+
+            IOException refused =
+                    assertThrows(IOException.class, () -> coordinator.writeTextFile(file.toString(), "ONE\n"));
+
+            assertTrue(refused.getMessage().contains("Read it again"), refused.getMessage());
+            assertEquals("one\ntyped after the agent read\n", FxTestSupport.callOnFx(buffer::getContent));
+
+            // The remedy the error names works: re-read, then write.
+            assertEquals(
+                    "one\ntyped after the agent read\n",
+                    coordinator.readTextFile(file.toString(), 1, 1) + "\n" + "typed after the agent read\n");
+            coordinator.writeTextFile(file.toString(), "ONE\ntyped after the agent read\n");
+            assertEquals("ONE\ntyped after the agent read\n", FxTestSupport.callOnFx(buffer::getContent));
+            // ...and the agent's own write counts as known text for its next one.
+            coordinator.writeTextFile(file.toString(), "TWO\n");
+            assertEquals("TWO\n", FxTestSupport.callOnFx(buffer::getContent));
+        }
+    }
+
+    @Test
+    void unsavedTextTheAgentNeverReadIsNotOverwritten(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Path file = Files.writeString(dir.resolve("unread.txt"), "saved copy\n");
+            EditorBuffer buffer = openBuffer(file, "saved copy\n", "only in the editor\n");
+            OpsStub ops = new OpsStub();
+            ops.openBuffer = buffer;
+            AgentCoordinator coordinator = new AgentCoordinator(new CoordinatorHostStub(), ops);
+            async.onClose(coordinator::shutdown);
+            async.onClose(() -> FxTestSupport.runOnFx(buffer::dispose));
+
+            IOException refused = assertThrows(
+                    IOException.class, () -> coordinator.writeTextFile(file.toString(), "from the disk copy\n"));
+
+            assertTrue(refused.getMessage().contains("unsaved changes"), refused.getMessage());
+            assertEquals("only in the editor\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertEquals("saved copy\n", Files.readString(file));
+        }
+    }
+
+    @Test
+    void aFileOpenInAnotherWindowIsEditedThroughItsBufferNotUnderneathIt(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Path file = Files.writeString(dir.resolve("elsewhere.txt"), "saved copy\n");
+            EditorBuffer buffer = openBuffer(file, "saved copy\n", "unsaved in the other window\n");
+            OpsStub ops = new OpsStub();
+            ops.otherWindowBuffer = buffer; // no tab in the agent's own window
+            AgentCoordinator coordinator = new AgentCoordinator(new CoordinatorHostStub(), ops);
+            async.onClose(coordinator::shutdown);
+            async.onClose(() -> FxTestSupport.runOnFx(buffer::dispose));
+
+            assertEquals("unsaved in the other window\n", coordinator.readTextFile(file.toString(), null, null));
+            coordinator.writeTextFile(file.toString(), "agent edit\n");
+            async.awaitFx();
+
+            assertEquals("agent edit\n", FxTestSupport.callOnFx(buffer::getContent));
+            assertEquals("saved copy\n", Files.readString(file), "nothing was written underneath the buffer");
+            assertNull(ops.backgroundOpen.get());
+            FxTestSupport.runOnFx(buffer.getArea()::undo);
+            assertEquals("unsaved in the other window\n", FxTestSupport.callOnFx(buffer::getContent));
+        }
+    }
+
+    @Test
+    void aClosedFileIsSnapshottedFirstAndKeepsItsEncodingAndLineEndings(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            byte[] before = "caf\u00e9\r\nna\u00efve\r\n".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1);
+            Path file = Files.write(dir.resolve("legacy.txt"), before);
+            OpsStub ops = new OpsStub();
+            AgentCoordinator coordinator = new AgentCoordinator(new CoordinatorHostStub(), ops);
+            async.onClose(coordinator::shutdown);
+
+            assertEquals(
+                    "caf\u00e9\r\nna\u00efve\r\n",
+                    coordinator.readTextFile(file.toString(), null, null),
+                    "a file that is not UTF-8 is readable, decoded as the editor would open it");
+            coordinator.writeTextFile(file.toString(), "caf\u00e9\r\nna\u00efve\r\nmore\r\n");
+            async.awaitFx();
+
+            assertEquals(java.util.List.of("caf\u00e9\nna\u00efve\n"), ops.history, "previous text kept first");
+            org.junit.jupiter.api.Assertions.assertArrayEquals(
+                    "caf\u00e9\r\nna\u00efve\r\nmore\r\n".getBytes(java.nio.charset.StandardCharsets.ISO_8859_1),
+                    Files.readAllBytes(file));
+            assertEquals(file, ops.backgroundOpen.get());
+        }
+    }
+
+    @Test
+    void aClosedFileIsNotReplacedWhenItsPreviousTextCannotBeKept(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Path file = Files.writeString(dir.resolve("valuable.txt"), "precious original\n");
+            OpsStub ops = new OpsStub();
+            ops.historyDurable = false;
+            AgentCoordinator coordinator = new AgentCoordinator(new CoordinatorHostStub(), ops);
+            async.onClose(coordinator::shutdown);
+
+            IOException refused = assertThrows(
+                    IOException.class, () -> coordinator.writeTextFile(file.toString(), "agent replacement\n"));
+            async.awaitFx();
+
+            assertTrue(refused.getMessage().contains("Local History"), refused.getMessage());
+            assertEquals("precious original\n", Files.readString(file));
+            assertNull(ops.backgroundOpen.get());
+        }
+    }
+
+    @Test
+    void aClosedFileChangedOnDiskSinceTheAgentReadItIsNotReplaced(@TempDir Path dir) throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Path file = Files.writeString(dir.resolve("moved-on.txt"), "v1\n");
+            OpsStub ops = new OpsStub();
+            AgentCoordinator coordinator = new AgentCoordinator(new CoordinatorHostStub(), ops);
+            async.onClose(coordinator::shutdown);
+
+            assertEquals("v1\n", coordinator.readTextFile(file.toString(), null, null));
+            Files.writeString(file, "v2 written by another program\n");
+
+            IOException refused =
+                    assertThrows(IOException.class, () -> coordinator.writeTextFile(file.toString(), "V1\n"));
+
+            assertTrue(refused.getMessage().contains("Read it again"), refused.getMessage());
+            assertEquals("v2 written by another program\n", Files.readString(file));
+            assertTrue(ops.history.isEmpty());
+        }
+    }
+
+    /** The host is only ever handed absolute paths; a relative one must never mean "under the JVM's cwd". */
+    @Test
+    void aRelativePathIsNeverResolvedAgainstTheWorkingDirectory() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            String name = "acp-relative-" + System.nanoTime() + ".txt";
+            Path underCwd = Path.of(name).toAbsolutePath();
+            OpsStub ops = new OpsStub();
+            AgentCoordinator coordinator = new AgentCoordinator(new CoordinatorHostStub(), ops);
+            async.onClose(coordinator::shutdown);
+            try {
+                assertThrows(IOException.class, () -> coordinator.writeTextFile(name, "written by agent\n"));
+                assertThrows(IOException.class, () -> coordinator.readTextFile(name, null, null));
+                async.awaitFx();
+                assertFalse(Files.exists(underCwd), "nothing was created under the working directory");
+                assertNull(ops.backgroundOpen.get());
+            } finally {
+                Files.deleteIfExists(underCwd);
+            }
+        }
+    }
+
     private static final class OpsStub implements AgentCoordinator.Ops {
 
         private final AtomicInteger refreshes = new AtomicInteger();
         private final AtomicReference<Path> backgroundOpen = new AtomicReference<>();
         private EditorBuffer openBuffer;
+        private EditorBuffer otherWindowBuffer;
+        private final java.util.List<String> history = new java.util.concurrent.CopyOnWriteArrayList<>();
+        private boolean historyDurable = true;
+
+        @Override
+        public EditorBuffer bufferInAnotherWindow(Path file) {
+            return otherWindowBuffer;
+        }
+
+        @Override
+        public void recordHistory(Path file, String content, java.util.function.Consumer<Boolean> completion) {
+            if (historyDurable) {
+                history.add(content);
+            }
+            completion.accept(historyDurable);
+        }
 
         @Override
         public Path projectRoot() {

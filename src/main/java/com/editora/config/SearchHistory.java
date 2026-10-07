@@ -88,11 +88,18 @@ public class SearchHistory {
                 .filter(s -> s != null && !s.isEmpty())
                 .limit(MAX_ENTRIES)
                 .toList());
+        Stored baseline = snapshot();
+        sink.loaded(file, () -> mapper.writeValueAsBytes(baseline));
     }
 
     private void save() {
+        Stored snapshot = snapshot();
+        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
+    }
+
+    private Stored snapshot() {
         Stored snapshot = new Stored();
         snapshot.queries = List.copyOf(queries);
-        sink.write(file, () -> mapper.writeValueAsBytes(snapshot));
+        return snapshot;
     }
 }

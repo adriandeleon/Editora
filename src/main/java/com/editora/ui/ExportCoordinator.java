@@ -89,7 +89,81 @@ final class ExportCoordinator {
             return;
         }
         host.setStatus(tr("status.pdf.exporting"));
-        pdfService.exportDocument(table, host.settings().getPdfPageSize(), f.toPath(), r -> reportPdf(r, f));
+        String pageSize = host.settings().getPdfPageSize();
+        stagedPdf(f, (out, report) -> pdfService.exportDocument(table, pageSize, out, report));
+    }
+
+    /**
+     * Runs an asynchronous export against a staging file beside {@code f} and moves the result over
+     * {@code f} only when the export succeeded (see {@link com.editora.io.StagedExport}). The Save dialog has
+     * usually just confirmed replacing {@code f}; written directly, a failure partway — a full disk, a tool
+     * that exits with an error — left that file truncated, with neither the old export nor the new one.
+     *
+     * @param export  starts the export to the given path and reports to the given callback
+     * @param ok      whether a result is a success
+     * @param failure builds a failed result from a message (the staging or the final move failed)
+     * @param report  receives the final result, as it did when the export wrote to {@code f} itself
+     */
+    <R> void staged(
+            java.io.File f,
+            java.util.function.BiConsumer<java.nio.file.Path, java.util.function.Consumer<R>> export,
+            java.util.function.Predicate<R> ok,
+            java.util.function.Function<String, R> failure,
+            java.util.function.Consumer<R> report) {
+        com.editora.io.StagedExport stage;
+        try {
+            stage = com.editora.io.StagedExport.begin(f.toPath());
+        } catch (java.io.IOException e) {
+            report.accept(failure.apply(e.getMessage() == null ? e.toString() : e.getMessage()));
+            return;
+        }
+        try {
+            export.accept(stage.path(), result -> {
+                R outcome = result;
+                if (ok.test(result)) {
+                    try {
+                        stage.commit();
+                    } catch (java.io.IOException e) {
+                        outcome = failure.apply(e.getMessage() == null ? e.toString() : e.getMessage());
+                    }
+                } else {
+                    stage.close();
+                }
+                report.accept(outcome);
+            });
+        } catch (RuntimeException e) {
+            stage.close();
+            throw e;
+        }
+    }
+
+    /** {@link #staged} for the PDF service: reports through {@link #reportPdf}. */
+    private void stagedPdf(
+            java.io.File f,
+            java.util.function.BiConsumer<
+                            java.nio.file.Path, java.util.function.Consumer<com.editora.pdf.PdfExportService.Result>>
+                    export) {
+        this.<com.editora.pdf.PdfExportService.Result>staged(
+                f,
+                export,
+                com.editora.pdf.PdfExportService.Result::ok,
+                message -> new com.editora.pdf.PdfExportService.Result(false, message),
+                r -> reportPdf(r, f));
+    }
+
+    /** {@link #staged} for the office service: reports through {@link #reportOffice}. */
+    private void stagedOffice(
+            java.io.File f,
+            java.util.function.BiConsumer<
+                            java.nio.file.Path,
+                            java.util.function.Consumer<com.editora.office.OfficeExportService.Result>>
+                    export) {
+        this.<com.editora.office.OfficeExportService.Result>staged(
+                f,
+                export,
+                com.editora.office.OfficeExportService.Result::ok,
+                message -> new com.editora.office.OfficeExportService.Result(false, message),
+                r -> reportOffice(r, f));
     }
 
     /** Opens the print preview for a CSV through the same directly-built table (see {@link #csvExportPdf}). */
@@ -115,11 +189,8 @@ final class ExportCoordinator {
             return;
         }
         host.setStatus(tr("status.pdf.exporting"));
-        pdfService.exportFxImages(
-                java.util.List.of(image),
-                host.settings().getPdfPageSize(),
-                file.toPath(),
-                result -> reportPdf(result, file));
+        String pageSize = host.settings().getPdfPageSize();
+        stagedPdf(file, (out, report) -> pdfService.exportFxImages(java.util.List.of(image), pageSize, out, report));
     }
 
     /** Opens the normal Print Preview flow for the complete Project Map layout. */
@@ -147,12 +218,13 @@ final class ExportCoordinator {
             return;
         }
         host.setStatus(tr("status.office.exporting"));
-        java.util.function.Consumer<com.editora.office.OfficeExportService.Result> cb = r -> reportOffice(r, f);
-        if (xlsx) {
-            officeService.exportXlsx(rows, hasHeader, f.toPath(), cb);
-        } else {
-            officeService.exportOds(rows, hasHeader, f.toPath(), cb);
-        }
+        stagedOffice(f, (out, cb) -> {
+            if (xlsx) {
+                officeService.exportXlsx(rows, hasHeader, out, cb);
+            } else {
+                officeService.exportOds(rows, hasHeader, out, cb);
+            }
+        });
     }
 
     /**
@@ -172,15 +244,19 @@ final class ExportCoordinator {
         }
         Settings s = host.settings();
         host.setStatus(tr("status.pdf.exporting"));
-        pdfService.exportCode(
-                b.getContent(),
-                grammarKey(b),
-                s.isPdfSyntaxHighlighting(),
-                s.isPdfLineNumbers(),
-                s.getTabSize(),
-                s.getPdfPageSize(),
-                f.toPath(),
-                r -> reportPdf(r, f));
+        String content = b.getContent();
+        String grammar = grammarKey(b);
+        stagedPdf(
+                f,
+                (out, report) -> pdfService.exportCode(
+                        content,
+                        grammar,
+                        s.isPdfSyntaxHighlighting(),
+                        s.isPdfLineNumbers(),
+                        s.getTabSize(),
+                        s.getPdfPageSize(),
+                        out,
+                        report));
     }
 
     /**
@@ -199,22 +275,37 @@ final class ExportCoordinator {
         }
         host.setStatus(tr("status.pdf.exporting"));
         String pageSize = host.settings().getPdfPageSize();
-        java.util.function.Consumer<com.editora.pdf.PdfExportService.Result> report = r -> reportPdf(r, f);
+        if (b.isTypst()) { // Typst — native CLI render to a (multi-page) PDF; TypstRenderer stages it itself
+            typst.exportToPath(
+                    b.getContent(),
+                    b.getPath(),
+                    f.toPath(),
+                    r -> reportPdf(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message()), f));
+            return;
+        }
+        stagedPdf(f, (out, report) -> exportPreviewPdfTo(b, pageSize, out, report));
+    }
+
+    /** Renders {@code b}'s preview as a PDF at {@code out} (a staging path — see {@link #stagedPdf}). */
+    private void exportPreviewPdfTo(
+            EditorBuffer b,
+            String pageSize,
+            java.nio.file.Path out,
+            java.util.function.Consumer<com.editora.pdf.PdfExportService.Result> report) {
         if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            pdfService.exportMarkdown(
-                    b.getContent(), baseDir, pageSize, mermaid.mmdcCommandOrNull(), f.toPath(), report);
+            pdfService.exportMarkdown(b.getContent(), baseDir, pageSize, mermaid.mmdcCommandOrNull(), out, report);
         } else if (b.isDiagram()) { // Mermaid (.mmd) — CLI render to PDF
             mermaid.exportDiagram(
                     b.getContent(),
-                    f.toPath(),
+                    out,
                     r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
         } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to PDF
             diagram.exportToPath(
                     b.diagramKind(),
                     b.getContent(),
-                    f.toPath(),
+                    out,
                     r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
         } else if (b.isSvg()) { // rasterize the SVG source and embed it as a PDF page
             byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
@@ -223,20 +314,14 @@ final class ExportCoordinator {
                 report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
                 return;
             }
-            pdfService.exportImages(java.util.List.of(png), pageSize, f.toPath(), report);
-        } else if (b.isTypst()) { // Typst — native CLI render straight to a (multi-page) PDF
-            typst.exportToPath(
-                    b.getContent(),
-                    b.getPath(),
-                    f.toPath(),
-                    r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
+            pdfService.exportImages(java.util.List.of(png), pageSize, out, report);
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
             java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
             if (chunks == null || chunks.isEmpty()) {
                 report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
                 return;
             }
-            pdfService.exportImages(chunks, pageSize, f.toPath(), report);
+            pdfService.exportImages(chunks, pageSize, out, report);
         }
     }
 
@@ -282,7 +367,7 @@ final class ExportCoordinator {
             String title = dot > 0 ? base.substring(0, dot) : base;
             String html = com.editora.editor.MarkdownHtmlExport.toHtml(
                     b.getContent(), title, host.settings().isMathSupport());
-            java.nio.file.Files.writeString(f.toPath(), html);
+            com.editora.io.StagedExport.writeString(f.toPath(), html);
             host.setStatus(tr("status.html.exported", f.toString()));
             openPath.accept(f.toPath()); // show the generated HTML in a tab
         } catch (Exception ex) {
@@ -354,7 +439,7 @@ final class ExportCoordinator {
         try {
             String json =
                     com.editora.markwhen.MarkwhenJson.toJson(com.editora.markwhen.MarkwhenParser.parse(b.getContent()));
-            java.nio.file.Files.writeString(f.toPath(), json);
+            com.editora.io.StagedExport.writeString(f.toPath(), json);
             host.setStatus(tr("status.markwhen.jsonExported", f.getName()));
         } catch (java.io.IOException e) {
             host.setStatus(tr("status.markwhen.exportFailed", e.getMessage() == null ? e.toString() : e.getMessage()));
@@ -407,12 +492,14 @@ final class ExportCoordinator {
         host.setStatus(tr("status.office.exporting"));
         java.nio.file.Path baseDir = b.getPath() == null ? null : b.getPath().getParent();
         java.util.List<String> mmdc = mermaid.mmdcCommandOrNull(); // ```mermaid blocks → diagram images
-        java.util.function.Consumer<com.editora.office.OfficeExportService.Result> cb = r -> reportOffice(r, f);
-        if (docx) {
-            officeService.exportDocx(b.getContent(), baseDir, mmdc, f.toPath(), cb);
-        } else {
-            officeService.exportOdt(b.getContent(), baseDir, mmdc, f.toPath(), cb);
-        }
+        String markdown = b.getContent();
+        stagedOffice(f, (out, cb) -> {
+            if (docx) {
+                officeService.exportDocx(markdown, baseDir, mmdc, out, cb);
+            } else {
+                officeService.exportOdt(markdown, baseDir, mmdc, out, cb);
+            }
+        });
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.<ext>}. */
@@ -584,7 +671,7 @@ final class ExportCoordinator {
             return;
         }
         try {
-            java.nio.file.Files.writeString(f.toPath(), csv);
+            com.editora.io.StagedExport.writeString(f.toPath(), csv);
             host.setStatus(tr("status.csv.exported", f.getName()));
         } catch (java.io.IOException ex) {
             host.setStatus(tr("status.csv.exportFailed", String.valueOf(ex.getMessage())));

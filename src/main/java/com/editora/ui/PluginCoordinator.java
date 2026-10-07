@@ -6,14 +6,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
-import java.util.stream.Stream;
 
 import javafx.application.Platform;
 import javafx.scene.Node;
@@ -537,17 +535,7 @@ final class PluginCoordinator {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        Path dir = pluginManager.pluginsDir().resolve(id);
-        try (Stream<Path> s = Files.walk(dir)) {
-            s.sorted(Comparator.reverseOrder()).forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException ignored) {
-                    // best-effort
-                }
-            });
-        } catch (IOException e) {
-            ops.showError(tr("status.plugins.uninstallFailed", id), e.getMessage());
+        if (!removeInstalled(id)) {
             return;
         }
         config.getPluginStore().setEnabled(id, false);
@@ -555,6 +543,27 @@ final class PluginCoordinator {
         pluginManager.discover();
         settingsWindow.syncPluginsCheck();
         host.setStatus(tr("status.plugins.uninstalled", id));
+    }
+
+    /**
+     * Deletes the folder of the installed plugin {@code id} — the directory it was discovered in, and only
+     * when that is a direct child of the plugins folder (see {@link PluginInstaller#removableDir}). The id is
+     * never turned into a path: it comes from {@code plugin.json}, which anyone can write.
+     */
+    private boolean removeInstalled(String id) {
+        PluginDescriptor plugin = descriptorFor(pluginManager.descriptors(), id);
+        Path dir = PluginInstaller.removableDir(pluginManager.pluginsDir(), plugin);
+        if (dir == null) {
+            ops.showError(tr("status.plugins.uninstallFailed", id), String.valueOf(plugin == null ? id : plugin.dir()));
+            return false;
+        }
+        if (!PluginInstaller.deleteInstalled(pluginManager.pluginsDir(), plugin)) {
+            ops.showError(tr("status.plugins.uninstallFailed", id), dir.toString());
+            pluginManager.discover(); // show what is left
+            settingsWindow.syncPluginsCheck();
+            return false;
+        }
+        return true;
     }
 
     /** A window-scoped {@link PluginContext}; one per plugin per window. */
@@ -716,7 +725,7 @@ final class PluginCoordinator {
         @Override
         public void replaceSelection(String replacement) {
             EditorBuffer b = buf();
-            if (b != null && b.isEditable() && replacement != null) {
+            if (b != null && b.isEditable() && replacement != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
                 b.getArea().replaceSelection(replacement);
             }
         }
@@ -732,7 +741,7 @@ final class PluginCoordinator {
         @Override
         public void setText(String text) {
             EditorBuffer b = buf();
-            if (b != null && b.isEditable() && text != null) {
+            if (b != null && b.isEditable() && text != null && NoUndoGuard.allow(b, tr("noUndo.op.plugin"))) {
                 // text() is the whole file, so this widens a narrowed buffer first (undoable, marks dirty).
                 b.replaceWholeDocument(text);
             }

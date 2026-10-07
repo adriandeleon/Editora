@@ -39,7 +39,10 @@ public final class AiClient {
 
         void onText(String delta);
 
-        /** The turn finished; {@code stopReason} e.g. {@code end_turn}/{@code max_tokens}/{@code refusal}. */
+        /**
+         * The response ended; {@code stopReason} e.g. {@code end_turn}/{@code max_tokens}/{@code refusal}, or
+         * {@link AiStop#INCOMPLETE} when the stream closed without one. See {@link AiStop#classify}.
+         */
         void onDone(String stopReason);
 
         void onError(String message);
@@ -150,7 +153,8 @@ public final class AiClient {
                     checkMillis,
                     checkMillis,
                     java.util.concurrent.TimeUnit.MILLISECONDS);
-            String stopReason = "end_turn";
+            // Null until the provider names one: a body that merely ends is not a finished answer.
+            String stopReason = null;
             boolean modelReported = false;
             SseParser parser = new SseParser();
             try (BufferedReader r = new BufferedReader(new InputStreamReader(body, StandardCharsets.UTF_8))) {
@@ -167,7 +171,9 @@ public final class AiClient {
                     }
                     if (provider.usesOpenAiApi()) {
                         if (OpenAiSse.isDone(event.data())) {
-                            listener.onDone(stopReason);
+                            // The terminator is itself an explicit end; a server that sends it without a
+                            // finish_reason has still said the answer is complete.
+                            listener.onDone(stopReason == null ? AiStop.END_TURN : stopReason);
                             return;
                         }
                         JsonNode chunk = mapper.readTree(event.data());
@@ -229,7 +235,9 @@ public final class AiClient {
             } finally {
                 watchdog.cancel(false);
             }
-            listener.onDone(stopReason);
+            // The body ended. Without a stop reason this is a connection that closed mid-answer, which used
+            // to be reported as "end_turn" and let a caller apply half a reply as if it were all of it.
+            listener.onDone(stopReason == null ? AiStop.INCOMPLETE : stopReason);
         } catch (IOException | InterruptedException | TimeoutException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();

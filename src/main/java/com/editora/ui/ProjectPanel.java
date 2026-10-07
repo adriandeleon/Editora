@@ -110,11 +110,35 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             public void delete(Path file) throws IOException {
                 Files.delete(file);
             }
+
+            @Override
+            public boolean movesToTrash(Path file) {
+                return com.editora.io.Trash.system().accepts(file);
+            }
+
+            @Override
+            public void moveToTrash(Path file) throws IOException {
+                com.editora.io.Trash.system().trash(file);
+            }
         };
 
         byte[] readAllBytes(Path file) throws IOException;
 
+        /** Deletes {@code file} for good. */
         void delete(Path file) throws IOException;
+
+        /**
+         * Whether deleting {@code file} moves it to the operating system's trash, where it can be restored,
+         * rather than deleting it for good. The confirmation tells the user which of the two will happen.
+         */
+        default boolean movesToTrash(Path file) {
+            return false;
+        }
+
+        /** Moves {@code file} to the trash, or throws leaving it in place. Never deletes. */
+        default void moveToTrash(Path file) throws IOException {
+            throw new IOException("No trash is available for " + file);
+        }
     }
 
     record DeleteResult(boolean prepared, int deleted, List<Path> failed) {
@@ -778,6 +802,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Points the tree at {@code root} (a project folder), or shows the placeholder when {@code null}. */
     public void setRoot(Path root) {
         this.root = root;
+        lastMove = List.of(); // an undo must not reach back into the project that was open before
         pendingTreeSelection = null;
         pendingTreeReveal = null;
         mapView.setRoot(root);
@@ -1371,6 +1396,36 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.deleteOperations = Objects.requireNonNull(deleteOperations, "deleteOperations");
     }
 
+    /**
+     * Asks a yes/no question about a tree operation (permanently deleting what the trash refused, moving a
+     * folder or several items). {@code true} = go ahead. Replaceable so tests answer without a modal dialog.
+     */
+    private java.util.function.Predicate<String> confirmQuestion = this::confirmQuestionDialog;
+
+    /** Test seam for {@link #confirmQuestion}. */
+    void setConfirmQuestionForTest(java.util.function.Predicate<String> confirm) {
+        this.confirmQuestion = Objects.requireNonNull(confirm, "confirm");
+    }
+
+    private boolean confirmQuestionDialog(String message) {
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
+        confirm.setTitle(tr("project.fileOperationTitle"));
+        confirm.setHeaderText(null);
+        cancelByDefault(confirm);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /** Makes Cancel the button Enter presses: for a question whose "yes" cannot be taken back. */
+    private static void cancelByDefault(Alert confirm) {
+        if (confirm.getDialogPane().lookupButton(ButtonType.OK) instanceof javafx.scene.control.Button ok) {
+            ok.setDefaultButton(false);
+        }
+        if (confirm.getDialogPane().lookupButton(ButtonType.CANCEL) instanceof javafx.scene.control.Button cancel) {
+            cancel.setDefaultButton(true);
+        }
+    }
+
     /** Injects the status-message sink used for drag-move / multi-delete feedback. */
     public void setOnStatus(Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
@@ -1616,18 +1671,59 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private void deleteItem(TreeItem<Path> item) {
         Path path = item.getValue();
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("project.deleteFileBody", path.getFileName()),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
-        confirm.setTitle(tr("project.deleteFileTitle"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+        if (!confirmDelete(List.of(path))) {
             return;
         }
         deleteConfirmed(List.of(path));
+    }
+
+    /**
+     * The delete confirmation. It says which of two different things is about to happen: the files go to the
+     * operating system's trash (restorable — OK is the default), or they are deleted for good, where the
+     * trash cannot take them (not restorable — Cancel is the default, so Enter alone deletes nothing).
+     */
+    private boolean confirmDelete(List<Path> files) {
+        int trashed = trashCount(files, deleteOperations);
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION, deleteQuestion(files, trashed), ButtonType.OK, ButtonType.CANCEL);
+        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
+        confirm.setTitle(tr("project.deleteFileTitle"));
+        confirm.setHeaderText(null);
+        if (trashed < files.size()) {
+            cancelByDefault(confirm);
+        }
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /** How many of {@code files} a delete would move to the trash rather than delete for good. */
+    static int trashCount(List<Path> files, DeleteOperations operations) {
+        int count = 0;
+        for (Path file : files) {
+            if (operations.movesToTrash(file)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * The text of the delete confirmation for {@code files}, {@code trashed} of which go to the trash:
+     * "Move … to the trash?" when all do, the long-standing "Delete …? This cannot be undone." when none do,
+     * and a sentence giving both counts when the selection is mixed. Package-visible for tests.
+     */
+    static String deleteQuestion(List<Path> files, int trashed) {
+        int total = files.size();
+        if (trashed >= total) {
+            return total == 1
+                    ? tr("project.trashFileBody", files.get(0).getFileName())
+                    : tr("project.trashMultiBody", total);
+        }
+        if (trashed <= 0) {
+            return total == 1
+                    ? tr("project.deleteFileBody", files.get(0).getFileName())
+                    : tr("project.deleteMultiBody", total);
+        }
+        return tr("project.deleteMixedBody", total, trashed, total - trashed);
     }
 
     // --- drag-to-move + multi-delete (mini file-manager) ---
@@ -1678,26 +1774,59 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         return out;
     }
 
+    /** One completed move, kept so the last drag-move can be taken back. */
+    record Move(Path from, Path to) {}
+
+    /** The moves of the most recent drag-move, in the order they were made; empty when there is none. */
+    private List<Move> lastMove = List.of();
+
+    /**
+     * Whether a drag-move of {@code sources} asks first: a folder (its whole subtree is relocated, which in a
+     * build tree silently breaks packages and imports) or more than one item. A single file moves at once,
+     * as before. Pure over the file system — package-visible for tests.
+     */
+    static boolean moveNeedsConfirmation(List<Path> sources) {
+        if (sources == null || sources.isEmpty()) {
+            return false;
+        }
+        return sources.size() > 1 || Files.isDirectory(sources.get(0));
+    }
+
+    /** The question asked before a drag-move that {@link #moveNeedsConfirmation needs one}. */
+    static String moveQuestion(List<Path> sources, Path targetDir) {
+        Object target = targetDir.getFileName() == null ? targetDir : targetDir.getFileName();
+        return sources.size() == 1
+                ? tr("project.moveFolderBody", sources.get(0).getFileName(), target)
+                : tr("project.moveMultiBody", sources.size(), target);
+    }
+
     /** Moves each of {@code sources} into {@code targetDir} (drag-and-drop). Skips no-ops, name conflicts,
-     *  and invalid moves (into itself); reports how many moved. Notifies {@code onFileRenamed} per moved path
-     *  so open buffers (a file, or files under a moved folder) follow. */
+     *  and invalid moves (into itself); reports how many moved. A folder or a multi-selection is confirmed
+     *  first — a drag that ends on a folder row is easy to make by accident. Notifies {@code onFileRenamed}
+     *  per moved path so open buffers (a file, or files under a moved folder) follow, and remembers the moves
+     *  so {@link #undoLastMove()} can take them back. */
     private void moveInto(List<Path> dropped, Path targetDir) {
         List<Path> sources = pruneNestedSources(dropped);
         if (sources.isEmpty() || targetDir == null || !Files.isDirectory(targetDir)) {
             return;
         }
-        int moved = 0;
         int skipped = 0;
+        List<Path> movable = new ArrayList<>();
         for (Path src : sources) {
-            if (!canMoveInto(src, targetDir)) {
+            // a file/folder of that name already there is never clobbered
+            if (!canMoveInto(src, targetDir) || Files.exists(targetDir.resolve(src.getFileName()))) {
                 skipped++;
-                continue;
+            } else {
+                movable.add(src);
             }
+        }
+        if (moveNeedsConfirmation(movable) && !confirmQuestion.test(moveQuestion(movable, targetDir))) {
+            onStatus.accept(tr("project.moveCancelled"));
+            return;
+        }
+        List<Move> done = new ArrayList<>();
+        for (Path src : movable) {
             Path dest = targetDir.resolve(src.getFileName());
-            if (Files.exists(dest)) {
-                skipped++; // a file/folder of that name is already there — don't clobber
-                continue;
-            }
             try {
                 Files.move(src, dest);
             } catch (IOException ex) {
@@ -1706,9 +1835,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 continue;
             }
             onFileRenamed.accept(src, dest); // update the open buffer(s) for a moved file / under a moved dir
-            moved++;
+            done.add(new Move(src, dest));
         }
+        int moved = done.size();
         if (moved > 0) {
+            lastMove = List.copyOf(done);
             markLocalChange();
             refreshAfterChange();
         }
@@ -1716,6 +1847,52 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 skipped == 0
                         ? tr("project.moved", moved, targetDir.getFileName())
                         : tr("project.movedSome", moved, skipped));
+    }
+
+    /** Whether there is a drag-move to take back (the tree menu offers "Undo Move" while there is). */
+    boolean canUndoMove() {
+        return !lastMove.isEmpty();
+    }
+
+    /**
+     * Takes back the most recent drag-move: every item that is still where the move put it, and whose old
+     * place is still free, goes back there (never onto something that has appeared since). Open buffers
+     * follow through {@code onFileRenamed}, as they did on the way out. One step: after it there is nothing
+     * to undo until the next move.
+     */
+    void undoLastMove() {
+        List<Move> moves = lastMove;
+        lastMove = List.of();
+        if (moves.isEmpty()) {
+            return;
+        }
+        int restored = 0;
+        int stuck = 0;
+        for (int i = moves.size() - 1; i >= 0; i--) {
+            Move move = moves.get(i);
+            Path parent = move.from().getParent();
+            if (!Files.exists(move.to(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                    || Files.exists(move.from(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                    || parent == null
+                    || !Files.isDirectory(parent)) {
+                stuck++;
+                continue;
+            }
+            try {
+                Files.move(move.to(), move.from());
+            } catch (IOException ex) {
+                stuck++;
+                continue;
+            }
+            onFileRenamed.accept(move.to(), move.from());
+            restored++;
+        }
+        if (restored > 0) {
+            markLocalChange();
+            refreshAfterChange();
+        }
+        onStatus.accept(
+                stuck == 0 ? tr("project.moveUndone", restored) : tr("project.moveUndoneSome", restored, stuck));
     }
 
     /** The files to act on for a cell action: the whole multi-selection when {@code clicked} is part of it,
@@ -1745,15 +1922,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             deleteItem(clicked); // single: reuse the existing per-file confirm flow
             return;
         }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("project.deleteMultiBody", files.size()),
-                ButtonType.OK,
-                ButtonType.CANCEL);
-        confirm.initOwner(getScene() == null ? null : getScene().getWindow());
-        confirm.setTitle(tr("project.deleteFileTitle"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+        if (!confirmDelete(files)) {
             return;
         }
         deleteConfirmed(files);
@@ -1803,23 +1972,74 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
 
         int deleted = 0;
+        int trashed = 0;
         List<Path> failed = new ArrayList<>();
+        List<Path> refusedByTrash = new ArrayList<>();
+        String trashRefusal = null;
         for (Path file : files) {
+            boolean toTrash = deleteOperations.movesToTrash(file);
             try {
-                deleteOperations.delete(file);
+                if (toTrash) {
+                    deleteOperations.moveToTrash(file);
+                    trashed++;
+                } else {
+                    deleteOperations.delete(file);
+                }
             } catch (IOException | RuntimeException failure) {
-                failed.add(file);
-                showError(tr("project.deleteError", file.getFileName(), failure.getMessage()));
+                if (toTrash) {
+                    // The user was told "to the trash". Deleting for good instead is a different act: ask.
+                    refusedByTrash.add(file);
+                    trashRefusal = trashRefusal == null ? String.valueOf(failure.getMessage()) : trashRefusal;
+                } else {
+                    failed.add(file);
+                    showError(tr("project.deleteError", file.getFileName(), failure.getMessage()));
+                }
                 continue;
             }
             onFileDeleted.accept(file);
             deleted++;
         }
+        if (!refusedByTrash.isEmpty()) {
+            String question = refusedByTrash.size() == 1
+                    ? tr("project.trashFailedBody", refusedByTrash.get(0).getFileName(), trashRefusal)
+                    : tr("project.trashFailedMultiBody", refusedByTrash.size(), trashRefusal);
+            boolean permanently = confirmQuestion.test(question);
+            for (Path file : refusedByTrash) {
+                if (!permanently) {
+                    failed.add(file); // kept, by the user's choice
+                    continue;
+                }
+                try {
+                    deleteOperations.delete(file);
+                } catch (IOException | RuntimeException failure) {
+                    failed.add(file);
+                    showError(tr("project.deleteError", file.getFileName(), failure.getMessage()));
+                    continue;
+                }
+                onFileDeleted.accept(file);
+                deleted++;
+            }
+        }
         if (deleted > 0) {
             markLocalChange();
             refreshAfterChange();
         }
+        if (trashed == 1) {
+            onStatus.accept(tr("project.trashedOne", firstTrashedName(files, failed, refusedByTrash)));
+        } else if (trashed > 1) {
+            onStatus.accept(tr("project.trashedMany", trashed));
+        }
         completion.complete(new DeleteResult(true, deleted, failed));
+    }
+
+    /** The name of the one file that went to the trash (for the status line). */
+    private String firstTrashedName(List<Path> files, List<Path> failed, List<Path> refusedByTrash) {
+        for (Path file : files) {
+            if (!failed.contains(file) && !refusedByTrash.contains(file) && !Files.exists(file)) {
+                return String.valueOf(file.getFileName());
+            }
+        }
+        return String.valueOf(files.get(0).getFileName());
     }
 
     private static void onFx(Runnable action) {
@@ -2093,7 +2313,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 Path target = dropTargetDir();
                 boolean ok = target != null && !draggedPaths.isEmpty();
                 if (ok) {
-                    moveInto(new ArrayList<>(draggedPaths), target);
+                    // After the drop event: the move may ask a question, and a modal dialog opened from
+                    // inside a drag-and-drop callback can leave the platform's drag session hanging.
+                    List<Path> dropped = new ArrayList<>(draggedPaths);
+                    Platform.runLater(() -> moveInto(dropped, target));
                 }
                 e.setDropCompleted(ok);
                 e.consume();
@@ -2260,6 +2483,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             rename.setGraphic(Icons.edit());
             rename.setOnAction(e -> renameItem(treeItem));
             menu.getItems().add(rename);
+        }
+        if (canUndoMove()) {
+            MenuItem undoMove = new MenuItem(tr("project.menu.undoMove"));
+            undoMove.setGraphic(Icons.undo());
+            undoMove.setOnAction(e -> undoLastMove());
+            menu.getItems().add(undoMove);
         }
         if (!isDir) {
             MenuItem delete = new MenuItem(tr("project.menu.delete"));

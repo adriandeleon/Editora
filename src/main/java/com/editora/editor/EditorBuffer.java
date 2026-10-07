@@ -204,12 +204,12 @@ public class EditorBuffer implements TabContent {
 
         @Override
         public int lspOffset(CodeArea a, int line, int col) {
-            return EditorBuffer.this.lspOffset(a, line, col);
+            return LspEditPlacement.offset(a, line, col);
         }
 
         @Override
         public int[] lspPosition(CodeArea a, int offset) {
-            return EditorBuffer.this.lspPosition(a, offset);
+            return LspEditPlacement.position(a, offset);
         }
     });
 
@@ -996,7 +996,7 @@ public class EditorBuffer implements TabContent {
             documentSnapshots.invalidate();
             completionActions.documentChanged(c);
             if (!completionEditTrackers.isEmpty()) {
-                int[] start = lspPosition(area, c.getPosition());
+                int[] start = LspEditPlacement.position(area, c.getPosition());
                 int[] before = completionChangeEnd(start, c.getRemoved());
                 int[] after = completionChangeEnd(start, c.getInserted());
                 var change = new LspEditShift.Change(start[0], start[1], before[0], before[1], after[0], after[1]);
@@ -2747,8 +2747,8 @@ public class EditorBuffer implements TabContent {
         }
         java.util.List<int[]> triples = new java.util.ArrayList<>(spans.size());
         for (OccurrenceSpan s : spans) {
-            int from = lspOffset(area, s.startLine(), s.startCol());
-            int to = lspOffset(area, s.endLine(), s.endCol());
+            int from = LspEditPlacement.offset(area, s.startLine(), s.startCol());
+            int to = LspEditPlacement.offset(area, s.endLine(), s.endCol());
             if (to > from) {
                 triples.add(new int[] {from, to, s.write() ? 1 : 0});
             }
@@ -7888,6 +7888,11 @@ public class EditorBuffer implements TabContent {
         this.charsetAssumed = assumed;
     }
 
+    /** The charset the file has on disk: the one it was decoded with, or the one a save last wrote. */
+    public String getDetectedCharset() {
+        return detectedCharset;
+    }
+
     public void setCharsetOverride(String charset) {
         this.charsetOverride = charset;
     }
@@ -9272,13 +9277,15 @@ public class EditorBuffer implements TabContent {
     /** Capture the acceptance independently of future completions and track safe typing until resolve lands. */
     public java.util.function.Consumer<java.util.List<LspTextEdit>> trackCompletionAdditionalEdits() {
         var shift = completionActions.pendingCompletionShift;
-        int start = shift == null ? area.getCaretPosition() : lspOffset(area, shift.startLine(), shift.startCol());
+        int start = shift == null
+                ? area.getCaretPosition()
+                : LspEditPlacement.offset(area, shift.startLine(), shift.startCol());
         int end = start;
         String line = area.getParagraph(
                         area.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                                 .getMajor())
                 .getText();
-        int column = lspPosition(area, start)[1];
+        int column = LspEditPlacement.position(area, start)[1];
         while (column < line.length() && Character.isJavaIdentifierPart(line.charAt(column++))) end++;
         var tracker = new CompletionEditTracker(shift, start, end);
         if (completionEditTrackers.size() >= 8) completionEditTrackers.removeFirst();
@@ -9319,125 +9326,43 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * As {@link #applyLspEdits(java.util.List)}, but all-or-nothing: when any edit cannot be placed — it
+     * overlaps another, starts or ends outside the document, or carries a negative position — <b>nothing</b>
+     * is applied and {@code false} is returned. A workspace edit spans files the user is not looking at, so
+     * an edit dropped there is a half-applied refactoring reported as done; the lenient variant stays for
+     * the single-buffer paths that have always skipped a stale edit.
+     */
+    public boolean applyLspEditsAtomically(java.util.List<LspTextEdit> edits) {
+        if (edits == null || edits.isEmpty()) {
+            return true;
+        }
+        return isEditable() && applyLspEditsNow(edits, false, true);
+    }
+
+    /** Whether {@link #applyLspEditsAtomically} would apply {@code edits}; changes nothing. */
+    public boolean canPlaceLspEdits(java.util.List<LspTextEdit> edits) {
+        if (edits == null || edits.isEmpty()) {
+            return true;
+        }
+        return isEditable() && LspEditPlacement.place(focusedArea != null ? focusedArea : area, edits, true) != null;
+    }
+
+    /**
      * As {@link #applyLspEdits(java.util.List)}, but optionally restoring the caret to the position it
      * addressed <em>before</em> the edits. Used by the auto-import path, where the inserted line sits above
      * the caret and would otherwise drag it away from what the user was typing (#834).
      */
     private void applyLspEdits(java.util.List<LspTextEdit> edits, boolean preserveCaret) {
-        if (preserveCaret) snippetSession.withExternalEdits(() -> applyLspEditsNow(edits, true));
-        else applyLspEditsNow(edits, false);
+        if (preserveCaret) snippetSession.withExternalEdits(() -> applyLspEditsNow(edits, true, false));
+        else applyLspEditsNow(edits, false, false);
     }
 
-    private void applyLspEditsNow(java.util.List<LspTextEdit> edits, boolean preserveCaret) {
+    /** Returns whether the edits were placed; lenient mode always answers true. */
+    private boolean applyLspEditsNow(java.util.List<LspTextEdit> edits, boolean preserveCaret, boolean strict) {
         if (edits == null || edits.isEmpty() || !isEditable()) {
-            return;
+            return !strict;
         }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int caretBefore = a.getCaretPosition();
-        int anchorBefore = a.getAnchor();
-        LspEditView.Before view = preserveCaret ? null : LspEditView.capture(a);
-        // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
-        // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
-        // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
-        // replaceText per edit, so it took many Ctrl-Z to revert (#415, the Format-Document sub-item).
-        int len = a.getLength();
-        int lineCount = a.getParagraphs().size();
-        java.util.List<int[]> ranges = new java.util.ArrayList<>(); // {start, end}
-        java.util.List<String> texts = new java.util.ArrayList<>();
-        java.util.List<LspTextEdit> asc = new java.util.ArrayList<>(edits);
-        asc.sort((x, y) -> Integer.compare(lspEditOffset(a, x), lspEditOffset(a, y)));
-        int last = 0;
-        for (LspTextEdit e : asc) {
-            try {
-                if (e.startLine() > lineCount || (e.startLine() == lineCount && e.startCol() > 0)) {
-                    continue; // start beyond the document — a stale edit; clamping would misplace it (#667)
-                }
-                int s = lspOffset(a, e.startLine(), e.startCol());
-                int en = lspOffset(a, e.endLine(), e.endCol());
-                int from = Math.min(s, en);
-                int to = Math.max(s, en);
-                if (from < last || to > len) {
-                    continue; // overlaps a previous edit or out of range — skip (rare; positions shifted)
-                }
-                ranges.add(new int[] {from, to});
-                texts.add(e.newText() == null ? "" : e.newText());
-                last = to;
-            } catch (RuntimeException ignored) {
-                // Position no longer valid (document changed under us) — skip this edit.
-            }
-        }
-        if (ranges.isEmpty()) {
-            return;
-        }
-        if (ranges.size() == 1) {
-            a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
-            restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
-            return;
-        }
-        // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
-        // the progressively-edited document* (documented in CLAUDE.md), so absolute offsets computed against
-        // the ORIGINAL text are only valid while nothing before them has changed length. Feeding ascending
-        // order silently corrupted every edit after the first length-changing one — which is exactly what
-        // Format Document does (re-indent = grow/shrink), so it mangled the file. Descending order keeps
-        // every offset valid because each edit lies before the region already rewritten. (The LSP spec gives
-        // the same rule for applying a TextEdit[].) Same-length edits hid this in the original test.
-        org.fxmisc.richtext.MultiChangeBuilder<?, ?, ?> builder = a.createMultiChange(ranges.size());
-        for (int i = ranges.size() - 1; i >= 0; i--) {
-            builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
-        }
-        builder.commit(); // one undo unit for the whole edit set
-        restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
-    }
-
-    /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
-    private static void restoreCaretAfterEdits(
-            CodeArea a,
-            LspEditView.Before view,
-            int caretBefore,
-            int anchorBefore,
-            java.util.List<int[]> ranges,
-            java.util.List<String> texts) {
-        if (view != null) {
-            LspEditView.restore(a, view, ranges, texts); // format / quick fix / rename: see LspEditView
-            return;
-        }
-        int target = LspEditShift.caretAfterEdits(caretBefore, ranges, texts);
-        int anchor = LspEditShift.caretAfterEdits(anchorBefore, ranges, texts);
-        a.selectRange(Math.max(0, Math.min(anchor, a.getLength())), Math.max(0, Math.min(target, a.getLength())));
-        a.requestFollowCaret();
-    }
-
-    private static int lspEditOffset(CodeArea a, LspTextEdit e) {
-        try {
-            return lspOffset(a, e.startLine(), e.startCol());
-        } catch (RuntimeException ex) {
-            return 0;
-        }
-    }
-
-    /**
-     * Absolute offset for a 0-based LSP line/character, clamped to the document/paragraph bounds. A line past
-     * the last one is the document <em>end</em> (as in {@code LspPositions.offset}), not the start of the
-     * last line: {@code (lineCount, 0)} is how a server addresses "after everything".
-     */
-    private static int lspOffset(CodeArea a, int line, int col) {
-        if (line >= a.getParagraphs().size()) {
-            return a.getLength();
-        }
-        int par = Math.max(0, line);
-        return a.getAbsolutePosition(
-                par, Math.max(0, Math.min(col, a.getParagraph(par).length())));
-    }
-
-    /**
-     * The 0-based LSP {@code {line, character}} of an absolute offset (the inverse of {@link #lspOffset}),
-     * clamped to the document. {@code Backward} bias so an offset at a line's end reads as that line's last
-     * column rather than the next line's column 0 — the two ends of the accept's change must agree.
-     */
-    private static int[] lspPosition(CodeArea a, int offset) {
-        int clamped = Math.max(0, Math.min(offset, a.getLength()));
-        var pos = a.offsetToPosition(clamped, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
-        return new int[] {pos.getMajor(), pos.getMinor()};
+        return LspEditPlacement.apply(focusedArea != null ? focusedArea : area, edits, preserveCaret, strict);
     }
 
     private static void toggleStyleClass(Node node, String styleClass, boolean on) {
@@ -9517,7 +9442,7 @@ public class EditorBuffer implements TabContent {
             documentSnapshots.expect(null);
             documentSnapshots.invalidate();
         }
-        forgetHistoryAtNarrowBoundary(); // the load is the baseline, not an undo step: undoing it emptied the file
+        forgetHistoryAtNarrowBoundary(false); // the load is the baseline, not an undo step: undoing it emptied the file
         captureUndoCheckpoint(); // ...and the Undo History baseline is the loaded text, not the loading shell
         refilter.run();
         dirty.set(false);
@@ -9632,8 +9557,9 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = full.substring(0, s);
         narrowSuffix = full.substring(e);
+        boolean hadHistory = hasUndoHistory();
         LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes, gitLines);
-        forgetHistoryAtNarrowBoundary();
+        forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
         moveSplitCaret(caret2 - s);
@@ -9662,8 +9588,9 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
         narrowSuffix = null;
+        boolean hadHistory = hasUndoHistory();
         LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes, gitLines);
-        forgetHistoryAtNarrowBoundary();
+        forgetHistoryAtNarrowBoundary(hadHistory);
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
         moveSplitCaret(prefix.length() + caret2);
@@ -9677,8 +9604,23 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /** Something an undo or an Undo History restore could bring back (more than the load's own baseline). */
+    private boolean hasUndoHistory() {
+        return area.isUndoAvailable() || area.isRedoAvailable() || undoHistory.size() > 1;
+    }
+
+    /** Whether a narrow/widen swap cleared a non-empty undo history since the last call: the UI says so. */
+    public boolean takeHistoryDropped() {
+        boolean dropped = historyDropped;
+        historyDropped = false;
+        return dropped;
+    }
+
+    private boolean historyDropped;
+
     /** The undo stack and the Undo History checkpoints: neither may be replayed across the boundary. */
-    private void forgetHistoryAtNarrowBoundary() {
+    private void forgetHistoryAtNarrowBoundary(boolean hadHistory) {
+        historyDropped |= hadHistory;
         area.getUndoManager().forgetHistory();
         undoHistory.clear();
         if (onUndoHistoryChanged != null) {

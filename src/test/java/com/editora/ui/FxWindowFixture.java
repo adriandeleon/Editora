@@ -28,6 +28,9 @@ final class FxWindowFixture implements AutoCloseable {
     final WindowManager windowManager;
     final MainController controller;
 
+    /** Set to leave the config directory in place on {@link #dispose()} — for a test that starts again on it. */
+    boolean keepConfigDir;
+
     private boolean disposed;
 
     private FxWindowFixture(Path configDir, SharedConfig shared, WindowManager wm, MainController controller) {
@@ -149,6 +152,16 @@ final class FxWindowFixture implements AutoCloseable {
                             (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
                     javafx.stage.Stage ownedStage =
                             (javafx.stage.Stage) FxTestSupport.call(holder, "stage", new Class<?>[] {});
+                    // A prompt this window raised late (an external-change question after a focus check, say)
+                    // would outlive the test and be the "next dialog" of whichever test runs after it.
+                    for (javafx.stage.Window open : List.copyOf(javafx.stage.Window.getWindows())) {
+                        if (open instanceof javafx.stage.Stage dialog
+                                && dialog.getOwner() == ownedStage
+                                && dialog.getScene() != null
+                                && dialog.getScene().getRoot() instanceof javafx.scene.control.DialogPane) {
+                            dialog.hide();
+                        }
+                    }
                     try {
                         ownedController.disposePlugins();
                     } catch (RuntimeException e) {
@@ -191,7 +204,14 @@ final class FxWindowFixture implements AutoCloseable {
             failure = combine(failure, e);
         }
         try {
-            deleteRecursively(configDir);
+            windowManager.recovery().close(); // its worker thread and session lock; a no-op if never used
+        } catch (RuntimeException e) {
+            failure = combine(failure, e);
+        }
+        try {
+            if (!keepConfigDir) {
+                deleteRecursively(configDir);
+            }
         } catch (IOException e) {
             failure = combine(failure, e);
         }

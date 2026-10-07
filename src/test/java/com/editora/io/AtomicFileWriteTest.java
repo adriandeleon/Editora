@@ -425,9 +425,13 @@ class AtomicFileWriteTest {
 
             Path backup;
             try (var kept = Files.list(backups)) {
-                backup = kept.findFirst().orElseThrow();
+                backup = kept.filter(entry -> entry.toString().endsWith(SaveBackups.SUFFIX))
+                        .findFirst()
+                        .orElseThrow();
             }
             assertEquals("precious\n", Files.readString(backup), "the previous bytes survive the torn write");
+            assertEquals(
+                    file.toString(), SaveBackups.scan(backups).get(0).target(), "and the note says whose they are");
             assertTrue(failure.getMessage().contains(backup.toString()), failure.getMessage());
         } finally {
             unlock(file);

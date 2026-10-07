@@ -796,6 +796,11 @@ final class SearchCoordinator {
         if (result.count() == 0) {
             return new ClosedReplace(0, false, false);
         }
+        // A large-file buffer has no undo: its text goes to Local History first, or the file is left alone
+        // and reported with the ones that failed.
+        if (!NoUndoGuard.allow(buffer, tr("noUndo.op.replaceInFiles"))) {
+            return new ClosedReplace(0, false, true);
+        }
         buffer.replaceWholeDocument(result.text());
         return new ClosedReplace(result.count(), true, false);
     }
