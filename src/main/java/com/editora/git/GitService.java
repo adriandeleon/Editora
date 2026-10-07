@@ -278,19 +278,7 @@ public final class GitService {
      * Public so the Doctor screen checks exactly the command this service runs.
      */
     public static List<String> commandTokens(String command) {
-        if (command == null || command.isBlank()) {
-            return List.of("git");
-        }
-        String raw = command.strip();
-        try {
-            if (Files.isRegularFile(Path.of(raw))) {
-                return List.of(raw);
-            }
-        } catch (RuntimeException notAPath) {
-            // Not a valid path on this platform: a command line.
-        }
-        List<String> tokens = com.editora.run.ProgramArgs.tokenize(raw);
-        return tokens.isEmpty() ? List.of(raw) : List.copyOf(tokens);
+        return com.editora.process.ConfiguredCommand.tokens(command, "git");
     }
 
     /**
@@ -1951,6 +1939,33 @@ public final class GitService {
             }
             int posted = count;
             Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /**
+     * The messages of the commits on {@code HEAD} that {@code base} does not have ({@code git log
+     * base..HEAD}), newest first, at most {@code max} — what a pull request from this branch would contain.
+     * Each is {@code {subject, body}}. Empty when {@code base} is not a safe revision or git fails.
+     */
+    public void commitMessagesSince(Path root, String base, int max, Consumer<List<String[]>> onResult) {
+        submit(exec, () -> {
+            List<String[]> commits = new ArrayList<>();
+            String range = base + "..HEAD";
+            if (gitAvailable() && root != null && base != null && !base.isBlank() && GitSafety.isSafeRevision(range)) {
+                List<String> args = new ArrayList<>(
+                        List.of("log", "--no-color", "--max-count=" + Math.max(1, max), "--format=%s%x00%b%x1e"));
+                args.addAll(GitSafety.revisionArgs(endOfOptions, range));
+                ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
+                if (r.ok()) {
+                    for (String record : r.out().split("\036")) {
+                        String[] parts = record.strip().split("\0", 2);
+                        if (!parts[0].isBlank()) {
+                            commits.add(new String[] {parts[0].strip(), parts.length > 1 ? parts[1].strip() : ""});
+                        }
+                    }
+                }
+            }
+            Platform.runLater(() -> onResult.accept(commits));
         });
     }
 

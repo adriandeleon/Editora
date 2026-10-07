@@ -1,24 +1,26 @@
 package com.editora.github;
 
+import java.util.Collection;
 import java.util.Locale;
 
 /**
  * Pure classifier for a git remote URL: is it a GitHub host, and what is that host? Used as the fourth
  * self-gating check for the GitHub integration (beyond the {@code githubSupport} setting, {@code gh} being
- * on PATH, and {@code gh auth status} succeeding) so the PR/issue surfaces stay inert on a GitLab / Gitea /
+ * on PATH, and {@code gh} being signed in) so the PR/issue surfaces stay inert on a GitLab / Gitea /
  * Bitbucket repo where every {@code gh} call would just error.
  *
- * <p>This is a cheap pre-filter, not the authority — {@code gh} itself resolves owner/repo from the remote
- * and errors if it can't, so a GitHub Enterprise host with an unusual name still works via the palette
- * commands (which gate only on {@code gh} being usable); the host heuristic just decides whether to *show*
- * the always-on surfaces. Handles {@code https://…}, {@code ssh://git@…}, and scp-style
- * {@code git@host:org/repo.git} forms. Pure — unit-tested.
+ * <p>The authority is {@code gh} itself: a remote is a GitHub remote when its host is one {@code gh} has an
+ * account on ({@code gh auth status --json hosts}) — which covers a GitHub Enterprise Server whose name says
+ * nothing about GitHub. Only when those hosts are not known (an older gh, an inconclusive probe) does the
+ * host-name heuristic decide. This only gates the always-on surfaces; the palette commands run regardless and
+ * surface gh's own error. Handles {@code https://…}, {@code ssh://git@…}, and scp-style
+ * {@code [user@]host:org/repo.git} forms. Pure — unit-tested.
  */
 public final class GitHubRemote {
 
     private GitHubRemote() {}
 
-    /** Whether {@code remoteUrl} points at a GitHub (or GitHub Enterprise) host. */
+    /** Whether {@code remoteUrl} looks like a GitHub (or GitHub Enterprise) host, by its name alone. */
     public static boolean isGitHub(String remoteUrl) {
         String host = hostOf(remoteUrl);
         if (host.isEmpty()) {
@@ -31,6 +33,42 @@ public final class GitHubRemote {
                 // this is the catch-all for on-prem installs. A false positive (e.g. "notgithub.example.com")
                 // is harmless — gh simply errors and the error surfaces to the user.
                 || host.contains("github");
+    }
+
+    /**
+     * Whether {@code remoteUrl} is on a host {@code gh} can talk to: one of {@code ghHosts} (the hosts gh has
+     * an account on) when those are known, else by the {@link #isGitHub(String) name heuristic}.
+     */
+    public static boolean isGitHub(String remoteUrl, Collection<String> ghHosts) {
+        if (ghHosts == null || ghHosts.isEmpty()) {
+            return isGitHub(remoteUrl);
+        }
+        String host = hostOf(remoteUrl);
+        if (host.isEmpty()) {
+            return false;
+        }
+        for (String known : ghHosts) {
+            if (known != null && host.equals(known.strip().toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether <em>any</em> of a repository's remotes is a GitHub remote ({@link #isGitHub(String, Collection)})
+     * — {@code gh} works from a fork whose {@code origin} is elsewhere as long as one remote is on GitHub.
+     */
+    public static boolean anyGitHub(Collection<String> remoteUrls, Collection<String> ghHosts) {
+        if (remoteUrls == null) {
+            return false;
+        }
+        for (String url : remoteUrls) {
+            if (isGitHub(url, ghHosts)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -52,13 +90,22 @@ public final class GitHubRemote {
             String rest = s.substring(scheme + 3);
             int slash = rest.indexOf('/');
             authority = slash >= 0 ? rest.substring(0, slash) : rest;
-        } else if (s.contains("@") && s.contains(":")) {
-            // scp-style: git@host:org/repo.git
-            int at = s.indexOf('@');
-            int colon = s.indexOf(':', at);
-            authority = s.substring(at + 1, colon);
         } else {
-            return ""; // a local path or unrecognized form
+            // scp-style: [user@]host:org/repo.git. As git reads it: a colon with no slash before it. A
+            // one-letter "host" is a Windows drive (C:\repo, C:/repo), and a leading . or / a local path.
+            int colon = s.indexOf(':');
+            int slash = s.indexOf('/');
+            int backslash = s.indexOf('\\');
+            if (colon < 0
+                    || (slash >= 0 && slash < colon)
+                    || (backslash >= 0 && backslash < colon)
+                    || s.charAt(0) == '.') {
+                return ""; // a local path or unrecognized form
+            }
+            authority = s.substring(0, colon);
+            if (authority.substring(authority.lastIndexOf('@') + 1).length() < 2) {
+                return "";
+            }
         }
         // Drop any user@ and :port left in the authority.
         int at = authority.lastIndexOf('@');

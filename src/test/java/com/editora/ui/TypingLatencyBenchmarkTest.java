@@ -188,8 +188,21 @@ class TypingLatencyBenchmarkTest {
                 a.requestFocus();
                 a.showParagraphAtBottom(a.getParagraphs().size() - 1);
             });
-            for (int i = 0; i < 8; i++) {
-                FxTestSupport.runOnFx(() -> {});
+            // Wait for the scroll to land rather than for a fixed time: on a loaded machine the file's
+            // deferred work (highlighting, Git gutter, minimap) can outlast any sleep chosen here.
+            for (int i = 0; i < 150; i++) {
+                boolean atEnd = FxTestSupport.callOnFx(() -> {
+                    CodeArea a = b.getFocusedArea();
+                    int last = a.getParagraphs().size() - 1;
+                    if (a.getVisibleParagraphs().isEmpty() || a.lastVisibleParToAllParIndex() < last) {
+                        a.showParagraphAtBottom(last);
+                        return false;
+                    }
+                    return true;
+                });
+                if (atEnd && i >= 8) {
+                    break;
+                }
                 Thread.sleep(20);
             }
             FxTestSupport.runOnFx(b::startAceJumpLine);
