@@ -37,8 +37,8 @@ class ChildLocalePolicyTest {
 
     private static final Pattern PARSE_STABLE =
             Pattern.compile("ProcessRunner\\s*\\.\\s*(?:run|runBytes|applyStandardEnv)\\s*\\(");
-    private static final Pattern USER_LOCALE =
-            Pattern.compile("ProcessRunner\\s*\\.\\s*(?:runInUserLocale|runScrubbed|applyUserEnv)\\s*\\(");
+    private static final Pattern USER_LOCALE = Pattern.compile("ProcessRunner\\s*\\.\\s*"
+            + "(?:runInUserLocale|runLiveInUserLocale|runWithInputInUserLocale|runScrubbed|applyUserEnv)\\s*\\(");
     /** Starting a process any other way bypasses both environments (and the augmented PATH). */
     private static final Pattern RAW_SPAWN =
             Pattern.compile("new\\s+ProcessBuilder\\s*\\(|getRuntime\\(\\)\\s*\\.exec\\s*\\(");

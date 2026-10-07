@@ -27,17 +27,19 @@ import com.editora.search.FuzzyMatch;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * IntelliJ-style branch dropdown: a search field over a sectioned list of <em>actions</em> (New Branch,
- * Fetch, Pull, Push, Commit…) plus <em>Local</em> and <em>Remote</em> branches. Typing filters branches
- * <em>and</em> actions together; ↑/↓ navigate (skipping section headers), Enter activates, Esc closes.
- * Anchored just above the status-bar branch segment.
+ * IntelliJ-style branch dropdown: a search field over a sectioned list — the <em>Local</em> branches (the
+ * current one first), the <em>Remote</em> branches, then the <em>actions</em> (New Branch, Pull, Fetch,
+ * Push, Stash, Commit…). Branches come first because they are what the dropdown is opened for: with the
+ * seven action rows on top, the current branch sat below the fold at the default height. Typing filters
+ * branches <em>and</em> actions together; ↑/↓ navigate (skipping section headers, and wrapping — so ↑ from
+ * the current branch lands on the last action), Enter activates, Esc closes. A row is activated by a click
+ * on that row only. Anchored just above the status-bar branch segment.
  *
  * <p>Pure view: the owner supplies the branch lists and the action/checkout callbacks via
  * {@link #show}. Modeled on {@link QuickOpen} (popup + filtered {@link ListView}).
  */
 public final class BranchPopup {
 
-    /** A non-branch action shown at the top (label + optional shortcut hint + handler). */
     /**
      * One of the popup's command rows.
      *
@@ -87,12 +89,10 @@ public final class BranchPopup {
         list.setItems(items);
         list.setPrefHeight(360);
         list.setFocusTraversable(false);
+        // Activation by mouse belongs to the cell (see RowCell): a handler on the list fired for a click
+        // anywhere inside it — a section header, the empty space under the rows — and ran whichever row
+        // happened to be selected, i.e. checked out a branch nobody clicked.
         list.setCellFactory(v -> new RowCell());
-        list.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                activate(list.getSelectionModel().getSelectedItem());
-            }
-        });
 
         search.textProperty().addListener((o, a, b) -> filter(b));
         search.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
@@ -145,13 +145,6 @@ public final class BranchPopup {
             Consumer<String> onCheckoutLocal,
             Consumer<String> onCheckoutRemote) {
         List<Row> rows = new ArrayList<>();
-        // The chord beside an action comes from the live keymap, never from the caller: a hardcoded "C-x g"
-        // was only true of the Emacs keymap.
-        var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
-        for (MenuAction a : actions) {
-            String chord = keymap == null ? null : keymap.displayChord(a.commandId());
-            rows.add(new ActionRow(a.label(), chord == null ? "" : chord, a.commandId(), a.run()));
-        }
         rows.add(new Header(tr("branchpopup.local")));
         List<com.editora.git.GitService.BranchInfo> locals = new ArrayList<>(local);
         locals.sort((x, y) -> {
@@ -181,6 +174,16 @@ public final class BranchPopup {
             rem.sort(String.CASE_INSENSITIVE_ORDER);
             for (String b : rem) {
                 rows.add(new BranchRow(b, true, false, "", 0, 0, false, () -> onCheckoutRemote.accept(b)));
+            }
+        }
+        if (!actions.isEmpty()) {
+            rows.add(new Header(tr("branchpopup.actions")));
+            // The chord beside an action comes from the live keymap, never from the caller: a hardcoded
+            // "C-x g" was only true of the Emacs keymap.
+            var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+            for (MenuAction a : actions) {
+                String chord = keymap == null ? null : keymap.displayChord(a.commandId());
+                rows.add(new ActionRow(a.label(), chord == null ? "" : chord, a.commandId(), a.run()));
             }
         }
         titleLabel.setText(tr("branchpopup.title"));
@@ -266,7 +269,7 @@ public final class BranchPopup {
         for (int i = 0; i < items.size(); i++) {
             if (!(items.get(i) instanceof Header)) {
                 list.getSelectionModel().select(i);
-                list.scrollTo(i);
+                list.scrollTo(0); // from the top: the section header above the first row stays in view
                 return;
             }
         }
@@ -301,11 +304,30 @@ public final class BranchPopup {
     /** Width of the leading icon column — the menu bar's {@code ICON_COLUMN}, so both read alike. */
     private static final double ICON_COLUMN = 22;
 
+    /** Whether a click or Enter on {@code row} does something: a real action or branch, never a header. */
+    private static boolean activatable(Row row) {
+        return row instanceof ActionRow || row instanceof BranchRow;
+    }
+
     private final class RowCell extends ListCell<Row> {
+        RowCell() {
+            // Only a primary click on this cell, and only while it shows an action or a branch.
+            setOnMouseClicked(e -> {
+                Row row = getItem();
+                if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && activatable(row)) {
+                    activate(row);
+                    e.consume();
+                }
+            });
+        }
+
         @Override
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
             getStyleClass().removeAll("branch-popup-header");
+            // Cells are recycled: a cell that last showed a branch must not keep describing it while it
+            // shows an action, a header or nothing.
+            setTooltip(null);
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
@@ -402,19 +424,8 @@ public final class BranchPopup {
             return box;
         }
 
-        /** "↓N ↑M" incoming/outgoing badge (capped at 99+), or empty when up to date / no upstream. */
         private String trackBadge(BranchRow br) {
-            StringBuilder sb = new StringBuilder();
-            if (br.behind() > 0) {
-                sb.append("↓").append(cap(br.behind()));
-            }
-            if (br.ahead() > 0) {
-                if (sb.length() > 0) {
-                    sb.append(' ');
-                }
-                sb.append("↑").append(cap(br.ahead()));
-            }
-            return sb.toString();
+            return BranchPopup.trackBadge(br.ahead(), br.behind());
         }
 
         private String branchTooltip(BranchRow br) {
@@ -429,17 +440,17 @@ public final class BranchPopup {
                 if (br.gone()) {
                     sb.append(tr("branchpopup.tip.goneSuffix"));
                 }
-                if (br.behind() > 0) {
-                    sb.append("\n")
-                            .append(tr(
-                                    br.behind() == 1 ? "branchpopup.tip.incoming.one" : "branchpopup.tip.incoming.many",
-                                    br.behind()));
-                }
                 if (br.ahead() > 0) {
                     sb.append("\n")
                             .append(tr(
                                     br.ahead() == 1 ? "branchpopup.tip.outgoing.one" : "branchpopup.tip.outgoing.many",
                                     br.ahead()));
+                }
+                if (br.behind() > 0) {
+                    sb.append("\n")
+                            .append(tr(
+                                    br.behind() == 1 ? "branchpopup.tip.incoming.one" : "branchpopup.tip.incoming.many",
+                                    br.behind()));
                 }
                 if (br.ahead() == 0 && br.behind() == 0 && !br.gone()) {
                     sb.append("\n").append(tr("branchpopup.tip.upToDate"));
@@ -447,9 +458,28 @@ public final class BranchPopup {
             }
             return sb.toString();
         }
+    }
 
-        private String cap(int n) {
-            return n > 99 ? "99+" : Integer.toString(n);
+    /**
+     * "↑M ↓N" outgoing/incoming badge (each capped at 99+), or empty when up to date / no upstream. Ahead
+     * first, then behind — the order the status bar and the Commit window use, so one glance reads the same
+     * everywhere.
+     */
+    static String trackBadge(int ahead, int behind) {
+        StringBuilder sb = new StringBuilder();
+        if (ahead > 0) {
+            sb.append("↑").append(cap(ahead));
         }
+        if (behind > 0) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append("↓").append(cap(behind));
+        }
+        return sb.toString();
+    }
+
+    private static String cap(int n) {
+        return n > 99 ? "99+" : Integer.toString(n);
     }
 }

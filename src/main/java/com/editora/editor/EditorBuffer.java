@@ -547,8 +547,8 @@ public class EditorBuffer implements TabContent {
     private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
     private LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
     private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
-    /** Per-line blame for the IntelliJ-style gutter "Annotate" column; null = blame off. */
-    private java.util.List<BlameInfo> blameLines;
+    /** Git change bars + blame column, kept on the right lines through unsaved edits. */
+    private final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter);
     /** Fixed annotation-column width in px, computed from the widest author+date when blame is set, so
      *  line numbers stay aligned regardless of which row's gutter is (re)built. */
     private double blameColumnWidth;
@@ -758,11 +758,6 @@ public class EditorBuffer implements TabContent {
     private long reindentGen;
     /** Chars of context captured before/after a note's selection (for re-anchoring). */
     private static final int CONTEXT_CHARS = 40;
-    /** Git gutter change bars: 0-based line → CSS class ({@code git-added}/{@code git-modified}/
-     *  {@code git-deleted}); {@code null} when this buffer isn't under Git change tracking. */
-    private java.util.Map<Integer, String> changeBars;
-    /** Per-line hunk text (the {@code -}/{@code +} diff) shown as a tooltip on the change bar; may be null. */
-    private java.util.Map<Integer, String> changeHunks;
 
     private Path path;
     /** Suggested name for a still-unsaved buffer (e.g. from {@code --new-file=foo.txt}); drives the tab
@@ -948,10 +943,7 @@ public class EditorBuffer implements TabContent {
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
         // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
         // per-line hunk text feeds a hover tooltip on the bar.
-        folds.setChangeHook(
-                () -> changeBars != null,
-                line -> changeBars == null ? null : changeBars.get(line),
-                line -> changeHunks == null ? null : changeHunks.get(line));
+        folds.setChangeHook(gitLines::barsTracked, gitLines::barAt, gitLines::hunkAt);
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
         folds.setRunHooks(
@@ -970,8 +962,8 @@ public class EditorBuffer implements TabContent {
         // Gutter blame "Annotate" column (leftmost): reserved only while blame is on; the per-line
         // author/date/heatmap come from the controller-supplied list, click shows that line's commit.
         folds.setBlameHooks(
-                () -> blameLines != null,
-                this::blameInfoAt,
+                this::isBlameOn,
+                gitLines::blameAt,
                 () -> blameColumnWidth,
                 line -> gutterBlameClick.accept(this, line));
         breakpoints.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -1031,6 +1023,7 @@ public class EditorBuffer implements TabContent {
         // order HighlightDirty maps its range through them.
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
+            gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
                 int inserted = change.getInserted().length();
@@ -4452,18 +4445,11 @@ public class EditorBuffer implements TabContent {
      *  stays git-free. Off on huge files. Computes the fixed column width from the widest author+date, then
      *  rebuilds the gutter so the column appears/disappears. */
     public void setBlame(java.util.List<BlameInfo> lines) {
-        var next = (hugeFile || lines == null || lines.isEmpty()) ? null : java.util.List.copyOf(lines);
-        if (java.util.Objects.equals(next, blameLines)) {
+        if (!gitLines.setBlame(hugeFile ? null : lines)) {
             return; // every git refresh comes through here, mostly with nothing: no gutter rebuild for that
         }
-        this.blameLines = next;
-        this.blameColumnWidth = blameLines == null ? 0 : measureBlameColumnWidth(blameLines);
+        this.blameColumnWidth = gitLines.blame() == null ? 0 : measureBlameColumnWidth(gitLines.blame());
         refreshGutter();
-    }
-
-    /** Per-line annotation for the gutter column (null for a blank/unloaded row). */
-    private BlameInfo blameInfoAt(int line) {
-        return (blameLines != null && line >= 0 && line < blameLines.size()) ? blameLines.get(line) : null;
     }
 
     /** Measures the annotation column once: the widest "author + date" across all lines, in the actual
@@ -4490,12 +4476,12 @@ public class EditorBuffer implements TabContent {
 
     /** Whether blame annotations are currently showing (non-null per-line data). */
     public boolean isBlameOn() {
-        return blameLines != null;
+        return gitLines.blame() != null;
     }
 
     /** The commit hash that last touched {@code line} (for "show this commit"), or null. */
     public String blameHashAt(int line) {
-        BlameInfo bi = blameInfoAt(line);
+        BlameInfo bi = gitLines.blameAt(line);
         return bi == null ? null : bi.hash();
     }
 
@@ -6632,9 +6618,9 @@ public class EditorBuffer implements TabContent {
         whitespace.setFont(family, size);
         inlineValues.setFont(family, size);
         stickyScroll.setFont(family, size);
-        if (blameLines != null) {
+        if (gitLines.blame() != null) {
             // The blame annotation column width is font-relative — recompute + rebuild so it stays aligned.
-            blameColumnWidth = measureBlameColumnWidth(blameLines);
+            blameColumnWidth = measureBlameColumnWidth(gitLines.blame());
             refreshGutter();
         }
         markRulerInputsDirty(); // the glyph advance changed
@@ -6840,23 +6826,10 @@ public class EditorBuffer implements TabContent {
 
     /** As {@link #setChangeBars(java.util.Map)} plus a per-line hunk-text map for the change-bar tooltip. */
     public void setChangeBars(java.util.Map<Integer, String> lineClasses, java.util.Map<Integer, String> hunkText) {
-        if (largeFile && lineClasses != null) {
-            lineClasses = null; // never track in large/huge-file mode
-            hunkText = null;
-        }
-        boolean wasTracked = changeBars != null;
-        boolean nowTracked = lineClasses != null;
-        java.util.Set<Integer> repaint = new java.util.HashSet<>();
-        if (wasTracked) {
-            repaint.addAll(changeBars.keySet());
-        }
-        if (nowTracked) {
-            repaint.addAll(lineClasses.keySet());
-        }
-        changeBars = lineClasses;
-        changeHunks = hunkText;
-        if (wasTracked != nowTracked) {
-            refreshGutter(); // the reserved slot appeared/disappeared — rebuild the factory
+        // Never tracked in large/huge-file mode. A null answer = the reserved slot appeared or disappeared.
+        java.util.Set<Integer> repaint = gitLines.setBars(largeFile ? null : lineClasses, hunkText);
+        if (repaint == null) {
+            refreshGutter(); // rebuild the factory
         } else {
             repaint.forEach(this::refreshGutterLine);
         }
@@ -6864,7 +6837,7 @@ public class EditorBuffer implements TabContent {
 
     /** Whether this buffer currently has Git change tracking on (a reserved change-bar slot). */
     public boolean hasChangeBars() {
-        return changeBars != null;
+        return gitLines.barsTracked();
     }
 
     public BookmarkManager getBookmarkManager() {
@@ -9458,6 +9431,7 @@ public class EditorBuffer implements TabContent {
         captureUndoCheckpoint(); // ...and the Undo History baseline is the loaded text, not the loading shell
         refilter.run();
         dirty.set(false);
+        gitLines.reset(); // freshly loaded: buffer lines are the disk's lines again
         recomputeRun(); // detect a runnable file on load (drives the Run glyph)
     }
 
@@ -9568,7 +9542,7 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = full.substring(0, s);
         narrowSuffix = full.substring(e);
-        LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes);
+        LineMarks.narrow(s, e, () -> area.replaceText(full.substring(s, e)), bookmarks, breakpoints, notes, gitLines);
         forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.max(0, Math.min(caret - s, area.getLength())));
         area.requestFollowCaret();
@@ -9598,7 +9572,7 @@ public class EditorBuffer implements TabContent {
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
         narrowPrefix = null; // cleared first: replaceText fires the dirty listener, which reads getContent()
         narrowSuffix = null;
-        LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes);
+        LineMarks.widen(() -> area.replaceText(prefix + visible + suffix), bookmarks, breakpoints, notes, gitLines);
         forgetHistoryAtNarrowBoundary();
         area.moveTo(Math.min(prefix.length() + caret, area.getLength()));
         area.requestFollowCaret();
@@ -9743,6 +9717,7 @@ public class EditorBuffer implements TabContent {
         cleanLineEnding = current ? lineEnding : savedLineEnding;
         forcedDirty = !current && eolOverride != null; // a rule that arrived mid-save: no converting back to it
         dirty.set(differsFromSaved());
+        gitLines.savedWithPendingEdits(); // a no-op when that left the buffer clean
     }
 
     public boolean isDisposed() {

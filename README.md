@@ -558,18 +558,28 @@ Editora is built with the help of AI coding tools.
   modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. The file list is **multi-select** — extend with
   Shift+Up/Down or Shift/Ctrl-click, then right-click to stage, unstage or discard the whole selection in one
-  `git` call (also *Git: Stage/Unstage Selected Files* on the palette) It has a **filter box**
+  `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette). It has a **filter box**
   (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group. Palette/keys cover commit (`C-x g`), stage
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
-  repo and opens a file from it — independent of projects). A **Git Log** tool window (`M-g h`, or *Show
-  File History* on a tab) browses commits — select one to see its files. In a file-filtered history,
+  repo and opens a file from it — independent of projects). Fetch prunes remote-tracking branches that were
+  deleted on the server, so a local branch whose upstream is gone is marked as such. The Emacs keymap adds
+  the `vc` chords (`C-x v v` commit, `C-x v P` push, `C-x v +` pull, `C-x v b s` switch branch, `C-x v l` /
+  `C-x v L` file / branch log, `C-x v g` blame); the IntelliJ keymap adds Commit (`Ctrl+K`), Push
+  (`Ctrl+Shift+K`), Update (`Ctrl+T`) and Branches (``Ctrl+Shift+` ``). A **Git Log** tool window (`M-g h`,
+  or *Show File History* on a tab) lists the checked-out branch's commits — short hash, the branches and tags
+  pointing at each commit, subject, author and relative date, one line per commit — and reloads after every
+  Git command; select a commit to see its files. It loads the newest 200 commits and says so when the history
+  is longer. In a file-filtered history,
   double-click a revision's file to compare it with the editable working copy and apply individual lines,
   hunks, or the whole revision; in the full repository log, double-click keeps the read-only parent-to-commit
   diff and **Compare with Working Tree** is available from the file menu. Right-click a commit to Copy Hash /
-  Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame**
-  (`M-g a`, GitLens-style) annotates the current line with "author, time ago • summary" (toggle in
-  *Settings → Git*, off by default). **Stash** push / pop / apply / drop from the palette or the branch
-  dropdown. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
+  Checkout / Reset / Revert / Cherry-Pick / New Branch (the same actions are on the palette as *Git Log: …*;
+  they act on the commit selected in the visible log, and open the log first when it is hidden). **Blame**
+  (`M-g a`) adds a gutter column showing every line's author and commit date, shaded by age, with the
+  commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default). **Stash**
+  push / pop-latest / apply / drop from the palette and the VCS menu; the branch dropdown (branches first,
+  then the actions) offers *Stash Changes* and *Unstash…*. The VCS menu also reaches Stage All, Compare with
+  Branch / Tag / Commit, Resolve Conflicts, Add to .gitignore and Initialize Repository. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
 - **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
   highlights, curved change ribbons and an overview track, collapsed unchanged context, whitespace/wrap
   controls, case-insensitive matching, smart or positional changed-line alignment, state-preserving live

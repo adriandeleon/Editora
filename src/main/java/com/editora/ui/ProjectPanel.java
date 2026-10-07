@@ -190,8 +190,12 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
         void showLocalHistory(Path file);
 
-        /** True when Git actions can run (the feature is on AND the context is inside a repo). */
-        boolean gitAvailable();
+        /**
+         * Which repository {@code path} belongs to: none (or Git is off) — the Git submenu is disabled; the
+         * window's active one — the tree's status colouring describes it; or another one (a nested
+         * repository, a submodule, a second worktree), whose status is only known once git is asked.
+         */
+        GitPathScope gitScope(Path path);
 
         void gitShowFileHistory(Path file);
 
@@ -2356,11 +2360,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             // Disable to match the live feature toggles + the file's actual status.
             menu.setOnShowing(e -> {
                 localHistory.setDisable(!fileActions.localHistoryEnabled());
-                git.setDisable(!fileActions.gitAvailable()); // grey out the Git submenu when there's no VCS
+                GitPathScope scope = fileActions.gitScope(file);
+                git.setDisable(scope == GitPathScope.NONE); // grey out the Git submenu when there's no VCS
                 com.editora.git.GitFileStatus st =
                         gitStatus.get(file.toAbsolutePath().normalize());
-                revert.setDisable(st == null); // nothing to revert on a clean file
-                ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new files
+                // The tree's status map is the active repository's. For a file of another one it says
+                // nothing, so the status-dependent items stay enabled and the action itself reports.
+                boolean known = scope == GitPathScope.ACTIVE;
+                revert.setDisable(known && st == null); // nothing to revert on a clean file
+                ignore.setDisable(known && st != com.editora.git.GitFileStatus.UNTRACKED); // for new files
             });
         }
         // On a folder: Local History plus subtree-wide Git mutation and comparison actions.
@@ -2405,9 +2413,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
             menu.setOnShowing(e -> {
                 folderHistory.setDisable(!fileActions.localHistoryEnabled());
-                boolean gitOn = fileActions.gitAvailable();
-                git.setDisable(!gitOn);
-                revert.setDisable(!gitChangedDirs.contains(dir.toAbsolutePath().normalize()));
+                GitPathScope scope = fileActions.gitScope(dir);
+                git.setDisable(scope == GitPathScope.NONE);
+                revert.setDisable(scope == GitPathScope.ACTIVE
+                        && !gitChangedDirs.contains(dir.toAbsolutePath().normalize()));
             });
         }
         return menu;

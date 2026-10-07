@@ -49,7 +49,7 @@ class GitPanelFxTest {
         public void stageAll() {}
 
         @Override
-        public void commit(String message) {}
+        public void commit(String message, java.util.function.Consumer<Boolean> onDone) {}
 
         @Override
         public void push() {}
@@ -152,8 +152,14 @@ class GitPanelFxTest {
         @Override
         public void stageAll() {}
 
+        final List<String> commits = new ArrayList<>();
+        java.util.function.Consumer<Boolean> commitDone;
+
         @Override
-        public void commit(String message) {}
+        public void commit(String message, java.util.function.Consumer<Boolean> onDone) {
+            commits.add(message);
+            commitDone = onDone;
+        }
 
         @Override
         public void push() {}
@@ -444,5 +450,249 @@ class GitPanelFxTest {
                 String.valueOf(FxTestSupport.call(root.getChildren().get(0).getValue(), "group", new Class<?>[] {})));
         Button commit = FxTestSupport.field(p, "commitButton");
         assertTrue(FxTestSupport.callOnFx(commit::isDisable), "nothing is staged");
+    }
+
+    // --- Ctrl/Cmd+Enter is the Commit button, not a way around it -------------------------------------
+
+    private static javafx.scene.control.TextArea messageOf(GitPanel p) {
+        return FxTestSupport.field(p, "message");
+    }
+
+    private static void ctrlEnter(GitPanel p) {
+        messageOf(p)
+                .fireEvent(new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED,
+                        "",
+                        "",
+                        javafx.scene.input.KeyCode.ENTER,
+                        false,
+                        true,
+                        false,
+                        false));
+    }
+
+    @Test
+    void ctrlEnterDoesNotCommitWhileTheButtonIsDisabled() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        // Nothing staged: the button is disabled, and the shortcut used to run `git commit` anyway.
+        FxTestSupport.runOnFx(() -> p.setStatus(
+                new GitStatus(true, "main", "origin/main", 0, 0, List.of(new FileEntry("only.txt", '.', 'M', null)))));
+        FxTestSupport.runOnFx(() -> {
+            messageOf(p).setText("a message");
+            ctrlEnter(p);
+        });
+        assertTrue(rec.commits.isEmpty(), "no commit with nothing staged");
+    }
+
+    @Test
+    void aSecondCtrlEnterWhileACommitRunsDoesNotQueueAnother() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        Button commit = FxTestSupport.field(p, "commitButton");
+        FxTestSupport.runOnFx(() -> {
+            messageOf(p).setText("first");
+            ctrlEnter(p);
+            ctrlEnter(p); // the hook is still running
+        });
+        assertEquals(List.of("first"), rec.commits, "one commit, not two");
+        assertTrue(FxTestSupport.callOnFx(commit::isDisable), "the button shows a commit is running");
+        // A status push in the middle (focus, save) must not re-enable it.
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        assertTrue(FxTestSupport.callOnFx(commit::isDisable));
+
+        FxTestSupport.runOnFx(() -> rec.commitDone.accept(true));
+        assertFalse(FxTestSupport.callOnFx(commit::isDisable), "re-enabled once the commit reported back");
+        assertEquals("", FxTestSupport.callOnFx(() -> messageOf(p).getText()), "the committed message is cleared");
+    }
+
+    @Test
+    void textTypedWhileTheCommitRanIsNotWiped() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        FxTestSupport.runOnFx(() -> {
+            messageOf(p).setText("first");
+            ctrlEnter(p);
+            messageOf(p).setText("the next commit, typed during the hook");
+            rec.commitDone.accept(true);
+        });
+        assertEquals(
+                "the next commit, typed during the hook",
+                FxTestSupport.callOnFx(() -> messageOf(p).getText()));
+    }
+
+    @Test
+    void aFailedCommitKeepsItsMessage() throws Exception {
+        Recording rec = new Recording();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(rec));
+        FxTestSupport.runOnFx(() -> p.setStatus(mixedStatus()));
+        FxTestSupport.runOnFx(() -> {
+            messageOf(p).setText("rejected by a hook");
+            ctrlEnter(p);
+            rec.commitDone.accept(false);
+        });
+        assertEquals(
+                "rejected by a hook", FxTestSupport.callOnFx(() -> messageOf(p).getText()));
+        Button commit = FxTestSupport.field(p, "commitButton");
+        assertFalse(FxTestSupport.callOnFx(commit::isDisable), "and can be retried");
+    }
+
+    // --- a status update keeps what the user had in hand -----------------------------------------------
+
+    private static GitStatus changes(String... unstaged) {
+        List<FileEntry> files = new ArrayList<>();
+        files.add(new FileEntry("staged.txt", 'M', '.', null));
+        for (String path : unstaged) {
+            files.add(new FileEntry(path, '.', 'M', null));
+        }
+        files.add(new FileEntry("new.txt", '?', '?', null));
+        return new GitStatus(true, "main", "origin/main", 0, 0, files);
+    }
+
+    private static List<String> selectedRows(GitPanel p) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            List<String> out = new ArrayList<>();
+            for (TreeItem<Object> item : tree(p).getSelectionModel().getSelectedItems()) {
+                Object row = item.getValue();
+                Object entry = FxTestSupport.call(row, "entry", new Class<?>[] {});
+                out.add(FxTestSupport.call(row, "group", new Class<?>[] {}) + "/"
+                        + FxTestSupport.call(entry, "path", new Class<?>[] {}));
+            }
+            return out;
+        });
+    }
+
+    private static void selectFile(GitPanel p, String path) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            TreeView<Object> t = tree(p);
+            for (int row = 0; row < t.getExpandedItemCount(); row++) {
+                if (String.valueOf(t.getTreeItem(row).getValue()).contains("path=" + path + ",")) {
+                    t.getSelectionModel().select(row);
+                }
+            }
+        });
+    }
+
+    @Test
+    void aStatusUpdateKeepsTheSelectionMultiSelectionAndRoot() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(changes("a.txt", "b.txt", "c.txt")));
+        TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
+        selectFile(p, "b.txt");
+        selectFile(p, "c.txt");
+        assertEquals(List.of("MODIFIED/b.txt", "MODIFIED/c.txt"), selectedRows(p));
+
+        // Tab switch, save, window focus: the same status again, with one more file above the selection.
+        FxTestSupport.runOnFx(() -> p.setStatus(changes("a.txt", "aa.txt", "b.txt", "c.txt")));
+
+        assertEquals(List.of("MODIFIED/b.txt", "MODIFIED/c.txt"), selectedRows(p), "selected by path, not by row");
+        assertTrue(
+                root == FxTestSupport.callOnFx(() -> tree(p).getRoot()),
+                "the tree keeps its root: replacing it is what reset the scroll position");
+    }
+
+    /** Staging file after file from the keyboard used to restart at the top of the list every time. */
+    @Test
+    void whenTheSelectedFileLeavesItsGroupTheSelectionMovesToTheNextOne() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(changes("a.txt", "b.txt", "c.txt")));
+        selectFile(p, "b.txt");
+
+        // b.txt was staged: it is gone from Changes (and now sits under Staged).
+        FxTestSupport.runOnFx(() -> p.setStatus(new GitStatus(
+                true,
+                "main",
+                "origin/main",
+                0,
+                0,
+                List.of(
+                        new FileEntry("staged.txt", 'M', '.', null),
+                        new FileEntry("b.txt", 'M', '.', null),
+                        new FileEntry("a.txt", '.', 'M', null),
+                        new FileEntry("c.txt", '.', 'M', null)))));
+        assertEquals(List.of("MODIFIED/c.txt"), selectedRows(p), "the file that followed it");
+
+        // The last file of the group falls back to the one before it.
+        FxTestSupport.runOnFx(() -> p.setStatus(
+                new GitStatus(true, "main", "origin/main", 0, 0, List.of(new FileEntry("a.txt", '.', 'M', null)))));
+        assertEquals(List.of("MODIFIED/a.txt"), selectedRows(p));
+    }
+
+    @Test
+    void aCollapsedGroupStaysCollapsedAcrossStatusUpdates() throws Exception {
+        GitPanel p = panel();
+        FxTestSupport.runOnFx(() -> p.setStatus(changes("a.txt", "b.txt")));
+        FxTestSupport.runOnFx(() -> tree(p).getRoot().getChildren().get(1).setExpanded(false)); // Changes
+
+        FxTestSupport.runOnFx(() -> p.setStatus(changes("a.txt", "b.txt", "c.txt")));
+
+        List<Boolean> expanded = FxTestSupport.callOnFx(() -> tree(p).getRoot().getChildren().stream()
+                .map(TreeItem::isExpanded)
+                .toList());
+        assertEquals(List.of(true, false, true), expanded, "Staged, Changes (collapsed by the user), Untracked");
+    }
+
+    @Test
+    void aStatusUpdateKeepsTheScrollPositionAndCellsDropAStaleTooltip() throws Exception {
+        GitPanel p = panel();
+        String[] many = new String[80];
+        for (int i = 0; i < many.length; i++) {
+            many[i] = String.format("dir/file-%03d.txt", i);
+        }
+        javafx.stage.Stage stage = FxTestSupport.callOnFx(() -> {
+            javafx.stage.Stage s = new javafx.stage.Stage();
+            s.setScene(new javafx.scene.Scene(p, 320, 400));
+            s.show();
+            return s;
+        });
+        try {
+            FxTestSupport.runOnFx(() -> {
+                p.setStatus(changes(many));
+                p.applyCss();
+                p.layout();
+                tree(p).scrollTo(40);
+                p.layout();
+            });
+            int before = firstVisibleRow(p);
+            assertTrue(before >= 30, "precondition: scrolled into the list (first visible row " + before + ")");
+
+            FxTestSupport.runOnFx(() -> {
+                p.setStatus(changes(many)); // the refresh after a save / a tab switch
+                p.layout();
+            });
+            assertEquals(before, firstVisibleRow(p), "the list did not jump back to the top");
+
+            // Only "new.txt" is left: the cells that showed dir/file-0NN.txt are now group rows or empty.
+            FxTestSupport.runOnFx(() -> {
+                p.setStatus(new GitStatus(
+                        true, "main", "origin/main", 0, 0, List.of(new FileEntry("new.txt", '?', '?', null))));
+                p.layout();
+            });
+            List<String> stale = FxTestSupport.callOnFx(() -> {
+                List<String> out = new ArrayList<>();
+                for (javafx.scene.Node node : tree(p).lookupAll(".tree-cell")) {
+                    javafx.scene.control.TreeCell<?> cell = (javafx.scene.control.TreeCell<?>) node;
+                    boolean fileRow =
+                            cell.getItem() != null && cell.getItem().toString().startsWith("FileRow");
+                    if (!fileRow && cell.getTooltip() != null) {
+                        out.add(cell.getTooltip().getText());
+                    }
+                }
+                return out;
+            });
+            assertTrue(stale.isEmpty(), "group and empty rows carry no file tooltip: " + stale);
+        } finally {
+            FxTestSupport.runOnFx(stage::close);
+        }
+    }
+
+    private static int firstVisibleRow(GitPanel p) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            javafx.scene.control.skin.VirtualFlow<?> flow =
+                    (javafx.scene.control.skin.VirtualFlow<?>) tree(p).lookup(".virtual-flow");
+            return flow.getFirstVisibleCell().getIndex();
+        });
     }
 }

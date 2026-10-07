@@ -8,12 +8,14 @@ import javafx.collections.transformation.FilteredList;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.control.Button;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.SplitPane;
 import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
@@ -23,18 +25,20 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
-import javafx.scene.text.Text;
-import javafx.scene.text.TextFlow;
 
 import com.editora.git.GitFileStatus;
-import com.editora.git.GitService.Commit;
+import com.editora.git.GitLog;
+import com.editora.git.GitLog.Entry;
 import com.editora.git.GitService.CommitFile;
+import com.editora.git.RelativeTime;
 
 import static com.editora.i18n.Messages.tr;
 
 /**
- * The Git Log / History tool window: a commit list (whole-repo or filtered to one file) over the
- * selected commit's changed files. Selecting a commit asks the controller (via {@link Actions}) to
+ * The Git Log / History tool window: a commit list (the checked-out branch's history, or one file's) over
+ * the selected commit's changed files. A commit row is one line — short hash, the branches and tags that
+ * point at it, the subject (ellipsized), author and relative date — and a footer says when the list is
+ * only the newest part of a longer history. Selecting a commit asks the controller (via {@link Actions}) to
  * fetch its files. In whole-repository mode, double-clicking a file opens its commit-vs-parent diff;
  * in file-history mode it compares that revision with the editable working file instead. A commit's
  * context menu offers Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. Like
@@ -79,15 +83,18 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     private final Actions actions;
-    private final Label filterLabel = new Label(tr("gitlog.all"));
+    private final Label filterLabel = new Label(tr("gitlog.currentBranch"));
     private final Button showAllButton;
     private final TextField filterField = new TextField();
     /** Unfiltered commits; {@link #commits} shows a {@link FilteredList} view over this so filtering keeps object
      * identity (a selected commit survives re-filtering while it still matches). */
-    private final ObservableList<Commit> allCommits = FXCollections.observableArrayList();
+    private final ObservableList<Entry> allCommits = FXCollections.observableArrayList();
 
-    private final FilteredList<Commit> filteredCommits = new FilteredList<>(allCommits, c -> true);
-    private final ListView<Commit> commits = new ListView<>();
+    private final FilteredList<Entry> filteredCommits = new FilteredList<>(allCommits, c -> true);
+    private final ListView<Entry> commits = new ListView<>();
+    /** Shown under the commit list when the load hit its limit: the list is not the whole history. */
+    private final Label truncatedLabel = new Label();
+
     private final ListView<CommitFile> files = new ListView<>();
     private final SplitPane split = new SplitPane();
     private final Label placeholder = new Label(tr("gitlog.noCommits"));
@@ -137,8 +144,17 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             }
         });
 
+        truncatedLabel.getStyleClass().add("git-log-truncated");
+        truncatedLabel.setMaxWidth(Double.MAX_VALUE);
+        truncatedLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+        truncatedLabel.setVisible(false);
+        truncatedLabel.setManaged(false);
+        VBox.setVgrow(commits, Priority.ALWAYS);
+        VBox commitsBox = new VBox(commits, truncatedLabel);
+
         files.getStyleClass().add("git-tree");
         files.setCellFactory(v -> new FileCell());
+        RowContextMenu.install(files); // the file rows' menu from the Menu key / Shift+F10, as for the commits
         installListNav(files);
         files.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ENTER) {
@@ -153,7 +169,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         });
 
         split.setOrientation(javafx.geometry.Orientation.VERTICAL);
-        split.getItems().setAll(commits, files);
+        split.getItems().setAll(commitsBox, files);
         split.setDividerPositions(0.6);
         VBox.setVgrow(split, Priority.ALWAYS);
 
@@ -163,7 +179,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         getChildren().setAll(toolbar, filterRow, split);
     }
 
-    /** Case-insensitive substring filter over each commit's subject, author, short/long hash and date. */
+    /** Case-insensitive substring filter over each commit's subject, author, short/long hash, date and refs. */
     private void applyCommitFilter(String text) {
         String q = text == null ? "" : text.strip().toLowerCase(java.util.Locale.ROOT);
         if (q.isEmpty()) {
@@ -174,7 +190,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                 || contains(c.author(), q)
                 || contains(c.shortHash(), q)
                 || contains(c.hash(), q)
-                || contains(c.date(), q));
+                || contains(c.date(), q)
+                || c.refs().stream().anyMatch(r -> contains(r.name(), q)));
     }
 
     private static boolean contains(String s, String lowerQuery) {
@@ -213,21 +230,64 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         return Icons.toolbarButton(icon, tip, action, "flat", "git-toolbar-button"); // tooltip + accessible name
     }
 
-    /** Replaces the commit list. {@code fileName} = null ⇒ whole-repo; else the filtered file's name. */
-    public void setLog(List<Commit> log, String fileName) {
+    /**
+     * Replaces the commit list. {@code fileName} = null ⇒ the history of {@code branch} (the checked-out
+     * branch — not every branch of the repository); else the history of that file.
+     *
+     * <p>A reload that brings the same commits back (the log is reloaded after every Git mutation, most of
+     * which — staging, a fetch with nothing new — move nothing) leaves the list, its selection and the
+     * changed-files pane alone. When the commits did change, the selected commit stays selected if it is
+     * still listed.
+     */
+    public void setLog(GitLog.Page page, String fileName, String branch) {
         boolean filtered = fileName != null && !fileName.isBlank();
+        boolean sameMode = fileHistoryMode == filtered;
         fileHistoryMode = filtered;
-        filterLabel.setText(filtered ? tr("gitlog.history", fileName) : tr("gitlog.all"));
+        filterLabel.setText(headerText(filtered ? fileName : null, branch));
         showAllButton.setVisible(filtered);
         showAllButton.setManaged(filtered);
-        files.getItems().clear();
-        // Populate the unfiltered master list; the FilteredList view re-applies the current filter automatically.
-        allCommits.setAll(log);
+        truncatedLabel.setText(
+                page.truncated() ? tr("gitlog.truncated", page.entries().size()) : "");
+        truncatedLabel.setVisible(page.truncated());
+        truncatedLabel.setManaged(page.truncated());
+        if (!sameMode || !allCommits.equals(page.entries())) {
+            String selected = selectedHash();
+            files.getItems().clear();
+            // Populate the unfiltered master list; the FilteredList view re-applies the current filter.
+            allCommits.setAll(page.entries());
+            reselect(selected);
+        }
         // A fresh open focuses the panel before the async log arrives — complete that focus now.
         if (focusPending && selectFirstCommit()) {
             focusPending = false;
             commits.requestFocus();
         }
+    }
+
+    /** Whole-branch log without a truncation notice — the shape most callers and tests have. */
+    public void setLog(List<Entry> log, String fileName) {
+        setLog(new GitLog.Page(log, false), fileName, "");
+    }
+
+    /** "History: Foo.java" for a file; "Commits on main" for the branch (never "all commits": it is one branch). */
+    static String headerText(String fileName, String branch) {
+        if (fileName != null) {
+            return tr("gitlog.history", fileName);
+        }
+        return branch == null || branch.isBlank() ? tr("gitlog.currentBranch") : tr("gitlog.branch", branch);
+    }
+
+    /** Selects the commit {@code hash} again after the list was replaced, or nothing when it is gone. */
+    private void reselect(String hash) {
+        if (hash != null) {
+            for (int i = 0; i < filteredCommits.size(); i++) {
+                if (hash.equals(filteredCommits.get(i).hash())) {
+                    commits.getSelectionModel().clearAndSelect(i);
+                    return;
+                }
+            }
+        }
+        commits.getSelectionModel().clearSelection();
     }
 
     /** Pushes the selected commit's changed files (called by the controller after {@code commitFiles}). */
@@ -237,12 +297,12 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     /** The hash of the currently-selected commit, or {@code null} when none is selected (backs the palette commands). */
     public String selectedHash() {
-        Commit c = commits.getSelectionModel().getSelectedItem();
+        Entry c = commits.getSelectionModel().getSelectedItem();
         return c == null ? null : c.hash();
     }
 
     private void openSelectedFile() {
-        Commit c = commits.getSelectionModel().getSelectedItem();
+        Entry c = commits.getSelectionModel().getSelectedItem();
         CommitFile f = files.getSelectionModel().getSelectedItem();
         if (c != null && f != null) {
             if (fileHistoryMode) {
@@ -273,29 +333,179 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         return true;
     }
 
-    private final class CommitCell extends ListCell<Commit> {
+    /** How many ref chips a row shows before the rest collapse into a "+N" chip (all are in the tooltip). */
+    static final int MAX_REF_CHIPS = 3;
+
+    /**
+     * How many ref chips fit a row {@code rowWidth} px wide: three in the bottom panel, fewer when the log is
+     * docked narrow — the subject must keep room, and a chip squeezed to "…" says nothing.
+     */
+    static int chipBudget(double rowWidth) {
+        if (rowWidth >= 640) {
+            return MAX_REF_CHIPS;
+        }
+        return rowWidth >= 440 ? 2 : 1;
+    }
+
+    /** Whether a row {@code rowWidth} px wide has room for the author column beside the subject and date. */
+    static boolean showsAuthor(double rowWidth) {
+        return rowWidth >= 520;
+    }
+
+    /** "3 days ago" for a commit time; the short ISO date when git gave no usable timestamp. */
+    static String relativeDate(Entry c, long nowSeconds) {
+        if (c.epochSeconds() <= 0) {
+            return c.date();
+        }
+        RelativeTime.Span span = RelativeTime.of(c.epochSeconds(), nowSeconds);
+        long v = span.value();
+        return switch (span.unit()) {
+            case NOW -> tr("blame.now");
+            case MINUTES -> tr("blame.minutesAgo", v);
+            case HOURS -> tr("blame.hoursAgo", v);
+            case DAYS -> tr("blame.daysAgo", v);
+            case WEEKS -> tr("blame.weeksAgo", v);
+            case MONTHS -> tr("blame.monthsAgo", v);
+            case YEARS -> tr("blame.yearsAgo", v);
+        };
+    }
+
+    /** The chip text of a ref: the name, with {@code HEAD →} in front of the checked-out branch. */
+    static String refLabel(GitLog.Ref ref) {
+        return ref.current() && ref.kind() != GitLog.RefKind.HEAD ? "HEAD → " + ref.name() : ref.name();
+    }
+
+    private static String refCssClass(GitLog.Ref ref) {
+        if (ref.current()) {
+            return "git-ref-head";
+        }
+        return switch (ref.kind()) {
+            case HEAD -> "git-ref-head";
+            case LOCAL -> "git-ref-local";
+            case REMOTE -> "git-ref-remote";
+            case TAG -> "git-ref-tag";
+            case OTHER -> "git-ref-other";
+        };
+    }
+
+    private static String commitTooltip(Entry c) {
+        StringBuilder sb = new StringBuilder(c.subject());
+        sb.append('\n').append(c.author()).append(" · ").append(c.date());
+        if (c.epochSeconds() > 0) {
+            sb.append(" (")
+                    .append(relativeDate(c, System.currentTimeMillis() / 1000))
+                    .append(')');
+        }
+        if (!c.refs().isEmpty()) {
+            sb.append('\n');
+            for (int i = 0; i < c.refs().size(); i++) {
+                sb.append(i == 0 ? "" : ", ").append(refLabel(c.refs().get(i)));
+            }
+        }
+        return sb.append('\n').append(c.hash()).toString();
+    }
+
+    /**
+     * One commit, on one line: {@code hash [refs…] subject ………… author  date}. An {@code HBox} of labels —
+     * the {@code TextFlow} this replaced could not ellipsize and made the list as wide as its longest
+     * subject. The cell asks for no width of its own ({@code prefWidth 0}), so the list gives it exactly the
+     * viewport's; the subject asks for none either and takes whatever the other columns leave, ellipsizing.
+     * A narrow row drops the author and all but one or two ref chips ({@link #chipBudget},
+     * {@link #showsAuthor}) rather than squeezing every column to an ellipsis. The one-line row height is CSS
+     * ({@code .git-log-panel .git-tree .list-cell}).
+     */
+    private final class CommitCell extends ListCell<Entry> {
+        private final Label hash = new Label();
+        private final HBox refs = new HBox(4);
+        private final Label subject = new Label();
+        private final Label author = new Label();
+        private final Label date = new Label();
+        private final HBox row = new HBox(8, hash, refs, subject, author, date);
+        private final Tooltip tooltip = new Tooltip();
+
+        CommitCell() {
+            setPrefWidth(0);
+            setContentDisplay(ContentDisplay.GRAPHIC_ONLY);
+            row.setAlignment(Pos.CENTER_LEFT);
+            row.getStyleClass().add("git-log-row");
+            // Color the short hash (accent) apart from the subject (default) so the log reads like a git graph.
+            hash.getStyleClass().add("git-log-hash");
+            hash.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+            refs.setAlignment(Pos.CENTER_LEFT);
+            refs.setFillHeight(false); // chips keep their own height: a pill, not a full-row block
+            refs.setMinWidth(0);
+            subject.getStyleClass().add("git-log-subject");
+            subject.setMinWidth(60);
+            subject.setPrefWidth(0);
+            subject.setMaxWidth(Double.MAX_VALUE);
+            subject.setTextOverrun(OverrunStyle.ELLIPSIS);
+            HBox.setHgrow(subject, Priority.ALWAYS);
+            author.getStyleClass().add("git-log-meta");
+            author.setMinWidth(0);
+            author.setMaxWidth(160);
+            author.setTextOverrun(OverrunStyle.ELLIPSIS);
+            date.getStyleClass().add("git-log-meta");
+            date.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
+            // Only when a threshold is crossed (two per row at most while a divider is dragged).
+            widthProperty().addListener((o, was, now) -> {
+                if (!isEmpty()
+                        && (chipBudget(was.doubleValue()) != chipBudget(now.doubleValue())
+                                || showsAuthor(was.doubleValue()) != showsAuthor(now.doubleValue()))) {
+                    fitToWidth(getItem());
+                }
+            });
+        }
+
+        /** Shows as many ref chips, and the author, as the row's current width has room for. */
+        private void fitToWidth(Entry c) {
+            double width = getWidth() > 0 ? getWidth() : commits.getWidth();
+            refs.getChildren().clear();
+            int shown = Math.min(c.refs().size(), chipBudget(width));
+            for (int i = 0; i < shown; i++) {
+                GitLog.Ref ref = c.refs().get(i);
+                refs.getChildren().add(chip(refLabel(ref), refCssClass(ref)));
+            }
+            if (c.refs().size() > shown) {
+                refs.getChildren().add(chip("+" + (c.refs().size() - shown), "git-ref-other"));
+            }
+            refs.setManaged(!c.refs().isEmpty());
+            refs.setVisible(!c.refs().isEmpty());
+            boolean author = showsAuthor(width);
+            this.author.setManaged(author);
+            this.author.setVisible(author);
+        }
+
         @Override
-        protected void updateItem(Commit c, boolean empty) {
+        protected void updateItem(Entry c, boolean empty) {
             super.updateItem(c, empty);
+            setText(null);
             if (empty || c == null) {
-                setText(null);
                 setGraphic(null);
                 setTooltip(null);
                 setContextMenu(null);
                 return;
             }
-            // Color the short hash (accent) apart from the subject (default) so the log reads like a git graph.
-            setText(null);
-            Text hash = new Text(c.shortHash());
-            hash.getStyleClass().add("git-log-hash");
-            Text subject = new Text("  " + c.subject());
-            subject.getStyleClass().add("git-log-subject");
-            setGraphic(new TextFlow(hash, subject));
-            setTooltip(new Tooltip(c.subject() + "\n" + c.author() + " · " + c.date() + "\n" + c.hash()));
+            hash.setText(c.shortHash());
+            subject.setText(c.subject());
+            author.setText(c.author());
+            date.setText(relativeDate(c, System.currentTimeMillis() / 1000));
+            fitToWidth(c);
+            setGraphic(row);
+            tooltip.setText(commitTooltip(c));
+            setTooltip(tooltip);
             setContextMenu(buildMenu(c));
         }
 
-        private ContextMenu buildMenu(Commit c) {
+        private Label chip(String text, String kindClass) {
+            Label chip = new Label(text);
+            chip.getStyleClass().addAll("git-ref", kindClass);
+            chip.setMinWidth(0);
+            chip.setMaxWidth(180);
+            chip.setTextOverrun(OverrunStyle.ELLIPSIS);
+            return chip;
+        }
+
+        private ContextMenu buildMenu(Entry c) {
             String h = c.hash();
             MenuItem copy = item(tr("gitlog.menu.copyHash"), Icons.copy(), () -> actions.copyHash(h));
             MenuItem checkout = item(tr("gitlog.menu.checkout"), Icons.git(), () -> actions.checkout(h));
@@ -348,13 +558,13 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         private ContextMenu buildMenu(CommitFile f) {
             String path = f.path();
             MenuItem diff = item(tr("gitlog.menu.showDiff"), Icons.diff(), () -> {
-                Commit c = commits.getSelectionModel().getSelectedItem();
+                Entry c = commits.getSelectionModel().getSelectedItem();
                 if (c != null) {
                     actions.openFileDiff(c.hash(), path, f.origPath());
                 }
             });
             MenuItem compareWorking = item(tr("gitlog.menu.compareWorking"), Icons.merge(), () -> {
-                Commit c = commits.getSelectionModel().getSelectedItem();
+                Entry c = commits.getSelectionModel().getSelectedItem();
                 if (c != null) {
                     actions.compareFileWithWorking(c.hash(), path);
                 }

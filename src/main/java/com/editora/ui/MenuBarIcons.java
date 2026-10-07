@@ -128,9 +128,16 @@ final class MenuBarIcons {
         add("git.stash", Icons::stash);
         add("git.stashPop", Icons::stash);
         add("git.unstash", Icons::stash);
+        add("git.stashDrop", Icons::trash);
+        add("git.stageAll", Icons::stageAll);
+        add("git.toggleBlame", Icons::blame);
+        add("merge.resolve", Icons::merge);
         add("tool.gitLog", Icons::gitLog);
         add("git.fileHistory", Icons::history);
         add("diff.vsHead", Icons::diff);
+        add("diff.vsBranch", Icons::diff);
+        add("diff.vsTag", Icons::diff);
+        add("diff.vsCommit", Icons::diff);
         add("diff.compareWith", Icons::diff);
         add("externalTool.run", Icons::tools);
         add("plugins.browse", Icons::plugin);

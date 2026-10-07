@@ -136,4 +136,21 @@ class StatusParserTest {
         GitStatus s = StatusParser.parse(out);
         assertEquals("a\tb\"c.txt", s.files().get(0).path());
     }
+
+    @Test
+    void quotedPathsKeepLiteralNonAsciiCharacters() {
+        // E9: with core.quotePath=false git escapes only control characters, quotes and backslashes; an é
+        // inside the quotes stays an é. Its low byte alone (0xE9) is not UTF-8 and decoded to U+FFFD, a
+        // path that does not exist.
+        assertEquals("new\tname é.txt", StatusParser.unquotePath("\"new\\tname é.txt\""));
+        assertEquals("untracked é\n.txt", StatusParser.unquotePath("\"untracked é\\n.txt\""));
+        assertEquals("日本\"語\\😀.txt", StatusParser.unquotePath("\"日本\\\"語\\\\😀.txt\""));
+        GitStatus s = StatusParser.parse("2 R. N... 100644 100644 100644 587be6b 587be6b R100 "
+                + "\"new\\tname é.txt\"\told name.txt\n? \"untracked é\\n.txt\"\n");
+        assertEquals("new\tname é.txt", s.files().get(0).path());
+        assertEquals("old name.txt", s.files().get(0).origPath());
+        assertEquals("untracked é\n.txt", s.files().get(1).path());
+        // The default form (every non-ASCII byte as an octal escape) still decodes.
+        assertEquals("café.txt", StatusParser.unquotePath("\"caf\\303\\251.txt\""));
+    }
 }
