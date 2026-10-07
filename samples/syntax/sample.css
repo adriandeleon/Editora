@@ -1,13 +1,75 @@
+/*
+ * A small CSS sample for syntax highlighting and folding.
+ * Covers custom properties, selectors of every kind, at-rules, functions,
+ * units, colors, and nesting.
+ */
+@import url("reset.css");
+
 :root {
   --accent: #3b82f6;
+  --accent-soft: rgb(59 130 246 / 15%);
+  --radius: 6px;
+  --stack: system-ui, "Segoe UI", sans-serif;
 }
 
-.button {
-  color: var(--accent);
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 var(--stack);
+  color: hsl(220 15% 20%);
+}
+
+#toolbar > .button:not(.ghost) {
+  color: #fff;
+  background: linear-gradient(to bottom, var(--accent), color-mix(in srgb, var(--accent) 80%, black));
   padding: 0.5rem 1rem;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  transition: filter 120ms ease-in-out;
 }
 
-.button:hover {
+.button:hover,
+.button:focus-visible {
   filter: brightness(1.1);
+  outline: 2px solid var(--accent-soft);
+}
+
+a[href^="https://"]::after {
+  content: " \2197"; /* an escaped arrow */
+}
+
+ul.items li:nth-child(odd) {
+  background: var(--accent-soft);
+}
+
+.card {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: clamp(0.5rem, 2vw, 1.5rem);
+
+  & > h2 {
+    margin-block: 0 0.25em;
+  }
+}
+
+@media (prefers-color-scheme: dark) and (min-width: 40em) {
+  body {
+    color: #e5e7eb;
+    background: #111827 !important;
+  }
+}
+
+@keyframes pulse {
+  from { opacity: 1; }
+  to { opacity: 0.4; }
+}
+
+@font-face {
+  font-family: "Sample Mono";
+  src: url("sample-mono.woff2") format("woff2");
 }

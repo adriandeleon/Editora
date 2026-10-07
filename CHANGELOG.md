@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `samples/` corpus for manual testing now covers more of the editor. Every syntax sample is a
+  complete, commented program instead of a ten-line stub, and there are new fixtures for Astro, JSX and
+  ignore files, sticky scroll and fold levels (one long file), related-file pairs, the HTML live
+  preview, Markdown lint and extensions, every recognised log format, shell and shebang scripts, a
+  script to debug, tests in the Maven, npm, Cargo and Go projects, more of the HTTP client format,
+  diff3 conflicts, and JPEG/GIF/BMP images. A test now fails if a bundled grammar has no sample.
 - After a pull, clicking a file's change graph (`4 ++--`) in the Git tab opens a diff of that file
   between the commit you were on and the one the pull brought. Clicking the file name still opens the
   file.

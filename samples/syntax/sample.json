@@ -1,9 +1,30 @@
 {
   "name": "sample",
   "version": "1.0.0",
-  "nested": {
-    "list": [1, 2, 3],
-    "flag": true,
-    "nothing": null
-  }
+  "description": "A small JSON sample: every value type, nesting, and string escapes.",
+  "private": true,
+  "count": 42,
+  "ratio": -0.75,
+  "exponent": 6.02e23,
+  "nothing": null,
+  "escapes": "tab\there, quote \" and backslash \\, unicode \u00e9",
+  "tags": ["editor", "sample", "json"],
+  "matrix": [
+    [1, 0, 0],
+    [0, 1, 0],
+    [0, 0, 1]
+  ],
+  "owner": {
+    "name": "Editora",
+    "contact": {
+      "email": "nobody@example.com",
+      "verified": false
+    }
+  },
+  "items": [
+    { "id": 1, "name": "hammer", "weightKg": 0.6, "tags": ["tool"] },
+    { "id": 2, "name": "anvil", "weightKg": 45, "tags": ["tool", "heavy"] },
+    { "id": 3, "name": "Dune", "pages": 612, "tags": [] }
+  ],
+  "empty": {}
 }

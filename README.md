@@ -830,8 +830,9 @@ also enforces the Spotless check and the JaCoCo per-package coverage floors. See
 [`docs/testing.md`](docs/testing.md).
 
 For **manual** smoke-testing and demos there's a curated, feature-organized sample corpus under
-[`samples/`](samples/README.md) (syntax per language, folding, markdown, mermaid, todo, spell, search,
-editorconfig, http, log, diff, encodings — open the relevant file to exercise a feature). Large perf
+[`samples/`](samples/README.md) (syntax per language, navigation, folding, markdown, previews, run and
+debug, build tools with tests, http, log, diff, encodings, … — open the relevant file to exercise a
+feature; its README is the manifest). Large perf
 inputs are generated on demand by `java scripts/GenSamples.java` (a JDK 25 compact source file;
 git-ignored output, not committed).
 

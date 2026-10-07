@@ -7,11 +7,14 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.editora.editor.GrammarRegistry;
+import com.editora.editor.LanguageRegistry;
 import com.editora.search.GitignoreFilter;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -27,7 +30,11 @@ import static org.junit.jupiter.api.Assertions.fail;
  * <ul>
  *   <li>every committed sample is listed in {@code samples/README.md};</li>
  *   <li>every {@code samples/...} path referenced in the README actually exists;</li>
- *   <li>the core (LSP-served) languages each have a syntax sample.</li>
+ *   <li>the core (LSP-served) languages each have a syntax sample;</li>
+ *   <li>every bundled grammar has a sample somewhere in the corpus, so shipping a new language without
+ *       one fails here rather than going unnoticed;</li>
+ *   <li>every sample still resolves to a language, so a rename or a move out of a name-matched folder
+ *       (e.g. {@code etc/hosts}) cannot silently turn it into plain text.</li>
  * </ul>
  *
  * Runs against the source tree (cwd = module root under Maven); skipped gracefully if {@code samples/}
@@ -57,13 +64,32 @@ class SamplesCorpusTest {
             "samples/syntax/sample.toml",
             "samples/syntax/sample.sh");
 
+    /**
+     * Bundled grammars that deliberately have no sample. {@code .gitattributes} is the only one: a real file
+     * of that name would change Git's behavior for the folder it sits in (see the README's Conventions).
+     */
+    private static final Set<String> NO_SAMPLE_ON_PURPOSE = Set.of("gitattributes");
+
+    /**
+     * Extensions that are meant to open as plain text or in a viewer: prose fixtures, binaries, and the two
+     * tool files Editora has no grammar for ({@code go.mod}, BibTeX).
+     */
+    private static final Set<String> PLAIN_EXTENSIONS =
+            Set.of("txt", "bin", "png", "jpg", "gif", "bmp", "pdf", "mod", "bib");
+
+    /** Samples whose language comes from their <em>content</em> (a shebang, a log sniff), not their name. */
+    private static final Set<String> DETECTED_BY_CONTENT =
+            Set.of("samples/run/shebang-script", "samples/log/server.out");
+
     @Test
     void everyCommittedSampleIsListedInTheReadme() throws IOException {
         Assumptions.assumeTrue(Files.isDirectory(SAMPLES), "samples/ not present (skipping)");
-        String readme = Files.readString(README);
+        // Whole paths, not substrings: "samples/syntax/sample.ts" must not be satisfied by a mention of
+        // "samples/syntax/sample.tsx", nor "sample.js" by "sample.json".
+        Set<String> listed = readmeReferences();
         Set<String> missing = new TreeSet<>();
         for (String rel : committedSamples()) {
-            if (!readme.contains(rel)) {
+            if (!listed.contains(rel)) {
                 missing.add(rel);
             }
         }
@@ -76,11 +102,9 @@ class SamplesCorpusTest {
     void everyReadmeReferenceExists() throws IOException {
         Assumptions.assumeTrue(Files.isDirectory(SAMPLES), "samples/ not present (skipping)");
         Set<String> dangling = new TreeSet<>();
-        Matcher m = REF.matcher(Files.readString(README));
-        while (m.find()) {
-            String ref = m.group();
-            if (ref.endsWith("/") || ref.equals("samples/perf")) {
-                continue; // a directory mention (e.g. "samples/perf/"), not a file
+        for (String ref : readmeReferences()) {
+            if (ref.endsWith("/") || ref.equals("samples/perf") || ref.startsWith("samples/perf/")) {
+                continue; // a directory mention, or a file under the generated, git-ignored perf/ tree
             }
             if (!Files.isRegularFile(Path.of(ref))) {
                 dangling.add(ref);
@@ -97,6 +121,65 @@ class SamplesCorpusTest {
         for (String f : MUST_HAVE) {
             assertTrue(Files.isRegularFile(Path.of(f)), "missing required syntax sample: " + f);
         }
+    }
+
+    @Test
+    void everyBundledGrammarHasASample() throws IOException {
+        Assumptions.assumeTrue(Files.isDirectory(SAMPLES), "samples/ not present (skipping)");
+        Set<String> covered = new TreeSet<>();
+        for (String rel : committedSamples()) {
+            covered.add(languageOf(rel));
+        }
+        covered.add(LanguageRegistry.forFileName("README.md")); // the manifest itself is a Markdown sample
+        Set<String> uncovered = new TreeSet<>(GrammarRegistry.shared().availableLanguageNames());
+        uncovered.removeAll(covered);
+        uncovered.removeAll(NO_SAMPLE_ON_PURPOSE);
+        if (!uncovered.isEmpty()) {
+            fail("These bundled grammars have no sample under samples/ (add one, and list it in the README): "
+                    + uncovered);
+        }
+    }
+
+    @Test
+    void everySampleResolvesToALanguage() throws IOException {
+        Assumptions.assumeTrue(Files.isDirectory(SAMPLES), "samples/ not present (skipping)");
+        Set<String> plain = new TreeSet<>();
+        for (String rel : committedSamples()) {
+            String name = rel.substring(rel.lastIndexOf('/') + 1);
+            int dot = name.lastIndexOf('.');
+            String ext = dot < 0 ? "" : name.substring(dot + 1).toLowerCase(Locale.ROOT);
+            if (PLAIN_EXTENSIONS.contains(ext) || DETECTED_BY_CONTENT.contains(rel)) {
+                continue;
+            }
+            if (LanguageRegistry.PLAINTEXT.equals(languageOf(rel))) {
+                plain.add(rel);
+            }
+        }
+        if (!plain.isEmpty()) {
+            fail("These samples open as plain text. A name- or folder-matched sample may have been renamed or"
+                    + " moved; otherwise add its extension to PLAIN_EXTENSIONS: " + plain);
+        }
+    }
+
+    /** The language a sample opens as. Resolved from the absolute path, as the editor does, because several
+     *  config grammars are matched by an enclosing folder ({@code etc/}, {@code debian/}). */
+    private static String languageOf(String rel) {
+        return LanguageRegistry.forFileName(
+                Path.of(rel).toAbsolutePath().toString().replace('\\', '/'));
+    }
+
+    /** Every {@code samples/...} path the README mentions, with sentence punctuation trimmed off the end. */
+    private static Set<String> readmeReferences() throws IOException {
+        Set<String> out = new TreeSet<>();
+        Matcher m = REF.matcher(Files.readString(README));
+        while (m.find()) {
+            String ref = m.group();
+            while (ref.endsWith(".") || ref.endsWith("-")) {
+                ref = ref.substring(0, ref.length() - 1);
+            }
+            out.add(ref);
+        }
+        return out;
     }
 
     /** All committed sample files (forward-slash {@code samples/...} paths), excluding the README and the

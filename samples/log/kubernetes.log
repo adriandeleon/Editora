@@ -1,0 +1,6 @@
+I1006 09:00:00.100123       1 controller.go:112] Starting inventory controller
+I1006 09:00:00.250871       1 shared_informer.go:311] Caches are synced for inventory
+W1006 09:00:04.933410       1 reflector.go:535] watch of *v1.ConfigMap ended with: too old resource version
+E1006 09:00:09.120007       1 controller.go:188] error syncing "default/shelf-a": conflict on update
+I1006 09:00:09.121555       1 controller.go:201] Requeuing "default/shelf-a" after 2s
+F1006 09:00:30.000001       1 main.go:74] leader election lost

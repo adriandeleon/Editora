@@ -5,6 +5,11 @@ package main
 
 import "fmt"
 
+// greeting is the line main prints; main_test.go checks it.
+func greeting(who string) string {
+	return "Hello from " + who + "."
+}
+
 func main() {
-	fmt.Println("Hello from the Go sample project.")
+	fmt.Println(greeting("the Go sample project"))
 }
