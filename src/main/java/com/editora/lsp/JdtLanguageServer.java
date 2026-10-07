@@ -47,4 +47,34 @@ interface JdtLanguageServer extends LanguageServer {
 
     @JsonRequest("java/organizeImports")
     CompletableFuture<JsonElement> organizeImports(Object params);
+
+    @JsonRequest("java/resolveUnimplementedAccessors")
+    CompletableFuture<JsonElement> resolveUnimplementedAccessors(Object params);
+
+    @JsonRequest("java/generateAccessors")
+    CompletableFuture<JsonElement> generateAccessors(Object params);
+
+    @JsonRequest("java/checkDelegateMethodsStatus")
+    CompletableFuture<JsonElement> checkDelegateMethodsStatus(Object params);
+
+    @JsonRequest("java/generateDelegateMethods")
+    CompletableFuture<JsonElement> generateDelegateMethods(Object params);
+
+    @JsonRequest("java/checkExtractInterfaceStatus")
+    CompletableFuture<JsonElement> checkExtractInterfaceStatus(Object params);
+
+    @JsonRequest("java/getRefactorEdit")
+    CompletableFuture<JsonElement> getRefactorEdit(Object params);
+
+    @JsonRequest("java/getChangeSignatureInfo")
+    CompletableFuture<JsonElement> getChangeSignatureInfo(Object params);
+
+    @JsonRequest("java/getMoveDestinations")
+    CompletableFuture<JsonElement> getMoveDestinations(Object params);
+
+    @JsonRequest("java/move")
+    CompletableFuture<JsonElement> move(Object params);
+
+    @JsonRequest("java/searchSymbols")
+    CompletableFuture<JsonElement> searchSymbols(Object params);
 }

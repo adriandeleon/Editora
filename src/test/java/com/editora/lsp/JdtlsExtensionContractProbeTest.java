@@ -172,6 +172,9 @@ class JdtlsExtensionContractProbeTest {
             record("organizeImports", organized);
             assertUsableWorkspaceEdit(gson, organized, "organize imports");
             for (var kind : JdtlsGenerate.Kind.values()) {
+                if (kind == JdtlsGenerate.Kind.ACCESSORS || kind == JdtlsGenerate.Kind.DELEGATE_METHODS) {
+                    continue; // their own argument and two-level shapes: JdtlsRefactorProbeTest
+                }
                 try {
                     Object checked = get(s.rawRequest(kind.checkRequest(), actionJson));
                     var status = gson.toJsonTree(checked);

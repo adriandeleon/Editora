@@ -1472,6 +1472,86 @@ public final class LspManager {
         }
     }
 
+    /** What a code lens counts — which decides what a click on it opens. */
+    public enum CodeLensKind {
+        REFERENCES,
+        IMPLEMENTATIONS
+    }
+
+    /** One code lens: where its declaration's name starts, what it says, and what it counts. */
+    public record CodeLensSpan(int line, int col, String title, CodeLensKind kind) {}
+
+    /** True if {@code file}'s server is ready and advertises code lenses. */
+    public boolean supportsCodeLens(Path file) {
+        LanguageServerSession s = sessionFor(file);
+        return s != null && s.capabilities() != null && s.capabilities().getCodeLensProvider() != null;
+    }
+
+    /**
+     * Pure: what a lens counts, read off its command id ({@code java.show.references},
+     * {@code java.show.implementations}, {@code editor.action.showReferences}, …) — or null for a lens that
+     * does something else (a "Run | Debug" lens), which is not shown: its command is the server's own
+     * editor integration and nothing here could carry it out.
+     */
+    static CodeLensKind codeLensKind(org.eclipse.lsp4j.Command command) {
+        String id = command == null || command.getCommand() == null
+                ? ""
+                : command.getCommand().toLowerCase(java.util.Locale.ROOT);
+        if (id.contains("implementation")) {
+            return CodeLensKind.IMPLEMENTATIONS;
+        }
+        return id.contains("reference") ? CodeLensKind.REFERENCES : null;
+    }
+
+    /** Pure: the lenses worth showing, as neutral spans in line order. */
+    static List<CodeLensSpan> codeLensSpans(List<org.eclipse.lsp4j.CodeLens> lenses) {
+        List<CodeLensSpan> out = new ArrayList<>();
+        if (lenses == null) {
+            return out;
+        }
+        for (org.eclipse.lsp4j.CodeLens lens : lenses) {
+            if (lens == null || lens.getRange() == null || lens.getCommand() == null) {
+                continue;
+            }
+            CodeLensKind kind = codeLensKind(lens.getCommand());
+            String title = lens.getCommand().getTitle();
+            if (kind == CodeLensKind.IMPLEMENTATIONS
+                    && title != null
+                    && title.strip().startsWith("0 ")) {
+                continue; // jdtls answers for every type and method; "0 implementations" on each is noise
+            }
+            if (kind != null && title != null && !title.isBlank()) {
+                Position start = lens.getRange().getStart();
+                out.add(new CodeLensSpan(start.getLine(), start.getCharacter(), title.strip(), kind));
+            }
+        }
+        out.sort(java.util.Comparator.comparingInt(CodeLensSpan::line).thenComparing(CodeLensSpan::kind));
+        return out;
+    }
+
+    /**
+     * Requests the code lenses on lines {@code [startLine..endLine]}, delivered as neutral spans on the FX
+     * thread — empty when unsupported or failed.
+     */
+    public void requestCodeLens(Path file, int startLine, int endLine, Consumer<List<CodeLensSpan>> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(List.of()));
+            return;
+        }
+        String uri = uri(file);
+        latest.issue(
+                uri,
+                "codeLens",
+                stamp(s, uri, List.of(startLine, endLine)),
+                true,
+                () -> s.codeLens(uri, startLine, endLine),
+                (lenses, error) -> {
+                    List<CodeLensSpan> out = error == null ? codeLensSpans(lenses) : List.of();
+                    Platform.runLater(() -> cb.accept(out));
+                });
+    }
+
     /** True if {@code file}'s server is ready and advertises inlay hints (#681). */
     public boolean supportsInlayHints(Path file) {
         LanguageServerSession s = sessionFor(file);
@@ -2679,6 +2759,20 @@ public final class LspManager {
         return args == null || args.isEmpty() ? null : args.get(0);
     }
 
+    /** Every argument of the command an opaque code-action payload carries, as JSON; empty without one. */
+    public static List<JsonElement> commandArguments(Object raw) {
+        org.eclipse.lsp4j.Command cmd = commandOf(raw);
+        List<Object> args = cmd == null ? null : cmd.getArguments();
+        if (args == null) {
+            return List.of();
+        }
+        List<JsonElement> out = new ArrayList<>();
+        for (Object arg : args) {
+            out.add(arg == null ? com.google.gson.JsonNull.INSTANCE : asJson(arg));
+        }
+        return out;
+    }
+
     private static org.eclipse.lsp4j.Command commandOf(Object raw) {
         if (raw instanceof org.eclipse.lsp4j.Command cmd) {
             return cmd;
@@ -3083,6 +3177,9 @@ public final class LspManager {
         java.put("autobuild", Map.of("enabled", false));
         // jdtls registers textDocument/onTypeFormatting dynamically, and only while this preference is on.
         java.put("format", Map.of("onType", Map.of("enabled", onTypeFormatting)));
+        // Asked for only while Settings.codeLens is on; see LspServerSettings.
+        java.put("referencesCodeLens", Map.of("enabled", true));
+        java.put("implementationCodeLens", "all");
         List<Map<String, Object>> runtimes = JavaRuntimes.runtimes(JavaRuntimes.discover());
         if (!runtimes.isEmpty()) {
             java.put("configuration", Map.of("runtimes", runtimes));
@@ -3129,12 +3226,16 @@ public final class LspManager {
         caps.put("hashCodeEqualsPromptSupport", true);
         caps.put("generateConstructorsPromptSupport", true);
         caps.put("overrideMethodsPromptSupport", true);
-        // Deliberately NOT declared yet — their prompts aren't built, and declaring one would replace a
-        // working action with a command nothing handles (see the contract above):
-        //   advancedGenerateAccessorsSupport   — accessors work today WITHOUT any flag; enabling this would
-        //                                        break them until the picker lands. The riskiest of the set.
-        //   generateDelegateMethodsPromptSupport — two-level payload (field → its methods), not a flat list.
-        //   extractInterfaceSupport            — two-stage: pick members, then pick a destination package.
+        // Backed by JdtlsGenerate's accessor and delegate-method prompts.
+        caps.put("advancedGenerateAccessorsSupport", true);
+        caps.put("generateDelegateMethodsPromptSupport", true);
+        // Backed by JdtlsRefactor: java.action.applyRefactoringCommand is carried out by the client.
+        // jdtls offers Extract Interface only with both flags. The second one also turns the extract
+        // refactorings (variable, constant, method, field) into that same command; each is one
+        // java/getRefactorEdit away.
+        caps.put("extractInterfaceSupport", true);
+        caps.put("advancedExtractRefactoringSupport", true);
+        caps.put("moveRefactoringSupport", true);
         return Map.copyOf(caps);
     }
 
@@ -3585,8 +3686,58 @@ public final class LspManager {
                 });
     }
 
+    /**
+     * Sends a custom {@code java/…} request and delivers its untyped JSON answer on the FX thread —
+     * {@code null} when there is no session or the request fails. For the look-ups a client-driven
+     * refactoring makes before it asks for an edit (destinations, candidates, a method's signature).
+     */
+    public void jdtlsRequest(Path file, String method, Object params, Consumer<JsonElement> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        s.rawRequest(method, params).whenComplete((r, e) -> {
+            JsonElement json = e != null ? null : asJson(r);
+            Platform.runLater(() -> cb.accept(json));
+        });
+    }
+
+    /**
+     * Sends a custom {@code java/…} request whose answer is, or wraps, a {@code WorkspaceEdit}
+     * ({@link JdtlsRefactor#editOf}) and applies it. {@code cb} gets whether an edit was applied, and the
+     * server's own {@code errorMessage} when it refused the refactoring (else null).
+     */
+    public void jdtlsApplyEdit(
+            Path file,
+            String method,
+            Object params,
+            Map<Path, String> expectedAtAction,
+            java.util.function.BiConsumer<Boolean, String> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(false, null));
+            return;
+        }
+        EditBasis expected = expectedAtAction == null || expectedAtAction.isEmpty()
+                ? editBasis(s)
+                : new EditBasis(expectedAtAction, System.currentTimeMillis());
+        s.rawRequest(method, params).whenComplete((r, e) -> {
+            JsonElement json = e != null ? null : asJson(r);
+            String refused = JdtlsRefactor.errorMessage(json);
+            org.eclipse.lsp4j.WorkspaceEdit edit = asWorkspaceEdit(JdtlsRefactor.editOf(json));
+            Platform.runLater(() -> {
+                if (edit == null) {
+                    cb.accept(false, refused);
+                } else {
+                    applyWorkspaceEdit(edit, expected, ok -> cb.accept(ok, refused));
+                }
+            });
+        });
+    }
+
     /** The raw result as gson, or null — the custom {@code java/…} requests answer as untyped JSON. */
-    private static com.google.gson.JsonElement asJson(Object raw) {
+    public static com.google.gson.JsonElement asJson(Object raw) {
         if (raw instanceof com.google.gson.JsonElement json) {
             return json;
         }

@@ -262,14 +262,19 @@ Editora is built with the help of AI coding tools.
   **Code Actions / quick fixes** (`Ctrl-.` in the VS Code/Sublime/IntelliJ keymaps, or the palette /
   right-click menu — apply the server's fixes, organize imports, refactorings), **Java code generation**
   from that same menu (**Generate toString()**, **hashCode()/equals()**, **Constructors**, and
-  **Override/Implement Methods** — each opens a checkbox list: Space toggles, Enter generates), and
+  **Getters and Setters**, **Delegate Methods** and **Override/Implement Methods** — each opens a checkbox
+  list: Space toggles, Enter generates), the **Java refactorings that need an answer first** (**Move** a
+  class to another package, a nested class, a static member or an instance method; **Extract Interface**;
+  and **Change Signature**, edited as one line where a new parameter is written `type name = value`), and
   **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
   editor right-click menu), **inlay hints** (the server's parameter-name / inferred-type annotations, drawn
   in grey italics **inline at the position they describe**, like IntelliJ and VS Code — off by default,
   Settings → Code Completion; parameter hints that explain nothing are always hidden, and by default the
   rest appear only on literal arguments), **re-indent as you type**
   (typing `;`, `}` or Enter snaps the line to the server's own indentation convention — indentation only,
-  never a reformat; off by default, Settings → Code Completion or `view.toggleOnTypeFormatting`), and
+  never a reformat; off by default, Settings → Code Completion or `view.toggleOnTypeFormatting`),
+  **code lenses** (the server's reference and implementation counts after a declaration; click one to open
+  them — off by default, Settings → Code Completion or `view.toggleCodeLens`), and
   **server-provided folding + expand/shrink selection** (grammar-accurate where a server offers them — an
   import block folds as one region — falling back to the built-in heuristics everywhere else).
   Three Java commands round it out: **Organize Imports** (direct, without the code-action menu),

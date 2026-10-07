@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 110;
+    public static final int SCHEMA_VERSION = 111;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -186,6 +186,8 @@ public class Settings {
      *  never filtered. Defaults to {@code literals}, matching VS Code's Java extension: a hint on every
      *  argument of every call is mostly noise, the more so while hints render at end-of-line (#823). */
     private String inlayHintMode = "literals";
+    /** LSP code lenses — reference and implementation counts drawn after a declaration; default off. */
+    private boolean codeLens = false;
     /** Re-indent the current line when a language server's trigger character is typed ({@code ;}, {@code }},
      *  Enter). Default <b>off</b>: it acts on very common keystrokes and overlaps the local auto-indent
      *  assists, so it is opt-in until it has proven itself in the field (#740). */
@@ -1341,6 +1343,14 @@ public class Settings {
 
     public void setLspOnTypeFormatting(boolean lspOnTypeFormatting) {
         this.lspOnTypeFormatting = lspOnTypeFormatting;
+    }
+
+    public boolean isCodeLens() {
+        return codeLens;
+    }
+
+    public void setCodeLens(boolean codeLens) {
+        this.codeLens = codeLens;
     }
 
     public boolean isInlayHints() {

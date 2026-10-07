@@ -271,6 +271,45 @@ Capability gating throughout reads the cached `ServerCapabilities` through pure,
 `triggerCharsOf`), so a feature is offered only when the server advertises it. Dynamic registrations are
 folded into that same effective object, so static and post-initialize providers follow one gating path.
 
+### Client-driven jdtls actions
+
+Some jdtls code actions answer with a command the **client** must carry out — sending it back as
+`workspace/executeCommand` fails. Which actions do so is decided by `extendedClientCapabilities`
+(`LspManager.javaExtendedClientCapabilities`): a flag is declared only together with the code that
+drives its command.
+
+- [`lsp/JdtlsGenerate`](../../src/main/java/com/editora/lsp/JdtlsGenerate.java) — the
+  `java.action.*Prompt` commands: toString, hashCode/equals, constructors, override/implement, getters
+  and setters, delegate methods. A check request lists candidates, a `MultiSelectPicker` chooses, a
+  generate request answers with the edit. Delegate methods are two levels (a field, then its methods);
+  the accessor prompt's argument carries the accessor kind and must go back unchanged.
+- [`lsp/JdtlsRefactor`](../../src/main/java/com/editora/lsp/JdtlsRefactor.java) —
+  `java.action.applyRefactoringCommand` with `[name, CodeActionParams, info?]`. Move asks
+  `java/getMoveDestinations` (packages, or an instance method's parameters and fields) or
+  `java/searchSymbols` (the project's types) and then `java/move`; Extract Interface asks
+  `java/checkExtractInterfaceStatus`; Change Signature asks `java/getChangeSignatureInfo`, shows the
+  signature as one editable line and maps the edited parameters back to their `originalIndex` (by name,
+  then by type for a renamed one; `= value` marks a new parameter). Both end in `java/getRefactorEdit`,
+  which is also all an extract refactoring needs. jdtls offers Extract Interface only when
+  `advancedExtractRefactoringSupport` is declared as well, and Change Signature with no flag at all.
+
+`LspCoordinator.runGeneratePrompt` / `runRefactorCommand` intercept these before `applyCodeAction`;
+`LspManager.jdtlsRequest` / `jdtlsApplyEdit` send the custom requests, which must be registered on
+`JdtLanguageServer` or LSP4J drops their results. The server's own `errorMessage` is shown when it
+refuses. The opt-in `JdtlsRefactorProbeTest` runs every flow against a real jdtls
+(`./mvnw test -Dtest=JdtlsRefactorProbeTest -Dgroups=probe -Dlsp.probe=true`).
+
+### Code lenses
+
+`Settings.codeLens` (off by default). `LanguageServerSession.codeLens` requests
+`textDocument/codeLens` and resolves only the lenses on the lines asked for — jdtls counts references per
+lens. `LspManager.codeLensSpans` keeps the lenses that count references or implementations (told apart
+by command id; a lens that runs something is the server's own editor integration) and drops "0
+implementations". `LspCoordinator.requestCodeLens` follows the inlay-hint cadence with its own 450 ms
+settle; `EditorBuffer.setCodeLenses` draws each as an inlay after the end of its line,
+`editor/CodeLensShift` moves them with line edits until the next answer, and a click puts the caret on
+the declaration and runs Find References or Go to Implementation.
+
 ### LspCoordinator
 
 The whole integration lives in [`ui/LspCoordinator`](../../src/main/java/com/editora/ui/LspCoordinator.java)

@@ -3098,6 +3098,20 @@
     -fx-opacity: 0.8;
 }
 
+/* A code lens ("3 references") follows the end of its line: set apart from the code, upright so it
+   does not read as an inlay hint, and clickable. */
+.inlay.code-lens {
+    -fx-font-style: normal;
+    -fx-font-size: 0.85em;
+    -fx-padding: 0 0 0 1.5em;
+    -fx-cursor: hand;
+}
+
+.inlay.code-lens:hover {
+    -fx-text-fill: -color-accent-fg;
+    -fx-underline: true;
+}
+
 /* ---- Markdown selection format bar (floating, anchored above the selection) ---- */
 .markdown-format-bar {
     -fx-background-color: -color-bg-default;

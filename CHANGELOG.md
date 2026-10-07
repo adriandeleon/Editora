@@ -52,6 +52,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git: "Fetch automatically" (Settings → Git, off by default). The background fetch never prompts and
   runs only in a trusted folder or in a repository you fetched, pulled or pushed in during the session.
 - Git: the clone form takes a branch, a shallow depth and a submodules option.
+- **Java refactorings that ask where to, or what.** With the Java language server, the Code Actions menu
+  now carries out **Move** (a class to another package, a nested class to its own file or another class,
+  a static member to another class, an instance method onto one of its parameters or fields), **Extract
+  Interface** (choose the methods, name the interface, choose its package) and **Change Signature**. The
+  signature is edited as one line — `public String greet(Helper helper, int n)` — where you can rename the
+  method, change its visibility or return type, reorder, rename, retype or remove parameters, and add one
+  as `type name = value` (the value is what existing callers pass).
+- **Generate Getters and Setters** and **Generate Delegate Methods** open the same checkbox list as the
+  other Java generators, so you choose the fields, or the methods of a field, instead of getting all of
+  them.
+- **Code lenses** — the language server's reference and implementation counts, drawn after a declaration
+  (`3 references`). Click one to open the references or implementations. Off by default: Settings → Code
+  Completion, or `View: Toggle Code Lenses`.
+- **Tests in nested classes run from the gutter.** A method inside a JUnit `@Nested` class (or a static
+  nested test class) gets its own ▶, as does the nested class; Run and Debug target it as `Outer$Inner`.
+  A class whose tests are all in nested classes used to get no test markers at all.
 
 ### Changed
 
@@ -105,6 +121,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Git: reverting a merge commit asks which parent is the mainline instead of failing.
 - Git: a missing globally configured `blame.ignoreRevsFile` no longer empties the blame column.
 - Git: the Commit window's header no longer cuts the push indicator to "↑…".
+- Java's **Change signature** code action was listed and then failed with "Could not apply".
+- Git: a click on empty space or a section header in the branch dropdown no longer checks out the
+  selected branch; only a click on a row activates it. Dropdown actions are refused if another
+  repository became active while it was open.
+- Git: unstaging a renamed file also unstages the deletion of its old path, instead of leaving a
+  half-staged rename.
+- Git: the first push of a branch goes to the configured push remote (`branch.<name>.pushRemote`,
+  `remote.pushDefault`) or the only remote, instead of always `origin`.
+- Git: blame, status, diffs and file lists larger than 10 MB are no longer shown or cached in part.
+  Blame uses a compact format, so large files are annotated in full.
+- Git: staging a new executable file or symlink from the diff viewer keeps its mode.
+- Git: blame annotations and gutter change bars follow unsaved line insertions and deletions.
+- Git: the `Git Log: …` palette commands no longer act on a hidden log's remembered selection; they
+  open the log and ask for a commit.
+- Git: the Commit window keeps its selection, collapsed groups and scroll position across status
+  updates. Ctrl/Cmd+Enter no longer commits with nothing staged or while a commit is running, and text
+  typed during a commit is kept.
+- Git: Clone accepts `~` and relative destinations, creates missing parent folders and accepts an
+  existing empty folder.
+- Git: a repository created inside an already-open one is noticed without a manual refresh, and Git is
+  found again after being installed without restarting Editora.
+- Git: blame works in SHA-256 repositories; file names with non-ASCII characters plus a tab, quote or
+  backslash parse correctly under `core.quotePath=false`; an inherited `GIT_DIR` or `GIT_WORK_TREE` no
+  longer redirects every folder to one repository; the Git console no longer stalls on output lines
+  with very long runs of whitespace.
+- Git: remaining English-only error headers are localized, and relative times read "1 day ago" instead
+  of "1 days ago".
 - Following a log through a pattern filter no longer joins lines together (`ERROR bERROR c`), and a line
   written in two parts is no longer missed by the filter.
 - Pausing and resuming Follow no longer skips the lines written in between, and turning Follow on no

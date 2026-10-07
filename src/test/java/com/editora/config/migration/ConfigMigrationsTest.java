@@ -379,11 +379,11 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
-    /** v109→110: the automatic fetch is new — and off: nobody's editor starts talking to a remote on upgrade. */
+    /** v110→111: the automatic fetch is new — and off: nobody's editor starts talking to a remote on upgrade. */
     @Test
     void theAutomaticFetchArrivesSwitchedOffForExistingUsers() throws Exception {
-        JsonNode v109 = mapper.readTree("{\"schemaVersion\":109,\"gitSupport\":true,\"gitPullMode\":\"rebase\"}");
-        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v109.deepCopy(), mapper);
+        JsonNode v110 = mapper.readTree("{\"schemaVersion\":110,\"gitSupport\":true,\"gitPullMode\":\"rebase\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v110.deepCopy(), mapper);
         assertEquals(
                 com.editora.config.Settings.SCHEMA_VERSION,
                 out.get("schemaVersion").asInt(),
@@ -394,7 +394,7 @@ class ConfigMigrationsTest {
         assertFalse(loaded.isGitAutoFetch(), "off unless the user switches it on");
         assertEquals(10, loaded.getGitAutoFetchMinutes());
 
-        JsonNode chosen = mapper.readTree("{\"schemaVersion\":110,\"gitAutoFetch\":true,\"gitAutoFetchMinutes\":3}");
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":111,\"gitAutoFetch\":true,\"gitAutoFetchMinutes\":3}");
         com.editora.config.Settings kept = mapper.treeToValue(chosen, com.editora.config.Settings.class);
         assertTrue(kept.isGitAutoFetch());
         assertEquals(3, kept.getGitAutoFetchMinutes());
@@ -405,11 +405,11 @@ class ConfigMigrationsTest {
         assertEquals(com.editora.config.Settings.MAX_GIT_AUTO_FETCH_MINUTES, kept.getGitAutoFetchMinutes());
     }
 
-    /** v108→109: gitPullMode is new — an existing user's pull stays fast-forward only. */
+    /** v109→110: gitPullMode is new — an existing user's pull stays fast-forward only. */
     @Test
     void thePullModeSettingArrivesAsFastForwardOnlyForExistingUsers() throws Exception {
-        JsonNode v108 = mapper.readTree("{\"schemaVersion\":108,\"gitSupport\":true,\"gitPath\":\"/opt/git\"}");
-        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v108.deepCopy(), mapper);
+        JsonNode v109 = mapper.readTree("{\"schemaVersion\":109,\"gitSupport\":true,\"gitPath\":\"/opt/git\"}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v109.deepCopy(), mapper);
         assertEquals(
                 com.editora.config.Settings.SCHEMA_VERSION,
                 out.get("schemaVersion").asInt(),
@@ -420,7 +420,7 @@ class ConfigMigrationsTest {
         assertEquals("ff-only", loaded.getGitPullMode(), "what pull did before the setting existed");
         assertEquals(com.editora.git.GitPullMode.FF_ONLY, com.editora.git.GitPullMode.of(loaded.getGitPullMode()));
 
-        JsonNode chosen = mapper.readTree("{\"schemaVersion\":109,\"gitPullMode\":\"rebase\"}");
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":110,\"gitPullMode\":\"rebase\"}");
         assertEquals(
                 "rebase",
                 mapper.treeToValue(chosen, com.editora.config.Settings.class).getGitPullMode());
@@ -430,6 +430,22 @@ class ConfigMigrationsTest {
         assertEquals("ff-only", blank.getGitPullMode());
         blank.setGitPullMode(null);
         assertEquals("ff-only", blank.getGitPullMode());
+    }
+
+    /** v108→109: codeLens is new and off — nothing else in the file changes. */
+    @Test
+    void theCodeLensSettingArrivesOffWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v108 = mapper.readTree("{\"schemaVersion\":108,\"inlayHints\":true,\"lspEnabled\":true}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v108.deepCopy(), mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
+        assertTrue(out.get("inlayHints").asBoolean());
+        assertFalse(out.has("codeLens"), "left to the default");
+        assertFalse(mapper.treeToValue(out, com.editora.config.Settings.class).isCodeLens());
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":109,\"codeLens\":true}");
+        assertTrue(mapper.treeToValue(chosen, com.editora.config.Settings.class).isCodeLens());
     }
 
     /** v107→108: debugProgramConsole is new — nothing else in the file changes, and it starts at its default. */

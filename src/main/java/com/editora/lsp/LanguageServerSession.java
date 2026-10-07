@@ -561,6 +561,7 @@ final class LanguageServerSession implements LanguageClient {
         td.setSelectionRange(new org.eclipse.lsp4j.SelectionRangeCapabilities()); // expand/shrink (#739)
         td.setDocumentHighlight(new org.eclipse.lsp4j.DocumentHighlightCapabilities()); // occurrences (#675)
         td.setInlayHint(new org.eclipse.lsp4j.InlayHintCapabilities()); // parameter/type hints (#681)
+        td.setCodeLens(new org.eclipse.lsp4j.CodeLensCapabilities()); // reference/implementation counts
         td.setCallHierarchy(new org.eclipse.lsp4j.CallHierarchyCapabilities()); // who-calls-this (#682)
         td.setTypeHierarchy(new org.eclipse.lsp4j.TypeHierarchyCapabilities()); // super/subtypes (#682)
         // Rename (#676): prepareSupport lets the server validate the position + hand us the placeholder.
@@ -1319,6 +1320,57 @@ final class LanguageServerSession implements LanguageClient {
                 request,
                 request.<List<org.eclipse.lsp4j.InlayHint>>thenApply(l -> l == null ? List.of() : List.copyOf(l))
                         .exceptionally(t -> List.of()));
+    }
+
+    /** The most lenses resolved for one window; each resolve is a search on the server. */
+    static final int MAX_RESOLVED_CODE_LENSES = 80;
+
+    /**
+     * The code lenses on lines {@code [startLine..endLine]} ({@code textDocument/codeLens}), each resolved
+     * to its command ({@code codeLens/resolve}) when the server left that for later — or empty. A lens
+     * outside the window is not resolved: jdtls counts references per lens, so resolving a whole file
+     * costs a search per declaration for text nobody is looking at.
+     */
+    CompletableFuture<List<org.eclipse.lsp4j.CodeLens>> codeLens(String uri, int startLine, int endLine) {
+        if (!ready()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        var request = bounded(server.getTextDocumentService()
+                .codeLens(new org.eclipse.lsp4j.CodeLensParams(new TextDocumentIdentifier(uri))));
+        var options = capabilities() == null ? null : capabilities().getCodeLensProvider();
+        boolean resolves = options != null && Boolean.TRUE.equals(options.getResolveProvider());
+        List<CompletableFuture<org.eclipse.lsp4j.CodeLens>> resolving =
+                new java.util.concurrent.CopyOnWriteArrayList<>();
+        CompletableFuture<List<org.eclipse.lsp4j.CodeLens>> result = request.thenCompose(lenses -> {
+            List<CompletableFuture<org.eclipse.lsp4j.CodeLens>> each = new ArrayList<>();
+            for (org.eclipse.lsp4j.CodeLens lens : lenses == null ? List.<org.eclipse.lsp4j.CodeLens>of() : lenses) {
+                if (lens == null || lens.getRange() == null || each.size() >= MAX_RESOLVED_CODE_LENSES) {
+                    continue;
+                }
+                int line = lens.getRange().getStart().getLine();
+                if (line < startLine || line > endLine) {
+                    continue;
+                }
+                if (lens.getCommand() != null || !resolves) {
+                    each.add(CompletableFuture.completedFuture(lens));
+                } else {
+                    var resolve = bounded(server.getTextDocumentService().resolveCodeLens(lens));
+                    resolving.add(resolve);
+                    each.add(resolve.exceptionally(t -> null));
+                }
+            }
+            return CompletableFuture.allOf(each.toArray(CompletableFuture[]::new))
+                    .thenApply(done -> each.stream()
+                            .map(f -> f.getNow(null))
+                            .filter(l -> l != null && l.getCommand() != null)
+                            .toList());
+        });
+        result.whenComplete((value, error) -> {
+            if (result.isCancelled()) {
+                resolving.forEach(f -> f.cancel(true));
+            }
+        });
+        return cancelling(request, result.exceptionally(t -> List.of()));
     }
 
     /** Call-hierarchy anchor at a position ({@code textDocument/prepareCallHierarchy}) → items or empty. */
