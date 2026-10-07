@@ -147,10 +147,75 @@ final class DiffCoordinator {
     });
     private DiffEngine.DiffOptions lastDiffOptions = DiffEngine.DiffOptions.DEFAULT;
 
+    /** The editor-side change commands (next/previous, peek, revert, stage); they stage through this class. */
+    private final GitHunkCoordinator hunks;
+
     DiffCoordinator(CoordinatorHost host, GitCoordinator git, Ops ops) {
         this.host = host;
         this.git = git;
         this.ops = ops;
+        this.hunks = new GitHunkCoordinator(host, git, this);
+    }
+
+    GitHunkCoordinator hunks() {
+        return hunks;
+    }
+
+    /** Saves {@code buffer} through the window's normal save path; false when it could not be saved. */
+    boolean saveBuffer(EditorBuffer buffer) {
+        return ops.saveBuffer(buffer);
+    }
+
+    /**
+     * Stages part of {@code file}'s unstaged changes on behalf of the editor's Stage Hunk: the index entry
+     * becomes {@code edit(index text, working text)}, written through the same blob rewrite and index
+     * compare-and-swap as the diff viewer's Stage Hunk (so a CRLF or Latin-1 blob keeps its bytes). The
+     * working text is read from disk — what git diffed — not from the buffer. {@code edit} answering
+     * {@code null} means the hunk no longer fits and nothing is staged.
+     */
+    void stageFromEditor(
+            Path root, String repoRel, Path file, java.util.function.BinaryOperator<String> edit, Runnable staged) {
+        String ecCharset = ops.editorConfigCharset(file);
+        String openCharset = openCharset(file);
+        git.service().showBlob(root, ":" + repoRel, index -> {
+            if (index.truncated() || !index.found()) {
+                host.setStatus(tr("status.diff.hunkStale", repoRel));
+                return;
+            }
+            submitFileRead(() -> {
+                byte[] working;
+                try {
+                    working = Files.size(file) > MAX_SIDE_BYTES ? null : Files.readAllBytes(file);
+                } catch (IOException unreadable) {
+                    working = null;
+                }
+                byte[] bytes = working;
+                javafx.application.Platform.runLater(() -> {
+                    String before = DiffSideText.decode(index.bytes(), ecCharset, openCharset)
+                            .text();
+                    String after = bytes == null
+                            ? null
+                            : edit.apply(
+                                    before,
+                                    DiffSideText.decode(bytes, ecCharset, openCharset)
+                                            .text());
+                    if (after == null) {
+                        host.setStatus(tr("status.diff.hunkStale", repoRel));
+                        return;
+                    }
+                    stageRewritten(
+                            root, repoRel, index, index.bytes(), before, ecCharset, openCharset, after, result -> {
+                                if (result.ok()) {
+                                    host.setStatus(tr("status.diff.hunkStaged"));
+                                    git.afterMutation();
+                                    staged.run();
+                                } else {
+                                    host.setStatus(tr("status.diff.hunkStale", result.message()));
+                                }
+                            });
+                });
+            });
+        });
     }
 
     /**
@@ -1396,7 +1461,7 @@ final class DiffCoordinator {
                     request.beforeText(),
                     ecCharset,
                     openCharset,
-                    request,
+                    request.afterText(),
                     done);
             return;
         }
@@ -1404,7 +1469,8 @@ final class DiffCoordinator {
             byte[] working = EditorConfigCharset.encode(
                     com.editora.editor.LineEndings.apply(open.getContent(), open.getLineEnding()),
                     open.getEffectiveCharset());
-            stageRewritten(root, repoRel, expectedBlob, working, null, ecCharset, openCharset, request, done);
+            stageRewritten(
+                    root, repoRel, expectedBlob, working, null, ecCharset, openCharset, request.afterText(), done);
             return;
         }
         submitFileRead(() -> {
@@ -1415,8 +1481,8 @@ final class DiffCoordinator {
                 working = new byte[0];
             }
             byte[] bytes = working;
-            javafx.application.Platform.runLater(
-                    () -> stageRewritten(root, repoRel, expectedBlob, bytes, null, ecCharset, null, request, done));
+            javafx.application.Platform.runLater(() -> stageRewritten(
+                    root, repoRel, expectedBlob, bytes, null, ecCharset, null, request.afterText(), done));
         });
     }
 
@@ -1433,7 +1499,7 @@ final class DiffCoordinator {
             String shownText,
             String ecCharset,
             String openCharset,
-            DiffViewerPane.GitHunkRequest request,
+            String afterText,
             Consumer<com.editora.process.ProcessRunner.Result> done) {
         EditorConfigCharset.Decoded decoded = DiffSideText.decodeRaw(original, ecCharset, openCharset);
         byte[] blob = BlobRewrite.rewrite(
@@ -1441,7 +1507,7 @@ final class DiffCoordinator {
                 EditorConfigCharset.charsetFor(decoded.charset()),
                 EditorConfigCharset.bomFor(decoded.charset()),
                 shownText == null ? decoded.text() : shownText,
-                request.afterText());
+                afterText);
         if (blob == null) {
             host.setStatus(tr("status.diff.hunkEncoding"));
             return;

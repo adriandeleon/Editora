@@ -175,6 +175,39 @@ public final class OverlayHost {
      * the top like the command palette, or in the vertical middle when {@code centered}.
      */
     private void show(Node content, Node anchor, boolean centered, boolean below, Runnable onShown, Runnable onHidden) {
+        Runnable position = anchor == null
+                ? null
+                : below ? () -> positionBelow(content, anchor) : () -> positionAbove(content, anchor);
+        show(content, position, centered, onShown, onHidden);
+    }
+
+    /**
+     * Shows {@code content} at a point of the scene rather than at a node — for a card that belongs to a
+     * line of text. Its top-left goes to ({@code sceneX}, {@code belowY}); when it would not fit between
+     * there and the bottom of the window its bottom edge goes to {@code aboveY} instead, so it never covers
+     * the line it is about.
+     */
+    public void showAt(Node content, double sceneX, double belowY, double aboveY, Runnable onShown, Runnable onHidden) {
+        show(content, () -> positionAt(content, sceneX, belowY, aboveY), false, onShown, onHidden);
+    }
+
+    private void positionAt(Node content, double sceneX, double belowY, double aboveY) {
+        javafx.geometry.Point2D below = overlayRoot.sceneToLocal(sceneX, belowY);
+        javafx.geometry.Point2D above = overlayRoot.sceneToLocal(sceneX, aboveY);
+        double height = content.prefHeight(-1);
+        double left = clampLeft(below.getX(), contentWidth(content), overlayRoot.getWidth());
+        double gap = 2;
+        if (below.getY() + gap + height <= overlayRoot.getHeight() - 4 || above.getY() - gap - height < 4) {
+            StackPane.setAlignment(content, Pos.TOP_LEFT);
+            StackPane.setMargin(content, new Insets(Math.max(4, below.getY() + gap), 0, 0, left));
+        } else {
+            StackPane.setAlignment(content, Pos.BOTTOM_LEFT);
+            StackPane.setMargin(
+                    content, new Insets(0, 0, Math.max(4, overlayRoot.getHeight() - above.getY() + gap), left));
+        }
+    }
+
+    private void show(Node content, Runnable position, boolean centered, Runnable onShown, Runnable onHidden) {
         // Replacing one overlay with another (e.g. palette → file finder): clear the previous component's
         // flag, but keep the original focus owner so dismissal returns to the editor, not the prior card.
         if (showing.get()) {
@@ -190,7 +223,7 @@ public final class OverlayHost {
         }
         content.setTranslateX(0);
         content.setTranslateY(0);
-        if (anchor == null) {
+        if (position == null) {
             StackPane.setAlignment(content, centered ? Pos.CENTER : Pos.TOP_CENTER);
             StackPane.setMargin(content, centered ? Insets.EMPTY : new Insets(90, 0, 0, 0));
         }
@@ -198,7 +231,7 @@ public final class OverlayHost {
         overlayRoot.setVisible(true);
         overlayRoot.toFront();
         showing.set(true);
-        if (anchor != null) {
+        if (position != null) {
             // Force a CSS + layout pass so overlayRoot has its real height now (the card may be added this
             // pulse), then anchor the card. Above-anchoring pins the card's *bottom* via bottom-alignment +
             // a bottom margin rather than computing its top from a measured height: the message-log
@@ -208,7 +241,6 @@ public final class OverlayHost {
             // measuring. Below-anchoring is the mirror image, pinned from the top instead.
             overlayRoot.applyCss();
             overlayRoot.layout();
-            Runnable position = below ? () -> positionBelow(content, anchor) : () -> positionAbove(content, anchor);
             position.run();
             Platform.runLater(position); // re-pin after anchor bounds settle
         }

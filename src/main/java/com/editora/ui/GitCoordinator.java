@@ -132,6 +132,19 @@ final class GitCoordinator {
      *  actions to tell whether a file is untracked (so Revert = clean vs. checkout). */
     private java.util.Map<Path, com.editora.git.GitFileStatus> lastStatusByPath = java.util.Map.of();
 
+    /** Puts a file's diff against HEAD on its buffer's gutter. */
+    interface GutterSink {
+        void show(EditorBuffer buffer, GitService.GitDiff diff);
+    }
+
+    private GutterSink gutterSink =
+            (b, diff) -> b.setChangeBars(GitChangeBars.cssClassesByLine(diff.changes()), diff.hunks());
+
+    /** Replaces how a diff reaches a buffer; the editor's hunk commands also take the hunks from it. */
+    void setGutterSink(GutterSink sink) {
+        gutterSink = sink;
+    }
+
     private String branchName = "";
     private java.util.function.BiConsumer<Path, String> repositoryListener = (root, branch) -> {};
     private Runnable mutationListener = () -> {};
@@ -333,7 +346,7 @@ final class GitCoordinator {
                         || com.editora.config.PathKeys.sameNormalized(b.getPath(), state.diffFile()))) {
             // An empty map still marks the buffer as tracked (reserves the slot); hunk text feeds the
             // change-bar hover tooltip.
-            b.setChangeBars(GitChangeBars.cssClassesByLine(state.changes()), state.hunks());
+            gutterSink.show(b, new GitService.GitDiff(state.changes(), state.hunks(), state.hunkList()));
         }
         refreshBlame(b); // inline blame for the active file (no-op + clears when blame is off)
     }
@@ -365,7 +378,7 @@ final class GitCoordinator {
                         && !buf.isNarrowed()
                         && buf.getPath() != null
                         && com.editora.config.PathKeys.sameNormalized(buf.getPath(), path)) {
-                    buf.setChangeBars(GitChangeBars.cssClassesByLine(diff.changes()), diff.hunks());
+                    gutterSink.show(buf, diff);
                 }
             });
         });

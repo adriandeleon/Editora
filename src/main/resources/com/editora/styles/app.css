@@ -165,14 +165,77 @@
 .editor-area .fold-gutter .git-change-bar {
     -fx-background-color: transparent;
 }
+/* A marked row's bar is 8px wide to the mouse (it opens the change) but paints its inner 3px; the whole
+   width fills on hover, which is also what says "this can be clicked". */
+.editor-area .fold-gutter .git-change-bar.git-added,
+.editor-area .fold-gutter .git-change-bar.git-modified,
+.editor-area .fold-gutter .git-change-bar.git-deleted {
+    -fx-background-insets: 0 0 0 5;
+    -fx-cursor: hand;
+}
+.editor-area .fold-gutter .git-change-bar.git-added:hover,
+.editor-area .fold-gutter .git-change-bar.git-modified:hover {
+    -fx-background-insets: 0 0 0 2;
+}
 .editor-area .fold-gutter .git-change-bar.git-added {
     -fx-background-color: -color-success-emphasis;
 }
 .editor-area .fold-gutter .git-change-bar.git-modified {
     -fx-background-color: -color-accent-emphasis;
 }
-.editor-area .fold-gutter .git-change-bar.git-deleted {
-    -fx-background-color: -color-danger-emphasis;
+/* Lines removed above this row: a wedge on the row's top edge instead of a stripe down its side, so it
+   cannot be read as "this line was modified". */
+.editor-area .fold-gutter .git-change-bar .git-deleted-wedge {
+    -fx-fill: -color-danger-emphasis;
+}
+.editor-area .fold-gutter .git-change-bar.git-deleted:hover .git-deleted-wedge {
+    -fx-fill: -color-danger-fg;
+}
+
+/* The card a change bar opens (GitHunkPopup): the old lines over the new ones, each in a read-only text
+   area so they can be selected, washed like the diff viewer's removed/added rows. */
+.git-hunk-popup {
+    -fx-padding: 10 12 10 12;
+}
+.git-hunk-popup .git-hunk-caption {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 0 0 2;
+}
+.git-hunk-popup .git-hunk-side,
+.git-hunk-popup .git-hunk-side:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 6;
+    -fx-border-width: 0 0 0 3;
+    -fx-border-radius: 6;
+    -fx-padding: 0;
+}
+.git-hunk-popup .git-hunk-side .content {
+    -fx-background-radius: 6;
+    -fx-padding: 4 8 4 8;
+}
+.git-hunk-popup .git-hunk-side .scroll-pane,
+.git-hunk-popup .git-hunk-side .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+.git-hunk-popup .git-hunk-old {
+    -fx-border-color: -color-danger-emphasis;
+    -fx-text-fill: -color-fg-default;
+}
+.git-hunk-popup .git-hunk-old .content {
+    -fx-background-color: -color-danger-subtle;
+}
+.git-hunk-popup .git-hunk-new {
+    -fx-border-color: -color-success-emphasis;
+    -fx-text-fill: -color-fg-default;
+}
+.git-hunk-popup .git-hunk-new .content {
+    -fx-background-color: -color-success-subtle;
+}
+.git-hunk-popup .git-hunk-actions {
+    -fx-padding: 8 0 0 0;
 }
 /* Hover tooltip on a change bar: the hunk's unified diff, monospace so -/+ lines align. */
 .git-diff-tooltip {
@@ -1928,6 +1991,18 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
 }
+
+/* Git status of the tab's file, in the colours of the Project tree and the Commit window (same
+   .git-status-* classes, put on the Tab by TabGitStatus). After the read-only rule so a changed file that is
+   open read-only still shows its status; the unsaved amber is restated after it, because "you have not
+   saved this" outranks "this differs from HEAD" and the file will be modified once it is saved. */
+.tab.git-status-modified .tab-title { -fx-text-fill: -color-accent-fg; }
+.tab.git-status-added .tab-title { -fx-text-fill: -color-success-fg; }
+.tab.git-status-untracked .tab-title { -fx-text-fill: -state-olive; }
+.tab.git-status-renamed .tab-title { -fx-text-fill: -state-violet; }
+.tab.git-status-deleted .tab-title { -fx-text-fill: -color-fg-muted; }
+.tab.git-status-conflict .tab-title { -fx-text-fill: -color-danger-fg; }
+.tab .tab-header.dirty .tab-title { -fx-text-fill: -state-amber; }
 
 /* Tab drag-to-reorder: dim the tab being dragged, and show an insertion line on the
    target tab's leading/trailing edge for the side it would drop on. */

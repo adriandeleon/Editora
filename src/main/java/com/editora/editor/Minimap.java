@@ -93,6 +93,21 @@ final class Minimap extends Region {
 
     private boolean lintEnabled;
 
+    /**
+     * The buffer's Git changes as {@code {line, count, kind}} triples (see {@link GitGutterLines#marks()}),
+     * drawn as a thin stripe at the left edge. Asked for again only after {@link #gitMarksChanged()}: a
+     * scroll repaint reads the array it already has.
+     */
+    private java.util.function.Supplier<int[]> gitMarkSource = () -> NO_GIT_MARKS;
+
+    private int[] gitMarks = NO_GIT_MARKS;
+    private boolean gitMarksStale;
+    private static final int[] NO_GIT_MARKS = new int[0];
+    /** Added / modified / deleted, indexed by {@link GitHunk.Kind#ordinal()}; resolved per editor theme. */
+    private final Color[] gitColors = new Color[3];
+
+    private static final double GIT_STRIPE_WIDTH = 3;
+
     private static final Color ERROR_STRIPE = Color.web("#e5484d");
     private static final Color WARNING_STRIPE = Color.web("#e2a03f");
     private static final Color INFO_STRIPE = Color.web("#4c8eda");
@@ -113,6 +128,8 @@ final class Minimap extends Region {
         second.todoEnabled = todoEnabled;
         second.lintMarks = lintMarks;
         second.lintEnabled = lintEnabled;
+        second.gitMarkSource = gitMarkSource;
+        second.gitMarksStale = true;
         second.setRenderingActive(renderingActive);
         follower = second;
         return second;
@@ -135,6 +152,73 @@ final class Minimap extends Region {
         // moments the canvas is smaller than it (see CanvasGuards / layoutChildren).
         addEventHandler(ScrollEvent.SCROLL, this::wheelScroll);
         resizeRender.setOnFinished(e -> renderContent());
+        OverlayPalette.track(area, palette -> {
+            Color ground = OverlayPalette.backgroundOf(area);
+            boolean dark = OverlayPalette.isDark(ground);
+            gitColors[GitHunk.Kind.ADDED.ordinal()] =
+                    OverlayPalette.reach(Color.web(dark ? "#3fb950" : "#1a7f37"), ground, OverlayPalette.INDICATOR);
+            gitColors[GitHunk.Kind.MODIFIED.ordinal()] = palette.info();
+            gitColors[GitHunk.Kind.DELETED.ordinal()] = palette.error();
+            repaintStripes();
+        });
+    }
+
+    /** Sets where the Git change marks come from; they are read on the next repaint. */
+    void setGitMarks(java.util.function.Supplier<int[]> source) {
+        gitMarkSource = source == null ? () -> NO_GIT_MARKS : source;
+        gitMarksChanged();
+    }
+
+    /** The marks (or the lines they sit on) changed: re-read them on the next repaint. */
+    void gitMarksChanged() {
+        if (follower != null) {
+            follower.gitMarksChanged();
+        }
+        if (gitMarksStale) {
+            return; // already waiting for a repaint
+        }
+        gitMarksStale = true;
+        repaintStripes();
+    }
+
+    /** The marks as last drawn — the test seam for "they follow the buffer". */
+    int[] gitMarksForTest() {
+        refreshGitMarks();
+        return gitMarks;
+    }
+
+    private void refreshGitMarks() {
+        if (gitMarksStale) {
+            gitMarksStale = false;
+            int[] now = gitMarkSource.get();
+            gitMarks = now == null ? NO_GIT_MARKS : now;
+        }
+    }
+
+    /**
+     * Draws the Git changes as a thin stripe down the left edge: one run per change, at least two pixels
+     * tall so a single changed line of a long file is still there. A deletion is drawn last and one row
+     * high, on the boundary it happened at.
+     */
+    private void drawGitStripes(GraphicsContext g, double h, int total, double rowHeight) {
+        refreshGitMarks();
+        int[] marks = gitMarks;
+        if (marks.length == 0 || total == 0 || gitColors[0] == null) {
+            return;
+        }
+        for (int pass = 0; pass < 2; pass++) {
+            for (int i = 0; i + 2 < marks.length; i += 3) {
+                boolean deletion = marks[i + 2] == GitHunk.Kind.DELETED.ordinal();
+                if (deletion != (pass == 1)) {
+                    continue;
+                }
+                double markH = Math.max(2.0, deletion ? rowHeight : marks[i + 1] * rowHeight);
+                // Whole pixels: a 2px mark on a half pixel is smeared over three rows at half strength.
+                double y = Math.rint(clamp(marks[i], total) * rowHeight - (deletion ? markH / 2 : 0));
+                g.setFill(gitColors[marks[i + 2]]);
+                g.fillRect(0, Math.max(0, Math.min(y, h - markH)), GIT_STRIPE_WIDTH, Math.ceil(markH));
+            }
+        }
     }
 
     /** Sets the visual tab width (columns) and re-renders if it changed. */
@@ -582,6 +666,7 @@ final class Minimap extends Region {
         drawViewport(g, w);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
         drawLintStripes(g, w, h, total, rowHeight);
+        drawGitStripes(g, h, total, rowHeight);
         drawTodoStripes(g, h, total, rowHeight);
     }
 
@@ -627,6 +712,7 @@ final class Minimap extends Region {
         drawViewport(g, w);
         drawDiagnosticStripes(g, w, h, total, rowHeight);
         drawLintStripes(g, w, h, total, rowHeight);
+        drawGitStripes(g, h, total, rowHeight);
         drawTodoStripes(g, h, total, rowHeight);
     }
 
@@ -729,7 +815,8 @@ final class Minimap extends Region {
         for (TodoMark m : todoMarks) {
             g.setFill(TodoColors.solid(m.colorWeb()));
             double y = clamp(m.line(), total) * rowHeight;
-            g.fillRect(0, Math.min(y, h - markH), STRIPE_WIDTH, markH);
+            // Beside the Git stripe when there is one, so neither hides the other.
+            g.fillRect(gitMarks.length == 0 ? 0 : GIT_STRIPE_WIDTH + 1, Math.min(y, h - markH), STRIPE_WIDTH, markH);
         }
     }
 

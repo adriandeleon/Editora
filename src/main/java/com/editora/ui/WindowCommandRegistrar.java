@@ -2015,6 +2015,32 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("git.toggleBlame", host.git()::toggleBlame));
         host.registry()
                 .register(Command.of("git.blameShowCommit", () -> host.git().ifEnabled(host.git()::blameShowCommit)));
+        // The active file's changes, worked on in the editor (GitHunkCoordinator).
+        host.registry()
+                .register(Command.of(
+                        "git.nextChange",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().nextChange())));
+        host.registry()
+                .register(Command.of(
+                        "git.previousChange",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().previousChange())));
+        host.registry()
+                .register(Command.of(
+                        "git.peekChange",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().peekChange())));
+        host.registry()
+                .register(Command.of(
+                        "git.revertHunk",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().revertHunk())));
+        host.registry()
+                .register(Command.of(
+                        "git.stageHunk",
+                        () -> host.git()
+                                .ifEnabled(() -> host.diffCoordinator().hunks().stageHunk())));
         host.registry().register(Command.of("git.stash", () -> host.git().ifEnabled(host.git()::gitStash)));
         host.registry().register(Command.of("git.stashPop", () -> host.git().ifEnabled(host.git()::gitStashPop)));
         host.registry().register(Command.of("git.unstash", () -> host.git().ifEnabled(host.git()::gitUnstash)));

@@ -34,6 +34,8 @@
   "Cmd-S-k": "git.push",
   "Cmd-t": "git.pull",
   "C-S-back-quote": "git.switchBranch",
+  "C-M-S-down": "git.nextChange",
+  "C-M-S-up": "git.previousChange",
   "Cmd-6": "tool.problems",
   "Cmd-4": "tool.run",
   "Cmd-5": "tool.debug",
