@@ -580,6 +580,17 @@ Editora is built with the help of AI coding tools.
   push / pop-latest / apply / drop from the palette and the VCS menu; the branch dropdown (branches first,
   then the actions) offers *Stash Changes* and *Unstash…*. The VCS menu also reaches Stage All, Compare with
   Branch / Tag / Commit, Resolve Conflicts, Add to .gitignore and Initialize Repository. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
+  **Branch management** is on each row of the branch dropdown (its `⋯` button, a right-click, or the Menu key)
+  and on the palette: new branch from any branch or tag (with or without switching), rename, merge into the
+  current branch, rebase the current branch onto another, set / unset upstream, compare a branch with the
+  current one (the changed-files review), check out a tag or revision by name, and delete — a local branch
+  with unmerged commits, and a branch on its remote, only after a confirmation that says what is lost. A merge
+  or rebase that stops on conflicts says so and leaves the operation in progress. With several remotes the
+  dropdown groups remote branches by remote. **Push** variants: *Push to…* (another remote or branch name),
+  *Push Tags*, and *Force Push*, which is always `--force-with-lease`; a push the remote rejects because it has
+  newer commits offers *Pull, then Push*, *Force with Lease* or Cancel. *Git: Manage Remotes…* lists the remotes
+  (URLs shown without stored credentials) to add, rename, re-point, fetch, prune or remove them, and *Git:
+  Manage Worktrees…* lists the work trees to add one, open it in a new window, remove or prune.
 - **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
   highlights, curved change ribbons and an overview track, collapsed unchanged context, whitespace/wrap
   controls, case-insensitive matching, smart or positional changed-line alignment, state-preserving live

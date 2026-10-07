@@ -980,6 +980,107 @@ public final class GitService {
         return new String[] {"push"};
     }
 
+    /** Whether {@code branch} is no branch at all: blank, or the {@code (detached)} marker of a detached HEAD. */
+    public static boolean isDetached(String branch) {
+        return branch == null || branch.isBlank() || branch.startsWith("(");
+    }
+
+    /**
+     * The argv of a forced push of the current branch — always {@code --force-with-lease}, never a bare
+     * {@code --force}: the remote branch is replaced only if it is still where this repository last saw it,
+     * so commits someone else pushed in the meantime are not silently destroyed. A tracked branch pushes to
+     * its upstream; an untracked one is pushed, and tracked, like a first {@link #pushArgs push}. Empty for a
+     * detached HEAD or an unusable name: there is no branch to force. Pure — unit-tested.
+     */
+    public static String[] forcePushArgs(String branch, String upstream, String remote) {
+        String ref = "refs/heads/" + branch;
+        if (isDetached(branch) || !GitSafety.isSafeRevision(ref)) {
+            return new String[0];
+        }
+        if (upstream != null && !upstream.isBlank()) {
+            return new String[] {"push", "--force-with-lease"};
+        }
+        if (!GitSafety.isSafeRevision(remote)) {
+            return new String[0];
+        }
+        return new String[] {"push", "--force-with-lease", "--set-upstream", remote, ref};
+    }
+
+    /** {@link #forcePushArgs(String, String, String)} with the remote left to {@link #runNetwork}. */
+    public static String[] forcePushArgs(String branch, String upstream) {
+        return forcePushArgs(branch, upstream, PUSH_REMOTE);
+    }
+
+    /**
+     * The argv that pushes local {@code branch} to {@code remoteBranch} on {@code remote} — a remote other
+     * than the tracked one, or another name there. {@code setUpstream} also makes it the branch's upstream.
+     * Both sides are full refs, so neither can be read as an option or mistaken for a tag. Empty when a name
+     * is unusable ({@link GitRefNames}). Pure — unit-tested.
+     */
+    static String[] pushToArgs(
+            boolean endOfOptions, String remote, String branch, String remoteBranch, boolean setUpstream) {
+        if (isDetached(branch)
+                || !GitRefNames.isValidBranch(branch)
+                || !GitRefNames.isValidBranch(remoteBranch)
+                || !GitSafety.isSafeRevision(remote)) {
+            return new String[0];
+        }
+        List<String> argv = new ArrayList<>(List.of("push"));
+        if (setUpstream) {
+            argv.add("--set-upstream");
+        }
+        argv.addAll(
+                GitSafety.revisionArgs(endOfOptions, remote, "refs/heads/" + branch + ":refs/heads/" + remoteBranch));
+        return argv.toArray(String[]::new);
+    }
+
+    public static String[] pushToArgs(String remote, String branch, String remoteBranch, boolean setUpstream) {
+        return pushToArgs(endOfOptions, remote, branch, remoteBranch, setUpstream);
+    }
+
+    /** {@code push --tags <remote>}: every local tag the remote lacks. Empty for an unusable remote. Pure. */
+    static String[] pushTagsArgs(boolean endOfOptions, String remote) {
+        if (!GitSafety.isSafeRevision(remote)) {
+            return new String[0];
+        }
+        List<String> argv = new ArrayList<>(List.of("push", "--tags"));
+        argv.addAll(GitSafety.revisionArgs(endOfOptions, remote));
+        return argv.toArray(String[]::new);
+    }
+
+    public static String[] pushTagsArgs(String remote) {
+        return pushTagsArgs(endOfOptions, remote);
+    }
+
+    /**
+     * {@code push --delete <remote> refs/heads/<branch>}: removes the branch on the remote. The full ref keeps
+     * a tag of the same name out of it. Empty when a name is unusable. Pure — unit-tested.
+     */
+    static String[] deleteRemoteBranchArgs(boolean endOfOptions, String remote, String branch) {
+        String ref = "refs/heads/" + branch;
+        if (branch == null || branch.isBlank() || !GitSafety.isSafeRevision(ref) || !GitSafety.isSafeRevision(remote)) {
+            return new String[0];
+        }
+        List<String> argv = new ArrayList<>(List.of("push", "--delete"));
+        argv.addAll(GitSafety.revisionArgs(endOfOptions, remote, ref));
+        return argv.toArray(String[]::new);
+    }
+
+    public static String[] deleteRemoteBranchArgs(String remote, String branch) {
+        return deleteRemoteBranchArgs(endOfOptions, remote, branch);
+    }
+
+    /**
+     * An argv for a command built outside this class: {@code options}, then {@code --end-of-options} when the
+     * installed git has it, then {@code positional} — the refs, remotes and paths, which are repository data
+     * or typed text and must never be read as options.
+     */
+    public static String[] guarded(List<String> options, String... positional) {
+        List<String> argv = new ArrayList<>(options);
+        argv.addAll(GitSafety.revisionArgs(endOfOptions, positional));
+        return argv.toArray(String[]::new);
+    }
+
     /**
      * The remote a first push of {@code branch} goes to, from the repository's configuration
      * ({@code git config --list -z}: {@code key\nvalue} records separated by NUL) and its remote names. Git's
@@ -1066,8 +1167,13 @@ public final class GitService {
 
     /** Local branches (with tracking info), remote branch short-names, and the remote URL (origin's, or
      *  the first remote's; empty when there's no remote) — for the branch popup. */
-    public record Branches(List<BranchInfo> local, List<String> remote, String remoteUrl) {
+    public record Branches(List<BranchInfo> local, List<String> remote, String remoteUrl, List<String> remoteNames) {
         public static final Branches EMPTY = new Branches(List.of(), List.of(), "");
+
+        /** Without the remotes' names — {@link GitRemotes#split} then splits at the first slash. */
+        public Branches(List<BranchInfo> local, List<String> remote, String remoteUrl) {
+            this(local, remote, remoteUrl, List.of());
+        }
     }
 
     /** Lists local ({@code refs/heads}) + remote ({@code refs/remotes}) branches, posted on the FX thread. */
@@ -1075,7 +1181,8 @@ public final class GitService {
         submit(exec, () -> {
             Branches result = Branches.EMPTY;
             if (gitAvailable() && root != null) {
-                result = new Branches(localBranches(root), remoteBranchNames(root), remoteUrl(root));
+                result = new Branches(
+                        localBranches(root), remoteBranchNames(root), remoteUrl(root), remoteNamesNow(root));
             }
             Branches posted = result;
             Platform.runLater(() -> onResult.accept(posted));
@@ -1186,6 +1293,114 @@ public final class GitService {
             }
         }
         return new int[] {ahead, behind};
+    }
+
+    // --- remotes, work trees, ref comparison -----------------------------------------------------
+
+    /** The names of the repository's remotes, in git's order. Runs on the calling (service) thread. */
+    private static List<String> remoteNamesNow(Path root) {
+        ProcessRunner.Result r = git(root, QUICK, "remote");
+        return r.ok()
+                ? r.out().lines().map(String::strip).filter(n -> !n.isEmpty()).toList()
+                : List.of();
+    }
+
+    /** Lists the remotes with their URLs ({@code git remote -v}), posted on the FX thread. */
+    public void remotes(Path root, Consumer<List<GitRemotes.Remote>> onResult) {
+        submit(exec, () -> {
+            List<GitRemotes.Remote> remotes = List.of();
+            if (gitAvailable() && root != null) {
+                ProcessRunner.Result r = git(root, QUICK, "remote", "-v");
+                if (r.ok()) {
+                    remotes = GitRemotes.parse(r.out());
+                }
+            }
+            List<GitRemotes.Remote> posted = remotes;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** The remote a push of {@code branch} goes to ({@link #pushRemote}), posted on the FX thread. */
+    public void pushRemoteOf(Path root, String branch, Consumer<String> onResult) {
+        submit(exec, () -> {
+            String remote = "origin";
+            if (gitAvailable() && root != null) {
+                ProcessRunner.Result config = git(root, QUICK, "config", "--list", "-z");
+                remote = pushRemote(config.ok() ? config.out() : "", branch, remoteNamesNow(root));
+            }
+            String posted = remote;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /** Lists the repository's work trees ({@code git worktree list --porcelain}), posted on the FX thread. */
+    public void worktrees(Path root, Consumer<List<GitWorktrees.Worktree>> onResult) {
+        submit(exec, () -> {
+            List<GitWorktrees.Worktree> trees = List.of();
+            if (gitAvailable() && root != null) {
+                ProcessRunner.Result r = git(root, QUICK, "worktree", "list", "--porcelain");
+                if (r.ok()) {
+                    trees = GitWorktrees.parse(r.out());
+                }
+            }
+            List<GitWorktrees.Worktree> posted = trees;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /**
+     * How many commits of local {@code branch} are not reachable from {@code HEAD} — what deleting it would
+     * leave without a branch, as far as the checked-out one is concerned. {@code -1} when it cannot be told.
+     */
+    public void unmergedCount(Path root, String branch, Consumer<Integer> onResult) {
+        submit(exec, () -> {
+            int count = -1;
+            String range = "HEAD..refs/heads/" + branch;
+            if (gitAvailable() && root != null && GitSafety.isSafeRevision(range)) {
+                List<String> args = new ArrayList<>(List.of("rev-list", "--count"));
+                args.addAll(GitSafety.revisionArgs(endOfOptions, range));
+                ProcessRunner.Result r = git(root, QUICK, args.toArray(String[]::new));
+                if (r.ok()) {
+                    try {
+                        count = Integer.parseInt(r.out().strip());
+                    } catch (NumberFormatException notACount) {
+                        count = -1;
+                    }
+                }
+            }
+            int posted = count;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
+    /**
+     * Lists the files that differ between two revisions ({@code git diff --name-status <left> <right>}) — the
+     * ref↔ref form of {@link #workingTreeDiff}, with the same result type, limit and disabled rename
+     * detection, so one review surface serves both.
+     */
+    public void refDiff(Path root, String left, String right, Consumer<WorkingTreeDiff> onResult) {
+        submit(exec, () -> {
+            WorkingTreeDiff result = new WorkingTreeDiff(List.of(), false, "Git is not available");
+            if (gitAvailable() && root != null) {
+                if (!GitSafety.isSafeRevision(left) || !GitSafety.isSafeRevision(right)) {
+                    result = new WorkingTreeDiff(
+                            List.of(),
+                            false,
+                            "Unsafe revision name: " + (GitSafety.isSafeRevision(left) ? right : left));
+                } else {
+                    List<String> args = new ArrayList<>(
+                            List.of(GitSafety.LITERAL_PATHSPECS, "diff", "--name-status", "-z", "--no-renames"));
+                    args.addAll(GitSafety.revisionArgs(endOfOptions, left, right));
+                    args.add("--");
+                    ProcessRunner.Result changed = git(root, QUICK, args.toArray(String[]::new));
+                    result = changed.ok()
+                            ? mergeWorkingTreeDiff(changed.out(), "", MAX_WORKING_TREE_DIFF_FILES)
+                            : new WorkingTreeDiff(List.of(), false, changed.message());
+                }
+            }
+            WorkingTreeDiff posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
     }
 
     // --- clone -----------------------------------------------------------------------------------

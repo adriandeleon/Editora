@@ -137,6 +137,8 @@ final class GitCoordinator {
     private Runnable mutationListener = () -> {};
     private String upstream = "";
     private boolean supportApplied;
+    /** Replaces the body of {@link #gitPush} once the branch coordinator exists; null in a bare engine. */
+    Runnable pushHandler;
 
     GitCoordinator(CoordinatorHost host, WindowOps ops) {
         this.host = host;
@@ -146,6 +148,11 @@ final class GitCoordinator {
     /** The off-thread Git CLI facade (operations in {@code MainController} run their commands through it). */
     GitService service() {
         return service;
+    }
+
+    /** The window surfaces shared with {@link GitBranchCoordinator}, which is built from this engine. */
+    CoordinatorHost host() {
+        return host;
     }
 
     /** The active repo root, or {@code null} when the current context isn't inside a repo. */
@@ -915,7 +922,7 @@ final class GitCoordinator {
         aroundWorkingTreeMutation(repoRoot, operation, report, afterReload);
     }
 
-    private void aroundWorkingTreeMutation(
+    void aroundWorkingTreeMutation(
             Path root,
             Consumer<Consumer<ProcessRunner.Result>> operation,
             Consumer<ProcessRunner.Result> report,
@@ -1044,6 +1051,10 @@ final class GitCoordinator {
      */
     void gitPush() {
         if (reportIfNoRepo()) {
+            return;
+        }
+        if (pushHandler != null) {
+            pushHandler.run(); // GitBranchCoordinator.push: the same push, with an answer to a rejection
             return;
         }
         gitSync(tr("gitlabel.push"), GitService.pushArgs(branchName, upstream));

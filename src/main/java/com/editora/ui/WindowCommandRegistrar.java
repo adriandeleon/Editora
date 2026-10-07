@@ -1944,6 +1944,7 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of("git.switchBranch", () -> host.git().ifEnabled(host.gitWindows()::chooseBranch)));
         host.registry().register(Command.of("git.newBranch", () -> host.git().ifEnabled(host.git()::newBranch)));
+        registerGitBranchCommands();
         // No ifEnabled: a clone runs with no repository at all.
         host.registry().register(Command.of("git.cancel", () -> host.git().cancelNetworkCommand()));
         host.registry().register(Command.of("git.fetch", () -> host.git().ifEnabled(host.gitWindows()::fetch)));
@@ -2506,5 +2507,38 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "nav.endOfDefun", () -> host.editing().sexpMove(com.editora.editops.SexpNav::endOfDefun)));
         host.registry().register(Command.of("nav.moveToWindowLine", host.editing()::moveToWindowLine));
+    }
+
+    /** Branch, push-variant, remote and work-tree commands ({@link GitBranchCoordinator}); all Git-gated. */
+    private void registerGitBranchCommands() {
+        GitBranchCoordinator branches = host.gitWindows().branches;
+        // A work tree opens as a project in its own window, like any other folder.
+        branches.setWindowOpener(folder -> host.windowManager()
+                .openOrFocus(host.config()
+                        .projects()
+                        .createOrGet(
+                                folder.getFileName() == null
+                                        ? folder.toString()
+                                        : folder.getFileName().toString(),
+                                folder)));
+        java.util.Map<String, Runnable> commands = new java.util.LinkedHashMap<>();
+        commands.put("git.newBranchFrom", branches::newBranchFrom);
+        commands.put("git.checkoutRevision", branches::checkoutRevision);
+        commands.put("git.renameBranch", branches::renameBranch);
+        commands.put("git.deleteBranch", branches::deleteBranch);
+        commands.put("git.deleteRemoteBranch", branches::deleteRemoteBranch);
+        commands.put("git.mergeBranch", branches::mergeBranch);
+        commands.put("git.rebaseOnto", branches::rebaseOnto);
+        commands.put("git.compareBranch", branches::compareWithCurrent);
+        commands.put("git.setUpstream", branches::setUpstream);
+        commands.put("git.unsetUpstream", branches::unsetUpstream);
+        commands.put("git.pushTo", branches::pushTo);
+        commands.put("git.pushForce", branches::pushForce);
+        commands.put("git.pushTags", branches::pushTags);
+        commands.put("git.fetchRemote", branches::fetchRemote);
+        commands.put("git.remotes", branches::manageRemotes);
+        commands.put("git.worktrees", branches::manageWorktrees);
+        commands.forEach((id, action) ->
+                host.registry().register(Command.of(id, () -> host.git().ifEnabled(action))));
     }
 }

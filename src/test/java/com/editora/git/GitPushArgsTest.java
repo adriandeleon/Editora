@@ -102,4 +102,92 @@ class GitPushArgsTest {
         assertEquals(
                 "mine", GitService.pushRemote(config("branch.release/1.2.pushremote", "mine"), "release/1.2", both));
     }
+
+    // --- force / push-to / tags / delete-remote ---------------------------------------------------
+
+    /** A forced push is never a bare --force: the lease protects commits fetched by nobody yet. */
+    @Test
+    void aForcedPushAlwaysCarriesTheLease() {
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease"}, GitService.forcePushArgs("main", "origin/main", "origin"));
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease", "--set-upstream", "fork", "refs/heads/topic"},
+                GitService.forcePushArgs("topic", "", "fork"));
+        assertArrayEquals(
+                new String[] {"push", "--force-with-lease", "--set-upstream", GitService.PUSH_REMOTE, "refs/heads/topic"
+                },
+                GitService.forcePushArgs("topic", null));
+        for (String[] argv : List.of(
+                GitService.forcePushArgs("main", "origin/main", "origin"),
+                GitService.forcePushArgs("topic", "", "fork"))) {
+            assertEquals(false, List.of(argv).contains("--force"), "a bare --force must never be emitted");
+            assertEquals(false, List.of(argv).contains("-f"));
+        }
+    }
+
+    @Test
+    void aForcedPushIsRefusedOnADetachedHead() {
+        assertEquals(0, GitService.forcePushArgs("(detached)", "", "origin").length);
+        assertEquals(0, GitService.forcePushArgs("", "origin/main", "origin").length);
+        assertEquals(0, GitService.forcePushArgs(null, null, "origin").length);
+        assertEquals(0, GitService.forcePushArgs("topic", "", "-o").length, "an option-like remote is refused");
+        assertEquals(true, GitService.isDetached("(detached)"));
+        assertEquals(true, GitService.isDetached(" "));
+        assertEquals(false, GitService.isDetached("main"));
+    }
+
+    @Test
+    void pushToNamesBothSidesByTheirFullRefs() {
+        assertArrayEquals(
+                new String[] {"push", "fork", "refs/heads/topic:refs/heads/topic"},
+                GitService.pushToArgs(false, "fork", "topic", "topic", false));
+        assertArrayEquals(
+                new String[] {
+                    "push",
+                    "--set-upstream",
+                    GitSafety.END_OF_OPTIONS,
+                    "fork",
+                    "refs/heads/topic:refs/heads/review/topic"
+                },
+                GitService.pushToArgs(true, "fork", "topic", "review/topic", true));
+    }
+
+    @Test
+    void pushToRefusesUnusableNames() {
+        assertEquals(0, GitService.pushToArgs(false, "fork", "topic", "bad name", false).length);
+        assertEquals(0, GitService.pushToArgs(false, "fork", "topic", "-x", false).length);
+        assertEquals(0, GitService.pushToArgs(false, "fork", "topic", "a:b", false).length, "a second refspec colon");
+        assertEquals(0, GitService.pushToArgs(false, "-fork", "topic", "topic", false).length);
+        assertEquals(0, GitService.pushToArgs(false, "fork", "(detached)", "topic", false).length);
+    }
+
+    @Test
+    void pushTagsNamesTheRemote() {
+        assertArrayEquals(new String[] {"push", "--tags", "origin"}, GitService.pushTagsArgs(false, "origin"));
+        assertArrayEquals(
+                new String[] {"push", "--tags", GitSafety.END_OF_OPTIONS, "origin"},
+                GitService.pushTagsArgs(true, "origin"));
+        assertEquals(0, GitService.pushTagsArgs(false, "--mirror").length);
+    }
+
+    /** The full ref keeps a tag of the same name out of a remote-branch delete. */
+    @Test
+    void deletingARemoteBranchNamesItsFullRef() {
+        assertArrayEquals(
+                new String[] {"push", "--delete", "origin", "refs/heads/feature/x"},
+                GitService.deleteRemoteBranchArgs(false, "origin", "feature/x"));
+        assertArrayEquals(
+                new String[] {"push", "--delete", GitSafety.END_OF_OPTIONS, "origin", "refs/heads/-odd"},
+                GitService.deleteRemoteBranchArgs(true, "origin", "-odd"));
+        assertEquals(0, GitService.deleteRemoteBranchArgs(false, "origin", "").length);
+        assertEquals(0, GitService.deleteRemoteBranchArgs(false, "-origin", "x").length);
+    }
+
+    /** The push variants still get --progress and the remote placeholder resolved like a plain push. */
+    @Test
+    void theVariantsStayPushCommands() {
+        assertArrayEquals(
+                new String[] {"push", "--progress", "--force-with-lease"},
+                GitService.withProgress(GitService.forcePushArgs("main", "origin/main")));
+    }
 }
