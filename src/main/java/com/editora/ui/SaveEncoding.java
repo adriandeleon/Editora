@@ -21,6 +21,9 @@ import com.editora.editorconfig.EditorConfigCharset;
  *       of an unrelated Latin-1 character: the whole file becomes mojibake that is neither its old encoding
  *       nor meaningful UTF-8. There is nothing safe to write, so the save is refused and the offending
  *       character named.
+ *   <li><b>Text that is not text</b>: an unpaired surrogate, left behind by an edit that split an emoji.
+ *       No charset can represent it — not the file's, not UTF-8 — so this too is refused and the line named,
+ *       rather than written as {@code ?}.
  * </ul>
  */
 final class SaveEncoding {
@@ -28,12 +31,24 @@ final class SaveEncoding {
     /**
      * @param bytes the bytes to write, or null when the save is refused
      * @param fallbackFrom the charset that could not hold the text when {@code bytes} are UTF-8 instead
-     * @param refused the first character the assumed charset cannot represent, when the save is refused
+     * @param refused the first character that cannot be written — one the assumed charset cannot
+     *     represent, or an unpaired surrogate — when the save is refused
      */
     record Plan(byte[] bytes, String fallbackFrom, Unencodable refused) {}
 
     /** A character the charset has no encoding for, and the 1-based line it is on. */
-    record Unencodable(String character, int line) {}
+    record Unencodable(String character, int line) {
+
+        /** Half of a surrogate pair: not a character at all, so no charset has an encoding for it. */
+        boolean unpairedSurrogate() {
+            return character.length() == 1 && Character.isSurrogate(character.charAt(0));
+        }
+
+        /** The character as a message can show it; a lone surrogate has no glyph, so its code is given. */
+        String display() {
+            return unpairedSurrogate() ? String.format("U+%04X", (int) character.charAt(0)) : character;
+        }
+    }
 
     private SaveEncoding() {}
 
@@ -45,10 +60,35 @@ final class SaveEncoding {
         if (EditorConfigCharset.canEncode(text, charset)) {
             return new Plan(EditorConfigCharset.encode(text, charset, bom), null, null);
         }
+        // Half of a surrogate pair (an edit split an emoji) is why even UTF-8 or UTF-16 "cannot encode" a
+        // text. The UTF-8 fallback below cannot hold it either: String.getBytes wrote '?' in its place, put
+        // a byte-order mark on a file that had none, and the buffer was then marked clean over it.
+        Unencodable broken = firstUnpairedSurrogate(text);
+        if (broken != null) {
+            return new Plan(null, null, broken);
+        }
         if (assumed) {
             return new Plan(null, null, firstUnencodable(text, charset));
         }
         return new Plan(EditorConfigCharset.encode(text, EditorConfigCharset.UTF_8_BOM), charset, null);
+    }
+
+    /** The first half of a surrogate pair that stands alone in {@code text}, or null when there is none. */
+    static Unencodable firstUnpairedSurrogate(String text) {
+        int line = 1;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '\n') {
+                line++;
+            } else if (Character.isHighSurrogate(c)
+                    && i + 1 < text.length()
+                    && Character.isLowSurrogate(text.charAt(i + 1))) {
+                i++; // a whole pair
+            } else if (Character.isSurrogate(c)) {
+                return new Unencodable(String.valueOf(c), line);
+            }
+        }
+        return null;
     }
 
     static Unencodable firstUnencodable(String text, String charset) {

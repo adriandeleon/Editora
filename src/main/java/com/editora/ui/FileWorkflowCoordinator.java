@@ -1812,12 +1812,20 @@ final class FileWorkflowCoordinator {
         SavePayload payload = savePayload(buffer, content);
         if (payload.encoding().bytes() == null) {
             SaveEncoding.Unencodable first = payload.encoding().refused();
-            host.setStatus(tr(
-                    "status.save.cannotEncodeAssumed",
-                    buffer.getTitle(),
-                    com.editora.editorconfig.EditorConfigCharset.displayName(buffer.getEffectiveCharset()),
-                    first == null ? "?" : first.character(),
-                    first == null ? "?" : String.valueOf(first.line())));
+            host.setStatus(
+                    first != null && first.unpairedSurrogate()
+                            ? tr(
+                                    "status.save.cannotEncodeSurrogate",
+                                    buffer.getTitle(),
+                                    String.valueOf(first.line()),
+                                    first.display())
+                            : tr(
+                                    "status.save.cannotEncodeAssumed",
+                                    buffer.getTitle(),
+                                    com.editora.editorconfig.EditorConfigCharset.displayName(
+                                            buffer.getEffectiveCharset()),
+                                    first == null ? "?" : first.character(),
+                                    first == null ? "?" : String.valueOf(first.line())));
             return null;
         }
         pendingSaves.merge(buffer, 1, Integer::sum);

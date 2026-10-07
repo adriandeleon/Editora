@@ -5,6 +5,7 @@ import javafx.scene.input.KeyEvent;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -50,5 +51,19 @@ class MultiCaretsTest {
         assertFalse(MultiCarets.managerEdits(pressed(KeyCode.LEFT, false, false, false, false)));
         assertFalse(MultiCarets.managerEdits(pressed(KeyCode.A, false, false, false, false)));
         assertFalse(MultiCarets.managerEdits(pressed(KeyCode.Z, false, true, false, false)), "Undo is foreign");
+    }
+
+    @Test
+    void aColumnInsideASurrogatePairSnapsToItsStart() {
+        String line = "ab😀cd"; // the emoji is the two chars at columns 2 and 3
+        assertEquals(2, MultiCarets.wholeCharacterColumn(line, 3), "between the halves: back to before the pair");
+        assertEquals(2, MultiCarets.wholeCharacterColumn(line, 2));
+        assertEquals(4, MultiCarets.wholeCharacterColumn(line, 4));
+        assertEquals(0, MultiCarets.wholeCharacterColumn(line, 0));
+        assertEquals(6, MultiCarets.wholeCharacterColumn(line, 6));
+        assertEquals(6, MultiCarets.wholeCharacterColumn(line, 99), "clamped to the line");
+        assertEquals(0, MultiCarets.wholeCharacterColumn("", 3));
+        // A surrogate that is already unpaired is not a pair to protect.
+        assertEquals(1, MultiCarets.wholeCharacterColumn("\uD83Dx", 1));
     }
 }
