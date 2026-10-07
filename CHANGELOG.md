@@ -36,6 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- In an `.http` / `.rest` file, a `# @name x` comment now names the request wherever it appears. After a
+  `###` separator, with or without a title, it was ignored, so `{{x.response.body.$.id}}` in a later
+  request resolved to nothing unless the named request was the first in the file. A request with a
+  `### Title` and no `@name` can still be referred to by its title.
 - Following a log through a pattern filter no longer joins lines together (`ERROR bERROR c`), and a line
   written in two parts is no longer missed by the filter.
 - Pausing and resuming Follow no longer skips the lines written in between, and turning Follow on no

@@ -39,8 +39,55 @@ class HttpFileTest {
         assertEquals("Get users", rs.get(0).name());
         assertEquals("POST", rs.get(1).method());
         assertEquals("{{host}}/users", rs.get(1).url());
-        // The ### separator label is the display name; a # @name comment is only a fallback.
-        assertEquals("Create user", rs.get(1).name());
+        // A # @name comment is the name later requests refer to; the ### label is only the fallback.
+        assertEquals("createUser", rs.get(1).name());
+    }
+
+    @Test
+    void bareSeparatorDoesNotBlockNameComment() {
+        List<Request> rs = HttpFile.parse("""
+                ###
+                # @name create
+                POST https://example.com/items
+
+                ###
+                // @name fetch
+                GET https://example.com/items/{{create.response.body.$.id}}
+                """);
+        assertEquals(2, rs.size());
+        assertEquals("create", rs.get(0).name());
+        assertEquals("fetch", rs.get(1).name());
+        assertEquals("create", HttpFile.parseRequest(rs.get(0)).name());
+    }
+
+    @Test
+    void nameCommentWinsOverSeparatorLabel() {
+        List<Request> rs = HttpFile.parse("""
+                ### Create item
+                # @name create
+                POST https://example.com/items
+                """);
+        assertEquals(1, rs.size());
+        // As in the JetBrains HTTP Client: the title does not stop `{{create.response…}}` from resolving.
+        assertEquals("create", rs.get(0).name());
+    }
+
+    @Test
+    void namesSecondRequestAfterBareSeparator() {
+        List<Request> rs = HttpFile.parse("""
+                GET https://example.com/ping
+
+                ###
+                # @name create
+                POST https://example.com/items
+
+                ###
+                GET https://example.com/items
+                """);
+        assertEquals(3, rs.size());
+        assertNull(rs.get(0).name());
+        assertEquals("create", rs.get(1).name());
+        assertNull(rs.get(2).name());
     }
 
     @Test
