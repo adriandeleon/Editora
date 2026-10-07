@@ -396,6 +396,25 @@
 .git-toolbar-button.git-needs-push .toolbar-icon {
     -fx-fill: -color-accent-fg;
 }
+/* The banner shown above the change list while a merge, rebase, cherry-pick or revert is in progress (or
+   files are unmerged): an amber strip naming the operation, with Continue / Skip / Abort. The text stays
+   the default foreground — it is a sentence to read, on a tinted fill. */
+.git-operation-banner {
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 4;
+    -fx-border-color: -state-amber;
+    -fx-border-radius: 4;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 6 8 6 8;
+}
+.git-operation-banner .git-operation-label {
+    -fx-text-fill: -color-fg-default;
+    -fx-font-weight: bold;
+}
+.git-operation-banner .button {
+    -fx-padding: 2 8 2 8;
+    -fx-font-size: 12px;
+}
 /* Git error dialog body: monospace so command output (paths, hints) lines up. */
 .git-error-text {
     -fx-font-family: "JetBrains Mono", "monospace";

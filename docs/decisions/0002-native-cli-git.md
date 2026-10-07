@@ -39,6 +39,39 @@ gutter work behind it. Working-tree mutations are serialised across both.
   here" (`RepoState.refused()`/`refusal()`: dubious ownership, a bare repository, …) and "git is
   unavailable" are each believed only for a bounded time, and a cached root is revalidated against
   the `.git` entries between the folder and that root — stat calls, not a process per refresh.
+- **An operation in progress is state, read without a process.** A merge, rebase, cherry-pick or
+  revert that stopped (usually on a conflict) — and a bisect, for display — is carried in
+  `RepoState.operation()` (`git/GitOperation`). `GitOperation.detect` reads git's own state files in
+  the order `git status` uses: `rebase-merge/` / `rebase-apply/` (not `applying`, which is `git am`)
+  before `MERGE_HEAD`, then `CHERRY_PICK_HEAD`, `REVERT_HEAD`, the sequencer's `todo` (a multi-commit
+  pick between two commits has no `*_HEAD`), then `BISECT_LOG`. Those files are per work tree, so the
+  directory is the one `git rev-parse --git-dir` names (`.git/worktrees/<name>` for a linked work
+  tree); it is answered by the same `rev-parse --show-toplevel --git-dir` that resolves the root, kept
+  per root, and every status refresh then costs a few `stat` calls and no extra process. Unmerged paths come from the status itself. The window shows the state in the
+  status-bar segment (`main · MERGING`) and as a banner in the Commit window, with **Continue**
+  (`<op> --continue`; a merge is concluded by committing — with the box's message, which is prefilled
+  from `MERGE_MSG`, else `commit --no-edit --cleanup=strip`), **Skip** (`<op> --skip`, not for a
+  merge) and **Abort** (`<op> --abort`), also registered as `git.continueOperation`,
+  `git.skipOperation` and `git.abortOperation`. Continue is refused while files are unmerged; Skip
+  and Abort are confirmed because they discard work.
+- **Stopping on conflicts is not a failure.** A pull, revert, cherry-pick, rebase step or stash
+  pop/apply that exits non-zero having announced conflicts (`GitConflicts.stoppedOnConflict`, read
+  from git's pinned English output) opens the Commit window and says what to do instead of showing an
+  error dialog; the refresh that follows every mutation then puts up the banner and the **Conflicts**
+  group. A conflicted stash pop has no operation to continue or abort: the banner only counts the
+  unmerged files. Conflict rows offer Resolve (the three-way resolver), Accept Ours / Accept Theirs
+  (`checkout --ours/--theirs` then `add`, or `rm` when that side deleted the file —
+  `GitConflicts.acceptSide`) and Mark Resolved; staging a conflicted file that still contains markers
+  is confirmed, and Commit is disabled, with the reason in its tooltip, while any path is unmerged.
+- **Pull has a mode.** `Settings.gitPullMode` (`git/GitPullMode`): `ff-only` (the default, and the
+  only behaviour before the setting), `rebase` (`pull --rebase`) or `merge`
+  (`pull --no-rebase --no-edit`). A fast-forward-only pull that fails *because the branches diverged*
+  (`GitPullMode.diverged`) offers Rebase / Merge / Cancel rather than the error; `git.pullRebase` and
+  `git.pullMerge` run one mode regardless of the setting.
+- **No user command opens an editor.** `GIT_EDITOR=:` is part of every user command's environment:
+  commits get their message with `-m`, and `rebase --continue` or a merge commit keeps the prepared
+  one. Without it git started `$EDITOR` with no terminal and the command sat on the lane until the
+  mutation ceiling.
 - **A running user command can be stopped.** `GitService.cancelRunningCommand()` ends the network
   command if one is running, otherwise the local one (a commit waiting in a hook, a long checkout),
   with SIGTERM first so git removes its lock files; the rest of a multi-command job is not started.

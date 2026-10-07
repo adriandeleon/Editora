@@ -391,6 +391,7 @@ public class SettingsWindow {
     private Spinner<Integer> historyMaxTotalSpinner;
     private Label gitStatusLabel;
     private TextField gitPathField;
+    private ComboBox<com.editora.git.GitPullMode> gitPullModeCombo;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox htmlPreviewCheck;
@@ -1355,6 +1356,28 @@ public class SettingsWindow {
             config.getSettings().setGitPath(now);
             apply(); // applySupport pushes the command into GitService
             probeGit();
+        });
+
+        gitPullModeCombo = new ComboBox<>();
+        gitPullModeCombo.getItems().setAll(com.editora.git.GitPullMode.values());
+        gitPullModeCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(com.editora.git.GitPullMode mode) {
+                return mode == null ? "" : GitCoordinator.pullModeLabel(mode);
+            }
+
+            @Override
+            public com.editora.git.GitPullMode fromString(String label) {
+                return null; // not editable
+            }
+        });
+        gitPullModeCombo.setMinWidth(170); // no fixed width: the translated items differ a lot in length
+        gitPullModeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setGitPullMode(now.id());
+            apply();
         });
 
         githubCheck = new CheckBox(tr("settings.enableGithub"));
@@ -3432,6 +3455,11 @@ public class SettingsWindow {
                         tr("settings.git.blameInline.desc"),
                         new HBox(8, chordChip("git.toggleBlame"), switchFor(blameCheck))),
                 "git blame annotate inline author history line");
+        cardRow(
+                c2,
+                Category.GIT,
+                settingRow(tr("settings.git.pullMode"), tr("settings.git.pullMode.desc"), gitPullModeCombo),
+                "git pull mode fast-forward ff-only rebase merge diverged");
 
         row(p, Category.GIT, null, noteBox(tr("settings.liveNote")), "live apply ok palette command");
         return p;
@@ -7633,6 +7661,7 @@ public class SettingsWindow {
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
             gitPathField.setText(settings.getGitPath());
+            gitPullModeCombo.setValue(com.editora.git.GitPullMode.of(settings.getGitPullMode()));
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());
@@ -8004,6 +8033,8 @@ public class SettingsWindow {
         try {
             blameCheck.setSelected(config.getSettings().isGitBlameInline());
             blameCheck.setDisable(!config.getSettings().isGitSupport());
+            gitPullModeCombo.setValue(
+                    com.editora.git.GitPullMode.of(config.getSettings().getGitPullMode()));
         } finally {
             loading = prev;
         }

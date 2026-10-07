@@ -162,9 +162,9 @@ final class GitWindowCoordinator {
         host.git().gitSync(tr("gitlabel.fetch"), FETCH_ARGS);
     }
 
-    /** {@code git pull --ff-only}. */
+    /** {@code git pull} in the configured "Pull mode" (fast-forward only by default). */
     void pull() {
-        host.git().gitSync(tr("gitlabel.pull"), "pull", "--ff-only");
+        host.git().gitPull();
     }
 
     /**

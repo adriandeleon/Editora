@@ -1948,6 +1948,36 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("git.cancel", () -> host.git().cancelNetworkCommand()));
         host.registry().register(Command.of("git.fetch", () -> host.git().ifEnabled(host.gitWindows()::fetch)));
         host.registry().register(Command.of("git.pull", () -> host.git().ifEnabled(host.gitWindows()::pull)));
+        // The two ways out of a diverged branch, whatever the "Pull mode" setting says.
+        host.registry()
+                .register(Command.of(
+                        "git.pullRebase",
+                        () -> host.git().ifEnabled(() -> host.git().gitPull(com.editora.git.GitPullMode.REBASE))));
+        host.registry()
+                .register(Command.of(
+                        "git.pullMerge",
+                        () -> host.git().ifEnabled(() -> host.git().gitPull(com.editora.git.GitPullMode.MERGE))));
+        host.registry()
+                .register(Command.of(
+                        "git.setPullMode",
+                        () -> host.editorSettings()
+                                .chooseSetting(
+                                        "git.setPullMode",
+                                        () -> java.util.Arrays.stream(com.editora.git.GitPullMode.values())
+                                                .map(com.editora.git.GitPullMode::id)
+                                                .toList(),
+                                        id -> GitCoordinator.pullModeLabel(com.editora.git.GitPullMode.of(id)),
+                                        () -> host.git().pullMode().id(),
+                                        host.git()::setPullMode)));
+        // A merge, rebase, cherry-pick or revert that stopped (on a conflict): the Commit window's banner
+        // buttons, as commands. Each reports "nothing in progress" when there is no such operation.
+        host.registry()
+                .register(
+                        Command.of("git.continueOperation", () -> host.git().ifEnabled(host.git()::continueOperation)));
+        host.registry()
+                .register(Command.of("git.skipOperation", () -> host.git().ifEnabled(host.git()::skipOperation)));
+        host.registry()
+                .register(Command.of("git.abortOperation", () -> host.git().ifEnabled(host.git()::abortOperation)));
         host.registry().register(Command.of("git.push", () -> host.git().ifEnabled(host.git()::gitPush)));
         // Git Log: act on the commit selected in the Git Log tool window (parity with its right-click menu).
         // withSelectedCommit never runs on a hidden log: it opens and focuses it and asks for a commit.

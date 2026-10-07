@@ -123,7 +123,7 @@ class GitPanelFxTest {
     }
 
     /** Records what the panel asks the controller to do, so the multi-selection actions can be asserted. */
-    private static final class Recording implements GitPanel.Actions {
+    private static class Recording implements GitPanel.Actions {
         final List<List<String>> staged = new ArrayList<>();
         final List<List<String>> unstaged = new ArrayList<>();
         final List<List<String>> discardedTracked = new ArrayList<>();
@@ -435,21 +435,293 @@ class GitPanelFxTest {
 
     /**
      * A conflicted (unmerged) file is not a staged change: it must not sit under Staged — where "Unstage"
-     * would run {@code git reset} and throw its merge stages away — nor enable Commit by itself.
+     * would run {@code git reset} and throw its merge stages away — nor under Changes, where it looked like
+     * any modified file. It has a group of its own, above the rest, and blocks Commit with a stated reason.
      */
     @Test
-    void aConflictedFileIsListedUnderChangesOnlyAndDoesNotEnableCommit() throws Exception {
+    void aConflictedFileIsListedUnderConflictsAndBlocksCommitWithAReason() throws Exception {
         GitPanel p = panel();
-        GitStatus status = new GitStatus(true, "main", "", 0, 0, List.of(new FileEntry("story.txt", 'U', 'U', null)));
+        GitStatus status = new GitStatus(
+                true,
+                "main",
+                "",
+                0,
+                0,
+                List.of(
+                        new FileEntry("ready.txt", 'M', '.', null),
+                        new FileEntry("story.txt", 'U', 'U', null),
+                        new FileEntry("both-added.txt", 'A', 'A', null),
+                        new FileEntry("edited.txt", '.', 'M', null)));
         FxTestSupport.runOnFx(() -> p.setStatus(status));
 
         TreeItem<Object> root = FxTestSupport.callOnFx(() -> tree(p).getRoot());
-        assertEquals(1, root.getChildren().size(), "one group: Changes (no Staged group)");
-        assertEquals(
-                "MODIFIED",
-                String.valueOf(FxTestSupport.call(root.getChildren().get(0).getValue(), "group", new Class<?>[] {})));
+        assertEquals(List.of("CONFLICTS", "STAGED", "MODIFIED"), groupNames(root), "Conflicts first");
+        assertEquals(2, root.getChildren().get(0).getChildren().size(), "both unmerged files, and only there");
+        assertEquals(1, root.getChildren().get(1).getChildren().size());
+        assertEquals(1, root.getChildren().get(2).getChildren().size(), "an unmerged path is not also a Change");
         Button commit = FxTestSupport.field(p, "commitButton");
-        assertTrue(FxTestSupport.callOnFx(commit::isDisable), "nothing is staged");
+        assertTrue(FxTestSupport.callOnFx(commit::isDisable), "something is staged, but files are unmerged");
+        assertEquals(
+                com.editora.i18n.Messages.tr("gitpanel.commitBlockedConflicts", 2),
+                FxTestSupport.callOnFx(p::commitBlockedReason));
+
+        // Resolved: the group goes, Commit is available again and has no reason to give.
+        GitStatus resolved = new GitStatus(true, "main", "", 0, 0, List.of(new FileEntry("ready.txt", 'M', '.', null)));
+        FxTestSupport.runOnFx(() -> p.setStatus(resolved));
+        assertEquals(List.of("STAGED"), groupNames(FxTestSupport.callOnFx(() -> tree(p).getRoot())));
+        assertFalse(FxTestSupport.callOnFx(commit::isDisable));
+        assertEquals("", FxTestSupport.callOnFx(p::commitBlockedReason));
+    }
+
+    private static List<String> groupNames(TreeItem<Object> root) {
+        List<String> names = new ArrayList<>();
+        for (TreeItem<Object> group : root.getChildren()) {
+            names.add(String.valueOf(FxTestSupport.call(group.getValue(), "group", new Class<?>[] {})));
+        }
+        return names;
+    }
+
+    /** Double-click / Enter on a conflicted row opens the resolver; its menu resolves instead of staging. */
+    @Test
+    void aConflictRowOpensTheResolverAndOffersTheResolveActions() throws Exception {
+        List<String> calls = new ArrayList<>();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(new GitPanel.Actions() {
+            @Override
+            public void open(String path) {
+                calls.add("open " + path);
+            }
+
+            @Override
+            public void stage(List<String> paths) {
+                calls.add("stage " + paths);
+            }
+
+            @Override
+            public void unstage(List<String> paths) {
+                calls.add("unstage " + paths);
+            }
+
+            @Override
+            public void discard(List<String> tracked, List<String> untracked) {
+                calls.add("discard");
+            }
+
+            @Override
+            public void stageAll() {}
+
+            @Override
+            public void commit(String message, java.util.function.Consumer<Boolean> onDone) {}
+
+            @Override
+            public void push() {}
+
+            @Override
+            public void refresh() {}
+
+            @Override
+            public void review(boolean staged) {}
+
+            @Override
+            public void diff(String path, boolean staged) {}
+
+            @Override
+            public void resolve(String path) {
+                calls.add("resolve " + path);
+            }
+
+            @Override
+            public void acceptSide(List<String> paths, boolean ours) {
+                calls.add((ours ? "ours " : "theirs ") + paths);
+            }
+        }));
+        GitStatus status = new GitStatus(
+                true,
+                "main",
+                "",
+                0,
+                0,
+                List.of(new FileEntry("story.txt", 'U', 'U', null), new FileEntry("edited.txt", '.', 'M', null)));
+        FxTestSupport.runOnFx(() -> {
+            p.setStatus(status);
+            TreeView<Object> t = tree(p);
+            TreeItem<Object> conflict =
+                    t.getRoot().getChildren().get(0).getChildren().get(0);
+            t.getSelectionModel().clearSelection();
+            t.getSelectionModel().select(conflict);
+            t.fireEvent(new javafx.scene.input.KeyEvent(
+                    javafx.scene.input.KeyEvent.KEY_PRESSED,
+                    "",
+                    "",
+                    javafx.scene.input.KeyCode.ENTER,
+                    false,
+                    false,
+                    false,
+                    false));
+            javafx.scene.control.ContextMenu menu = (javafx.scene.control.ContextMenu)
+                    FxTestSupport.call(p, "buildMenu", new Class<?>[] {List.class}, List.of(conflict.getValue()));
+            List<String> labels =
+                    menu.getItems().stream().map(MenuItem::getText).toList();
+            assertEquals(
+                    List.of(
+                            com.editora.i18n.Messages.tr("gitpanel.menu.resolve"),
+                            com.editora.i18n.Messages.tr("gitpanel.menu.open"),
+                            com.editora.i18n.Messages.tr("gitpanel.menu.acceptOurs"),
+                            com.editora.i18n.Messages.tr("gitpanel.menu.acceptTheirs"),
+                            com.editora.i18n.Messages.tr("gitpanel.menu.markResolved")),
+                    labels,
+                    "no Stage, Unstage, Show Diff or Discard for an unmerged path");
+            menu.getItems().get(0).fire();
+            menu.getItems().get(2).fire();
+            menu.getItems().get(3).fire();
+            menu.getItems().get(4).fire();
+        });
+        assertEquals(
+                List.of(
+                        "resolve story.txt",
+                        "resolve story.txt",
+                        "ours [story.txt]",
+                        "theirs [story.txt]",
+                        "stage [story.txt]"),
+                calls);
+    }
+
+    /** The banner names the operation and offers exactly the steps git has for it. */
+    @Test
+    void theOperationBannerOffersTheStepsOfTheOperationInProgress() throws Exception {
+        List<String> calls = new ArrayList<>();
+        GitPanel p = FxTestSupport.callOnFx(() -> new GitPanel(new Recording() {
+            @Override
+            public void continueOperation() {
+                calls.add("continue");
+            }
+
+            @Override
+            public void skipOperation() {
+                calls.add("skip");
+            }
+
+            @Override
+            public void abortOperation() {
+                calls.add("abort");
+            }
+        }));
+        javafx.scene.Node banner = FxTestSupport.field(p, "operationBanner");
+        Label label = FxTestSupport.field(p, "operationLabel");
+        Button proceed = FxTestSupport.field(p, "continueButton");
+        Button skip = FxTestSupport.field(p, "skipButton");
+        Button abort = FxTestSupport.field(p, "abortButton");
+        GitStatus clean = new GitStatus(true, "main", "", 0, 0, List.of());
+        GitStatus conflicted =
+                new GitStatus(true, "main", "", 0, 0, List.of(new FileEntry("story.txt", 'U', 'U', null)));
+
+        FxTestSupport.runOnFx(() -> p.setStatus(clean));
+        assertFalse(FxTestSupport.callOnFx(banner::isVisible), "nothing in progress");
+        assertFalse(FxTestSupport.callOnFx(banner::isManaged), "and it takes no room");
+
+        FxTestSupport.runOnFx(() -> {
+            p.setOperation(new com.editora.git.GitOperation(com.editora.git.GitOperation.Kind.REBASE, 2, 5, ""));
+            p.setStatus(conflicted);
+        });
+        assertTrue(FxTestSupport.callOnFx(banner::isVisible));
+        assertTrue(FxTestSupport.callOnFx(() -> p.getChildren().contains(banner)), "it is part of the window");
+        assertEquals(
+                com.editora.i18n.Messages.tr(
+                        "gitpanel.operation.conflicts",
+                        com.editora.i18n.Messages.tr(
+                                "gitpanel.operation.step", com.editora.i18n.Messages.tr("git.operation.rebase"), 2, 5),
+                        1),
+                FxTestSupport.callOnFx(label::getText));
+        assertTrue(FxTestSupport.callOnFx(() -> proceed.isVisible() && skip.isVisible() && abort.isVisible()));
+        assertTrue(FxTestSupport.callOnFx(() -> abort.getStyleClass().contains("danger")));
+        FxTestSupport.runOnFx(() -> {
+            proceed.fire();
+            skip.fire();
+            abort.fire();
+        });
+        assertEquals(List.of("continue", "skip", "abort"), calls);
+
+        FxTestSupport.runOnFx(() -> {
+            p.setOperation(com.editora.git.GitOperation.of(com.editora.git.GitOperation.Kind.MERGE));
+            p.setStatus(clean);
+        });
+        assertEquals(
+                com.editora.i18n.Messages.tr(
+                        "gitpanel.operation.inProgress", com.editora.i18n.Messages.tr("git.operation.merge")),
+                FxTestSupport.callOnFx(label::getText));
+        assertFalse(FxTestSupport.callOnFx(skip::isVisible), "git has no merge --skip");
+        assertTrue(FxTestSupport.callOnFx(() -> proceed.isVisible() && abort.isVisible()));
+        Button commit = FxTestSupport.field(p, "commitButton");
+        assertFalse(
+                FxTestSupport.callOnFx(commit::isDisable),
+                "a resolved merge is concluded by committing, even with nothing left staged");
+
+        FxTestSupport.runOnFx(() -> {
+            p.setOperation(com.editora.git.GitOperation.of(com.editora.git.GitOperation.Kind.BISECT));
+            p.setStatus(clean);
+        });
+        assertTrue(FxTestSupport.callOnFx(banner::isVisible), "a bisect is shown");
+        assertFalse(
+                FxTestSupport.callOnFx(() -> proceed.isVisible() || skip.isVisible() || abort.isVisible()),
+                "but not driven from here");
+        assertTrue(FxTestSupport.callOnFx(commit::isDisable), "nothing staged, no merge to conclude");
+
+        FxTestSupport.runOnFx(() -> {
+            p.setOperation(com.editora.git.GitOperation.NONE);
+            p.setStatus(clean);
+        });
+        assertFalse(FxTestSupport.callOnFx(banner::isVisible));
+    }
+
+    /** A merge commit should say what was merged: git's prepared message is offered, never forced. */
+    @Test
+    void aMergePrefillsTheEmptyCommitBoxWithGitsMessageAndTakesItBackWhenTheMergeEnds() throws Exception {
+        GitPanel p = panel();
+        com.editora.git.GitOperation merge = new com.editora.git.GitOperation(
+                com.editora.git.GitOperation.Kind.MERGE, 0, 0, "Merge branch 'feature'");
+        FxTestSupport.runOnFx(() -> p.setOperation(merge));
+        assertEquals(
+                "Merge branch 'feature'",
+                FxTestSupport.callOnFx(() -> messageOf(p).getText()));
+
+        // Deleted by the user: the next status refresh (same merge) does not put it back.
+        FxTestSupport.runOnFx(() -> {
+            messageOf(p).clear();
+            p.setOperation(merge);
+        });
+        assertEquals("", FxTestSupport.callOnFx(() -> messageOf(p).getText()));
+        FxTestSupport.runOnFx(() -> {
+            p.setOperation(com.editora.git.GitOperation.NONE);
+            p.setOperation(merge);
+        });
+        assertEquals(
+                "Merge branch 'feature'",
+                FxTestSupport.callOnFx(() -> messageOf(p).getText()),
+                "a new merge");
+
+        // The merge is aborted with the message untouched: it would be a wrong message for the next commit.
+        FxTestSupport.runOnFx(() -> p.setOperation(com.editora.git.GitOperation.NONE));
+        assertEquals("", FxTestSupport.callOnFx(() -> messageOf(p).getText()));
+
+        // A message the user is already writing is never replaced…
+        FxTestSupport.runOnFx(() -> {
+            messageOf(p).setText("my own words");
+            p.setOperation(merge);
+        });
+        assertEquals("my own words", FxTestSupport.callOnFx(() -> messageOf(p).getText()));
+        // …nor removed when the merge ends.
+        FxTestSupport.runOnFx(() -> p.setOperation(com.editora.git.GitOperation.NONE));
+        assertEquals("my own words", FxTestSupport.callOnFx(() -> messageOf(p).getText()));
+
+        // A prefilled message the user then edited is theirs too.
+        FxTestSupport.runOnFx(() -> {
+            messageOf(p).clear();
+            p.setOperation(merge);
+            messageOf(p).appendText(" (with fixes)");
+            p.setOperation(com.editora.git.GitOperation.NONE);
+        });
+        assertEquals(
+                "Merge branch 'feature' (with fixes)",
+                FxTestSupport.callOnFx(() -> messageOf(p).getText()));
     }
 
     // --- Ctrl/Cmd+Enter is the Commit button, not a way around it -------------------------------------
