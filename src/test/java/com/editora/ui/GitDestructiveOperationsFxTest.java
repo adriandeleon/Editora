@@ -462,8 +462,8 @@ class GitDestructiveOperationsFxTest {
     private static List<String> logRows(FxWindowFixture fx) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
-            List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
-            return rows.stream().map(GitService.Commit::hash).toList();
+            List<com.editora.git.GitLog.Entry> rows = FxTestSupport.field(panel, "allCommits");
+            return rows.stream().map(com.editora.git.GitLog.Entry::hash).toList();
         });
     }
 
@@ -492,7 +492,8 @@ class GitDestructiveOperationsFxTest {
             async.awaitFx();
             GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
             FxTestSupport.runOnFx(() -> {
-                javafx.scene.control.ListView<GitService.Commit> commits = FxTestSupport.field(panel, "commits");
+                javafx.scene.control.ListView<com.editora.git.GitLog.Entry> commits =
+                        FxTestSupport.field(panel, "commits");
                 commits.getSelectionModel().select(0);
                 assertEquals(t.third(), panel.selectedHash());
 
@@ -500,7 +501,7 @@ class GitDestructiveOperationsFxTest {
                 // on screen could be checked out or reset there: the old rows go at once…
                 coordinator.applyState(repoState(t.worktree(), "task"));
                 assertEquals(null, panel.selectedHash(), "no commit of the previous repository stays selected");
-                List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
+                List<com.editora.git.GitLog.Entry> rows = FxTestSupport.field(panel, "allCommits");
                 assertTrue(rows.isEmpty(), "the previous repository's commits are no longer listed");
             });
             // …and the log, still open, lists the repository its actions now run in.

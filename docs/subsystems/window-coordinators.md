@@ -15,7 +15,7 @@ Do not pass the controller itself or add inheritance to share its fields.
 | `NavigationCoordinator` | Navigation history, pickers, folding and go-to actions |
 | `PreviewCoordinator` | Preview modes, Markdown/CSV editing and lint integration |
 | `ExportCoordinator` | Export, copying, print preparation and export service shutdown |
-| `GitWindowCoordinator` | Git window actions and navigation. The Git Log owns the repository root it listed: it is cleared and reloaded when `GitCoordinator` reports another active root or branch, and every row action runs in that root, captured before any dialog |
+| `GitWindowCoordinator` | Git window actions and navigation. The Git Log owns the repository root it listed: it is cleared and reloaded when `GitCoordinator` reports another active root or branch, and every row action runs in that root, captured before any dialog. It also subscribes to `GitCoordinator.onMutation` (fired by `afterMutation()`), so an open log reloads after every Git command; `GitLogPanel.setLog` leaves the list and selection alone when the same commits come back. The `git.log.*` palette commands go through `withSelectedCommit`, which never acts on a hidden log. The branch dropdown captures its repository root when requested and refuses an action once another root is active |
 | `WindowChromeCoordinator` | Chrome visibility, focus modes and overlays |
 | `WindowMcpBridge` | Window-facing MCP operations; the controller retains the public facade |
 | `FileWorkflowCoordinator` | Loading, saving, autosave and elevated saves |

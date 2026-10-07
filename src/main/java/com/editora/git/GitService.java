@@ -681,6 +681,38 @@ public final class GitService {
         });
     }
 
+    /**
+     * The Git Log's rows: up to {@code max} commits (of {@code file} when given) with author time and ref
+     * decorations, parsed by the pure {@link GitLog#parse}. One extra commit is requested so the page can
+     * say whether the history was cut off. Posts on the FX thread.
+     */
+    public void logPage(Path root, Path file, int max, Consumer<GitLog.Page> onResult) {
+        submit(exec, () -> {
+            GitLog.Page page = GitLog.Page.EMPTY;
+            if (gitAvailable() && root != null) {
+                List<String> args = new ArrayList<>(List.of(
+                        GitSafety.LITERAL_PATHSPECS,
+                        "log",
+                        "--no-color",
+                        "--decorate=full",
+                        GitLog.FORMAT,
+                        "--date=short",
+                        "-n",
+                        String.valueOf(max + 1)));
+                if (file != null) {
+                    args.add("--");
+                    args.add(file.toAbsolutePath().toString());
+                }
+                ProcessRunner.Result r = git(root, QUICK, args.toArray(new String[0]));
+                if (r.ok()) {
+                    page = GitLog.parse(r.out(), max);
+                }
+            }
+            GitLog.Page posted = page;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+    }
+
     /** Parses {@code %H\t%h\t%an\t%ad\t%s} log lines into {@link Commit}s. Pure — unit-tested. */
     static List<Commit> parseLog(String out) {
         List<Commit> commits = new ArrayList<>();
