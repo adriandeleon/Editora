@@ -10,12 +10,14 @@ public final class GitOutputHighlights {
 
     public record Span(int start, int end, String styleClass) {}
 
-    private static final Pattern DIFF_STAT = Pattern.compile("^\\s*.+?\\s+\\|\\s+(\\d+)(?:\\s+([+\\-=]+))?\\s*$");
+    /** Possessive leading whitespace and a non-blank start to the path: see {@code GitOutputLinks.DIFF_STAT}. */
+    private static final Pattern DIFF_STAT = Pattern.compile("^\\s*+\\S.*?\\s+\\|\\s+(\\d+)(?:\\s+([+\\-=]+))?\\s*$");
+
     private static final Pattern SUMMARY = Pattern.compile(
-            "^\\s*(\\d+ files? changed)(?:, (\\d+ insertions?\\(\\+\\)))?(?:, (\\d+ deletions?\\(-\\)))?\\s*$");
-    private static final Pattern MODE = Pattern.compile("^\\s*(create mode|delete mode)\\s+\\d+\\s+.+$");
-    private static final Pattern NEW_REF = Pattern.compile("^\\s*\\* \\[new (?:branch|tag)\\].*$");
-    private static final Pattern FORCED_REF = Pattern.compile("^\\s*\\+ .+\\(forced update\\)\\s*$");
+            "^\\s*+(\\d+ files? changed)(?:, (\\d+ insertions?\\(\\+\\)))?(?:, (\\d+ deletions?\\(-\\)))?\\s*$");
+    private static final Pattern MODE = Pattern.compile("^\\s*+(create mode|delete mode)\\s+\\d+\\s+.+$");
+    private static final Pattern NEW_REF = Pattern.compile("^\\s*+\\* \\[new (?:branch|tag)\\].*$");
+    private static final Pattern FORCED_REF = Pattern.compile("^\\s*+\\+ .+\\(forced update\\)\\s*$");
 
     private GitOutputHighlights() {}
 
@@ -25,7 +27,7 @@ public final class GitOutputHighlights {
         }
         List<Span> spans = new ArrayList<>();
         Matcher stat = DIFF_STAT.matcher(line);
-        if (stat.matches()) {
+        if (line.indexOf('|') >= 0 && stat.matches()) {
             add(spans, stat, 1, "git-output-count");
             if (stat.group(2) != null) {
                 int start = stat.start(2);

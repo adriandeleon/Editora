@@ -64,11 +64,55 @@ public final class GitSafety {
             System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win"));
 
     /**
+     * The variables that bind a git process to one particular repository — what
+     * {@code git rev-parse --local-env-vars} prints. Git itself clears them before it runs a command in
+     * another repository; Editora must do the same for every git child. Launched from a shell that exports
+     * {@code GIT_DIR}/{@code GIT_WORK_TREE} (a bare-repository dotfiles setup, a shell started by a hook),
+     * every folder otherwise resolved to that one repository, and an inherited {@code GIT_INDEX_FILE} pointed
+     * every status at a foreign index.
+     */
+    static final List<String> REPO_LOCAL_ENV = List.of(
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+            "GIT_CONFIG",
+            "GIT_CONFIG_PARAMETERS",
+            "GIT_CONFIG_COUNT",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_IMPLICIT_WORK_TREE",
+            "GIT_GRAFT_FILE",
+            "GIT_INDEX_FILE",
+            "GIT_NO_REPLACE_OBJECTS",
+            "GIT_REPLACE_REF_BASE",
+            "GIT_PREFIX",
+            "GIT_SHALLOW_FILE",
+            "GIT_COMMON_DIR");
+
+    /**
+     * Adds a {@code null} entry for each of {@link #REPO_LOCAL_ENV} to {@code env}: the process runner reads a
+     * null value as "remove this variable from the child's environment".
+     */
+    static Map<String, String> withoutRepoLocalEnv(Map<String, String> env) {
+        for (String name : REPO_LOCAL_ENV) {
+            env.put(name, null);
+        }
+        return env;
+    }
+
+    /**
      * Environment of every background command: no optional index lock, no terminal prompt, no pager, and no
      * on-demand object fetch from a promisor remote (see the class comment).
      */
-    static final Map<String, String> BACKGROUND_ENV =
-            Map.of("GIT_OPTIONAL_LOCKS", "0", "GIT_TERMINAL_PROMPT", "0", "GIT_PAGER", "cat", "GIT_NO_LAZY_FETCH", "1");
+    static final Map<String, String> BACKGROUND_ENV = backgroundEnv();
+
+    private static Map<String, String> backgroundEnv() {
+        Map<String, String> env = withoutRepoLocalEnv(new java.util.LinkedHashMap<>());
+        env.put("GIT_OPTIONAL_LOCKS", "0");
+        env.put("GIT_TERMINAL_PROMPT", "0");
+        env.put("GIT_PAGER", "cat");
+        env.put("GIT_NO_LAZY_FETCH", "1");
+        return java.util.Collections.unmodifiableMap(env);
+    }
 
     /**
      * Environment additions for a <em>user-initiated</em> command, given the environment Editora inherited.
@@ -80,9 +124,11 @@ public final class GitSafety {
      * Git's replies stay the English text the UI recognises. An inherited {@code LC_ALL} would override
      * {@code LC_MESSAGES}; it is blanked (an empty {@code LC_ALL} counts as unset) and its value carried in
      * {@code LC_CTYPE}, which is the category that decides how file names and text are decoded.
+     *
+     * <p>Git's repository-binding variables are removed as for a background read ({@link #REPO_LOCAL_ENV}).
      */
     static Map<String, String> userEnv(Map<String, String> inherited) {
-        Map<String, String> env = new java.util.LinkedHashMap<>();
+        Map<String, String> env = withoutRepoLocalEnv(new java.util.LinkedHashMap<>());
         env.put("GIT_OPTIONAL_LOCKS", "0");
         env.put("GIT_TERMINAL_PROMPT", "0");
         env.put("COLUMNS", "1000");
