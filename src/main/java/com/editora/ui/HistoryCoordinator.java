@@ -294,11 +294,117 @@ final class HistoryCoordinator {
         sweepIfDue();
     }
 
+    /**
+     * The limits in force: the configured ones, except that a limit which became stricter without the user
+     * confirming what it deletes stays at its previous value (see {@link HistoryService#effectivePolicy}).
+     */
     private HistoryRetention.RetentionPolicy retentionPolicy() {
         var s = host.settings();
-        long maxAgeMillis = s.getHistoryMaxAgeDays() > 0 ? s.getHistoryMaxAgeDays() * 86_400_000L : 0;
+        return historyService.effectivePolicy(
+                policyOf(s.getHistoryMaxPerFile(), s.getHistoryMaxAgeDays(), s.getHistoryMaxTotalMb()));
+    }
+
+    private static HistoryRetention.RetentionPolicy policyOf(int maxPerFile, int maxAgeDays, int maxTotalMb) {
+        long maxAgeMillis = maxAgeDays > 0 ? maxAgeDays * 86_400_000L : 0;
         return new HistoryRetention.RetentionPolicy(
-                s.getHistoryMaxPerFile(), maxAgeMillis, (long) Math.max(0, s.getHistoryMaxTotalMb()) * 1024L * 1024L);
+                maxPerFile, maxAgeMillis, (long) Math.max(0, maxTotalMb) * 1024L * 1024L);
+    }
+
+    /** The newest {@link #changeLimits} request; an older one whose preview arrives late is dropped. */
+    private int limitRequests;
+
+    /**
+     * Sets the three retention limits — the one way the Settings spinners and the {@code history.setMax*}
+     * commands change them. Looser limits are written at once. Stricter ones delete revisions, in every
+     * project, the moment they are applied, and stepping a spinner back does not bring them back: so the
+     * settings are left alone until it is known what would go, and when that is anything at all the user is
+     * told how many revisions from how many files and must confirm. {@code onDone} gets {@code true} once the
+     * settings hold the new values (the caller then saves and applies them, which runs the sweep) and
+     * {@code false} when the change was declined and nothing was written.
+     */
+    void changeLimits(
+            int maxPerFile, int maxAgeDays, int maxTotalMb, javafx.stage.Window owner, Consumer<Boolean> onDone) {
+        int request = ++limitRequests;
+        HistoryRetention.RetentionPolicy current = retentionPolicy();
+        HistoryRetention.RetentionPolicy candidate = policyOf(maxPerFile, maxAgeDays, maxTotalMb);
+        Runnable commit = () -> {
+            var s = host.settings();
+            s.setHistoryMaxPerFile(maxPerFile);
+            s.setHistoryMaxAgeDays(maxAgeDays);
+            s.setHistoryMaxTotalMb(maxTotalMb);
+            historyService.acknowledge(candidate);
+            onDone.accept(true);
+        };
+        if (!HistoryRetention.tightens(current, candidate)) {
+            commit.run();
+            return;
+        }
+        historyService.previewTightening(indexSnapshot(), current, candidate, System.currentTimeMillis(), impact -> {
+            if (request != limitRequests) {
+                return; // the control moved on while this was computed; its latest value is being checked
+            }
+            if (impact != null && (impact.revisions() == 0 || confirmTightening(impact, owner))) {
+                commit.run();
+            } else {
+                onDone.accept(false);
+            }
+        });
+    }
+
+    /** One of the three retention limits, for {@link #changeLimit}. */
+    enum Limit {
+        MAX_PER_FILE,
+        MAX_AGE_DAYS,
+        MAX_TOTAL_MB
+    }
+
+    /**
+     * A {@code history.setMax*} command: sets one limit through {@link #changeLimits}, then saves, applies and
+     * reports it as {@code title} — or says that nothing changed when the user declined the deletion.
+     */
+    void changeLimit(String title, Limit limit, int value) {
+        var s = host.settings();
+        changeLimits(
+                limit == Limit.MAX_PER_FILE ? value : s.getHistoryMaxPerFile(),
+                limit == Limit.MAX_AGE_DAYS ? value : s.getHistoryMaxAgeDays(),
+                limit == Limit.MAX_TOTAL_MB ? value : s.getHistoryMaxTotalMb(),
+                host.window(),
+                applied -> {
+                    if (!applied) {
+                        host.setStatus(tr("status.history.limitsUnchanged"));
+                        return;
+                    }
+                    host.requestSave();
+                    applySupport();
+                    host.syncSettingsWindow();
+                    host.setStatus(tr("status.settingChanged", title, Integer.toString(value)));
+                });
+    }
+
+    private boolean confirmTightening(HistoryRetention.Impact impact, javafx.stage.Window owner) {
+        javafx.scene.control.ButtonType delete = new javafx.scene.control.ButtonType(
+                tr("dialog.history.purge.button"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("dialog.history.limits.confirm", impact.revisions(), impact.files()),
+                delete,
+                ButtonType.CANCEL);
+        confirm.initOwner(owner != null && owner.isShowing() ? owner : host.window());
+        confirm.setTitle(tr("dialog.history.limits.title"));
+        confirm.setHeaderText(null);
+        confirm.getDialogPane().lookupButton(delete).getStyleClass().add("danger");
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == delete;
+    }
+
+    /** A private copy of the whole index, for work on the history worker. */
+    private Map<String, Map<String, List<HistoryRevision>>> indexSnapshot() {
+        Map<String, Map<String, List<HistoryRevision>>> snapshot = new LinkedHashMap<>();
+        ops.historyByProject().forEach((project, files) -> {
+            Map<String, List<HistoryRevision>> copy = new LinkedHashMap<>();
+            files.forEach((file, revisions) -> copy.put(file, List.copyOf(revisions)));
+            snapshot.put(project, copy);
+        });
+        return snapshot;
     }
 
     /**
@@ -313,13 +419,7 @@ final class HistoryCoordinator {
         if (!isEnabled() || !historyService.claimSweep(policy)) {
             return;
         }
-        Map<String, Map<String, List<HistoryRevision>>> snapshot = new LinkedHashMap<>();
-        ops.historyByProject().forEach((project, files) -> {
-            Map<String, List<HistoryRevision>> copy = new LinkedHashMap<>();
-            files.forEach((file, revisions) -> copy.put(file, List.copyOf(revisions)));
-            snapshot.put(project, copy);
-        });
-        historyService.sweep(snapshot, policy, System.currentTimeMillis(), this::removeEvicted);
+        historyService.sweep(indexSnapshot(), policy, System.currentTimeMillis(), this::removeEvicted);
     }
 
     /** Subtracts swept-out revisions from the live index, drops emptied files, persists, and refreshes. */

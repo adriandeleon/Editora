@@ -263,6 +263,73 @@ public final class HistoryRetention {
         return out;
     }
 
+    /** How many revisions, in how many files, a change of limits would delete. */
+    public record Impact(int revisions, int files) {
+        public static final Impact NONE = new Impact(0, 0);
+    }
+
+    /** A limit is "off" at zero or below; otherwise the smaller value is the stricter one. */
+    private static boolean stricter(long from, long to) {
+        return to > 0 && (from <= 0 || to < from);
+    }
+
+    private static long looser(long a, long b) {
+        return a <= 0 || b <= 0 ? 0 : Math.max(a, b);
+    }
+
+    /**
+     * True when {@code to} is stricter than {@code from} in any limit — the only kind of change that can
+     * delete revisions. A {@code null} {@code from} is "no policy yet", which nothing tightens.
+     */
+    public static boolean tightens(RetentionPolicy from, RetentionPolicy to) {
+        if (from == null || to == null) {
+            return false;
+        }
+        return stricter(from.maxPerFile(), to.maxPerFile())
+                || stricter(from.maxAgeMillis(), to.maxAgeMillis())
+                || stricter(from.maxTotalBytesPerProject(), to.maxTotalBytesPerProject());
+    }
+
+    /** The policy that keeps whatever either of {@code a} and {@code b} keeps: each limit at its looser value. */
+    public static RetentionPolicy loosest(RetentionPolicy a, RetentionPolicy b) {
+        if (a == null || b == null) {
+            return a == null ? b : a;
+        }
+        return new RetentionPolicy(
+                (int) looser(a.maxPerFile(), b.maxPerFile()),
+                looser(a.maxAgeMillis(), b.maxAgeMillis()),
+                looser(a.maxTotalBytesPerProject(), b.maxTotalBytesPerProject()));
+    }
+
+    /**
+     * What replacing {@code current} with {@code candidate} would delete from {@code byProject} right now:
+     * the revisions {@code candidate} evicts that {@code current} keeps (what {@code current} would drop
+     * anyway is not the change's doing). This is the number a confirmation shows before a tightened limit
+     * is applied; the input is not mutated.
+     */
+    public static Impact tighteningImpact(
+            Map<String, Map<String, List<HistoryRevision>>> byProject,
+            RetentionPolicy current,
+            RetentionPolicy candidate,
+            long now) {
+        if (byProject == null || candidate == null) {
+            return Impact.NONE;
+        }
+        // No current policy: every limit off, so the baseline is the index as it stands.
+        Map<String, Map<String, List<HistoryRevision>>> kept =
+                sweep(byProject, current == null ? new RetentionPolicy(0, 0, 0) : current, now);
+        int revisions = 0;
+        int files = 0;
+        for (Map<String, List<HistoryRevision>> project :
+                evicted(kept, sweep(kept, candidate, now)).values()) {
+            for (List<HistoryRevision> gone : project.values()) {
+                revisions += gone.size();
+                files++;
+            }
+        }
+        return new Impact(revisions, files);
+    }
+
     /** All sha256 hashes still referenced by any revision in any project (the blobs to keep). */
     public static Set<String> liveHashes(Map<String, Map<String, List<HistoryRevision>>> byProject) {
         Set<String> live = new HashSet<>();

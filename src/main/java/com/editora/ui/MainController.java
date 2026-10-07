@@ -564,6 +564,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void saveNotes() {
                 config.saveNotes();
             }
+
+            @Override
+            public void notesStored(java.util.Map<String, ?> bucket, String fileKey) {
+                marksStored(MarkMerge.Kind.NOTES, bucket, fileKey);
+            }
         });
         // Built here (not as a field initializer) because BookmarksPanel's constructor reads config.getBookmarks().
         this.bookmarkCoordinator = new BookmarkCoordinator(coordinatorHost, new BookmarkCoordinator.Ops() {
@@ -618,6 +623,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void saveBookmarks() {
                 config.saveBookmarks();
             }
+
+            @Override
+            public void bookmarksStored(java.util.Map<String, ?> bucket, String fileKey) {
+                marksStored(MarkMerge.Kind.BOOKMARKS, bucket, fileKey);
+            }
         });
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
         registry.setExecutionListener(macroCoordinator::onCommand);
@@ -668,6 +678,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::exportConfig,
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
+        this.settingsWindow.setStatusSink(this::setStatus);
+        this.settingsWindow.setHistoryLimits((perFile, ageDays, totalMb, owner, done) ->
+                historyCoordinator.changeLimits(perFile, ageDays, totalMb, owner, done));
         this.pluginCoordinator = new PluginCoordinator(
                 coordinatorHost,
                 registry,
@@ -1514,9 +1527,13 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Deletes a project from the shared list (with confirmation). Only the project entry, its saved
-     * session, and its bookmark/note/breakpoint buckets are removed — the folder and its files on disk are
-     * left untouched. If the project has an open window, it is closed first (saving its dirty buffers); a
+     * Deletes a project from the shared list (with confirmation). Only the project entry and its saved
+     * session are removed — which is all the confirmation says. The folder and its files on disk are left
+     * untouched, and so are the project's personal notes, bookmarks, breakpoints and Local History: they
+     * stay in their buckets under the project's id, which is derived from its name and folder, so adding the
+     * folder again under the same name re-attaches them. (They used to be dropped here, unannounced and with
+     * no way back; Local History in particular is the safety net for the project's files, not list
+     * bookkeeping.) If the project has an open window, it is closed first (saving its dirty buffers); a
      * cancelled save prompt aborts the deletion.
      */
     private void deleteProject(Project p) {
@@ -1545,10 +1562,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         config.shared().cancelPendingWrite(projects.stateFile(p));
         projects.delete(p.id()); // drops it from the index + open set + deletes its state file
         projects.save();
-        config.deleteBookmarksForProject(p.id()); // the project's bookmarks go with it
-        config.deleteNotesForProject(p.id()); // ...its personal notes
-        config.deleteBreakpointsForProject(p.id()); // ...and its breakpoints
-        config.deleteHistoryForProject(p.id()); // ...and its local file history index
+        // Nothing else: the notes/bookmark/breakpoint/history buckets are user data and stay (see above).
         refreshProjectPanelList();
         setStatus(tr("status.deletedProject", p.name()));
     }
@@ -2455,6 +2469,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public void saveBreakpoints() {
                         config.saveBreakpoints();
+                    }
+
+                    @Override
+                    public void breakpointsStored(java.util.Map<String, ?> bucket, String fileKey) {
+                        marksStored(MarkMerge.Kind.BREAKPOINTS, bucket, fileKey);
                     }
                 });
         debugToolWindow = new ToolWindow(
@@ -7148,6 +7167,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Another window (or this one) changed folder trust: stop honouring overrides that lost it. */
     void trustChanged() {
         lspCoordinator.reloadProjectSettings();
+    }
+
+    /** This window rewrote a file's notes, bookmarks or breakpoints: the other windows re-read them. */
+    private void marksStored(MarkMerge.Kind kind, java.util.Map<String, ?> bucket, String fileKey) {
+        if (windowManager != null) {
+            windowManager.broadcastMarksChanged(this, new MarkMerge.Change(kind, bucket, fileKey));
+        }
+    }
+
+    /** Another window rewrote a file's notes, bookmarks or breakpoints (see {@link MarkMerge.Change}). */
+    void marksChangedElsewhere(MarkMerge.Change change) {
+        switch (change.kind()) {
+            case NOTES -> notesCoordinator.storeChangedElsewhere(change.bucket(), change.fileKey());
+            case BOOKMARKS -> bookmarkCoordinator.storeChangedElsewhere(change.bucket(), change.fileKey());
+            case BREAKPOINTS -> debugCoordinator.breakpointsChangedElsewhere(change.bucket(), change.fileKey());
+        }
     }
 
     /**
