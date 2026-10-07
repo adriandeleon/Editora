@@ -44,6 +44,9 @@ public final class ProcessRunner {
     /** The {@code err} of a {@link Result} whose command was killed at its timeout. */
     static final String TIMED_OUT = "command timed out";
 
+    /** The {@code err} of a {@link Result} whose command the user cancelled ({@link Cancellation}). */
+    public static final String CANCELLED = "command cancelled";
+
     /** Outcome of one command: process {@code exit} code plus its captured {@code out}/{@code err}. */
     public record Result(int exit, String out, String err, boolean outTruncated, boolean errTruncated) {
         public Result(int exit, String out, String err) {
@@ -57,6 +60,11 @@ public final class ProcessRunner {
         /** The command was killed at its timeout: it said nothing about what it was asked, either way. */
         public boolean timedOut() {
             return exit == -1 && TIMED_OUT.equals(err);
+        }
+
+        /** The user stopped the command: not a failure to report, and it said nothing either way. */
+        public boolean cancelled() {
+            return exit == -1 && CANCELLED.equals(err);
         }
 
         /** A human-readable error: stderr if present, else stdout, trimmed. */
@@ -137,6 +145,63 @@ public final class ProcessRunner {
     public static Result runWithInputInUserLocale(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, byte[] stdin) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, stdin, true, false));
+    }
+
+    /** Receives a live command's output; called on the stream reader threads, so it must be thread-safe. */
+    @FunctionalInterface
+    public interface LiveOutput {
+        /**
+         * One line of stdout or stderr. A {@code transientLine} is progress the child overwrites: the next
+         * line delivered replaces it.
+         */
+        void line(String text, boolean transientLine);
+    }
+
+    /**
+     * The handle that stops one live command. {@link #cancel} may come from any thread, before the child has
+     * even started (it is then killed as it starts) or after it has exited (nothing happens).
+     */
+    public static final class Cancellation {
+        private Process process;
+        private boolean cancelled;
+
+        /** Kills the command's process tree — SIGTERM first, so git removes its lock files and half a clone. */
+        public synchronized void cancel() {
+            cancelled = true;
+            if (process != null && process.isAlive()) {
+                ProcessRegistry.killTree(process);
+            }
+        }
+
+        public synchronized boolean cancelled() {
+            return cancelled;
+        }
+
+        private synchronized void attach(Process started) {
+            process = started;
+            if (cancelled) {
+                ProcessRegistry.killTree(started);
+            }
+        }
+    }
+
+    /**
+     * As {@link #runInUserLocale(Path, Duration, List, Map)}, also handing each output line to {@code live}
+     * as it is written. For a user command that runs long enough to need watching ({@code git clone}). The
+     * {@link Result} still carries the whole output, with overwritten progress collapsed out of stderr.
+     * {@code cancel} (may be null) stops it; the result is then {@link Result#cancelled()}.
+     */
+    public static Result runLiveInUserLocale(
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            LiveOutput live,
+            Cancellation cancel) {
+        Result r = decodedInUserLocale(
+                runRaw(workingDir, timeout, command, extraEnv, null, true, false, null, live, cancel));
+        return new Result(
+                r.exit(), r.out(), LiveLines.collapseCarriageReturns(r.err()), r.outTruncated(), r.errTruncated());
     }
 
     private static byte[] utf8(String stdin) {
@@ -224,6 +289,21 @@ public final class ProcessRunner {
             boolean userLocale,
             boolean scrubSecrets,
             java.util.function.Predicate<String> stopAfterLine) {
+        return runRaw(
+                workingDir, timeout, command, extraEnv, stdin, userLocale, scrubSecrets, stopAfterLine, null, null);
+    }
+
+    private static BytesResult runRaw(
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            byte[] stdin,
+            boolean userLocale,
+            boolean scrubSecrets,
+            java.util.function.Predicate<String> stopAfterLine,
+            LiveOutput live,
+            Cancellation cancel) {
         // Resolve a bare command name to an absolute path against the augmented PATH: on Unix
         // ProcessBuilder searches the JVM's (stripped, GUI-launched) PATH for the executable, not the
         // child env we set below — so without this, mmdc/npx still wouldn't be found.
@@ -240,6 +320,9 @@ public final class ProcessRunner {
             process = pb.start();
         } catch (IOException e) {
             return new BytesResult(-1, new byte[0], e.getMessage() == null ? "failed to start" : e.getMessage());
+        }
+        if (cancel != null) {
+            cancel.attach(process);
         }
         // Feed stdin (if any) on a daemon thread, closing it so the child sees EOF; broken-pipe is ignored
         // (the child may exit before reading everything). A large buffer can't stall the caller this way.
@@ -272,14 +355,14 @@ public final class ProcessRunner {
         // and `waitFor(timeout)` was only reached once the child had already finished.
         ByteArrayOutputStream errBuf = new ByteArrayOutputStream();
         AtomicBoolean errTruncated = new AtomicBoolean();
-        Thread errReader = new Thread(() -> drain(process.getErrorStream(), errBuf, errTruncated), "proc-stderr");
+        Thread errReader = new Thread(() -> drain(process.getErrorStream(), errBuf, errTruncated, live), "proc-stderr");
         errReader.setDaemon(true);
         errReader.start();
         ByteArrayOutputStream outBuf = new ByteArrayOutputStream();
         AtomicBoolean outTruncated = new AtomicBoolean();
         Thread outReader = new Thread(
                 stopAfterLine == null
-                        ? () -> drain(process.getInputStream(), outBuf, outTruncated)
+                        ? () -> drain(process.getInputStream(), outBuf, outTruncated, live)
                         : () -> drainLines(process, stopAfterLine, outTruncated),
                 "proc-stdout");
         outReader.setDaemon(true);
@@ -299,6 +382,9 @@ public final class ProcessRunner {
             }
             if (errReader.isAlive()) {
                 errTruncated.set(true);
+            }
+            if (cancel != null && cancel.cancelled()) {
+                return new BytesResult(-1, outBuf.toByteArray(), CANCELLED, outTruncated.get(), errTruncated.get());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -609,11 +695,15 @@ public final class ProcessRunner {
      * {@code find /} can't exhaust the heap (the packaged app runs {@code -Xmx2g}, and an OOM here would be
      * swallowed into the executor's discarded Future, leaving the caller's status spinning forever).
      */
-    private static void drain(InputStream in, ByteArrayOutputStream out, AtomicBoolean truncated) {
+    private static void drain(InputStream in, ByteArrayOutputStream out, AtomicBoolean truncated, LiveOutput live) {
         byte[] buf = new byte[8192];
+        LiveLines lines = live == null ? null : new LiveLines(live);
         try (in) {
             int n;
             while ((n = in.read(buf)) != -1) {
+                if (lines != null) {
+                    lines.feed(buf, 0, n);
+                }
                 int room = MAX_CAPTURED_BYTES - out.size();
                 if (room > 0) {
                     out.write(buf, 0, Math.min(n, room));
@@ -624,6 +714,9 @@ public final class ProcessRunner {
             }
         } catch (IOException ignored) {
             // Stream closed early (process exited); whatever we captured is good enough.
+        }
+        if (lines != null) {
+            lines.end();
         }
     }
 

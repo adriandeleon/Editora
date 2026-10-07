@@ -281,6 +281,50 @@ class GitServiceHardeningFxTest {
     }
 
     @Test
+    void aRunningNetworkCommandCanBeCancelled(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        repo.write("notes.txt", "one\n");
+        repo.commitAll("init");
+        Path started = GitTestRepo.fifo(dir.resolve("fetch-started"));
+        // A stand-in git whose `fetch` never comes back by itself: only a kill ends it.
+        Path wrapper = GitTestRepo.script(dir.resolve("git-wrapper"), """
+                if [ "$1" = "fetch" ]; then
+                  echo started > '%s'
+                  sleep 120
+                fi
+                exec git "$@"
+                """.formatted(started));
+        Assumptions.assumeFalse(
+                wrapper.toString().matches(".*\\s.*"), "the git command setting is whitespace-tokenized");
+
+        GitService service = new GitService();
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            async.onClose(() -> {
+                service.shutdown();
+                service.setCommand(""); // the command is app-wide state: restore PATH git for other tests
+            });
+            service.setCommand(wrapper.toString());
+            assertFalse(service.cancelNetworkCommand(), "nothing is running yet");
+
+            CountDownLatch fetched = new CountDownLatch(1);
+            AtomicReference<ProcessRunner.Result> fetchResult = new AtomicReference<>();
+            service.runNetwork(
+                    repo.root,
+                    r -> {
+                        fetchResult.set(r);
+                        fetched.countDown();
+                    },
+                    "fetch");
+            assertEquals(List.of("started"), Files.readAllLines(started), "the fetch is now parked inside git");
+
+            assertTrue(service.cancelNetworkCommand());
+            async.await(fetched, "the cancelled fetch reporting back");
+            assertTrue(fetchResult.get().cancelled(), fetchResult.get().toString());
+            assertFalse(service.cancelNetworkCommand(), "and nothing is left to cancel");
+        }
+    }
+
+    @Test
     void everyInvocationDisablesTerminalPromptsAndNetworkWorkDoesNotBlockStatus(@TempDir Path dir) throws Exception {
         GitTestRepo repo = GitTestRepo.init(dir);
         Path file = repo.write("notes.txt", "one\n");
@@ -341,7 +385,7 @@ class GitServiceHardeningFxTest {
             for (String invocation : invocations) {
                 assertTrue(invocation.startsWith("0 "), "GIT_TERMINAL_PROMPT=0 on every call, got: " + invocation);
             }
-            assertTrue(invocations.stream().anyMatch(i -> i.endsWith(" fetch")), invocations.toString());
+            assertTrue(invocations.stream().anyMatch(i -> i.endsWith(" fetch --progress")), invocations.toString());
         }
     }
 

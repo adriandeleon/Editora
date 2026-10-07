@@ -112,4 +112,21 @@ class CommandLogFormatTest {
         CommandLog.none().record(entry(0, "x", "y")); // must not throw
         assertTrue(true);
     }
+
+    @Test
+    void aStreamedEntryIsOnlyItsFooter() {
+        // Its echo and output reached the console while it ran; repeating them would show the clone twice.
+        CommandLog.Entry streamed =
+                new CommandLog.Entry(List.of("git", "clone"), 0, "", "Cloning into 'x'...\n", 12, true);
+        assertEquals(List.of("exit 0 · 12 ms"), texts(CommandLogFormat.format(streamed)));
+    }
+
+    @Test
+    void aCancelledCommandSaysSoInsteadOfLookingLikeAFailure() {
+        CommandLog.Entry cancelled =
+                new CommandLog.Entry(List.of("git", "clone"), -1, "", ProcessRunner.CANCELLED, 2500, true);
+        List<Line> lines = CommandLogFormat.format(cancelled);
+        assertEquals(List.of("cancelled · 2.5 s"), texts(lines));
+        assertEquals(CommandLogFormat.FOOTER_STYLE, lines.get(0).styleClass());
+    }
 }

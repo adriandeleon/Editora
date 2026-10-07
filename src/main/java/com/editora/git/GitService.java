@@ -10,6 +10,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -947,11 +948,14 @@ public final class GitService {
     // --- clone -----------------------------------------------------------------------------------
 
     /**
-     * {@code clone -- <url> <destination>}. The URL is pasted text: without the {@code --} a value beginning
-     * with {@code -} is an option, and {@code --upload-pack=<program>} runs that program.
+     * {@code clone --progress -- <url> <destination>}. The URL is pasted text: without the {@code --} a value
+     * beginning with {@code -} is an option, and {@code --upload-pack=<program>} runs that program.
+     * {@code --progress} because git only reports progress to a terminal unless told to, and the clone is
+     * streamed into the Git console ({@link #gitStreamed}) — as are fetch, pull and push
+     * ({@link #withProgress}).
      */
     static String[] cloneArgs(String url, String destination) {
-        return new String[] {"clone", "--", url == null ? "" : url, destination};
+        return new String[] {"clone", "--progress", "--", url == null ? "" : url, destination};
     }
 
     /**
@@ -968,7 +972,7 @@ public final class GitService {
                 Path parent = destination.toAbsolutePath().getParent();
                 r = userCommand(
                         networkCommands,
-                        () -> gitLogged(
+                        () -> gitStreamed(
                                 parent,
                                 NETWORK,
                                 cloneArgs(url, destination.toAbsolutePath().toString())));
@@ -1030,7 +1034,7 @@ public final class GitService {
     public void runNetwork(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
         submitNetworkInRequestOrder(() -> {
             ProcessRunner.Result r = gitAvailable() && root != null
-                    ? userCommand(networkCommands, () -> gitLogged(root, NETWORK, args))
+                    ? userCommand(networkCommands, () -> gitStreamed(root, NETWORK, withProgress(args)))
                     : NOT_INSTALLED;
             Platform.runLater(() -> onResult.accept(r));
         });
@@ -1356,7 +1360,10 @@ public final class GitService {
                 result = userCommand(running, () -> {
                     ProcessRunner.Result combined = new ProcessRunner.Result(0, "", "");
                     for (String[] command : commands) {
-                        ProcessRunner.Result current = gitLogged(root, timeout, command);
+                        // The network lane's commands (pull) are the slow ones: watched as they run.
+                        ProcessRunner.Result current = running == networkCommands
+                                ? gitStreamed(root, timeout, withProgress(command))
+                                : gitLogged(root, timeout, command);
                         if (combined.ok()) {
                             combined = current;
                         }
@@ -1468,6 +1475,63 @@ public final class GitService {
         commandLog.record(
                 new CommandLog.Entry(argv, r.exit(), r.out(), r.err(), (System.nanoTime() - startNanos) / 1_000_000L));
         return r;
+    }
+
+    /**
+     * {@code args} with {@code --progress} after a {@code fetch}/{@code pull}/{@code push} subcommand: like
+     * clone, they only report progress to a terminal unless told to, and they are streamed
+     * ({@link #gitStreamed}). Anything else is returned as it came.
+     */
+    static String[] withProgress(String... args) {
+        if (args.length == 0
+                || !Set.of("fetch", "pull", "push").contains(args[0])
+                || List.of(args).contains("--progress")) {
+            return args;
+        }
+        String[] out = new String[args.length + 1];
+        out[0] = args[0];
+        out[1] = "--progress";
+        System.arraycopy(args, 1, out, 2, args.length - 1);
+        return out;
+    }
+
+    /**
+     * {@link #gitLogged} for a command long enough to watch: the {@link CommandLog} hears that it started and
+     * each line as git writes it, not only the finished transcript.
+     */
+    private ProcessRunner.Result gitStreamed(Path dir, Duration timeout, String... args) {
+        long startNanos = System.nanoTime();
+        List<String> argv = gitArgv(args);
+        CommandLog log = commandLog;
+        ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
+        streamedCommand = cancel;
+        ProcessRunner.Result r;
+        try {
+            log.started(argv);
+            r = ProcessRunner.runLiveInUserLocale(dir, timeout, argv, USER_ENV, log::progress, cancel);
+        } finally {
+            streamedCommand = null;
+        }
+        log.record(new CommandLog.Entry(
+                argv, r.exit(), r.out(), r.err(), (System.nanoTime() - startNanos) / 1_000_000L, true));
+        return r;
+    }
+
+    /** The streamed network command now running — the lane runs one at a time — or null. */
+    private volatile ProcessRunner.Cancellation streamedCommand;
+
+    /**
+     * Stops the clone, fetch, pull or push that is running; its caller gets a
+     * {@link ProcessRunner.Result#cancelled() cancelled} result. False when none is. Git is sent SIGTERM
+     * first, on which it removes its lock files and a partial clone. Commands still queued behind it run.
+     */
+    public boolean cancelNetworkCommand() {
+        ProcessRunner.Cancellation cancel = streamedCommand;
+        if (cancel == null) {
+            return false;
+        }
+        cancel.cancel();
+        return true;
     }
 
     /** A background read: hardened argv ({@link #backgroundArgv}), never logged, never prompting. */

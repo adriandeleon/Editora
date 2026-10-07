@@ -2490,6 +2490,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // A single shared "Output" console for every build tool (auto-opens on a run).
         buildOutputPanel.setOnLink(testNavigation::openRunLink);
         buildOutputPanel.setOnUrl(this::openExternalUrl);
+        buildOutputPanel.setOnGitDiff(pulled -> diffCoordinator.diffPulledFile(pulled));
         installCommandLogs();
         buildOutputToolWindow = new ToolWindow(
                 "buildOutput",
@@ -6113,9 +6114,17 @@ public class MainController implements com.editora.mcp.McpBridge {
      * Both sinks are called on a service worker thread, hence the marshal.
      */
     private void installCommandLogs() {
+        // A clone runs for minutes: its command and progress are shown while it runs, not once it is over.
         git.service()
-                .setCommandLog(
-                        entry -> Platform.runLater(() -> logCliCommand(gitConsoleOwner, tr("console.tab.git"), entry)));
+                .setCommandLog(new GitConsoleLog(
+                        entry -> logCliCommand(gitConsoleOwner, tr("console.tab.git"), entry),
+                        argv -> {
+                            buildOutputPanel.commandStarted(
+                                    gitConsoleOwner, tr("console.tab.git"), argv, git::cancelNetworkCommand);
+                            showCliTranscript(gitConsoleOwner);
+                        },
+                        (line, transientLine) ->
+                                buildOutputPanel.commandProgress(gitConsoleOwner, line, transientLine)));
         github.service()
                 .setCommandLog(entry ->
                         Platform.runLater(() -> logCliCommand(ghConsoleOwner, tr("console.tab.github"), entry)));
@@ -6123,6 +6132,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private void logCliCommand(Object owner, String tabTitle, com.editora.process.CommandLog.Entry entry) {
         buildOutputPanel.logCommand(owner, tabTitle, entry);
+        showCliTranscript(owner);
+    }
+
+    private void showCliTranscript(Object owner) {
         // The console's stripe is gated on a build tool being detected; a repo with no build file still has
         // git, so the first logged command is what makes the window reachable there.
         refreshBuildOutputAvailability();

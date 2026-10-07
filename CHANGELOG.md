@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- After a pull, clicking a file's change graph (`4 ++--`) in the Git tab opens a diff of that file
+  between the commit you were on and the one the pull brought. Clicking the file name still opens the
+  file.
+- Clone, fetch, pull and push now open the Output window's Git tab as soon as they start and show the
+  command running there: the `git` command line, then Git's own progress (counting, receiving,
+  resolving, writing) updating in place, then the exit line. Before, the tab only appeared once the
+  command had finished. While one runs, the tab's Stop button (or the new `Git: Cancel Running Command`)
+  cancels it.
+
 ## [0.19.0] - 2026-10-06
 
 ### Security

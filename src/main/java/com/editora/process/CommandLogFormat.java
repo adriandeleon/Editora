@@ -42,6 +42,16 @@ public final class CommandLogFormat {
     public static List<Line> format(CommandLog.Entry entry) {
         List<Line> lines = new ArrayList<>();
         boolean failed = entry.exitCode() != 0;
+        if (entry.streamed()) {
+            // Echoed when it started and its output shown as it arrived: only the exit is left to say.
+            if (entry.exitCode() == -1 && ProcessRunner.CANCELLED.equals(entry.err())) {
+                // The user stopped it: say so, and not in the colour of a failure.
+                lines.add(new Line("cancelled · " + duration(entry.millis()), FOOTER_STYLE));
+                return lines;
+            }
+            lines.add(new Line(footer(entry.exitCode(), entry.millis()), failed ? ERROR_STYLE : FOOTER_STYLE));
+            return lines;
+        }
         lines.add(new Line(commandLine(entry.argv()), ECHO_STYLE));
 
         List<String> out = splitLines(entry.out());

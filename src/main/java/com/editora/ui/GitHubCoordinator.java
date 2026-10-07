@@ -878,7 +878,7 @@ final class GitHubCoordinator {
                             git.pushCurrentBranch(r -> {
                                 if (r.ok()) {
                                     runPrCreate(dir, args);
-                                } else {
+                                } else if (!r.cancelled()) {
                                     ghError(tr("status.github.pushFailed"), r.message());
                                 }
                             });

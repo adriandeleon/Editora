@@ -1231,11 +1231,20 @@ final class GitCoordinator {
         return relative.startsWith(directory);
     }
 
+    /** Stops the running clone, fetch, pull or push (the Git console's Stop button and {@code git.cancel}). */
+    void cancelNetworkCommand() {
+        host.setStatus(tr(service.cancelNetworkCommand() ? "status.git.cancelling" : "status.git.nothingToCancel"));
+    }
+
     /**
      * Shows a Git command's (often multi-line) error output in a readable, scrollable dialog rather than
      * cramming it into the one-line status bar. The status bar gets a short summary.
      */
     void gitError(String summary, String detail) {
+        if (ProcessRunner.CANCELLED.equals(detail)) {
+            host.setStatus(tr("status.git.cancelled")); // the user stopped it: nothing to explain in a dialog
+            return;
+        }
         host.setStatus(summary);
         String body = detail == null || detail.isBlank() ? summary : detail.strip();
         Alert alert = new Alert(Alert.AlertType.ERROR);
