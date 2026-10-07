@@ -560,31 +560,101 @@ Editora is built with the help of AI coding tools.
   under *Settings → Application → Enable Personal Notes*.
 - **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
   ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
-  modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
+  modified, and a corner flag where lines were deleted) that stay on their lines while you type, and the same
+  changes are marked down the minimap's edge. **Work on a change where it is**: *Git: Next / Previous Change*
+  steps through the file's changes (`Alt+F5` / `Shift+Alt+F5` in the VS Code keymap, `Ctrl+Alt+Shift+Down` /
+  `Up` in IntelliJ, `C-x v ]` / `C-x v [` in Emacs); clicking a change bar (or *Git: Peek Change at Caret*)
+  opens a card with the old and the new lines and **Revert Hunk** (an undoable edit to the buffer — nothing is
+  written), **Stage Hunk** (saves the file, then stages only that change), **Copy Old Text**, Previous / Next
+  and Open Diff. Editor tabs are tinted by their file's status (modified / added / untracked / renamed /
+  conflicted), in the Project tree's colours; and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. The file list is **multi-select** — extend with
   Shift+Up/Down or Shift/Ctrl-click, then right-click to stage, unstage or discard the whole selection in one
-  `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette). It has a **filter box**
-  (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group. Palette/keys cover commit (`C-x g`), stage
+  `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette); **Space**
+  stages or unstages the selected rows, a group header's menu acts on the whole group (Stage All in Group,
+  Unstage All, Discard All), and *Git: Unstage All* / *Git: Discard All Changes…* do the same for everything —
+  the latter after a confirmation that counts the tracked files reset and the untracked files deleted. Staged
+  and changed rows show their `+added −deleted` line counts. It has a **filter box**
+  (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group.
+  **Commit options** sit above the message box: **Amend** (*Git: Amend Last Commit*) names the commit it will
+  replace, puts its message in an empty box, lets you commit with nothing staged to reword it, and warns in
+  place when that commit is already on the upstream (it will need a force push); **Sign off** (`-s`) is
+  remembered per repository for the session; the Commit button's menu has **Commit and Push** (*Git: Commit
+  and Push* — a failed commit pushes nothing); and *Git: Undo Last Commit…* takes the last commit off the
+  branch (`reset --soft HEAD~1`), keeps its changes staged and puts its message back — refused for a merge or
+  a first commit, and confirmed in stronger words when the commit was already pushed. A **length guide** shows
+  the subject's length (amber past 50, red past 72) and counts body lines over 72 — advice, never a block; a
+  dropdown (*Git: Recent Commit Messages…*) brings back one of the last 20 messages used in the repository this
+  session; and a `commit.template` is put in an empty box, its comment lines stripped at commit. Palette/keys cover commit (`C-x g`), stage
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
-  repo and opens a file from it — independent of projects). Fetch prunes remote-tracking branches that were
+  repo and opens a file from it — independent of projects; the form also takes a **branch** to check out, a
+  shallow **depth**, and *Also clone submodules*). A rebase or merge pull carries uncommitted changes across
+  (`--autostash`) and says whether they were applied back or kept in the stash. **Fetch automatically**
+  (*Settings → Git*, off by default; *Git: Toggle Fetch Automatically*) fetches the active repository in the
+  background every 10 minutes (configurable): it never prompts for a password, stays out of the way of your
+  own network commands, and only runs in a trusted folder or a repository you have fetched, pulled or pushed
+  in during the session. Fetch prunes remote-tracking branches that were
   deleted on the server, so a local branch whose upstream is gone is marked as such. The Emacs keymap adds
   the `vc` chords (`C-x v v` commit, `C-x v P` push, `C-x v +` pull, `C-x v b s` switch branch, `C-x v l` /
   `C-x v L` file / branch log, `C-x v g` blame); the IntelliJ keymap adds Commit (`Ctrl+K`), Push
   (`Ctrl+Shift+K`), Update (`Ctrl+T`) and Branches (``Ctrl+Shift+` ``). A **Git Log** tool window (`M-g h`,
-  or *Show File History* on a tab) lists the checked-out branch's commits — short hash, the branches and tags
-  pointing at each commit, subject, author and relative date, one line per commit — and reloads after every
-  Git command; select a commit to see its files. It loads the newest 200 commits and says so when the history
-  is longer. In a file-filtered history,
+  or *Show File History* on a tab) lists the checked-out branch's commits — a commit graph, short hash, the
+  branches and tags pointing at each commit, subject, author and relative date, one line per commit — and
+  reloads after every Git command. It loads 200 commits at a time and fetches the next page as you scroll
+  (or from *Load More*); a toolbar toggle (*Git Log: Toggle All Branches*) switches to every branch, remote
+  and tag. Select a commit to see its full message, author and e-mail, date, hash, parents (click one to
+  jump to it) and refs above its files. The filter box narrows the loaded rows as you type, and **Enter
+  searches the whole history**: plain words match the commit message, `author:name`, `content:text` (or
+  `-Stext`: commits that add or remove the text), `since:`/`until:` dates and `path:glob` narrow further —
+  the active search is shown in the header with a button to clear it. **Enter** (or a double-click) on a
+  commit opens everything it changed as one multi-file review; select two commits and choose **Compare
+  Selected Commits** to review what differs between them. A file history **follows renames**. In a
+  file-filtered history,
   double-click a revision's file to compare it with the editable working copy and apply individual lines,
   hunks, or the whole revision; in the full repository log, double-click keeps the read-only parent-to-commit
   diff and **Compare with Working Tree** is available from the file menu. Right-click a commit to Copy Hash /
   Checkout / Reset / Revert / Cherry-Pick / New Branch (the same actions are on the palette as *Git Log: …*;
-  they act on the commit selected in the visible log, and open the log first when it is hidden). **Blame**
+  they act on the commit selected in the visible log, and open the log first when it is hidden). Reverting a
+  merge commit asks which parent is the mainline. **Tags**: *New Tag…* on a commit (lightweight, or annotated
+  when you give a message) and *Checkout / Push / Delete* on a tagged one; *Git: New Tag…*, *Push Tag…*,
+  *Delete Tag…* (palette and VCS menu) and *Checkout Tag…* (palette) pick from the repository's tags. **Blame**
   (`M-g a`) adds a gutter column showing every line's author and commit date, shaded by age, with the
-  commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default). **Stash**
-  push / pop-latest / apply / drop from the palette and the VCS menu; the branch dropdown (branches first,
-  then the actions) offers *Stash Changes* and *Unstash…*. The VCS menu also reaches Stage All, Compare with
-  Branch / Tag / Commit, Resolve Conflicts, Add to .gitignore and Initialize Repository. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
+  commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default).
+  *Git: Blame — Ignore Whitespace Changes* (`-w`) and *Git: Blame — Detect Moved and Copied Lines* (`-M -C`)
+  are per-window toggles for seeing past reformatting and refactoring commits; a `.git-blame-ignore-revs`
+  file at the repository root (or the file `blame.ignoreRevsFile` names) is used automatically, and a broken
+  one is reported instead of silently emptying the column. *Git: Annotate Previous Revision* opens the file
+  as it was before the commit the caret line is blamed on — read-only, annotated in turn, following
+  renames — so a line can be walked back through its history.
+  **Stashes** (*Git: Stashes…*) lists every stash with its message, branch, age and files (untracked ones
+  included): Enter shows its changes in the multi-file review tab, and the Menu key or a right-click offers
+  Apply, Pop, Drop, Branch from Stash and Copy Name. *Git: Stash Changes…* takes a message and three
+  options — include untracked files, staged changes only (Git 2.35+), keep the index — and saves unsaved
+  buffers first, so the stash holds what is on screen. A stash that applies with conflicts says so, says
+  the stash was kept, and lists the conflicted files. Pop-latest / apply / drop pickers remain on the
+  palette and the VCS menu; the branch dropdown (branches first, then the actions) offers *Stash Changes*
+  and *Unstash…*.
+  **Patches:** *Git: Apply Patch…* applies a `.patch`/`.diff` file, or the active buffer when it is a
+  patch, to the working tree or the index — checked first, so a patch that does not fit changes nothing
+  and git's reason is shown with the offer of a 3-way merge. In a repository a patch file's review tab
+  carries the same *Apply to Working Tree* / *Apply to Index* pair. *Git: Create Patch…* writes the staged
+  changes, the unstaged changes or a commit (`format-patch`) to a file or a new untitled buffer.
+  The same is on a Git Log row (*Create Patch…*). The **VCS menu** keeps the daily actions at its top level
+  (Commit, Commit and Push, Push, Pull, Fetch, Switch Branch, Git Log, Continue / Skip / Abort, Init, Clone)
+  and groups the rest into submenus: Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches, History &
+  Blame and Compare. Git commands that succeed no longer bring the Output console forward — only network
+  commands (to show progress) and failures do, so an action started from the Git Log leaves the log on screen. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
+  **Branch management** is on each row of the branch dropdown (its `⋯` button, a right-click, or the Menu key)
+  and on the palette: new branch from any branch or tag (with or without switching), rename, merge into the
+  current branch, rebase the current branch onto another, set / unset upstream, compare a branch with the
+  current one (the changed-files review), check out a tag or revision by name, and delete — a local branch
+  with unmerged commits, and a branch on its remote, only after a confirmation that says what is lost. A merge
+  or rebase that stops on conflicts says so and leaves the operation in progress. With several remotes the
+  dropdown groups remote branches by remote. **Push** variants: *Push to…* (another remote or branch name),
+  *Push Tags*, and *Force Push*, which is always `--force-with-lease`; a push the remote rejects because it has
+  newer commits offers *Pull, then Push*, *Force with Lease* or Cancel. *Git: Manage Remotes…* lists the remotes
+  (URLs shown without stored credentials) to add, rename, re-point, fetch, prune or remove them, and *Git:
+  Manage Worktrees…* lists the work trees to add one, open it in a new window, remove or prune.
 - **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
   highlights, curved change ribbons and an overview track, collapsed unchanged context, whitespace/wrap
   controls, case-insensitive matching, smart or positional changed-line alignment, state-preserving live

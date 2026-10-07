@@ -139,19 +139,7 @@ final class MainMenuBar {
         items.clear();
         menuGroups.clear();
         for (MenuBarModel.MenuSpec spec : MenuBarModel.menus(simple)) {
-            Menu menu = new Menu(tr(spec.titleKey()));
-            java.util.List<Row> group = new java.util.ArrayList<>();
-            for (String entry : spec.entries()) {
-                if (MenuBarModel.SEPARATOR.equals(entry)) {
-                    menu.getItems().add(new SeparatorMenuItem());
-                    continue;
-                }
-                Row row = newRow(entry);
-                row.item().setOnAction(e -> run.accept(entry));
-                items.put(entry, row);
-                group.add(row);
-                menu.getItems().add(row.item());
-            }
+            Menu menu = menuOf(spec);
             // Recompute enablement as the menu opens, so it can never show a stale answer. The context
             // half of the gate (a repo, an open buffer, a suspended debug session) moves constantly and
             // asynchronously — Git detection alone lands well after the window is built — while refresh()
@@ -159,8 +147,42 @@ final class MainMenuBar {
             // this may not fire, which is why the state-change sites push refreshEnablement() as well.
             menu.setOnShowing(e -> refreshEnablement());
             bar.getMenus().add(menu);
-            menuGroups.add(group);
         }
+    }
+
+    /**
+     * One menu from its spec: its entries, then — below a separator — its submenus, each built the same
+     * way. A submenu is a plain {@link Menu} inside its parent, which the macOS system menu bar renders
+     * natively like any other; its rows are their own group for the chord column.
+     */
+    private Menu menuOf(MenuBarModel.MenuSpec spec) {
+        Menu menu = new Menu(tr(spec.titleKey()));
+        java.util.List<Row> group = new java.util.ArrayList<>();
+        for (String entry : spec.entries()) {
+            if (MenuBarModel.SEPARATOR.equals(entry)) {
+                menu.getItems().add(new SeparatorMenuItem());
+                continue;
+            }
+            Row row = newRow(entry);
+            row.item().setOnAction(e -> run.accept(entry));
+            items.put(entry, row);
+            group.add(row);
+            menu.getItems().add(row.item());
+        }
+        menuGroups.add(group);
+        if (!spec.submenus().isEmpty()) {
+            menu.getItems().add(new SeparatorMenuItem());
+            for (MenuBarModel.MenuSpec submenu : spec.submenus()) {
+                Menu nested = menuOf(submenu);
+                if (!systemMenu) {
+                    // An empty icon column, so the submenu's title starts where the item titles do.
+                    nested.setGraphic(iconColumn(null));
+                    nested.getStyleClass().add("menu-submenu");
+                }
+                menu.getItems().add(nested);
+            }
+        }
+        return menu;
     }
 
     /**
@@ -220,7 +242,7 @@ final class MainMenuBar {
         holder.setMaxWidth(ICON_COLUMN);
         holder.setAlignment(Pos.CENTER);
         holder.getStyleClass().add("menu-item-icon");
-        Node glyph = MenuBarIcons.forCommand(commandId);
+        Node glyph = commandId == null ? null : MenuBarIcons.forCommand(commandId);
         if (glyph != null) {
             holder.getChildren().add(glyph);
         }

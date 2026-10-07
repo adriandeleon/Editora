@@ -125,4 +125,20 @@ class DiskLineMapTest {
         map.reset();
         assertEquals(12, map.diskLine(12));
     }
+
+    /** The hunk commands go the other way: from a line git names to where it is in the buffer now. */
+    @Test
+    void aDiskLineCanBeFoundAgainInTheBuffer() {
+        DiskLineMap map = new DiskLineMap();
+        assertEquals(5, map.bufferLine(5), "identity");
+        map.edit(1, false, "", "\n\n"); // two lines typed after line 1
+        assertEquals(1, map.bufferLine(1));
+        assertEquals(4, map.bufferLine(2));
+        assertEquals(12, map.bufferLine(10), "below the stored part");
+        map.edit(0, true, "x\n", ""); // line 0 deleted
+        assertEquals(DiskLineMap.UNKNOWN, map.bufferLine(0), "it is gone");
+        assertEquals(0, map.bufferLine(1));
+        map.lose();
+        assertEquals(DiskLineMap.UNKNOWN, map.bufferLine(1));
+    }
 }

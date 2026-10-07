@@ -85,6 +85,15 @@ multi-file `.patch`/`.diff` buffers and repository snapshots from the Git coordi
 the `diff.reviewStaged` / `diff.reviewUnstaged` commands open index-vs-HEAD or working-vs-index review sets;
 untracked files compare against an empty index side, and rename/copy entries fetch their original path on the
 left. Active-diff commands route through the currently selected file.
+`DiffCoordinator.openBlobReview` builds the same read-only review from pairs of blob specs
+(`<rev>:<path>`, or nothing for an absent side); the stash list uses it to show a stash against the commit
+it was made on, with the untracked files of an `--include-untracked` stash read from the stash commit's
+third parent.
+
+Inside a repository a patch buffer always opens as a `PatchReviewPane` (a one-file patch too), because that
+tab carries the **Apply to Working Tree** / **Apply to Index** bar (`setApplyActions`). The bar applies the
+bytes that were parsed for the tab, in the repository the tab was opened in — a review tab is not a file, so
+a window without a project has no active repository while it is selected.
 
 `DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` resolves each root (which may
 itself be a symbolic link) and walks below it without following symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
@@ -147,6 +156,19 @@ index bytes and the displayed path blob still match. A stale comparison therefor
 and an `index.lock` held by another Git process is reported as busy and left in place. Copy hunk and
 open-changed-line are available from the context menu and command palette.
 
+### Applying a patch file
+
+`GitPatchCoordinator` applies a whole patch with `git apply` (`GitService.applyPatch`), never by replaying
+hunks through the editor: the patch's own bytes go to git's stdin, so a patch of CRLF or Latin-1 text still
+matches. `--check` runs first in the same serial job; a patch that does not fit applies nothing and
+`PatchOutcome.REJECTED` shows git's message with the offer to retry with `--3way`. A three-way apply has no
+pre-flight (`--check --3way` passes for a patch that will conflict) and can end as
+`PatchOutcome.CONFLICTS`: exit code 1 with the files written and marked. Anything that writes files — a
+working-tree apply, any three-way apply — first saves the open buffers of the paths the patch names and
+runs inside `GitCoordinator.aroundWorkingTreeMutation`, so pending saves are superseded and buffers reload.
+`git.createPatch` reads `git diff --binary [--cached]` or `git format-patch -1 --stdout <hash>` as a
+hardened background read and writes the bytes unchanged.
+
 ## Three-way merge
 
 `merge.resolve` first asks Git for the conflicted path's `:1`, `:2`, and `:3` index blobs: the common
@@ -183,7 +205,10 @@ source document's line separator, preserves the edited final-newline state, uses
 whole-document replacement, and refuses to overwrite a buffer that changed after the resolver opened. The
 target is resolved by path at apply time rather than captured when the resolver opened: if the source tab
 was closed meanwhile, the file is reopened in the background and its current text checked, so a resolution
-is never written into a disposed buffer and reported as applied.
+is never written into a disposed buffer and reported as applied. When the file is an unmerged path of
+the active repository and the applied text has no conflict left, the apply also finishes the resolution for
+Git (`GitCoordinator.resolutionApplied`): the buffer is saved and the path staged, which is what clears it
+from the Commit window's Conflicts group. A partial resolution is only written into the buffer.
 
 ## Accessibility
 

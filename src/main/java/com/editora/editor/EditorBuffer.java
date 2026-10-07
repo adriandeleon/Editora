@@ -548,7 +548,7 @@ public class EditorBuffer implements TabContent {
     private LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
     private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
     /** Git change bars + blame column, kept on the right lines through unsaved edits. */
-    private final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter);
+    private final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter, minimap);
     /** Fixed annotation-column width in px, computed from the widest author+date when blame is set, so
      *  line numbers stay aligned regardless of which row's gutter is (re)built. */
     private double blameColumnWidth;
@@ -941,9 +941,7 @@ public class EditorBuffer implements TabContent {
         folds.setSplitViews(() -> focusedArea, () -> area2);
         // Personal-Notes markers are drawn inline at each note's start by noteOverlay (no gutter slot).
         notes.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
-        // Git change bars: the slot is reserved only while tracking is on (changeBars != null); the
-        // per-line hunk text feeds a hover tooltip on the bar.
-        folds.setChangeHook(gitLines::barsTracked, gitLines::barAt, gitLines::hunkAt);
+        gitLines.attach(folds); // change bars: slot reserved only while tracking is on; hunk text on hover
         // Gutter Run glyph: reserved for a runnable file — one entry line for a script, or one per
         // request for a .http file.
         folds.setRunHooks(
@@ -2832,10 +2830,7 @@ public class EditorBuffer implements TabContent {
         return out;
     }
 
-    /**
-     * One code lens: the 0-based line it annotates, what it says ({@code 3 references}), and an opaque
-     * token the click handler gets back (the coordinator's own description of what the lens does).
-     */
+    /** One code lens: its 0-based line, its text ({@code 3 references}) and the click handler's own token. */
     public record CodeLens(int line, String label, Object token) {}
 
     private static final String CODE_LENS_STYLE = "code-lens";
@@ -2851,13 +2846,7 @@ public class EditorBuffer implements TabContent {
      * empty clears them.
      */
     public void setCodeLenses(java.util.List<CodeLens> lenses) {
-        java.util.Map<Integer, java.util.List<CodeLens>> byLine = new java.util.HashMap<>();
-        if (lenses != null) {
-            for (CodeLens lens : lenses) {
-                byLine.computeIfAbsent(lens.line(), k -> new java.util.ArrayList<>(1))
-                        .add(lens);
-            }
-        }
+        java.util.Map<Integer, java.util.List<CodeLens>> byLine = CodeLensShift.byLine(lenses, CodeLens::line);
         if (byLine.equals(codeLensByLine)) {
             return;
         }
@@ -2884,49 +2873,13 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /**
-     * Keeps the lenses on their declarations while the answer to the next request is on its way: a change
-     * that adds or removes lines moves the lenses below it, and drops those inside the removed text.
-     */
+    /** Keeps the lenses on their declarations until the next answer arrives ({@link CodeLensShift}). */
     private void shiftCodeLenses(java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
-        if (codeLensByLine.isEmpty()) {
-            return;
+        var moved = CodeLensShift.afterChanges(codeLensByLine, changes, area);
+        if (moved != null) {
+            codeLensByLine = moved;
+            refreshInlayAreas();
         }
-        java.util.Map<Integer, java.util.List<CodeLens>> moved = codeLensByLine;
-        if (changes.size() == 1) {
-            var change = changes.get(0);
-            int removedLines = newlines(change.getRemoved());
-            int delta = newlines(change.getInserted()) - removedLines;
-            if (delta == 0 && removedLines == 0) {
-                return;
-            }
-            var at = area.offsetToPosition(
-                    Math.min(change.getPosition(), area.getLength()),
-                    org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-            moved = CodeLensShift.shift(
-                    codeLensByLine,
-                    at.getMajor(),
-                    at.getMinor() == 0,
-                    removedLines,
-                    change.getRemoved().endsWith("\n"),
-                    delta);
-        } else if (changes.stream().anyMatch(c -> newlines(c.getRemoved()) + newlines(c.getInserted()) > 0)) {
-            // Each change of a batch is in the coordinates of the step it ran in; rather than replay
-            // them, drop the lenses until the next answer.
-            moved = java.util.Map.of();
-        } else {
-            return;
-        }
-        codeLensByLine = moved.isEmpty() ? java.util.Map.of() : moved;
-        refreshInlayAreas();
-    }
-
-    private static int newlines(String text) {
-        int n = 0;
-        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
-            n++;
-        }
-        return n;
     }
 
     /** A click on a code lens runs its action instead of placing the caret. */
@@ -6949,12 +6902,9 @@ public class EditorBuffer implements TabContent {
         return folds;
     }
 
-    /**
-     * Sets the Git gutter change bars (0-based line → CSS class), or {@code null} to disable tracking
-     * (no reserved slot). Toggling tracking rebuilds the whole gutter factory (the reserved width
-     * changes); otherwise only the lines whose bar changed are repainted — cheap and viewport-safe.
-     * Off in large-file mode (the gutter is minimal there).
-     */
+    /** Sets the Git change bars (0-based on-disk line → CSS class); {@code null} = not tracked, no slot.
+     *  Toggling tracking rebuilds the gutter factory; otherwise only the changed lines repaint. Off in
+     *  large-file mode (the gutter is minimal there). */
     public void setChangeBars(java.util.Map<Integer, String> lineClasses) {
         setChangeBars(lineClasses, null);
     }
@@ -6973,6 +6923,11 @@ public class EditorBuffer implements TabContent {
     /** Whether this buffer currently has Git change tracking on (a reserved change-bar slot). */
     public boolean hasChangeBars() {
         return gitLines.barsTracked();
+    }
+
+    /** The Git changes behind the bars: hunks, where they sit under unsaved edits, bar clicks. */
+    public GitGutterLines gitGutter() {
+        return gitLines;
     }
 
     public BookmarkManager getBookmarkManager() {

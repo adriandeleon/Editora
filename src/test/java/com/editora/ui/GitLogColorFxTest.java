@@ -75,7 +75,7 @@ class GitLogColorFxTest {
         });
 
         HBox row = assertInstanceOf(HBox.class, graphic[0], "commit row is one line of labels (hash, subject, …)");
-        Label hash = (Label) row.getChildren().get(0);
+        Label hash = (Label) row.lookup(".git-log-hash"); // after the graph strip
         assertNotNull(hash);
         assertTrue(hash.getStyleClass().contains("git-log-hash"), "the short hash carries the git-log-hash class");
         assertTrue(hash.getText().startsWith("abc1234"), "the hash text is the short hash: " + hash.getText());

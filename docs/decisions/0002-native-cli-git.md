@@ -39,6 +39,56 @@ gutter work behind it. Working-tree mutations are serialised across both.
   here" (`RepoState.refused()`/`refusal()`: dubious ownership, a bare repository, …) and "git is
   unavailable" are each believed only for a bounded time, and a cached root is revalidated against
   the `.git` entries between the folder and that root — stat calls, not a process per refresh.
+- **An operation in progress is state, read without a process.** A merge, rebase, cherry-pick or
+  revert that stopped (usually on a conflict) — and a bisect, for display — is carried in
+  `RepoState.operation()` (`git/GitOperation`). `GitOperation.detect` reads git's own state files in
+  the order `git status` uses: `rebase-merge/` / `rebase-apply/` (not `applying`, which is `git am`)
+  before `MERGE_HEAD`, then `CHERRY_PICK_HEAD`, `REVERT_HEAD`, the sequencer's `todo` (a multi-commit
+  pick between two commits has no `*_HEAD`), then `BISECT_LOG`. Those files are per work tree, so the
+  directory is the one `git rev-parse --git-dir` names (`.git/worktrees/<name>` for a linked work
+  tree); it is answered by the same `rev-parse --show-toplevel --git-dir` that resolves the root, kept
+  per root, and every status refresh then costs a few `stat` calls and no extra process. Unmerged paths come from the status itself. The window shows the state in the
+  status-bar segment (`main · MERGING`) and as a banner in the Commit window, with **Continue**
+  (`<op> --continue`; a merge is concluded by committing — with the box's message, which is prefilled
+  from `MERGE_MSG`, else `commit --no-edit --cleanup=strip`), **Skip** (`<op> --skip`, not for a
+  merge) and **Abort** (`<op> --abort`), also registered as `git.continueOperation`,
+  `git.skipOperation` and `git.abortOperation`. Continue is refused while files are unmerged; Skip
+  and Abort are confirmed because they discard work.
+- **Stopping on conflicts is not a failure.** A pull, revert, cherry-pick, rebase step or stash
+  pop/apply that exits non-zero having announced conflicts (`GitConflicts.stoppedOnConflict`, read
+  from git's pinned English output) opens the Commit window and says what to do instead of showing an
+  error dialog; the refresh that follows every mutation then puts up the banner and the **Conflicts**
+  group. A conflicted stash pop has no operation to continue or abort: the banner only counts the
+  unmerged files. Conflict rows offer Resolve (the three-way resolver), Accept Ours / Accept Theirs
+  (`checkout --ours/--theirs` then `add`, or `rm` when that side deleted the file —
+  `GitConflicts.acceptSide`) and Mark Resolved; staging a conflicted file that still contains markers
+  is confirmed, and Commit is disabled, with the reason in its tooltip, while any path is unmerged.
+- **Pull has a mode.** `Settings.gitPullMode` (`git/GitPullMode`): `ff-only` (the default, and the
+  only behaviour before the setting), `rebase` (`pull --rebase --autostash`) or `merge`
+  (`pull --no-rebase --no-edit --autostash`). The two modes that cannot start on a dirty tree stash
+  the uncommitted changes for the duration; `GitPullMode.autostash` reads from git's output whether
+  they were applied back ("Applied autostash") or conflicted and were kept as a stash entry, and the
+  status message says which — the second case also opens the Commit window, like any other conflict. A fast-forward-only pull that fails *because the branches diverged*
+  (`GitPullMode.diverged`) offers Rebase / Merge / Cancel rather than the error; `git.pullRebase` and
+  `git.pullMerge` run one mode regardless of the setting.
+- **One classifier for "stopped on conflicts".** `GitConflicts.mentionsConflict` is the only place
+  that reads git's conflict announcements; `GitOutcome.CONFLICT`, `GitConflicts.stoppedOnConflict`
+  and `StashOutcome.CONFLICT` (which adds the stash's own two phrases) are built on it. Every command
+  that can stop that way — pull, merge, rebase, revert, cherry-pick, continue/skip, stash apply/pop, a
+  three-way patch apply, an autostash that did not apply back — ends in
+  `GitCoordinator.conflictsNeedAttention` / `reportConflictStop`: a status message and the Commit
+  window. None of them shows a modal.
+- **A commit's message is one `-m` argument.** The cancellable runner user commands go through has
+  no stdin, and a commit waiting in a hook must stay cancellable, so the message is not piped with
+  `-F -`. Amend is `--amend`, sign-off `-s`. The message is recorded as typed — a subject beginning
+  with `#` stays a subject — except in a repository with a `commit.template`: the template (read with
+  `git config --type=path`, a regular file of at most 64 KB, relative to the work tree) is put in the
+  empty box with its comment lines, so such a commit passes `--cleanup=strip` and the box counts as
+  empty while `CommitMessages.strip` leaves nothing (`core.commentChar` is honoured for that check).
+- **No user command opens an editor.** `GIT_EDITOR=:` is part of every user command's environment:
+  commits get their message with `-m`, and `rebase --continue` or a merge commit keeps the prepared
+  one. Without it git started `$EDITOR` with no terminal and the command sat on the lane until the
+  mutation ceiling.
 - **A running user command can be stopped.** `GitService.cancelRunningCommand()` ends the network
   command if one is running, otherwise the local one (a commit waiting in a hook, a long checkout),
   with SIGTERM first so git removes its lock files; the rest of a multi-command job is not started.
@@ -63,7 +113,50 @@ gutter work behind it. Working-tree mutations are serialised across both.
   `filter.<name>.clean`/`process` drivers selected through `.gitattributes`, which cannot be
   disabled without breaking Git LFS and end-of-line conversion; that needs a trust decision, not an
   override. The cost is that a `core.fsmonitor` daemon is not used for background status.
-- Ref names are repository data. A revision that starts with `-` is refused before it reaches git,
+- **The automatic fetch is a background command that touches the network — the one such command.**
+  "Fetch automatically" (`Settings.gitAutoFetch`, off by default; `ui/GitAutoFetch`,
+  `GitService.autoFetch`) runs `git fetch --prune --quiet` of the active repository on the network
+  lane at the configured interval. It is held to the background rules and then some:
+  - *The config overrides apply.* It carries `GitSafety.BACKGROUND_CONFIG` like every background
+    read (no hooks — so no `reference-transaction` hook —, no fsmonitor, no pager, no `ext::`
+    transport), is never written to the Git console, and has a 2-minute ceiling.
+  - *The overrides are not enough, so it needs a vouched-for repository.* A fetch runs the transport
+    programs the repository's own config names (`remote.<name>.uploadpack`, `core.sshCommand`,
+    `credential.helper`, `url.*.insteadOf`); those cannot be neutralised without breaking the fetch
+    itself. That is exactly the risk this section describes for background commands, so the automatic
+    fetch runs only where the user has already accepted it: in a **trusted folder**
+    (`config/TrustStore`, the same store that gates build wrappers and project-local language
+    servers) or in a repository where the user ran a fetch, pull or push **themselves during this
+    session** (`GitService.userRanNetworkCommandIn` — that command already ran the same transport
+    configuration with the user's consent). Anywhere else the timer ticks and does nothing.
+  - *It can ask for nothing* (`GitSafety.autoFetchEnv`, `AUTO_FETCH_CONFIG`). On top of
+    `GIT_TERMINAL_PROMPT=0`: `GIT_ASKPASS` and `SSH_ASKPASS` are set to the empty string and
+    `-c core.askPass=` is passed (git reads an empty value as "no askpass program", where an unset
+    one falls through to the next source), `SSH_ASKPASS_REQUIRE=never` (OpenSSH 8.4+),
+    `GCM_INTERACTIVE=never` and `-c credential.interactive=false` for Git Credential Manager. ssh is
+    put in batch mode with `GIT_SSH_COMMAND="ssh -o BatchMode=yes"` — but **only when the user has no
+    ssh command of their own**: `GIT_SSH_COMMAND` outranks `core.sshCommand`, so setting it would
+    replace theirs. When `git config --get core.sshCommand` answers, or `GIT_SSH_COMMAND`/`GIT_SSH`
+    is exported, nothing is set and the other variables are relied on (ssh without a terminal and
+    with askpass forbidden fails rather than prompts). A credential helper that needs no interaction
+    (a keychain, a cached token) still works, which is what makes the feature useful.
+  - *It stays out of the way.* It is not started while a user network command is running, parked or
+    queued (`GitService.networkBusy`), it is killed the moment one is requested, it is skipped for a
+    window that has been unfocused for longer than one interval, and a failure is silent apart from
+    one status-bar hint per repository per session.
+  Untested: the askpass/credential-manager suppression on Windows and macOS (the variables are the
+  documented ones; an empty environment value is "unset" on Windows, which is why `core.askPass=` is
+  passed as configuration as well).
+- **Clone options are arguments, not text.** The clone form's branch, depth and submodules become
+  `--branch=<name>` (one argument, so a name beginning with `-` stays a value), `--depth=<n>` and
+  `--recurse-submodules`, all before the `--` that precedes the URL.
+- **A history search can be stopped.** The Git Log's listing is read with a cancellation handle
+  (`ProcessRunner.run(…, Cancellation)`, still the parse-stable background environment); a new
+  listing, a cleared search or a repository change kills the one in flight
+  (`GitService.cancelHistoryRead`) instead of leaving a `log -S` on the history lane until its
+  2-minute ceiling.
+- Ref names are repository data. A name the user types for a branch, tag or remote is checked by the
+  one validator, `git/GitRefNames` (held to `git check-ref-format` by its test). A revision that starts with `-` is refused before it reaches git,
   and `--end-of-options` is added where the installed git (2.24+) understands it.
 - Kill timers differ by kind: 10 s for background reads, 15 min for working-tree mutations and
   commit (hooks, a GPG pinentry and large checkouts legitimately take long, and a mutation killed

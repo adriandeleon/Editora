@@ -34,6 +34,17 @@ final class GitConsoleLog implements CommandLog {
         this.onProgress = onProgress;
     }
 
+    /**
+     * Whether a finished command should bring the Output window's Git tab forward. Only one that failed: its
+     * transcript is the explanation. A quick local command that worked — a stage, a commit, a tag or a revert
+     * started from the Git Log — says so in the status bar, and raising the console for it would cover the
+     * Git Log it was started from, which shares the bottom panel. (A network command raises the console when
+     * it <em>starts</em>, to show its progress.) A command the user cancelled has nothing to explain. Pure.
+     */
+    static boolean raisesConsole(Entry entry) {
+        return entry.exitCode() != 0 && !com.editora.process.ProcessRunner.CANCELLED.equals(entry.err());
+    }
+
     @Override
     public void record(Entry entry) {
         Platform.runLater(() -> onRecord.accept(entry));

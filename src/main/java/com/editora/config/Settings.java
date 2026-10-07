@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 109;
+    public static final int SCHEMA_VERSION = 111;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -266,6 +266,20 @@ public class Settings {
     private String ghPath = "";
     /** git command/path override; blank = the {@code git} found on the (augmented) PATH. */
     private String gitPath = "";
+    /**
+     * How {@code git pull} integrates the remote's commits: {@code ff-only} (the default, and what every
+     * version before this setting did), {@code rebase} or {@code merge}; see {@code git.GitPullMode}.
+     */
+    private String gitPullMode = "ff-only";
+    /**
+     * "Fetch automatically": a background {@code git fetch --prune} of the active repository every
+     * {@link #gitAutoFetchMinutes} minutes. Off by default — it is the only network traffic Editora would
+     * start on its own, and it only ever runs in a trusted folder or a repository the user has fetched,
+     * pulled or pushed in during the session (see ADR 0002).
+     */
+    private boolean gitAutoFetch = false;
+    /** Minutes between automatic fetches; at least 1. */
+    private int gitAutoFetchMinutes = 10;
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
@@ -1669,6 +1683,33 @@ public class Settings {
     public void setGitPath(String gitPath) {
         this.gitPath = gitPath == null ? "" : gitPath;
     }
+
+    public String getGitPullMode() {
+        return gitPullMode;
+    }
+
+    public void setGitPullMode(String gitPullMode) {
+        this.gitPullMode = gitPullMode == null || gitPullMode.isBlank() ? "ff-only" : gitPullMode.strip();
+    }
+
+    public boolean isGitAutoFetch() {
+        return gitAutoFetch;
+    }
+
+    public void setGitAutoFetch(boolean gitAutoFetch) {
+        this.gitAutoFetch = gitAutoFetch;
+    }
+
+    public int getGitAutoFetchMinutes() {
+        return gitAutoFetchMinutes;
+    }
+
+    public void setGitAutoFetchMinutes(int gitAutoFetchMinutes) {
+        this.gitAutoFetchMinutes = Math.max(1, Math.min(MAX_GIT_AUTO_FETCH_MINUTES, gitAutoFetchMinutes));
+    }
+
+    /** A day: beyond that "automatically" means nothing. */
+    public static final int MAX_GIT_AUTO_FETCH_MINUTES = 24 * 60;
 
     public boolean isGitBlameInline() {
         return gitBlameInline;

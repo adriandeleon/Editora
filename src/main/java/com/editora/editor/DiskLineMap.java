@@ -45,6 +45,30 @@ final class DiskLineMap {
         return line < size ? origin[line] : line + tailDelta;
     }
 
+    /** The buffer line showing on-disk line {@code disk}, or {@link #UNKNOWN} when it is gone or rewritten. */
+    int bufferLine(int disk) {
+        if (lost || disk < 0) {
+            return UNKNOWN;
+        }
+        for (int i = 0; i < size; i++) {
+            if (origin[i] == disk) {
+                return i;
+            }
+        }
+        int below = disk - tailDelta;
+        return below >= size ? below : UNKNOWN;
+    }
+
+    /** Buffer lines from this one down are on-disk line {@code line + tailShift()}: no edit reached them. */
+    int untouchedFrom() {
+        return size;
+    }
+
+    /** See {@link #untouchedFrom()}. */
+    int tailShift() {
+        return tailDelta;
+    }
+
     /** Whether buffer lines and disk lines currently coincide (nothing has shifted). */
     boolean identity() {
         return !lost && size == 0 && tailDelta == 0;

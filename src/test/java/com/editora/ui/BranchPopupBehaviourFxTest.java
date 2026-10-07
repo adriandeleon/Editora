@@ -19,6 +19,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
+import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -237,5 +238,161 @@ class BranchPopupBehaviourFxTest {
         assertEquals("↑1", BranchPopup.trackBadge(1, 0));
         assertEquals("↓99+", BranchPopup.trackBadge(0, 250));
         assertEquals("", BranchPopup.trackBadge(0, 0));
+    }
+
+    // --- per-row secondary actions, remote groups, the "gone" marker --------------------------------
+
+    /** A dropdown over two remotes, whose branch rows offer one secondary action each. */
+    private static Shown showWithRowActions() {
+        Shown base = show();
+        base.popup().hide();
+        StackPane root = (StackPane) base.stage().getScene().getRoot();
+        Node anchor = root.getChildren().get(0);
+        base.popup()
+                .show(
+                        base.stage(),
+                        anchor,
+                        "main",
+                        List.of(
+                                new BranchInfo("fix/c", "origin/fix/c", 0, 0, true),
+                                new BranchInfo("main", "origin/main", 0, 0, false)),
+                        List.of("origin/main", "fork/topic", "fork/main"),
+                        List.of("origin", "fork"),
+                        "",
+                        List.of(),
+                        name -> base.ran().add("local:" + name),
+                        name -> base.ran().add("remote:" + name),
+                        branch -> List.of(
+                                new BranchPopup.RowAction(
+                                        "Delete " + branch.name(),
+                                        true,
+                                        () -> base.ran().add("delete:" + branch.name())),
+                                BranchPopup.RowAction.SEPARATOR,
+                                new BranchPopup.RowAction(
+                                        "gone=" + branch.gone() + " current=" + branch.current(), false, () -> {})));
+        root.applyCss();
+        root.layout();
+        return base;
+    }
+
+    @Test
+    void aBranchRowsSecondaryActionClosesTheDropdownAndRuns() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = showWithRowActions();
+            try {
+                List<BranchPopup.RowAction> actions = s.popup().rowActionsFor("fix/c");
+                assertEquals("Delete fix/c", actions.get(0).label());
+                assertTrue(actions.get(0).danger());
+                assertEquals("gone=true current=false", actions.get(2).label(), "the row describes its branch");
+                assertEquals(
+                        "gone=false current=true",
+                        s.popup().rowActionsFor("main").get(2).label());
+
+                s.popup().runRowAction(actions.get(0));
+                assertEquals(List.of("delete:fix/c"), s.ran(), "the action ran, and nothing was checked out");
+                assertFalse(s.popup().isShown(), "the dropdown closes like it does for a checkout");
+            } finally {
+                s.stage().close();
+            }
+        });
+    }
+
+    /** The visible way into the secondary actions, and a click on it is not a click on the row. */
+    @Test
+    void everyBranchRowCarriesAMoreButtonThatDoesNotCheckOut() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = showWithRowActions();
+            try {
+                int rows = 0;
+                for (Node n : s.list().lookupAll(".list-cell")) {
+                    if (!(n instanceof ListCell<?> cell)
+                            || cell.isEmpty()
+                            || !kind(cell.getItem()).equals("BranchRow")) {
+                        continue;
+                    }
+                    rows++;
+                    Node more = cell.lookup(".branch-more");
+                    assertTrue(more != null, "no more-button on " + name(cell.getItem()));
+                    click(more);
+                }
+                assertTrue(rows >= 5, "expected the branch rows to be laid out, got " + rows);
+                assertEquals(List.of(), s.ran(), "the more-button must not activate its row");
+                assertTrue(s.popup().isShown());
+            } finally {
+                s.popup().hide();
+                s.stage().close();
+            }
+        });
+    }
+
+    @Test
+    void severalRemotesGetASectionEachAndAGoneUpstreamIsMarked() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = showWithRowActions();
+            try {
+                List<String> headers = new ArrayList<>();
+                for (Object row : s.list().getItems()) {
+                    if (kind(row).equals("Header")) {
+                        headers.add(String.valueOf(FxTestSupport.call(row, "title", new Class<?>[] {})));
+                    }
+                }
+                assertEquals(
+                        List.of(
+                                tr("branchpopup.local"),
+                                tr("branchpopup.remoteOf", "fork"),
+                                tr("branchpopup.remoteOf", "origin")),
+                        headers);
+                boolean marked = false;
+                for (Node n : s.list().lookupAll(".list-cell")) {
+                    if (n instanceof ListCell<?> cell && !cell.isEmpty() && n.lookup(".branch-gone") != null) {
+                        marked = true;
+                        assertEquals("fix/c", name(cell.getItem()));
+                        assertTrue(cell.getTooltip().getText().contains(tr("branchpopup.tip.goneHint")));
+                    }
+                }
+                assertTrue(marked, "the branch whose upstream is gone carries the marker");
+            } finally {
+                s.popup().hide();
+                s.stage().close();
+            }
+        });
+    }
+
+    /** The Menu key opens the selected branch's secondary menu; choosing an entry runs it and closes all. */
+    @Test
+    void theMenuKeyOpensTheSelectedRowsSecondaryMenu() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = showWithRowActions();
+            try {
+                javafx.scene.control.TextField search = FxTestSupport.field(s.popup(), "search");
+                assertEquals("main", name(s.list().getSelectionModel().getSelectedItem()), "the current branch");
+                Event.fireEvent(
+                        search,
+                        new javafx.scene.input.KeyEvent(
+                                javafx.scene.input.KeyEvent.KEY_PRESSED,
+                                "",
+                                "",
+                                javafx.scene.input.KeyCode.CONTEXT_MENU,
+                                false,
+                                false,
+                                false,
+                                false));
+                javafx.scene.control.ContextMenu menu = FxTestSupport.field(s.popup(), "rowMenu");
+                assertNotNull(menu, "the Menu key opened nothing");
+                assertTrue(menu.isShowing());
+                assertTrue(s.popup().isShown(), "the dropdown stays up under its menu");
+                assertEquals(3, menu.getItems().size());
+                assertTrue(menu.getItems().get(0).getStyleClass().contains("danger"));
+                assertTrue(menu.getItems().get(1) instanceof javafx.scene.control.SeparatorMenuItem);
+
+                menu.getItems().get(0).fire();
+                assertEquals(List.of("delete:main"), s.ran());
+                assertFalse(s.popup().isShown());
+                assertNull(FxTestSupport.<Object>field(s.popup(), "rowMenu"), "the menu went down with the dropdown");
+            } finally {
+                s.popup().hide();
+                s.stage().close();
+            }
+        });
     }
 }
