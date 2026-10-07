@@ -197,7 +197,7 @@ public final class OverlayHost {
         double height = content.prefHeight(-1);
         double left = clampLeft(below.getX(), contentWidth(content), overlayRoot.getWidth());
         double gap = 2;
-        if (below.getY() + gap + height <= overlayRoot.getHeight() - 4 || above.getY() - gap - height < 4) {
+        if (goesBelow(below.getY(), above.getY(), height, overlayRoot.getHeight())) {
             StackPane.setAlignment(content, Pos.TOP_LEFT);
             StackPane.setMargin(content, new Insets(Math.max(4, below.getY() + gap), 0, 0, left));
         } else {
@@ -205,6 +205,15 @@ public final class OverlayHost {
             StackPane.setMargin(
                     content, new Insets(0, 0, Math.max(4, overlayRoot.getHeight() - above.getY() + gap), left));
         }
+    }
+
+    /**
+     * Whether a card {@code height} tall goes below {@code belowY} rather than above {@code aboveY}: below
+     * when it fits there, and also when it fits on neither side (its top stays on screen that way). Pure.
+     */
+    static boolean goesBelow(double belowY, double aboveY, double height, double overlayHeight) {
+        double edge = 6;
+        return belowY + height <= overlayHeight - edge || aboveY - height < edge;
     }
 
     private void show(Node content, Runnable position, boolean centered, Runnable onShown, Runnable onHidden) {

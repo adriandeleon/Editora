@@ -129,6 +129,9 @@ public final class GitGutterLines implements LineMarks.Carrier {
             hunkStarts[i] = hunks.get(i).line();
         }
         marksChanged();
+        if (!reverted.isEmpty() && !hunks.isEmpty()) {
+            repaintGutter.run(); // the rows were just painted without knowing which bars a revert had removed
+        }
     }
 
     /** Whether there is any change to act on. */
@@ -232,29 +235,48 @@ public final class GitGutterLines implements LineMarks.Carrier {
             }
             return n == out.length ? out : java.util.Arrays.copyOf(out, n);
         }
+        // Line by line only down to the furthest edit; below it every line is its disk line plus one
+        // constant, so the hunks there are placed directly — an edit near the top of a long file costs a
+        // few lines here, not one lookup per line of the document.
+        int edited = Math.min(map.untouchedFrom(), total);
         GitHunk run = null;
-        for (int line = 0; line <= total; line++) {
-            GitHunk hunk = line < total ? hunkAtDisk(map.diskLine(line)) : null;
+        for (int line = 0; line < edited; line++) {
+            GitHunk hunk = hunkAtDisk(map.diskLine(line));
             if (hunk != null && reverted.contains(hunk)) {
                 hunk = null;
             }
-            if (hunk == run) {
-                if (run != null) {
-                    out[n - 2]++;
-                }
-                continue;
-            }
-            run = hunk;
-            if (hunk != null) {
-                if (n + 3 > out.length) {
-                    out = java.util.Arrays.copyOf(out, Math.max(12, out.length * 2)); // a hunk split by an edit
-                }
+            if (hunk != null && hunk == run) {
+                out[n - 2]++;
+            } else if (hunk != null) {
+                out = roomForOne(out, n);
                 out[n++] = line;
                 out[n++] = 1;
                 out[n++] = hunk.kind().ordinal();
             }
+            run = hunk;
+        }
+        int shift = map.tailShift();
+        for (GitHunk hunk : hunks) {
+            int from = Math.max(hunk.line() - shift, edited);
+            int to = Math.min(hunk.line() + hunk.markerCount() - shift, total);
+            if (from >= to || reverted.contains(hunk)) {
+                continue;
+            }
+            if (hunk == run && from == edited) {
+                out[n - 2] += to - from; // the hunk the edited part ended in continues below it
+            } else {
+                out = roomForOne(out, n);
+                out[n++] = from;
+                out[n++] = to - from;
+                out[n++] = hunk.kind().ordinal();
+            }
         }
         return n == out.length ? out : java.util.Arrays.copyOf(out, n);
+    }
+
+    private static int[] roomForOne(int[] out, int used) {
+        // More runs than hunks: an unsaved edit split one in two.
+        return used + 3 <= out.length ? out : java.util.Arrays.copyOf(out, Math.max(12, out.length * 2));
     }
 
     private void marksChanged() {

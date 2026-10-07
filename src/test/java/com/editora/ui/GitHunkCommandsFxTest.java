@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -207,6 +208,14 @@ class GitHunkCommandsFxTest {
             s.caret(6);
             s.run("git.revertHunk");
             assertEquals(WORKING.replace("l5\nl7", "l5\nl6\nl7"), s.text(), "a deletion goes back above its mark");
+            // A re-diff of the same file on disk while the buffer is still unsaved (tab switch, window focus)
+            // must not paint the reverted deletion's flag again.
+            s.refresh();
+            Object gutter = FxTestSupport.field(s.buffer, "gitLines");
+            assertNull(
+                    FxTestSupport.callOnFx(() -> FxTestSupport.call(gutter, "barAt", new Class<?>[] {int.class}, 7)),
+                    "line 7 is l7, where the flag was");
+            assertArrayEquals(new int[] {2, 1, MODIFIED, 10, 1, ADDED}, s.marks());
             s.caret(10);
             s.run("git.revertHunk");
             assertEquals(WORKING.replace("l5\nl7", "l5\nl6\nl7").replace("added\n", ""), s.text());
@@ -233,6 +242,16 @@ class GitHunkCommandsFxTest {
                     FxTestSupport.callOnFx(
                             () -> (int[]) FxTestSupport.call(minimap, "gitMarksForTest", new Class<?>[] {})),
                     "the minimap draws them where the gutter does");
+
+            // An edit at the bottom makes the map follow every line; the marks are the same ones.
+            FxTestSupport.runOnFx(() -> s.buffer.getArea().appendText("tail\n"));
+            s.async.awaitFx();
+            assertArrayEquals(new int[] {4, 1, MODIFIED, 8, 1, DELETED, 11, 1, ADDED}, s.marks());
+            FxTestSupport.runOnFx(() -> {
+                int end = s.buffer.getArea().getLength();
+                s.buffer.getArea().deleteText(end - "tail\n".length(), end);
+            });
+            s.async.awaitFx();
 
             s.caret(11);
             s.run("git.revertHunk");
