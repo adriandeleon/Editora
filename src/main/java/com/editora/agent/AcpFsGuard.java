@@ -23,7 +23,14 @@ import com.editora.io.PathContainment;
  *   <li>A write must not go through a symbolic link, and never lands in the editor's own configuration
  *       directory — even when that sits inside the session root (a session started in the home folder):
  *       settings, keymaps and plugins there can make the editor run commands.
+ *   <li>A write never lands in version-control metadata ({@code .git/}, {@code .hg/}, …) anywhere under the
+ *       session root: hooks and config there run commands too, and a rewritten {@code HEAD} or index is the
+ *       repository's history, not a project file. Reading it stays allowed.
  * </ul>
+ *
+ * <p>Both checks return the absolute path they vetted. <b>That path, not the agent's string, is what the
+ * caller must read or write</b>: a relative path is relative to the session folder here, and resolving the
+ * raw string a second time would place it under the editor's own working directory instead.
  *
  * <p>A refused request fails with a message the agent can read and report; nothing is asked of the user.
  * Filesystem-touching but otherwise pure; unit-tested against a temp directory.
@@ -32,6 +39,10 @@ public final class AcpFsGuard {
 
     /** Largest file served to an agent in one read (text the model has to hold anyway). */
     public static final long MAX_READ_BYTES = 16L * 1024 * 1024;
+
+    /** Directory (or gitlink file) names that hold a repository's own state. Compared ignoring case. */
+    private static final java.util.Set<String> VCS_METADATA =
+            java.util.Set.of(".git", ".hg", ".svn", ".bzr", ".jj", ".sl", "_darcs");
 
     private AcpFsGuard() {}
 
@@ -62,7 +73,38 @@ public final class AcpFsGuard {
         if (protectedDir != null && PathContainment.isWithin(protectedDir, target)) {
             throw new IOException("Refused: " + path + " is inside the editor's configuration directory");
         }
+        if (insideVcsMetadata(root, target)) {
+            throw new IOException("Refused: " + path + " is version-control metadata, which the editor does not"
+                    + " write on an agent's behalf");
+        }
         return target;
+    }
+
+    /**
+     * Whether {@code target} is, or lies under, a version-control metadata entry below {@code root} — by the
+     * name the agent used or by where that name really leads (a link to {@code .git} under another name).
+     */
+    static boolean insideVcsMetadata(Path root, Path target) {
+        if (hasVcsComponent(root.toAbsolutePath().normalize(), target)) {
+            return true;
+        }
+        try {
+            return hasVcsComponent(PathContainment.realOrNearest(root), PathContainment.realOrNearest(target));
+        } catch (IOException | RuntimeException e) {
+            return true; // cannot be vouched for
+        }
+    }
+
+    private static boolean hasVcsComponent(Path root, Path target) {
+        if (!target.startsWith(root)) {
+            return false;
+        }
+        for (Path part : root.relativize(target)) {
+            if (VCS_METADATA.contains(part.toString().toLowerCase(java.util.Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Path resolveInside(Path root, String path) throws IOException {
