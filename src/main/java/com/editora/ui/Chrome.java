@@ -312,10 +312,15 @@ final class Chrome {
 
     /** Debug commands that only mean anything while a thread is suspended at a stop. */
     /**
-     * Git commands that must stay enabled <b>outside</b> a repository — creating one is the whole point.
-     * Gating these on {@code inRepo()} would grey them out in the only situation they exist for.
+     * Git commands that must stay enabled <b>outside</b> a repository, because that is where they are
+     * needed: creating one ({@code git.clone}, {@code git.init}); stopping a clone, which runs before any
+     * repository exists ({@code git.cancel}); pointing Editora at the git executable when it cannot find
+     * one, which looks exactly like "no repository" ({@code git.setCommand}); the branch dropdown, whose
+     * no-repository state offers Clone and Init ({@code git.switchBranch}); and the Commit window, which
+     * shows "Not a Git repository" with a Clone button ({@code tool.commit}).
      */
-    private static final java.util.Set<String> NEEDS_NO_REPO = java.util.Set.of("git.clone", "git.init");
+    private static final java.util.Set<String> NEEDS_NO_REPO = java.util.Set.of(
+            "git.clone", "git.init", "git.cancel", "git.setCommand", "git.switchBranch", "tool.commit");
 
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
             "debug.continue",
