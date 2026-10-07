@@ -87,6 +87,9 @@ class PluginInstallerTest {
         assertFalse(PluginInstaller.isSafeId("a\\b"));
         assertFalse(PluginInstaller.isSafeId("bad..id"));
         assertFalse(PluginInstaller.isSafeId(""));
+        assertFalse(PluginInstaller.isSafeId("."));
+        assertFalse(PluginInstaller.isSafeId(".hidden"), "a dot-folder is never listed, so could not be removed");
+        assertFalse(PluginInstaller.isSafeId("/etc"));
     }
 
     @Test

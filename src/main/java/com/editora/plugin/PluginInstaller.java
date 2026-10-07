@@ -7,6 +7,7 @@ import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
@@ -14,6 +15,7 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -128,8 +130,17 @@ public final class PluginInstaller {
         }
     }
 
-    /** Extracts the zip to a temp dir, finds the plugin root + id, moves it into the plugins dir, rescans. */
-    private Result installBytes(byte[] zipBytes) {
+    /**
+     * Extracts the zip to a temp dir, finds the plugin root + id, puts it in the plugins dir, rescans.
+     *
+     * <p>An update keeps what the old install owned. "Replace an existing install" used to be a recursive
+     * delete of {@code plugins/<id>/} followed by a move, which wiped the plugin's {@code data/} directory
+     * (the writable store {@code PluginContext.dataDir()} hands out) on every update, and left nothing at all
+     * if the move then failed. Now the new version is brought next to the old one first, the two folders are
+     * swapped by rename, {@code data/} is carried over, and the old folder is deleted last; a failure in
+     * between puts the old install back.
+     */
+    Result installBytes(byte[] zipBytes) {
         Path temp = null;
         try {
             temp = Files.createTempDirectory("editora-plugin-");
@@ -149,13 +160,53 @@ public final class PluginInstaller {
             if (id.isBlank() || !isSafeId(id)) {
                 return new Result(false, "", "", "invalid plugin id");
             }
-            Path target = manager.pluginsDir().resolve(id);
-            Files.createDirectories(manager.pluginsDir());
-            deleteRecursively(target); // replace an existing install (update)
-            moveDir(root, target);
+            if (isReservedId(id)) {
+                return new Result(false, "", "", "plugin id \"" + id + "\" is reserved");
+            }
+            Path pluginsDir = manager.pluginsDir();
+            Path target = pluginsDir.resolve(id);
+            Files.createDirectories(pluginsDir);
+            boolean update = Files.exists(target, LinkOption.NOFOLLOW_LINKS);
+            if (update && !Files.isRegularFile(target.resolve("plugin.json"))) {
+                // Whatever this is, it is not an install of this plugin: never delete it to make room.
+                return new Result(false, "", "", "a folder named \"" + id + "\" that is not a plugin is in the way");
+            }
+            Path incoming = Files.createTempDirectory(pluginsDir, STAGING_PREFIX + id + ".new-");
+            Path previous = null;
+            boolean previousIsSpare = false; // true once the new install is complete and holds the old data
+            try {
+                Files.delete(incoming); // moveDir needs the name free; the unique name stays ours
+                moveDir(root, incoming); // the slow, fallible part (a cross-volume copy) happens beside the old one
+                if (update) {
+                    Path aside = Files.createTempDirectory(pluginsDir, STAGING_PREFIX + id + ".old-");
+                    Files.delete(aside);
+                    Files.move(target, aside);
+                    previous = aside;
+                }
+                try {
+                    Files.move(incoming, target);
+                    if (previous != null) {
+                        carryOverData(previous, target);
+                    }
+                    previousIsSpare = true;
+                } catch (IOException | RuntimeException failure) {
+                    if (previous != null) {
+                        // Put the old install back, data and all. If even that fails it stays where it is,
+                        // under its staging name, rather than being deleted.
+                        deleteQuietly(target);
+                        Files.move(previous, target);
+                    }
+                    throw failure;
+                }
+            } finally {
+                deleteQuietly(incoming);
+                if (previous != null && previousIsSpare) {
+                    deleteQuietly(previous);
+                }
+            }
             manager.discover(); // pick up the new plugin for the Settings list (loads next launch)
             return new Result(true, id, m.name == null || m.name.isBlank() ? id : m.name, null);
-        } catch (IOException ex) {
+        } catch (IOException | RuntimeException ex) {
             LOG.log(Level.WARNING, "Plugin install failed", ex);
             return new Result(false, "", "", ex.getMessage());
         } finally {
@@ -163,6 +214,80 @@ public final class PluginInstaller {
                 deleteQuietly(temp);
             }
         }
+    }
+
+    /** Prefix of the folders an install stages beside the plugins; {@link PluginManager#discover} skips them. */
+    static final String STAGING_PREFIX = ".installing-";
+
+    /** The per-plugin writable store ({@code PluginContext.dataDir()}), preserved across updates. */
+    static final String DATA_DIR = "data";
+
+    /**
+     * Moves the old install's {@code data/} into the new one. Files the new archive ships under
+     * {@code data/} are defaults: where the user already has a file of that name, the user's file wins.
+     */
+    private static void carryOverData(Path previous, Path target) throws IOException {
+        Path oldData = previous.resolve(DATA_DIR);
+        if (!Files.isDirectory(oldData, LinkOption.NOFOLLOW_LINKS)) {
+            return;
+        }
+        Path newData = target.resolve(DATA_DIR);
+        if (!Files.exists(newData, LinkOption.NOFOLLOW_LINKS)) {
+            Files.move(oldData, newData);
+            return;
+        }
+        copyRecursively(oldData, newData);
+    }
+
+    /**
+     * Folder names under {@code <config>/plugins} that belong to Editora itself: the in-app installer puts
+     * downloaded language servers, debug adapters and the Typst CLI there ({@code plugins/lsp},
+     * {@code plugins/dap}, {@code plugins/typst}). A plugin with one of these ids would be installed over
+     * — and removed together with — every one of those tools.
+     */
+    private static final Set<String> RESERVED_IDS = Set.of("lsp", "dap", "typst");
+
+    /** Whether {@code id} names one of the built-in tool folders (compared without case: some volumes fold it). */
+    public static boolean isReservedId(String id) {
+        return id != null && RESERVED_IDS.contains(id.strip().toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * The folder that removing {@code plugin} may delete: its own install directory, and only when that is a
+     * real folder directly inside {@code pluginsDir} and not one of the built-in tool folders. Null otherwise.
+     *
+     * <p>Removal used to delete {@code pluginsDir.resolve(manifest id)}. The id comes from a file anyone can
+     * write: {@code ".."} resolved to the whole Editora config directory, an absolute path to that path, and
+     * another plugin's name to that plugin.
+     */
+    public static Path removableDir(Path pluginsDir, PluginDescriptor plugin) {
+        if (pluginsDir == null || plugin == null || plugin.dir() == null) {
+            return null;
+        }
+        Path root = pluginsDir.toAbsolutePath().normalize();
+        Path dir = plugin.dir().toAbsolutePath().normalize();
+        if (!root.equals(dir.getParent()) || dir.getFileName() == null) {
+            return null;
+        }
+        String name = dir.getFileName().toString();
+        if (isReservedId(name) || name.startsWith(".")) {
+            return null;
+        }
+        return Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS) ? dir : null;
+    }
+
+    /**
+     * Deletes an installed plugin's folder — the one {@link #removableDir} approves, nothing else.
+     *
+     * @return false when the plugin has no removable folder, or part of it could not be deleted
+     */
+    public static boolean deleteInstalled(Path pluginsDir, PluginDescriptor plugin) {
+        Path dir = removableDir(pluginsDir, plugin);
+        if (dir == null) {
+            return false;
+        }
+        deleteQuietly(dir);
+        return !Files.exists(dir, LinkOption.NOFOLLOW_LINKS);
     }
 
     /** The dir containing {@code plugin.json}: the extract root, else its sole subdirectory. */
@@ -179,9 +304,12 @@ public final class PluginInstaller {
         return null;
     }
 
-    /** Conservative plugin-id sanity (folder-name safe): letters/digits/dash/dot/underscore, no traversal. */
+    /**
+     * Conservative plugin-id sanity (folder-name safe): letters/digits/dash/dot/underscore, no traversal, and
+     * no leading dot (a dot-folder is not listed as a plugin, so it could never be removed again).
+     */
     static boolean isSafeId(String id) {
-        if (id == null || id.isBlank() || id.equals(".") || id.equals("..")) {
+        if (id == null || id.isBlank() || id.startsWith(".")) {
             return false;
         }
         for (int i = 0; i < id.length(); i++) {
@@ -300,7 +428,7 @@ public final class PluginInstaller {
     }
 
     private static void deleteRecursively(Path dir) throws IOException {
-        if (!Files.exists(dir)) {
+        if (!Files.exists(dir, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
         try (Stream<Path> s = Files.walk(dir)) {
