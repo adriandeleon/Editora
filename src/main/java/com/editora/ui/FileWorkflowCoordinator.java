@@ -1406,7 +1406,8 @@ final class FileWorkflowCoordinator {
      * Writes {@code buffer} to its (e.g. root-owned) file via the OS auth agent ({@code pkexec}/polkit),
      * which prompts for the password itself — Editora never handles it. The bytes go to a private temp
      * file, then {@code cat tmp > target} runs as root, truncating the target in place so its owner and
-     * permissions are preserved. Runs off the FX thread (the auth dialog blocks); the result is applied back
+     * permissions are preserved — after the same script has copied the target aside, so a copy that fails
+     * part-way can be undone (see {@link com.editora.process.ElevatedSave#SCRIPT}). Runs off the FX thread (the auth dialog blocks); the result is applied back
      * on the FX thread.
      */
     void saveAsAdmin(EditorBuffer buffer) {
@@ -1500,15 +1501,26 @@ final class FileWorkflowCoordinator {
                     System.getProperty("os.name"), result.exit(), result.error())) {
                 host.setStatus(tr("status.admin.cancelled"));
             } else {
-                host.setStatus(tr(
-                        "status.admin.failed",
-                        result.error() == null || result.error().isBlank()
-                                ? String.valueOf(result.exit())
-                                : result.error()));
+                host.setStatus(adminFailureStatus(target, result));
             }
         } finally {
             finishRequest(request);
         }
+    }
+
+    /** What a failed elevated save says: above all, where the file's previous bytes are now. */
+    static String adminFailureStatus(Path target, AdminResult result) {
+        String reason = com.editora.process.ElevatedSave.reason(result.error());
+        String why = reason.isBlank() ? String.valueOf(result.exit()) : reason;
+        String file = com.editora.config.PathDisplay.of(target);
+        String backup = com.editora.config.PathDisplay.of(com.editora.process.ElevatedSave.backupOf(target));
+        return switch (com.editora.process.ElevatedSave.failureOf(result.exit(), result.error())) {
+            case RESTORED -> tr("status.admin.failedRestored", file, why);
+            case BACKUP_KEPT -> tr("status.admin.failedBackupKept", file, backup, why);
+            case NO_BACKUP -> tr("status.admin.failedNoBackup", file, why);
+            case STALE_BACKUP -> tr("status.admin.failedStaleBackup", file, backup);
+            case OTHER -> tr("status.admin.failed", why);
+        };
     }
 
     boolean saveAs(EditorBuffer buffer) {
