@@ -564,6 +564,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void saveNotes() {
                 config.saveNotes();
             }
+
+            @Override
+            public void notesStored(java.util.Map<String, ?> bucket, String fileKey) {
+                marksStored(MarkMerge.Kind.NOTES, bucket, fileKey);
+            }
         });
         // Built here (not as a field initializer) because BookmarksPanel's constructor reads config.getBookmarks().
         this.bookmarkCoordinator = new BookmarkCoordinator(coordinatorHost, new BookmarkCoordinator.Ops() {
@@ -617,6 +622,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void saveBookmarks() {
                 config.saveBookmarks();
+            }
+
+            @Override
+            public void bookmarksStored(java.util.Map<String, ?> bucket, String fileKey) {
+                marksStored(MarkMerge.Kind.BOOKMARKS, bucket, fileKey);
             }
         });
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
@@ -2455,6 +2465,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     @Override
                     public void saveBreakpoints() {
                         config.saveBreakpoints();
+                    }
+
+                    @Override
+                    public void breakpointsStored(java.util.Map<String, ?> bucket, String fileKey) {
+                        marksStored(MarkMerge.Kind.BREAKPOINTS, bucket, fileKey);
                     }
                 });
         debugToolWindow = new ToolWindow(
@@ -7148,6 +7163,22 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Another window (or this one) changed folder trust: stop honouring overrides that lost it. */
     void trustChanged() {
         lspCoordinator.reloadProjectSettings();
+    }
+
+    /** This window rewrote a file's notes, bookmarks or breakpoints: the other windows re-read them. */
+    private void marksStored(MarkMerge.Kind kind, java.util.Map<String, ?> bucket, String fileKey) {
+        if (windowManager != null) {
+            windowManager.broadcastMarksChanged(this, new MarkMerge.Change(kind, bucket, fileKey));
+        }
+    }
+
+    /** Another window rewrote a file's notes, bookmarks or breakpoints (see {@link MarkMerge.Change}). */
+    void marksChangedElsewhere(MarkMerge.Change change) {
+        switch (change.kind()) {
+            case NOTES -> notesCoordinator.storeChangedElsewhere(change.bucket(), change.fileKey());
+            case BOOKMARKS -> bookmarkCoordinator.storeChangedElsewhere(change.bucket(), change.fileKey());
+            case BREAKPOINTS -> debugCoordinator.breakpointsChangedElsewhere(change.bucket(), change.fileKey());
+        }
     }
 
     /**

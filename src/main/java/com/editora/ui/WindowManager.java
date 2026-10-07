@@ -1123,6 +1123,19 @@ public class WindowManager {
         }
     }
 
+    /**
+     * {@code origin} rewrote a file's notes, bookmarks or breakpoints. Each window holds its own buffer for a
+     * file and each buffer its own copy of those marks, so every other window re-reads the store: a buffer
+     * left with a stale copy showed marks that were gone and wrote them back over the other window's.
+     */
+    void broadcastMarksChanged(MainController origin, MarkMerge.Change change) {
+        for (Holder h : new ArrayList<>(windows)) {
+            if (h.controller != origin) {
+                h.controller.marksChangedElsewhere(change);
+            }
+        }
+    }
+
     /** Re-registers the synthetic {@code externalTool.run.*} commands in every window after the set changed. */
     public void broadcastExternalToolsChanged() {
         for (Holder h : new ArrayList<>(windows)) {
