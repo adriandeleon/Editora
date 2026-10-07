@@ -19,6 +19,8 @@
   "C-x v l": "git.fileHistory",
   "C-x v S-l": "tool.gitLog",
   "C-x v g": "git.toggleBlame",
+  "C-x v ]": "git.nextChange",
+  "C-x v [": "git.previousChange",
   "C-x b": "buffer.jump",
   "C-x k": "buffer.close",
   "C-x 1": "view.unsplit",

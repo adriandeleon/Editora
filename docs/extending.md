@@ -14,6 +14,7 @@ against the current code.
 - [Add a language / TextMate grammar](#add-a-language--textmate-grammar)
 - [Add a tool window](#add-a-tool-window)
 - [Add a Canvas overlay](#add-a-canvas-overlay)
+- [Add an in-scene card at a line of text](#add-an-in-scene-card-at-a-line-of-text)
 - [Extract a feature coordinator](#extract-a-feature-coordinator)
 
 ---
@@ -154,6 +155,20 @@ Attach it in `EditorBuffer.installOverlays()` (eagerly for a common feature, or 
 `attachLazyOverlay` for a rare one), anchor it inside `Minimap.WIDTH`, and add an
 `EditorBuffer.setXxxEnabled`/`setXxxData` pair injected from `MainController`. If it should also
 show on the scrollbar/minimap, feed a stripe (`DiagnosticStripe`-style) + a `Minimap` channel.
+
+## Add an in-scene card at a line of text
+
+A card that takes keys is shown through the window's `OverlayHost` ([ADR 0005](decisions/0005-in-scene-overlays.md)),
+never as a `javafx.stage.Popup`. One that belongs to a place in the document rather than to a toolbar button
+uses `OverlayHost.showAt(card, sceneX, belowY, aboveY, onShown, onHidden)`: the card goes under the line, or
+over it when there is no room below, so it never covers what it is about. `GitHunkPopup` is the example —
+the anchor comes from `CodeArea.getParagraphBoundsOnScreen` for the part of the hunk that is on screen.
+
+- Set `editora.ownsKeys` on the card; leave `Esc`/the cancel chord and the click-away to the host.
+- Do not close the card from an `estimatedScrollY` (or any layout-driven) listener: that property also
+  changes while the viewport settles, and the card would close itself as it opens. The host's key and mouse
+  events are the only dismissal.
+- Run a button's action *after* `overlayHost.hide()`, so focus is back in the editor when it runs.
 
 ## Extract a feature coordinator
 

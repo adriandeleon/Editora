@@ -555,7 +555,14 @@ Editora is built with the help of AI coding tools.
   under *Settings → Application → Enable Personal Notes*.
 - **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
   ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
-  modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
+  modified, and a corner flag where lines were deleted) that stay on their lines while you type, and the same
+  changes are marked down the minimap's edge. **Work on a change where it is**: *Git: Next / Previous Change*
+  steps through the file's changes (`Alt+F5` / `Shift+Alt+F5` in the VS Code keymap, `Ctrl+Alt+Shift+Down` /
+  `Up` in IntelliJ, `C-x v ]` / `C-x v [` in Emacs); clicking a change bar (or *Git: Peek Change at Caret*)
+  opens a card with the old and the new lines and **Revert Hunk** (an undoable edit to the buffer — nothing is
+  written), **Stage Hunk** (saves the file, then stages only that change), **Copy Old Text**, Previous / Next
+  and Open Diff. Editor tabs are tinted by their file's status (modified / added / untracked / renamed /
+  conflicted), in the Project tree's colours; and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. The file list is **multi-select** — extend with
   Shift+Up/Down or Shift/Ctrl-click, then right-click to stage, unstage or discard the whole selection in one
   `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette). It has a **filter box**

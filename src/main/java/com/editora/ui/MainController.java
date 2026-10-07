@@ -5622,6 +5622,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (projectPanel != null) {
                 projectPanel.setGitStatus(byPath);
             }
+            TabGitStatus.apply(editorArea.tabs(), byPath); // tab titles take the same status colours
         }
 
         @Override
@@ -8102,8 +8103,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab tab = new Tab();
         DeferredTabContent.install(tab, content.node()); // a restored background tab attaches when shown
         tab.setUserData(content);
-        // Title lives in a graphic header (not tab.setText) so it's a drag handle for mouse reorder, like
-        // buffer tabs. Buffer tabs replace this header via updateTabMeta; non-buffer tabs (Welcome) keep it.
+        // The title is a graphic header (a drag handle); buffer tabs replace it via updateTabMeta.
         Label title = new Label(content.title());
         title.getStyleClass().add("tab-title");
         HBox header = new HBox(6);

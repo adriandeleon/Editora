@@ -71,12 +71,14 @@ public final class GitService {
             Map<Integer, ChangeType> changes,
             Map<Integer, String> hunks,
             String refusal,
-            GitOperation operation) {
+            GitOperation operation,
+            List<DiffParser.Hunk> hunkList) {
         public static final RepoState NONE = new RepoState(null, null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
 
         public RepoState {
             refusal = refusal == null ? "" : refusal;
             operation = operation == null ? GitOperation.NONE : operation;
+            hunkList = hunkList == null ? List.of() : List.copyOf(hunkList);
         }
 
         public RepoState(
@@ -86,7 +88,29 @@ public final class GitService {
                 Map<Integer, ChangeType> changes,
                 Map<Integer, String> hunks,
                 String refusal) {
-            this(root, diffFile, status, changes, hunks, refusal, GitOperation.NONE);
+            this(root, diffFile, status, changes, hunks, refusal, GitOperation.NONE, List.of());
+        }
+
+        public RepoState(
+                Path root,
+                Path diffFile,
+                GitStatus status,
+                Map<Integer, ChangeType> changes,
+                Map<Integer, String> hunks,
+                String refusal,
+                GitOperation operation) {
+            this(root, diffFile, status, changes, hunks, refusal, operation, List.of());
+        }
+
+        public RepoState(
+                Path root,
+                Path diffFile,
+                GitStatus status,
+                Map<Integer, ChangeType> changes,
+                Map<Integer, String> hunks,
+                String refusal,
+                List<DiffParser.Hunk> hunkList) {
+            this(root, diffFile, status, changes, hunks, refusal, GitOperation.NONE, hunkList);
         }
 
         public RepoState(
@@ -131,8 +155,13 @@ public final class GitService {
     }
 
     /** A file's gutter diff vs HEAD: per-line {@link ChangeType} (bar color) + per-line hunk text (tooltip). */
-    public record GitDiff(Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
-        public static final GitDiff EMPTY = new GitDiff(Map.of(), Map.of());
+    public record GitDiff(
+            Map<Integer, ChangeType> changes, Map<Integer, String> hunks, List<DiffParser.Hunk> hunkList) {
+        public static final GitDiff EMPTY = new GitDiff(Map.of(), Map.of(), List.of());
+
+        public GitDiff(Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
+            this(changes, hunks, List.of());
+        }
     }
 
     /** Background reads (status, gutter diff, log, blame, blob lookups): a stuck probe must not wedge the lane. */
@@ -491,7 +520,8 @@ public final class GitService {
         statusBackoff.succeeded(root);
         GitStatus status = StatusParser.parse(st.out());
         GitDiff diff = diffFile != null ? diffHead(root, diffFile) : GitDiff.EMPTY;
-        return new RepoState(root, diffFile, status, diff.changes(), diff.hunks(), "", operationIn(root));
+        return new RepoState(
+                root, diffFile, status, diff.changes(), diff.hunks(), "", operationIn(root), diff.hunkList());
     }
 
     // --- the operation in progress (merge / rebase / cherry-pick / revert) -------------------------
@@ -551,7 +581,10 @@ public final class GitService {
         if (!r.ok()) {
             return GitDiff.EMPTY; // untracked / unmerged / new repo with no HEAD: no bars
         }
-        return new GitDiff(DiffParser.parseToLineMap(r.out()), DiffParser.parseToHunkText(r.out()));
+        return new GitDiff(
+                DiffParser.parseToLineMap(r.out()),
+                DiffParser.parseToHunkText(r.out()),
+                DiffParser.parseHunks(r.out()));
     }
 
     /** Diffs a single file against {@code HEAD} for the gutter; posts the change + hunk maps on the FX thread. */
@@ -559,6 +592,32 @@ public final class GitService {
         submit(exec, () -> {
             GitDiff diff = gitAvailable() && root != null && file != null ? diffHead(root, file) : GitDiff.EMPTY;
             Platform.runLater(() -> onResult.accept(diff));
+        });
+    }
+
+    /**
+     * The hunks of {@code file}'s <em>unstaged</em> changes (working tree vs index), for staging one hunk
+     * from the editor; posts on the FX thread. {@code null} when git could not answer (an unmerged path
+     * included), an empty list when nothing is unstaged.
+     */
+    public void unstagedHunks(Path root, Path file, Consumer<List<DiffParser.Hunk>> onResult) {
+        submit(exec, () -> {
+            List<DiffParser.Hunk> hunks = null;
+            if (gitAvailable() && root != null && file != null) {
+                ProcessRunner.Result r = git(
+                        root,
+                        QUICK,
+                        GitSafety.LITERAL_PATHSPECS,
+                        "diff",
+                        "--no-color",
+                        "-U0",
+                        "--",
+                        file.toAbsolutePath().toString());
+                // An unmerged path answers with a combined diff ("@@@"), which is not a hunk to stage.
+                hunks = r.ok() && !r.out().contains("\n@@@ ") ? DiffParser.parseHunks(r.out()) : null;
+            }
+            List<DiffParser.Hunk> result = hunks;
+            Platform.runLater(() -> onResult.accept(result));
         });
     }
 

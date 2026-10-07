@@ -81,6 +81,11 @@ subscription resets one JavaFX timer sequence, which preserves each feature's de
 milestones are never armed. Standalone controls without that dispatcher should still debounce on their
 RichTextFX stream rather than doing expensive work per change.
 
+A stripe on the minimap follows the same rule one step further: its *data* is not recomputed per repaint
+either. The Git change stripe holds an `int[]` of `{line, count, kind}` triples and asks `GitGutterLines`
+for a new one only after `gitMarksChanged()` (new bars, or an edit that moved lines); a scroll re-blits the
+cached content image and draws from the array it has, allocating nothing.
+
 ### 3. Work incrementally, and only on what's visible
 
 - Highlighting re-tokenizes only the **edited range**: from the first edited line, on the stored grammar
