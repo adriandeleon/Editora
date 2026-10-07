@@ -6,8 +6,7 @@
 @host = https://httpbin.org
 @item = hammer
 
-# A named request: later requests can read its response. It is the first request in the file, so no
-# ### separator comes before it.
+# A named request: later requests can read its response.
 # @name create
 POST {{host}}/post
 Content-Type: application/json
