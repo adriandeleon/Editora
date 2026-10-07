@@ -8,8 +8,6 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 
-import com.editora.process.ProcessRunner;
-
 /**
  * UI-facing façade for the {@code typst} CLI, mirroring {@code DiagramService}/{@code MermaidService}: work
  * runs on a single daemon executor and results are posted back on the JavaFX thread via
@@ -71,11 +69,23 @@ public final class TypstService {
         });
     }
 
-    /** Exports {@code source} to {@code dest} (format by extension) off-thread; posts the result. */
-    public void export(String source, Path dest, Path fileDir, Path root, Consumer<ProcessRunner.Result> onResult) {
+    /**
+     * Exports {@code source} for {@code dest} (format by extension) off-thread into a staging directory and
+     * posts the {@link TypstRenderer.PendingExport} on the FX thread. Nothing at the destination has changed
+     * yet: the receiver must {@code commit()} it (after asking about any {@code existingTargets()}) or
+     * {@code close()} it.
+     */
+    public void export(
+            String source, Path dest, Path fileDir, Path root, Consumer<TypstRenderer.PendingExport> onStaged) {
         exec.submit(() -> {
-            ProcessRunner.Result r = TypstRenderer.exportTo(command(), source, dest, fileDir, root);
-            Platform.runLater(() -> onResult.accept(r));
+            TypstRenderer.PendingExport pending = TypstRenderer.stageExport(command(), source, dest, fileDir, root);
+            Platform.runLater(() -> {
+                try {
+                    onStaged.accept(pending);
+                } finally {
+                    pending.close(); // no-op once committed; otherwise the staging directory must not linger
+                }
+            });
         });
     }
 

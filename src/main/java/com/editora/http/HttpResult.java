@@ -16,7 +16,8 @@ import java.util.Locale;
  * download (an image, an archive) is byte-identical on disk. {@code body} is only those bytes decoded with the
  * response charset for display and request chaining — empty for a {@link #binary() binary} payload, which has
  * no text form. {@code truncated} is set when the response was longer than the size cap and {@code rawBody}
- * holds just the first part.
+ * holds just the first part. {@code written} lists what the request's {@code >>} redirects saved to disk, one
+ * line per file — the response view shows them, so a file that was created or replaced is never a surprise.
  */
 public record HttpResult(
         int status,
@@ -28,7 +29,27 @@ public record HttpResult(
         String error,
         List<String> warnings,
         byte[] rawBody,
-        boolean truncated) {
+        boolean truncated,
+        List<String> written) {
+
+    public HttpResult {
+        written = written == null ? List.of() : List.copyOf(written);
+    }
+
+    /** A result whose request saved nothing to disk. */
+    public HttpResult(
+            int status,
+            List<String[]> headers,
+            String body,
+            String contentType,
+            long elapsedMs,
+            long sizeBytes,
+            String error,
+            List<String> warnings,
+            byte[] rawBody,
+            boolean truncated) {
+        this(status, headers, body, contentType, elapsedMs, sizeBytes, error, warnings, rawBody, truncated, List.of());
+    }
 
     /** How far into the payload {@link #looksBinary} looks for a NUL byte (git's heuristic). */
     private static final int SNIFF_BYTES = 8000;
@@ -77,10 +98,23 @@ public record HttpResult(
             long elapsedMs,
             List<String> warnings,
             boolean truncated) {
+        return ofBytes(status, headers, raw, contentType, elapsedMs, warnings, truncated, List.of());
+    }
+
+    /** As {@link #ofBytes(int, List, byte[], String, long, List, boolean)}, with the files the redirects saved. */
+    public static HttpResult ofBytes(
+            int status,
+            List<String[]> headers,
+            byte[] raw,
+            String contentType,
+            long elapsedMs,
+            List<String> warnings,
+            boolean truncated,
+            List<String> written) {
         byte[] bytes = raw == null ? new byte[0] : raw;
         String text = looksBinary(bytes, contentType) ? "" : new String(bytes, charsetOf(contentType));
         return new HttpResult(
-                status, headers, text, contentType, elapsedMs, bytes.length, null, warnings, bytes, truncated);
+                status, headers, text, contentType, elapsedMs, bytes.length, null, warnings, bytes, truncated, written);
     }
 
     /** A request that never produced a response (not sent, connection failure, cancelled). */

@@ -65,6 +65,8 @@ public final class HistoryService {
     private boolean gcRequested;
     /** The policy the index was last swept with; {@code null} until the startup sweep is claimed. */
     private RetentionPolicy sweptPolicy;
+    /** The limits the user has agreed to; see {@link #effectivePolicy}. Guarded by {@link #publicationLock}. */
+    private RetentionPolicy acknowledgedPolicy;
 
     public HistoryService(HistoryBlobStore blobs) {
         this(blobs, () -> true, System::nanoTime);
@@ -187,24 +189,86 @@ public final class HistoryService {
         }
     }
 
+    /**
+     * Records a revision and <b>waits for its content to be on disk</b> before returning: for the caller
+     * that is about to make a change it cannot take back (an edit in a buffer with no undo) and must not
+     * start until the previous text is recoverable. The blob is written on the worker like any other — so it
+     * stays ordered with garbage collection — while the calling thread blocks for at most
+     * {@code timeoutMillis}. {@code onRecorded} then runs on the <em>calling</em> thread, where the caller
+     * folds the revision into the index, exactly as in {@link #snapshotWithOutcome}. A write that fails or
+     * does not finish in time is reported as unsuccessful, never as a revision. Content equal to the newest
+     * revision is still written and recorded: the point is a revision the caller can name.
+     */
+    public void snapshotBlocking(
+            Path file,
+            String content,
+            String reason,
+            String label,
+            long now,
+            long timeoutMillis,
+            Consumer<SnapshotOutcome> onRecorded) {
+        synchronized (publicationLock) {
+            publicationsInFlight++;
+        }
+        SnapshotOutcome outcome = new SnapshotOutcome(null, false);
+        java.util.concurrent.Future<HistoryRevision> written = null;
+        try {
+            written = exec.submit(() -> {
+                String sha = HistoryBlobStore.sha256(content);
+                synchronized (publicationLock) { // as in snapshotWithOutcome: keep a deferred GC off this blob
+                    publicationHashes.add(sha);
+                    if (deferredLiveHashes != null && !deferredLiveHashes.contains(sha)) {
+                        var protectedHashes = new LinkedHashSet<>(deferredLiveHashes);
+                        protectedHashes.add(sha);
+                        deferredLiveHashes = Set.copyOf(protectedHashes);
+                    }
+                }
+                blobs.put(content, sha);
+                long size = content.getBytes(StandardCharsets.UTF_8).length;
+                return new HistoryRevision(file.toString(), now, size, sha, reason, label == null ? "" : label);
+            });
+            outcome = new SnapshotOutcome(written.get(timeoutMillis, java.util.concurrent.TimeUnit.MILLISECONDS), true);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            written.cancel(false);
+        } catch (RejectedExecutionException
+                | java.util.concurrent.ExecutionException
+                | java.util.concurrent.TimeoutException failure) {
+            LOG.log(Level.WARNING, "Failed to record a history revision for " + file, failure);
+            if (written != null) {
+                written.cancel(false); // not started yet: do not write it after the caller gave up
+            }
+        }
+        try {
+            onRecorded.accept(outcome);
+        } finally {
+            publicationFinished();
+        }
+    }
+
     private void deliver(SnapshotOutcome outcome, Consumer<SnapshotOutcome> onRecorded) {
         Platform.runLater(() -> {
             try {
                 onRecorded.accept(outcome);
             } finally {
-                synchronized (publicationLock) {
-                    publicationsInFlight--;
-                    if (publicationsInFlight == 0 && deferredLiveHashes != null) {
-                        Set<String> live = deferredLiveHashes;
-                        deferredLiveHashes = null;
-                        queueGc(live);
-                    }
-                    if (publicationsInFlight == 0) {
-                        publicationHashes.clear();
-                    }
-                }
+                publicationFinished();
             }
         });
+    }
+
+    /** One record's revision has reached the index (or failed): release a GC that was waiting for it. */
+    private void publicationFinished() {
+        synchronized (publicationLock) {
+            publicationsInFlight--;
+            if (publicationsInFlight == 0 && deferredLiveHashes != null) {
+                Set<String> live = deferredLiveHashes;
+                deferredLiveHashes = null;
+                queueGc(live);
+            }
+            if (publicationsInFlight == 0) {
+                publicationHashes.clear();
+            }
+        }
     }
 
     /** Fetches a revision's body off the FX thread and delivers it (or {@code null}) on the FX thread. */
@@ -274,6 +338,60 @@ public final class HistoryService {
     public void requestGc() {
         synchronized (publicationLock) {
             gcRequested = true;
+        }
+    }
+
+    /**
+     * The retention limits in force. The first call of a session adopts {@code configured} (what the settings
+     * file says is what the user last agreed to). After that a configured policy takes effect at once only
+     * where it is <em>looser</em>: a limit that became stricter stays at its previous value until
+     * {@link #acknowledge} — whichever way the setting was changed, tightening a limit deletes revisions, and
+     * that needs the user's say-so first (see {@link #previewTightening}).
+     */
+    public RetentionPolicy effectivePolicy(RetentionPolicy configured) {
+        synchronized (publicationLock) {
+            if (configured == null) {
+                return acknowledgedPolicy;
+            }
+            acknowledgedPolicy = acknowledgedPolicy != null && HistoryRetention.tightens(acknowledgedPolicy, configured)
+                    ? HistoryRetention.loosest(acknowledgedPolicy, configured)
+                    : configured;
+            return acknowledgedPolicy;
+        }
+    }
+
+    /** The user confirmed {@code policy}, stricter limits included: it is now the one in force. */
+    public void acknowledge(RetentionPolicy policy) {
+        synchronized (publicationLock) {
+            acknowledgedPolicy = policy;
+        }
+    }
+
+    /**
+     * Computes, off the FX thread, what replacing {@code current} with {@code candidate} would delete from
+     * {@code snapshot} (a private copy of the index) and delivers it on the FX thread — {@code null} when it
+     * could not be computed, which callers must treat as "do not tighten".
+     */
+    public void previewTightening(
+            Map<String, Map<String, List<HistoryRevision>>> snapshot,
+            RetentionPolicy current,
+            RetentionPolicy candidate,
+            long now,
+            Consumer<HistoryRetention.Impact> onImpact) {
+        try {
+            exec.submit(() -> {
+                HistoryRetention.Impact impact;
+                try {
+                    impact = HistoryRetention.tighteningImpact(snapshot, current, candidate, now);
+                } catch (RuntimeException failure) {
+                    LOG.log(Level.WARNING, "Could not preview a Local History limit change", failure);
+                    impact = null;
+                }
+                HistoryRetention.Impact result = impact;
+                Platform.runLater(() -> onImpact.accept(result));
+            });
+        } catch (RejectedExecutionException shuttingDown) {
+            Platform.runLater(() -> onImpact.accept(null));
         }
     }
 

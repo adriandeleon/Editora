@@ -307,6 +307,57 @@ class NarrowingFxTest {
         assertEquals(DOC, content(b), "and the hidden text is untouched throughout");
     }
 
+    private String status() throws Exception {
+        FxTestSupport.drainFx(); // the notice is posted after the command's own status
+        return FxTestSupport.callOnFx(() -> {
+            StatusBar bar = FxTestSupport.field(fx.controller, "statusBar");
+            javafx.scene.control.Label echo = FxTestSupport.field(bar, "echo");
+            return echo.getText();
+        });
+    }
+
+    @Test
+    void droppingANonEmptyUndoHistoryAtTheBoundaryIsSaidInTheStatusLine() throws Exception {
+        EditorBuffer b = open(DOC);
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().appendText("!"); // an edit made before the boundary: something to lose
+            b.getArea().selectRange(at(DOC, 1, 0), at(DOC, 2, 5));
+        });
+        run("edit.narrowToRegion");
+        assertEquals(
+                StatusBar.echoLine(com.editora.i18n.Messages.tr("status.narrow.narrowedHistoryCleared")), status());
+
+        FxTestSupport.runOnFx(() -> b.getArea().insertText(0, "Y"));
+        run("edit.widen");
+        assertEquals(StatusBar.echoLine(com.editora.i18n.Messages.tr("status.narrow.widenedHistoryCleared")), status());
+        assertFalse(FxTestSupport.callOnFx(() -> b.getArea().isUndoAvailable()), "the pinned behaviour stands");
+    }
+
+    @Test
+    void narrowingAFreshBufferSaysNothingAboutUndoHistory() throws Exception {
+        EditorBuffer b = narrowed(); // nothing was edited before the boundary
+        assertEquals(StatusBar.echoLine(com.editora.i18n.Messages.tr("status.narrow.narrowed")), status());
+        run("edit.widen");
+        assertEquals(StatusBar.echoLine(com.editora.i18n.Messages.tr("status.narrow.widened")), status());
+        assertEquals(DOC, content(b));
+    }
+
+    @Test
+    void aWriterThatForcesAWidenDoesNotDropTheHistorySilently() throws Exception {
+        EditorBuffer b = narrowed();
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().insertText(0, "X"); // an edit made while narrowed
+            // What Replace in Files, a lint fix or an agent write does: whole-document text, so it widens first.
+            b.replaceWholeDocument(DOC.replace("four", "FOUR"));
+            StatusBar bar = FxTestSupport.field(fx.controller, "statusBar");
+            bar.setMessage("Replaced 1 occurrence"); // the writer's own status, set right after the edit
+        });
+        assertEquals(StatusBar.echoLine(com.editora.i18n.Messages.tr("status.narrow.widenedHistoryCleared")), status());
+        assertEquals(DOC.replace("four", "FOUR"), content(b));
+        FxTestSupport.runOnFx(() -> b.getArea().undo());
+        assertEquals("one\nXtwo\nthree\nfour\nfive", content(b), "the replacement itself is still one undo step");
+    }
+
     @Test
     void theSecondSplitViewCannotUndoAcrossTheBoundaryEither() throws Exception {
         // Each split view keeps its own undo stack over the shared document. Only the primary's was cleared,

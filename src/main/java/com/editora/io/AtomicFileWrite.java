@@ -1,11 +1,14 @@
 package com.editora.io;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.CopyOption;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.ProviderMismatchException;
 import java.nio.file.StandardCopyOption;
@@ -36,12 +39,15 @@ import org.apache.sshd.sftp.client.fs.SftpFileSystem;
  * <ul>
  *   <li><b>Symlinks.</b> Moving over a symlink <em>replaces the link with a regular file</em>. Editing a
  *       dotfile that's symlinked into a dotfiles repo (a very normal setup) would quietly detach it. So the
- *       link is resolved first and the target is written.
+ *       link is resolved first and the target is written — also when the target does not exist yet.
  *   <li><b>Permissions.</b> A fresh temp file gets default permissions, so a shell script would silently lose
  *       its executable bit and any group/other access. The existing file's POSIX permissions are copied onto
  *       the temp file before the move. A <em>new</em> file has nothing to copy, and must not inherit the
  *       temp file's owner-only mode either: it is staged with the mode any newly created file gets
  *       (read/write for everyone, narrowed by the process umask).
+ *   <li><b>Everything else attached to the file.</b> Extended attributes, the setuid/setgid/sticky bits, a
+ *       Windows ACL and the Hidden/System flags belong to the old file, not to the staged one. They are
+ *       copied across ({@link FileMetadata}); when they cannot be, a document is overwritten in place.
  * </ul>
  *
  * <p>The staged bytes are forced to the device before the move. Without that, a crash shortly after the save
@@ -87,14 +93,7 @@ public final class AtomicFileWrite {
 
         /** Overwrites the <em>existing</em> {@code path} in place and forces the bytes to the device. */
         default void overwrite(Path path, byte[] bytes) throws IOException {
-            try (FileChannel channel =
-                    FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
-                ByteBuffer buffer = ByteBuffer.wrap(bytes);
-                while (buffer.hasRemaining()) {
-                    channel.write(buffer);
-                }
-                channel.force(true);
-            }
+            overwriteDurably(path, bytes);
         }
 
         void move(Path source, Path target, CopyOption... options) throws IOException;
@@ -187,6 +186,50 @@ public final class AtomicFileWrite {
     };
 
     private AtomicFileWrite() {}
+
+    /**
+     * Overwrites the existing {@code path} and forces the bytes to the device, in a way a thread interrupt
+     * cannot cut short.
+     *
+     * <p>A {@link FileChannel} is interruptible: an interrupt delivered to the writing thread — the window
+     * closing while an auto-save runs — closes the channel, and it used to do so after {@code
+     * TRUNCATE_EXISTING} had emptied the file, leaving it at zero bytes. A local file is therefore written
+     * through {@link RandomAccessFile}, whose blocking I/O ignores interrupts; the new bytes go in first and
+     * the length is cut afterwards, so the file is never empty on the way. Other providers keep the channel,
+     * with the interrupt held back until the write is done.
+     */
+    static void overwriteDurably(Path path, byte[] bytes) throws IOException {
+        File local;
+        try {
+            local = path.toFile();
+        } catch (UnsupportedOperationException notTheDefaultFilesystem) {
+            local = null;
+        }
+        if (local != null) {
+            if (!Files.isRegularFile(path)) {
+                throw new NoSuchFileException(path.toString()); // "rw" would create it; this only overwrites
+            }
+            try (RandomAccessFile file = new RandomAccessFile(local, "rw")) {
+                file.write(bytes);
+                file.setLength(bytes.length);
+                file.getFD().sync();
+            }
+            return;
+        }
+        boolean interrupted = Thread.interrupted();
+        try (FileChannel channel =
+                FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING)) {
+            ByteBuffer buffer = ByteBuffer.wrap(bytes);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+            channel.force(true);
+        } finally {
+            if (interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
 
     /**
      * Apache MINA's {@code SftpFileSystemProvider.move(..., REPLACE_EXISTING)} deletes the destination before
@@ -308,6 +351,7 @@ public final class AtomicFileWrite {
             Path backupDir)
             throws IOException {
         Path target = resolveLink(file);
+        refuseSpecialFile(target);
         Path dir = target.getParent();
         if (dir == null) {
             dir = target.toAbsolutePath().getParent();
@@ -336,11 +380,17 @@ public final class AtomicFileWrite {
         boolean replaced = false;
         IOException cannotReplace = null;
         try {
-            boolean keepsIdentity = !inPlaceAllowed || !canOverwrite(target) || keepsOwnership(target, tmp);
+            boolean mayWriteInPlace = inPlaceAllowed && canOverwrite(target);
+            boolean keepsIdentity = !mayWriteInPlace || keepsOwnership(target, tmp);
             if (keepsIdentity) {
                 files.write(tmp, bytes);
                 files.force(tmp);
                 copyPermissions(target, tmp);
+                // Extended attributes, an explicit ACL: copied where they can be. Where they cannot, the
+                // replacement would silently be a lesser file, so the original is overwritten instead.
+                keepsIdentity = remote || FileMetadata.carry(target, tmp) || !mayWriteInPlace;
+            }
+            if (keepsIdentity) {
                 if (!commit.getAsBoolean()) {
                     return Outcome.SKIPPED;
                 }
@@ -464,21 +514,30 @@ public final class AtomicFileWrite {
             throw refused;
         }
         boolean keepBackup = false;
+        int specialMode = isRemote(target) ? -1 : FileMetadata.specialMode(target);
         try {
             files.write(backup, previous);
+            // Until the overwrite is done this file is the only copy of the previous bytes. The note says
+            // whose they are, so a launch after a kill or a power cut can offer them back (SaveBackups).
+            SaveBackups.noteTarget(backup, target);
             files.force(backup);
             if (!commit.getAsBoolean()) {
                 return Outcome.SKIPPED;
             }
             try {
                 files.overwrite(target, bytes);
+                FileMetadata.applySpecialMode(target, specialMode); // the kernel drops setuid/setgid on a write
             } catch (IOException torn) {
                 if (isRemote(target) && unchanged(files, target, previous)) {
                     // The server refused before anything was written (the usual "permission denied").
                     throw new IOException("Could not write " + target + " in place: " + torn.getMessage(), torn);
                 }
+                // An interrupt is the likeliest reason to be here, and the flag is still set: on an
+                // interruptible channel the restore would be closed the same way, after truncating again.
+                boolean interrupted = Thread.interrupted();
                 try {
                     files.overwrite(target, previous);
+                    FileMetadata.applySpecialMode(target, specialMode);
                 } catch (IOException notRestored) {
                     keepBackup = true;
                     torn.addSuppressed(notRestored);
@@ -486,6 +545,10 @@ public final class AtomicFileWrite {
                             "Could not finish writing " + target + " in place; it may be incomplete. Its previous"
                                     + " contents are in " + backup,
                             torn);
+                } finally {
+                    if (interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
                 }
                 throw new IOException(
                         "Could not write " + target + " in place (" + torn.getMessage()
@@ -497,6 +560,7 @@ public final class AtomicFileWrite {
             if (!keepBackup) {
                 try {
                     files.deleteIfExists(backup);
+                    SaveBackups.forget(backup);
                 } catch (IOException leftBehind) {
                     // The save itself is decided; a stray backup copy must not turn it into a failure.
                 }
@@ -517,12 +581,12 @@ public final class AtomicFileWrite {
         if (backupDir != null) {
             try {
                 files.createDirectories(backupDir);
-                return files.createTempFile(backupDir, prefix, ".editora-backup");
+                return files.createTempFile(backupDir, prefix, SaveBackups.SUFFIX);
             } catch (IOException | RuntimeException unusable) {
                 // Fall through to the system temp directory: a backup somewhere beats none.
             }
         }
-        return files.createTempFile(prefix, ".editora-backup");
+        return files.createTempFile(prefix, SaveBackups.SUFFIX);
     }
 
     /** Longest slice of a file name kept in a staging or backup name, in UTF-8 bytes. */
@@ -564,6 +628,7 @@ public final class AtomicFileWrite {
             Path file, byte[] expectedBytes, byte[] replacementBytes, BooleanSupplier commit, FileOperations files)
             throws IOException {
         Path target = resolveLink(file);
+        refuseSpecialFile(target);
         Path dir = target.getParent();
         if (dir == null) {
             dir = target.toAbsolutePath().getParent();
@@ -577,6 +642,9 @@ public final class AtomicFileWrite {
             files.write(tmp, replacementBytes);
             files.force(tmp);
             copyPermissions(target, tmp);
+            if (!isRemote(target)) {
+                FileMetadata.carry(target, tmp); // best effort: this path never falls back to writing in place
+            }
             if (!commit.getAsBoolean() || !Arrays.equals(expectedBytes, files.readAllBytes(target))) {
                 return false;
             }
@@ -626,18 +694,66 @@ public final class AtomicFileWrite {
         return files.createTempFile(dir, prefix, ".editora-tmp");
     }
 
+    /** How many links a path may pass through; the kernel's own limit is 40. */
+    private static final int MAX_LINK_HOPS = 40;
+
     /**
      * The real file behind {@code file} when it is a symlink — writing through the link keeps it a link.
-     * A broken link, or any resolution failure, falls back to the path as given.
+     *
+     * <p>A link whose target does not exist yet (a dotfile manager's link to a file that has not been
+     * created, a volume that is not mounted) cannot be resolved by {@code toRealPath}. Falling back to the
+     * link's own path, as this once did, renamed the staged file over the <em>link</em>: the link was gone
+     * and the file it named was never created. Such a link is followed by hand to the path it names.
+     *
+     * @throws IOException when the link cannot be followed at all (a loop, or a folder on the way is
+     *     missing) — the save fails and the link stays what it is
      */
-    static Path resolveLink(Path file) {
-        try {
-            if (isRemote(file)) {
+    static Path resolveLink(Path file) throws IOException {
+        if (isRemote(file)) {
+            try {
                 return SftpFiles.resolveLink(file); // an SFTP path's toRealPath() does not follow links
+            } catch (IOException | RuntimeException brokenLink) {
+                return file;
             }
-            return Files.isSymbolicLink(file) ? file.toRealPath() : file;
-        } catch (IOException | RuntimeException brokenLink) {
+        }
+        if (!Files.isSymbolicLink(file)) {
             return file;
+        }
+        try {
+            return file.toRealPath();
+        } catch (IOException dangling) {
+            return followLinks(file);
+        }
+    }
+
+    private static Path followLinks(Path link) throws IOException {
+        Path current = link.toAbsolutePath();
+        for (int hop = 0; hop < MAX_LINK_HOPS; hop++) {
+            // The folder is resolved for real, so a ".." in a link is taken from where the link truly is.
+            Path parent = current.getParent();
+            Path name = current.getFileName();
+            if (parent != null && name != null) {
+                current = parent.toRealPath().resolve(name);
+            }
+            if (!Files.isSymbolicLink(current)) {
+                return current;
+            }
+            current = current.resolveSibling(Files.readSymbolicLink(current));
+        }
+        throw new IOException("Too many levels of symbolic links: " + link);
+    }
+
+    /**
+     * A save writes regular files. Renaming a staged file over a named pipe, a socket, a device node or a
+     * directory would replace that thing with a regular file (or fail half-way).
+     */
+    private static void refuseSpecialFile(Path target) throws IOException {
+        if (isRemote(target)) {
+            return; // decided by SftpFiles.looksOverwritable and the server
+        }
+        if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)
+                && !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException(target + " is not a regular file and cannot be saved to");
         }
     }
 
@@ -657,6 +773,7 @@ public final class AtomicFileWrite {
             }
             Set<PosixFilePermission> perms = view.readAttributes().permissions();
             Files.setPosixFilePermissions(to, perms);
+            FileMetadata.applySpecialMode(to, FileMetadata.specialMode(from)); // setuid, setgid, sticky
         } catch (IOException | UnsupportedOperationException | SecurityException ignored) {
             // Best effort: a save that keeps the wrong mode still beats a save that doesn't happen.
         }

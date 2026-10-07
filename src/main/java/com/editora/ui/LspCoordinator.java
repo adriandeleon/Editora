@@ -23,6 +23,7 @@ import com.editora.editor.LspDiagnostic;
 import com.editora.editor.MarkdownRenderer;
 import com.editora.lsp.InlayHintFilter;
 import com.editora.lsp.JdtlsGenerate;
+import com.editora.lsp.JdtlsRefactor;
 import com.editora.lsp.LspManager;
 import org.fxmisc.richtext.CodeArea;
 
@@ -112,6 +113,15 @@ final class LspCoordinator {
 
         /** Cancels a save captured before an LSP resource mutation can move, replace, or delete its path. */
         default void invalidatePendingWrite(Path file) {}
+
+        /**
+         * Keeps {@code file}'s current content in Local History before a workspace edit deletes or replaces
+         * it, answering (on the FX thread) whether the edit may go on: false only when history is on and
+         * the copy could not be made durable.
+         */
+        default void captureBeforeDestruction(Path file, java.util.function.Consumer<Boolean> completion) {
+            completion.accept(true);
+        }
 
         /** Sets (or clears, when {@code null}) the status-bar {@code LSP: <server>} segment label. */
         void setStatusBarLsp(String label);
@@ -395,7 +405,7 @@ final class LspCoordinator {
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
-        lspManager.setApplyEditHandler(this::applyWorkspaceEditsAsync); // server quick-fix edits land here (#670)
+        lspManager.setApplyEditHandler(this::applyWorkspaceEditsConfirmed); // server quick-fix edits land here (#670)
         lspManager.setOnEditBlocked(this::editBlocked);
         lspManager.setOnRefreshRequested(this::refreshRequested);
         lspManager.setOpenDocumentDiagnosticsOnly(!projectWideProblems); // the Problems window's default scope
@@ -565,7 +575,7 @@ final class LspCoordinator {
         requestFoldingRanges(b);
         boolean sem = host.settings().isSemanticHighlight() && lspManager.supportsSemanticTokens(path);
         b.setSemanticActive(sem);
-        b.setInlayHintsActive(host.settings().isInlayHints());
+        b.setInlayHintsActive(lineAnnotationsOn());
         if (!active) {
             refreshWhenShown.add(b);
             return;
@@ -914,6 +924,7 @@ final class LspCoordinator {
         lspManager.configure(on, effectiveCommands());
         appliedProjectRoot = ops.lspProjectRoot();
         appliedProjectOverrides = projectOverrideSignature();
+        offerInterruptedEdits();
         if (on) {
             noticeWithheldOverrides();
         }
@@ -1314,6 +1325,7 @@ final class LspCoordinator {
      * this the first buffer would launch the previous project's (or the global) command.
      */
     private boolean overridesReapplied() {
+        offerInterruptedEdits(); // a window learns its project late; asks once per root
         Path root = ops.lspProjectRoot();
         if (java.util.Objects.equals(root, appliedProjectRoot)) {
             return false;
@@ -1351,6 +1363,7 @@ final class LspCoordinator {
         projectSettingsCache = EMPTY_PROJECT_SETTINGS;
         applyOnTypeFormatting();
         appliedProjectRoot = ops.lspProjectRoot();
+        offerInterruptedEdits();
         if (ops.lspFeatureEnabled() && !projectOverrideSignature().equals(appliedProjectOverrides)) {
             applySupport();
         }
@@ -1476,6 +1489,7 @@ final class LspCoordinator {
      * Rides the same cadence as semantic tokens (didChange debounce, scroll-settle, ready, syncBuffer).
      */
     void requestInlayHints(EditorBuffer buffer) {
+        scheduleCodeLens(buffer); // same cadence, its own (longer) settle and gate
         Path path = buffer.getPath();
         if (path == null
                 || !host.settings().isInlayHints()
@@ -1533,9 +1547,104 @@ final class LspCoordinator {
         return out;
     }
 
+    /** Whether either setting that annotates lines from the server is on: inlay hints or code lenses. */
+    private boolean lineAnnotationsOn() {
+        return host.settings().isInlayHints() || host.settings().isCodeLens();
+    }
+
+    /** Lines requested around the viewport: a lens just off screen is there when the view scrolls to it. */
+    private static final int CODE_LENS_WINDOW_PAD = 30;
+
+    /** Longer than the hint cadence: resolving a lens is a reference search on the server. */
+    private final javafx.animation.PauseTransition codeLensSettle = codeLensSettle();
+
+    private java.lang.ref.WeakReference<EditorBuffer> codeLensTarget = new java.lang.ref.WeakReference<>(null);
+
+    private javafx.animation.PauseTransition codeLensSettle() {
+        var settle = new javafx.animation.PauseTransition(javafx.util.Duration.millis(450));
+        settle.setOnFinished(e -> {
+            EditorBuffer target = codeLensTarget.get();
+            if (target != null && target == host.activeBuffer()) {
+                requestCodeLens(target);
+            }
+        });
+        return settle;
+    }
+
+    /** Asks for {@code buffer}'s code lenses once editing and scrolling have settled; clears them when off. */
+    private void scheduleCodeLens(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null
+                || !host.settings().isCodeLens()
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsCodeLens(path)) {
+            buffer.setCodeLenses(null);
+            return;
+        }
+        codeLensTarget = new java.lang.ref.WeakReference<>(buffer);
+        codeLensSettle.playFromStart();
+    }
+
+    /**
+     * Code lenses: the server's reference and implementation counts for the declarations in view, drawn
+     * after their lines. A click opens what the lens counts.
+     */
+    void requestCodeLens(EditorBuffer buffer) {
+        Path path = buffer.getPath();
+        if (path == null
+                || !host.settings().isCodeLens()
+                || !lspManager.isManaged(path)
+                || !lspManager.supportsCodeLens(path)) {
+            buffer.setCodeLenses(null);
+            return;
+        }
+        int[] window = paddedWindow(buffer.visibleLineWindow(), CODE_LENS_WINDOW_PAD, buffer.lineCount());
+        long version = buffer.docVersion();
+        lspManager.changeDocument(path, buffer.text()); // the counts are for the text on screen
+        lspManager.requestCodeLens(path, window[0], window[1], spans -> {
+            if (buffer != host.activeBuffer() || buffer.docVersion() != version) {
+                return;
+            }
+            List<EditorBuffer.CodeLens> lenses = new java.util.ArrayList<>(spans.size());
+            for (LspManager.CodeLensSpan span : spans) {
+                lenses.add(new EditorBuffer.CodeLens(span.line(), span.title(), span));
+            }
+            buffer.setCodeLensHandler((line, clicked) -> openCodeLens(buffer, line, clicked));
+            buffer.setCodeLenses(lenses);
+        });
+    }
+
+    /** A lens was clicked: with several on the line the user says which one. */
+    private void openCodeLens(EditorBuffer buffer, int line, List<EditorBuffer.CodeLens> clicked) {
+        if (clicked.size() == 1) {
+            openCodeLens(buffer, line, clicked.get(0));
+        } else if (!clicked.isEmpty()) {
+            pickOne(
+                    tr("settings.codeLens"),
+                    tr("palette.setting.pick"),
+                    clicked,
+                    EditorBuffer.CodeLens::label,
+                    l -> "",
+                    chosen -> openCodeLens(buffer, line, chosen));
+        }
+    }
+
+    /** Puts the caret on the declaration's name and runs the navigation the lens stands for. */
+    private void openCodeLens(EditorBuffer buffer, int line, EditorBuffer.CodeLens lens) {
+        if (buffer != host.activeBuffer() || !(lens.token() instanceof LspManager.CodeLensSpan span)) {
+            return;
+        }
+        gotoInBuffer(buffer, line, span.col());
+        if (span.kind() == LspManager.CodeLensKind.IMPLEMENTATIONS) {
+            gotoImplementation();
+        } else {
+            findReferences();
+        }
+    }
+
     /** Re-applies the inlay-hints gate to every open buffer (the palette/Settings toggle's apply). */
     void applyInlayHints() {
-        boolean on = host.settings().isInlayHints();
+        boolean on = lineAnnotationsOn();
         host.forEachBuffer(b -> {
             b.setInlayHintsActive(on && b.getPath() != null && lspManager.isManaged(b.getPath()));
             requestInlayHints(b); // the gate inside clears buffers when toggled off
@@ -1726,7 +1835,7 @@ final class LspCoordinator {
             if (semantic) {
                 requestSemanticTokens(buffer);
             }
-            buffer.setInlayHintsActive(host.settings().isInlayHints()); // decoupled from semantic (#681)
+            buffer.setInlayHintsActive(lineAnnotationsOn()); // decoupled from semantic (#681)
             requestInlayHints(buffer); // gated internally on the setting + capability (#681)
             requestFoldingRanges(buffer); // #738 — a no-op until the server reports ready, then refreshed
         } else {
@@ -1744,6 +1853,7 @@ final class LspCoordinator {
             buffer.clearOccurrenceSpans();
             buffer.setInlayHintsActive(false);
             buffer.setInlayHints(null);
+            buffer.setCodeLenses(null);
             buffer.setSemanticActive(false);
             if (path != null && lspManager.isManaged(path)) {
                 lspManager.closeDocument(path);
@@ -2188,6 +2298,10 @@ final class LspCoordinator {
         if (kind == null || params == null) {
             return false;
         }
+        if (kind == JdtlsGenerate.Kind.DELEGATE_METHODS) {
+            runDelegatePrompt(path, item, params);
+            return true;
+        }
         lspManager.jdtlsGenerateCandidates(path, kind, params, plan -> {
             List<JdtlsGenerate.Candidate> candidates = plan.candidates();
             List<JdtlsGenerate.Candidate> constructors = kind == JdtlsGenerate.Kind.CONSTRUCTORS
@@ -2233,6 +2347,269 @@ final class LspCoordinator {
             }
         });
         return true;
+    }
+
+    /**
+     * Generate Delegate Methods: a field first (only asked when several can be delegated to), then the
+     * methods of that field to forward.
+     */
+    private void runDelegatePrompt(Path path, LspManager.CodeActionItem item, Object params) {
+        JdtlsGenerate.Kind kind = JdtlsGenerate.Kind.DELEGATE_METHODS;
+        lspManager.jdtlsRequest(path, kind.checkRequest(), params, status -> {
+            List<JdtlsGenerate.DelegateField> fields = JdtlsGenerate.delegateFields(status);
+            if (fields.isEmpty()) {
+                host.setStatus(tr("status.lsp.generateNothing", item.title()));
+                return;
+            }
+            java.util.function.Consumer<JdtlsGenerate.DelegateField> withField = field -> MultiSelectPicker.show(
+                    host.overlayHost(),
+                    item.title() + " — " + field.label(),
+                    pickerRows(field.methods()),
+                    chosen -> applyJdtlsEdit(
+                            path,
+                            item,
+                            kind.generateRequest(),
+                            JdtlsGenerate.delegateParams(LspManager.asJson(params), field, chosen)));
+            if (fields.size() == 1) {
+                withField.accept(fields.get(0));
+            } else {
+                pickOne(item.title(), tr("picker.generate.delegateField"), fields, f -> f.label(), f -> "", withField);
+            }
+        });
+    }
+
+    /** Sends a {@code java/…} request that answers with an edit, applies it, and reports the outcome. */
+    private void applyJdtlsEdit(Path path, LspManager.CodeActionItem item, String method, Object params) {
+        beginReportedEdit();
+        lspManager.jdtlsApplyEdit(path, method, params, item.expectedDocuments(), (ok, refused) -> {
+            if (!ok && refused != null) {
+                host.setError(refused); // the server's own reason beats "could not apply"
+                return;
+            }
+            reportEdit(
+                    ok,
+                    tr("status.lsp.codeActionApplied", item.title()),
+                    tr("status.lsp.codeActionFailed", item.title()));
+        });
+    }
+
+    /** A single-choice picker over {@code items}; {@code onChoose} is not called when it is dismissed. */
+    private <T> void pickOne(
+            String title,
+            String prompt,
+            List<T> items,
+            java.util.function.Function<T, String> label,
+            java.util.function.Function<T, String> detail,
+            java.util.function.Consumer<T> onChoose) {
+        QuickOpen<T> picker = new QuickOpen<>(title, prompt, () -> items, label, detail, chosen -> {
+            if (chosen != null) {
+                onChoose.accept(chosen);
+            }
+        });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /**
+     * Carries out a jdtls refactoring the client has to drive — Move, Extract Interface, Change Signature
+     * ({@link JdtlsRefactor}) — if {@code item} is one, and reports whether it took over.
+     *
+     * <p>Like the generate prompts these must not reach {@code applyCodeAction}: their command,
+     * {@code java.action.applyRefactoringCommand}, is not one the server executes.
+     */
+    private boolean runRefactorCommand(Path path, LspManager.CodeActionItem item) {
+        JdtlsRefactor.Request request =
+                JdtlsRefactor.parse(LspManager.commandIdOf(item.raw()), LspManager.commandArguments(item.raw()));
+        if (request == null) {
+            return false;
+        }
+        String uri = request.documentUri();
+        switch (request.name()) {
+            case JdtlsRefactor.MOVE_FILE -> {
+                String source = request.info("uri") == null ? uri : request.info("uri");
+                moveTo(
+                        path,
+                        item,
+                        "moveResource",
+                        source,
+                        null,
+                        tr("picker.refactor.package"),
+                        r -> JdtlsRefactor.packages(r, false));
+            }
+            case JdtlsRefactor.MOVE_INSTANCE_METHOD ->
+                moveTo(
+                        path,
+                        item,
+                        "moveInstanceMethod",
+                        uri,
+                        request.params(),
+                        tr("picker.refactor.moveTarget"),
+                        JdtlsRefactor::instanceTargets);
+            case JdtlsRefactor.MOVE_STATIC_MEMBER -> moveToType(path, item, "moveStaticMember", request);
+            case JdtlsRefactor.MOVE_TYPE -> moveType(path, item, request);
+            case JdtlsRefactor.EXTRACT_INTERFACE -> extractInterface(path, item, request);
+            case JdtlsRefactor.CHANGE_SIGNATURE -> changeSignature(path, item, request);
+            default ->
+                // A refactoring that needs no choice from the user: the edit is one request away.
+                applyJdtlsEdit(path, item, "java/getRefactorEdit", refactorEdit(request, null));
+        }
+        return true;
+    }
+
+    private com.google.gson.JsonObject refactorEdit(
+            JdtlsRefactor.Request request, com.google.gson.JsonArray arguments) {
+        int tabSize = host.settings().getTabSize();
+        EditorBuffer buffer = activeLspBuffer();
+        boolean spaces = buffer == null || buffer.detectInsertSpaces(tabSize);
+        return JdtlsRefactor.refactorEditParams(request.name(), request.params(), tabSize, spaces, arguments);
+    }
+
+    /** Asks the server where {@code source} can move, lets the user choose, and moves it there. */
+    private void moveTo(
+            Path path,
+            LspManager.CodeActionItem item,
+            String moveKind,
+            String source,
+            com.google.gson.JsonElement params,
+            String prompt,
+            java.util.function.Function<com.google.gson.JsonElement, List<JdtlsRefactor.Destination>> read) {
+        lspManager.jdtlsRequest(
+                path, "java/getMoveDestinations", JdtlsRefactor.moveParams(moveKind, source, params, null), answer -> {
+                    String refused = JdtlsRefactor.errorMessage(answer);
+                    List<JdtlsRefactor.Destination> targets = read.apply(answer);
+                    if (refused != null || targets.isEmpty()) {
+                        host.setError(refused != null ? refused : tr("status.lsp.refactorNoTarget", item.title()));
+                        return;
+                    }
+                    pickDestination(
+                            item,
+                            prompt,
+                            targets,
+                            target -> applyJdtlsEdit(
+                                    path,
+                                    item,
+                                    "java/move",
+                                    JdtlsRefactor.moveParams(moveKind, source, params, target.raw())));
+                });
+    }
+
+    /** Moves a static member or a nested type into another type of the same project. */
+    private void moveToType(Path path, LspManager.CodeActionItem item, String moveKind, JdtlsRefactor.Request request) {
+        lspManager.jdtlsRequest(
+                path, "java/searchSymbols", JdtlsRefactor.searchTypesParams(request.info("projectName")), answer -> {
+                    List<JdtlsRefactor.Destination> types =
+                            JdtlsRefactor.types(answer, request.info("enclosingTypeName"));
+                    if (types.isEmpty()) {
+                        host.setError(tr("status.lsp.refactorNoTarget", item.title()));
+                        return;
+                    }
+                    pickDestination(
+                            item,
+                            tr("picker.refactor.class"),
+                            types,
+                            target -> applyJdtlsEdit(
+                                    path,
+                                    item,
+                                    "java/move",
+                                    JdtlsRefactor.moveParams(
+                                            moveKind, request.documentUri(), request.params(), target.raw())));
+                });
+    }
+
+    /** Move Type: into a file of its own, or into another class — asked only when both are possible. */
+    private void moveType(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
+        Runnable newFile = () -> applyJdtlsEdit(
+                path,
+                item,
+                "java/move",
+                JdtlsRefactor.moveParams("moveTypeToNewFile", request.documentUri(), request.params(), null));
+        Runnable otherClass = () -> moveToType(path, item, "moveTypeToClass", request);
+        boolean toFile = request.supportsDestination("newFile");
+        boolean toClass = request.supportsDestination("class");
+        if (toFile && toClass) {
+            String fileLabel = tr("picker.refactor.moveType.newFile");
+            pickOne(
+                    item.title(),
+                    tr("picker.refactor.moveTarget"),
+                    List.of(fileLabel, tr("picker.refactor.moveType.class")),
+                    s -> s,
+                    s -> "",
+                    chosen -> (chosen.equals(fileLabel) ? newFile : otherClass).run());
+        } else if (toClass) {
+            otherClass.run();
+        } else {
+            newFile.run();
+        }
+    }
+
+    private void pickDestination(
+            LspManager.CodeActionItem item,
+            String prompt,
+            List<JdtlsRefactor.Destination> targets,
+            java.util.function.Consumer<JdtlsRefactor.Destination> onChoose) {
+        pickOne(item.title(), prompt, targets, JdtlsRefactor.Destination::label, d -> d.detail(), onChoose);
+    }
+
+    /** Extract Interface: which methods, the interface's name, and the package it is created in. */
+    private void extractInterface(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
+        lspManager.jdtlsRequest(path, "java/checkExtractInterfaceStatus", request.params(), status -> {
+            List<JdtlsGenerate.Candidate> members = JdtlsRefactor.interfaceMembers(status);
+            List<JdtlsRefactor.Destination> packages = JdtlsRefactor.interfacePackages(status);
+            if (members.isEmpty() || packages.isEmpty()) {
+                host.setStatus(tr("status.lsp.generateNothing", item.title()));
+                return;
+            }
+            String subType = JdtlsRefactor.subTypeName(status);
+            MultiSelectPicker.show(
+                    host.overlayHost(),
+                    item.title(),
+                    pickerRows(members),
+                    chosen -> host.promptText(
+                            item.title(),
+                            tr("prompt.refactor.interfaceName"),
+                            subType == null ? "" : subType + "Interface",
+                            typed -> {
+                                String name = typed.strip();
+                                if (!JdtlsRefactor.isTypeName(name)) {
+                                    host.setError(tr("status.lsp.refactorBadName", name));
+                                    return;
+                                }
+                                java.util.function.Consumer<JdtlsRefactor.Destination> create = pkg -> applyJdtlsEdit(
+                                        path,
+                                        item,
+                                        "java/getRefactorEdit",
+                                        refactorEdit(
+                                                request, JdtlsRefactor.extractInterfaceArguments(chosen, name, pkg)));
+                                if (packages.size() == 1) {
+                                    create.accept(packages.get(0));
+                                } else {
+                                    pickDestination(item, tr("picker.refactor.package"), packages, create);
+                                }
+                            }));
+        });
+    }
+
+    /** Change Signature: the method's signature is edited as one line of text. */
+    private void changeSignature(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
+        lspManager.jdtlsRequest(path, "java/getChangeSignatureInfo", request.params(), info -> {
+            String refused = JdtlsRefactor.errorMessage(info);
+            String signature = JdtlsRefactor.signatureText(info);
+            if (refused != null || signature.isEmpty()) {
+                host.setError(refused != null ? refused : tr("status.lsp.codeActionFailed", item.title()));
+                return;
+            }
+            host.promptText(item.title(), tr("prompt.refactor.signature"), signature, typed -> {
+                if (typed.strip().equals(signature)) {
+                    return; // nothing changed
+                }
+                com.google.gson.JsonArray arguments = JdtlsRefactor.changeSignatureArguments(info, typed);
+                if (arguments == null) {
+                    host.setError(tr("status.lsp.refactorBadSignature"));
+                    return;
+                }
+                applyJdtlsEdit(path, item, "java/getRefactorEdit", refactorEdit(request, arguments));
+            });
+        });
     }
 
     private static List<MultiSelectPicker.Item<JdtlsGenerate.Candidate>> pickerRows(
@@ -2849,6 +3226,9 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.formatNoChange"));
                 return;
             }
+            if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
+                return;
+            }
             buffer.applyLspEdits(edits);
             host.setStatus(tr("status.lsp.formatted"));
         });
@@ -2924,6 +3304,9 @@ final class LspCoordinator {
         if (runGeneratePrompt(path, item)) {
             return; // a jdtls generate prompt: we drive it, not the server (#741)
         }
+        if (runRefactorCommand(path, item)) {
+            return; // likewise a refactoring that asks the user where to, or what
+        }
         LspManager.CodeActionItem applied = item;
         beginReportedEdit();
         lspManager.applyCodeAction(
@@ -2991,7 +3374,7 @@ final class LspCoordinator {
                     reportEdit(false, "", tr("status.lsp.renameFailed", name));
                     return;
                 }
-                if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped)) {
+                if (!com.editora.lsp.RenamePreview.worthPreviewing(mapped, workspaceDisk())) {
                     // Confined to this file: visible on screen and one undo away, so a confirmation step here
                     // would be friction with nothing to confirm.
                     applyRename(mapped, name);
@@ -3012,22 +3395,75 @@ final class LspCoordinator {
      */
     private void previewThenApply(com.editora.lsp.WorkspaceEditMapper.Mapped mapped, String name) {
         java.util.List<MultiSelectPicker.Item<java.nio.file.Path>> rows = new java.util.ArrayList<>();
-        for (com.editora.lsp.RenamePreview.FileChange change : com.editora.lsp.RenamePreview.summarise(mapped)) {
-            String label = ops.homeCollapsed(change.file().toString());
-            if (change.edits() > 0) {
-                label += "  ·  " + tr("lsp.rename.editCount", change.edits());
-            }
-            if (change.renamedTo() != null) {
-                label += "  ·  " + tr("lsp.rename.movesTo", change.renamedTo().getFileName());
-            }
-            rows.add(new MultiSelectPicker.Item<>(label, true, change.file()));
+        java.util.Set<Path> listed = new java.util.LinkedHashSet<>();
+        for (com.editora.lsp.RenamePreview.FileChange change :
+                com.editora.lsp.RenamePreview.summarise(mapped, workspaceDisk())) {
+            rows.add(new MultiSelectPicker.Item<>(previewLabel(change), true, change.file()));
+            listed.add(change.file());
         }
         MultiSelectPicker.show(
                 host.overlayHost(),
                 tr("lsp.rename.previewTitle", name, com.editora.lsp.RenamePreview.totalEdits(mapped), rows.size()),
                 rows,
-                keep -> applyRename(
-                        com.editora.lsp.RenamePreview.filter(mapped, new java.util.LinkedHashSet<>(keep)), name));
+                keep -> applyPreviewed(mapped, new java.util.LinkedHashSet<>(keep), listed, name));
+    }
+
+    /** One preview row: the path, then what happens to it — deletes and replacements spelled out. */
+    String previewLabel(com.editora.lsp.RenamePreview.FileChange change) {
+        String label = ops.homeCollapsed(change.file().toString());
+        if (change.edits() > 0) {
+            label += "  ·  " + tr("lsp.rename.editCount", change.edits());
+        }
+        if (change.renamedTo() != null) {
+            label += "  ·  " + tr("lsp.rename.movesTo", change.renamedTo().getFileName());
+        }
+        if (change.overwrites()) {
+            label += "  ·  " + tr("lsp.rename.overwrites");
+        }
+        if (change.deletion() != null) {
+            label += "  ·  "
+                    + tr(
+                            change.deletion() == com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY
+                                    ? "lsp.rename.deletesFolder"
+                                    : "lsp.rename.deletesFile");
+        }
+        return label;
+    }
+
+    /**
+     * Applies what the user left ticked. Refused when a delete that is still ticked would remove a path
+     * the user unticked — a file kept in place inside a folder the edit deletes.
+     */
+    void applyPreviewed(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
+            java.util.Set<Path> keep,
+            java.util.Set<Path> listed,
+            String name) {
+        com.editora.lsp.WorkspaceEditMapper.Mapped filtered =
+                com.editora.lsp.RenamePreview.filter(mapped, keep, listed);
+        List<Path> covered = com.editora.lsp.RenamePreview.excludedButDeleted(filtered, keep, listed);
+        if (!covered.isEmpty()) {
+            beginReportedEdit();
+            editRefused(covered, tr("status.lsp.renameDeleteCoversKept", blockedFileNames(covered)));
+            reportEdit(false, "", tr("status.lsp.renameFailed", name));
+            return;
+        }
+        applyRename(filtered, name);
+    }
+
+    /** The filesystem as the workspace-edit transaction sees it, for classifying destructive operations. */
+    private com.editora.lsp.WorkspaceEditHazards.Disk workspaceDisk() {
+        return new com.editora.lsp.WorkspaceEditHazards.Disk() {
+            @Override
+            public boolean exists(Path path) {
+                return workspaceFiles.exists(path);
+            }
+
+            @Override
+            public boolean isDirectory(Path path) {
+                return workspaceFiles.isDirectory(path);
+            }
+        };
     }
 
     /** Applies a (possibly filtered) rename edit and reports the outcome. */
@@ -3060,6 +3496,12 @@ final class LspCoordinator {
         }
         blockedTargets = List.copyOf(files);
         host.setError(tr("status.lsp.editBlocked", blockedFileNames(files)));
+    }
+
+    /** As {@link #editBlocked}, for a refusal with a reason of its own to give. */
+    private void editRefused(List<Path> files, String message) {
+        blockedTargets = files == null || files.isEmpty() ? List.of(Path.of("")) : List.copyOf(files);
+        host.setError(message);
     }
 
     /** Pure: up to three file names, then a count of the rest. */
@@ -3320,6 +3762,128 @@ final class LspCoordinator {
         }
     }
 
+    /** Asks before an unpreviewed edit destroys something on disk; a field so a test can answer. */
+    java.util.function.Predicate<List<com.editora.lsp.WorkspaceEditHazards.Hazard>> destructiveEditConfirmer =
+            this::confirmDestructiveEdit;
+
+    private boolean confirmDestructiveEdit(List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards) {
+        StringBuilder lines = new StringBuilder();
+        for (var hazard : hazards) {
+            lines.append(lines.isEmpty() ? "" : "\n")
+                    .append(tr(
+                            hazard.kind() == com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY
+                                    ? "dialog.lsp.destructiveEdit.deleteFolder"
+                                    : "dialog.lsp.destructiveEdit.overwrite",
+                            ops.homeCollapsed(hazard.path().toString())));
+        }
+        javafx.scene.control.ButtonType apply = new javafx.scene.control.ButtonType(
+                tr("dialog.lsp.destructiveEdit.apply"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.Alert confirm = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.WARNING,
+                lines.toString(),
+                javafx.scene.control.ButtonType.CANCEL,
+                apply);
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.lsp.destructiveEdit.title"));
+        confirm.setHeaderText(tr("dialog.lsp.destructiveEdit.header"));
+        confirm.getDialogPane().setMinWidth(520);
+        // Enter must not confirm a deletion: Cancel is the default button.
+        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(apply)).setDefaultButton(false);
+        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
+                .setDefaultButton(true);
+        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL) == apply;
+    }
+
+    /**
+     * The applier for edits nobody previewed — a code action, a refactoring command, a server's
+     * {@code workspace/applyEdit}. One that deletes a folder with its contents or replaces an existing
+     * file is applied only after the user has seen the paths and agreed (a rename shows them as preview
+     * rows instead).
+     */
+    void applyWorkspaceEditsConfirmed(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
+        List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
+                com.editora.lsp.WorkspaceEditHazards.needingConfirmation(mapped, workspaceDisk());
+        if (!hazards.isEmpty() && !destructiveEditConfirmer.test(hazards)) {
+            editRefused(
+                    hazards.stream()
+                            .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
+                            .toList(),
+                    tr("status.lsp.destructiveEditDeclined"));
+            done.accept(false);
+            return;
+        }
+        applyWorkspaceEditsAsync(mapped, done);
+    }
+
+    /** Most files of one deleted folder that are copied to Local History; a larger folder is not walked further. */
+    static final int MAX_CAPTURED_PER_EDIT = 200;
+
+    /**
+     * Copies what the edit is about to delete or replace into Local History, then continues on the FX
+     * thread with whether every copy was made. Runs before staging, while each file is still at the path
+     * its history belongs to. A folder is listed off the FX thread; an edit with nothing to lose continues
+     * at once.
+     */
+    private void captureBeforeDestruction(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
+        List<com.editora.lsp.WorkspaceEditHazards.Hazard> hazards =
+                com.editora.lsp.WorkspaceEditHazards.of(mapped, workspaceDisk());
+        if (hazards.isEmpty()) {
+            done.accept(true);
+            return;
+        }
+        boolean folders =
+                hazards.stream().anyMatch(h -> h.kind() == com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY);
+        if (!folders) {
+            captureEach(
+                    hazards.stream()
+                            .map(com.editora.lsp.WorkspaceEditHazards.Hazard::path)
+                            .toList(),
+                    0,
+                    done);
+            return;
+        }
+        workspaceExecutor.execute(() -> {
+            List<Path> files = new java.util.ArrayList<>();
+            for (var hazard : hazards) {
+                if (hazard.kind() != com.editora.lsp.WorkspaceEditHazards.Kind.DELETE_DIRECTORY) {
+                    files.add(hazard.path());
+                    continue;
+                }
+                try {
+                    for (Path path : workspaceFiles.walk(hazard.path())) {
+                        if (files.size() >= MAX_CAPTURED_PER_EDIT) {
+                            break;
+                        }
+                        if (workspaceFiles.isRegularFile(path)) {
+                            files.add(path);
+                        }
+                    }
+                } catch (java.io.IOException | RuntimeException unreadable) {
+                    // Staging will fail on the same folder and refuse the edit; nothing to copy from here.
+                }
+            }
+            Platform.runLater(() -> captureEach(files, 0, done));
+        });
+    }
+
+    private void captureEach(List<Path> files, int index, java.util.function.Consumer<Boolean> done) {
+        if (index >= files.size()) {
+            done.accept(true);
+            return;
+        }
+        Path file = files.get(index);
+        ops.captureBeforeDestruction(file, kept -> {
+            if (!kept) {
+                editRefused(List.of(file), tr("status.lsp.editHistoryFailed", blockedFileNames(List.of(file))));
+                done.accept(false);
+                return;
+            }
+            captureEach(files, index + 1, done);
+        });
+    }
+
     /**
      * Production workspace-edit path. Unopened files are decoded through the host's background loader and
      * create/move/delete operations run on a virtual thread; only buffer validation, RichTextFX edits and UI
@@ -3328,6 +3892,7 @@ final class LspCoordinator {
     void applyWorkspaceEditsAsync(
             com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.function.Consumer<Boolean> done) {
         if (!resourceTargetsSafe(mapped)) {
+            resourceTargetsBlocked(mapped);
             done.accept(false);
             return;
         }
@@ -3347,33 +3912,47 @@ final class LspCoordinator {
                 return;
             }
             Map<Path, OpenTarget> targets = openResourceTargets(mapped); // while the files still exist
-            workspaceExecutor.execute(() -> {
-                WorkspaceTransactionStatus transaction = new WorkspaceTransactionStatus();
-                java.util.List<StagedCreate> creates = stageCreates(mapped.creates(), transaction);
-                java.util.List<StagedRename> renames =
-                        creates == null ? null : stageRenames(mapped.renames(), transaction);
-                java.util.List<StagedDelete> deletes =
-                        creates == null || renames == null ? null : stageDeletes(mapped.deletes(), transaction);
-                if (creates == null || renames == null || deletes == null) {
-                    if (renames != null) {
-                        rollbackRenames(renames, transaction);
-                    }
-                    if (creates != null) {
-                        rollbackCreates(creates, transaction);
-                    }
-                    Platform.runLater(() -> {
-                        reportIncompleteRollback(transaction);
-                        done.accept(false);
-                    });
-                    return;
+            captureBeforeDestruction(mapped, captured -> {
+                if (captured) {
+                    stageWorkspaceEdit(mapped, buffers, targets, done);
+                } else {
+                    done.accept(false);
                 }
-                Platform.runLater(() -> collectCreatedWorkspaceBuffers(
-                        mapped,
-                        buffers,
-                        0,
-                        () -> finishWorkspaceEdit(
-                                mapped, buffers, creates, renames, deletes, targets, transaction, done)));
             });
+        });
+    }
+
+    /** Stages the edit's filesystem operations off the FX thread, then finishes (or rolls back) on it. */
+    private void stageWorkspaceEdit(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped,
+            java.util.List<EditorBuffer> buffers,
+            Map<Path, OpenTarget> targets,
+            java.util.function.Consumer<Boolean> done) {
+        workspaceExecutor.execute(() -> {
+            WorkspaceTransactionStatus transaction = beginTransaction(mapped);
+            java.util.List<StagedCreate> creates = stageCreates(mapped.creates(), transaction);
+            java.util.List<StagedRename> renames = creates == null ? null : stageRenames(mapped.renames(), transaction);
+            java.util.List<StagedDelete> deletes =
+                    creates == null || renames == null ? null : stageDeletes(mapped.deletes(), transaction);
+            if (creates == null || renames == null || deletes == null) {
+                if (renames != null) {
+                    rollbackRenames(renames, transaction);
+                }
+                if (creates != null) {
+                    rollbackCreates(creates, transaction);
+                }
+                endTransaction(transaction);
+                Platform.runLater(() -> {
+                    reportIncompleteRollback(transaction);
+                    done.accept(false);
+                });
+                return;
+            }
+            Platform.runLater(() -> collectCreatedWorkspaceBuffers(
+                    mapped,
+                    buffers,
+                    0,
+                    () -> finishWorkspaceEdit(mapped, buffers, creates, renames, deletes, targets, transaction, done)));
         });
     }
 
@@ -3435,10 +4014,18 @@ final class LspCoordinator {
      *  writes and MOVES files on disk, so its all-or-nothing refusals need direct tests. */
     boolean applyWorkspaceEdits(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
         if (!resourceTargetsSafe(mapped)) {
+            resourceTargetsBlocked(mapped);
             return false;
         }
         invalidateResourceWrites(mapped);
-        WorkspaceTransactionStatus transaction = new WorkspaceTransactionStatus();
+        WorkspaceTransactionStatus transaction = beginTransaction(mapped);
+        boolean applied = applyWorkspaceEdits(mapped, transaction);
+        endTransaction(transaction);
+        return applied;
+    }
+
+    private boolean applyWorkspaceEdits(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, WorkspaceTransactionStatus transaction) {
         var files = mapped.edits();
         java.util.List<StagedCreate> creates = stageCreates(mapped.creates(), transaction);
         if (creates == null) {
@@ -3492,7 +4079,13 @@ final class LspCoordinator {
             reportIncompleteRollback(transaction);
             return false;
         }
-        if (!resourceStateCurrent(creates, staged, deletes)) {
+        boolean safe = resourceTargetsSafe(mapped);
+        List<Path> unplaceable = safe ? unplaceableTargets(mapped, buffers) : List.of();
+        if (!resourceStateCurrent(creates, staged, deletes) || !safe || !unplaceable.isEmpty()) {
+            if (!safe) {
+                resourceTargetsBlocked(mapped);
+            }
+            editUnplaceable(unplaceable);
             rollbackDeletes(deletes, transaction);
             rollbackRenames(staged, transaction);
             rollbackCreates(creates, transaction);
@@ -3508,6 +4101,7 @@ final class LspCoordinator {
         }
         // The filesystem transaction completed before any text changed. Now remap open buffers/session state
         // in protocol order; this part is in-memory and cannot leave a failed disk move behind.
+        transaction.journal.committed();
         List<Path> orphaned = remapRenamedBuffers(staged, targets);
         for (StagedCreate created : creates) {
             ops.fileCreated(created.operation().file());
@@ -3534,6 +4128,14 @@ final class LspCoordinator {
         // Supersede saves started while the resource transaction was staging, before UI identity changes.
         invalidateResourceWrites(mapped);
         if (!resourceStateCurrent(creates, renames, deletes) || !openTargetsCurrent(targets)) {
+            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+            return;
+        }
+        // The preflight ran before files were loaded and staged, several FX turns ago: a keystroke since
+        // then — in any window — may have dirtied a buffer this edit is about to close with its file.
+        // Asked again here, in the same FX turn that retires the tabs, nothing can slip in between.
+        if (!resourceTargetsSafe(mapped)) {
+            resourceTargetsBlocked(mapped);
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
             return;
         }
@@ -3565,10 +4167,24 @@ final class LspCoordinator {
                 return;
             }
         }
+        List<Path> unplaceable = unplaceableTargets(mapped, buffers);
+        if (!unplaceable.isEmpty()) {
+            editUnplaceable(unplaceable); // before any buffer changes: all of the edit lands, or none of it
+            rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+            return;
+        }
+        // Buffers without undo (large-file mode) keep a Local History copy first; one refusal stops the edit.
+        for (EditorBuffer buffer : new java.util.LinkedHashSet<>(buffers)) {
+            if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
+                rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+                return;
+            }
+        }
         if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
             return;
         }
+        transaction.journal.committed();
         List<Path> orphaned = remapRenamedBuffers(renames, targets);
         creates.forEach(created -> ops.fileCreated(created.operation().file()));
         retireDeleted(deletes, targets);
@@ -3576,6 +4192,7 @@ final class LspCoordinator {
             commitRenames(renames);
             commitCreates(creates);
             commitDeletes(deletes);
+            transaction.journal.close();
         });
         if (!orphaned.isEmpty()) {
             tabsNotRemapped(orphaned); // the text is edited and the file moved; never call that "applied"
@@ -3608,6 +4225,46 @@ final class LspCoordinator {
             }
         }
         return true;
+    }
+
+    /** Names the unsaved buffers that made {@link #resourceTargetsSafe} refuse, in whichever window they are. */
+    private void resourceTargetsBlocked(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        java.util.Set<Path> unsaved = new java.util.LinkedHashSet<>();
+        java.util.List<Path> targets = new java.util.ArrayList<>();
+        mapped.deletes().forEach(deletion -> targets.add(deletion.file()));
+        mapped.creates().stream().filter(c -> c.overwrite()).forEach(creation -> targets.add(creation.file()));
+        mapped.renames().forEach(rename -> targets.add(rename.to()));
+        for (Path target : targets) {
+            for (EditorBuffer buffer : ops.buffersAtOrUnder(target)) {
+                if (buffer.isDirty() && buffer.getPath() != null) {
+                    unsaved.add(buffer.getPath());
+                }
+            }
+        }
+        if (!unsaved.isEmpty()) {
+            List<Path> files = List.copyOf(unsaved);
+            editRefused(files, tr("status.lsp.editTargetsUnsaved", blockedFileNames(files)));
+        }
+    }
+
+    /** The files whose buffer cannot take every one of its edits — see {@code applyLspEditsAtomically}. */
+    private static List<Path> unplaceableTargets(
+            com.editora.lsp.WorkspaceEditMapper.Mapped mapped, java.util.List<EditorBuffer> buffers) {
+        List<Path> files = new java.util.ArrayList<>();
+        for (int i = 0; i < mapped.edits().size(); i++) {
+            EditorBuffer buffer = buffers.get(i);
+            if (buffer != null && !buffer.canPlaceLspEdits(mapped.edits().get(i).edits())) {
+                files.add(mapped.edits().get(i).file());
+            }
+        }
+        return files;
+    }
+
+    /** An edit the server sent does not fit the file it names: nothing was applied; say which file. */
+    private void editUnplaceable(List<Path> files) {
+        if (!files.isEmpty()) {
+            editRefused(files, tr("status.lsp.editUnplaceable", blockedFileNames(files)));
+        }
     }
 
     private boolean resourceStateCurrent(
@@ -3657,6 +4314,7 @@ final class LspCoordinator {
             rollbackDeletes(deletes, transaction);
             rollbackRenames(renames, transaction);
             rollbackCreates(creates, transaction);
+            endTransaction(transaction);
             Platform.runLater(() -> {
                 reportIncompleteRollback(transaction);
                 done.accept(false);
@@ -3674,7 +4332,12 @@ final class LspCoordinator {
                 var edit = mapped.edits().get(i);
                 EditorBuffer buffer = buffers.get(i);
                 String original = buffer.getContent();
-                buffer.applyLspEdits(edit.edits());
+                if (!buffer.applyLspEditsAtomically(edit.edits())) {
+                    // Checked for every buffer before the first was touched; reaching this means the
+                    // document changed underneath. The catch below restores the buffers already edited.
+                    editUnplaceable(List.of(edit.file()));
+                    throw new IllegalStateException("workspace edit does not fit " + edit.file());
+                }
                 if (!original.equals(buffer.getContent())) {
                     applied.add(new AppliedWorkspaceText(buffer, edit.file(), original));
                 }
@@ -3708,6 +4371,168 @@ final class LspCoordinator {
 
     private static final class WorkspaceTransactionStatus {
         private boolean rollbackFailed;
+        private com.editora.lsp.WorkspaceEditJournal journal = com.editora.lsp.WorkspaceEditJournal.begin(null);
+    }
+
+    /** What the user chose to do about an interrupted transaction. */
+    enum InterruptedEditChoice {
+        /** Put the staged files back (an undecided edit). */
+        RESTORE,
+        /** Remove the old copies (a decided edit that did not get to clean up). */
+        REMOVE,
+        /** Leave every file where it is and stop asking. */
+        KEEP,
+        /** Ask again at the next project open. */
+        LATER
+    }
+
+    /** Asks what to do about an interrupted transaction; a field so a test can answer without a dialog. */
+    java.util.function.Function<com.editora.lsp.WorkspaceEditJournal.Interrupted, InterruptedEditChoice>
+            interruptedEditPrompt = this::promptInterruptedEdit;
+
+    private Path interruptedEditsCheckedFor;
+
+    /**
+     * Once per opened project: looks for workspace-edit transactions that were interrupted between staging
+     * and commit — the process died with files moved aside under hidden {@code .editora-lsp-*} names — and
+     * offers to put them back. Nothing is moved or removed without the user's answer.
+     */
+    void offerInterruptedEdits() {
+        Path root = ops.lspProjectRoot();
+        Path directory = journalDir();
+        if (root == null || directory == null || root.equals(interruptedEditsCheckedFor)) {
+            return;
+        }
+        interruptedEditsCheckedFor = root;
+        workspaceExecutor.execute(() -> {
+            List<com.editora.lsp.WorkspaceEditJournal.Interrupted> found = new java.util.ArrayList<>();
+            for (var interrupted : com.editora.lsp.WorkspaceEditJournal.pending(directory)) {
+                if (interrupted.touches(root)) {
+                    found.add(interrupted);
+                } else {
+                    com.editora.lsp.WorkspaceEditJournal.release(interrupted); // another project's
+                }
+            }
+            if (!found.isEmpty()) {
+                Platform.runLater(() -> found.forEach(this::resolveInterruptedEdit));
+            }
+        });
+    }
+
+    private void resolveInterruptedEdit(com.editora.lsp.WorkspaceEditJournal.Interrupted interrupted) {
+        InterruptedEditChoice choice = interruptedEditPrompt.apply(interrupted);
+        switch (choice == null ? InterruptedEditChoice.LATER : choice) {
+            case RESTORE ->
+                workspaceExecutor.execute(() -> {
+                    var outcome = interrupted.restore();
+                    Platform.runLater(() -> interruptedEditResolved(
+                            outcome.restored(),
+                            outcome.leftInPlace(),
+                            tr(
+                                    "status.lsp.interruptedEdit.restored",
+                                    outcome.restored().size())));
+                });
+            case REMOVE ->
+                workspaceExecutor.execute(() -> {
+                    List<Path> left = interrupted.discardLeftovers();
+                    Platform.runLater(
+                            () -> interruptedEditResolved(List.of(), left, tr("status.lsp.interruptedEdit.removed")));
+                });
+            case KEEP -> {
+                List<Path> left = interrupted.leftovers();
+                interrupted.dismiss();
+                host.setStatus(tr("status.lsp.interruptedEdit.kept", blockedFileNames(left)));
+            }
+            case LATER -> {
+                // The journal stays; this run does not ask again.
+            }
+        }
+    }
+
+    private void interruptedEditResolved(List<Path> restored, List<Path> left, String success) {
+        if (!restored.isEmpty()) {
+            ops.fileCreated(restored.get(0)); // refreshes the Project tree
+        }
+        if (left.isEmpty()) {
+            host.setStatus(success);
+        } else {
+            host.setError(tr("status.lsp.interruptedEdit.left", blockedFileNames(left)));
+        }
+    }
+
+    private InterruptedEditChoice promptInterruptedEdit(com.editora.lsp.WorkspaceEditJournal.Interrupted interrupted) {
+        List<Path> originals = interrupted.originals();
+        StringBuilder lines = new StringBuilder();
+        int shown = Math.min(10, originals.size());
+        for (int i = 0; i < shown; i++) {
+            lines.append(i == 0 ? "" : "\n")
+                    .append(ops.homeCollapsed(originals.get(i).toString()));
+        }
+        if (originals.size() > shown) {
+            lines.append("\n+").append(originals.size() - shown);
+        }
+        javafx.scene.control.ButtonType act = new javafx.scene.control.ButtonType(
+                tr(
+                        interrupted.committed()
+                                ? "dialog.lsp.interruptedEdit.remove"
+                                : "dialog.lsp.interruptedEdit.restore"),
+                javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.ButtonType keep = new javafx.scene.control.ButtonType(
+                tr("dialog.lsp.interruptedEdit.keep"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
+        javafx.scene.control.ButtonType later = new javafx.scene.control.ButtonType(
+                tr("dialog.lsp.interruptedEdit.later"), javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE);
+        javafx.scene.control.Alert ask = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.WARNING, lines.toString(), later, keep, act);
+        ask.initOwner(host.window());
+        ask.setTitle(tr("dialog.lsp.interruptedEdit.title"));
+        ask.setHeaderText(tr(
+                interrupted.committed()
+                        ? "dialog.lsp.interruptedEdit.headerCommitted"
+                        : "dialog.lsp.interruptedEdit.header"));
+        ask.getDialogPane().setMinWidth(560);
+        javafx.scene.control.ButtonType answer = ask.showAndWait().orElse(later);
+        if (answer == act) {
+            return interrupted.committed() ? InterruptedEditChoice.REMOVE : InterruptedEditChoice.RESTORE;
+        }
+        return answer == keep ? InterruptedEditChoice.KEEP : InterruptedEditChoice.LATER;
+    }
+
+    /** Where interrupted-transaction journals are kept; a field so a test can point it at a temp directory. */
+    Path workspaceEditJournalDir;
+
+    private Path journalDir() {
+        if (workspaceEditJournalDir != null) {
+            return workspaceEditJournalDir;
+        }
+        com.editora.config.ConfigManager config = ops.config();
+        return config == null ? null : config.getConfigDir().resolve("lsp-edit-journal");
+    }
+
+    /**
+     * Starts a transaction. One that moves files keeps a journal on disk until it has committed or rolled
+     * back, so a crash in between leaves a record of what is staged where (see
+     * {@link com.editora.lsp.WorkspaceEditJournal}).
+     */
+    private WorkspaceTransactionStatus beginTransaction(com.editora.lsp.WorkspaceEditMapper.Mapped mapped) {
+        WorkspaceTransactionStatus transaction = new WorkspaceTransactionStatus();
+        if (!mapped.creates().isEmpty()
+                || !mapped.renames().isEmpty()
+                || !mapped.deletes().isEmpty()) {
+            transaction.journal = com.editora.lsp.WorkspaceEditJournal.begin(journalDir());
+        }
+        return transaction;
+    }
+
+    /**
+     * Ends a transaction whose staged files have all been committed or put back. After an incomplete
+     * rollback the journal stays, so the files it could not restore are offered at the next project open.
+     */
+    private void endTransaction(WorkspaceTransactionStatus transaction) {
+        if (transaction.rollbackFailed) {
+            transaction.journal.abandon();
+        } else {
+            transaction.journal.close();
+        }
     }
 
     private record AppliedWorkspaceText(EditorBuffer buffer, Path file, String original) {}
@@ -3738,6 +4563,7 @@ final class LspCoordinator {
                         return null;
                     }
                     Path backup = temporarySibling(file, ".created-overwrite");
+                    transaction.journal.creating(file, backup);
                     workspaceFiles.move(file, backup);
                     staged.add(new StagedCreate(operation, backup, false, null));
                     workspaceFiles.createFile(file);
@@ -3750,6 +4576,7 @@ final class LspCoordinator {
                     if (parent != null) {
                         workspaceFiles.createDirectories(parent);
                     }
+                    transaction.journal.creating(file, null);
                     workspaceFiles.createFile(file);
                     staged.add(new StagedCreate(operation, null, true, null));
                     staged.set(
@@ -3816,6 +4643,7 @@ final class LspCoordinator {
                     return null;
                 }
                 Path stage = temporarySibling(file, ".deleted");
+                transaction.journal.deleting(file, stage);
                 workspaceFiles.move(file, stage);
                 staged.add(new StagedDelete(operation, stage, null));
                 staged.set(staged.size() - 1, new StagedDelete(operation, stage, workspaceFiles.identity(stage)));
@@ -3917,6 +4745,8 @@ final class LspCoordinator {
                     continue;
                 }
                 Path stage = temporarySibling(from, ".source");
+                transaction.journal.renaming(
+                        from, stage, r.to().toAbsolutePath().normalize());
                 workspaceFiles.move(from, stage);
                 staged.add(new StagedRename(r, stage, null, null));
                 staged.set(staged.size() - 1, new StagedRename(r, stage, null, workspaceFiles.identity(stage)));
@@ -3931,6 +4761,7 @@ final class LspCoordinator {
                 Path backup = null;
                 if (workspaceFiles.exists(to)) {
                     backup = temporarySibling(to, ".destination");
+                    transaction.journal.replacing(to, backup);
                     workspaceFiles.move(to, backup);
                     item = new StagedRename(item.rename(), item.stage(), backup, item.identity());
                     staged.set(i, item);

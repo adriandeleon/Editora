@@ -81,6 +81,11 @@ subscription resets one JavaFX timer sequence, which preserves each feature's de
 milestones are never armed. Standalone controls without that dispatcher should still debounce on their
 RichTextFX stream rather than doing expensive work per change.
 
+A stripe on the minimap follows the same rule one step further: its *data* is not recomputed per repaint
+either. The Git change stripe holds an `int[]` of `{line, count, kind}` triples and asks `GitGutterLines`
+for a new one only after `gitMarksChanged()` (new bars, or an edit that moved lines); a scroll re-blits the
+cached content image and draws from the array it has, allocating nothing.
+
 ### 3. Work incrementally, and only on what's visible
 
 - Highlighting re-tokenizes only the **edited range**: from the first edited line, on the stored grammar
@@ -170,6 +175,12 @@ Undo is bounded by text as well as by count: the queue holds 300 entries and 64 
 `area.replaceText(wholeText)`. Every RichTextFX area outside `EditorBuffer` must be built through
 `ui/AreaUndo.none(...)` (read-only: no history) or `AreaUndo.bounded(...)`; the default undo manager is
 unlimited and records programmatic edits. `RichTextAreaUndoPolicyTest` enforces this.
+
+Large-file mode has **no** undo, so "it is one undo step" is not a safety net there. A programmatic bulk or
+whole-document edit (Replace in Files, a line transform, tool/AI/agent/plugin/LSP output) must ask
+`ui/NoUndoGuard.allow(buffer, operationName)` immediately before it edits: on a no-undo buffer the guard
+first stores the buffer text in Local History as a labelled revision (blocking until it is on disk) and
+tells the user, or returns false — and then the edit must not happen.
 
 Build `HttpClient`s through `io/LazyHttpClient`, never in a field initializer: each one starts a selector
 thread when built.

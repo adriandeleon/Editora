@@ -124,11 +124,41 @@ class GitSafetyTest {
         assertFalse(plain.containsKey("LC_ALL"), "LC_ALL=C is what broke JVM hooks on non-ASCII paths");
         assertFalse(plain.containsKey("LC_CTYPE"));
         assertEquals("0", plain.get("GIT_TERMINAL_PROMPT"));
+        // No terminal, so no editor: rebase --continue and a merge commit keep git's prepared message
+        // instead of starting $EDITOR and waiting on it for the whole mutation ceiling.
+        assertEquals(":", plain.get("GIT_EDITOR"));
 
         // An inherited LC_ALL would override LC_MESSAGES: it is blanked and its charset kept in LC_CTYPE.
         java.util.Map<String, String> all = GitSafety.userEnv(java.util.Map.of("LC_ALL", "de_DE.UTF-8"));
         assertEquals("", all.get("LC_ALL"));
         assertEquals("de_DE.UTF-8", all.get("LC_CTYPE"));
         assertEquals("C", all.get("LC_MESSAGES"));
+    }
+
+    @Test
+    void everyGitChildLosesTheRepositoryBindingVariables() {
+        // E10: started from a shell that exports GIT_DIR / GIT_WORK_TREE (bare-repository dotfiles, a hook's
+        // shell), every folder resolved to that one repository. A null value tells the process runner to
+        // remove the variable; both environments carry one for each name git itself calls repository-local.
+        java.util.Map<String, String> user =
+                GitSafety.userEnv(java.util.Map.of("GIT_DIR", "/elsewhere/.git", "LANG", "C"));
+        for (java.util.Map<String, String> env : List.of(GitSafety.BACKGROUND_ENV, user)) {
+            for (String name : List.of(
+                    "GIT_DIR",
+                    "GIT_WORK_TREE",
+                    "GIT_INDEX_FILE",
+                    "GIT_OBJECT_DIRECTORY",
+                    "GIT_COMMON_DIR",
+                    "GIT_CONFIG_PARAMETERS",
+                    "GIT_CONFIG_COUNT",
+                    "GIT_PREFIX")) {
+                assertTrue(env.containsKey(name), name);
+                assertEquals(null, env.get(name), name);
+            }
+            assertEquals("0", env.get("GIT_TERMINAL_PROMPT"));
+        }
+        // What the user set on purpose for their git is not Editora's to remove.
+        assertFalse(GitSafety.BACKGROUND_ENV.containsKey("GIT_SSH_COMMAND"));
+        assertFalse(GitSafety.BACKGROUND_ENV.containsKey("GIT_AUTHOR_NAME"));
     }
 }

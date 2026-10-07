@@ -203,4 +203,75 @@ class JdtlsGenerateTest {
         assertEquals(1, found.size());
         assertEquals("?", found.get(0).label());
     }
+
+    /** Captured from {@code java/resolveUnimplementedAccessors} (jdtls 1.61): a bare array. */
+    private static final String ACCESSORS = """
+            [{"fieldName":"count","isStatic":false,"generateGetter":true,"generateSetter":true,"typeName":"int"},
+             {"fieldName":"items","isStatic":false,"generateGetter":true,"generateSetter":false,
+              "typeName":"List<String>"}]
+            """;
+
+    /** Captured from {@code java/checkDelegateMethodsStatus} (jdtls 1.61), shortened. */
+    private static final String DELEGATES = """
+            {"delegateFields":[
+              {"field":{"bindingKey":"Ldemo/App;.items)Ljava/util/List<Ljava/lang/String;>;","name":"items",
+                        "type":"List<String>","isField":true,"isSelected":false},
+               "delegateMethods":[
+                 {"bindingKey":"Ljava/util/List<Ljava/lang/String;>;.add(Ljava/lang/String;)Z","name":"add",
+                  "parameters":["String"]},
+                 {"bindingKey":"Ljava/util/List<Ljava/lang/String;>;.clear()V","name":"clear","parameters":[]}]},
+              {"field":{"bindingKey":"Ldemo/App;.done)Z","name":"done","type":"Done","isField":true},
+               "delegateMethods":[]}]}
+            """;
+
+    @Test
+    void accessorFieldsArePreselectedAndSayWhatIsMissing() {
+        var kind = JdtlsGenerate.forCommand("java.action.generateAccessorsPrompt");
+        assertEquals(JdtlsGenerate.Kind.ACCESSORS, kind);
+
+        var fields = JdtlsGenerate.candidates(kind, json(ACCESSORS));
+
+        assertEquals(
+                List.of("count : int  (get, set)", "items : List<String>  (get)"),
+                fields.stream().map(JdtlsGenerate.Candidate::label).toList());
+        assertTrue(fields.stream().allMatch(JdtlsGenerate.Candidate::preselected));
+        assertTrue(JdtlsGenerate.candidates(kind, json("{}")).isEmpty(), "not the array: nothing to offer");
+
+        var params = JdtlsGenerate.generateParams(kind, json("{\"kind\":2}"), fields.subList(1, 2), json(ACCESSORS));
+        assertEquals(2, params.getAsJsonObject("context").get("kind").getAsInt(), "the accessor kind goes back");
+        assertEquals(1, params.getAsJsonArray("accessors").size());
+        assertEquals(
+                "items",
+                params.getAsJsonArray("accessors")
+                        .get(0)
+                        .getAsJsonObject()
+                        .get("fieldName")
+                        .getAsString());
+    }
+
+    @Test
+    void delegateMethodsAreChosenPerField() {
+        var kind = JdtlsGenerate.forCommand("java.action.generateDelegateMethodsPrompt");
+        assertEquals(JdtlsGenerate.Kind.DELEGATE_METHODS, kind);
+
+        var fields = JdtlsGenerate.delegateFields(json(DELEGATES));
+
+        assertEquals(1, fields.size(), "a field with nothing left to delegate is not offered");
+        assertEquals("items : List<String>", fields.get(0).label());
+        assertEquals(
+                List.of("add(String)", "clear()"),
+                fields.get(0).methods().stream()
+                        .map(JdtlsGenerate.Candidate::label)
+                        .toList());
+        assertTrue(JdtlsGenerate.candidates(kind, json(DELEGATES)).isEmpty(), "never a flat list");
+        assertTrue(JdtlsGenerate.delegateFields(json("[]")).isEmpty());
+
+        var params = JdtlsGenerate.delegateParams(
+                json("{}"), fields.get(0), fields.get(0).methods().subList(1, 2));
+        var entry = params.getAsJsonArray("delegateEntries").get(0).getAsJsonObject();
+        assertEquals("items", entry.getAsJsonObject("field").get("name").getAsString());
+        assertEquals(
+                "clear", entry.getAsJsonObject("delegateMethod").get("name").getAsString());
+        assertTrue(params.has("context"));
+    }
 }

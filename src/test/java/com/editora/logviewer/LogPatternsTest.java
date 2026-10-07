@@ -69,6 +69,25 @@ class LogPatternsTest {
         assertNull(LogPatterns.levelOf("more info: see the manual"));
     }
 
+    /** Microsoft.Extensions.Logging's console formatter: a four-letter level, a colon, then the category. */
+    @Test
+    void detectsAllSixDotNetConsoleLevels() {
+        assertEquals(LogLevel.TRACE, LogPatterns.levelOf("trce: Shop.Cart.CartService[0]"));
+        assertEquals(LogLevel.DEBUG, LogPatterns.levelOf("dbug: Shop.Cart.CartService[0]"));
+        assertEquals(LogLevel.INFO, LogPatterns.levelOf("info: Microsoft.Hosting.Lifetime[14]"));
+        assertEquals(LogLevel.WARN, LogPatterns.levelOf("warn: Microsoft.AspNetCore[0]"));
+        assertEquals(LogLevel.ERROR, LogPatterns.levelOf("fail: Microsoft.AspNetCore.Server.Kestrel[13]"));
+        assertEquals(LogLevel.FATAL, LogPatterns.levelOf("crit: Shop.Program[0]"));
+        // The indented message line under the header belongs to that record.
+        assertNull(LogPatterns.levelOf("      Now listening on: http://localhost:5000"));
+        assertEquals(LogLevel.DEBUG, LogLevel.fromToken("dbug"));
+        assertEquals(LogLevel.TRACE, LogLevel.fromToken("trce"));
+        // Lowercase is a level only as the first word plus a colon; elsewhere it is ordinary text.
+        assertNull(LogPatterns.levelOf("the dbug build is slower"));
+        assertNull(LogPatterns.levelOf("set trce: off in the config"));
+        assertNull(LogPatterns.levelOf("dbug and trce are .NET abbreviations"));
+    }
+
     @Test
     void detectsStructuredLevelsWhereverTheyAreInAJsonRecord() {
         assertEquals(LogLevel.ERROR, LogPatterns.levelOf("{\"level\":50,\"time\":1696,\"msg\":\"pino\"}"));

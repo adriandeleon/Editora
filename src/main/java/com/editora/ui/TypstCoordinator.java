@@ -68,7 +68,107 @@ final class TypstCoordinator {
      *  preview right-click "Export to PDF" (which already chose the file), mirroring
      *  {@code DiagramCoordinator.exportToPath}. */
     void exportToPath(String source, Path file, Path dest, Consumer<ProcessRunner.Result> onResult) {
-        service.export(source, dest, fileDirOf(file), rootOf(file), onResult);
+        service.export(source, dest, fileDirOf(file), rootOf(file), pending -> {
+            ProcessRunner.Result result = pending.result();
+            if (result.ok()) {
+                try {
+                    // A PDF is one file — the destination the caller's Save dialog already confirmed.
+                    pending.commit();
+                } catch (java.io.IOException e) {
+                    result = new ProcessRunner.Result(-1, "", String.valueOf(e.getMessage()));
+                }
+            }
+            onResult.accept(result);
+        });
+    }
+
+    /**
+     * Asks before an export replaces page files the Save dialog never mentioned ({@code report-1.png}, … for
+     * a multi-page PNG/SVG). Replaceable so a test can answer without a modal dialog.
+     */
+    private java.util.function.Predicate<java.util.List<Path>> confirmReplace = this::confirmReplaceDialog;
+
+    /** Test seam for {@link #confirmReplace}. */
+    void setConfirmReplaceForTest(java.util.function.Predicate<java.util.List<Path>> confirm) {
+        this.confirmReplace = confirm;
+    }
+
+    private boolean confirmReplaceDialog(java.util.List<Path> existing) {
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("dialog.typstExport.replaceBody", replaceList(existing)),
+                javafx.scene.control.ButtonType.OK,
+                javafx.scene.control.ButtonType.CANCEL));
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("dialog.typstExport.title"));
+        confirm.setHeaderText(null);
+        // Replacing files nobody named is the destructive answer: Enter must not give it.
+        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.OK))
+                .setDefaultButton(false);
+        ((javafx.scene.control.Button) confirm.getDialogPane().lookupButton(javafx.scene.control.ButtonType.CANCEL))
+                .setDefaultButton(true);
+        return confirm.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL)
+                == javafx.scene.control.ButtonType.OK;
+    }
+
+    /** The file names for the replace question, one per line, capped so the dialog stays readable. Pure. */
+    static String replaceList(java.util.List<Path> existing) {
+        int shown = Math.min(existing.size(), 8);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < shown; i++) {
+            sb.append(i == 0 ? "" : "\n").append(existing.get(i).getFileName());
+        }
+        if (existing.size() > shown) {
+            sb.append('\n').append(tr("dialog.typstExport.replaceMore", existing.size() - shown));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Finishes a staged export on the FX thread: asks before replacing page files that already exist, moves
+     * the result into place, and reports the files actually written. Package-visible for tests.
+     */
+    void finishExport(com.editora.typst.TypstRenderer.PendingExport pending) {
+        ProcessRunner.Result r = pending.result();
+        if (!r.ok()) {
+            pending.close();
+            String msg = r.message();
+            host.setStatus(tr("status.typst.exportFailed", msg));
+            Alert err = new Alert(Alert.AlertType.ERROR);
+            err.initOwner(host.window());
+            err.setTitle(tr("dialog.typstExport.title"));
+            err.setHeaderText(tr("status.typst.exportFailed", ""));
+            err.setContentText(msg);
+            err.showAndWait();
+            return;
+        }
+        if (!pending.ok()) {
+            // "exited 0, wrote nothing" is the failure it is, not a success over a missing file
+            pending.close();
+            host.setStatus(tr("status.typst.exportFailed", tr("status.typst.noOutput")));
+            return;
+        }
+        java.util.List<Path> existing = pending.existingTargets();
+        if (!existing.isEmpty() && !confirmReplace.test(existing)) {
+            pending.close();
+            host.setStatus(tr("status.typst.exportCancelled"));
+            return;
+        }
+        java.util.List<Path> written;
+        try {
+            written = pending.commit();
+        } catch (java.io.IOException e) {
+            host.setStatus(tr("status.typst.exportFailed", String.valueOf(e.getMessage())));
+            return;
+        }
+        if (written.size() == 1) {
+            host.setStatus(tr("status.typst.exported", written.get(0).toString()));
+        } else {
+            host.setStatus(tr(
+                    "status.typst.exportedPages",
+                    written.size(),
+                    String.valueOf(written.get(0).toAbsolutePath().getParent())));
+        }
     }
 
     /** Renders the document to per-page PNG bytes (empty on failure) — the print path paginates them. */
@@ -142,32 +242,10 @@ final class TypstCoordinator {
                 return;
             }
             host.setStatus(tr("status.typst.exporting"));
-            service.export(source, f.toPath(), fileDirOf(file), rootOf(file), r -> {
-                // typst rewrites report.png -> report-1.png (even for one page), so the chooser's own path is
-                // not what got written; report what actually exists — and treat "exited 0, wrote nothing" as
-                // the failure it is rather than claiming success over a missing file.
-                java.util.List<java.nio.file.Path> written =
-                        r.ok() ? com.editora.typst.TypstRenderer.exportedFiles(f.toPath()) : java.util.List.of();
-                if (r.ok() && written.size() == 1) {
-                    host.setStatus(tr("status.typst.exported", written.get(0).toString()));
-                } else if (r.ok() && written.size() > 1) {
-                    host.setStatus(tr(
-                            "status.typst.exportedPages",
-                            written.size(),
-                            String.valueOf(written.get(0).toAbsolutePath().getParent())));
-                } else if (r.ok()) {
-                    host.setStatus(tr("status.typst.exportFailed", tr("status.typst.noOutput")));
-                } else {
-                    String msg = r.message();
-                    host.setStatus(tr("status.typst.exportFailed", msg));
-                    Alert err = new Alert(Alert.AlertType.ERROR);
-                    err.initOwner(host.window());
-                    err.setTitle(tr("dialog.typstExport.title"));
-                    err.setHeaderText(tr("status.typst.exportFailed", ""));
-                    err.setContentText(msg);
-                    err.showAndWait();
-                }
-            });
+            // The export is staged first: a PNG/SVG document is one file per page, so the names that get
+            // written (report-1.png, …) are not the one the Save dialog asked about — finishExport asks about
+            // those before anything is replaced, and reports the files that really exist afterwards.
+            service.export(source, f.toPath(), fileDirOf(file), rootOf(file), this::finishExport);
         });
     }
 

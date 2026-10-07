@@ -2,10 +2,45 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Sample</title>
+    <!-- An HTML comment. The embedded style and script blocks below switch grammar. -->
+    <style>
+      :root { --accent: #3b82f6; }
+      .lead { color: var(--accent); font-weight: 600; }
+    </style>
   </head>
   <body>
-    <h1>Hello</h1>
-    <p class="lead">A small HTML sample.</p>
+    <header>
+      <h1>Inventory</h1>
+      <p class="lead">A small HTML sample &mdash; tags, attributes, entities, embedded CSS and JS.</p>
+    </header>
+    <main>
+      <table>
+        <thead>
+          <tr><th scope="col">Item</th><th scope="col">Weight</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Hammer</td><td>0.6&nbsp;kg</td></tr>
+          <tr><td>Anvil</td><td>45&nbsp;kg</td></tr>
+        </tbody>
+      </table>
+      <form action="#" method="post">
+        <label for="name">Add an item</label>
+        <input id="name" name="name" type="text" placeholder="Saw" required />
+        <button type="submit" disabled>Add</button>
+      </form>
+      <img src="../images/sample.png" alt="A sample image" width="240" height="160" />
+    </main>
+    <footer>
+      <a href="https://example.com/?q=a&amp;b=c" target="_blank" rel="noopener">Example</a>
+    </footer>
+    <script>
+      // Embedded JavaScript: enable the button once the field has text.
+      const field = document.querySelector("#name");
+      field.addEventListener("input", () => {
+        document.querySelector("button").disabled = field.value.trim() === "";
+      });
+    </script>
   </body>
 </html>

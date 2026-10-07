@@ -1,0 +1,37 @@
+/* The stylesheet for widget.html. Change --accent and save: the live preview picks it up. */
+:root {
+  --accent: #3b82f6;
+}
+
+body {
+  display: grid;
+  min-height: 100vh;
+  margin: 0;
+  place-items: center;
+  font-family: system-ui, sans-serif;
+}
+
+.widget {
+  padding: 2rem 3rem;
+  border: 1px solid #d1d5db;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.count {
+  margin: 0.25em 0;
+  font-size: 4rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.count.negative {
+  color: #dc2626;
+}
+
+.buttons button {
+  min-width: 3rem;
+  padding: 0.5rem 1rem;
+  font-size: 1.25rem;
+  cursor: pointer;
+}

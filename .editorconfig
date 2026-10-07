@@ -39,3 +39,8 @@ trim_trailing_whitespace = false
 # i18n property files: keys/values verbatim, no width limit.
 [*.properties]
 max_line_length = off
+
+# A deliberately malformed Markdown-lint fixture: saving it must not add the final newline it exists to
+# be missing (its trailing whitespace is already kept by the *.md rule above).
+[samples/markdown/lint.md]
+insert_final_newline = false

@@ -26,7 +26,19 @@ public record ConfigLoadProblem(Path file, Kind kind, List<String> skipped, Path
          * such byte replaced by U+FFFD, so the values holding them are not what was written — and the next
          * save writes the replacements back.
          */
-        NOT_UTF8
+        NOT_UTF8,
+        /**
+         * Not a loss: a copy of the file that an older build had moved aside ({@code <name>.v<n>.bak}) because
+         * it could not read it was put back, since this build can and the file left in its place still held
+         * nothing but defaults.
+         */
+        NEWER_COPY_RESTORED,
+        /**
+         * An older build moved a newer copy of the file aside and this build could read it, but the file left
+         * in its place has been changed since, so the two were not reconciled: the file in use was loaded and
+         * the copy is still at {@link #backup}.
+         */
+        NEWER_COPY_KEPT
     }
 
     public ConfigLoadProblem {

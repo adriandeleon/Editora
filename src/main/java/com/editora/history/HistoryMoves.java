@@ -95,15 +95,7 @@ public final class HistoryMoves {
 
     /** {@code revision} as a revision of the file at {@code path}. */
     public static HistoryRevision at(String path, HistoryRevision revision) {
-        return path.equals(revision.path())
-                ? revision
-                : new HistoryRevision(
-                        path,
-                        revision.timestamp(),
-                        revision.sizeBytes(),
-                        revision.sha256(),
-                        revision.reason(),
-                        revision.label());
+        return path.equals(revision.path()) ? revision : revision.withPath(path);
     }
 
     /** Both lists as one history of {@code path}: newest first, a revision present in both listed once. */

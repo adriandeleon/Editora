@@ -40,7 +40,20 @@ class ThreeWayMergeIntegrationFxTest {
         assertResolverUsesStages(true);
     }
 
+    /**
+     * The file was edited by hand outside the conflict and so no longer matches the recomputed merge. It
+     * still has Git's markers: the resolver opens on them — keeping the edit — and does not ask.
+     */
+    @Test
+    void resolverUsesTheFilesOwnMarkersWithoutAskingWhenTheMergeDisagrees() throws Exception {
+        assertResolverUsesStages(false, true);
+    }
+
     private static void assertResolverUsesStages(boolean removeMarkers) throws Exception {
+        assertResolverUsesStages(removeMarkers, false);
+    }
+
+    private static void assertResolverUsesStages(boolean removeMarkers, boolean editOutsideMarkers) throws Exception {
         Path repo = Files.createTempDirectory("editora-three-way");
         Path file = repo.resolve("story.txt");
         git(repo, true, "init", "-q");
@@ -62,6 +75,9 @@ class ThreeWayMergeIntegrationFxTest {
         org.junit.jupiter.api.Assertions.assertFalse(markerText.contains("|||||||"));
         if (removeMarkers) {
             Files.writeString(file, "before\nmanual work in progress\nafter\n");
+        }
+        if (editOutsideMarkers) {
+            Files.writeString(file, markerText.replace("before\n", "before, edited by hand\n"));
         }
 
         Path config = Files.createTempDirectory("editora-three-way-config");
@@ -99,7 +115,16 @@ class ThreeWayMergeIntegrationFxTest {
 
             ConflictFile conflictFile = FxTestSupport.field(pane, "file");
             Conflict conflict = ((ConflictSegment) conflictFile.segments().get(1)).conflict();
-            assertEquals(List.of("base"), conflict.base());
+            if (editOutsideMarkers) {
+                assertEquals(
+                        List.of("before, edited by hand"),
+                        ((com.editora.diff.ConflictParser.PlainSegment)
+                                        conflictFile.segments().get(0))
+                                .lines());
+                assertEquals(List.of(), conflict.base(), "the file's two-way markers, not the recomputed merge");
+            } else {
+                assertEquals(List.of("base"), conflict.base());
+            }
             assertEquals(List.of("ours"), conflict.ours());
             assertEquals(List.of("theirs"), conflict.theirs());
         } finally {

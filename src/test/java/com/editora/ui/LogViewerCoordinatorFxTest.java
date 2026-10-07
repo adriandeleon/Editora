@@ -372,6 +372,54 @@ class LogViewerCoordinatorFxTest {
         }
     }
 
+    @Test
+    void aRotationDoesNotReplaceALogTheUserTypedInto(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        FakeHost host = new FakeHost();
+        LogViewerCoordinator c = new LogViewerCoordinator(host);
+        Path file = dir.resolve("annotated.log");
+        java.nio.file.Files.writeString(file, SAMPLE);
+        EditorBuffer log = sampleLog(host, c);
+        long loaded = java.nio.file.Files.size(file);
+        long modified = java.nio.file.Files.getLastModifiedTime(file).toMillis();
+        FxTestSupport.runOnFx(() -> {
+            log.setPath(file);
+            log.setDiskSnapshot(modified, loaded);
+            log.markClean();
+            c.recordLoadOffset(log, loaded);
+        });
+        try {
+            FxTestSupport.runOnFx(c::toggleFollowCommand);
+            append(file, "2026-10-06 09:00:04 INFO  followed\n");
+            awaitContent(log, "followed\n");
+            FxTestSupport.runOnFx(() -> log.getArea().insertText(0, "MY NOTE: incident starts here\n"));
+            assertTrue(FxTestSupport.callOnFx(log::isDirty));
+
+            // logrotate copytruncate, or a restart: the file starts over.
+            java.nio.file.Files.writeString(file, "2026-10-06 11:00:00 INFO  new file\n");
+            long deadline = System.nanoTime() + 8_000_000_000L;
+            while (FxTestSupport.callOnFx(log::isLogFollowing)
+                    && !FxTestSupport.callOnFx(log::getContent).startsWith("2026-10-06 11:00:00")) {
+                assertTrue(System.nanoTime() < deadline, "the rotation was never noticed");
+                Thread.sleep(50);
+            }
+
+            String text = FxTestSupport.callOnFx(log::getContent);
+            assertTrue(text.startsWith("MY NOTE: incident starts here\n"), "the typed text survives: " + text);
+            assertTrue(text.endsWith("followed\n"), "and so does the log it annotates");
+            assertFalse(FxTestSupport.callOnFx(log::isLogFollowing), "following stopped rather than replace it");
+            assertTrue(FxTestSupport.callOnFx(log::isDirty));
+            assertTrue(FxTestSupport.callOnFx(() -> log.getArea().isUndoAvailable()));
+            assertEquals(com.editora.i18n.Messages.tr("status.log.followStoppedEdited"), host.lastStatus);
+            assertEquals(
+                    loaded + "2026-10-06 09:00:04 INFO  followed\n".length(),
+                    FxTestSupport.callOnFx(() -> log.diskSnapshot().size()),
+                    "the snapshot is still the old file's, so saving over the rotated one asks first");
+        } finally {
+            FxTestSupport.runOnFx(() -> c.onBufferClosed(log));
+            c.shutdown();
+        }
+    }
+
     private static void append(Path file, String text) throws Exception {
         java.nio.file.Files.writeString(file, text, java.nio.file.StandardOpenOption.APPEND);
     }

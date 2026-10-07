@@ -85,6 +85,15 @@ multi-file `.patch`/`.diff` buffers and repository snapshots from the Git coordi
 the `diff.reviewStaged` / `diff.reviewUnstaged` commands open index-vs-HEAD or working-vs-index review sets;
 untracked files compare against an empty index side, and rename/copy entries fetch their original path on the
 left. Active-diff commands route through the currently selected file.
+`DiffCoordinator.openBlobReview` builds the same read-only review from pairs of blob specs
+(`<rev>:<path>`, or nothing for an absent side); the stash list uses it to show a stash against the commit
+it was made on, with the untracked files of an `--include-untracked` stash read from the stash commit's
+third parent.
+
+Inside a repository a patch buffer always opens as a `PatchReviewPane` (a one-file patch too), because that
+tab carries the **Apply to Working Tree** / **Apply to Index** bar (`setApplyActions`). The bar applies the
+bytes that were parsed for the tab, in the repository the tab was opened in — a review tab is not a file, so
+a window without a project has no active repository while it is selected.
 
 `DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` resolves each root (which may
 itself be a symbolic link) and walks below it without following symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
@@ -147,6 +156,19 @@ index bytes and the displayed path blob still match. A stale comparison therefor
 and an `index.lock` held by another Git process is reported as busy and left in place. Copy hunk and
 open-changed-line are available from the context menu and command palette.
 
+### Applying a patch file
+
+`GitPatchCoordinator` applies a whole patch with `git apply` (`GitService.applyPatch`), never by replaying
+hunks through the editor: the patch's own bytes go to git's stdin, so a patch of CRLF or Latin-1 text still
+matches. `--check` runs first in the same serial job; a patch that does not fit applies nothing and
+`PatchOutcome.REJECTED` shows git's message with the offer to retry with `--3way`. A three-way apply has no
+pre-flight (`--check --3way` passes for a patch that will conflict) and can end as
+`PatchOutcome.CONFLICTS`: exit code 1 with the files written and marked. Anything that writes files — a
+working-tree apply, any three-way apply — first saves the open buffers of the paths the patch names and
+runs inside `GitCoordinator.aroundWorkingTreeMutation`, so pending saves are superseded and buffers reload.
+`git.createPatch` reads `git diff --binary [--cached]` or `git format-patch -1 --stdout <hash>` as a
+hardened background read and writes the bytes unchanged.
+
 ## Three-way merge
 
 `merge.resolve` first asks Git for the conflicted path's `:1`, `:2`, and `:3` index blobs: the common
@@ -166,15 +188,21 @@ as a conflict is never merged unseen. It automatically composes disjoint changes
 overlapping changes that produce identical text; only divergent overlapping regions become conflicts. Each
 conflict retains an explicit base-presence bit, because two competing insertions have a real but empty
 ancestor region. Before the stage merge is shown it is compared with the file (`ThreeWayMerge.agreesWith`: taking ours
-everywhere, and theirs everywhere, must give the same lines from both). A file that has moved on — conflicts
-resolved by hand, markers deleted — is not silently replaced: the user chooses between starting again from
-Git's versions and resolving the markers the file still has. If all three Git stages are not available, `ConflictParser` remains the fallback for files
+everywhere, and theirs everywhere, must give the same lines from both). When they disagree and the file still
+has well-formed conflict regions, the resolver opens on the file's own regions without asking
+(`ThreeWayMerge.sourceFor`): they are what Git reported, and conflicts already resolved by hand stay resolved.
+A disagreement is not proof of an edit — Git's merge aligns repeated lines with a different diff algorithm, and
+the recomputed merge can combine cleanly two changes Git marked as a conflict
+(`ThreeWayMergeGitOracleTest` runs the two against each other). Only a file with no conflict left is put to
+the user, who may start again from Git's versions or cancel. If all three Git stages are not available, `ConflictParser` remains the fallback for files
 that already contain standard merge/diff3 markers. It recognises a marker only as Git writes it — a run of
 marker characters followed by a space or the end of the line, and the `=` separator only as a whole line.
 The run is seven long, or longer when the file's `conflict-marker-size` attribute says so: the opening
-marker fixes the size for its conflict, and a longer opening run counts only when its separator and closing
-marker follow. A run of any other length — a Markdown or reStructuredText heading underline inside a
-conflict — stays content, and an unresolved conflict is written back with the marker size it came with.
+marker fixes the size for its conflict, and an opening run counts only as the first line of a well-formed
+set — its separator and then its closing marker follow, with no other opening marker of that size in
+between. A lone marker-looking line (documentation about conflicts, a half-deleted conflict) and a run of
+any other length — a Markdown or reStructuredText heading underline inside a conflict — stay content. A
+conflict left unresolved is written back as the lines it was read from, not regenerated from its parts.
 
 `MergeViewerPane` shows Base/Ours/Theirs for each conflict and a lower editable Result. Acceptance actions
 recompute the Result until the user edits it manually; later acceptance actions are then refused so they
@@ -183,7 +211,10 @@ source document's line separator, preserves the edited final-newline state, uses
 whole-document replacement, and refuses to overwrite a buffer that changed after the resolver opened. The
 target is resolved by path at apply time rather than captured when the resolver opened: if the source tab
 was closed meanwhile, the file is reopened in the background and its current text checked, so a resolution
-is never written into a disposed buffer and reported as applied.
+is never written into a disposed buffer and reported as applied. When the file is an unmerged path of
+the active repository and the applied text has no conflict left, the apply also finishes the resolution for
+Git (`GitCoordinator.resolutionApplied`): the buffer is saved and the path staged, which is what clears it
+from the Commit window's Conflicts group. A partial resolution is only written into the buffer.
 
 ## Accessibility
 

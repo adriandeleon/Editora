@@ -240,6 +240,7 @@ public class SettingsWindow {
     private CheckBox completionDocCheck;
     private CheckBox semanticHighlightCheck;
     private CheckBox inlayHintsCheck;
+    private CheckBox codeLensCheck;
     private ComboBox<String> inlayHintModeCombo;
     private CheckBox onTypeFormattingCheck;
     private CheckBox pasteImportsCheck;
@@ -386,11 +387,15 @@ public class SettingsWindow {
     private Label githubStatusLabel;
     private CheckBox updateCheckCheck;
     private CheckBox localHistoryCheck;
+    private CheckBox crashRecoveryCheck;
     private Spinner<Integer> historyMaxPerFileSpinner;
     private Spinner<Integer> historyMaxAgeSpinner;
     private Spinner<Integer> historyMaxTotalSpinner;
     private Label gitStatusLabel;
     private TextField gitPathField;
+    private ComboBox<com.editora.git.GitPullMode> gitPullModeCombo;
+    private CheckBox gitAutoFetchCheck;
+    private Spinner<Integer> gitAutoFetchSpinner;
     private CheckBox mermaidCheck;
     private CheckBox httpCheck;
     private CheckBox htmlPreviewCheck;
@@ -597,6 +602,29 @@ public class SettingsWindow {
     public void setSnippetManager(com.editora.snippet.SnippetManager snippetManager) {
         this.snippetManager = snippetManager;
     }
+
+    /** Where a message about something this window did goes: the owning window's status bar. */
+    public void setStatusSink(Consumer<String> onStatus) {
+        this.onStatus = onStatus;
+    }
+
+    private Consumer<String> onStatus;
+
+    /**
+     * Changes the three Local History retention limits on behalf of this window's spinners. Lowering one
+     * deletes revisions, so the implementation ({@code HistoryCoordinator.changeLimits}) writes the settings
+     * only once it knows nothing would go or the user confirmed what would; {@code done} gets whether it did.
+     */
+    @FunctionalInterface
+    public interface HistoryLimits {
+        void change(int maxPerFile, int maxAgeDays, int maxTotalMb, Window owner, Consumer<Boolean> done);
+    }
+
+    public void setHistoryLimits(HistoryLimits historyLimits) {
+        this.historyLimits = historyLimits;
+    }
+
+    private HistoryLimits historyLimits;
 
     /** Injects the Spell Check page's "open dictionary file" actions (bundled technical / personal). */
     public void setDictionaryActions(Runnable openTechnical, Runnable openPersonal) {
@@ -1166,6 +1194,7 @@ public class SettingsWindow {
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
         inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
+        codeLensCheck = viewCheck(tr("settings.codeLens"), Settings::setCodeLens);
         inlayHintModeCombo = new ComboBox<>();
         inlayHintModeCombo.getItems().setAll("literals", "all");
         inlayHintModeCombo.setConverter(new StringConverter<>() {
@@ -1357,6 +1386,52 @@ public class SettingsWindow {
             probeGit();
         });
 
+        gitPullModeCombo = new ComboBox<>();
+        gitPullModeCombo.getItems().setAll(com.editora.git.GitPullMode.values());
+        gitPullModeCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(com.editora.git.GitPullMode mode) {
+                return mode == null ? "" : GitCoordinator.pullModeLabel(mode);
+            }
+
+            @Override
+            public com.editora.git.GitPullMode fromString(String label) {
+                return null; // not editable
+            }
+        });
+        gitPullModeCombo.setMinWidth(170); // no fixed width: the translated items differ a lot in length
+        gitPullModeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setGitPullMode(now.id());
+            apply();
+        });
+
+        gitAutoFetchCheck = new CheckBox(tr("settings.git.autoFetch"));
+        gitAutoFetchCheck.selectedProperty().addListener((obs, was, now) -> {
+            gitAutoFetchSpinner.setDisable(!now);
+            if (loading) {
+                return;
+            }
+            config.getSettings().setGitAutoFetch(now);
+            apply(); // applySupport starts or stops the timer
+        });
+        gitAutoFetchSpinner = IntSpinners.editable(
+                1,
+                com.editora.config.Settings.MAX_GIT_AUTO_FETCH_MINUTES,
+                config.getSettings().getGitAutoFetchMinutes(),
+                1);
+        gitAutoFetchSpinner.setPrefWidth(90);
+        gitAutoFetchSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
+        gitAutoFetchSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setGitAutoFetchMinutes(now);
+            apply();
+        });
+
         githubCheck = new CheckBox(tr("settings.enableGithub"));
         githubCheck.selectedProperty().addListener((obs, was, now) -> {
             config.getSettings().setGithubSupport(now);
@@ -1374,6 +1449,7 @@ public class SettingsWindow {
 
         updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
 
+        crashRecoveryCheck = viewCheck(tr("settings.crashRecovery"), Settings::setCrashRecovery);
         localHistoryCheck = new CheckBox(tr("settings.enableLocalHistory"));
         historyMaxPerFileSpinner = historySpinner(1, Settings.MAX_HISTORY_PER_FILE, 50, Settings::setHistoryMaxPerFile);
         historyMaxAgeSpinner = historySpinner(0, Settings.MAX_HISTORY_AGE_DAYS, 30, Settings::setHistoryMaxAgeDays);
@@ -1800,10 +1876,41 @@ public class SettingsWindow {
             if (loading || now == null) {
                 return;
             }
-            setter.accept(config.getSettings(), now);
-            apply();
+            if (historyLimits == null) {
+                setter.accept(config.getSettings(), now);
+                apply();
+                return;
+            }
+            // Not written here: a lower limit deletes revisions in every project the moment it is applied,
+            // and stepping the spinner back up does not bring them back. The handler writes the settings
+            // once it knows nothing would go, or after the user confirmed what would.
+            historyLimits.change(
+                    historyMaxPerFileSpinner.getValue(),
+                    historyMaxAgeSpinner.getValue(),
+                    historyMaxTotalSpinner.getValue(),
+                    stage,
+                    applied -> {
+                        if (applied) {
+                            apply();
+                        }
+                        showHistoryLimits(); // declined: back to the limits in force
+                    });
         });
         return s;
+    }
+
+    /** Shows the stored retention limits in the three spinners, without that counting as an edit. */
+    private void showHistoryLimits() {
+        Settings settings = config.getSettings();
+        boolean was = loading;
+        loading = true;
+        try {
+            historyMaxPerFileSpinner.getValueFactory().setValue(settings.getHistoryMaxPerFile());
+            historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
+            historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
+        } finally {
+            loading = was;
+        }
     }
 
     /** Local-history retention spinners are only meaningful while the master switch is on. */
@@ -1951,6 +2058,23 @@ public class SettingsWindow {
      * Asks before every custom binding is dropped. One click used to wipe them all — including the chords
      * given to macros and external tools on other pages — while Reset to Defaults, which keeps them, asked.
      */
+    /** Asks before Templates → Remove deletes a user template file. Replaceable so a test can answer. */
+    private java.util.function.Predicate<com.editora.template.Template> confirmTemplateRemoval =
+            this::confirmTemplateRemovalDialog;
+
+    private boolean confirmTemplateRemovalDialog(com.editora.template.Template t) {
+        String name = t.name() == null || t.name().isBlank() ? t.id() : t.name();
+        Alert confirm = Dialogs.styled(new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("settings.template.removeConfirm", name, t.id() + ".json"),
+                ButtonType.OK,
+                ButtonType.CANCEL));
+        confirm.initOwner(stage);
+        confirm.setTitle(tr("settings.template.remove"));
+        confirm.setHeaderText(null);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
     private boolean confirmResetAllShortcuts() {
         Alert confirm = Dialogs.styled(new Alert(
                 Alert.AlertType.CONFIRMATION, tr("dialog.shortcut.resetAll.body"), ButtonType.OK, ButtonType.CANCEL));
@@ -3141,6 +3265,12 @@ public class SettingsWindow {
                 "projects workspace folder");
         checkRow(features, Category.WORKSPACE, projectHiddenCheck, null, "project tree hidden dot files folders show");
         checkRow(features, Category.WORKSPACE, notesCheck, null, "personal notes annotations enable feature");
+        checkRow(
+                features,
+                Category.WORKSPACE,
+                crashRecoveryCheck,
+                tr("settings.crashRecovery.note"),
+                "crash recovery unsaved edits restore backup hot exit power loss kill");
         Card history = card(p, tr("settings.section.localHistory"));
         checkRow(
                 history,
@@ -3254,6 +3384,13 @@ public class SettingsWindow {
                 null,
                 "inlay hints parameter names inferred types lsp annotations");
         inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
+        checkRow(
+                lsp,
+                Category.COMPLETION,
+                codeLensCheck,
+                tr("settings.codeLens.note"),
+                "code lens vision references usages implementations count lsp");
+        codeLensCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         controlRow(
                 lsp,
                 Category.COMPLETION,
@@ -3432,6 +3569,21 @@ public class SettingsWindow {
                         tr("settings.git.blameInline.desc"),
                         new HBox(8, chordChip("git.toggleBlame"), switchFor(blameCheck))),
                 "git blame annotate inline author history line");
+        cardRow(
+                c2,
+                Category.GIT,
+                settingRow(tr("settings.git.pullMode"), tr("settings.git.pullMode.desc"), gitPullModeCombo),
+                "git pull mode fast-forward ff-only rebase merge diverged");
+        Label autoFetchUnit = new Label(tr("settings.git.autoFetchMinutes"));
+        autoFetchUnit.setLabelFor(gitAutoFetchSpinner);
+        cardRow(
+                c2,
+                Category.GIT,
+                settingRow(
+                        tr("settings.git.autoFetch"),
+                        tr("settings.git.autoFetch.desc"),
+                        new HBox(8, gitAutoFetchSpinner, autoFetchUnit, switchFor(gitAutoFetchCheck))),
+                "git fetch automatically auto background interval minutes remote prune");
 
         row(p, Category.GIT, null, noteBox(tr("settings.liveNote")), "live apply ok palette command");
         return p;
@@ -4341,6 +4493,10 @@ public class SettingsWindow {
         remove.setOnAction(e -> {
             com.editora.template.Template t = list.getSelectionModel().getSelectedItem();
             if (t == null || !templateUserIds.contains(t.id()) || templateRegistry == null) {
+                return;
+            }
+            // The file is deleted outright, and a multi-file template cannot be rebuilt from this form.
+            if (!confirmTemplateRemoval.test(t)) {
                 return;
             }
             try {
@@ -7407,8 +7563,40 @@ public class SettingsWindow {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        Settings.resetToDefaults(config.getSettings());
+        // A reset clears API keys, external tools, TODO patterns, the toolbar layout and every tool path, and
+        // rewrites settings.json in place. Keep what is there now beside it first; without the copy there
+        // is no reset.
+        Path backup;
+        try {
+            config.save(); // the file is to hold the settings as they are, not as of the last queued write
+            backup = SettingsResetBackup.write(
+                    config.getConfigDir().resolve("settings.json"), java.time.LocalDateTime.now());
+        } catch (java.io.IOException | RuntimeException e) {
+            Alert failed = Dialogs.styled(new Alert(
+                    Alert.AlertType.ERROR,
+                    tr("settings.reset.backupFailed", e.getMessage() == null ? e.toString() : e.getMessage()),
+                    ButtonType.OK));
+            failed.initOwner(stage);
+            failed.setTitle(tr("settings.reset.title"));
+            failed.setHeaderText(null);
+            failed.showAndWait();
+            return;
+        }
+        Settings live = config.getSettings();
+        int historyPerFile = live.getHistoryMaxPerFile();
+        int historyAgeDays = live.getHistoryMaxAgeDays();
+        int historyTotalMb = live.getHistoryMaxTotalMb();
+        Settings.resetToDefaults(live);
+        // The Local History limits are the exception: a default stricter than the user's limit would delete
+        // revisions, which a reset of preferences must not do. A looser limit is kept; the spinners (which
+        // ask before deleting) are the way to lower it.
+        live.setHistoryMaxPerFile(Math.max(historyPerFile, live.getHistoryMaxPerFile()));
+        live.setHistoryMaxAgeDays(historyAgeDays <= 0 ? 0 : Math.max(historyAgeDays, live.getHistoryMaxAgeDays()));
+        live.setHistoryMaxTotalMb(Math.max(historyTotalMb, live.getHistoryMaxTotalMb()));
         commitReset();
+        if (onStatus != null) {
+            onStatus.accept(tr("status.settings.reset", backup.getFileName().toString()));
+        }
     }
 
     /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */
@@ -7565,6 +7753,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(settings.isCompletionDoc());
             semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
             inlayHintsCheck.setSelected(settings.isInlayHints());
+            codeLensCheck.setSelected(settings.isCodeLens());
             inlayHintModeCombo.setValue(settings.getInlayHintMode());
             onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(settings.isLspPasteImports());
@@ -7633,12 +7822,17 @@ public class SettingsWindow {
             blameCheck.setSelected(settings.isGitBlameInline());
             blameCheck.setDisable(!settings.isGitSupport());
             gitPathField.setText(settings.getGitPath());
+            gitPullModeCombo.setValue(com.editora.git.GitPullMode.of(settings.getGitPullMode()));
+            gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
+            gitAutoFetchSpinner.getValueFactory().setValue(settings.getGitAutoFetchMinutes());
+            gitAutoFetchSpinner.setDisable(!settings.isGitAutoFetch());
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());
             refreshGithubStatus();
             updateCheckCheck.setSelected(settings.isUpdateCheck());
             localHistoryCheck.setSelected(settings.isLocalHistory());
+            crashRecoveryCheck.setSelected(settings.isCrashRecovery());
             historyMaxPerFileSpinner.getValueFactory().setValue(settings.getHistoryMaxPerFile());
             historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
             historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
@@ -8004,6 +8198,11 @@ public class SettingsWindow {
         try {
             blameCheck.setSelected(config.getSettings().isGitBlameInline());
             blameCheck.setDisable(!config.getSettings().isGitSupport());
+            gitPullModeCombo.setValue(
+                    com.editora.git.GitPullMode.of(config.getSettings().getGitPullMode()));
+            gitAutoFetchCheck.setSelected(config.getSettings().isGitAutoFetch());
+            gitAutoFetchSpinner.getValueFactory().setValue(config.getSettings().getGitAutoFetchMinutes());
+            gitAutoFetchSpinner.setDisable(!config.getSettings().isGitAutoFetch());
         } finally {
             loading = prev;
         }
@@ -8205,6 +8404,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(s.isCompletionDoc());
             semanticHighlightCheck.setSelected(s.isSemanticHighlight());
             inlayHintsCheck.setSelected(s.isInlayHints());
+            codeLensCheck.setSelected(s.isCodeLens());
             inlayHintModeCombo.setValue(s.getInlayHintMode());
             onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(s.isLspPasteImports());

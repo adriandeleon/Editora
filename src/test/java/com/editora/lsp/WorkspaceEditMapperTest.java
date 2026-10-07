@@ -235,4 +235,27 @@ class WorkspaceEditMapperTest {
                                 new StringValue("snippet", "${1:name}")))));
         assertNull(WorkspaceEditMapper.map(new WorkspaceEdit(List.of(Either.forLeft(tde)))));
     }
+
+    /** An edit with no place in the document used to be left out while the rest was applied as "done". */
+    @Test
+    void anEditWithoutAUsableRangeRefusesTheWholeEdit() {
+        var missingRange = new org.eclipse.lsp4j.TextEdit(); // as Gson builds one from {"newText": "LOST"}
+        missingRange.setNewText("LOST");
+        var negativeLine = edit(-1, 0, 0, 1, "N");
+        var negativeColumn = edit(0, 0, 0, -1, "N");
+        var halfRange = new org.eclipse.lsp4j.Range();
+        halfRange.setStart(new org.eclipse.lsp4j.Position(0, 0));
+        var missingEnd = new org.eclipse.lsp4j.TextEdit(halfRange, "E");
+
+        for (var bad : List.of(missingRange, negativeLine, negativeColumn, missingEnd)) {
+            assertNull(
+                    WorkspaceEditMapper.map(
+                            new WorkspaceEdit(Map.of(uri("/tmp/A.java"), List.of(edit(0, 0, 0, 1, "kept"), bad)))),
+                    "refused, not dropped: " + bad);
+        }
+        var withNull = new java.util.ArrayList<org.eclipse.lsp4j.TextEdit>();
+        withNull.add(edit(0, 0, 0, 1, "kept"));
+        withNull.add(null);
+        assertNull(WorkspaceEditMapper.map(new WorkspaceEdit(Map.of(uri("/tmp/A.java"), withNull))));
+    }
 }

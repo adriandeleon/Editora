@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "build": "echo \"build step\"",
-    "test": "echo \"no tests yet\"",
+    "test": "node --test --test-reporter=tap",
     "lint": "echo \"lint step\""
   },
   "license": "MIT"

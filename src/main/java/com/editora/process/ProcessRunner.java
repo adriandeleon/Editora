@@ -89,7 +89,7 @@ public final class ProcessRunner {
      * environment (on top of the inherited environment + {@code LC_ALL=C}).
      */
     public static Result run(Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
-        return run(workingDir, timeout, command, extraEnv, null);
+        return run(workingDir, timeout, command, extraEnv, (String) null);
     }
 
     /**
@@ -100,6 +100,20 @@ public final class ProcessRunner {
     public static Result run(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), false, false));
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List, Map)} — parse-stable output, no stdin — for a read slow enough to
+     * be worth stopping (a history search through file contents). {@code cancel} kills the process tree; the
+     * result is then {@link Result#cancelled()}.
+     */
+    public static Result run(
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            Cancellation cancel) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, null, false, false, null, null, cancel));
     }
 
     /**
@@ -440,7 +454,8 @@ public final class ProcessRunner {
 
     /**
      * Turns the inherited environment {@code env} into the one a child is started with, in place, and returns
-     * it: the augmented PATH, {@code LC_ALL=C} unless {@code userLocale}, then {@code overrides}.
+     * it: the augmented PATH, {@code LC_ALL=C} unless {@code userLocale}, then {@code overrides}. An override
+     * whose value is {@code null} <em>removes</em> that variable from the inherited environment.
      */
     static Map<String, String> childEnvironment(
             Map<String, String> env, boolean userLocale, Map<String, String> overrides) {
@@ -450,7 +465,14 @@ public final class ProcessRunner {
             applyStandardEnv(env);
         }
         if (overrides != null) {
-            env.putAll(overrides);
+            // A null value removes the variable: git's children must not inherit GIT_DIR and its relatives.
+            overrides.forEach((key, value) -> {
+                if (value == null) {
+                    env.remove(key);
+                } else {
+                    env.put(key, value);
+                }
+            });
         }
         return env;
     }

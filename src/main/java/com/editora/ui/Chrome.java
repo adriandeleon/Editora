@@ -274,7 +274,34 @@ final class Chrome {
             boolean hasPreview,
             boolean debugActive,
             boolean debugSuspended,
-            boolean debugRestartable) {
+            boolean debugRestartable,
+            boolean gitOperation) {
+
+        /** A context with no merge, rebase, cherry-pick or revert in progress in its repository. */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended,
+                boolean debugRestartable) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    debugRestartable,
+                    false);
+        }
 
         /** A context whose debug session, if any, can be restarted — every session but a one-shot attach. */
         PaletteContext(
@@ -302,7 +329,7 @@ final class Chrome {
 
         /** Everything available — the neutral value for tests and for callers with no window context. */
         static PaletteContext all() {
-            return new PaletteContext(true, true, true, true, true, true, true, true, true);
+            return new PaletteContext(true, true, true, true, true, true, true, true, true, true, true);
         }
     }
 
@@ -312,10 +339,27 @@ final class Chrome {
 
     /** Debug commands that only mean anything while a thread is suspended at a stop. */
     /**
-     * Git commands that must stay enabled <b>outside</b> a repository — creating one is the whole point.
-     * Gating these on {@code inRepo()} would grey them out in the only situation they exist for.
+     * Git commands that must stay enabled <b>outside</b> a repository, because that is where they are
+     * needed: creating one ({@code git.clone}, {@code git.init}); stopping a clone, which runs before any
+     * repository exists ({@code git.cancel}); pointing Editora at the git executable when it cannot find
+     * one, which looks exactly like "no repository" ({@code git.setCommand}); the branch dropdown, whose
+     * no-repository state offers Clone and Init ({@code git.switchBranch}); and the Commit window, which
+     * shows "Not a Git repository" with a Clone button ({@code tool.commit}).
      */
-    private static final java.util.Set<String> NEEDS_NO_REPO = java.util.Set.of("git.clone", "git.init");
+    private static final java.util.Set<String> NEEDS_NO_REPO = java.util.Set.of(
+            "git.clone",
+            "git.init",
+            "git.cancel",
+            "git.setCommand",
+            "git.setPullMode",
+            "git.toggleAutoFetch",
+            "git.setAutoFetchInterval",
+            "git.switchBranch",
+            "tool.commit");
+
+    /** Git commands that act on a merge, rebase, cherry-pick or revert in progress, and need one. */
+    private static final java.util.Set<String> NEEDS_GIT_OPERATION =
+            java.util.Set.of("git.continueOperation", "git.skipOperation", "git.abortOperation");
 
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
             "debug.continue",
@@ -355,9 +399,12 @@ final class Chrome {
         // you run when you have no repo yet. Gating those on inRepo() would grey them out in the only
         // situation they exist for.
         if (id.startsWith("git.") || id.equals("tool.commit") || id.equals("tool.gitLog")) {
-            return c.inRepo() || NEEDS_NO_REPO.contains(id)
-                    ? null
-                    : new DisabledReason("palette.disabled.needsRepo", null);
+            if (!c.inRepo() && !NEEDS_NO_REPO.contains(id)) {
+                return new DisabledReason("palette.disabled.needsRepo", null);
+            }
+            return NEEDS_GIT_OPERATION.contains(id) && !c.gitOperation()
+                    ? new DisabledReason("palette.disabled.needsGitOperation", null)
+                    : null;
         }
         if (DEBUG_NEEDS_SUSPENDED.contains(id)) {
             return c.debugSuspended() ? null : new DisabledReason("palette.disabled.needsSuspended", null);

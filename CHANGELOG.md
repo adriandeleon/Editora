@@ -7,8 +7,117 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Crash recovery.** Unsaved edits, including untitled buffers, in every window, are kept in the config
+  folder while you work and offered back on the next launch if Editora did not close normally (crash,
+  kill, logout, power loss). Restoring opens the text as unsaved tabs and never writes your files; a file
+  that changed on disk in the meantime is flagged. Copies are removed when you save, revert or close.
+  Buffers over 16 million characters are not covered. New setting **Keep a recovery copy of unsaved
+  edits** (Settings → Workspace, on by default) and commands `File: Recover Unsaved Edits…` and
+  `View: Toggle Crash Recovery`. Settings schema 112.
+- If Editora is interrupted in the middle of a refactoring that moves or deletes files, the next time
+  the project is opened it offers to put the files back.
+- Project tree: Delete moves files to the trash on Linux and macOS (the dialog says which will happen;
+  a permanent delete now defaults to Cancel), and a new "Undo Move" in the tree menu reverses the last
+  drag-move. Windows still deletes permanently.
+- Git: a merge, rebase, cherry-pick or revert in progress is shown in the status bar (`main · MERGING`)
+  and as a banner in the Commit window with Continue, Skip and Abort (`Git: Continue Operation`,
+  `Git: Skip Commit`, `Git: Abort Operation`). Conflicted files have their own Conflicts group with
+  Resolve (the three-way resolver), keep-one-side actions named for what they are in the current
+  operation, and Mark Resolved. Finishing a resolution saves and stages the file. A merge commit is
+  prefilled with Git's prepared message.
+- Git: a "Pull mode" setting (fast-forward only, which stays the default; rebase; merge) and
+  `Git: Pull (Rebase)` / `Git: Pull (Merge)`. A pull that cannot fast-forward because the branch
+  diverged offers Rebase or Merge instead of an error. Rebase and merge pulls carry uncommitted changes
+  across with `--autostash` and say what happened to them.
+- Git: branch management from the branch dropdown (a row's `⋯`, right-click or the Menu key) and the
+  palette: new branch from any branch or tag, rename, merge into current, rebase onto, set or unset
+  upstream, compare with current, check out a tag or revision by name, delete locally (unmerged commits
+  are confirmed with their count) and delete on the remote. Remote branches are grouped by remote when
+  there are several.
+- Git: `Force Push` (always `--force-with-lease`, confirmed), `Push to…` another remote or branch name,
+  and `Push Tags`. A push rejected as non-fast-forward offers Pull-then-Push, Force-with-Lease or Cancel.
+- Git: `Manage Remotes…` (add, rename, set URL, fetch, prune, remove), `Fetch Remote…`, and
+  `Manage Worktrees…` (list, add, open in a new window, remove, prune).
+- Git Log: history loads a page at a time as you scroll instead of stopping at 200 commits; an
+  all-branches view and a commit graph; a details area with the full message, author, date, hash,
+  parents and refs; Enter in the filter box searches the whole history (message words, `author:`,
+  `content:`, `since:`/`until:`, `path:`); file history follows renames; Enter on a commit opens
+  everything it changed as one review, and two selected commits can be compared.
+- Git: tags. New Tag…, Checkout, Push and Delete from a commit row and from the palette.
+- Git: work on a file's changes in the editor. `Git: Next Change` / `Previous Change`; clicking a gutter
+  change bar (or `Git: Peek Change at Caret`) opens a card with the old and new lines and Revert Hunk,
+  Stage Hunk, Copy Old Text and Open Diff; `Git: Revert Hunk at Caret` is an undoable edit and
+  `Git: Stage Hunk at Caret` stages only that change. Editor tabs are tinted by their file's Git status
+  and the minimap marks changed lines.
+- Git: `Git: Stashes…` lists every stash with its files; Enter shows its changes, and each stash can be
+  applied, popped, dropped, branched from or copied by name. `Stash Changes…` offers include untracked,
+  staged only and keep index.
+- Git blame: ignore-whitespace and detect-moved-lines toggles, automatic use of
+  `.git-blame-ignore-revs`, and `Git: Annotate Previous Revision` to walk a line back through history.
+- Git: `Apply Patch…` (to the working tree or the index, checked first, with a 3-way offer when it does
+  not fit) and `Create Patch…` from staged changes, unstaged changes or a commit.
+- Commit window: Amend, Commit and Push, Sign off, `Git: Undo Last Commit…`, a subject and body length
+  guide, recent messages, `commit.template` support, `Unstage All`, `Discard All Changes…`, Space to
+  stage or unstage the selected rows, and per-file added/removed line counts.
+- Git: "Fetch automatically" (Settings → Git, off by default). The background fetch never prompts and
+  runs only in a trusted folder or in a repository you fetched, pulled or pushed in during the session.
+- Git: the clone form takes a branch, a shallow depth and a submodules option.
+- **Java refactorings that ask where to, or what.** With the Java language server, the Code Actions menu
+  now carries out **Move** (a class to another package, a nested class to its own file or another class,
+  a static member to another class, an instance method onto one of its parameters or fields), **Extract
+  Interface** (choose the methods, name the interface, choose its package) and **Change Signature**. The
+  signature is edited as one line — `public String greet(Helper helper, int n)` — where you can rename the
+  method, change its visibility or return type, reorder, rename, retype or remove parameters, and add one
+  as `type name = value` (the value is what existing callers pass).
+- **Generate Getters and Setters** and **Generate Delegate Methods** open the same checkbox list as the
+  other Java generators, so you choose the fields, or the methods of a field, instead of getting all of
+  them.
+- **Code lenses** — the language server's reference and implementation counts, drawn after a declaration
+  (`3 references`). Click one to open the references or implementations. Off by default: Settings → Code
+  Completion, or `View: Toggle Code Lenses`.
+- **Tests in nested classes run from the gutter.** A method inside a JUnit `@Nested` class (or a static
+  nested test class) gets its own ▶, as does the nested class; Run and Debug target it as `Outer$Inner`.
+  A class whose tests are all in nested classes used to get no test markers at all.
+
 ### Changed
 
+- Launching Editora again (no file, `--project`, `--dev`) now goes to the running editor on the same
+  config directory instead of starting a second process; `--new-instance` starts a separate one.
+- "Reset to Defaults" first saves the previous settings as `settings.json.before-reset-<date>.bak` and
+  names the file in the status bar; it no longer lowers Local History limits.
+- Lowering a Local History limit (Settings or the `history.setMax*` commands) asks first, stating how
+  many revisions from how many files would be removed, instead of deleting them at once.
+- The Rename preview lists files and folders a rename would delete and files it would replace; a code
+  action or refactoring that deletes a folder or replaces an existing file asks first, naming the paths.
+- Git Log: Reset states how many commits leave the branch and how many are not on the upstream; Soft
+  and Mixed ask before stranding commits; checking out a commit reports the detached HEAD. "Delete" on
+  an untracked folder says it is a folder and how many files it removes.
+- MCP: `edit_buffer` replaces a whole buffer only with `replace_whole_buffer: true`; unknown arguments
+  and empty or relative paths are rejected for every tool; `save_buffer` reports `saved` only once the
+  file is written.
+- Typst: a one-page PNG/SVG export is written under the chosen name, and the export asks before
+  replacing existing page files (`name-1.png`, …).
+- Dragging a folder or several items in the Project tree asks first; Settings → Templates → Remove asks
+  for confirmation.
+- The VCS menu is grouped into submenus (Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches,
+  History & Blame, Compare) with the daily actions at the top level.
+- A Git command that stops on conflicts (pull, merge, rebase, revert, cherry-pick, stash pop, 3-way
+  patch) opens the Commit window with its conflicts instead of an error dialog.
+- A successful local Git command no longer raises the Output console, so a Git Log row action keeps the
+  log visible. Network commands and failures still raise it.
+- Deleted lines are marked in the gutter by a corner flag at the top of the following line instead of a
+  full-height red bar, and change bars have a wider click target.
+- Log reads run on their own lane, so a slow history search no longer delays status and gutter updates,
+  and a running search is cancelled when it is replaced or cleared.
+
+- The `samples/` corpus for manual testing now covers more of the editor. Every syntax sample is a
+  complete, commented program instead of a ten-line stub, and there are new fixtures for Astro, JSX and
+  ignore files, sticky scroll and fold levels (one long file), related-file pairs, the HTML live
+  preview, Markdown lint and extensions, every recognised log format, shell and shebang scripts, a
+  script to debug, tests in the Maven, npm, Cargo and Go projects, more of the HTTP client format,
+  diff3 conflicts, and JPEG/GIF/BMP images. A test now fails if a bundled grammar has no sample.
 - After a pull, clicking a file's change graph (`4 ++--`) in the Git tab opens a diff of that file
   between the commit you were on and the one the pull brought. Clicking the file name still opens the
   file.
@@ -40,6 +149,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `###` separator, with or without a title, it was ignored, so `{{x.response.body.$.id}}` in a later
   request resolved to nothing unless the named request was the first in the file. A request with a
   `### Title` and no `@name` can still be referred to by its title.
+- **Data-loss review fixes.** A review of every path that writes, deletes, replaces or discards user
+  data found 58 issues; this release fixes them, with the limits noted at the end of this entry.
+  - *Unsaved edits.* Deleting a file from the Project tree now asks every window that has unsaved edits
+    to it, and a tab with unsaved text is never closed by a delete it was not asked about. Text typed
+    while a file is being reloaded (after a Git operation, or after choosing Reload) is no longer
+    replaced by the disk copy. In the "File Changed on Disk" prompt, Enter keeps your version when the
+    buffer has unsaved edits. A file deleted outside Editora leaves its tab marked unsaved, and
+    auto-save does not recreate it. Following a log no longer replaces text you typed into it when the
+    log rotates.
+  - *Saving.* Saving a file with mixed line endings without editing it no longer rewrites it; an edited
+    save still normalises to the dominant ending but says so, keeps the original bytes in
+    `<config>/line-ending-originals`, and asks first when the file contains binary data. The status bar
+    shows "Mixed (LF)" for such a file, and a non-UTF-8 mixed file is no longer told that "no bytes are
+    lost". The save status says when an `.editorconfig` rule changed a file's encoding or byte-order
+    mark. A document containing half of a split emoji is refused instead of being saved as `?`. Saving
+    through a dangling symlink creates its target; pipes, devices and directories are not replaced.
+    Saves keep extended attributes and setuid/setgid/sticky bits. An interrupted in-place save no longer
+    leaves the file empty, and a backup left by a killed save is offered at the next launch. Save as
+    Administrator backs the file up before overwriting it.
+  - *Editora's own files.* Two Editora processes on one config directory no longer revert each other's
+    settings, sessions, projects, notes, bookmarks, breakpoints, macros, dictionary or Local History.
+    Two windows with the same file open no longer overwrite each other's notes, bookmarks or
+    breakpoints. "Project: Delete" no longer deletes the project's notes, bookmarks, breakpoints and
+    Local History. An unreadable `projects.json` no longer deletes untitled windows' sessions. Config
+    writes are flushed to disk before being renamed into place and retried after a failure; an empty or
+    damaged config file is preserved and reported instead of silently reset; config set aside by an
+    older build is restored by the newer one; `settings.toml` is kept as `settings.toml.migrated`.
+  - *Bulk edits.* AI "Rewrite Selection" and "Generate Commit Message" apply a reply only when it is
+    complete and refuse a selection too large to send whole. Large files and files with very long lines
+    have no undo: bulk edits there (Replace in Files, line transforms, external tools, AI, agent, MCP,
+    language-server edits, apply-from-diff) save the previous text to Local History first or are
+    refused. CSV grid edits change the row shown, also when narrowed, and only the edited field. Line
+    commands no longer split a line containing NUL characters. Narrowing says so when it clears the
+    undo history. An external tool replaces the text that was selected when it started.
+  - *Agents and language servers.* An agent's relative path is no longer written relative to the
+    editor's working directory; an agent write keeps a Local History copy, the file's encoding and line
+    endings, never touches `.git/`, and cannot replace text typed since the agent's last read. The
+    permission dialog opens on the rejecting choice. A request that timed out is not applied afterwards.
+    A language-server edit no longer deletes a file whose tab became unsaved while it was applied, is
+    never half-applied, and copies what it deletes or replaces to Local History.
+  - *Files on disk.* An HTTP `>>!` redirect no longer writes an error response over an existing file and
+    records the replaced file in Local History. Exports are written to a temporary file and renamed, so
+    a failed export cannot truncate the file it was replacing. Updating a plugin keeps its `data/`
+    folder; a plugin with an invalid id is not loaded and Remove can only delete the plugin's own folder.
+  - *Git, merge and Local History.* Local History keeps the text a file held before the first save of a
+    session. Restoring a deleted file writes it back in its original encoding. Untracked files are
+    copied to Local History before "Delete" removes them. The merge resolver writes an unresolved
+    conflict back exactly as it was, a stray marker-looking line no longer swallows the rest of the
+    file, and the file's own conflict regions are used when the recomputed merge disagrees.
+  - *Not fully fixed.* Linux POSIX ACLs are still dropped on save. Switching branch from a detached HEAD
+    with unreferenced commits does not warn. Tree delete has no trash on Windows. A config write that
+    still fails at quit is not reported before the window closes.
+- Git: a repository Git refuses to work in (for example "dubious ownership") says why in the status bar
+  and the Commit window instead of looking like no repository.
+- Git: commands never start an external editor, so continuing a rebase no longer hangs waiting for one.
+- Git: reverting a merge commit asks which parent is the mainline instead of failing.
+- Git: a missing globally configured `blame.ignoreRevsFile` no longer empties the blame column.
+- Git: the Commit window's header no longer cuts the push indicator to "↑…".
+- Java's **Change signature** code action was listed and then failed with "Could not apply".
+- Git: a click on empty space or a section header in the branch dropdown no longer checks out the
+  selected branch; only a click on a row activates it. Dropdown actions are refused if another
+  repository became active while it was open.
+- Git: unstaging a renamed file also unstages the deletion of its old path, instead of leaving a
+  half-staged rename.
+- Git: the first push of a branch goes to the configured push remote (`branch.<name>.pushRemote`,
+  `remote.pushDefault`) or the only remote, instead of always `origin`.
+- Git: blame, status, diffs and file lists larger than 10 MB are no longer shown or cached in part.
+  Blame uses a compact format, so large files are annotated in full.
+- Git: staging a new executable file or symlink from the diff viewer keeps its mode.
+- Git: blame annotations and gutter change bars follow unsaved line insertions and deletions.
+- Git: the `Git Log: …` palette commands no longer act on a hidden log's remembered selection; they
+  open the log and ask for a commit.
+- Git: the Commit window keeps its selection, collapsed groups and scroll position across status
+  updates. Ctrl/Cmd+Enter no longer commits with nothing staged or while a commit is running, and text
+  typed during a commit is kept.
+- Git: Clone accepts `~` and relative destinations, creates missing parent folders and accepts an
+  existing empty folder.
+- Git: a repository created inside an already-open one is noticed without a manual refresh, and Git is
+  found again after being installed without restarting Editora.
+- Git: blame works in SHA-256 repositories; file names with non-ASCII characters plus a tab, quote or
+  backslash parse correctly under `core.quotePath=false`; an inherited `GIT_DIR` or `GIT_WORK_TREE` no
+  longer redirects every folder to one repository; the Git console no longer stalls on output lines
+  with very long runs of whitespace.
+- Git: remaining English-only error headers are localized, and relative times read "1 day ago" instead
+  of "1 days ago".
 - Following a log through a pattern filter no longer joins lines together (`ERROR bERROR c`), and a line
   written in two parts is no longer missed by the filter.
 - Pausing and resuming Follow no longer skips the lines written in between, and turning Follow on no
@@ -53,6 +247,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Applying or clearing a log filter keeps you on the line you were on instead of jumping to the end.
 - Filtering a large log no longer freezes the window while the filter runs, and pressing Enter in the
   filter field no longer applies the filter twice.
+- The log viewer now recognises all six levels of the .NET console logger. `dbug:` and `trce:` lines were
+  treated as part of the record above them, so they took its colour, level filter and grouping.
 - A level or pattern set from the command palette now shows in the log's controls, and is no longer
   dropped by the next change made there.
 - In a filtered log, stack-trace lines are tinted with their own record's level, not the level of

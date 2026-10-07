@@ -472,4 +472,120 @@ class ConfigWriterTest {
             helper.destroyForcibly();
         }
     }
+
+    // --- durability and retry (data-loss review C5, C7) -------------------------------------------------
+
+    @Test
+    void theTempFileIsForcedToDiskBeforeItIsRenamedIntoPlace(@TempDir Path dir) throws IOException {
+        // A rename is atomic against a process crash only. After a power cut, a filesystem that does not
+        // order data before the rename brings the new name back with no content: a zero-length settings.json.
+        Path file = Files.writeString(dir.resolve("settings.json"), "previous");
+        List<String> order = new java.util.ArrayList<>();
+        DelegatingFileOperations files = new DelegatingFileOperations() {
+            @Override
+            public void write(Path path, byte[] content) throws IOException {
+                order.add("write");
+                super.write(path, content);
+            }
+
+            @Override
+            public void force(Path path) throws IOException {
+                order.add("force " + (path.equals(file) ? "target" : "temp"));
+                super.force(path);
+            }
+
+            @Override
+            public void move(Path source, Path target, CopyOption... options) throws IOException {
+                order.add("move");
+                super.move(source, target, options);
+            }
+        };
+
+        ConfigWriter.writeAtomic(file, bytes("replacement"), files);
+
+        assertEquals(List.of("write", "force temp", "move"), order);
+        assertEquals("replacement", Files.readString(file));
+    }
+
+    @Test
+    void aWriteThatFailedIsWrittenAgainWhenAnotherWriteSucceeds(@TempDir Path dir) throws Exception {
+        // A store is queued only when it changes, so a write lost to a briefly unwritable folder used to stay
+        // lost: the change lived in memory until quit and was gone after it.
+        Path blocked = Files.createDirectories(dir.resolve("recent-files.json"));
+        Files.writeString(blocked.resolve("in-the-way"), "x"); // a non-empty directory cannot be replaced
+        Path other = dir.resolve("settings.json");
+        ConfigWriter writer = new ConfigWriter();
+        List<Path> reported = new java.util.concurrent.CopyOnWriteArrayList<>();
+        writer.setOnWriteError((file, failure) -> reported.add(file));
+        try {
+            writer.enqueue(blocked, bytes("recent"));
+            assertFalse(writer.flush(), "the failure is reported to a durable save");
+            assertEquals(List.of(blocked, blocked), reported, "once for the write, once for the flush's retry");
+            assertTrue(writer.hasFailedWrite(blocked));
+
+            Files.delete(blocked.resolve("in-the-way"));
+            Files.delete(blocked); // the folder is writable again
+            writer.enqueue(other, bytes("settings"));
+            assertTrue(writer.flush());
+
+            assertEquals("recent", Files.readString(blocked), "retried without being queued again");
+            assertEquals("settings", Files.readString(other));
+            assertFalse(writer.hasFailedWrite(blocked));
+        } finally {
+            writer.shutdown();
+        }
+    }
+
+    @Test
+    void aFailedWriteIsRetriedAtShutdown(@TempDir Path dir) throws Exception {
+        Path blocked = Files.createDirectories(dir.resolve("search-history.json"));
+        Files.writeString(blocked.resolve("in-the-way"), "x");
+        ConfigWriter writer = new ConfigWriter();
+        writer.setOnWriteError((file, failure) -> {});
+        writer.enqueue(blocked, bytes("queries"));
+        assertFalse(writer.flush());
+
+        Files.delete(blocked.resolve("in-the-way"));
+        Files.delete(blocked);
+
+        assertTrue(writer.shutdown(), "the last flush wrote what had failed");
+        assertEquals("queries", Files.readString(blocked));
+    }
+
+    @Test
+    void aNewerSnapshotReplacesAFailedOneRatherThanBeingOverwrittenByItsRetry(@TempDir Path dir) throws Exception {
+        Path blocked = Files.createDirectories(dir.resolve("agent-sessions.json"));
+        Files.writeString(blocked.resolve("in-the-way"), "x");
+        ConfigWriter writer = new ConfigWriter();
+        writer.setOnWriteError((file, failure) -> {});
+        try {
+            writer.enqueue(blocked, bytes("stale"));
+            assertFalse(writer.flush());
+            Files.delete(blocked.resolve("in-the-way"));
+            Files.delete(blocked);
+
+            writer.enqueue(blocked, bytes("current"));
+            assertTrue(writer.flush());
+
+            assertEquals("current", Files.readString(blocked));
+        } finally {
+            writer.shutdown();
+        }
+    }
+
+    @Test
+    void aSupplierWithNothingToWriteCountsAsWritten(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("settings.json");
+        ConfigWriter writer = new ConfigWriter();
+        List<ConfigWriter.WriteOutcome> outcomes = new java.util.concurrent.CopyOnWriteArrayList<>();
+        try {
+            writer.enqueue(file, () -> null, outcomes::add);
+            assertTrue(writer.flush());
+
+            assertEquals(List.of(ConfigWriter.WriteOutcome.WRITTEN), outcomes);
+            assertFalse(Files.exists(file));
+        } finally {
+            writer.shutdown();
+        }
+    }
 }

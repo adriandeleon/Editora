@@ -94,7 +94,9 @@ public final class StatusParser {
     /**
      * Decodes git's C-style quoted path back to the real name. With {@code core.quotePath=true} (the default),
      * {@code git status --porcelain} (no {@code -z}) wraps a path containing non-ASCII/control/quote/backslash
-     * bytes in double-quotes and escapes those bytes — {@code café.txt} → {@code "caf\303\251.txt"}. An
+     * bytes in double-quotes and escapes those bytes — {@code café.txt} → {@code "caf\303\251.txt"}.
+     * With {@code core.quotePath=false} only a name with a control character, quote or backslash is quoted, and
+     * its non-ASCII characters stay literal inside the quotes ({@code "new\tname é.txt"}); both forms decode. An
      * unquoted field (no surrounding quotes) is returned unchanged. The octal escapes are the raw UTF-8 bytes,
      * so they are collected and decoded as UTF-8. Returns {@code null} unchanged (rename orig may be absent).
      */
@@ -107,7 +109,16 @@ public final class StatusParser {
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (c != '\\' || i + 1 >= s.length()) {
-                bytes.write(c); // a literal (printable ASCII) byte
+                // A literal character. With core.quotePath=false git leaves non-ASCII characters as they are
+                // inside the quotes (only control characters, quotes and backslashes are escaped), so this
+                // is not always one ASCII byte: write the character's UTF-8 bytes, not its low eight bits.
+                if (c < 0x80) {
+                    bytes.write(c);
+                } else {
+                    int cp = s.codePointAt(i);
+                    bytes.writeBytes(new String(Character.toChars(cp)).getBytes(StandardCharsets.UTF_8));
+                    i += Character.charCount(cp) - 1;
+                }
                 continue;
             }
             char e = s.charAt(++i);

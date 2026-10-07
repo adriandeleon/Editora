@@ -21,6 +21,13 @@ your config directory containing a `plugin.json` manifest plus, optionally, a Ja
 `<configDir>` is `~/.editora` (or `~/.editora-dev` under `--dev`, or whatever `--config-dir` /
 `EDITORA_CONFIG_DIR` points at). The enabled set is stored in `<configDir>/plugins.json`.
 
+A plugin id is letters, digits, `-`, `_` and `.` (not starting with a dot, no `..`), and should equal its
+folder name. `lsp`, `dap` and `typst` are reserved: Editora keeps downloaded language servers, debug adapters
+and the Typst CLI in `plugins/lsp`, `plugins/dap` and `plugins/typst`, so those folders are never treated as
+plugins. A folder whose `plugin.json` declares an invalid or reserved id is listed under its folder name with
+a load error and nothing from it is loaded. *Remove* deletes the plugin's own folder — always a direct child
+of `plugins/` — never a path built from the manifest id.
+
 Plugins are discovered and their classes loaded **once at startup**. Enabling, disabling, or installing a
 plugin takes effect **on the next launch** — there is no hot reload.
 
@@ -97,7 +104,7 @@ public class HelloPlugin implements Plugin {
 | `addEditorMenuItem(label, action)` | An editor right-click item; the action gets an `ActiveEditor`. |
 | `addStatusBarSegment(label, commandId)` | A clickable status-bar segment. |
 | `activeEditor()` | The live active-buffer facade (`filePath`/`text`/`selectedText`/`replaceSelection`/`insertAtCaret`/`setText`/`openPath`). `setText` replaces the whole buffer (undoable) — for whole-file transforms like formatting. |
-| `pluginDir()` / `dataDir()` / `configDir()` | Paths (a writable per-plugin `data/` is created on demand). |
+| `pluginDir()` / `dataDir()` / `configDir()` | Paths (a writable per-plugin `data/` is created on demand). `data/` survives an update of the plugin: the rest of the folder is replaced, `data/` is carried over, and a file the user already has wins over one of the same name shipped in the archive. Removing the plugin deletes it. |
 | `log(msg)` / `setStatus(msg)` | Debug log / status echo. |
 
 A Java plugin may use Editora's **exported** API (`com.editora.plugin` and the public parts of

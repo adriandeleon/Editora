@@ -518,7 +518,7 @@ final class MultiCarets {
             if (paragraph < 0 || paragraph >= area.getParagraphs().size()) {
                 return;
             }
-            int column = Math.min(primary.getColumnPosition(), area.getParagraphLength(paragraph));
+            int column = wholeCharacterColumn(area.getText(paragraph), primary.getColumnPosition());
             target = area.getAbsolutePosition(paragraph, column);
             area.showParagraphInViewport(paragraph);
         }
@@ -527,6 +527,20 @@ final class MultiCarets {
             return; // no further line that way
         }
         manager.addCaretAt(target);
+    }
+
+    /**
+     * {@code column} clamped to {@code line} and moved off the middle of a surrogate pair. A column counts
+     * UTF-16 chars, so the same column on another line can fall between the two halves of an emoji; a caret
+     * there splits the character with whatever is typed, and the halves cannot be saved in any encoding.
+     */
+    static int wholeCharacterColumn(String line, int column) {
+        int clamped = Math.max(0, Math.min(column, line.length()));
+        boolean insidePair = clamped > 0
+                && clamped < line.length()
+                && Character.isHighSurrogate(line.charAt(clamped - 1))
+                && Character.isLowSurrogate(line.charAt(clamped));
+        return insidePair ? clamped - 1 : clamped;
     }
 
     /** The offset one visual line beyond {@code edge}, at {@code primary}'s x; -1 when it cannot be measured. */

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -198,5 +199,93 @@ class CsvCoordinatorFxTest {
 
         c.onBufferClosed(b);
         assertNull(c.gridNodeFor(b), "the per-buffer grid is dropped on close");
+    }
+
+    // --- cell edits ------------------------------------------------------------------------------------
+
+    private static void rebuild(CsvCoordinator c, EditorBuffer b) {
+        FxTestSupport.call(c, "rebuild", new Class<?>[] {EditorBuffer.class}, b);
+    }
+
+    private static void commit(CsvCoordinator c, EditorBuffer b, int dataRow, int field, String value) {
+        FxTestSupport.call(
+                c,
+                "commitCell",
+                new Class<?>[] {EditorBuffer.class, int.class, int.class, String.class},
+                b,
+                dataRow,
+                field,
+                value);
+    }
+
+    @Test
+    void aCellEditOnANarrowedBufferWritesTheRowTheGridShows() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setCsvPreview(true);
+        CsvCoordinator c = new CsvCoordinator(host, new FakeOps());
+        String doc = "id,name\n1,alice\n2,bob\n3,carol\n4,dave\n";
+        EditorBuffer b = csvBuffer(doc);
+        FxTestSupport.runOnFx(() -> {
+            c.ensureCsvPreview(b);
+            assertTrue(b.narrowTo(doc.indexOf("2,bob"), doc.indexOf("4,dave")));
+            rebuild(c, b);
+            commit(c, b, 2, 1, "CAROL"); // the grid lists the whole file: data row 2 is "3,carol"
+        });
+        assertEquals("id,name\n1,alice\n2,bob\n3,CAROL\n4,dave\n", FxTestSupport.callOnFx(b::getContent));
+        assertEquals(
+                "2,bob\n3,CAROL\n", FxTestSupport.callOnFx(() -> b.getArea().getText()));
+    }
+
+    @Test
+    void aCellEditOutsideTheNarrowedRegionIsRefusedNotMisplaced() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setCsvPreview(true);
+        CsvCoordinator c = new CsvCoordinator(host, new FakeOps());
+        String doc = "id,name\n1,alice\n2,bob\n3,carol\n4,dave\n";
+        EditorBuffer b = csvBuffer(doc);
+        FxTestSupport.runOnFx(() -> {
+            c.ensureCsvPreview(b);
+            assertTrue(b.narrowTo(doc.indexOf("3,carol"), doc.length()));
+            rebuild(c, b);
+            commit(c, b, 0, 1, "ALICE"); // "1,alice" is held aside by the narrowing
+        });
+        assertEquals(doc, FxTestSupport.callOnFx(b::getContent), "no other row may take the edit");
+        assertEquals(com.editora.i18n.Messages.tr("status.csv.cannotEditHiddenRow"), host.lastStatus);
+    }
+
+    @Test
+    void aCellEditIsRefusedWhenTheRowIsNoLongerTheOneTheGridShowed() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setCsvPreview(true);
+        CsvCoordinator c = new CsvCoordinator(host, new FakeOps());
+        EditorBuffer b = csvBuffer("id,name\n1,alice\n2,bob\n");
+        FxTestSupport.runOnFx(() -> {
+            c.ensureCsvPreview(b);
+            rebuild(c, b);
+            b.getArea().insertText(0, "0,zed\n"); // typed before the debounced re-parse: every row shifted
+            commit(c, b, 0, 1, "ALICE");
+        });
+        assertEquals("0,zed\nid,name\n1,alice\n2,bob\n", FxTestSupport.callOnFx(b::getContent));
+        assertEquals(com.editora.i18n.Messages.tr("status.csv.cannotEditChangedRow"), host.lastStatus);
+    }
+
+    @Test
+    void aCellEditLeavesTheOtherCellsOfTheRowAsTheyWereWritten() throws Exception {
+        FakeHost host = new FakeHost();
+        host.settings.setCsvPreview(true);
+        CsvCoordinator c = new CsvCoordinator(host, new FakeOps());
+        EditorBuffer b = csvBuffer("id,code,note\n1,\"007\",\"\"\n2, \"x\" ,\"a\"b\n");
+        FxTestSupport.runOnFx(() -> {
+            c.ensureCsvPreview(b);
+            rebuild(c, b);
+            commit(c, b, 0, 0, "9");
+            commit(c, b, 1, 0, "8"); // a second edit before the debounced re-parse
+        });
+        assertEquals("id,code,note\n9,\"007\",\"\"\n8, \"x\" ,\"a\"b\n", FxTestSupport.callOnFx(b::getContent));
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().undo();
+            b.getArea().undo();
+        });
+        assertEquals("id,code,note\n1,\"007\",\"\"\n2, \"x\" ,\"a\"b\n", FxTestSupport.callOnFx(b::getContent));
     }
 }

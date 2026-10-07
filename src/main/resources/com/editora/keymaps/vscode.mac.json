@@ -30,6 +30,8 @@
   "Cmd-b": "tool.project",
   "Cmd-S-m": "tool.problems",
   "C-S-g": "git.commit",
+  "M-f5": "git.nextChange",
+  "M-S-f5": "git.previousChange",
   "Cmd-S-d": "tool.debug",
   "Cmd-S-x": "plugins.browse",
   "Cmd-,": "view.settings",

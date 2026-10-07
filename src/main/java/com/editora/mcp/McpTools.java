@@ -21,9 +21,19 @@ final class McpTools {
     private final McpBridge bridge;
     private final ObjectMapper m;
 
+    /**
+     * Each tool's published {@code inputSchema.properties}, by tool name: {@link #callTool} checks the
+     * arguments it is given against the very schema {@code tools/list} advertises, so the two cannot drift.
+     */
+    private final java.util.Map<String, JsonNode> argumentSchemas = new java.util.HashMap<>();
+
     McpTools(McpBridge bridge, ObjectMapper m) {
         this.bridge = bridge;
         this.m = m;
+        for (JsonNode tool : listToolsResult().get("tools")) {
+            argumentSchemas.put(
+                    tool.get("name").asText(), tool.get("inputSchema").get("properties"));
+        }
     }
 
     // --- initialize -------------------------------------------------------------------------------
@@ -67,7 +77,9 @@ final class McpTools {
         tools.add(tool("list_commands", "List every command that execute_command can run.", obj()));
         tools.add(toolReq(
                 "execute_command",
-                "Run a registered command by id (edits go through the undo stack). See list_commands.",
+                "Run a registered command by id (edits go through the undo stack). See list_commands."
+                        + " The result says only that the command was run, not what it achieved: to save a"
+                        + " buffer and learn whether it reached the disk, use save_buffer.",
                 obj().set("id", strProp("The command id, e.g. \"file.save\".")),
                 "id"));
         ObjectNode openProps = obj();
@@ -83,19 +95,28 @@ final class McpTools {
         editProps.set("path", strProp("Absolute path of an open file; omit for the active buffer."));
         editProps.set(
                 "old_text",
-                strProp("Exact text to replace (must occur exactly once unless replace_all)."
-                        + " Omit or pass \"\" to replace the whole buffer."));
-        editProps.set("new_text", strProp("Replacement text."));
+                strProp("Exact text to replace. It must occur exactly once in the buffer's whole text unless"
+                        + " replace_all is true. Required, and not empty, unless replace_whole_buffer is true."));
+        editProps.set("new_text", strProp("Replacement text (\"\" deletes old_text)."));
         editProps.set("replace_all", boolProp("Replace every occurrence of old_text (default false)."));
+        editProps.set(
+                "replace_whole_buffer",
+                boolProp("Set true to replace the buffer's entire text with new_text; old_text and replace_all"
+                        + " must then be omitted. Refused when the buffer changed since your last read_buffer of"
+                        + " it (read it again and retry). Default false."));
         tools.add(toolReq(
                 "edit_buffer",
-                "Apply an undoable text edit to an open buffer (the user can undo it with one C-z)."
-                        + " Omit 'path' for the active buffer.",
+                "Edit an open buffer through the editor's undo history; nothing is written to disk until"
+                        + " save_buffer. Replaces old_text with new_text. To replace the buffer's entire text,"
+                        + " pass replace_whole_buffer: true instead of old_text — an edit without old_text is"
+                        + " rejected, never widened to the whole buffer. Omit 'path' for the active buffer.",
                 editProps,
                 "new_text"));
         tools.add(tool(
                 "save_buffer",
-                "Save an open buffer to its file on disk. Omit 'path' for the active buffer.",
+                "Save an open buffer to its file on disk and wait for the write: the result is 'saved' only"
+                        + " when the bytes are on disk, and an error when the save was refused, failed or is"
+                        + " still pending. Omit 'path' for the active buffer.",
                 obj().set("path", strProp("Absolute path of an open file; omit for the active buffer."))));
         tools.add(tool(
                 "get_selection",
@@ -134,6 +155,10 @@ final class McpTools {
         }
         String name = params.get("name").asText();
         JsonNode args = params.get("arguments");
+        String invalid = argumentError(name, args);
+        if (invalid != null) {
+            return errorResult(invalid);
+        }
         return switch (name) {
             case "list_open_files" -> openFilesResult();
             case "read_buffer" -> readBufferResult(text(args, "path"));
@@ -283,8 +308,24 @@ final class McpTools {
         if (newText == null) {
             return errorResult("edit_buffer requires 'new_text'.");
         }
-        String error =
-                bridge.editBuffer(text(args, "path"), text(args, "old_text"), newText, bool(args, "replace_all"));
+        String path = text(args, "path");
+        String oldText = text(args, "old_text"); // null when absent, JSON null, or ""
+        boolean replaceAll = bool(args, "replace_all");
+        String error;
+        if (bool(args, "replace_whole_buffer")) {
+            if (oldText != null || replaceAll) {
+                return errorResult("edit_buffer: 'replace_whole_buffer' replaces the buffer's entire text, so it"
+                        + " cannot be combined with 'old_text' or 'replace_all'. Pass either old_text (a targeted"
+                        + " edit) or replace_whole_buffer: true, not both.");
+            }
+            error = bridge.replaceBuffer(path, newText);
+        } else if (oldText == null) {
+            // An absent, misspelled or empty old_text used to mean "replace the whole buffer".
+            return errorResult("edit_buffer requires a non-empty 'old_text': the exact text to replace. To replace"
+                    + " the buffer's entire text instead, pass \"replace_whole_buffer\": true (and no old_text).");
+        } else {
+            error = bridge.editBuffer(path, oldText, newText, replaceAll);
+        }
         return error == null ? textResult(m.createObjectNode().put("applied", true)) : errorResult(error);
     }
 
@@ -358,6 +399,97 @@ final class McpTools {
             o.set("files", files);
         }
         return textResult(o);
+    }
+
+    // --- argument checking ------------------------------------------------------------------------
+
+    /**
+     * Why {@code args} cannot be used to call {@code tool}, or {@code null} when they can.
+     *
+     * <p>Several tools take an optional argument whose absence <em>widens</em> what they act on: no
+     * {@code path} means the active buffer; no {@code old_text} once meant the whole buffer. An argument that
+     * is misspelled ({@code oldText}, {@code file}), empty or of the wrong type was silently treated as
+     * absent, so a slip in the request turned a narrow edit into a broad one — and a following
+     * {@code save_buffer} wrote it. Anything the published schema does not describe is therefore rejected by
+     * name, and a {@code path} that is given must name something.
+     */
+    private String argumentError(String tool, JsonNode args) {
+        JsonNode schema = argumentSchemas.get(tool);
+        if (schema == null || args == null || args.isNull()) {
+            return null; // unknown tool: reported by the dispatcher; no arguments: nothing to check
+        }
+        if (!args.isObject()) {
+            return tool + ": 'arguments' must be a JSON object.";
+        }
+        for (var fields = args.fields(); fields.hasNext(); ) {
+            var field = fields.next();
+            String name = field.getKey();
+            JsonNode value = field.getValue();
+            JsonNode declared = schema.get(name);
+            if (declared == null) {
+                return tool + ": unknown argument '" + name + "'." + suggestion(schema, name) + " Accepted: "
+                        + accepted(schema) + ".";
+            }
+            if (value == null || value.isNull()) {
+                continue; // an explicit null is "not given"
+            }
+            String type = declared.path("type").asText();
+            boolean typed =
+                    switch (type) {
+                        case "string" -> value.isTextual();
+                        case "boolean" -> value.isBoolean();
+                        case "integer" -> value.isIntegralNumber();
+                        default -> true;
+                    };
+            if (!typed) {
+                return tool + ": argument '" + name + "' must be a JSON " + type + ".";
+            }
+            if ("path".equals(name)) {
+                String problem = pathProblem(value.asText());
+                if (problem != null) {
+                    return tool + ": " + problem;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Why {@code path} does not name a file, or {@code null}. Pure. */
+    static String pathProblem(String path) {
+        if (path.isBlank()) {
+            return "'path' is empty. Pass the absolute path of the file, or leave 'path' out altogether to mean"
+                    + " the active buffer.";
+        }
+        boolean rooted;
+        try {
+            rooted = java.nio.file.Path.of(path).getRoot() != null;
+        } catch (RuntimeException e) {
+            rooted = false;
+        }
+        // A relative path would be resolved against the editor's own working directory, not the project.
+        return rooted ? null : "'path' must be an absolute path, got '" + path + "'.";
+    }
+
+    private static String accepted(JsonNode schema) {
+        java.util.List<String> names = new java.util.ArrayList<>();
+        schema.fieldNames().forEachRemaining(names::add);
+        return names.isEmpty() ? "no arguments" : String.join(", ", names);
+    }
+
+    /** " Did you mean 'old_text'?" when {@code name} is a declared argument in another spelling. */
+    private static String suggestion(JsonNode schema, String name) {
+        String wanted = squash(name);
+        for (var names = schema.fieldNames(); names.hasNext(); ) {
+            String candidate = names.next();
+            if (squash(candidate).equals(wanted)) {
+                return " Did you mean '" + candidate + "'?";
+            }
+        }
+        return "";
+    }
+
+    private static String squash(String name) {
+        return name.replace("_", "").replace("-", "").toLowerCase(java.util.Locale.ROOT);
     }
 
     // --- result + schema helpers ------------------------------------------------------------------

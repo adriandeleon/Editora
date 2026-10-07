@@ -239,6 +239,16 @@ final class LogViewerCoordinator {
 
             @Override
             public void rotated(String text, LogTailService.FileState state) {
+                if (logFollows.get(buffer) == self[0] && buffer.isDirty()) {
+                    // A rotation replaces the whole buffer. The user typed into this one: showing the new
+                    // file would drop that text. Stop here instead, and leave the on-disk snapshot alone so
+                    // that saving these edits over the rotated file asks first.
+                    stopFollow(buffer);
+                    resumes.remove(buffer); // the offset belonged to the file that was rotated away
+                    syncBar(buffer);
+                    host.setStatus(tr("status.log.followStoppedEdited"));
+                    return;
+                }
                 if (current(state)) {
                     buffer.resetLogContent(text);
                     host.setStatus(tr("status.log.rotated"));

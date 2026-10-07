@@ -81,4 +81,40 @@ class SaveEncodingTest {
                         .formatHex(SaveEncoding.plan("hi", EditorConfigCharset.UTF_16LE, false, true)
                                 .bytes()));
     }
+
+    @Test
+    void halfACharacterIsNeverWrittenAsAQuestionMark() {
+        // An edit split an emoji: the document holds two unpaired surrogates. UTF-8 "cannot encode" this
+        // text either, so falling back to UTF-8 used to write "?" twice — and add a byte-order mark.
+        String split = "ok\nab\uD83DX\uDE00cd\n";
+        for (String charset : new String[] {
+            EditorConfigCharset.UTF_8,
+            EditorConfigCharset.UTF_8_BOM,
+            EditorConfigCharset.UTF_16LE,
+            EditorConfigCharset.UTF_16BE,
+            EditorConfigCharset.LATIN1
+        }) {
+            SaveEncoding.Plan plan = SaveEncoding.plan(split, charset, false, true);
+
+            assertNull(plan.bytes(), charset + ": nothing is written");
+            assertNull(plan.fallbackFrom(), charset + ": and the file's encoding is not changed");
+            assertEquals(new SaveEncoding.Unencodable("\uD83D", 2), plan.refused(), charset);
+            assertEquals(true, plan.refused().unpairedSurrogate());
+        }
+        assertEquals(
+                new SaveEncoding.Unencodable("\uDE00", 1),
+                SaveEncoding.plan("\uDE00", EditorConfigCharset.LATIN1, true, true)
+                        .refused(),
+                "a stand-in charset is refused for the same reason first");
+    }
+
+    @Test
+    void wholeAstralCharactersAreNotMistakenForHalves() {
+        assertNull(SaveEncoding.firstUnpairedSurrogate("a😀b\n😀"));
+        assertEquals(new SaveEncoding.Unencodable("\uD83D", 1), SaveEncoding.firstUnpairedSurrogate("a😀\uD83D"));
+        assertEquals("U+D83D", new SaveEncoding.Unencodable("\uD83D", 1).display());
+        assertEquals("€", new SaveEncoding.Unencodable("€", 1).display());
+        SaveEncoding.Plan emoji = SaveEncoding.plan("😀", EditorConfigCharset.UTF_8, false, true);
+        assertEquals("f09f9880", HexFormat.of().formatHex(emoji.bytes()));
+    }
 }

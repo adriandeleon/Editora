@@ -18,13 +18,17 @@ public final class GitOutputLinks {
     }
 
     private static final Pattern STATUS =
-            Pattern.compile("^\\s*(?:modified|deleted|new file|typechange):\\s+(.+?)(?:\\s+->\\s+.*)?\\s*$");
-    private static final Pattern RENAME = Pattern.compile("^\\s*renamed:\\s+(.+?) -> (.+?)\\s*$");
-    private static final Pattern RENAME_PART = Pattern.compile("^\\s*renamed (?:from|to):\\s+(.+?)\\s*$");
-    private static final Pattern MODE = Pattern.compile("^\\s*(?:create|delete) mode \\d+ (.+?)\\s*$");
-    /** Git's --stat row: a path, a pipe, then a change count/graph (or "Bin ..." for binary files). */
+            Pattern.compile("^\\s*+(?:modified|deleted|new file|typechange):\\s+(.+?)(?:\\s+->\\s+.*)?\\s*$");
+    private static final Pattern RENAME = Pattern.compile("^\\s*+renamed:\\s+(.+?) -> (.+?)\\s*$");
+    private static final Pattern RENAME_PART = Pattern.compile("^\\s*+renamed (?:from|to):\\s+(.+?)\\s*$");
+    private static final Pattern MODE = Pattern.compile("^\\s*+(?:create|delete) mode \\d+ (.+?)\\s*$");
+    /**
+     * Git's --stat row: a path, a pipe, then a change count/graph (or "Bin ..." for binary files). The leading
+     * whitespace is possessive and the path starts at a non-blank: with a plain {@code \s*(.+?)} both could
+     * consume a run of spaces, and one hook-printed line of a few thousand spaces took seconds to reject.
+     */
     private static final Pattern DIFF_STAT =
-            Pattern.compile("^\\s*(.+?)\\s+\\|\\s+(?:\\d+(?:\\s+[+\\-=]*)?|Bin\\b.*)\\s*$");
+            Pattern.compile("^\\s*+(\\S.*?)\\s+\\|\\s+(?:\\d+(?:\\s+[+\\-=]*)?|Bin\\b.*)\\s*$");
 
     private static final Pattern DIFF_FILE = Pattern.compile("^(?:---|\\+\\+\\+) [ab]/(.+?)\\s*$");
     private static final Pattern DIFF_PAIR = Pattern.compile("^diff --git a/(.+?) b/(.+?)\\s*$");
@@ -68,6 +72,9 @@ public final class GitOutputLinks {
         if (diffFile.matches() && !"/dev/null".equals(diffFile.group(1))) {
             add(links, line, diffFile.start(1), diffFile.end(1));
             return List.copyOf(links);
+        }
+        if (line.indexOf('|') < 0) {
+            return List.copyOf(links); // not a stat row: do not run its pattern over arbitrary output
         }
         Matcher diffStat = DIFF_STAT.matcher(line);
         if (diffStat.matches()) {

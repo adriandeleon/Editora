@@ -40,6 +40,24 @@ class MenuBarModelTest {
         assertTrue(unknown.isEmpty(), "menu entries naming commands that do not exist: " + unknown);
     }
 
+    /** Finished Git features that were reachable from a context menu or the palette only. */
+    @Test
+    void theVcsMenuReachesEveryFinishedGitFeature() {
+        List<String> all = MenuBarModel.allCommandIds();
+        for (String id : List.of(
+                "git.stageAll",
+                "diff.vsBranch",
+                "diff.vsTag",
+                "diff.vsCommit",
+                "merge.resolve",
+                "git.toggleBlame",
+                "git.stashDrop",
+                "git.addToGitignore",
+                "git.init")) {
+            assertTrue(all.contains(id), id + " is missing from the menu bar");
+        }
+    }
+
     @Test
     void everyMenuTitleIsLocalized() throws Exception {
         Properties messages = messages();
@@ -47,6 +65,11 @@ class MenuBarModelTest {
         for (MenuBarModel.MenuSpec menu : MenuBarModel.menus()) {
             if (!messages.containsKey(menu.titleKey())) {
                 missing.add(menu.titleKey());
+            }
+            for (MenuBarModel.MenuSpec submenu : menu.submenus()) {
+                if (!messages.containsKey(submenu.titleKey())) {
+                    missing.add(submenu.titleKey());
+                }
             }
         }
         assertTrue(missing.isEmpty(), "menu titles with no i18n key: " + missing);
@@ -57,7 +80,7 @@ class MenuBarModelTest {
     void noCommandAppearsTwice() {
         List<String> all = new ArrayList<>();
         for (MenuBarModel.MenuSpec menu : MenuBarModel.menus()) {
-            for (String e : menu.entries()) {
+            for (String e : menu.allEntries()) {
                 if (!MenuBarModel.SEPARATOR.equals(e)) {
                     all.add(e);
                 }
@@ -69,7 +92,12 @@ class MenuBarModelTest {
     /** A leading, trailing or doubled separator renders as a stray line in the menu. */
     @Test
     void separatorsAreWellPlaced() {
+        List<MenuBarModel.MenuSpec> every = new ArrayList<>();
         for (MenuBarModel.MenuSpec menu : MenuBarModel.menus()) {
+            every.add(menu);
+            every.addAll(menu.submenus());
+        }
+        for (MenuBarModel.MenuSpec menu : every) {
             List<String> e = menu.entries();
             assertFalse(e.isEmpty(), menu.titleKey() + " is empty");
             assertFalse(MenuBarModel.SEPARATOR.equals(e.get(0)), menu.titleKey() + " starts with a separator");
@@ -99,6 +127,33 @@ class MenuBarModelTest {
             assertTrue(
                     help.contains("help.documentation"),
                     "Help should link to the docs (simple=" + simple + "), got " + help);
+        }
+    }
+
+    /**
+     * VCS is the one menu with submenus: what is used daily stays at its top level, the rest is one level
+     * down, and a submenu has no submenus of its own (the bar builds exactly two levels).
+     */
+    @Test
+    void theVcsMenuKeepsTheDailyActionsAtTheTopAndGroupsTheRest() {
+        MenuBarModel.MenuSpec vcs = MenuBarModel.menus().stream()
+                .filter(m -> "menubar.vcs".equals(m.titleKey()))
+                .findFirst()
+                .orElseThrow();
+        for (String daily :
+                List.of("git.commit", "git.push", "git.pull", "git.fetch", "git.switchBranch", "tool.gitLog")) {
+            assertTrue(vcs.entries().contains(daily), daily + " is a top-level VCS entry");
+        }
+        long topLevel = vcs.entries().stream()
+                .filter(e -> !MenuBarModel.SEPARATOR.equals(e))
+                .count();
+        assertTrue(topLevel <= 14, "the top level stays short, was " + topLevel);
+        assertFalse(vcs.submenus().isEmpty());
+        for (MenuBarModel.MenuSpec submenu : vcs.submenus()) {
+            assertTrue(submenu.submenus().isEmpty(), submenu.titleKey() + " nests a further submenu");
+        }
+        for (MenuBarModel.MenuSpec other : MenuBarModel.menus(true)) {
+            assertTrue(other.submenus().isEmpty(), "Simple UI mode has no submenus");
         }
     }
 }

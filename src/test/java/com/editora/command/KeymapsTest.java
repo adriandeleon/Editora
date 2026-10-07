@@ -255,6 +255,60 @@ class KeymapsTest {
         }
     }
 
+    /**
+     * Git chords are the ones each editor's users already know, and only those: Emacs' {@code vc} prefix
+     * ({@code C-x v …}) and IntelliJ's commit / push / update / branches. VS Code, Sublime Text and plain CUA
+     * define no chord for push, pull, fetch or switching branch, so none is invented for them.
+     */
+    @Test
+    void gitChordsFollowEachEditorsOwnConvention() {
+        Map<String, String> emacs = load("/com/editora/keymaps/emacs.json");
+        assertEquals("git.commit", emacs.get("C-x v v")); // vc-next-action
+        assertEquals("git.push", emacs.get("C-x v S-p")); // vc-push (C-x v P)
+        assertEquals("git.pull", emacs.get("C-x v S-=")); // vc-update (C-x v +)
+        assertEquals("git.switchBranch", emacs.get("C-x v b s")); // vc-switch-branch
+        assertEquals("git.newBranch", emacs.get("C-x v b c")); // vc-create-branch
+        assertEquals("git.fileHistory", emacs.get("C-x v l")); // vc-print-log
+        assertEquals("tool.gitLog", emacs.get("C-x v S-l")); // vc-print-root-log (C-x v L)
+        assertEquals("git.toggleBlame", emacs.get("C-x v g")); // vc-annotate
+        assertEquals("diff.vsHead", emacs.get("C-x v ="));
+
+        Map<String, String> idea = load("/com/editora/keymaps/intellij.json");
+        assertEquals("tool.commit", idea.get("C-k"));
+        assertEquals("git.push", idea.get("C-S-k"));
+        assertEquals("git.pull", idea.get("C-t")); // Update Project
+        assertEquals("git.switchBranch", idea.get("C-S-back-quote")); // Branches…
+        Map<String, String> ideaMac = load("/com/editora/keymaps/intellij.mac.json");
+        assertEquals("tool.commit", ideaMac.get("Cmd-k"));
+        assertEquals("git.push", ideaMac.get("Cmd-S-k"));
+        assertEquals("git.pull", ideaMac.get("Cmd-t"));
+        assertEquals("git.switchBranch", ideaMac.get("C-S-back-quote"));
+
+        for (String id : List.of("cua", "sublime", "vscode")) {
+            for (String suffix : List.of(".json", ".mac.json")) {
+                Map<String, String> map = load("/com/editora/keymaps/" + id + suffix);
+                for (String command : List.of("git.push", "git.pull", "git.fetch", "git.switchBranch")) {
+                    assertFalse(map.containsValue(command), id + suffix + " invents a chord for " + command);
+                }
+            }
+        }
+    }
+
+    /** A chord may not also be the prefix of a longer one — the longer binding could never be typed. */
+    @Test
+    void noChordIsAPrefixOfAnother() {
+        for (String resource : allKeymapResources()) {
+            Set<String> chords = load(resource).keySet();
+            for (String chord : chords) {
+                for (String other : chords) {
+                    assertFalse(
+                            other.startsWith(chord + " "),
+                            resource + ": '" + chord + "' is bound and is also the prefix of '" + other + "'");
+                }
+            }
+        }
+    }
+
     @Test
     void applyOverridesBlankValueUnbinds() {
         KeymapManager km = new KeymapManager();

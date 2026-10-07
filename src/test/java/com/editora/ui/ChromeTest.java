@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.util.List;
 import java.util.Set;
 
 import com.editora.ui.Chrome.PaletteGates;
@@ -365,10 +366,43 @@ class ChromeTest {
         Chrome.PaletteContext none = noBuffer();
         assertFalse(Chrome.contextEnabled("git.push", none));
         assertFalse(Chrome.contextEnabled("git.commit", none));
-        assertFalse(Chrome.contextEnabled("tool.commit", none));
         assertFalse(Chrome.contextEnabled("tool.gitLog", none));
         // Clone is exactly what you run when there is no repo yet.
         assertTrue(Chrome.contextEnabled("git.clone", none));
+    }
+
+    /**
+     * Commands that are needed precisely where there is no repository: a clone runs before one exists and
+     * must be stoppable; a git that cannot be found looks like "no repository", and the command that fixes
+     * its path must stay reachable; the branch dropdown and the Commit window both have a no-repository
+     * state that offers Clone.
+     */
+    @Test
+    void commandsNeededOutsideARepositoryStayEnabledThere() {
+        Chrome.PaletteContext none = noBuffer();
+        for (String id : List.of("git.cancel", "git.setCommand", "git.switchBranch", "git.init", "tool.commit")) {
+            assertTrue(Chrome.contextEnabled(id, none), id);
+        }
+    }
+
+    /** Abort / Continue / Skip have nothing to act on unless a merge, rebase, cherry-pick or revert is waiting. */
+    @Test
+    void theOperationCommandsNeedAnOperationInProgress() {
+        Chrome.PaletteContext idle =
+                new Chrome.PaletteContext(true, true, true, true, true, true, true, false, false, true, false);
+        Chrome.PaletteContext merging =
+                new Chrome.PaletteContext(true, true, true, true, true, true, true, false, false, true, true);
+        for (String id : List.of("git.continueOperation", "git.skipOperation", "git.abortOperation")) {
+            assertFalse(Chrome.contextEnabled(id, idle), id);
+            assertTrue(Chrome.contextEnabled(id, merging), id);
+            assertFalse(Chrome.contextEnabled(id, noBuffer()), id + " outside a repository");
+        }
+        // The pulls that get a diverged branch moving again are ordinary repository commands…
+        assertTrue(Chrome.contextEnabled("git.pullRebase", idle));
+        assertTrue(Chrome.contextEnabled("git.pullMerge", idle));
+        assertFalse(Chrome.contextEnabled("git.pullRebase", noBuffer()));
+        // …and the pull-mode preference can be set anywhere.
+        assertTrue(Chrome.contextEnabled("git.setPullMode", noBuffer()));
     }
 
     @Test

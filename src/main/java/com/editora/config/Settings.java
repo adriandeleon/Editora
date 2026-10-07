@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 108;
+    public static final int SCHEMA_VERSION = 112;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -186,6 +186,8 @@ public class Settings {
      *  never filtered. Defaults to {@code literals}, matching VS Code's Java extension: a hint on every
      *  argument of every call is mostly noise, the more so while hints render at end-of-line (#823). */
     private String inlayHintMode = "literals";
+    /** LSP code lenses — reference and implementation counts drawn after a declaration; default off. */
+    private boolean codeLens = false;
     /** Re-indent the current line when a language server's trigger character is typed ({@code ;}, {@code }},
      *  Enter). Default <b>off</b>: it acts on very common keystrokes and overlaps the local auto-indent
      *  assists, so it is opt-in until it has proven itself in the field (#740). */
@@ -264,12 +266,29 @@ public class Settings {
     private String ghPath = "";
     /** git command/path override; blank = the {@code git} found on the (augmented) PATH. */
     private String gitPath = "";
+    /**
+     * How {@code git pull} integrates the remote's commits: {@code ff-only} (the default, and what every
+     * version before this setting did), {@code rebase} or {@code merge}; see {@code git.GitPullMode}.
+     */
+    private String gitPullMode = "ff-only";
+    /**
+     * "Fetch automatically": a background {@code git fetch --prune} of the active repository every
+     * {@link #gitAutoFetchMinutes} minutes. Off by default — it is the only network traffic Editora would
+     * start on its own, and it only ever runs in a trusted folder or a repository the user has fetched,
+     * pulled or pushed in during the session (see ADR 0002).
+     */
+    private boolean gitAutoFetch = false;
+    /** Minutes between automatic fetches; at least 1. */
+    private int gitAutoFetchMinutes = 10;
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
     /** Local File History: on by default — silently snapshots local files on save/auto-save/external
      *  reload so prior versions can be browsed, diffed, and restored independently of VCS. */
     private boolean localHistory = true;
+    /** Crash recovery: on by default — while a buffer has unsaved changes a copy of its text is kept under
+     *  {@code <config>/recovery/} and offered back on the next launch if Editora did not close normally. */
+    private boolean crashRecovery = true;
     /** Max revisions kept per file (oldest pruned beyond this); ≤0 = unbounded. */
     private int historyMaxPerFile = 50;
     /** Max age in days for a revision (older pruned, newest always kept); ≤0 = no age limit. */
@@ -1329,6 +1348,14 @@ public class Settings {
         this.lspOnTypeFormatting = lspOnTypeFormatting;
     }
 
+    public boolean isCodeLens() {
+        return codeLens;
+    }
+
+    public void setCodeLens(boolean codeLens) {
+        this.codeLens = codeLens;
+    }
+
     public boolean isInlayHints() {
         return inlayHints;
     }
@@ -1660,6 +1687,33 @@ public class Settings {
         this.gitPath = gitPath == null ? "" : gitPath;
     }
 
+    public String getGitPullMode() {
+        return gitPullMode;
+    }
+
+    public void setGitPullMode(String gitPullMode) {
+        this.gitPullMode = gitPullMode == null || gitPullMode.isBlank() ? "ff-only" : gitPullMode.strip();
+    }
+
+    public boolean isGitAutoFetch() {
+        return gitAutoFetch;
+    }
+
+    public void setGitAutoFetch(boolean gitAutoFetch) {
+        this.gitAutoFetch = gitAutoFetch;
+    }
+
+    public int getGitAutoFetchMinutes() {
+        return gitAutoFetchMinutes;
+    }
+
+    public void setGitAutoFetchMinutes(int gitAutoFetchMinutes) {
+        this.gitAutoFetchMinutes = Math.max(1, Math.min(MAX_GIT_AUTO_FETCH_MINUTES, gitAutoFetchMinutes));
+    }
+
+    /** A day: beyond that "automatically" means nothing. */
+    public static final int MAX_GIT_AUTO_FETCH_MINUTES = 24 * 60;
+
     public boolean isGitBlameInline() {
         return gitBlameInline;
     }
@@ -1674,6 +1728,14 @@ public class Settings {
 
     public void setLocalHistory(boolean localHistory) {
         this.localHistory = localHistory;
+    }
+
+    public boolean isCrashRecovery() {
+        return crashRecovery;
+    }
+
+    public void setCrashRecovery(boolean crashRecovery) {
+        this.crashRecovery = crashRecovery;
     }
 
     public int getHistoryMaxPerFile() {

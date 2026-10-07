@@ -61,9 +61,16 @@ class MenuBarFxTest {
     void everyItemIsWiredToAnAction() throws Exception {
         MenuBar bar = bar();
         int wired = 0;
-        for (Menu menu : bar.getMenus()) {
-            for (MenuItem item : menu.getItems()) {
+        java.util.ArrayDeque<Menu> menus = new java.util.ArrayDeque<>(bar.getMenus());
+        while (!menus.isEmpty()) {
+            for (MenuItem item : menus.poll().getItems()) {
                 if (item instanceof SeparatorMenuItem) {
+                    continue;
+                }
+                if (item instanceof Menu submenu) {
+                    assertFalse(submenu.getText().isBlank(), "a submenu has no title");
+                    assertFalse(submenu.getItems().isEmpty(), "an empty submenu: " + submenu.getText());
+                    menus.add(submenu);
                     continue;
                 }
                 String text = MainMenuBar.displayTextOf(item);
@@ -73,7 +80,7 @@ class MenuBarFxTest {
             }
         }
         long modelled = MenuBarModel.menus().stream()
-                .flatMap(m -> m.entries().stream())
+                .flatMap(m -> m.allEntries().stream())
                 .filter(e -> !MenuBarModel.SEPARATOR.equals(e))
                 .count();
         assertEquals(modelled, wired, "every modelled command became an item");
@@ -143,13 +150,23 @@ class MenuBarFxTest {
     /** The label of the item bound to {@code commandId}, found by its position in the model. */
     private MenuItem itemFor(MenuBar bar, String commandId) {
         for (int m = 0; m < MenuBarModel.menus().size(); m++) {
-            var entries = MenuBarModel.menus().get(m).entries();
-            for (int i = 0; i < entries.size(); i++) {
-                if (commandId.equals(entries.get(i))) {
-                    return bar.getMenus().get(m).getItems().get(i);
-                }
+            MenuBarModel.MenuSpec spec = MenuBarModel.menus().get(m);
+            Menu menu = bar.getMenus().get(m);
+            MenuItem found = itemIn(spec.entries(), menu.getItems(), commandId);
+            // Submenus follow the entries, below one separator, in the model's order.
+            for (int s = 0; found == null && s < spec.submenus().size(); s++) {
+                Menu submenu = (Menu) menu.getItems().get(spec.entries().size() + 1 + s);
+                found = itemIn(spec.submenus().get(s).entries(), submenu.getItems(), commandId);
+            }
+            if (found != null) {
+                return found;
             }
         }
         return null;
+    }
+
+    private static MenuItem itemIn(java.util.List<String> entries, java.util.List<MenuItem> items, String commandId) {
+        int index = entries.indexOf(commandId);
+        return index < 0 ? null : items.get(index);
     }
 }

@@ -61,7 +61,7 @@ public final class StatusBar extends HBox {
     private final ProgressBar backgroundProgress = new ProgressBar(0);
 
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
-    /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
+    /** Git branch + ahead/behind, "No VCS" outside a repository, "Git off" when disabled; opens the dropdown. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
     /** GitHub PR CI checks roll-up (✓/✗/○ + fail count); clickable → refresh. Hidden unless the current
      *  branch has a PR with checks. */
@@ -468,20 +468,48 @@ public final class StatusBar extends HBox {
         gitFeatureEnabled = enabled;
         git.setDisable(!enabled);
         if (!enabled) {
+            gitInRepo = false;
             git.setText(tr("statusbar.gitOff"));
             git.getTooltip().setText(tr("statusbar.tip.gitDisabled"));
+        } else if (!gitInRepo) {
+            showNoVcs();
         }
         applyGitVisibility();
     }
 
     /**
-     * Updates the Git branch segment. Shown only when the active file is inside a repo: a {@code null}/blank
-     * {@code branch} (no version control for this file, or no file) <em>hides</em> the segment entirely;
-     * otherwise it shows {@code ⎇ branch} with optional {@code ↑ahead ↓behind}.
+     * "No VCS": Git is on but there is no repository here. Clicking opens the dropdown's Clone / Init. A
+     * folder git <em>refuses</em> to work in says so instead, with git's reason in the tooltip.
+     */
+    private void showNoVcs() {
+        if (gitRefusal.isEmpty()) {
+            git.setText(tr("statusbar.noVcs"));
+            git.getTooltip().setText(tr("statusbar.tip.gitNoVcs"));
+        } else {
+            git.setText(tr("statusbar.gitRefused"));
+            git.getTooltip().setText(tr("statusbar.tip.gitRefused", gitRefusal));
+        }
+    }
+
+    /** The branch part of the segment ({@code ⎇ main  ↑1}); the operation label is appended to it. */
+    private String gitBranchText = "";
+    /** The merge / rebase / cherry-pick / revert / bisect in progress, shown after the branch. */
+    private com.editora.git.GitOperation gitOperation = com.editora.git.GitOperation.NONE;
+    /** Git's reason for refusing to work in the folder, or {@code ""}. */
+    private String gitRefusal = "";
+
+    /**
+     * Updates the Git branch segment: {@code ⎇ branch} with optional {@code ↑ahead ↓behind} inside a
+     * repository, "No VCS" for a {@code null}/blank {@code branch} (no version control for this file, or no
+     * file). While Git is off the segment keeps saying so.
      */
     public void setGitBranch(String branch, int ahead, int behind) {
         if (branch == null || branch.isBlank()) {
             gitInRepo = false;
+            gitBranchText = "";
+            if (gitFeatureEnabled) {
+                showNoVcs();
+            }
             applyGitVisibility();
             return;
         }
@@ -492,15 +520,63 @@ public final class StatusBar extends HBox {
         if (behind > 0) {
             sb.append("  ↓").append(behind); // ↓
         }
-        git.setText(sb.toString());
-        git.getTooltip().setText(tr("statusbar.tip.gitBranch"));
+        gitBranchText = sb.toString();
         gitInRepo = true;
+        renderGitBranch();
         applyGitVisibility();
     }
 
-    /** The branch segment shows only when Git is on, the active file is in a repo, and not in Simple UI mode. */
+    /**
+     * Shows the operation the repository is in the middle of after the branch — {@code ⎇ main · MERGING} —
+     * so a half-finished merge or rebase is visible without opening the Commit window.
+     */
+    public void setGitOperation(com.editora.git.GitOperation operation) {
+        gitOperation = operation == null ? com.editora.git.GitOperation.NONE : operation;
+        if (gitInRepo && gitFeatureEnabled) {
+            renderGitBranch();
+        }
+    }
+
+    /**
+     * Git's reason for refusing to work in this folder (dubious ownership, a bare repository, …), or
+     * {@code ""}: outside a repository the segment then reads "Git: refused" with the reason in its tooltip
+     * rather than "No VCS", which sent people looking for a repository that was there all along.
+     */
+    public void setGitRefusal(String reason) {
+        gitRefusal = reason == null ? "" : reason.strip();
+        if (!gitInRepo && gitFeatureEnabled) {
+            showNoVcs();
+        }
+    }
+
+    private void renderGitBranch() {
+        String label = gitOperationLabel(gitOperation.kind());
+        git.setText(label.isEmpty() ? gitBranchText : gitBranchText + " · " + label);
+        git.getTooltip()
+                .setText(
+                        label.isEmpty()
+                                ? tr("statusbar.tip.gitBranch")
+                                : tr("statusbar.tip.gitOperation", GitCoordinator.operationName(gitOperation.kind())));
+    }
+
+    /** The segment's label for an operation in progress ({@code MERGING}, …); {@code ""} for none. */
+    static String gitOperationLabel(com.editora.git.GitOperation.Kind kind) {
+        return switch (kind) {
+            case NONE -> "";
+            case MERGE -> tr("statusbar.git.merging");
+            case REBASE -> tr("statusbar.git.rebasing");
+            case CHERRY_PICK -> tr("statusbar.git.cherryPicking");
+            case REVERT -> tr("statusbar.git.reverting");
+            case BISECT -> tr("statusbar.git.bisecting");
+        };
+    }
+
+    /**
+     * The segment is part of the bar in every Git state — branch, "No VCS" or "Git off" — so the dropdown
+     * (and with it Clone and Init) is always one click away. Simple UI mode has no Git at all and hides it.
+     */
     private void applyGitVisibility() {
-        boolean vis = gitFeatureEnabled && gitInRepo && !simpleMode;
+        boolean vis = !simpleMode;
         git.setVisible(vis);
         git.setManaged(vis);
     }
@@ -719,7 +795,7 @@ public final class StatusBar extends HBox {
         }
         refreshPositionAndCsv(buffer, buffer.getFocusedArea());
         language.setText(displayLanguage(buffer.getLanguage()));
-        endings.setText(buffer.getLineEnding());
+        endings.setText(MixedLineEndings.label(buffer)); // "Mixed (LF)" while the file on disk mixes them
         refreshSize(buffer);
     }
 

@@ -32,6 +32,107 @@ public final class DiffParser {
 
     private DiffParser() {}
 
+    /**
+     * One hunk of a {@code -U0} diff with its exact lines: the header's four numbers (1-based, as git prints
+     * them) and the removed / added lines without their {@code -}/{@code +} marker or terminator.
+     *
+     * @param oldUnterminated the last removed line is the old file's last line and had no final newline
+     * @param newUnterminated the same for the last added line and the new file
+     */
+    public record Hunk(
+            int oldStart,
+            int oldCount,
+            int newStart,
+            int newCount,
+            List<String> removed,
+            List<String> added,
+            boolean oldUnterminated,
+            boolean newUnterminated) {
+
+        public Hunk {
+            removed = List.copyOf(removed);
+            added = List.copyOf(added);
+        }
+
+        public ChangeType type() {
+            return newCount == 0 ? ChangeType.DELETED : oldCount == 0 ? ChangeType.ADDED : ChangeType.MODIFIED;
+        }
+
+        /** The first 0-based new-file line the gutter marks for this hunk (see {@link DiffParser}). */
+        public int markerLine() {
+            return newCount == 0 ? Math.max(0, newStart) : newStart - 1;
+        }
+
+        /** How many new-file lines the gutter marks: the added lines, or one for a pure deletion. */
+        public int markerCount() {
+            return Math.max(1, newCount);
+        }
+    }
+
+    /**
+     * Parses every hunk of a {@code -U0} diff of <em>one</em> file with its line text, in document order.
+     * A removed/added line keeps a trailing {@code \r} when the file has CRLF endings — the caller decides
+     * what that means for its text model.
+     */
+    public static List<Hunk> parseHunks(String diff) {
+        List<Hunk> out = new ArrayList<>();
+        if (diff == null || diff.isBlank()) {
+            return out;
+        }
+        String[] lines = diff.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            Matcher m = HUNK.matcher(lines[i]);
+            if (!m.find()) {
+                continue;
+            }
+            int oldCount = m.group(2) == null ? 1 : Integer.parseInt(m.group(2));
+            int newCount = m.group(4) == null ? 1 : Integer.parseInt(m.group(4));
+            List<String> removed = new ArrayList<>();
+            List<String> added = new ArrayList<>();
+            boolean oldUnterminated = false;
+            boolean newUnterminated = false;
+            // Counted, not scanned to the next non-+/- line: the header says exactly how many lines follow.
+            int j = i + 1;
+            while (j < lines.length && (removed.size() < oldCount || added.size() < newCount)) {
+                String l = lines[j];
+                if (l.startsWith("-") && removed.size() < oldCount) {
+                    removed.add(l.substring(1));
+                } else if (l.startsWith("+") && added.size() < newCount) {
+                    added.add(l.substring(1));
+                } else if (l.startsWith("\\")) {
+                    if (added.isEmpty()) {
+                        oldUnterminated = true;
+                    } else {
+                        newUnterminated = true;
+                    }
+                } else {
+                    break;
+                }
+                j++;
+            }
+            if (j < lines.length && lines[j].startsWith("\\")) {
+                if (added.isEmpty()) {
+                    oldUnterminated = true;
+                } else {
+                    newUnterminated = true;
+                }
+            }
+            if (removed.size() == oldCount && added.size() == newCount) {
+                out.add(new Hunk(
+                        Integer.parseInt(m.group(1)),
+                        oldCount,
+                        Integer.parseInt(m.group(3)),
+                        newCount,
+                        removed,
+                        added,
+                        oldUnterminated,
+                        newUnterminated));
+            }
+            i = j - 1;
+        }
+        return out;
+    }
+
     /** Parses every hunk header in {@code diff} into new-file change ranges, in document order. */
     public static List<LineChange> parse(String diff) {
         List<LineChange> out = new ArrayList<>();

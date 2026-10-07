@@ -27,17 +27,19 @@ import com.editora.search.FuzzyMatch;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * IntelliJ-style branch dropdown: a search field over a sectioned list of <em>actions</em> (New Branch,
- * Fetch, Pull, Push, Commit…) plus <em>Local</em> and <em>Remote</em> branches. Typing filters branches
- * <em>and</em> actions together; ↑/↓ navigate (skipping section headers), Enter activates, Esc closes.
- * Anchored just above the status-bar branch segment.
+ * IntelliJ-style branch dropdown: a search field over a sectioned list — the <em>Local</em> branches (the
+ * current one first), the <em>Remote</em> branches, then the <em>actions</em> (New Branch, Pull, Fetch,
+ * Push, Stash, Commit…). Branches come first because they are what the dropdown is opened for: with the
+ * seven action rows on top, the current branch sat below the fold at the default height. Typing filters
+ * branches <em>and</em> actions together; ↑/↓ navigate (skipping section headers, and wrapping — so ↑ from
+ * the current branch lands on the last action), Enter activates, Esc closes. A row is activated by a click
+ * on that row only. Anchored just above the status-bar branch segment.
  *
  * <p>Pure view: the owner supplies the branch lists and the action/checkout callbacks via
  * {@link #show}. Modeled on {@link QuickOpen} (popup + filtered {@link ListView}).
  */
 public final class BranchPopup {
 
-    /** A non-branch action shown at the top (label + optional shortcut hint + handler). */
     /**
      * One of the popup's command rows.
      *
@@ -46,6 +48,17 @@ public final class BranchPopup {
      * actions, so picking icons independently would let them drift apart for no reason.
      */
     public record MenuAction(String label, String commandId, Runnable run) {}
+
+    /** The branch a row stands for, as handed to the owner when it is asked for that row's actions. */
+    public record BranchRef(String name, boolean remote, boolean current, String upstream, boolean gone) {}
+
+    /**
+     * One entry of a branch row's secondary menu (rename, merge, delete…). {@code danger} marks an action
+     * that destroys something; {@link #SEPARATOR} draws a line between groups.
+     */
+    public record RowAction(String label, boolean danger, Runnable run) {
+        public static final RowAction SEPARATOR = new RowAction("", false, () -> {});
+    }
 
     private sealed interface Row permits Header, ActionRow, BranchRow {}
 
@@ -82,17 +95,21 @@ public final class BranchPopup {
     private VBox content;
     private boolean showing;
 
+    /** Supplies a branch row's secondary actions; the rows carry no menu while this answers nothing. */
+    private java.util.function.Function<BranchRef, List<RowAction>> rowActions = branch -> List.of();
+
+    /** The secondary menu that is up, so a second request (or hiding the dropdown) can take it down. */
+    private javafx.scene.control.ContextMenu rowMenu;
+
     public BranchPopup() {
         search.setPromptText(tr("branchpopup.searchPrompt"));
         list.setItems(items);
         list.setPrefHeight(360);
         list.setFocusTraversable(false);
+        // Activation by mouse belongs to the cell (see RowCell): a handler on the list fired for a click
+        // anywhere inside it — a section header, the empty space under the rows — and ran whichever row
+        // happened to be selected, i.e. checked out a branch nobody clicked.
         list.setCellFactory(v -> new RowCell());
-        list.setOnMouseClicked(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                activate(list.getSelectionModel().getSelectedItem());
-            }
-        });
 
         search.textProperty().addListener((o, a, b) -> filter(b));
         search.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
@@ -144,14 +161,39 @@ public final class BranchPopup {
             List<MenuAction> actions,
             Consumer<String> onCheckoutLocal,
             Consumer<String> onCheckoutRemote) {
+        show(
+                owner,
+                anchor,
+                current,
+                local,
+                remote,
+                List.of(),
+                remoteUrl,
+                actions,
+                onCheckoutLocal,
+                onCheckoutRemote,
+                branch -> List.of());
+    }
+
+    /**
+     * As above, with the remotes' names — more than one groups the remote branches under a header per
+     * remote — and the supplier of each branch row's secondary actions (shown from the row's "more" button,
+     * a right-click, or the Menu key / Shift+F10 on the selected row).
+     */
+    public void show(
+            Window owner,
+            Node anchor,
+            String current,
+            List<com.editora.git.GitService.BranchInfo> local,
+            List<String> remote,
+            List<String> remoteNames,
+            String remoteUrl,
+            List<MenuAction> actions,
+            Consumer<String> onCheckoutLocal,
+            Consumer<String> onCheckoutRemote,
+            java.util.function.Function<BranchRef, List<RowAction>> rowActions) {
+        this.rowActions = rowActions == null ? branch -> List.of() : rowActions;
         List<Row> rows = new ArrayList<>();
-        // The chord beside an action comes from the live keymap, never from the caller: a hardcoded "C-x g"
-        // was only true of the Emacs keymap.
-        var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
-        for (MenuAction a : actions) {
-            String chord = keymap == null ? null : keymap.displayChord(a.commandId());
-            rows.add(new ActionRow(a.label(), chord == null ? "" : chord, a.commandId(), a.run()));
-        }
         rows.add(new Header(tr("branchpopup.local")));
         List<com.editora.git.GitService.BranchInfo> locals = new ArrayList<>(local);
         locals.sort((x, y) -> {
@@ -175,12 +217,21 @@ public final class BranchPopup {
                     b.gone(),
                     cur ? this::hide : () -> onCheckoutLocal.accept(b.name())));
         }
-        if (!remote.isEmpty()) {
-            rows.add(new Header(tr("branchpopup.remote")));
-            List<String> rem = new ArrayList<>(remote);
-            rem.sort(String.CASE_INSENSITIVE_ORDER);
-            for (String b : rem) {
+        for (var group : remoteGroups(remote, remoteNames).entrySet()) {
+            rows.add(new Header(
+                    group.getKey().isEmpty() ? tr("branchpopup.remote") : tr("branchpopup.remoteOf", group.getKey())));
+            for (String b : group.getValue()) {
                 rows.add(new BranchRow(b, true, false, "", 0, 0, false, () -> onCheckoutRemote.accept(b)));
+            }
+        }
+        if (!actions.isEmpty()) {
+            rows.add(new Header(tr("branchpopup.actions")));
+            // The chord beside an action comes from the live keymap, never from the caller: a hardcoded
+            // "C-x g" was only true of the Emacs keymap.
+            var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+            for (MenuAction a : actions) {
+                String chord = keymap == null ? null : keymap.displayChord(a.commandId());
+                rows.add(new ActionRow(a.label(), chord == null ? "" : chord, a.commandId(), a.run()));
             }
         }
         titleLabel.setText(tr("branchpopup.title"));
@@ -190,6 +241,34 @@ public final class BranchPopup {
         remoteUrlLabel.setTooltip(shownUrl.isBlank() ? null : new Tooltip(shownUrl));
         all = rows;
         present(owner, anchor);
+    }
+
+    /**
+     * The remote branches as the sections they are listed in: one section (keyed {@code ""}, the plain
+     * "Remote" header) while they all live on one remote, else one per remote in name order, each sorted.
+     * Pure.
+     */
+    static java.util.Map<String, List<String>> remoteGroups(List<String> remote, List<String> remoteNames) {
+        java.util.Map<String, List<String>> byRemote = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (String branch : remote) {
+            var split = com.editora.git.GitRemotes.split(branch, remoteNames);
+            byRemote.computeIfAbsent(split == null ? "" : split.remote(), r -> new ArrayList<>())
+                    .add(branch);
+        }
+        java.util.Map<String, List<String>> groups = new java.util.LinkedHashMap<>();
+        if (byRemote.size() <= 1) {
+            List<String> all = new ArrayList<>(remote);
+            all.sort(String.CASE_INSENSITIVE_ORDER);
+            if (!all.isEmpty()) {
+                groups.put("", all);
+            }
+            return groups;
+        }
+        byRemote.forEach((name, branches) -> {
+            branches.sort(String.CASE_INSENSITIVE_ORDER);
+            groups.put(name, branches);
+        });
+        return groups;
     }
 
     /**
@@ -209,7 +288,7 @@ public final class BranchPopup {
         if (overlayHost == null) {
             return;
         }
-        hint.setText(PickerKeys.legend(PickerKeys.hint("select", "↵")));
+        hint.setText(PickerKeys.legend(PickerKeys.hint("select", "↵"), tr("branchpopup.moreHint")));
         search.clear();
         filter("");
         showing = true;
@@ -220,6 +299,7 @@ public final class BranchPopup {
     }
 
     public void hide() {
+        hideRowMenu();
         if (overlayHost != null) {
             overlayHost.hide();
         }
@@ -266,7 +346,7 @@ public final class BranchPopup {
         for (int i = 0; i < items.size(); i++) {
             if (!(items.get(i) instanceof Header)) {
                 list.getSelectionModel().select(i);
-                list.scrollTo(i);
+                list.scrollTo(0); // from the top: the section header above the first row stays in view
                 return;
             }
         }
@@ -274,6 +354,13 @@ public final class BranchPopup {
     }
 
     private void onKey(KeyEvent e) {
+        // The Menu key (and Shift+F10, its keyboard twin) opens the selected branch's secondary actions.
+        if (e.getCode() == javafx.scene.input.KeyCode.CONTEXT_MENU
+                || (e.getCode() == javafx.scene.input.KeyCode.F10 && e.isShiftDown())) {
+            showRowMenuForSelection();
+            e.consume();
+            return;
+        }
         PickerKeys.Action action = PickerKeys.action(e);
         switch (action) {
             case CANCEL -> hide();
@@ -298,14 +385,108 @@ public final class BranchPopup {
         }
     }
 
+    private static BranchRef refOf(BranchRow row) {
+        return new BranchRef(row.name(), row.remote(), row.current(), row.upstream(), row.gone());
+    }
+
+    /** The secondary actions of the branch named {@code name} in the shown list; empty when it has none. */
+    List<RowAction> rowActionsFor(String name) {
+        for (Row row : all) {
+            if (row instanceof BranchRow branch && branch.name().equals(name)) {
+                return rowActions.apply(refOf(branch));
+            }
+        }
+        return List.of();
+    }
+
+    /** Runs a secondary action the way a row is activated: the dropdown closes first. */
+    void runRowAction(RowAction action) {
+        hide();
+        action.run().run();
+    }
+
+    private void hideRowMenu() {
+        if (rowMenu != null) {
+            rowMenu.hide();
+            rowMenu = null;
+        }
+    }
+
+    /** Opens the secondary menu of the selected row, under that row's cell. */
+    private void showRowMenuForSelection() {
+        int index = list.getSelectionModel().getSelectedIndex();
+        if (index < 0 || !(items.get(index) instanceof BranchRow row)) {
+            return;
+        }
+        Node anchor = list;
+        for (Node node : list.lookupAll(".list-cell")) {
+            if (node instanceof ListCell<?> cell && !cell.isEmpty() && cell.getIndex() == index) {
+                anchor = cell;
+                break;
+            }
+        }
+        showRowMenu(row, anchor, javafx.geometry.Side.BOTTOM, 24, 0);
+    }
+
+    /** Builds and shows {@code row}'s secondary menu beside {@code anchor}; nothing when it has no actions. */
+    private void showRowMenu(BranchRow row, Node anchor, javafx.geometry.Side side, double dx, double dy) {
+        hideRowMenu();
+        List<RowAction> actions = rowActions.apply(refOf(row));
+        if (actions.isEmpty()) {
+            return;
+        }
+        javafx.scene.control.ContextMenu menu = new javafx.scene.control.ContextMenu();
+        for (RowAction action : actions) {
+            if (action == RowAction.SEPARATOR) {
+                menu.getItems().add(new javafx.scene.control.SeparatorMenuItem());
+                continue;
+            }
+            javafx.scene.control.MenuItem item = new javafx.scene.control.MenuItem(action.label());
+            if (action.danger()) {
+                item.getStyleClass().add("danger");
+            }
+            item.setOnAction(e -> runRowAction(action));
+            menu.getItems().add(item);
+        }
+        rowMenu = menu;
+        menu.show(anchor, side, dx, dy);
+    }
+
     /** Width of the leading icon column — the menu bar's {@code ICON_COLUMN}, so both read alike. */
     private static final double ICON_COLUMN = 22;
 
+    /** Whether a click or Enter on {@code row} does something: a real action or branch, never a header. */
+    private static boolean activatable(Row row) {
+        return row instanceof ActionRow || row instanceof BranchRow;
+    }
+
     private final class RowCell extends ListCell<Row> {
+        RowCell() {
+            // Only a primary click on this cell, and only while it shows an action or a branch.
+            setOnMouseClicked(e -> {
+                Row row = getItem();
+                if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && activatable(row)) {
+                    activate(row);
+                    e.consume();
+                }
+            });
+            // A right-click (or the platform's context-menu gesture) on a branch opens its secondary menu.
+            setOnContextMenuRequested(e -> {
+                if (!isEmpty() && getItem() instanceof BranchRow row) {
+                    list.getSelectionModel().select(getIndex());
+                    showRowMenu(row, this, javafx.geometry.Side.BOTTOM, e.getX(), e.getY() - getHeight());
+                    e.consume();
+                }
+            });
+        }
+
         @Override
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
             getStyleClass().removeAll("branch-popup-header");
+            // Cells are recycled: a cell that last showed a branch must not keep describing it while it
+            // shows an action, a header or nothing.
+            setTooltip(null);
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);
@@ -390,31 +571,36 @@ public final class BranchPopup {
                     : (br.gone() ? tr("branchpopup.gone", br.upstream()) : br.upstream());
             Label up = new Label(detail);
             up.getStyleClass().add("branch-upstream");
+            if (br.gone()) {
+                up.getStyleClass().add("branch-gone"); // the upstream was deleted: this branch is a leftover
+            }
+            // The visible way into the secondary actions; right-click and the Menu key reach the same menu.
+            javafx.scene.control.Button more = new javafx.scene.control.Button("\u22ef");
+            more.getStyleClass().addAll("flat", "branch-more");
+            more.setFocusTraversable(false);
+            more.setAccessibleText(tr("branchpopup.more", br.name()));
+            more.setTooltip(new Tooltip(tr("branchpopup.more", br.name())));
+            more.setOnAction(e -> {
+                list.getSelectionModel().select(getIndex());
+                showRowMenu(br, more, javafx.geometry.Side.BOTTOM, 0, 0);
+            });
+            // A click on the button is not a click on the row: it must not check the branch out.
+            more.setOnMouseClicked(javafx.event.Event::consume);
 
             // The check moves into the shared leading column: as a "✓ " text prefix it shifted the current
             // branch's name out of line with every other row's.
             Node mark = br.current() ? Icons.check() : null;
-            HBox box = new HBox(0, iconColumn(mark), left, spacer, up);
+            HBox box = new HBox(0, iconColumn(mark), left, spacer, up, more);
             HBox.setMargin(left, new javafx.geometry.Insets(0, 0, 0, 8));
             HBox.setMargin(up, new javafx.geometry.Insets(0, 0, 0, 18));
+            HBox.setMargin(more, new javafx.geometry.Insets(0, 0, 0, 6));
             box.setAlignment(Pos.CENTER_LEFT);
             setTooltip(new Tooltip(branchTooltip(br)));
             return box;
         }
 
-        /** "↓N ↑M" incoming/outgoing badge (capped at 99+), or empty when up to date / no upstream. */
         private String trackBadge(BranchRow br) {
-            StringBuilder sb = new StringBuilder();
-            if (br.behind() > 0) {
-                sb.append("↓").append(cap(br.behind()));
-            }
-            if (br.ahead() > 0) {
-                if (sb.length() > 0) {
-                    sb.append(' ');
-                }
-                sb.append("↑").append(cap(br.ahead()));
-            }
-            return sb.toString();
+            return BranchPopup.trackBadge(br.ahead(), br.behind());
         }
 
         private String branchTooltip(BranchRow br) {
@@ -428,12 +614,7 @@ public final class BranchPopup {
                 sb.append("\n").append(tr("branchpopup.tip.tracks", br.upstream()));
                 if (br.gone()) {
                     sb.append(tr("branchpopup.tip.goneSuffix"));
-                }
-                if (br.behind() > 0) {
-                    sb.append("\n")
-                            .append(tr(
-                                    br.behind() == 1 ? "branchpopup.tip.incoming.one" : "branchpopup.tip.incoming.many",
-                                    br.behind()));
+                    sb.append("\n").append(tr("branchpopup.tip.goneHint"));
                 }
                 if (br.ahead() > 0) {
                     sb.append("\n")
@@ -441,15 +622,40 @@ public final class BranchPopup {
                                     br.ahead() == 1 ? "branchpopup.tip.outgoing.one" : "branchpopup.tip.outgoing.many",
                                     br.ahead()));
                 }
+                if (br.behind() > 0) {
+                    sb.append("\n")
+                            .append(tr(
+                                    br.behind() == 1 ? "branchpopup.tip.incoming.one" : "branchpopup.tip.incoming.many",
+                                    br.behind()));
+                }
                 if (br.ahead() == 0 && br.behind() == 0 && !br.gone()) {
                     sb.append("\n").append(tr("branchpopup.tip.upToDate"));
                 }
             }
             return sb.toString();
         }
+    }
 
-        private String cap(int n) {
-            return n > 99 ? "99+" : Integer.toString(n);
+    /**
+     * "↑M ↓N" outgoing/incoming badge (each capped at 99+), or empty when up to date / no upstream. Ahead
+     * first, then behind — the order the status bar and the Commit window use, so one glance reads the same
+     * everywhere.
+     */
+    static String trackBadge(int ahead, int behind) {
+        StringBuilder sb = new StringBuilder();
+        if (ahead > 0) {
+            sb.append("↑").append(cap(ahead));
         }
+        if (behind > 0) {
+            if (sb.length() > 0) {
+                sb.append(' ');
+            }
+            sb.append("↓").append(cap(behind));
+        }
+        return sb.toString();
+    }
+
+    private static String cap(int n) {
+        return n > 99 ? "99+" : Integer.toString(n);
     }
 }

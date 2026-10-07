@@ -82,6 +82,13 @@ final class NotesCoordinator {
 
         /** Persists {@code notes.json}. */
         void saveNotes();
+
+        /**
+         * This window rewrote {@code fileKey}'s notes ({@code null}: several files) in {@code bucket} (one of
+         * the per-project maps of {@link #allNotes}): the other windows re-read them (see
+         * {@link NotesCoordinator#storeChangedElsewhere}).
+         */
+        default void notesStored(Map<String, ?> bucket, String fileKey) {}
     }
 
     /** A note plus the store key (file) it belongs to, for the cross-file pickers. */
@@ -103,6 +110,12 @@ final class NotesCoordinator {
      *  whenever a second buffer was edited inside the same debounce window. */
     private final java.util.Set<EditorBuffer> pendingPersist =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+    /**
+     * The note ids each buffer last saw in the store for its file (when it loaded or wrote them): what
+     * {@link MarkMerge} needs to tell "this buffer deleted it" from "another window added it".
+     */
+    private final Map<EditorBuffer, java.util.Set<java.util.UUID>> seenInStore = new java.util.WeakHashMap<>();
 
     NotesCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -241,6 +254,7 @@ final class NotesCoordinator {
         ops.notes().put(key, updated);
         ops.saveNotes();
         refreshViews();
+        ops.notesStored(ops.notes(), key); // another window may have the file open
     }
 
     List<PersonalNote> notesFor(Path file) {
@@ -383,14 +397,42 @@ final class NotesCoordinator {
             return;
         }
         String key = ops.noteKey(buffer);
-        List<PersonalNote> snap = buffer.getNoteManager().snapshot();
         var map = ops.notes();
+        List<PersonalNote> stored = map.get(key);
+        // Not the snapshot alone: a second window on this file has its own copy of the notes, and writing
+        // this one as the whole list deleted every note the other had added.
+        List<PersonalNote> snap = MarkMerge.withForeign(
+                stored, seenInStore.get(buffer), buffer.getNoteManager().snapshot(), PersonalNote::id);
         if (snap.isEmpty()) {
             map.remove(key);
         } else {
-            map.put(key, NoteStore.mergePreservingOrder(map.get(key), snap));
+            map.put(key, NoteStore.mergePreservingOrder(stored, snap));
         }
+        seenInStore.put(buffer, MarkMerge.keys(map.get(key), PersonalNote::id));
         ops.saveNotes();
+        refreshViews();
+        ops.notesStored(map, key);
+    }
+
+    /**
+     * Another window rewrote {@code fileKey}'s notes ({@code null}: several files) in {@code bucket}. A
+     * buffer of this window on that file shows them now — it would otherwise keep its stale copy and write
+     * it back — and the panel, which lists every project's notes, is redrawn.
+     */
+    void storeChangedElsewhere(Map<String, ?> bucket, String fileKey) {
+        if (isEnabled() && bucket == ops.notes()) {
+            host.forEachBuffer(b -> {
+                if (b.getPath() == null || b.isNarrowed()) {
+                    return; // a narrowed buffer's lines are region-relative; it merges when it next writes
+                }
+                String key = ops.noteKey(b);
+                if (fileKey == null || fileKey.equals(key)) {
+                    List<PersonalNote> stored = ops.notes().get(key);
+                    b.applyNotes(stored);
+                    seenInStore.put(b, MarkMerge.keys(stored, PersonalNote::id));
+                }
+            });
+        }
         refreshViews();
     }
 
@@ -413,6 +455,7 @@ final class NotesCoordinator {
             }
         }
         boolean moved = buffer.applyNotes(saved);
+        seenInStore.put(buffer, MarkMerge.keys(saved, PersonalNote::id));
         if (moved || rekeyed) {
             persistNotes(buffer); // self-heal corrected positions / re-key / orphan status
         } else {
@@ -430,6 +473,7 @@ final class NotesCoordinator {
         if (RenamedFileState.rekey(ops.notes(), oldKey, PathKeys.canonicalKey(target), sep)) {
             ops.saveNotes();
             refreshViews();
+            ops.notesStored(ops.notes(), null);
         }
     }
 
@@ -457,6 +501,8 @@ final class NotesCoordinator {
         boolean any = !buffer.getNoteManager().snapshot().isEmpty();
         if (now != null && !now.equals(oldPath) && (any || map.containsKey(ops.noteKey(buffer)))) {
             pendingPersist.remove(buffer);
+            // The buffer now IS this file: notes stored for a file it overwrote are replaced, not merged in.
+            seenInStore.put(buffer, MarkMerge.keys(map.get(ops.noteKey(buffer)), PersonalNote::id));
             persistNotes(buffer);
         }
     }
@@ -738,6 +784,7 @@ final class NotesCoordinator {
             if (bucket != null && bucket.remove(fileKey) != null) {
                 ops.saveNotes();
                 refreshViews();
+                ops.notesStored(bucket, fileKey); // another window may have that file open
             }
         }
     }
@@ -776,6 +823,7 @@ final class NotesCoordinator {
         }
         ops.saveNotes();
         refreshViews();
+        ops.notesStored(map, fileKey); // another window may have that file open
     }
 
     void exportNotes() {

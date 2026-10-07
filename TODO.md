@@ -45,6 +45,22 @@ A backlog of planned features and improvements. Unordered within each section.
       strict live probe when evaluating server updates.
 
 ## Recently shipped
+- [x] **Commit options, bulk actions and the remaining Git items** — in the Commit window: Amend (names the
+      commit, prefills its message, message-only amend, in-place warning when it is already pushed), Commit
+      and Push, Sign-off (per repository, session), *Undo Last Commit*, a subject/body length guide, the last
+      20 messages per repository, `commit.template`, Unstage All / Discard All, group-row menus, Space to
+      stage/unstage, and per-file `+/−` line counts; `--autostash` for rebase and merge pulls; "Fetch
+      automatically" (off by default; trusted folder or a repository the user fetched/pulled/pushed in this
+      session; never prompts — ADR 0002); clone options (branch, depth, submodules); *Create Patch* on a Git
+      Log row. Cleanup: the VCS menu in submenus, one ref-name validator (`GitRefNames`), one conflict
+      classifier, a Git console that only comes forward for network commands and failures, a cancellable
+      history search, rebase-aware "accept side" labels, a selectable commit message in the Git Log.
+      Settings schema 110→111 (additive ×2). i18n ×6.
+- [ ] Git follow-ups left by that pass: persist the recent commit messages (they are session memory —
+      no existing store fitted; a small `git-commit-messages.json` would), a real wrap-column ruler in the
+      message box (needs a monospaced box), `GitStatus` knowing an unborn branch so Amend can be disabled
+      rather than refused on click, auto-fetch of *every* open repository rather than the active one, and
+      "delete tag on remote".
 - [x] Preserve preceding save identities in queued autosaves across UI acknowledgment, with deterministic
       coverage for both successful persistence and same-metadata external-change protection.
 - [x] **Global and project settings use JSON instead of TOML** — `settings.json` now shares the same
@@ -209,7 +225,19 @@ A backlog of planned features and improvements. Unordered within each section.
       `ui/MultiSelectPicker` (checkbox card in the shared `OverlayHost`) — `QuickOpen` picks exactly one.
       *Deferred to a follow-up: accessors (`advancedGenerateAccessorsSupport` — these work **today** with no
       flag, so declaring it early is a regression, not a gap), delegate methods (two-level field→methods
-      payload) and extract interface (two-stage: members, then destination package).*
+      payload) and extract interface (two-stage: members, then destination package).* — done, see the
+      next entry.
+- [x] **Client-driven jdtls refactorings, the remaining generate prompts, code lenses, nested tests** —
+      accessors and delegate methods are driven by `JdtlsGenerate`; `lsp/JdtlsRefactor` carries out
+      `java.action.applyRefactoringCommand` (Move ×4, Extract Interface, Change Signature, and the extract
+      refactorings `advancedExtractRefactoringSupport` turns into that command — jdtls offers Extract
+      Interface only with that flag too). Change Signature was offered before, with no flag, and failed.
+      Shapes read off jdtls 1.61 and pinned by the opt-in `JdtlsRefactorProbeTest`. Code lenses
+      (`Settings.codeLens`, schema 108→109) ride the inlay mechanism at end of line; `JavaTestScanner`
+      reports `Outer$Inner` targets.
+      *Not done: the rename jdtls proposes after an extract (`RefactorWorkspaceEdit.command`) is ignored;
+      `inferSelectionSupport` (extract with no selection), Introduce Parameter and the ambiguous-import
+      chooser are not declared; a Change Signature preview.*
 - [x] **Go to Implementation / Type Definition / Declaration** (#735, #736) — the three navigation requests
       every registered server advertises and none of which Editora sent. `LspManager.requestDefinition`
       generalized into a shared `requestLocations` walk parameterized by which session method runs, so all
@@ -1365,9 +1393,10 @@ A backlog of planned features and improvements. Unordered within each section.
       `docs/plugins.md`
 - [x] Git history, blame & stash (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h` / *Show File
       History*): browse commits, see a commit's files, double-click for a read-only diff, right-click to
-      Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame** (`M-g a`,
-      GitLens-style "author, time ago • summary" on the current line; off by default). **Stash**
-      push/pop/apply/drop (palette + branch dropdown). All Git-gated (off in Simple UI mode)
+      Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Blame** (`M-g a`: a gutter
+      column with each line's author and commit date, shaded by age; off by default). **Stash**
+      push/pop/apply/drop (palette + VCS menu; the branch dropdown offers stash and unstash). All
+      Git-gated (off in Simple UI mode)
 - [x] Simple UI mode — a one-toggle minimal layout (toolbar icon, **View: Toggle Simple UI Mode**,
       Settings → Application, or `--simple`): hides the extra toolbar groups (new-from-template, recent,
       find-in-files, split, project selector), the tool-window stripe, breadcrumb, the entire gutter

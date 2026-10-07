@@ -65,4 +65,11 @@ class TestSupportTest {
         assertTrue(TestResultParsers.isFileBased(BuildTool.GRADLE));
         assertFalse(TestResultParsers.isFileBased(BuildTool.GO));
     }
+
+    @Test
+    void aNestedClassIsShownWithItsOuterClass() {
+        assertEquals("OrderTest.WhenEmpty", TestSourceLocator.displayName("com.x.OrderTest$WhenEmpty"));
+        assertEquals("OrderTest", TestSourceLocator.displayName("com.x.OrderTest"));
+        assertEquals("Bare", TestSourceLocator.displayName("Bare"));
+    }
 }

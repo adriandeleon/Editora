@@ -174,7 +174,7 @@ final class OverlayPalette {
         return Color.color(c.getRed(), c.getGreen(), c.getBlue(), Math.min(1, opacity));
     }
 
-    private static Color backgroundOf(Region area) {
+    static Color backgroundOf(Region area) {
         Background background = area.getBackground();
         if (background != null && !background.getFills().isEmpty()) {
             Paint fill = background.getFills().get(0).getFill();

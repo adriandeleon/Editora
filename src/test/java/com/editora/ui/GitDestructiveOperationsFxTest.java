@@ -86,7 +86,10 @@ class GitDestructiveOperationsFxTest {
             assertEquals("other branch disk text\n", Files.readString(dirtyFile));
             assertFalse(Files.exists(deletedFile));
             assertEquals("recoverable from main\n", FxTestSupport.callOnFx(deleted::getContent));
-            assertFalse(FxTestSupport.callOnFx(deleted::isDirty));
+            SaveGuardsFxTest.awaitOnFx(async, "the removed file's open copy to be marked", deleted::isDirty);
+            assertTrue(
+                    FxTestSupport.callOnFx(deleted::isDirty),
+                    "the working tree no longer has this file: its open copy must not close as if it were saved");
         }
     }
 
@@ -200,7 +203,7 @@ class GitDestructiveOperationsFxTest {
     }
 
     @Test
-    void stashPopConflictReportsFailureRetainsTheStashAndReloadsCleanBuffer(@TempDir Path dir) throws Exception {
+    void stashPopConflictSaysTheStashWasKeptAndReloadsCleanBuffer(@TempDir Path dir) throws Exception {
         Path repo = initRepo(dir);
         Path file = Files.writeString(repo.resolve("story.txt"), "base\n");
         commitAll(repo, "base");
@@ -213,11 +216,12 @@ class GitDestructiveOperationsFxTest {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             EditorBuffer buffer = open(fx.controller, file);
             GitCoordinator coordinator = applyRepo(fx, repo, "main");
-            CountDownLatch failed = watchStatus(fx, tr("status.git.opFailed")::equals);
+            // Not "Git command failed" in an error dialog: the stash was applied, with conflicts, and kept.
+            CountDownLatch told = watchStatus(fx, tr("stash.conflict.pop")::equals);
 
             FxTestSupport.runOnFx(coordinator::gitStashPop);
-            async.await(failed, "stash conflict feedback");
-            dismissError(async);
+            async.await(told, "stash conflict feedback");
+            async.awaitFx();
 
             assertTrue(git(repo, "status", "--porcelain=v1").out().contains("UU story.txt"));
             assertEquals(1, git(repo, "stash", "list").out().lines().count(), "a conflicted pop retains the stash");
@@ -324,18 +328,17 @@ class GitDestructiveOperationsFxTest {
             String shortFirst = com.editora.git.GitFormat.shortHash(first);
 
             // Reset ▸ Hard sits directly under Soft and Mixed: it must ask, and Cancel must change nothing.
+            // The confirmation follows a Git query (what the reset takes off the branch), so it is awaited.
             CountDownLatch cancelled = new CountDownLatch(1);
-            FxTestSupport.runOnFx(() -> {
-                Platform.runLater(() -> {
-                    assertDialogSays(tr(
-                            "dialog.gitReset.hardConfirm",
-                            shortFirst,
-                            "main",
-                            repo.toAbsolutePath().normalize()));
-                    pressDialog(ButtonBar.ButtonData.CANCEL_CLOSE, cancelled);
-                });
-                windows.gitLogActions().reset(first, "hard");
-            });
+            String confirmation = GitHeadMoveWarning.resetPrompt(
+                    "hard",
+                    shortFirst,
+                    "main",
+                    repo.toAbsolutePath().normalize(),
+                    new GitService.LeftBehind(true, 1, false, 1, 1));
+            FxTestSupport.runOnFx(() -> windows.gitLogActions().reset(first, "hard"));
+            awaitDialog(confirmation);
+            FxTestSupport.runOnFx(() -> pressDialog(ButtonBar.ButtonData.CANCEL_CLOSE, cancelled));
             async.await(cancelled, "hard reset cancellation");
             async.awaitWorker(FxTestSupport.field(coordinatorOf(fx).service(), "exec"));
             async.awaitFx();
@@ -345,10 +348,9 @@ class GitDestructiveOperationsFxTest {
             // Confirmed, it runs.
             CountDownLatch confirmed = new CountDownLatch(1);
             CountDownLatch done = watchStatus(fx, tr("status.git.reset", "hard", shortFirst)::equals);
-            FxTestSupport.runOnFx(() -> {
-                Platform.runLater(() -> pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed));
-                windows.gitLogActions().reset(first, "hard");
-            });
+            FxTestSupport.runOnFx(() -> windows.gitLogActions().reset(first, "hard"));
+            awaitDialog(confirmation);
+            FxTestSupport.runOnFx(() -> pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed));
             async.await(confirmed, "hard reset confirmation");
             async.await(done, "hard reset completion");
             assertEquals(first, git(repo, "rev-parse", "HEAD").out().strip());
@@ -364,6 +366,10 @@ class GitDestructiveOperationsFxTest {
         String first = git(repo, "rev-parse", "HEAD").out().strip();
         Files.writeString(file, "second\n");
         commitAll(repo, "second");
+        // Another ref still holds "second": the reset strands nothing, which is when soft does not ask
+        // (a soft reset that would leave commits on no branch or tag is confirmed — see
+        // GitConfirmationsSayWhatIsLostFxTest).
+        git(repo, "branch", "keep");
 
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
@@ -462,8 +468,8 @@ class GitDestructiveOperationsFxTest {
     private static List<String> logRows(FxWindowFixture fx) throws Exception {
         return FxTestSupport.callOnFx(() -> {
             GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
-            List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
-            return rows.stream().map(GitService.Commit::hash).toList();
+            List<com.editora.git.GitLog.Entry> rows = FxTestSupport.field(panel, "allCommits");
+            return rows.stream().map(com.editora.git.GitLog.Entry::hash).toList();
         });
     }
 
@@ -492,7 +498,8 @@ class GitDestructiveOperationsFxTest {
             async.awaitFx();
             GitLogPanel panel = FxTestSupport.field(fx.controller, "gitLogPanel");
             FxTestSupport.runOnFx(() -> {
-                javafx.scene.control.ListView<GitService.Commit> commits = FxTestSupport.field(panel, "commits");
+                javafx.scene.control.ListView<com.editora.git.GitLog.Entry> commits =
+                        FxTestSupport.field(panel, "commits");
                 commits.getSelectionModel().select(0);
                 assertEquals(t.third(), panel.selectedHash());
 
@@ -500,7 +507,7 @@ class GitDestructiveOperationsFxTest {
                 // on screen could be checked out or reset there: the old rows go at once…
                 coordinator.applyState(repoState(t.worktree(), "task"));
                 assertEquals(null, panel.selectedHash(), "no commit of the previous repository stays selected");
-                List<GitService.Commit> rows = FxTestSupport.field(panel, "allCommits");
+                List<com.editora.git.GitLog.Entry> rows = FxTestSupport.field(panel, "allCommits");
                 assertTrue(rows.isEmpty(), "the previous repository's commits are no longer listed");
             });
             // …and the log, still open, lists the repository its actions now run in.
@@ -520,18 +527,18 @@ class GitDestructiveOperationsFxTest {
             CountDownLatch confirmed = new CountDownLatch(1);
             CountDownLatch done = watchStatus(fx, tr("status.git.reset", "hard", shortFirst)::equals);
 
+            FxTestSupport.runOnFx(() -> windows.gitLogActions().reset(t.first(), "hard"));
+            // The confirmation says which repository and branch are about to lose work — and which
+            // commits: second and third leave main, and only the task branch still reaches second.
+            awaitDialog(GitHeadMoveWarning.resetPrompt(
+                    "hard",
+                    shortFirst,
+                    "main",
+                    t.repo().toAbsolutePath().normalize(),
+                    new GitService.LeftBehind(true, 2, false, 2, 1)));
             FxTestSupport.runOnFx(() -> {
-                Platform.runLater(() -> {
-                    // The confirmation says which repository and branch are about to lose work.
-                    assertDialogSays(tr(
-                            "dialog.gitReset.hardConfirm",
-                            shortFirst,
-                            "main",
-                            t.repo().toAbsolutePath().normalize()));
-                    coordinator.applyState(repoState(t.worktree(), "task")); // the active repository changes
-                    pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed);
-                });
-                windows.gitLogActions().reset(t.first(), "hard");
+                coordinator.applyState(repoState(t.worktree(), "task")); // the active repository changes
+                pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed);
             });
             async.await(confirmed, "hard reset confirmation");
             async.await(done, "hard reset completion");
@@ -561,6 +568,17 @@ class GitDestructiveOperationsFxTest {
                 windows.promptGitReset(t.first());
             });
             async.await(chosen, "reset mode choice");
+            // "third" would be left on no branch: a mixed reset that strands a commit is confirmed too.
+            String confirmation = GitHeadMoveWarning.resetPrompt(
+                    "mixed",
+                    com.editora.git.GitFormat.shortHash(t.first()),
+                    "main",
+                    t.repo().toAbsolutePath().normalize(),
+                    new GitService.LeftBehind(true, 2, false, 2, 1));
+            awaitDialog(confirmation);
+            CountDownLatch confirmed = new CountDownLatch(1);
+            FxTestSupport.runOnFx(() -> pressDialog(ButtonBar.ButtonData.OK_DONE, confirmed));
+            async.await(confirmed, "mixed reset confirmation");
             async.await(done, "mixed reset completion");
 
             assertEquals(t.first(), git(t.repo(), "rev-parse", "HEAD").out().strip());
@@ -718,6 +736,31 @@ class GitDestructiveOperationsFxTest {
                 new GitStatus(true, branch, null, 0, 0, List.of()),
                 Map.of(),
                 Map.of());
+    }
+
+    /**
+     * Waits until the confirmation with this content text is on screen. One that follows a Git query is not
+     * there in the turn that asked for it, and it is matched by its text because dialogs of other tests in
+     * the same JVM can still be listed.
+     */
+    private static void awaitDialog(String content) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        while (!FxTestSupport.callOnFx(() -> {
+            for (Window window : new ArrayList<>(Window.getWindows())) {
+                if (window.isShowing()
+                        && window.getScene() != null
+                        && window.getScene().getRoot() instanceof DialogPane pane
+                        && content.equals(pane.getContentText())) {
+                    return true;
+                }
+            }
+            return false;
+        })) {
+            if (System.nanoTime() > deadline) {
+                throw new AssertionError("no confirmation dialog saying: " + content);
+            }
+            Thread.sleep(20);
+        }
     }
 
     /** Asserts that the confirmation on screen names the consequence the caller expects. */

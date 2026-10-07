@@ -1,0 +1,58 @@
+# The .rest extension is the same format as .http. This file covers what requests.http leaves out:
+# in-file variables, named requests and chaining, dynamic variables, auth shorthand, an external
+# body, multipart, and per-request directives. Every request goes to httpbin.org, a public echo
+# service, so they need a network connection. Credentials here are fake.
+
+@host = https://httpbin.org
+@item = hammer
+
+# A named request: later requests can read its response. It is the first request in the file, so no
+# ### separator comes before it.
+# @name create
+POST {{host}}/post
+Content-Type: application/json
+X-Request-Id: {{$uuid}}
+
+{
+  "item": "{{item}}",
+  "createdAt": "{{$isoTimestamp}}",
+  "quantity": {{$randomInt}}
+}
+
+### Chained: reuses a value from the response to "create"
+GET {{host}}/get?item={{create.response.body.$.json.item}}&status={{create.response.status}}
+Accept: application/json
+
+### Basic auth shorthand: "user password" is encoded for you
+GET {{host}}/basic-auth/ada/not-a-real-password
+Authorization: Basic ada not-a-real-password
+
+### External body: the request body is read from the file beside this one
+POST {{host}}/post
+Content-Type: application/json
+
+< ./body.json
+
+### Multipart form: one inline part and one file part
+POST {{host}}/post
+Content-Type: multipart/form-data; boundary=sample-boundary
+
+--sample-boundary
+Content-Disposition: form-data; name="note"
+
+Sent from {{item}}
+--sample-boundary
+Content-Disposition: form-data; name="file"; filename="body.json"
+Content-Type: application/json
+
+< ./body.json
+--sample-boundary--
+
+### Directives: do not follow the redirect, and give up after five seconds
+# @no-redirect
+# @timeout 5
+GET {{host}}/redirect-to?url=https%3A%2F%2Fexample.com
+
+// A request with no method defaults to GET; this line is a comment in the other style.
+###
+{{host}}/uuid

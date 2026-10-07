@@ -165,14 +165,77 @@
 .editor-area .fold-gutter .git-change-bar {
     -fx-background-color: transparent;
 }
+/* A marked row's bar is 8px wide to the mouse (it opens the change) but paints its inner 3px; the whole
+   width fills on hover, which is also what says "this can be clicked". */
+.editor-area .fold-gutter .git-change-bar.git-added,
+.editor-area .fold-gutter .git-change-bar.git-modified,
+.editor-area .fold-gutter .git-change-bar.git-deleted {
+    -fx-background-insets: 0 0 0 5;
+    -fx-cursor: hand;
+}
+.editor-area .fold-gutter .git-change-bar.git-added:hover,
+.editor-area .fold-gutter .git-change-bar.git-modified:hover {
+    -fx-background-insets: 0 0 0 2;
+}
 .editor-area .fold-gutter .git-change-bar.git-added {
     -fx-background-color: -color-success-emphasis;
 }
 .editor-area .fold-gutter .git-change-bar.git-modified {
     -fx-background-color: -color-accent-emphasis;
 }
-.editor-area .fold-gutter .git-change-bar.git-deleted {
-    -fx-background-color: -color-danger-emphasis;
+/* Lines removed above this row: a wedge on the row's top edge instead of a stripe down its side, so it
+   cannot be read as "this line was modified". */
+.editor-area .fold-gutter .git-change-bar .git-deleted-wedge {
+    -fx-fill: -color-danger-emphasis;
+}
+.editor-area .fold-gutter .git-change-bar.git-deleted:hover .git-deleted-wedge {
+    -fx-fill: -color-danger-fg;
+}
+
+/* The card a change bar opens (GitHunkPopup): the old lines over the new ones, each in a read-only text
+   area so they can be selected, washed like the diff viewer's removed/added rows. */
+.git-hunk-popup {
+    -fx-padding: 10 12 10 12;
+}
+.git-hunk-popup .git-hunk-caption {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 4 0 0 2;
+}
+.git-hunk-popup .git-hunk-side,
+.git-hunk-popup .git-hunk-side:focused {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-background-radius: 6;
+    -fx-border-width: 0 0 0 3;
+    -fx-border-radius: 6;
+    -fx-padding: 0;
+}
+.git-hunk-popup .git-hunk-side .content {
+    -fx-background-radius: 6;
+    -fx-padding: 4 8 4 8;
+}
+.git-hunk-popup .git-hunk-side .scroll-pane,
+.git-hunk-popup .git-hunk-side .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+}
+.git-hunk-popup .git-hunk-old {
+    -fx-border-color: -color-danger-emphasis;
+    -fx-text-fill: -color-fg-default;
+}
+.git-hunk-popup .git-hunk-old .content {
+    -fx-background-color: -color-danger-subtle;
+}
+.git-hunk-popup .git-hunk-new {
+    -fx-border-color: -color-success-emphasis;
+    -fx-text-fill: -color-fg-default;
+}
+.git-hunk-popup .git-hunk-new .content {
+    -fx-background-color: -color-success-subtle;
+}
+.git-hunk-popup .git-hunk-actions {
+    -fx-padding: 8 0 0 0;
 }
 /* Hover tooltip on a change bar: the hunk's unified diff, monospace so -/+ lines align. */
 .git-diff-tooltip {
@@ -368,6 +431,37 @@
 .git-commit-message {
     -fx-font-size: 14px;
 }
+/* The options above the commit message: Amend and Sign-off, the subject-length guide, recent messages. */
+.git-message-toolbar { -fx-padding: 2 0 0 0; }
+.git-commit-option { -fx-font-size: 12px; }
+/* The length guide is advice: muted while the subject is short, amber past 50, red past 72. */
+.git-message-guide {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
+.git-message-guide.git-guide-long { -fx-text-fill: -state-amber; -fx-font-weight: bold; }
+.git-message-guide.git-guide-too-long { -fx-text-fill: -state-red; -fx-font-weight: bold; }
+/* Which commit Amend replaces, and — in place, not in a dialog — that it is already pushed. */
+.git-amend-info {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-muted;
+}
+.git-amend-warning {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 4;
+    -fx-border-color: -state-amber;
+    -fx-border-radius: 4;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 3 6 3 6;
+}
+/* The secondary half of the Commit button (Commit and Push). */
+.git-commit-more { -fx-padding: 0; }
+/* Lines added / deleted at the right edge of a Commit-window row. */
+.git-tree .git-count { -fx-font-size: 11px; }
+.git-tree .git-count-added { -fx-text-fill: -state-green; }
+.git-tree .git-count-deleted { -fx-text-fill: -state-red; }
 /* Commit tool window toolbar: compact icon buttons (legible, no truncated text labels). */
 .git-toolbar-button {
     -fx-padding: 3 5 3 5;
@@ -396,6 +490,25 @@
 .git-toolbar-button.git-needs-push .toolbar-icon {
     -fx-fill: -color-accent-fg;
 }
+/* The banner shown above the change list while a merge, rebase, cherry-pick or revert is in progress (or
+   files are unmerged): an amber strip naming the operation, with Continue / Skip / Abort. The text stays
+   the default foreground — it is a sentence to read, on a tinted fill. */
+.git-operation-banner {
+    -fx-background-color: -state-amber-bg;
+    -fx-background-radius: 4;
+    -fx-border-color: -state-amber;
+    -fx-border-radius: 4;
+    -fx-border-width: 0 0 0 3;
+    -fx-padding: 6 8 6 8;
+}
+.git-operation-banner .git-operation-label {
+    -fx-text-fill: -color-fg-default;
+    -fx-font-weight: bold;
+}
+.git-operation-banner .button {
+    -fx-padding: 2 8 2 8;
+    -fx-font-size: 12px;
+}
 /* Git error dialog body: monospace so command output (paths, hints) lines up. */
 .git-error-text {
     -fx-font-family: "JetBrains Mono", "monospace";
@@ -406,6 +519,10 @@
    `.command-palette .list-cell`'s 12.5px wherever the two rules sit in this file. */
 .command-palette.branch-popup .list-cell {
     -fx-font-size: 14px;
+    /* Menu-height rows. The theme's list cell is 3em (42px) high whatever it holds; the dropdown lists
+       every branch and seven actions, and at that height its list showed eight rows of them. */
+    -fx-cell-size: 2em;
+    -fx-padding: 0 16 0 16;
 }
 /* The title/chord pair is shared with the menu bar, so both surfaces are styled from ONE rule and cannot
    drift. The menu's half stays scoped to `.menu-item` on purpose: unscoped it would lose to AtlantaFX's
@@ -439,6 +556,36 @@
 .branch-upstream {
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
+}
+/* A local branch whose upstream was deleted on the remote: usually a merged leftover to delete. */
+.branch-upstream.branch-gone {
+    -fx-text-fill: -color-warning-fg;
+}
+/* The per-row "more" button: the visible way into a branch's secondary actions. Compact, so it never
+   grows the menu-height row it sits in. */
+.command-palette.branch-popup .branch-more {
+    -fx-padding: 0 6 0 6;
+    -fx-min-height: 0;
+    -fx-font-size: 13px;
+    -fx-text-fill: -color-fg-muted;
+}
+.command-palette.branch-popup .branch-more:hover {
+    -fx-text-fill: -color-fg-default;
+}
+/* A destructive entry in a branch row's secondary menu (delete). */
+.menu-item.danger > .label {
+    -fx-text-fill: -color-danger-fg;
+}
+/* Git remotes / work trees managers (GitManagerOverlay). */
+.git-manager .list-view {
+    -fx-pref-height: 220px;
+}
+.git-manager .git-manager-detail {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+.git-manager .git-manager-empty {
+    -fx-text-fill: -color-fg-muted;
 }
 /* Remote URL shown in the branch popup header. */
 .branch-remote-url {
@@ -1357,9 +1504,74 @@
 .git-tree .git-status-deleted .git-status-letter { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-conflict .git-status-letter,
 .git-tree .git-status-conflict .git-status-letter { -fx-text-fill: -color-danger-fg; }
+/* Git Log and GitHub lists: one text line per row, the height of the Commit window's tree rows. The
+   theme gives every list cell a fixed 3em (42px) whatever it holds, which showed two commits in the
+   default bottom panel. Em-relative so the rows follow the UI font. */
+.git-log-panel .git-tree .list-cell {
+    -fx-cell-size: 1.5em;
+    -fx-padding: 0 4 0 4;
+}
 /* Git Log commit list: the short hash reads in the accent color, the subject in the default text color. */
-.git-log-panel .git-log-hash { -fx-fill: -color-accent-fg; }
-.git-log-panel .git-log-subject { -fx-fill: -color-fg-default; }
+.git-log-panel .git-log-hash { -fx-text-fill: -color-accent-fg; }
+.git-log-panel .git-log-subject { -fx-text-fill: -color-fg-default; }
+/* Author / relative date (Git Log) and the trailing detail of a GitHub row: secondary, but text people read. */
+.git-log-panel .git-log-meta {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+}
+/* Ref chips on a commit row (branches, tags, HEAD). Smaller than the row's text and without vertical
+   padding, so a decorated row stays exactly as high as an undecorated one. */
+.git-log-panel .git-ref {
+    -fx-font-size: 11px;
+    -fx-padding: 0 5 0 5;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 3;
+    -fx-text-fill: -color-fg-muted;
+}
+.git-log-panel .git-ref-head { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; }
+.git-log-panel .git-ref-local { -fx-text-fill: -color-success-fg; }
+.git-log-panel .git-ref-remote { -fx-text-fill: -state-violet; }
+.git-log-panel .git-ref-tag { -fx-text-fill: -state-olive; }
+/* "Showing the newest N commits" + Load More, under a commit list with older history still to load. */
+.git-log-panel .git-log-truncated {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+    -fx-padding: 2 6 2 6;
+}
+.git-log-panel .git-log-load-more {
+    -fx-font-size: 12px;
+    -fx-padding: 1 8 1 8;
+    -fx-text-fill: -color-accent-fg;
+}
+/* The active history search, in the toolbar beside the header. */
+.git-log-panel .git-log-search {
+    -fx-text-fill: -color-accent-fg;
+    -fx-font-size: 12px;
+    -fx-padding: 0 2 0 8;
+}
+/* Details of the selected commit, above its changed files. */
+.git-log-panel .git-log-details-scroll {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+.git-log-panel .git-log-details-scroll > .viewport { -fx-background-color: transparent; }
+.git-log-panel .git-log-details { -fx-padding: 4 8 6 8; }
+/* The commit message is a read-only text area (selectable, copyable) dressed as the label it replaced. */
+.git-log-panel .git-log-message,
+.git-log-panel .git-log-message:focused {
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 4 0 0 0;
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-border-width: 0;
+}
+.git-log-panel .git-log-message .content,
+.git-log-panel .git-log-message .scroll-pane,
+.git-log-panel .git-log-message .scroll-pane > .viewport {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+.git-log-panel .git-log-parent { -fx-padding: 0; -fx-border-width: 0; }
 /* GitHub tool window: the Pull Requests | Issues segmented toggle needs a clearly-visible selected state
    (a flat toggle's selected look was barely distinguishable from the unselected one). */
 .github-tab {
@@ -1377,13 +1589,13 @@
 }
 /* Workflow-run state glyphs in the GitHub tool window's Runs segment — same semantic palette as the
    .git-status-* file colors, so every AtlantaFX theme inherits correctly. */
-.git-tree .github-run-success { -fx-fill: -color-success-fg; }
-.git-tree .github-run-failure { -fx-fill: -color-danger-fg; }
-.git-tree .github-run-running { -fx-fill: -color-accent-fg; }
-.git-tree .github-run-queued { -fx-fill: -color-fg-muted; }
-.git-tree .github-run-cancelled { -fx-fill: -color-fg-muted; }
-.git-tree .github-run-skipped { -fx-fill: -color-fg-muted; }
-.git-tree .github-run-unknown { -fx-fill: -color-fg-muted; }
+.git-tree .github-run-success { -fx-text-fill: -color-success-fg; }
+.git-tree .github-run-failure { -fx-text-fill: -color-danger-fg; }
+.git-tree .github-run-running { -fx-text-fill: -color-accent-fg; }
+.git-tree .github-run-queued { -fx-text-fill: -color-fg-muted; }
+.git-tree .github-run-cancelled { -fx-text-fill: -color-fg-muted; }
+.git-tree .github-run-skipped { -fx-text-fill: -color-fg-muted; }
+.git-tree .github-run-unknown { -fx-text-fill: -color-fg-muted; }
 /* PR review tab (GitHub "Files changed" style): a centered scrolling column of file rows. Font sizes are
    em-relative so setFontScale scales the whole tree with the editor text zoom. */
 .pr-review-pane { -fx-background-color: -color-bg-default; }
@@ -1893,6 +2105,18 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
 }
+
+/* Git status of the tab's file, in the colours of the Project tree and the Commit window (same
+   .git-status-* classes, put on the Tab by TabGitStatus). After the read-only rule so a changed file that is
+   open read-only still shows its status; the unsaved amber is restated after it, because "you have not
+   saved this" outranks "this differs from HEAD" and the file will be modified once it is saved. */
+.tab.git-status-modified .tab-title { -fx-text-fill: -color-accent-fg; }
+.tab.git-status-added .tab-title { -fx-text-fill: -color-success-fg; }
+.tab.git-status-untracked .tab-title { -fx-text-fill: -state-olive; }
+.tab.git-status-renamed .tab-title { -fx-text-fill: -state-violet; }
+.tab.git-status-deleted .tab-title { -fx-text-fill: -color-fg-muted; }
+.tab.git-status-conflict .tab-title { -fx-text-fill: -color-danger-fg; }
+.tab .tab-header.dirty .tab-title { -fx-text-fill: -state-amber; }
 
 /* Tab drag-to-reorder: dim the tab being dragged, and show an insertion line on the
    target tab's leading/trailing edge for the side it would drop on. */
@@ -2872,6 +3096,20 @@
     -fx-font-style: italic;
     -fx-padding: 0 0.15em 0 0.15em;
     -fx-opacity: 0.8;
+}
+
+/* A code lens ("3 references") follows the end of its line: set apart from the code, upright so it
+   does not read as an inlay hint, and clickable. */
+.inlay.code-lens {
+    -fx-font-style: normal;
+    -fx-font-size: 0.85em;
+    -fx-padding: 0 0 0 1.5em;
+    -fx-cursor: hand;
+}
+
+.inlay.code-lens:hover {
+    -fx-text-fill: -color-accent-fg;
+    -fx-underline: true;
 }
 
 /* ---- Markdown selection format bar (floating, anchored above the selection) ---- */

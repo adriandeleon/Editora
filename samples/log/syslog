@@ -1,0 +1,8 @@
+Oct  6 09:00:01 web-1 systemd[1]: Started shop.service - The shop web application.
+Oct  6 09:00:02 web-1 shop[4121]: info: listening on 0.0.0.0:8080
+Oct  6 09:00:15 web-1 sshd[4190]: Accepted publickey for deploy from 203.0.113.7 port 51022 ssh2
+Oct  6 09:01:40 web-1 kernel: [  812.004411] EXT4-fs (sda1): re-mounted. Opts: errors=remount-ro
+Oct  6 09:02:11 web-1 shop[4121]: warning: cart 7731 has unpriced items
+Oct  6 09:02:12 web-1 shop[4121]: error: checkout failed: pool exhausted
+Oct  6 09:02:12 web-1 sshd[4207]: error: maximum authentication attempts exceeded for invalid user admin
+Oct  6 09:05:00 web-1 CRON[4300]: (root) CMD (/usr/local/bin/backup.sh)
