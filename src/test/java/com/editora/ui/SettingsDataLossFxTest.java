@@ -77,9 +77,14 @@ class SettingsDataLossFxTest {
         return text[0];
     }
 
+    /** The limits question only: a dialog another test class left open in this JVM is not this test's business. */
     private static boolean anyDialogShowing() {
+        String title = tr("dialog.history.limits.title");
         return Window.getWindows().stream()
-                .anyMatch(w -> w.getScene() != null && w.getScene().getRoot() instanceof DialogPane);
+                .anyMatch(w -> w.getScene() != null
+                        && w.getScene().getRoot() instanceof DialogPane
+                        && w instanceof Stage stage
+                        && title.equals(stage.getTitle()));
     }
 
     private static SettingsWindow showSettings(FxWindowFixture fx) throws Exception {

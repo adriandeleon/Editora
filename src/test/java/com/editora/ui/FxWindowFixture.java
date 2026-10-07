@@ -152,6 +152,16 @@ final class FxWindowFixture implements AutoCloseable {
                             (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
                     javafx.stage.Stage ownedStage =
                             (javafx.stage.Stage) FxTestSupport.call(holder, "stage", new Class<?>[] {});
+                    // A prompt this window raised late (an external-change question after a focus check, say)
+                    // would outlive the test and be the "next dialog" of whichever test runs after it.
+                    for (javafx.stage.Window open : List.copyOf(javafx.stage.Window.getWindows())) {
+                        if (open instanceof javafx.stage.Stage dialog
+                                && dialog.getOwner() == ownedStage
+                                && dialog.getScene() != null
+                                && dialog.getScene().getRoot() instanceof javafx.scene.control.DialogPane) {
+                            dialog.hide();
+                        }
+                    }
                     try {
                         ownedController.disposePlugins();
                     } catch (RuntimeException e) {
