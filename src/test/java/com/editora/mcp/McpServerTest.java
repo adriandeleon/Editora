@@ -70,6 +70,11 @@ class McpServerTest {
         }
 
         @Override
+        public String replaceBuffer(String path, String newText) {
+            return null;
+        }
+
+        @Override
         public String saveBuffer(String path) {
             return null;
         }

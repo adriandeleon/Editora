@@ -68,6 +68,40 @@ requests for older agents. `AgentCoordinator` applies selector updates on the FX
 ignores updates for a different session. See the
 [ACP selector specification](https://agentclientprotocol.com/protocol/v1/session-config-options).
 
+## Agent and MCP writes
+
+Two channels let a program other than the user change documents: the ACP agent's
+`fs/write_text_file` (`AcpClient` → `AgentCoordinator`) and the MCP server's `edit_buffer` /
+`save_buffer` (`McpTools` → `WindowMcpBridge`). Neither asks the user before each write, so
+each of them keeps to these rules:
+
+- **One path.** `AcpFsGuard` resolves the agent's path inside the session folder and returns
+  it; `AcpClient` hands that absolute path to the host, and the host refuses anything that is
+  not absolute. MCP rejects an empty or relative `path`. Nothing is ever resolved against the
+  editor's own working directory. `AcpFsGuard` also refuses writes into the configuration
+  directory and into version-control metadata (`.git/`, `.hg/`, …).
+- **A buffer is written through the buffer.** If any window has the file open, the write is an
+  undoable whole-document edit of that buffer and nothing reaches the disk until the user
+  saves.
+- **A file with no buffer is recoverable.** Its previous text goes to Local File History first
+  (the write is refused if that fails), the replacement keeps the file's charset, byte-order
+  mark and line endings (`AgentFileWrites`), and the write is conditional on the bytes that
+  were snapshotted.
+- **No stale overwrite.** `ServedText` remembers a digest of what each document last looked
+  like to the agent (`fs/read_text_file`, `read_buffer`, or its own last write). A
+  whole-document write is refused when the text changed since, or when the buffer holds
+  unsaved text the agent never read; the error names the read to repeat.
+- **Narrow by default.** MCP checks arguments against the schema it publishes: an unknown
+  name, a wrong type or an empty `path` is an error, never "the active buffer" or "the whole
+  buffer". Replacing a whole buffer takes `replace_whole_buffer: true`. Targeted edits match
+  against the whole document, as `read_buffer` returns it, also when the buffer is narrowed.
+- **Reports are true.** `save_buffer` waits for the write and answers `saved` only when the
+  bytes are on disk. A call that timed out before the FX thread started it is cancelled
+  (`FxCall`), so a reported failure is not applied later.
+- **The permission dialog cannot be answered by accident.** It opens with the focus on
+  "reject once" (else Cancel), has no default button, and ignores keys and button presses for
+  a moment after it appears.
+
 ## Verification
 
 Use a loopback fake server to exercise streaming, health checks, optional authentication,

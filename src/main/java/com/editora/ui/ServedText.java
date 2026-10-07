@@ -30,31 +30,47 @@ final class ServedText {
         /** The agent never read this document through the editor, and it holds unsaved changes. */
         UNREAD_UNSAVED;
 
-        /** The reason handed back to the agent — it names the remedy — or {@code null} when the write may go on. */
-        String refusal(String name) {
+        /**
+         * The reason handed back to the agent — it names the remedy — or {@code null} when the write may go on.
+         *
+         * @param name the document, as the agent named it
+         * @param readWith how this agent reads the editor's copy (the protocol call), e.g. {@code read_buffer}
+         */
+        String refusal(String name, String readWith) {
             return switch (this) {
                 case CURRENT -> null;
                 case CHANGED_SINCE_READ ->
-                    "Refused: " + name + " changed in the editor after you last read it, so this write would discard"
-                            + " those changes. Read it again, re-apply your change to the current text, and retry.";
+                    "Refused: " + name + " changed after you last read it, so this write would discard those"
+                            + " changes. Read it again (" + readWith + "), re-apply your change to the current"
+                            + " text, and retry.";
                 case UNREAD_UNSAVED ->
-                    "Refused: " + name + " is open in the editor with unsaved changes that you have not read, so"
-                            + " this write would discard them. Read it through the editor first, apply your change"
-                            + " to that text, and retry.";
+                    "Refused: " + name + " is open in the editor with unsaved changes that you have not read,"
+                            + " so this write would discard them. Read the editor's copy first (" + readWith
+                            + "), apply your change to that text, and retry.";
             };
         }
     }
 
     private static final int MAX_ENTRIES = 2048;
 
-    private final Map<Object, byte[]> digests = new LinkedHashMap<>(64, 0.75f, true) {
-        private static final long serialVersionUID = 1L;
+    private final Map<Object, byte[]> digests;
 
-        @Override
-        protected boolean removeEldestEntry(Map.Entry<Object, byte[]> eldest) {
-            return size() > MAX_ENTRIES;
-        }
-    };
+    /** Keyed by values that stay meaningful on their own (path keys): the most recent {@value #MAX_ENTRIES}. */
+    ServedText() {
+        this(new LinkedHashMap<>(64, 0.75f, true) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<Object, byte[]> eldest) {
+                return size() > MAX_ENTRIES;
+            }
+        });
+    }
+
+    /** Over a caller-chosen map — a {@link java.util.WeakHashMap} when the keys are the documents themselves. */
+    ServedText(Map<Object, byte[]> store) {
+        this.digests = store;
+    }
 
     /** Records that the agent now knows {@code text} as the content of {@code key} (it read it, or wrote it). */
     synchronized void served(Object key, String text) {
@@ -75,6 +91,12 @@ final class ServedText {
         return Arrays.equals(seen, digest(current)) ? Verdict.CURRENT : Verdict.CHANGED_SINCE_READ;
     }
 
+    /** Whether {@code text} is exactly what the agent was last shown of {@code key} (false when never shown). */
+    synchronized boolean knows(Object key, String text) {
+        byte[] seen = digests.get(key);
+        return seen != null && Arrays.equals(seen, digest(text));
+    }
+
     /** Forgets {@code key} (its document is gone). */
     synchronized void forget(Object key) {
         digests.remove(key);
@@ -85,10 +107,17 @@ final class ServedText {
         digests.clear();
     }
 
+    /**
+     * Line terminators do not count: the same file is served with its own terminators while it has no buffer
+     * and with {@code \n} once it is open, and that is not a change anyone typed.
+     */
     private static byte[] digest(String text) {
+        String body = text == null ? "" : text;
+        if (body.indexOf('\r') >= 0) {
+            body = body.replace("\r\n", "\n").replace('\r', '\n');
+        }
         try {
-            return MessageDigest.getInstance("SHA-256")
-                    .digest((text == null ? "" : text).getBytes(StandardCharsets.UTF_8));
+            return MessageDigest.getInstance("SHA-256").digest(body.getBytes(StandardCharsets.UTF_8));
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException("SHA-256 is unavailable", impossible);
         }

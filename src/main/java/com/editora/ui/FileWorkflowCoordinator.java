@@ -1387,6 +1387,28 @@ final class FileWorkflowCoordinator {
         return writeBuffer(buffer, buffer.getPath());
     }
 
+    /**
+     * Starts a save of a file-backed buffer and reports whether the bytes reached the disk — for a caller on
+     * another thread (the MCP bridge) that must not answer "saved" for a write that was only queued. Never
+     * opens Save As or an elevation prompt: those complete with {@code false}. FX thread; the future completes
+     * on the FX thread.
+     */
+    CompletableFuture<Boolean> saveReportingOutcome(EditorBuffer buffer) {
+        Path file = buffer == null ? null : buffer.getPath();
+        SaveRequest request = file == null || adminSaveApplicable(file) ? null : captureSave(buffer, file, false);
+        if (request == null) {
+            return CompletableFuture.completedFuture(false);
+        }
+        CompletableFuture<Boolean> completed = new CompletableFuture<>();
+        try {
+            saveExecutor(file).submit(() -> writeAsync(request, false, completed));
+        } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
+            finishRequest(request);
+            completed.complete(false);
+        }
+        return completed;
+    }
+
     /** Synchronous variant for close/run/debug flows that must observe the saved bytes before continuing. */
     boolean saveSynchronously(EditorBuffer buffer) {
         if (refuseUnsavable(buffer)) {

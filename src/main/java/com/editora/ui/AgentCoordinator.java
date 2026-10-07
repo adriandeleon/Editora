@@ -983,7 +983,7 @@ final class AgentCoordinator implements AcpClient.Host {
         }
         // The agent sends the whole file as it believes it to be. Text typed since it last read the buffer —
         // or unsaved text it never read at all — would be replaced without notice.
-        String stale = served.check(key, open.getContent(), open.isDirty()).refusal(path);
+        String stale = served.check(key, open.getContent(), open.isDirty()).refusal(path, "fs/read_text_file");
         if (stale != null) {
             return stale;
         }
@@ -1003,7 +1003,7 @@ final class AgentCoordinator implements AcpClient.Host {
     private void writeClosedFile(Path file, String key, String body) throws Exception {
         AgentFileWrites.Plan plan = AgentFileWrites.plan(file, body, ops.editorConfigCharset(file));
         if (plan.existing() != null) {
-            String stale = served.check(key, plan.currentText(), false).refusal(file.toString());
+            String stale = served.check(key, plan.currentText(), false).refusal(file.toString(), "fs/read_text_file");
             if (stale != null) {
                 throw new IOException(stale);
             }

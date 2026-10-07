@@ -393,6 +393,11 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
+    public String replaceBuffer(String path, String newText) {
+        return mcpBridge.replaceBuffer(path, newText);
+    }
+
+    @Override
     public String saveBuffer(String path) {
         return mcpBridge.saveBuffer(path);
     }
