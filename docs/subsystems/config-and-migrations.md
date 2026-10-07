@@ -40,10 +40,13 @@ Two serialization formats, chosen per file:
 
 On first launch after the format change, `SharedConfig.loadSettings()` converts a legacy
 `settings.toml` when `settings.json` is absent. It reads the TOML through the ordinary versioned
-migration pipeline, atomically writes the complete JSON replacement, and only then removes TOML.
+migration pipeline, atomically writes the complete JSON replacement, and only then renames the TOML
+file to `settings.toml.migrated` — it is never deleted, because the JSON is produced from the model
+and so carries neither the comments of a hand-maintained file nor a key the model does not know.
 If writing fails, the launch still uses the migrated in-memory values and leaves TOML for a retry;
 if both files exist, JSON wins. Project-local `.editora/settings.toml` remains readable and is
-converted by the explicit **Edit Project Settings** action.
+converted by the explicit **Edit Project Settings** action, which keeps it the same way
+(`SharedConfig.retireLegacyFile`).
 
 ## SharedConfig vs ConfigManager
 
@@ -80,21 +83,29 @@ Bookmarks were deliberately moved out of `WorkspaceState` into their own `bookma
 
 [`ConfigWriter`](../../src/main/java/com/editora/config/ConfigWriter.java) performs all `settings.json` and session writes off the JavaFX thread on a single `config-writer` daemon thread.
 
-The contract: callers serialize a **consistent snapshot to bytes on their own thread** (the FX thread is single-threaded, so reading the config POJOs needs no locking) and hand the immutable bytes to the writer. Each write is a **temp-file + atomic move** (`writeAtomic`), so a crash mid-write never leaves a half-written config. A config file that is a symlink (a dotfiles repository managed with stow or chezmoi) is written **through** the link: the temp file is staged beside the real file and moved onto it, so the link stays a link.
+The contract: callers serialize a **consistent snapshot to bytes on their own thread** (the FX thread is single-threaded, so reading the config POJOs needs no locking) and hand the immutable bytes to the writer. Each write is a **temp-file + fsync + atomic move** (`writeAtomic`), so a crash mid-write never leaves a half-written config, and a power cut does not bring the renamed file back zero-length on a filesystem that does not order data before the rename. A config file that is a symlink (a dotfiles repository managed with stow or chezmoi) is written **through** the link: the temp file is staged beside the real file and moved onto it, so the link stays a link.
 
 Two paths:
 
 - `enqueue(file, bytes)` — non-blocking and **coalesced per file** (latest bytes win), via `ConfigManager.saveAsync()` → `SharedConfig.enqueueSettings()`. This backs the frequent in-session save (`MainController.requestSave`).
 - `flush()` — blocks until everything queued has landed, via `ConfigManager.save()` → `SharedConfig.flushWrites()`. This is the durable form used by quit (`persistSession`), one-off actions, and `exportConfig()`. `App.start` registers a JVM-shutdown flush.
 
-`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. The three history lists (`recent-files.json`, `search-history.json`, `agent-sessions.json`) are queued on it as well, as an immutable snapshot serialized on the writer thread. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. That GC is throttled (`HistoryService.gcIfDue`, at most once per ten minutes) so a save does not walk the whole blob store; a skipped pass deletes nothing and the next one uses the live set of its own moment, while a purge (`localHistory.purgeFile` / `localHistory.purgeProject`) requests an immediate pass. Retention is applied to the whole index once per start, off the FX thread (`HistoryRetention.sweep`), not only to the file being saved; a file's newest revision, labelled revisions and pre-delete copies are exempt from the ordinary limits but expire after a longer lease (six times the age limit, at least 180 days). Other stores (`bookmarks.json`, `notes.json`, …) and the projects index keep direct synchronous writes (`SharedConfig.writeStore`, `ProjectManager.save`). Those run inside FX event handlers and, for the one-time `bookmarks.json` creation, inside `load()`, so they **never throw**: a failed write is logged and handed to the same `setOnWriteError` handler as a queued one (`ConfigWriter.reportWriteError`), and the change stays in memory. A failure that happens before any handler is installed — the config is loaded before the first window exists — is kept by `ConfigWriter` and handed to the first handler; `WindowManager` in turn holds a failure it has no window to show in, and the first window reports it together with the load problems.
+`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. The three history lists (`recent-files.json`, `search-history.json`, `agent-sessions.json`) are queued on it as well, as an immutable snapshot serialized on the writer thread. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. That GC is throttled (`HistoryService.gcIfDue`, at most once per ten minutes) so a save does not walk the whole blob store; a skipped pass deletes nothing and the next one uses the live set of its own moment, while a purge (`localHistory.purgeFile` / `localHistory.purgeProject`) requests an immediate pass. Retention is applied to the whole index once per start, off the FX thread (`HistoryRetention.sweep`), not only to the file being saved; a file's newest revision, labelled revisions and pre-delete copies are exempt from the ordinary limits but expire after a longer lease (six times the age limit, at least 180 days). Other stores (`bookmarks.json`, `notes.json`, …) and the projects index keep direct synchronous writes (`SharedConfig.writeStore`, `ProjectManager.save`). Those run inside FX event handlers and, for the one-time `bookmarks.json` creation, inside `load()`, so they **never throw**: a failed write is logged and handed to the same `setOnWriteError` handler as a queued one (`ConfigWriter.reportWriteError`), and the change stays in memory.
+
+**A failed write is retried, not dropped.** A store is only written when it changes, so a write lost to a full disk or a briefly read-only folder used to stay lost until quit. `ConfigWriter` keeps the latest failed snapshot per file and writes it again after the next write that succeeds and on every `flush()` (so also at quit and at `shutdown()`); `flush()` returns false for as long as a file's latest write is still failed. `SharedConfig` does the same for the synchronous stores, `projects.json` and `dictionary.txt` (`unsavedStores`): they are saved again after the next store write that succeeds, by `flushWrites()` and by `shutdown()`. A dictionary word that could not be appended is now reported like any other failed write.
+
+**Every store write is a "my changes only" write** ([`StoreSync`](../../src/main/java/com/editora/config/StoreSync.java)). For each file the process remembers what it last read or wrote. A save then (1) writes nothing when the store in memory is still that — so an incidental `saveAsync()` no longer rewrites `settings.json` from a copy loaded at start; (2) writes plainly when the file on disk is still the one it last saw; and (3) otherwise re-reads the file and applies only its own changes to it ([`StoreMerge`](../../src/main/java/com/editora/config/StoreMerge.java): per key, and per entry for the lists whose entries have an identity — notes by id, bookmarks and breakpoints by line, projects by id, macros by name, history revisions, recent files…). A file that was migrated, re-stamped or replaced by defaults when it was loaded counts as changed by that load and is written once. The `ConfigWriter` queue carries a supplier that does this on the writer thread and returns `null` ("nothing left for the writer to do"). A failure that happens before any handler is installed — the config is loaded before the first window exists — is kept by `ConfigWriter` and handed to the first handler; `WindowManager` in turn holds a failure it has no window to show in, and the first window reports it together with the load problems.
 
 ## More than one process on a config directory
 
 `SharedConfig` shares the stores between the *windows* of one process. Two *processes* on the same
-directory are a different matter, and an ordinary one: `App.shouldForwardLaunch` only forwards a plain
-"open these files" launch to the running editor, so a launch with no file argument, `--project`,
-`--new-file`, `--new-instance` or `--diff-ui` starts a second JVM on `~/.editora`.
+directory are a different matter, and are avoided where possible: `App.shouldForwardLaunch` hands **every**
+launch to the editor already running on that config directory — a launch with files (new window), with
+`--project` (that project's window) or with nothing to open (the editor is brought forward,
+`WindowManager.presentForExternalLaunch`) — unless it carries `--new-instance`, `--new-file` or `--diff-ui`.
+`--dev` and `--config-dir` do not opt out; they select which directory, and therefore which running editor,
+a launch belongs to. A second JVM on `~/.editora` therefore needs `--new-instance` (or a launch that arrives
+before the first process has published its endpoint, or cannot reach it).
 
 `App.start` calls `SharedConfig.claimInstance()` before any window is built. The claim is an OS file lock
 on `<configDir>/instance.lock` ([`InstanceLock`](../../src/main/java/com/editora/config/InstanceLock.java)),
@@ -113,8 +124,10 @@ released by the operating system when the holder dies, so a crash never leaves a
   outside *this* process's index, and another process's revisions are not in it.
 - For the same reason GC never runs against an index that is not the one that was written
   (`HistoryIndexGuard`): when `history/index.json` did not load cleanly (newer schema, unparseable, a
-  skipped value), when it is zero-length or missing while `history/blobs/` still holds bodies, and — in
-  later sessions too — for as long as an `index.json.v<n>.bak` / `index.json.corrupt.bak` sits beside it.
+  skipped value, blank, or not a JSON object), when it is zero-length or missing — or loads but lists no
+  revision at all — while `history/blobs/` still holds bodies, and — in later sessions too — for as long
+  as an `index.json.v<n>.bak` / `index.json.corrupt.bak` sits beside it (a `.v<n>.bak` this build can read
+  is restored first, see "Coming back from a downgrade").
   The bodies the backup references are kept until the user restores or deletes that backup. A zero-length
   index beside stored bodies is reported as unreadable (and copied to `.corrupt.bak`) rather than read as
   "no history yet".
@@ -122,11 +135,18 @@ released by the operating system when the holder dies, so a crash never leaves a
 A config that was never claimed (tests, embedders) counts as its own sole user, and a filesystem that
 refuses locks degrades to "primary, alone".
 
-**What is still not safe across processes:** every store is written whole from its process's in-memory
-copy, so `settings.json`, `notes.json`, `bookmarks.json`, `breakpoints.json`, `projects.json`,
-`recent-files.json`, `history/index.json` and the other stores remain *last-writer-wins* between two
-processes. There is no merge-on-write and no cross-process change notification; the warning exists
-because of that. (The spawned-process ledger is per process — see
+**What two processes do to each other's data:** nothing destructive. Each process writes only what it
+changed (`StoreSync`, above), under a short-lived lock on `<configDir>/stores.lock` so two read-merge-write
+cycles cannot interleave. So a setting changed in one editor is no longer reverted by the other's next tab
+switch, a project created in one stays in `projects.json`, notes, bookmarks, breakpoints, macros,
+abbreviations, sites, recent files and Local History revisions from both survive, and `dictionary.txt` keeps
+the words the other process added when one removes a word. Revisions another process added to the history
+index are not in this process's memory, so their body hashes are remembered (`foreignHistoryHashes`) and
+excluded from this process's blob collection.
+
+What remains: a process does **not load** the other's changes — it shows them after a restart — and when both
+change the *same* setting or entry, the one saved last wins. The one-time notice in a secondary says so.
+(The spawned-process ledger is per process — see
 [LSP and DAP](lsp-and-dap.md#processregistry--processrunner).)
 
 ## Schema versioning and migrations
@@ -156,7 +176,7 @@ override; `PROJECTS` registers `1 → 2` as `seedOpenProjectIds`; and `RECENT` r
 
 [`ConfigMigrations.readVersioned(file, mapper, defaults, schema)`](../../src/main/java/com/editora/config/migration/ConfigMigrations.java) is the single read path. It is mapper-agnostic, so the same migrations also process the legacy TOML file before conversion because `TomlMapper` produces ordinary Jackson nodes:
 
-1. Missing/unreadable/empty → return `defaults`.
+1. Missing → return `defaults` (after step 0 below). A file that **exists** but is empty, blank, or valid JSON that is not an object (`null`, a string, a number; a bare array only for `recent-files.json`) is damage, not a first run — typically a write the OS never flushed before a power cut, or a sync tool's placeholder. It is reported as `UNREADABLE` and copied to `.corrupt.bak` like an unparseable file.
 2. Decode (`readText`) and parse to a Jackson tree. A leading UTF-8 byte-order mark is dropped and a byte that is not valid UTF-8 becomes U+FFFD (logged), so a file saved by another editor "with BOM" or in a legacy encoding costs at most one character, not every value in it. A file read with replaced bytes is reported as `ConfigLoadProblem.Kind.NOT_UTF8` and its original bytes are copied to `.corrupt.bak`, because the next save makes the replacement permanent; it is never write-protected. The Local History index is the exception: it gets the report but no copy (`ConfigSchema.keepsCopyOfUndecodableFile`), since any backup beside it suspends blob collection, and such an index still counts as intact.
 3. `upgrade(schema, tree, mapper)` — read the stored version (`versionOf`), then `applySteps` runs the `from → to` chain in order (one registered step per version, throwing `IllegalStateException` if a step is missing), and stamps `schemaVersion` to the current version.
 4. Merge the migrated object **onto `defaults`** via `mapper.readerForUpdating(defaults)`. So a purely additive new field just defaults when an old file is read.
@@ -175,6 +195,8 @@ A getter that *resolves* a blank value (`getAuthorName()` → the OS user, `getP
 
 If a file's stored `schemaVersion` is **newer** than this build supports (the user downgraded the app), `upgrade` throws [`NewerThanSupportedException`](../../src/main/java/com/editora/config/migration/NewerThanSupportedException.java). `readVersioned` then backs the file up to `<name>.v<n>.bak` (`ConfigMigrations.backup`, preserving any existing backup) and returns `defaults`. An older Editora never overwrites — and silently drops fields from — a newer config.
 
+**Coming back from a downgrade** (step 0 of the read path, `ConfigMigrations.restoreSetAsideCopy`): before a store is read, a `<name>.v<n>.bak` whose `n` this build supports is looked for beside it. When the file left in its place is absent, empty, or holds nothing but defaults (ignoring its version stamp and `ConfigSchema.selfMaintainedKeys()` — update-check bookkeeping, the projects index's window set), the copy is moved back and the user is told (`ConfigLoadProblem.Kind.NEWER_COPY_RESTORED`). When that file has been changed since, there are two sets of data and no way to choose: the file in use is loaded, the copy stays, and the user is told once where it is (`NEWER_COPY_KEPT`; `reported-backups.txt` remembers what has been said). Without this, running an older build once left every store at defaults for good — nothing ever read a `.bak` again.
+
 That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`) — session files and `projects.json` included. The same applies to an unparseable file that could not be copied aside. The Local File History index is the one exception — it is reported but still written, because its publication protocol must keep running; its revision bodies are protected instead by refusing blob GC (see the instance-lock section above).
 
 ### Worked examples
@@ -188,7 +210,10 @@ The short version is in [conventions.md → Config and schema](../conventions.md
 
 1. **Bump the POJO's `SCHEMA_VERSION`** (`Settings`, `WorkspaceState`, `BookmarkStore`, `ProjectManager.Index`, `RecentFiles`, …).
 2. **Add one `v → v+1` entry** to that file's `steps` map in `ConfigSchema`. For a purely additive field (new field with a default), use `ConfigMigrations::identity` — the read path merges onto defaults, so the old file needs no transform; it just gets re-stamped. For a structural change, write a small pure `Migration` and register it (see `wrapRecentFilesArray` / `seedOpenProjectIds`).
-3. Done. The read path, version stamping, and downgrade backup are automatic once the step is registered.
+3. Update the store's line in `StoreShapeGuardTest.PINNED` (the failing test prints it).
+4. Done. The read path, version stamping, and downgrade backup are automatic once the step is registered.
+
+**A field added to anything a store serializes needs a bump, even a purely additive one.** Every store type ignores unknown properties, so a build from before the field reads the file without complaint and writes it back without the field; only a newer `schemaVersion` makes it set the file aside instead. `StoreShapeGuardTest` pins each store's shape (property names of the root type and every nested Editora type, with enum constants) together with its version, and fails when the shape changes while the version does not — which is how `Bookmark.mnemonic` once shipped with `bookmarks.json` still at version 1.
 
 If the change adds a **new Jackson-serialized type**, also add `opens com.editora.<pkg> to com.fasterxml.jackson.databind;` in `module-info.java`. The config package already has `opens com.editora.config to com.fasterxml.jackson.databind` (and `com.editora.vfs`/`macro`/`todo`/`externaltool` for the types those packages serialize through this engine).
 
@@ -197,3 +222,5 @@ If the change adds a **new Jackson-serialized type**, also add `opens com.editor
 [`ProjectManager`](../../src/main/java/com/editora/config/ProjectManager.java) holds the projects index, persisted as JSON in `projects.json` (the inner `ProjectManager.Index`, schema **2**). A project is a named single folder; each project's session is a separate `WorkspaceState` JSON under `projects/<id>.json` (`ProjectManager.stateFile(project)`).
 
 The index tracks the **open-window set** in `openProjectIds` (`""` = the global no-project window; an untitled window's `untitled:<uuid>` key also collapses to `""` for bucketing but is tracked here by its key) plus `activeProjectId` as the last-focused window. `markOpen`/`markClosed`/`setOpenWindows` mutate the set; it's restored on the next launch by `WindowManager.launch`. The `1 → 2` migration (`seedOpenProjectIds`) is what bridges pre-multi-window installs into this model.
+
+When `projects.json` could not be read (unparseable, empty, or from a newer build), the open set in memory is the empty default, not "every window was closed". `ProjectManager.loadedIntact()` is then false and `save()` leaves the file alone — focus, open and close call it constantly, and none of them is a reason to write an empty index over a damaged one — until the user adds or deletes a project. `WindowManager.gcOrphanWindowSessions` (the launch-time sweep of `windows/<uuid>.json` files not in the open set) asks `openSetIsComplete()`, which is also false for as long as a `projects.json.corrupt.bak` / `.v<n>.bak` is kept: the windows that copy lists still have their session files.

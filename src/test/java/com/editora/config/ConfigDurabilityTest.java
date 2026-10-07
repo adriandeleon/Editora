@@ -61,12 +61,19 @@ class ConfigDurabilityTest {
     }
 
     @Test
-    void anEmptyFileIsNotBackedUp() throws IOException {
-        // Nothing to preserve — don't litter the config dir.
+    void anEmptyFileIsDamageNotAFirstRun() throws IOException {
+        // A store that exists is never written empty, so zero bytes is what a power cut leaves of a write the
+        // OS had not flushed. It used to load as "no config yet", silently, and the next save made that
+        // permanent (data-loss review C5). Now it is reported, and a copy is kept like any other damage.
         Path file = dir.resolve("notes.json");
         Files.writeString(file, "");
-        ConfigMigrations.readVersioned(file, new ObjectMapper(), new NoteStore(), ConfigSchema.NOTES);
-        assertFalse(Files.exists(file.resolveSibling("notes.json.corrupt.bak")));
+        List<com.editora.config.migration.ConfigLoadProblem> problems = new java.util.ArrayList<>();
+        ConfigMigrations.readVersioned(file, new ObjectMapper(), new NoteStore(), ConfigSchema.NOTES, problems::add);
+        assertEquals(1, problems.size());
+        assertEquals(
+                com.editora.config.migration.ConfigLoadProblem.Kind.UNREADABLE,
+                problems.get(0).kind());
+        assertTrue(Files.exists(file.resolveSibling("notes.json.corrupt.bak")));
     }
 
     @Test

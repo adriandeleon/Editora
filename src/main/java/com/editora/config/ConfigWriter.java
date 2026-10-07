@@ -31,6 +31,12 @@ import com.editora.io.AtomicFileWrite;
  */
 public final class ConfigWriter {
 
+    /**
+     * Produces the bytes to write, on the writer thread. May return {@code null}: there is nothing for this
+     * writer to do — the snapshot is already what the file holds, or the supplier wrote it itself (a store
+     * that merges with what is on disk, see {@link StoreSync}). That counts as written. {@link #UNCHANGED}
+     * says the same and, in addition, that nothing touched the disk.
+     */
     @FunctionalInterface
     interface BytesSupplier {
         byte[] get() throws IOException;
@@ -40,7 +46,17 @@ public final class ConfigWriter {
     @FunctionalInterface
     interface Sink {
         void write(Path file, BytesSupplier bytes);
+
+        /**
+         * Told once, after the store was read from {@code file}, what that store serializes to — the baseline
+         * a later {@link #write} is compared with, so a store nobody changed is not written back over a file
+         * another process has changed since. Ignored by default.
+         */
+        default void loaded(Path file, BytesSupplier bytes) {}
     }
+
+    /** A {@link BytesSupplier} result: the file already holds this snapshot, so no write was attempted. */
+    static final byte[] UNCHANGED = new byte[0];
 
     /**
      * Writes on the calling thread. For a store used on its own (a test, a tool) with no shared writer to
@@ -48,7 +64,10 @@ public final class ConfigWriter {
      */
     static final Sink DIRECT = (file, bytes) -> {
         try {
-            writeAtomicOrThrow(file, bytes.get());
+            byte[] snapshot = bytes.get();
+            if (snapshot != null && snapshot != UNCHANGED) {
+                writeAtomicOrThrow(file, snapshot);
+            }
         } catch (IOException e) {
             Logger.getLogger(ConfigWriter.class.getName()).log(Level.SEVERE, "Failed to write config file " + file, e);
         }
@@ -60,7 +79,12 @@ public final class ConfigWriter {
         FAILED
     }
 
-    private record PendingWrite(BytesSupplier bytes, Consumer<WriteOutcome> completion) {}
+    private record PendingWrite(BytesSupplier bytes, Consumer<WriteOutcome> completion) {
+        /** The same snapshot for a later attempt; its owner was already told the first one failed. */
+        PendingWrite retry() {
+            return new PendingWrite(bytes, ignored -> {});
+        }
+    }
 
     private static final Logger LOG = Logger.getLogger(ConfigWriter.class.getName());
 
@@ -73,7 +97,16 @@ public final class ConfigWriter {
     /** Serializes the executor drain with the post-shutdown synchronous fallback. */
     private final Object writerLock = new Object();
 
+    /** A write was refused outright (the writer had shut down) since the last {@link #flush}. */
     private final AtomicBoolean failureSinceFlush = new AtomicBoolean();
+
+    /**
+     * The latest snapshot of each file whose write failed, kept so it is written again rather than dropped:
+     * a store is only queued when it changes, so a write lost to a full disk or a briefly read-only folder
+     * used to stay lost — the change lived in memory until quit and was gone after it. Retried by the next
+     * drain that writes anything successfully, and by {@link #flush}. Guarded by {@link #lock}.
+     */
+    private final Map<Path, PendingWrite> failed = new LinkedHashMap<>();
 
     public ConfigWriter() {
         this(Executors.newSingleThreadExecutor(r -> {
@@ -175,6 +208,7 @@ public final class ConfigWriter {
         PendingWrite removed;
         synchronized (lock) {
             removed = pending.remove(file);
+            failed.remove(file); // the file is going away: nothing of it is left to retry
             cancelled.add(file);
         }
         complete(removed, WriteOutcome.SUPERSEDED);
@@ -218,15 +252,20 @@ public final class ConfigWriter {
     /** Blocks until every queued write has been performed (a durable save, an export, or app exit). */
     public boolean flush() {
         try {
-            io.submit(() -> {}).get(flushTimeoutMillis, TimeUnit.MILLISECONDS); // wait for all queued drains
-            return !failureSinceFlush.getAndSet(false);
+            // Wait for all queued drains, then give every write that failed earlier one more attempt: this is
+            // the durable path (quit, export), and the disk may have recovered since.
+            io.submit(this::retryFailed).get(flushTimeoutMillis, TimeUnit.MILLISECONDS);
+            return settled();
         } catch (RejectedExecutionException shuttingDown) {
             try {
                 if (!io.awaitTermination(flushTimeoutMillis, TimeUnit.MILLISECONDS)) {
                     return false;
                 }
+                synchronized (writerLock) {
+                    retryFailed(); // the executor is gone: this thread is now the only writer
+                }
                 synchronized (lock) {
-                    return pending.isEmpty() && !failureSinceFlush.getAndSet(false);
+                    return pending.isEmpty() && settled();
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -239,6 +278,33 @@ public final class ConfigWriter {
             // The writer may still own a claimed batch. A synchronous drain here would introduce a second
             // writer and allow that older batch to land after a newer one. Leave the single owner intact.
             return false;
+        }
+    }
+
+    /** True when no file's latest write is still failed and none was refused since the last flush. */
+    private boolean settled() {
+        boolean refused = failureSinceFlush.getAndSet(false);
+        synchronized (lock) {
+            return failed.isEmpty() && !refused;
+        }
+    }
+
+    /** Writes again every snapshot whose last attempt failed and that nothing newer has replaced. */
+    private void retryFailed() {
+        synchronized (lock) {
+            if (failed.isEmpty()) {
+                return;
+            }
+            failed.forEach(pending::putIfAbsent);
+            failed.clear();
+        }
+        drain();
+    }
+
+    /** Whether a write of {@code file} failed and is still waiting to be retried. */
+    boolean hasFailedWrite(Path file) {
+        synchronized (lock) {
+            return failed.containsKey(file);
         }
     }
 
@@ -264,6 +330,7 @@ public final class ConfigWriter {
         if (hook != null) {
             hook.run(); // test-only: a window for a racing cancel() (#491); null in production
         }
+        boolean[] wroteSomething = {false};
         batch.forEach((file, write) -> {
             synchronized (lock) {
                 if (cancelled.contains(file)) {
@@ -272,18 +339,50 @@ public final class ConfigWriter {
                 }
             }
             try {
-                writeAtomicOrThrow(file, write.bytes().get());
+                byte[] bytes = write.bytes().get();
+                if (bytes != null && bytes != UNCHANGED) {
+                    writeAtomicOrThrow(file, bytes);
+                }
+                synchronized (lock) {
+                    failed.remove(file); // a newer snapshot of it is on disk now
+                }
+                if (bytes != UNCHANGED) {
+                    wroteSomething[0] = true; // a skipped write says nothing about whether the disk works
+                }
                 complete(write, WriteOutcome.WRITTEN);
             } catch (IOException | RuntimeException e) {
                 IOException failure = e instanceof IOException ioFailure
                         ? ioFailure
                         : new IOException("Failed to serialize configuration snapshot", e);
                 LOG.log(Level.SEVERE, "Failed to write config file " + file, failure);
-                failureSinceFlush.set(true);
+                synchronized (lock) {
+                    if (!cancelled.contains(file)) {
+                        failed.put(file, write.retry());
+                    }
+                }
                 complete(write, WriteOutcome.FAILED);
                 surfaceWriteError(file, failure); // surface it (#418) — no longer a silent swallow
             }
         });
+        if (wroteSomething[0]) {
+            // The disk takes writes again: retry what failed before this batch. What failed in this batch
+            // waits for the next success, so a write that keeps failing cannot make this spin.
+            boolean retry = false;
+            synchronized (lock) {
+                var earlier = failed.entrySet().iterator();
+                while (earlier.hasNext()) {
+                    Map.Entry<Path, PendingWrite> entry = earlier.next();
+                    if (!batch.containsKey(entry.getKey())) {
+                        pending.putIfAbsent(entry.getKey(), entry.getValue());
+                        earlier.remove();
+                        retry = true;
+                    }
+                }
+            }
+            if (retry) {
+                drainOwned();
+            }
+        }
     }
 
     /**
@@ -337,6 +436,11 @@ public final class ConfigWriter {
         writeAtomicOrThrow(file, bytes, FILES);
     }
 
+    /** As {@link #writeAtomic(Path, byte[])}, but a failure is the caller's to report. */
+    static void writeAtomicChecked(Path file, byte[] bytes) throws IOException {
+        writeAtomicOrThrow(file, bytes, FILES);
+    }
+
     /** Atomic config replacement with an injectable filesystem boundary. */
     static void writeAtomic(Path file, byte[] bytes, AtomicFileWrite.FileOperations files) throws IOException {
         writeAtomicOrThrow(file, bytes, files);
@@ -359,6 +463,11 @@ public final class ConfigWriter {
         boolean replaced = false;
         try {
             files.write(tmp, bytes);
+            // Durable before it is visible. A rename is only atomic against a process crash: after a power
+            // cut, a filesystem that does not order data before the rename (XFS, ext4 with delayed allocation
+            // tuned off, NTFS, most network mounts) brings the new name back with no content — a zero-length
+            // settings.json, notes.json or projects.json. The document save path already does this.
+            files.force(tmp);
             try {
                 files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (IOException atomicUnsupported) {

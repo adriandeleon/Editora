@@ -57,6 +57,24 @@ public class SharedConfig {
     /** Performs settings/session writes off the FX thread (async for the frequent path, flush for durable). */
     private final ConfigWriter writer = new ConfigWriter();
 
+    /** Makes every store write a "my changes only" write (see {@link StoreSync}). */
+    private final StoreSync sync;
+
+    /**
+     * Stores written on the caller's thread whose last write failed, each with the save that writes it again.
+     * Such a store is written only when it changes, so without this a note, bookmark, breakpoint, macro, site
+     * or dictionary word added while the config folder was briefly unwritable lived in memory until quit and
+     * was gone after it. Retried after the next store write that succeeds, by {@link #flushWrites} (every
+     * durable save, including the one at quit) and by {@link #shutdown}.
+     */
+    private final Map<Path, Runnable> unsavedStores = new LinkedHashMap<>();
+
+    /** True while {@link #retryUnsavedStores} runs, so the saves it calls do not start another round. */
+    private boolean retryingUnsavedStores;
+
+    /** Revisions another process added to the Local History index on disk; their bodies must not be collected. */
+    private final Set<String> foreignHistoryHashes = ConcurrentHashMap.newKeySet();
+
     private final HistoryService historyService;
     /** This process's claim on the config dir ({@code null} until {@link #claimInstance()}). */
     private volatile InstanceLock instanceLock;
@@ -93,6 +111,8 @@ public class SharedConfig {
     private AbbrevStore abbrevStore = new AbbrevStore();
     /** User-added spell-check words (one per line in {@code dictionary.txt}); lower-cased, shared globally. */
     private final java.util.Set<String> userDictionary = new java.util.LinkedHashSet<>();
+    /** The dictionary as this process last read or wrote it: what its own additions and removals are relative to. */
+    private final java.util.Set<String> userDictionaryBase = new java.util.LinkedHashSet<>();
     /** The shared projects index ({@code projects.json}) — one source of truth across all windows. */
     private final ProjectManager projects;
 
@@ -132,8 +152,13 @@ public class SharedConfig {
     public SharedConfig(Path configDir, boolean dev) {
         this.configDir = configDir;
         this.dev = dev;
+        this.sync = new StoreSync(configDir, json);
         this.projects = new ProjectManager(configDir);
-        this.projects.setOnWriteError(writer::reportWriteError);
+        this.projects.setOnWriteError((file, failure) -> {
+            writer.reportWriteError(file, failure);
+            markUnsaved(file, this.projects::save);
+        });
+        this.projects.setOnSaved(file -> storeSaved(file));
         this.projects.loadProblems().forEach(this::onLoadProblem);
         this.historyService =
                 new HistoryService(new HistoryBlobStore(getHistoryBlobsDir()), this::mayCollectHistoryBlobs);
@@ -147,9 +172,10 @@ public class SharedConfig {
      * idempotent. The claim is an OS file lock (see {@link InstanceLock}) held until {@link #shutdown()} or
      * process exit, so a crashed primary never leaves a stale claim behind.
      *
-     * <p>A second process on the same directory is an ordinary state (a launch that is not forwarded to the
-     * running editor), but the stores here are written whole from each process's memory. So a secondary is
-     * told apart, warns the user once, and never garbage-collects shared data.
+     * <p>A second process on the same directory is a possible state (a {@code --new-instance} launch, or one
+     * that could not be forwarded to the running editor). Each process writes only its own changes to the
+     * stores ({@link StoreSync}) but does not see the other's until it restarts. So a secondary is told
+     * apart, tells the user once, and never garbage-collects shared data.
      */
     public synchronized boolean claimInstance() {
         if (instanceLock == null) {
@@ -228,6 +254,7 @@ public class SharedConfig {
         projects.loadProblems().forEach(this::onLoadProblem);
         appliedSettings = null; // a reload replaces the Settings object; the next window pair re-baselines
         settings = loadSettings();
+        sync.loaded(getSettingsFile(), settingsBytes());
         loadBookmarks();
         loadBreakpoints();
         loadHistory();
@@ -243,9 +270,11 @@ public class SharedConfig {
     /**
      * Loads JSON preferences, converting the legacy TOML file once when JSON does not yet exist.
      *
-     * <p>The legacy file is removed only after the complete JSON replacement has been written atomically.
-     * If the write fails, this launch still uses the TOML values and the next launch can retry; an existing
-     * JSON file always wins so a stale legacy copy can never roll settings back.
+     * <p>The legacy file is renamed to {@code settings.toml.migrated} — not deleted — and only after the
+     * complete JSON replacement has been written atomically: the JSON is produced from the model, so the
+     * comments of a hand-maintained file and any key the model does not carry exist nowhere else. If the
+     * write fails, this launch still uses the TOML values and the next launch can retry; an existing JSON
+     * file always wins so a stale legacy copy can never roll settings back.
      */
     private Settings loadSettings() {
         Path file = getSettingsFile();
@@ -265,29 +294,127 @@ public class SharedConfig {
                 // Keep using the values read from TOML. Leaving it in place makes migration retryable.
                 return migrated;
             }
-            try {
-                Files.deleteIfExists(legacy);
-            } catch (IOException ignored) {
-                // JSON now wins on every later launch; a stale legacy copy is harmless.
-            }
+            retireLegacyFile(legacy);
             return migrated;
         }
         return read(file, new Settings(), ConfigSchema.SETTINGS);
     }
 
+    /** The suffix a converted legacy TOML file is kept under. */
+    static final String MIGRATED_SUFFIX = ".migrated";
+
+    /**
+     * Renames a legacy file that has been converted to {@code <name>.migrated} (numbered when that is taken).
+     * Best effort: when it cannot be renamed it stays where it is, which is harmless — JSON wins from now on.
+     */
+    static void retireLegacyFile(Path legacy) {
+        Path kept = legacy.resolveSibling(legacy.getFileName() + MIGRATED_SUFFIX);
+        for (int n = 2; Files.exists(kept) && n <= 20; n++) { // an earlier one is somebody's copy too
+            kept = legacy.resolveSibling(legacy.getFileName() + MIGRATED_SUFFIX + "." + n);
+        }
+        try {
+            Files.move(legacy, kept);
+        } catch (IOException | RuntimeException ignored) {
+            // left in place; never deleted
+        }
+    }
+
     /** {@link ConfigMigrations#readVersioned} with this instance's mapper, collecting what could not be read. */
     private <T> T read(Path file, T defaults, ConfigSchema schema) {
-        return ConfigMigrations.readVersioned(file, json, defaults, schema, this::onLoadProblem);
+        T store = ConfigMigrations.readVersioned(file, json, defaults, schema, this::onLoadProblem);
+        if (schema != ConfigSchema.SETTINGS) { // the preferences are registered by load(), after a TOML conversion
+            storeLoaded(file, store);
+        }
+        return store;
+    }
+
+    /** Tells {@link StoreSync} what {@code store}, just read from {@code file}, serializes to. */
+    private void storeLoaded(Path file, Object store) {
+        try {
+            sync.loaded(file, json.writeValueAsBytes(store));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new UncheckedIOException("Failed to serialize " + file.getFileName(), e);
+        }
+    }
+
+    /** As {@link #storeLoaded(Path, Object)}, for a session file read by a window's {@link ConfigManager}. */
+    void storeLoaded(Path file, byte[] serialized) {
+        sync.loaded(file, serialized);
+    }
+
+    /**
+     * Queues {@code mine} — a store serialized on the calling thread — for {@code file}. The write happens on
+     * the writer thread through {@link StoreSync}: skipped when this process changed nothing, merged with
+     * what is on disk when another process wrote the file in the meantime.
+     */
+    void enqueueStore(Path file, byte[] mine, ConfigSchema schema) {
+        writer.enqueue(file, () -> sync.write(file, mine, schema, null) ? null : ConfigWriter.UNCHANGED);
+    }
+
+    /** The sink a history list writes through: queued, and merged like every other store. */
+    private ConfigWriter.Sink sinkFor(ConfigSchema schema) {
+        return new ConfigWriter.Sink() {
+            @Override
+            public void write(Path file, ConfigWriter.BytesSupplier bytes) {
+                if (!writeProtected.contains(file)) {
+                    writer.enqueue(
+                            file, () -> sync.write(file, bytes.get(), schema, null) ? null : ConfigWriter.UNCHANGED);
+                }
+            }
+
+            @Override
+            public void loaded(Path file, ConfigWriter.BytesSupplier bytes) {
+                try {
+                    sync.loaded(file, bytes.get());
+                } catch (IOException e) {
+                    throw new UncheckedIOException("Failed to serialize " + file.getFileName(), e);
+                }
+            }
+        };
     }
 
     /** Records {@code problem} for {@link #takeLoadProblems} and write-protects its file when it must be. */
     void onLoadProblem(ConfigLoadProblem problem) {
+        if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT && alreadyReported(problem.backup())) {
+            return; // said once, when the newer build first came back; the copy is the user's to deal with
+        }
         if (!loadProblems.contains(problem)) { // a session file is read at bootstrap and again by its window
             loadProblems.add(problem);
         }
         if (problem.mustNotOverwrite()) {
             writeProtected.add(problem.file());
         }
+    }
+
+    /** Names the set-aside copies the user has been told about, one path per line. */
+    static final String REPORTED_COPIES_FILE_NAME = "reported-backups.txt";
+
+    /**
+     * Whether {@code copy} — a set-aside file that was not restored — has been reported in an earlier launch;
+     * records it when it has not. Without this the same notice would come back on every start for as long as
+     * the copy exists. When the record cannot be read or written the answer is "not yet": repeating a notice
+     * is better than never giving it.
+     */
+    private boolean alreadyReported(Path copy) {
+        if (copy == null) {
+            return false;
+        }
+        Path ledger = configDir.resolve(REPORTED_COPIES_FILE_NAME);
+        String line = copy.toAbsolutePath().normalize().toString();
+        try {
+            if (Files.isReadable(ledger) && Files.readAllLines(ledger).contains(line)) {
+                return true;
+            }
+            Files.createDirectories(configDir);
+            Files.writeString(
+                    ledger,
+                    line + System.lineSeparator(),
+                    java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        } catch (IOException | RuntimeException e) {
+            // not recorded: it is reported again next launch
+        }
+        return false;
     }
 
     /**
@@ -312,13 +439,14 @@ public class SharedConfig {
     /** Writes preferences to {@code settings.json} synchronously (serialize now, then block until written). */
     public boolean saveSettings() {
         enqueueSettings();
-        return writer.flush();
+        return flushWrites();
     }
 
     /** The shared off-thread writer (settings + session state route through it; see {@link ConfigWriter}). */
     /** Drops any queued write for {@code file} (it's about to be deleted — see {@link ConfigWriter#cancel}). */
     public void cancelPendingWrite(Path file) {
         writer.cancel(file);
+        sync.forget(file);
     }
 
     ConfigWriter writer() {
@@ -339,7 +467,7 @@ public class SharedConfig {
     void enqueueSettings(ConfigManager origin) {
         byte[] bytes = settingsBytes();
         if (!writeProtected.contains(getSettingsFile())) {
-            writer.enqueue(getSettingsFile(), bytes);
+            enqueueStore(getSettingsFile(), bytes, ConfigSchema.SETTINGS);
         }
         if (appliedSettings == null || Arrays.equals(bytes, appliedSettingsBytes)) {
             return;
@@ -393,12 +521,14 @@ public class SharedConfig {
 
     /** Blocks until all queued settings/session writes have landed (a durable save, an export, or exit). */
     public boolean flushWrites() {
-        return writer.flush();
+        boolean storesSaved = retryUnsavedStores();
+        return writer.flush() && storesSaved;
     }
 
     /** Stops app-wide background services after the last window has closed. */
     public boolean shutdown() {
-        boolean durable = writer.shutdown();
+        boolean storesSaved = retryUnsavedStores(); // the last chance for a store whose write failed earlier
+        boolean durable = writer.shutdown() && storesSaved;
         historyService.shutdown();
         InstanceLock lock = instanceLock;
         if (lock != null) {
@@ -525,25 +655,87 @@ public class SharedConfig {
      * Writes one store synchronously and atomically. A file that is {@link #isWriteProtected write-protected}
      * is left alone: the in-memory store is the defaults loaded in its place, not its content.
      *
+     * <p>The write goes through {@link StoreSync}: nothing is written when this process changed nothing, and
+     * when another process wrote the file in the meantime its entries are kept and only this process's own
+     * additions, edits and removals are applied.
+     *
      * <p>Never throws. These writes run inside FX event handlers (toggle a bookmark or breakpoint, edit a
      * note, save a macro, trust a folder) and, for the one-time {@code bookmarks.json} creation, inside
      * {@link #load()}: an exception from a full disk or a read-only config dir used to abort the handler with
      * nothing shown, or stop the app from starting. A failure is logged and reported through
-     * {@link #setOnWriteError} like a queued write; the change stays in memory.
+     * {@link #setOnWriteError} like a queued write; the change stays in memory and {@code retry} is run again
+     * later (see {@link #unsavedStores}).
      *
+     * @param retry the public save that leads back here for this store
      * @return whether the store in memory is now the one on disk
      */
-    private boolean writeStore(Path file, Object store) {
+    private boolean writeStore(Path file, Object store, ConfigSchema schema, Runnable retry) {
         if (writeProtected.contains(file)) {
             return false;
         }
+        boolean written;
         try {
             Files.createDirectories(configDir);
-            ConfigWriter.writeAtomic(file, json, store);
-            return true;
+            written = sync.write(file, json.writeValueAsBytes(store), schema, null);
         } catch (IOException e) {
             writer.reportWriteError(file, e);
+            markUnsaved(file, retry);
             return false;
+        }
+        if (written) { // an unchanged store that was skipped says nothing about whether the disk works
+            storeSaved(file);
+        }
+        return true;
+    }
+
+    private void markUnsaved(Path file, Runnable retry) {
+        synchronized (unsavedStores) {
+            unsavedStores.put(file, retry);
+        }
+    }
+
+    /** {@code file} is on disk as it is in memory; the disk takes writes, so retry what failed before. */
+    private void storeSaved(Path file) {
+        synchronized (unsavedStores) {
+            unsavedStores.remove(file);
+        }
+        retryUnsavedStores();
+    }
+
+    /**
+     * Saves again every store whose last write failed. A store that fails again reports it again and stays
+     * listed.
+     *
+     * @return whether nothing is left unsaved
+     */
+    private boolean retryUnsavedStores() {
+        List<Runnable> retries;
+        synchronized (unsavedStores) {
+            if (retryingUnsavedStores) {
+                return true;
+            }
+            if (unsavedStores.isEmpty()) {
+                return true;
+            }
+            retryingUnsavedStores = true;
+            retries = new ArrayList<>(unsavedStores.values());
+        }
+        try {
+            retries.forEach(Runnable::run);
+        } finally {
+            synchronized (unsavedStores) {
+                retryingUnsavedStores = false;
+            }
+        }
+        synchronized (unsavedStores) {
+            return unsavedStores.isEmpty();
+        }
+    }
+
+    /** Whether a store's last write failed and is still waiting to be retried. */
+    boolean hasUnsavedStores() {
+        synchronized (unsavedStores) {
+            return !unsavedStores.isEmpty();
         }
     }
 
@@ -555,7 +747,7 @@ public class SharedConfig {
      */
     public RecentFiles recentFiles() {
         if (recentFiles == null) {
-            recentFiles = new RecentFiles(configDir, this::enqueueHistoryFile, this::onLoadProblem);
+            recentFiles = new RecentFiles(configDir, sinkFor(ConfigSchema.RECENT), this::onLoadProblem);
         }
         return recentFiles;
     }
@@ -563,7 +755,7 @@ public class SharedConfig {
     /** The Find-in-Files query history, shared like {@link #recentFiles()}. */
     public SearchHistory searchHistory() {
         if (searchHistory == null) {
-            searchHistory = new SearchHistory(configDir, this::enqueueHistoryFile, this::onLoadProblem);
+            searchHistory = new SearchHistory(configDir, sinkFor(ConfigSchema.SEARCH_HISTORY), this::onLoadProblem);
         }
         return searchHistory;
     }
@@ -571,16 +763,10 @@ public class SharedConfig {
     /** The AI Agent chat-session history, shared like {@link #recentFiles()}. */
     public AgentSessionHistory agentSessions() {
         if (agentSessions == null) {
-            agentSessions = new AgentSessionHistory(configDir, this::enqueueHistoryFile, this::onLoadProblem);
+            agentSessions =
+                    new AgentSessionHistory(configDir, sinkFor(ConfigSchema.AGENT_SESSIONS), this::onLoadProblem);
         }
         return agentSessions;
-    }
-
-    /** Queues a history file on the shared writer: off the FX thread, coalesced, and failures are surfaced. */
-    private void enqueueHistoryFile(Path file, ConfigWriter.BytesSupplier bytes) {
-        if (!writeProtected.contains(file)) {
-            writer.enqueue(file, bytes);
-        }
     }
 
     // --- plugins (enable-state) ---
@@ -590,15 +776,12 @@ public class SharedConfig {
     }
 
     private void loadPlugins() {
-        if (Files.exists(getPluginsFile())) {
-            pluginStore = read(getPluginsFile(), new PluginStore(), ConfigSchema.PLUGINS);
-        } else {
-            pluginStore = new PluginStore();
-        }
+        // Read even when absent: a copy an older build set aside may be waiting to be restored.
+        pluginStore = read(getPluginsFile(), new PluginStore(), ConfigSchema.PLUGINS);
     }
 
     public void savePlugins() {
-        writeStore(getPluginsFile(), pluginStore);
+        writeStore(getPluginsFile(), pluginStore, ConfigSchema.PLUGINS, this::savePlugins);
     }
 
     // --- workspace trust (folders allowed to run their own build wrapper) ---
@@ -612,15 +795,12 @@ public class SharedConfig {
     }
 
     private void loadTrust() {
-        if (Files.exists(getTrustFile())) {
-            trustStore = read(getTrustFile(), new TrustStore(), ConfigSchema.TRUST);
-        } else {
-            trustStore = new TrustStore();
-        }
+        // Read even when absent: a copy an older build set aside may be waiting to be restored.
+        trustStore = read(getTrustFile(), new TrustStore(), ConfigSchema.TRUST);
     }
 
     public void saveTrust() {
-        writeStore(getTrustFile(), trustStore);
+        writeStore(getTrustFile(), trustStore, ConfigSchema.TRUST, this::saveTrust);
     }
 
     // --- keyboard macros (app-global) ---
@@ -630,15 +810,12 @@ public class SharedConfig {
     }
 
     private void loadMacros() {
-        if (Files.exists(getMacrosFile())) {
-            macroStore = read(getMacrosFile(), new MacroStore(), ConfigSchema.MACROS);
-        } else {
-            macroStore = new MacroStore();
-        }
+        // Read even when absent: a copy an older build set aside may be waiting to be restored.
+        macroStore = read(getMacrosFile(), new MacroStore(), ConfigSchema.MACROS);
     }
 
     public void saveMacros() {
-        writeStore(getMacrosFile(), macroStore);
+        writeStore(getMacrosFile(), macroStore, ConfigSchema.MACROS, this::saveMacros);
     }
 
     // --- abbreviations (app-global) ---
@@ -663,15 +840,12 @@ public class SharedConfig {
     }
 
     private void loadAbbreviations() {
-        if (Files.exists(getAbbreviationsFile())) {
-            abbrevStore = read(getAbbreviationsFile(), new AbbrevStore(), ConfigSchema.ABBREVIATIONS);
-        } else {
-            abbrevStore = new AbbrevStore();
-        }
+        // Read even when absent: a copy an older build set aside may be waiting to be restored.
+        abbrevStore = read(getAbbreviationsFile(), new AbbrevStore(), ConfigSchema.ABBREVIATIONS);
     }
 
     public void saveAbbreviations() {
-        writeStore(getAbbreviationsFile(), abbrevStore);
+        writeStore(getAbbreviationsFile(), abbrevStore, ConfigSchema.ABBREVIATIONS, this::rewriteAbbreviations);
         onStoreChanged.run();
     }
 
@@ -698,8 +872,18 @@ public class SharedConfig {
     }
 
     public void saveConnections() {
-        writeStore(getConnectionsFile(), connectionStore);
+        writeStore(getConnectionsFile(), connectionStore, ConfigSchema.CONNECTIONS, this::rewriteConnections);
         onStoreChanged.run();
+    }
+
+    /** The retry of a failed {@link #saveAbbreviations}: the list did not change again, so nobody is told. */
+    private void rewriteAbbreviations() {
+        writeStore(getAbbreviationsFile(), abbrevStore, ConfigSchema.ABBREVIATIONS, this::rewriteAbbreviations);
+    }
+
+    /** The retry of a failed {@link #saveConnections}. */
+    private void rewriteConnections() {
+        writeStore(getConnectionsFile(), connectionStore, ConfigSchema.CONNECTIONS, this::rewriteConnections);
     }
 
     /**
@@ -796,8 +980,11 @@ public class SharedConfig {
                     separator + w + System.lineSeparator(),
                     java.nio.file.StandardOpenOption.CREATE,
                     java.nio.file.StandardOpenOption.APPEND);
+            userDictionaryBase.add(w);
         } catch (IOException e) {
-            // non-fatal: the word still applies for this session, just isn't persisted
+            // The word still applies for this session; say that it is not saved, and try again later.
+            writer.reportWriteError(getUserDictionaryFile(), e);
+            markUnsaved(getUserDictionaryFile(), this::rewriteUserDictionary);
         }
     }
 
@@ -827,43 +1014,75 @@ public class SharedConfig {
         }
     }
 
-    /** Rewrites {@code dictionary.txt} from the in-memory set (one word per line); non-fatal on failure.
-     *  Written via temp + atomic move (the project convention): a plain {@code writeString} truncates first,
-     *  so a crash / disk-full between truncate and write left the whole personal dictionary empty. */
+    /**
+     * Brings {@code dictionary.txt} in line with this process's additions and removals, keeping every word
+     * another process (or a hand edit) added to the file in the meantime — the file used to be rewritten from
+     * this process's set alone, which dropped them. Those words join the in-memory set as well.
+     *
+     * <p>Written via temp + atomic move (the project convention): a plain {@code writeString} truncates
+     * first, so a crash / disk-full between truncate and write left the whole personal dictionary empty.
+     * A failure is reported and the rewrite is retried later; the in-memory set applies meanwhile.
+     */
     private void rewriteUserDictionary() {
+        Path file = getUserDictionaryFile();
         try {
             Files.createDirectories(configDir);
+            java.util.Set<String> merged = readUserDictionary(file);
+            for (String removedHere : userDictionaryBase) {
+                if (!userDictionary.contains(removedHere)) {
+                    merged.remove(removedHere);
+                }
+            }
+            for (String word : userDictionary) {
+                if (!userDictionaryBase.contains(word)) {
+                    merged.add(word); // added here (possibly by an append that failed)
+                }
+            }
             StringBuilder sb = new StringBuilder();
-            for (String w : userDictionary) {
+            for (String w : merged) {
                 sb.append(w).append(System.lineSeparator());
             }
-            com.editora.io.AtomicFileWrite.write(
-                    getUserDictionaryFile(), sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            com.editora.io.AtomicFileWrite.write(file, sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            userDictionary.addAll(merged);
+            userDictionary.retainAll(merged);
+            userDictionaryBase.clear();
+            userDictionaryBase.addAll(merged);
         } catch (IOException e) {
-            // non-fatal: the in-memory set still applies for this session
+            writer.reportWriteError(file, e);
+            markUnsaved(file, this::rewriteUserDictionary);
+            return;
         }
+        storeSaved(file);
     }
 
     private void loadUserDictionary() {
         userDictionary.clear();
-        Path file = getUserDictionaryFile();
-        if (!Files.isReadable(file)) {
-            return;
-        }
+        userDictionaryBase.clear();
         try {
-            // Lenient decode: Files.readAllLines REPORTs malformed bytes and throws, which silently discarded
-            // the ENTIRE personal dictionary over one bad byte — and a later remove would then rewrite the
-            // file from that empty set (permanent loss). new String(bytes, UTF_8) replaces instead of throwing.
-            String text = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
-            for (String line : text.split("\r?\n")) {
-                String w = stripBom(line).strip().toLowerCase(java.util.Locale.ROOT);
-                if (!w.isEmpty()) {
-                    userDictionary.add(w);
-                }
-            }
+            userDictionary.addAll(readUserDictionary(getUserDictionaryFile()));
         } catch (IOException ignored) {
             // missing/unreadable dictionary just means no user words
         }
+        userDictionaryBase.addAll(userDictionary);
+    }
+
+    /** The words in {@code file}, lower-cased, in file order; empty when the file is absent. */
+    private static java.util.Set<String> readUserDictionary(Path file) throws IOException {
+        java.util.Set<String> words = new java.util.LinkedHashSet<>();
+        if (!Files.isReadable(file)) {
+            return words;
+        }
+        // Lenient decode: Files.readAllLines REPORTs malformed bytes and throws, which silently discarded
+        // the ENTIRE personal dictionary over one bad byte — and a later remove would then rewrite the
+        // file from that empty set (permanent loss). new String(bytes, UTF_8) replaces instead of throwing.
+        String text = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
+        for (String line : text.split("\r?\n")) {
+            String w = stripBom(line).strip().toLowerCase(java.util.Locale.ROOT);
+            if (!w.isEmpty()) {
+                words.add(w);
+            }
+        }
+        return words;
     }
 
     /** Drops a leading UTF-8 BOM — {@link String#strip()} does not (U+FEFF is {@code Cf}, not whitespace), so
@@ -881,6 +1100,9 @@ public class SharedConfig {
      * those files, and writes {@code bookmarks.json} so the migration runs only once.
      */
     private void loadBookmarks() {
+        // Before deciding this is a first run: an older build may have set the real file aside.
+        ConfigMigrations.restoreSetAsideCopy(
+                getBookmarksFile(), json, new BookmarkStore(), ConfigSchema.BOOKMARKS, this::onLoadProblem);
         if (Files.exists(getBookmarksFile())) {
             bookmarkStore = read(getBookmarksFile(), new BookmarkStore(), ConfigSchema.BOOKMARKS);
             return;
@@ -891,42 +1113,54 @@ public class SharedConfig {
     }
 
     private void loadConnections() {
-        if (Files.exists(getConnectionsFile())) {
-            connectionStore = read(getConnectionsFile(), new ConnectionStore(), ConfigSchema.CONNECTIONS);
-        } else {
-            connectionStore = new ConnectionStore();
-        }
+        // Read even when absent: a copy an older build set aside may be waiting to be restored.
+        connectionStore = read(getConnectionsFile(), new ConnectionStore(), ConfigSchema.CONNECTIONS);
     }
 
     private void loadBreakpoints() {
-        if (Files.exists(getBreakpointsFile())) {
-            breakpointStore = read(getBreakpointsFile(), new BreakpointStore(), ConfigSchema.BREAKPOINTS);
-        } else {
-            breakpointStore = new BreakpointStore();
-        }
+        // Read even when absent: a copy an older build set aside may be waiting to be restored.
+        breakpointStore = read(getBreakpointsFile(), new BreakpointStore(), ConfigSchema.BREAKPOINTS);
     }
 
     private void loadHistory() {
         Path index = getHistoryFile();
-        int problemsBefore = loadProblems.size();
+        // Reported, but never write-protected: the index publication protocol below must keep running.
+        List<ConfigLoadProblem> problems = new ArrayList<>();
+        // First, so that "lost" is judged on the index an older build may have set aside.
+        ConfigMigrations.restoreSetAsideCopy(index, json, new HistoryStore(), ConfigSchema.HISTORY, problems::add);
         boolean lost = HistoryIndexGuard.lostIndex(index, getHistoryBlobsDir());
         if (lost && Files.exists(index)) {
             // Zero-length beside stored revision bodies: a write the OS never flushed, not "no history yet".
-            loadProblems.add(ConfigMigrations.unreadable(index));
+            problems.add(ConfigMigrations.unreadable(index));
             historyStore = new HistoryStore();
-        } else if (Files.exists(index)) {
-            // Reported, but never write-protected: the index publication protocol below must keep running.
-            historyStore = ConfigMigrations.readVersioned(
-                    index, json, new HistoryStore(), ConfigSchema.HISTORY, loadProblems::add);
         } else {
-            historyStore = new HistoryStore();
+            historyStore = ConfigMigrations.readVersioned(
+                    index, json, new HistoryStore(), ConfigSchema.HISTORY, problems::add);
+        }
+        storeLoaded(index, historyStore);
+        for (ConfigLoadProblem problem : problems) {
+            if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT && alreadyReported(problem.backup())) {
+                continue;
+            }
+            if (!loadProblems.contains(problem)) {
+                loadProblems.add(problem);
+            }
         }
         // Decided after the read, which is what leaves a backup behind. The backup keeps protecting the
         // bodies in later sessions, when the index this session writes loads cleanly.
-        // An index that was read with a non-UTF-8 byte replaced still lists every revision, so it does not count.
-        boolean readAsWritten = loadProblems.subList(problemsBefore, loadProblems.size()).stream()
-                .allMatch(p -> p.kind() == ConfigLoadProblem.Kind.NOT_UTF8);
-        historyIndexIntact = !lost && readAsWritten && !HistoryIndexGuard.backupPresent(index);
+        // An index that was read with a non-UTF-8 byte replaced still lists every revision, so it does not
+        // count; nor does one that was just restored, or a set-aside copy (backupPresent covers that one).
+        boolean readAsWritten = problems.stream()
+                .allMatch(p -> p.kind() == ConfigLoadProblem.Kind.NOT_UTF8
+                        || p.kind() == ConfigLoadProblem.Kind.NEWER_COPY_RESTORED
+                        || p.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT);
+        // An index that lists no revision at all while bodies are stored is not trusted either, however it
+        // came to be that way ("{}", an index rewritten from defaults): collecting against it deletes every
+        // body. Bodies left by a deliberate purge are collected once the index lists a revision again.
+        boolean emptyBesideBodies =
+                HistoryRetention.liveHashes(historyStore.getByProject()).isEmpty()
+                        && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
+        historyIndexIntact = !lost && readAsWritten && !emptyBesideBodies && !HistoryIndexGuard.backupPresent(index);
         Set<String> loaded = HistoryRetention.liveHashes(historyStore.getByProject());
         synchronized (historyPublicationLock) {
             durableHistoryHashes = loaded;
@@ -963,7 +1197,16 @@ public class SharedConfig {
         }
         writer.enqueue(
                 getHistoryFile(),
-                () -> json.writeValueAsBytes(snapshot),
+                () -> {
+                    // Another process's revisions are kept in the index on disk but are not in this process's
+                    // memory, so their bodies are protected from this process's collection by hash.
+                    boolean written = sync.write(
+                            getHistoryFile(),
+                            json.writeValueAsBytes(snapshot),
+                            ConfigSchema.HISTORY,
+                            merged -> foreignHistoryHashes.addAll(historyHashesIn(merged)));
+                    return written ? null : ConfigWriter.UNCHANGED;
+                },
                 outcome -> finishHistoryPublication(publication, hashes, outcome));
     }
 
@@ -982,6 +1225,7 @@ public class SharedConfig {
             }
             protectedHashes = new LinkedHashSet<>(durableHistoryHashes);
             protectedHashes.addAll(currentHistoryHashes);
+            protectedHashes.addAll(foreignHistoryHashes);
             pendingHistoryHashes.values().forEach(protectedHashes::addAll);
             // Queue GC while this live-set snapshot is still current. A durable waiter can start the
             // next publication; running its callback first would let this older GC delete its new blob.
@@ -989,6 +1233,22 @@ public class SharedConfig {
         }
         boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
         finished.forEach((ignored, waiter) -> waiter.accept(durable));
+    }
+
+    /** Every revision body hash an index tree references ({@code byProject / project / file / [] / sha256}). */
+    private static Set<String> historyHashesIn(JsonNode index) {
+        Set<String> hashes = new LinkedHashSet<>();
+        for (JsonNode project : index.path("byProject")) {
+            for (JsonNode file : project) {
+                for (JsonNode revision : file) {
+                    String hash = revision.path("sha256").asText("");
+                    if (!hash.isEmpty()) {
+                        hashes.add(hash);
+                    }
+                }
+            }
+        }
+        return hashes;
     }
 
     /** Migrates bookmarks out of the legacy session files into their per-project buckets, stripping each. */
@@ -1038,12 +1298,12 @@ public class SharedConfig {
 
     /** Writes the global bookmarks to {@code bookmarks.json}, independently of a session save. */
     public void saveBookmarks() {
-        writeStore(getBookmarksFile(), bookmarkStore);
+        writeStore(getBookmarksFile(), bookmarkStore, ConfigSchema.BOOKMARKS, this::saveBookmarks);
     }
 
     /** Writes the breakpoints to {@code breakpoints.json}, independently of a session save. */
     public void saveBreakpoints() {
-        writeStore(getBreakpointsFile(), breakpointStore);
+        writeStore(getBreakpointsFile(), breakpointStore, ConfigSchema.BREAKPOINTS, this::saveBreakpoints);
     }
 
     /** Loads {@code notes.json} (versioned, per-project buckets). Missing/malformed ⇒ an empty store. */
@@ -1053,6 +1313,6 @@ public class SharedConfig {
 
     /** Writes the global Personal Notes to {@code notes.json}, independently of a session save. */
     public void saveNotes() {
-        writeStore(getNotesFile(), noteStore);
+        writeStore(getNotesFile(), noteStore, ConfigSchema.NOTES, this::saveNotes);
     }
 }

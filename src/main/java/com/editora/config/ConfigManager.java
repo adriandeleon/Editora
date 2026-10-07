@@ -356,8 +356,12 @@ public class ConfigManager {
      * could be neither read nor backed up is not overwritten ({@link SharedConfig#isWriteProtected}).
      */
     private WorkspaceState readWorkspaceState(Path file) {
-        return ConfigMigrations.readVersioned(
+        WorkspaceState state = ConfigMigrations.readVersioned(
                 file, json, new WorkspaceState(), ConfigSchema.WORKSPACE, shared::onLoadProblem);
+        // The baseline a later save is compared with: a window that changed nothing writes nothing, and a
+        // session another process changed meanwhile is merged with rather than replaced.
+        shared.storeLoaded(file, bytesOf(state, file));
+        return state;
     }
 
     public WorkspaceState getWorkspaceState() {
@@ -416,15 +420,19 @@ public class ConfigManager {
     /** Queues this window's session state ({@code workspace-state.json}, possibly in a project sub-dir). */
     private void enqueueWorkspace() {
         if (!shared.isWriteProtected(workspaceStateFile)) {
-            shared.writer().enqueue(workspaceStateFile, workspaceBytes());
+            shared.enqueueStore(workspaceStateFile, workspaceBytes(), ConfigSchema.WORKSPACE);
         }
     }
 
     private byte[] workspaceBytes() {
+        return bytesOf(workspaceState, workspaceStateFile);
+    }
+
+    private byte[] bytesOf(WorkspaceState state, Path file) {
         try {
-            return json.writeValueAsBytes(workspaceState);
+            return json.writeValueAsBytes(state);
         } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new UncheckedIOException("Failed to serialize session state for " + workspaceStateFile, e);
+            throw new UncheckedIOException("Failed to serialize session state for " + file, e);
         }
     }
 

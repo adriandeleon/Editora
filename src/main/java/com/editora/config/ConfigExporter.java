@@ -65,7 +65,12 @@ public final class ConfigExporter {
 
     /** Top-level files that describe the running process rather than the user's configuration. */
     private static final Set<String> RUNTIME_FILES = Set.of(
-            "instance.lock", "instance.properties", "mcp-endpoint.json", "spawned-servers.txt", "editora-session.log");
+            "instance.lock",
+            "stores.lock",
+            "instance.properties",
+            "mcp-endpoint.json",
+            "spawned-servers.txt",
+            "editora-session.log");
 
     /**
      * Whether the file at {@code relative} (its path inside the config dir, forward-slash separated) belongs

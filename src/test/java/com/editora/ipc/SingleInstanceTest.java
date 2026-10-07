@@ -96,6 +96,49 @@ class SingleInstanceTest {
     }
 
     @Test
+    void aLaunchWithNothingToOpenIsDeliveredTooSoTheLauncherDoesNotStartASecondProcess(@TempDir Path dir)
+            throws Exception {
+        // Clicking the launcher again, or `editora` with no file: an empty request, not "nothing to forward".
+        SingleInstance.Result primary = SingleInstance.start(dir, List.of(), true);
+        try {
+            awaitServing(primary);
+            CopyOnWriteArrayList<List<String>> received = new CopyOnWriteArrayList<>();
+            primary.instance().setListener(received::add);
+
+            SingleInstance.Result second = SingleInstance.start(dir, List.of(), true, false);
+
+            assertTrue(second.forwarded());
+            assertTrue(waitFor(() -> !received.isEmpty()), "the primary never received the launch");
+            assertEquals(List.of(), received.get(0));
+        } finally {
+            close(primary);
+        }
+    }
+
+    @Test
+    void aLaunchWithNothingToOpenIsNotSentToARunningBuildThatWouldIgnoreIt(@TempDir Path dir) throws Exception {
+        // An older build still running across an upgrade: it only knows "open these files".
+        SingleInstance.Result primary = SingleInstance.start(dir, List.of(), true);
+        try {
+            awaitServing(primary);
+            Path endpoint = dir.resolve(SingleInstance.ENDPOINT_FILE);
+            Files.writeString(endpoint, Files.readString(endpoint).replace("accepts=any", "accepts=files"));
+            CopyOnWriteArrayList<List<String>> received = new CopyOnWriteArrayList<>();
+            primary.instance().setListener(received::add);
+
+            SingleInstance.Result bare = SingleInstance.start(dir, List.of(), true, false);
+            assertEquals(SingleInstance.Role.STANDALONE, bare.role(), "it starts its own editor, as before");
+
+            SingleInstance.Result files = SingleInstance.start(dir, ARGS, true, true);
+            assertTrue(files.forwarded(), "a plain file launch is still handed over");
+            assertTrue(waitFor(() -> !received.isEmpty()));
+            assertEquals(List.of(ARGS), List.copyOf(received));
+        } finally {
+            close(primary);
+        }
+    }
+
+    @Test
     void aSecondLaunchIsForwardedToTheFirstRatherThanStartingAnother(@TempDir Path dir) throws Exception {
         SingleInstance.Result primary = SingleInstance.start(dir, List.of(), true);
         try {

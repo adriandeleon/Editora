@@ -78,9 +78,9 @@ public class App extends Application {
         // crash and can be attached to a bug report (the in-memory capture was installed in main()).
         com.editora.ui.DebugLog.attachFile(shared.getConfigDir());
 
-        // Claim the config dir. A launch that is not forwarded (no file argument, --project, --new-instance,
-        // --diff-ui) is a second process on the same directory; only the first may garbage-collect shared
-        // data, and WindowManager tells the user of a later one that the two can overwrite each other.
+        // Claim the config dir. A launch that is not forwarded (--new-instance, --new-file, --diff-ui, or one
+        // that could not reach the running editor) is a second process on the same directory; only the first
+        // may garbage-collect shared data, and WindowManager tells the user of a later one about the other.
         shared.claimInstance();
         // Point the spawned-server ledger at the config dir and reap any LSP/DAP server leaked by a
         // previous run that died too hard for the shutdown hook to fire (SIGKILL, power loss). Must run
@@ -158,7 +158,9 @@ public class App extends Application {
         // starting, and SingleInstance buffers those until now rather than dropping them. The request lands
         // on the accept thread, so hop to the FX thread before touching any window.
         if (singleInstance != null && singleInstance.instance() != null) {
-            singleInstance.instance().setListener(args -> Platform.runLater(() -> openForwardedLaunch(windows, args)));
+            singleInstance
+                    .instance()
+                    .setListener(args -> Platform.runLater(() -> openForwardedLaunch(windows, shared, args)));
         }
     }
 
@@ -180,17 +182,54 @@ public class App extends Application {
      * on macOS, so a forwarded launch and an OS-delivered one cannot behave differently — the two paths
      * having drifted is exactly the bug class that produced "opens the file but reports it failed" before.
      */
-    private static void openForwardedLaunch(com.editora.ui.WindowManager windows, java.util.List<String> args) {
+    private static void openForwardedLaunch(
+            com.editora.ui.WindowManager windows, SharedConfig shared, java.util.List<String> args) {
         try {
             // fileTargets, not a second parser: these are the argv the forwarding process would itself have
             // parsed, so they must resolve identically here.
+            java.util.List<com.editora.ui.MainController.OpenTarget> targets = fileTargets(args);
+            com.editora.config.Project project = forwardedProject(shared, projectArg(args));
+            if (project != null) {
+                // --project DIR: that project's window, and the files in it — what the launch would have
+                // shown had it started its own process.
+                windows.openOrFocus(project);
+                for (com.editora.ui.MainController.OpenTarget t : targets) {
+                    windows.openInWindow(project.id(), t.file(), Math.max(0, t.line() - 1));
+                }
+                windows.presentForExternalLaunch();
+                return;
+            }
+            if (targets.isEmpty()) {
+                // The launcher clicked again, or `editora` with no file: nothing to open, so show the editor.
+                windows.presentForExternalLaunch();
+                return;
+            }
             // In a NEW window: had this launch not been forwarded it would have started its own process, and
             // so its own window. Reusing the process is the point of the handoff; reusing the window was not,
             // and it silently took over whatever the user was working in.
-            windows.openExternalLaunchInNewWindow(fileTargets(args), zenFlag(args), expertFlag(args), simpleFlag(args));
+            windows.openExternalLaunchInNewWindow(targets, zenFlag(args), expertFlag(args), simpleFlag(args));
         } catch (RuntimeException e) {
             LOG.log(Level.WARNING, "Could not apply a forwarded launch", e);
         }
+    }
+
+    /**
+     * The project a forwarded {@code --project DIR} names, created in the index when it is new — exactly what
+     * {@code WindowManager.launch} does for a cold start. {@code null} when the launch named none, or Projects
+     * are switched off (the option is then ignored, as it is at startup).
+     */
+    private static com.editora.config.Project forwardedProject(SharedConfig shared, String projectDir) {
+        if (projectDir == null || !shared.getSettings().isProjectSupport()) {
+            return null;
+        }
+        java.nio.file.Path root =
+                java.nio.file.Path.of(projectDir).toAbsolutePath().normalize();
+        String name = root.getFileName() == null
+                ? root.toString()
+                : root.getFileName().toString();
+        com.editora.config.Project project = shared.projects().createOrGet(name, root);
+        shared.projects().save();
+        return project;
     }
 
     /** True when running on macOS (Finder "Open With" delivers files via an Apple Event, not argv). */
@@ -323,11 +362,20 @@ public class App extends Application {
         boolean forward = shouldForwardLaunch(argList);
         // What is sent is not argv: a relative FILE means "relative to where I was run", and the running
         // editor has a working directory of its own. See forwardArgs.
+        // A launch that is more than "open these files" needs a running editor that knows what to do with it;
+        // one from before that (still running across an upgrade) would acknowledge it and show nothing.
+        boolean filesOnly = !fileTargets(argList).isEmpty() && projectArg(argList) == null;
         singleInstance = com.editora.ipc.SingleInstance.start(
                 configDir,
                 forward ? forwardArgs(argList, java.nio.file.Path.of("").toAbsolutePath()) : argList,
-                forward);
+                forward,
+                filesOnly);
         if (singleInstance.forwarded()) {
+            if (fileTargets(argList).isEmpty()) {
+                // Nothing visible happens in this terminal, so say where the launch went.
+                System.err.println(AppInfo.NAME + " is already running with this configuration (" + configDir
+                        + "); this launch was handed to it. Use --new-instance to start a separate editor.");
+            }
             System.exit(0); // delivered; exiting now is the entire saving (no second window, no second JVM)
         }
         if (singleInstance.instance() != null) {
@@ -437,8 +485,8 @@ public class App extends Application {
                   --single-window[=project]  Open just one window (the named project, else no-project)
                   --no-session          Open only the files given here; don't restore the saved session
                                         instead of restoring all windows; doesn't change the saved layout
-                  --new-instance        Start a separate editor instead of opening the files in the
-                                        already-running one (which is the default when only files are given)
+                  --new-instance        Start a separate editor process instead of handing this launch
+                                        to the one already running with the same config directory
                   --diff-ui LEFT RIGHT  Compare two files or directories in a standalone diff window
                   --zen                 Start in Zen (distraction-free) mode (session only)
                   --expert              Start in Expert mode: like Zen, but keeps the editor
@@ -472,16 +520,24 @@ public class App extends Application {
      * Whether this launch should be handed to an already-running instance rather than starting a second
      * editor. Pure, so the policy is unit-tested rather than inferred from behaviour.
      *
-     * <p>Deliberately narrow: <b>only</b> a launch that is purely "open these files". That is exactly the
-     * file-manager click this exists for, and the one case whose meaning inside a running editor is
-     * unambiguous. The flags that shape how a <em>process</em> starts — {@code --project},
-     * {@code --new-file}, {@code --config-dir}, {@code --dev} — have no honest reading once a window already
-     * exists, so a launch carrying any of them gets its own process rather than a half-applied
-     * interpretation. ({@code --no-session} and {@code --single-window} exist only to make a cold start
-     * cheap; forwarding makes both moot, so they are ignored rather than disqualifying — which matters,
-     * because the packaged {@code .desktop} entry passes them on every click.) The focus-mode flags are
-     * forwarded and applied to the receiving window: the user picked "Expert Mode" deliberately, so honouring
-     * it is less surprising than a launcher that silently doesn't.
+     * <p><b>Every launch is, unless it says otherwise.</b> The running instance is the one that uses the same
+     * config directory (the endpoint file lives in it — see {@code ipc.SingleInstance}), so {@code --dev} and
+     * {@code --config-dir} select <em>which</em> editor a launch can reach rather than opting out. A second
+     * process on the same directory is what has to be avoided: each one holds its own copy of the
+     * preferences, the session files and every store, and although a process now writes only what it changed
+     * ({@code config.StoreSync}), neither sees the other's changes until it restarts and both restore the same
+     * windows. This used to forward only a launch that named files, so clicking the launcher a second time —
+     * or running {@code editora} or {@code editora --project X} in a terminal — started exactly that second
+     * process.
+     *
+     * <p>What a forwarded launch does in the running editor is decided by {@link #openForwardedLaunch}: files
+     * open in a new window (or focus the window that has them), {@code --project} opens that project's
+     * window, and a launch with nothing to open brings the editor forward. ({@code --no-session} and
+     * {@code --single-window} only make a cold start cheap; forwarding makes both moot.)
+     *
+     * <p>Not forwarded: {@code --new-instance}, the explicit request for a separate process;
+     * {@code --diff-ui}, a standalone tool window with its own startup chrome; and {@code --new-file}, which
+     * asks for a buffer no running window has an entry point for yet.
      */
     static boolean shouldForwardLaunch(java.util.List<String> args) {
         if (args == null || newInstanceFlag(args)) {
@@ -490,15 +546,13 @@ public class App extends Application {
         if (diffUiFlag(args)) {
             return false; // a standalone diff owns its window and startup chrome
         }
-        if (projectArg(args) != null || newFileArg(args) != null || configDirArg(args) != null || devFlag(args)) {
-            return false;
-        }
-        return !fileTargets(args).isEmpty();
+        return newFileArg(args) == null;
     }
 
     /**
-     * The arguments to send to a running instance in place of this launch's own: the focus-mode flags, then
-     * every file target as an <b>absolute</b> path with its {@code :line[:column]} suffix re-attached.
+     * The arguments to send to a running instance in place of this launch's own: the focus-mode flags, a
+     * {@code --project} directory made <b>absolute</b>, then every file target as an absolute path with its
+     * {@code :line[:column]} suffix re-attached.
      *
      * <p>Raw argv used to be forwarded, and the receiving process resolved it against <em>its</em> working
      * directory — so {@code cd ~/projB && editora README.md} reported "Failed to open", or opened the
@@ -524,6 +578,10 @@ public class App extends Application {
         }
         if (simpleFlag(args)) {
             out.add("--simple");
+        }
+        String project = projectArg(args);
+        if (project != null) {
+            out.add("--project=" + cwd.resolve(project).normalize());
         }
         for (com.editora.ui.MainController.OpenTarget t : fileTargets(args, p -> exists.test(cwd.resolve(p)))) {
             String position = t.line() <= 0 ? "" : ":" + t.line() + (t.column() > 0 ? ":" + t.column() : "");

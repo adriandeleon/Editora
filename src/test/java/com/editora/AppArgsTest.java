@@ -334,33 +334,64 @@ class AppArgsTest {
     }
 
     @Test
-    void aLaunchWithNoFilesStartsItsOwnEditor() {
-        // Nothing to deliver; forwarding would silently turn "run Editora" into "focus the other one".
-        assertFalse(App.shouldForwardLaunch(List.of()));
-        assertFalse(App.shouldForwardLaunch(List.of("--expert")));
+    void aLaunchWithNoFilesIsHandedToTheRunningEditorToo() {
+        // The launcher clicked a second time, or `editora` typed in a terminal. This used to start a second
+        // process on the same config directory, whose next incidental save reverted the first one's settings,
+        // session and stores (data-loss review C1); now the running editor is brought forward instead.
+        assertTrue(App.shouldForwardLaunch(List.of()));
+        assertTrue(App.shouldForwardLaunch(List.of("--expert")));
+        assertTrue(App.shouldForwardLaunch(List.of("--single-window", "--no-session")));
     }
 
     @Test
     void newInstanceOptsOut() {
         assertFalse(App.shouldForwardLaunch(List.of("--new-instance", "/src/Foo.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--new-instance")));
     }
 
     @Test
-    void launchesThatShapeTheProcessItselfAreNotForwarded() {
-        // Each of these means something at *startup* that has no honest reading inside a running window, so
-        // they get their own process rather than a half-applied interpretation.
-        assertFalse(App.shouldForwardLaunch(List.of("--project=/src/app", "/src/Foo.java")));
+    void optionsThatOnlySelectTheConfigDirectoryDoNotOptOut() {
+        // The endpoint lives in the config directory, so these choose WHICH running editor a launch reaches;
+        // a second `editora --dev` is as much a second process on ~/.editora-dev as a bare one is on ~/.editora.
+        assertTrue(App.shouldForwardLaunch(List.of("--config-dir=/tmp/cfg", "/src/Foo.java")));
+        assertTrue(App.shouldForwardLaunch(List.of("--dev", "/src/Foo.java")));
+        assertTrue(App.shouldForwardLaunch(List.of("--dev")));
+    }
+
+    @Test
+    void aProjectLaunchIsForwardedWithItsDirectoryMadeAbsolute() {
+        assertTrue(App.shouldForwardLaunch(List.of("--project=/src/app", "/src/Foo.java")));
+        Path cwd = Path.of("/home/me").toAbsolutePath();
+
+        List<String> forwarded = App.forwardArgs(List.of("--project", "work/app", "notes.md"), cwd, p -> true);
+
+        assertEquals(
+                List.of(
+                        "--project=" + cwd.resolve("work/app"),
+                        cwd.resolve("notes.md").toString()),
+                forwarded);
+        // …and the receiving process reads the same project and file back out of it.
+        assertEquals(cwd.resolve("work/app").toString(), App.projectArg(forwarded));
+        assertEquals(
+                List.of(new OpenTarget(cwd.resolve("notes.md"), 0, 0)), App.fileTargets(forwarded, NOTHING_EXISTS));
+    }
+
+    @Test
+    void launchesThatNeedAWindowOfTheirOwnAreNotForwarded() {
+        // --new-file asks for a buffer no running window has an entry point for; --diff-ui is a standalone
+        // tool window with its own startup chrome. Each still gets its own process.
         assertFalse(App.shouldForwardLaunch(List.of("--new-file=notes.md", "/src/Foo.java")));
-        assertFalse(App.shouldForwardLaunch(List.of("--config-dir=/tmp/cfg", "/src/Foo.java")));
-        assertFalse(App.shouldForwardLaunch(List.of("--dev", "/src/Foo.java")));
+        assertFalse(App.shouldForwardLaunch(List.of("--new-file")));
         assertFalse(App.shouldForwardLaunch(List.of("--diff-ui", "/src/old.java", "/src/new.java")));
     }
 
     @Test
-    void aLeakedForeignFlagValueIsNotMistakenForAFileToForward() {
-        // fileTargets already refuses a non-existent token sitting after a foreign flag (#791); the
-        // forwarding policy inherits that, so such a launch must not be treated as "open these files".
-        assertFalse(App.shouldForwardLaunch(List.of("--add-exports", "javafx.graphics/com.sun.glass.ui=com.editora")));
+    void aLeakedForeignFlagValueIsNotForwardedAsAFile() {
+        // fileTargets already refuses a non-existent token sitting after a foreign flag (#791). Such a launch
+        // is forwarded like any other, but as a launch with nothing to open — the token is not sent.
+        List<String> args = List.of("--add-exports", "javafx.graphics/com.sun.glass.ui=com.editora");
+        assertTrue(App.shouldForwardLaunch(args));
+        assertEquals(List.of(), App.forwardArgs(args, Path.of("/home/me").toAbsolutePath(), p -> false));
     }
 
     @Test

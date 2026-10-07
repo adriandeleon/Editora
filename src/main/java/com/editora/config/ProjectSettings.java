@@ -83,7 +83,8 @@ public class ProjectSettings {
 
     /**
      * Converts a legacy project TOML file to JSON for editing. Existing JSON wins; malformed TOML is left
-     * untouched and reported to the caller instead of being replaced by empty overrides.
+     * untouched and reported to the caller instead of being replaced by empty overrides. The converted TOML
+     * file is kept as {@code settings.toml.migrated}.
      */
     public static Path migrateLegacyForEditing(Path projectRoot) throws java.io.IOException {
         Path file = fileFor(projectRoot);
@@ -99,7 +100,9 @@ public class ProjectSettings {
             migrated = new ProjectSettings();
         }
         ConfigWriter.writeAtomic(file, JSON, migrated);
-        Files.deleteIfExists(legacy);
+        // Kept, renamed: the JSON was produced from the model, so the comments in a hand-written (and often
+        // committed) TOML file, and any key the model does not carry, exist nowhere else.
+        SharedConfig.retireLegacyFile(legacy);
         return file;
     }
 
