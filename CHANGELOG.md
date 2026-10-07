@@ -71,6 +71,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- GitHub: the tool window names the repository `gh` resolved, filters pull requests and issues by state
+  (open, closed, merged, all) and "Mine", offers "load more" instead of stopping at 50 (30 for runs),
+  and shows a spinner while `gh` is working. Row menus open with the Menu key, and the segment buttons
+  can be reached with Tab.
+- GitHub: the status-bar checks indicator appears on its own, names the pull request, updates while
+  checks are pending, and opens a list of the checks with links and failure logs.
+- GitHub: Create Pull Request starts from the branch's commits and the repository's template, with a
+  base-branch chooser, the head branch shown and a push offer when the branch is unpushed or ahead. It
+  refuses the default branch and offers the pull request a branch already has. The Create and Submit
+  Review forms stay open while `gh` runs and keep what you typed if it fails.
+- GitHub: new commands Show Pull Requests, Show Issues, Rerun Selected Workflow Run, Rerun Failed Jobs,
+  Cancel Selected Workflow Run, Copy URL of Selected Row and Show Pull Request Checks, and a
+  VCS ▸ GitHub submenu.
+- GitHub: with Git support off, GitHub commands say so and name the command that turns it on.
+- GitHub: the checks indicator requires `gh` 2.50 (Settings said 2.4). An older `gh` is detected, and
+  Settings, Doctor and the checks command say which version is needed.
+
 - The VCS menu is grouped into submenus (Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches,
   History & Blame, Compare) with the daily actions at the top level.
 - A Git command that stops on conflicts (pull, merge, rebase, revert, cherry-pick, stash pop, 3-way
@@ -115,6 +132,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- GitHub: being offline when Editora starts no longer disables the integration for the session as "not
+  authenticated". A missing or signed-out `gh` is checked again when a command needs it, and a rejected
+  token is reported as such.
+- GitHub: a `gh` path containing spaces (for example `C:\Program Files\GitHub CLI\gh.exe`) works.
+- GitHub: a pull request too large for a single diff (over 300 files or 20,000 lines) opens for review
+  from GitHub's file list, and the review tab says so. A file diff shows each hunk at its real line
+  numbers and marks a missing final newline. A one-file pull request opens the review tab, so its
+  description, Open on GitHub, Submit Review and Refresh are reachable.
+- GitHub: a failed CI log larger than 10 MB shows its end, where the failure is, instead of its
+  beginning. The log's Stop button stops `gh`, and lists, long checkouts and background checks no longer
+  queue behind each other.
+- GitHub: the tool window recognises scp-style remotes without a user, GitHub remotes other than
+  `origin`, and Enterprise hosts `gh` is signed in to. Saving unrelated settings no longer closes it.
+- GitHub: checking out a pull request from the tool window supersedes pending saves in that repository,
+  not the active tab's. Open on GitHub works for files whose name starts with `-`. A reviewer typed as
+  `@a, a` is added once. Workflow run ids are no longer digit-grouped, and tooltips show relative and
+  local times.
 - Git: a repository Git refuses to work in (for example "dubious ownership") says why in the status bar
   and the Commit window instead of looking like no repository.
 - Git: commands never start an external editor, so continuing a rebase no longer hangs waiting for one.
