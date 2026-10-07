@@ -137,6 +137,8 @@ public class App extends Application {
                     simpleFlag(rawArgs),
                     singleWindowArg(rawArgs),
                     noSessionFlag(rawArgs));
+            // A save that was killed while overwriting a file in place left the previous bytes in a backup.
+            com.editora.ui.SaveBackupRecovery.offerAtStartup(shared, stage);
         }
 
         // macOS: receive files opened via Finder's "Open With" (a CFBundleDocumentTypes association added by

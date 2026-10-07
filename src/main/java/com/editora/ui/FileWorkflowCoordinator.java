@@ -218,7 +218,7 @@ final class FileWorkflowCoordinator {
             // A file that cannot be replaced (read-only folder, hard links, another owner) is overwritten in
             // place; its previous bytes wait here, on a disk that survives a crash, until the write is done.
             return AtomicFileWrite.writeDocument(
-                    target, bytes, commit, host.config().getConfigDir().resolve("save-backups"));
+                    target, bytes, commit, host.config().getConfigDir().resolve(SaveBackupRecovery.FOLDER));
         }
     };
 
@@ -2258,8 +2258,11 @@ final class FileWorkflowCoordinator {
     void shutdown() {
         shutdown = true;
         autoSaveIdleTimer.stop();
-        autoSaveExecutor.shutdownNow();
-        remoteSaveExecutors.values().forEach(ExecutorService::shutdownNow);
+        // Not shutdownNow: that interrupts the write that is running, and an interrupt in the middle of an
+        // in-place overwrite leaves the user's file truncated. The tickets closed below already stop every
+        // write that has not reached its commit point; one that has is allowed to finish.
+        autoSaveExecutor.shutdown();
+        remoteSaveExecutors.values().forEach(ExecutorService::shutdown);
         fileLoadExecutor.shutdownNow();
         List.copyOf(activeSaveRequests).forEach(this::finishRequest);
         committedSaves.clear();
