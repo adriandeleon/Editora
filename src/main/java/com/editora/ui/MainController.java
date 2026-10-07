@@ -319,6 +319,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Local File History: snapshots local files on save/auto-save/external reload (off-thread). */
     private HistoryCoordinator historyCoordinator;
+    /** Gate for programmatic bulk edits in a buffer without undo; installed on every buffer in addBuffer. */
+    private NoUndoGuard noUndoGuard;
 
     private ToolbarCoordinator toolbarCoordinator;
     private java.util.Map<String, javafx.scene.Node> toolbarBaseWidgets;
@@ -2361,6 +2363,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         githubToolWindow = new ToolWindow(
                 "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
+        noUndoGuard = new NoUndoGuard(historyCoordinator::recordSafetyCopy, coordinatorHost::setStatus);
         fileHistoryToolWindow = new ToolWindow(
                 "fileHistory",
                 tr("toolwindow.fileHistory"),
@@ -8119,6 +8122,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
         buffer.setOnNotesChanged(() -> notesCoordinator.schedulePersistNotes(buffer));
         buffer.setOnNarrowChanged(() -> editing.afterNarrowChanged(buffer));
+        NoUndoGuard.install(buffer, noUndoGuard);
         buffer.setNoteMarkerClick(notesCoordinator::onNoteMarkerClick);
         buffer.setGutterBlameClick(git::onGutterBlameClick);
         todoCoordinator.applyToBuffer(buffer); // push the compiled TODO/highlight matcher (on by default)

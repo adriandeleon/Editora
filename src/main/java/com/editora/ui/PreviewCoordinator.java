@@ -182,6 +182,9 @@ final class PreviewCoordinator {
             host.setStatus(tr("status.markdownLint.fixNone"));
             return;
         }
+        if (!NoUndoGuard.allow(b, tr("command.markdownLint.fix"))) {
+            return;
+        }
         b.replaceWholeDocument(fixed); // computed from getContent(): widens a narrowed buffer first (undoable)
         host.setStatus(tr("status.markdownLint.fixed"));
     }
@@ -593,6 +596,9 @@ final class PreviewCoordinator {
         String out = align ? com.editora.csv.CsvAlign.align(text, delim) : com.editora.csv.CsvAlign.shrink(text, delim);
         if (out.equals(text)) {
             host.setStatus(tr(align ? "status.csv.alignNoChange" : "status.csv.shrinkNoChange"));
+            return;
+        }
+        if (!NoUndoGuard.allow(b, tr(align ? "command.csv.align" : "command.csv.shrink"))) {
             return;
         }
         b.replaceWholeDocument(out); // computed from getContent(): widens a narrowed buffer first (undoable)

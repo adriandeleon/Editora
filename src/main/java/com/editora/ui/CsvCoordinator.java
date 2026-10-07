@@ -1,6 +1,5 @@
 package com.editora.ui;
 
-import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +8,7 @@ import javafx.scene.Node;
 
 import com.editora.command.Command;
 import com.editora.command.CommandRegistry;
+import com.editora.csv.CsvCellEdit;
 import com.editora.csv.CsvParser;
 import com.editora.editor.EditorBuffer;
 
@@ -53,6 +53,8 @@ final class CsvCoordinator {
     private final Map<EditorBuffer, CsvGridPanel> panels = new IdentityHashMap<>();
     /** Delimiter last used to build each buffer's grid — maps a clicked field back to a caret offset. */
     private final Map<EditorBuffer, Character> delimiters = new IdentityHashMap<>();
+    /** The whole-document text each buffer's grid was last built from — what a cell edit is checked against. */
+    private final Map<EditorBuffer, String> builtFrom = new IdentityHashMap<>();
 
     CsvCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -105,6 +107,7 @@ final class CsvCoordinator {
             buffer.setCsvPreviewRefresh(null);
             panels.remove(buffer);
             delimiters.remove(buffer);
+            builtFrom.remove(buffer);
         }
     }
 
@@ -138,6 +141,7 @@ final class CsvCoordinator {
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null && panels.remove(closed) != null) {
             delimiters.remove(closed);
+            builtFrom.remove(closed);
         }
     }
 
@@ -150,12 +154,14 @@ final class CsvCoordinator {
             return;
         }
         if (!buffer.isCsv() || !isEnabled()) {
+            builtFrom.remove(buffer);
             panel.setEditable(false, null);
             panel.setData(List.of());
             return;
         }
         String text = buffer.getContent();
         if (text.length() > MAX_PREVIEW_CHARS) {
+            builtFrom.remove(buffer);
             panel.setEditable(false, null);
             panel.setData(List.of()); // too large — the placeholder shows the empty message
             host.setStatus(com.editora.i18n.Messages.tr("status.csv.gridTooLarge"));
@@ -163,6 +169,7 @@ final class CsvCoordinator {
         }
         char delimiter = CsvParser.detectDelimiter(text);
         delimiters.put(buffer, delimiter);
+        builtFrom.put(buffer, text);
         List<List<String>> rows = CsvParser.parse(text, delimiter);
         // In-place editing is safe only when each parsed row maps 1:1 to a physical line — i.e. no quoted
         // multi-line field merged two lines — and the buffer is writable. Otherwise the grid stays read-only.
@@ -172,10 +179,13 @@ final class CsvCoordinator {
     }
 
     /**
-     * Writes a grid cell edit back to the buffer: rebuild the edited row's physical line (fields re-quoted
-     * per RFC-4180) and replace exactly that paragraph via an undoable {@code replaceText}. The subsequent
-     * text-change fires the debounced re-parse, resyncing the grid. {@code dataRow == -1} edits the header
-     * row (line 0).
+     * Writes a grid cell edit back to the buffer: splices the new value into that field of the row's
+     * physical line — nothing else on the line changes — as one undoable {@code replaceText}. The grid shows
+     * the <em>whole file</em> ({@link EditorBuffer#getContent()}), so the row is located in the whole file
+     * and mapped into the editor area, which holds only a part of it while the buffer is narrowed. The edit
+     * is refused, with a message, when the line is no longer the one the grid was built from or lies outside
+     * the narrowed region. The subsequent text-change fires the debounced re-parse, resyncing the grid.
+     * {@code dataRow == -1} edits the header row (line 0).
      */
     private void commitCell(EditorBuffer buffer, int dataRow, int field, String value) {
         if (buffer == null || !buffer.isCsv() || !buffer.isEditable()) {
@@ -186,25 +196,35 @@ final class CsvCoordinator {
             return;
         }
         char delimiter = delimiters.getOrDefault(buffer, ',');
-        var area = buffer.getArea();
         int line = dataRow < 0 ? 0 : (panel.isHeaderRow() ? dataRow + 1 : dataRow);
-        if (line < 0 || line >= area.getParagraphs().size()) {
+        String content = buffer.getContent();
+        int[] span = CsvCellEdit.lineSpan(content, line);
+        String shown = CsvCellEdit.lineText(builtFrom.get(buffer), line);
+        if (span == null || shown == null || !shown.equals(content.substring(span[0], span[1]))) {
+            refuseCellEdit(buffer, "status.csv.cannotEditChangedRow");
             return;
         }
-        String lineText = area.getText(line);
-        List<List<String>> parsed = CsvParser.parse(lineText, delimiter);
-        List<String> fields = parsed.isEmpty() ? new ArrayList<>() : new ArrayList<>(parsed.get(0));
-        while (fields.size() <= field) {
-            fields.add("");
-        }
-        fields.set(field, value);
-        String newLine = CsvParser.formatRow(fields, delimiter);
-        if (newLine.equals(lineText)) {
+        String newLine = CsvCellEdit.replaceField(shown, delimiter, field, value);
+        if (newLine.equals(shown)) {
             return; // no-op (e.g. re-committing the same value)
         }
-        int start = area.getAbsolutePosition(line, 0);
-        int end = start + area.getParagraphLength(line);
+        var area = buffer.getArea();
+        int start = span[0] - buffer.narrowStart();
+        int end = span[1] - buffer.narrowStart();
+        if (start < 0 || end > area.getLength()) {
+            refuseCellEdit(buffer, "status.csv.cannotEditHiddenRow");
+            return;
+        }
         area.replaceText(start, end, newLine); // undoable; marks the buffer dirty
+        // Until the debounced re-parse runs, the grid's other rows are still checked against the right text.
+        builtFrom.put(buffer, buffer.getContent());
+    }
+
+    /** Says why a cell edit was not written and puts the grid back in step with the document. */
+    private void refuseCellEdit(EditorBuffer buffer, String messageKey) {
+        host.setStatus(com.editora.i18n.Messages.tr(messageKey));
+        // Not from inside the table's own commit handler: rebuilding replaces its columns and items.
+        javafx.application.Platform.runLater(() -> rebuild(buffer));
     }
 
     /** A grid cell was activated: place the caret at that field's start in the buffer. */
