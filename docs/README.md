@@ -62,6 +62,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   tail-follow offsets and rotation, and the rules a filtered view depends on.
 - [subsystems/git-log.md](subsystems/git-log.md) — the Git Log's paging, graph layout, history
   search syntax and argv safety, file history across renames, and tags.
+- [subsystems/github.md](subsystems/github.md) — the `gh` availability probe and its states, the four
+  call lanes and cancellation, tool-window gating, and how oversized logs and diffs are reported.
 - [subsystems/java-editing-review.md](subsystems/java-editing-review.md) — Java typing/completion
   pipeline, IntelliJ comparison, regression coverage, performance evidence and remaining server gaps.
 
