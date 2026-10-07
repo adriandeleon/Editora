@@ -569,15 +569,7 @@ final class EditorSettingsCoordinator {
             int max,
             java.util.function.IntConsumer set,
             Runnable apply) {
-        host.promptText(commandTitle(commandId), tr("palette.setting.value"), Integer.toString(get.getAsInt()), v -> {
-            int parsed;
-            try {
-                parsed = Integer.parseInt(v.trim());
-            } catch (NumberFormatException ex) {
-                host.setStatus(tr("status.setting.invalidNumber", v.trim()));
-                return;
-            }
-            int clamped = Math.max(min, Math.min(max, parsed));
+        promptIntValue(commandId, get, min, max, clamped -> {
             set.accept(clamped);
             host.requestSave();
             if (apply != null) {
@@ -588,6 +580,33 @@ final class EditorSettingsCoordinator {
             }
             host.setStatus(tr("status.settingChanged", commandTitle(commandId), Integer.toString(clamped)));
         });
+    }
+
+    /**
+     * The prompt half of {@link #promptIntSetting}: asks for an integer, clamps it to [min,max] and hands it
+     * to {@code onValue}, which decides what to do with it (a setting that must ask before it is changed).
+     */
+    void promptIntValue(
+            String commandId,
+            java.util.function.IntSupplier get,
+            int min,
+            int max,
+            java.util.function.IntConsumer onValue) {
+        host.promptText(commandTitle(commandId), tr("palette.setting.value"), Integer.toString(get.getAsInt()), v -> {
+            int parsed;
+            try {
+                parsed = Integer.parseInt(v.trim());
+            } catch (NumberFormatException ex) {
+                host.setStatus(tr("status.setting.invalidNumber", v.trim()));
+                return;
+            }
+            onValue.accept(Math.max(min, Math.min(max, parsed)));
+        });
+    }
+
+    /** A command's palette title, for a status line written by the code that applied its value. */
+    String titleOf(String commandId) {
+        return commandTitle(commandId);
     }
 
     /** Generic single-choice picker that sets a setting to the chosen value (label fn for display). */

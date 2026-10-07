@@ -678,6 +678,9 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::exportConfig,
                 this::showDebugLog);
         this.settingsWindow.setPluginManager(pluginManager); // shared; lists discovered plugins on the Plugins page
+        this.settingsWindow.setStatusSink(this::setStatus);
+        this.settingsWindow.setHistoryLimits((perFile, ageDays, totalMb, owner, done) ->
+                historyCoordinator.changeLimits(perFile, ageDays, totalMb, owner, done));
         this.pluginCoordinator = new PluginCoordinator(
                 coordinatorHost,
                 registry,

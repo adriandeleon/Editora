@@ -598,6 +598,29 @@ public class SettingsWindow {
         this.snippetManager = snippetManager;
     }
 
+    /** Where a message about something this window did goes: the owning window's status bar. */
+    public void setStatusSink(Consumer<String> onStatus) {
+        this.onStatus = onStatus;
+    }
+
+    private Consumer<String> onStatus;
+
+    /**
+     * Changes the three Local History retention limits on behalf of this window's spinners. Lowering one
+     * deletes revisions, so the implementation ({@code HistoryCoordinator.changeLimits}) writes the settings
+     * only once it knows nothing would go or the user confirmed what would; {@code done} gets whether it did.
+     */
+    @FunctionalInterface
+    public interface HistoryLimits {
+        void change(int maxPerFile, int maxAgeDays, int maxTotalMb, Window owner, Consumer<Boolean> done);
+    }
+
+    public void setHistoryLimits(HistoryLimits historyLimits) {
+        this.historyLimits = historyLimits;
+    }
+
+    private HistoryLimits historyLimits;
+
     /** Injects the Spell Check page's "open dictionary file" actions (bundled technical / personal). */
     public void setDictionaryActions(Runnable openTechnical, Runnable openPersonal) {
         this.onOpenTechnicalDictionary = openTechnical;
@@ -1800,10 +1823,41 @@ public class SettingsWindow {
             if (loading || now == null) {
                 return;
             }
-            setter.accept(config.getSettings(), now);
-            apply();
+            if (historyLimits == null) {
+                setter.accept(config.getSettings(), now);
+                apply();
+                return;
+            }
+            // Not written here: a lower limit deletes revisions in every project the moment it is applied,
+            // and stepping the spinner back up does not bring them back. The handler writes the settings
+            // once it knows nothing would go, or after the user confirmed what would.
+            historyLimits.change(
+                    historyMaxPerFileSpinner.getValue(),
+                    historyMaxAgeSpinner.getValue(),
+                    historyMaxTotalSpinner.getValue(),
+                    stage,
+                    applied -> {
+                        if (applied) {
+                            apply();
+                        }
+                        showHistoryLimits(); // declined: back to the limits in force
+                    });
         });
         return s;
+    }
+
+    /** Shows the stored retention limits in the three spinners, without that counting as an edit. */
+    private void showHistoryLimits() {
+        Settings settings = config.getSettings();
+        boolean was = loading;
+        loading = true;
+        try {
+            historyMaxPerFileSpinner.getValueFactory().setValue(settings.getHistoryMaxPerFile());
+            historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
+            historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());
+        } finally {
+            loading = was;
+        }
     }
 
     /** Local-history retention spinners are only meaningful while the master switch is on. */
@@ -7407,8 +7461,40 @@ public class SettingsWindow {
         if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
             return;
         }
-        Settings.resetToDefaults(config.getSettings());
+        // A reset clears API keys, external tools, TODO patterns, the toolbar layout and every tool path, and
+        // rewrites settings.json in place. Keep what is there now beside it first; without the copy there
+        // is no reset.
+        Path backup;
+        try {
+            config.save(); // the file is to hold the settings as they are, not as of the last queued write
+            backup = SettingsResetBackup.write(
+                    config.getConfigDir().resolve("settings.json"), java.time.LocalDateTime.now());
+        } catch (java.io.IOException | RuntimeException e) {
+            Alert failed = Dialogs.styled(new Alert(
+                    Alert.AlertType.ERROR,
+                    tr("settings.reset.backupFailed", e.getMessage() == null ? e.toString() : e.getMessage()),
+                    ButtonType.OK));
+            failed.initOwner(stage);
+            failed.setTitle(tr("settings.reset.title"));
+            failed.setHeaderText(null);
+            failed.showAndWait();
+            return;
+        }
+        Settings live = config.getSettings();
+        int historyPerFile = live.getHistoryMaxPerFile();
+        int historyAgeDays = live.getHistoryMaxAgeDays();
+        int historyTotalMb = live.getHistoryMaxTotalMb();
+        Settings.resetToDefaults(live);
+        // The Local History limits are the exception: a default stricter than the user's limit would delete
+        // revisions, which a reset of preferences must not do. A looser limit is kept; the spinners (which
+        // ask before deleting) are the way to lower it.
+        live.setHistoryMaxPerFile(Math.max(historyPerFile, live.getHistoryMaxPerFile()));
+        live.setHistoryMaxAgeDays(historyAgeDays <= 0 ? 0 : Math.max(historyAgeDays, live.getHistoryMaxAgeDays()));
+        live.setHistoryMaxTotalMb(Math.max(historyTotalMb, live.getHistoryMaxTotalMb()));
         commitReset();
+        if (onStatus != null) {
+            onStatus.accept(tr("status.settings.reset", backup.getFileName().toString()));
+        }
     }
 
     /** Persists + applies a reset, re-themes the app, and reloads the controls + preview. */
