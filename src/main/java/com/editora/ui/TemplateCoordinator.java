@@ -120,7 +120,13 @@ final class TemplateCoordinator {
             if (target.getParent() != null) {
                 java.nio.file.Files.createDirectories(target.getParent());
             }
-            java.nio.file.Files.writeString(target, rendered.text());
+            // Exclusive create: the exists() check above can answer "no" on a transient remote failure, and a
+            // truncating write would then empty a real file.
+            java.nio.file.Files.writeString(
+                    target,
+                    rendered.text(),
+                    java.nio.file.StandardOpenOption.CREATE_NEW,
+                    java.nio.file.StandardOpenOption.WRITE);
         } catch (java.io.IOException e) {
             host.setError(tr("status.newfile.failed", e.getMessage()));
             return;
@@ -438,7 +444,12 @@ final class TemplateCoordinator {
             if (target.getParent() != null) {
                 java.nio.file.Files.createDirectories(target.getParent());
             }
-            java.nio.file.Files.writeString(target, parsed.text());
+            // Exclusive create — "refuse to overwrite" must hold even when exists() above was wrong.
+            java.nio.file.Files.writeString(
+                    target,
+                    parsed.text(),
+                    java.nio.file.StandardOpenOption.CREATE_NEW,
+                    java.nio.file.StandardOpenOption.WRITE);
             return true;
         } catch (java.io.IOException e) {
             host.setStatus(tr("status.templateWriteFailed", e.getMessage()));

@@ -1,8 +1,6 @@
 package com.editora.ui;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import javafx.geometry.Insets;
@@ -123,7 +121,8 @@ public final class DebugLogWindow {
         java.io.File target = chooser.showSaveDialog(stage);
         if (target != null) {
             try {
-                Files.writeString(target.toPath(), area.getText(), StandardCharsets.UTF_8);
+                // Staged: a failed write must not empty a log the Save dialog agreed to replace.
+                com.editora.io.StagedExport.writeString(target.toPath(), area.getText());
             } catch (IOException ex) {
                 fileLabel.setText(tr("debuglog.exportFailed", ex.getMessage()));
             }

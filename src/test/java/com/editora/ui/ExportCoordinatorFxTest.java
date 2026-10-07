@@ -86,6 +86,61 @@ class ExportCoordinatorFxTest {
         }
     }
 
+    /**
+     * An asynchronous export (PDF, office, diagram CLI) writes to a staging path: when it reports failure
+     * after writing part of its output, the file the Save dialog agreed to replace is still whole.
+     */
+    @Test
+    void aFailedExportDoesNotTruncateTheFileItWasReplacing() throws Exception {
+        Path output = Files.writeString(temp.resolve("report.pdf"), "last good export");
+        List<String> reported = new ArrayList<>();
+        FxTestSupport.runOnFx(() -> {
+            ExportCoordinator exports = new ExportCoordinator(
+                    new Host(), null, null, null, path -> fail("opens nothing"), chooser -> output.toFile());
+            try {
+                exports.<String>staged(
+                        output.toFile(),
+                        (out, done) -> {
+                            assertNotEquals(output, out, "the export must not be pointed at the real file");
+                            assertEquals("report.pdf", out.getFileName().toString());
+                            try {
+                                Files.writeString(out, "%PDF-1.7 half a docu");
+                            } catch (java.io.IOException e) {
+                                throw new java.io.UncheckedIOException(e);
+                            }
+                            done.accept("failed: disk full");
+                        },
+                        result -> result.startsWith("ok"),
+                        message -> "failed: " + message,
+                        reported::add);
+                assertEquals("last good export", Files.readString(output));
+
+                exports.<String>staged(
+                        output.toFile(),
+                        (out, done) -> {
+                            try {
+                                Files.writeString(out, "%PDF-1.7 complete");
+                            } catch (java.io.IOException e) {
+                                throw new java.io.UncheckedIOException(e);
+                            }
+                            done.accept("ok");
+                        },
+                        result -> result.startsWith("ok"),
+                        message -> "failed: " + message,
+                        reported::add);
+                assertEquals("%PDF-1.7 complete", Files.readString(output));
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            } finally {
+                exports.shutdown();
+            }
+        });
+        assertEquals(List.of("failed: disk full", "ok"), reported);
+        try (var files = Files.list(temp)) {
+            assertEquals(List.of(output), files.toList(), "no staging directory is left beside the export");
+        }
+    }
+
     @Test
     void preservesCommandOrderAndNoBufferGuards() throws Exception {
         FxTestSupport.runOnFx(() -> {
