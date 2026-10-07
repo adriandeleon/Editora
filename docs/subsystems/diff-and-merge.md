@@ -85,6 +85,15 @@ multi-file `.patch`/`.diff` buffers and repository snapshots from the Git coordi
 the `diff.reviewStaged` / `diff.reviewUnstaged` commands open index-vs-HEAD or working-vs-index review sets;
 untracked files compare against an empty index side, and rename/copy entries fetch their original path on the
 left. Active-diff commands route through the currently selected file.
+`DiffCoordinator.openBlobReview` builds the same read-only review from pairs of blob specs
+(`<rev>:<path>`, or nothing for an absent side); the stash list uses it to show a stash against the commit
+it was made on, with the untracked files of an `--include-untracked` stash read from the stash commit's
+third parent.
+
+Inside a repository a patch buffer always opens as a `PatchReviewPane` (a one-file patch too), because that
+tab carries the **Apply to Working Tree** / **Apply to Index** bar (`setApplyActions`). The bar applies the
+bytes that were parsed for the tab, in the repository the tab was opened in — a review tab is not a file, so
+a window without a project has no active repository while it is selected.
 
 `DirectoryReviewPane` is the recursive folder-comparison surface. `DirectoryDiff` resolves each root (which may
 itself be a symbolic link) and walks below it without following symbolic links, prunes `.git` trees and paths matched by either root's `.gitignore`, bounds each scan to
@@ -146,6 +155,19 @@ with `update-index --cacheinfo` (keeping its file mode), and atomically publishe
 index bytes and the displayed path blob still match. A stale comparison therefore fails without mutation,
 and an `index.lock` held by another Git process is reported as busy and left in place. Copy hunk and
 open-changed-line are available from the context menu and command palette.
+
+### Applying a patch file
+
+`GitPatchCoordinator` applies a whole patch with `git apply` (`GitService.applyPatch`), never by replaying
+hunks through the editor: the patch's own bytes go to git's stdin, so a patch of CRLF or Latin-1 text still
+matches. `--check` runs first in the same serial job; a patch that does not fit applies nothing and
+`PatchOutcome.REJECTED` shows git's message with the offer to retry with `--3way`. A three-way apply has no
+pre-flight (`--check --3way` passes for a patch that will conflict) and can end as
+`PatchOutcome.CONFLICTS`: exit code 1 with the files written and marked. Anything that writes files — a
+working-tree apply, any three-way apply — first saves the open buffers of the paths the patch names and
+runs inside `GitCoordinator.aroundWorkingTreeMutation`, so pending saves are superseded and buffers reload.
+`git.createPatch` reads `git diff --binary [--cached]` or `git format-patch -1 --stdout <hash>` as a
+hardened background read and writes the bytes unchanged.
 
 ## Three-way merge
 

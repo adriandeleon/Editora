@@ -688,9 +688,10 @@ final class DiffCoordinator {
             if (applicable) {
                 // The text that was parsed for this tab: what is applied is what is being reviewed.
                 byte[] patch = GitPatchCoordinator.patchBytes(buffer);
+                Path root = git.repoRoot(); // the repository it was opened in; see GitPatchCoordinator.apply
                 review.setApplyActions(
-                        () -> git.patches().apply(patch, false),
-                        () -> git.patches().apply(patch, true));
+                        () -> git.patches().apply(root, patch, false),
+                        () -> git.patches().apply(root, patch, true));
             }
             ops.addDiffTab(review);
         }

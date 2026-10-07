@@ -121,6 +121,64 @@ public final class BlameIgnoreRevs {
         return globalBroken ? new Plan(globalReadable, true, null) : Plan.NONE;
     }
 
+    /**
+     * The text of a git config file equal to the user's global configuration without
+     * {@code blame.ignoreRevsFile}: what {@code GIT_CONFIG_GLOBAL} points at for a blame that must not open
+     * a missing globally configured file. Written as a <em>file</em>, not handed over with {@code -c} or
+     * {@code GIT_CONFIG_COUNT}: those outrank the repository's own config, so a global
+     * {@code core.autocrlf} would start overriding the repository's and change what blame calls an
+     * uncommitted line. {@code safeDirectory} is added as {@code safe.directory} (honoured only from a
+     * config file): git has already answered for that repository under the user's real configuration.
+     *
+     * @param listZ {@code git config --global --includes -z --list}: {@code key LF value NUL …}, the
+     *     includes already expanded (so {@code include.*} entries are dropped)
+     */
+    public static String globalConfigWithoutIgnoreRevs(String listZ, String safeDirectory) {
+        StringBuilder sb = new StringBuilder();
+        for (String entry : listZ == null ? new String[0] : listZ.split("\u0000")) {
+            int newline = entry.indexOf('\n');
+            String key = newline < 0 ? entry : entry.substring(0, newline);
+            int first = key.indexOf('.');
+            int last = key.lastIndexOf('.');
+            if (first <= 0 || last == key.length() - 1) {
+                continue;
+            }
+            String section = key.substring(0, first);
+            String name = key.substring(last + 1);
+            if ((section.equalsIgnoreCase("blame") && name.equalsIgnoreCase("ignoreRevsFile"))
+                    || section.equalsIgnoreCase("include")
+                    || section.equalsIgnoreCase("includeIf")) {
+                continue;
+            }
+            sb.append('[').append(section);
+            if (last > first) {
+                String subsection = key.substring(first + 1, last);
+                sb.append(" \"")
+                        .append(subsection.replace("\\", "\\\\").replace("\"", "\\\""))
+                        .append('"');
+            }
+            sb.append("]\n\t").append(name);
+            if (newline >= 0) { // a key listed without a value is a bare boolean
+                sb.append(" = ").append(quoted(entry.substring(newline + 1)));
+            }
+            sb.append('\n');
+        }
+        if (safeDirectory != null && !safeDirectory.isBlank()) {
+            sb.append("[safe]\n\tdirectory = ").append(quoted(safeDirectory)).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** A config value in double quotes, with the escapes git's config parser reads. */
+    private static String quoted(String value) {
+        return '"'
+                + value.replace("\\", "\\\\")
+                        .replace("\"", "\\\"")
+                        .replace("\n", "\\n")
+                        .replace("\t", "\\t")
+                + '"';
+    }
+
     /** Whether a failed blame's message is about an ignore-revs file (so retrying without one may succeed). */
     public static boolean isIgnoreRevsFailure(String err) {
         return err != null && (err.contains("object name list") || err.contains("invalid object name"));

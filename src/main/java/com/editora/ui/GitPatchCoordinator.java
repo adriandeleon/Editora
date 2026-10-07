@@ -150,10 +150,20 @@ final class GitPatchCoordinator {
 
     /** Applies {@code patch} in the active repository: to the index only ({@code cached}) or the working tree. */
     void apply(byte[] patch, boolean cached) {
-        if (git.reportIfNoRepo()) {
-            return;
+        if (!git.reportIfNoRepo()) {
+            apply(git.repoRoot(), patch, cached);
         }
-        run(git.repoRoot(), patch, cached, false);
+    }
+
+    /**
+     * As above, in the repository the caller chose the patch for. A review tab is not a file: while it is
+     * the active tab a window without a project has no repository of its own, so the tab carries the one it
+     * was opened in.
+     */
+    void apply(Path root, byte[] patch, boolean cached) {
+        if (root != null) {
+            run(root, patch, cached, false);
+        }
     }
 
     private void run(Path root, byte[] patch, boolean cached, boolean threeWay) {

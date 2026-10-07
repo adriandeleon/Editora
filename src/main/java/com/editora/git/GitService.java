@@ -964,41 +964,25 @@ public final class GitService {
 
     /**
      * {@link #READ_ENV} for one blame that must not see the user's global {@code blame.ignoreRevsFile}:
-     * {@code GIT_CONFIG_GLOBAL} points at a file holding only {@code safe.directory} for this repository
-     * (the key is honoured from a config <em>file</em> only, and git has already answered for this root
-     * under the user's own configuration), and every other global entry is handed back through
-     * {@code GIT_CONFIG_COUNT}, so line-ending conversion and the rest stay as the user set them.
-     * Git older than 2.32 ignores {@code GIT_CONFIG_GLOBAL}; blame then fails as it does in a terminal.
+     * {@code GIT_CONFIG_GLOBAL} points at a copy of the global configuration without that key
+     * ({@link BlameIgnoreRevs#globalConfigWithoutIgnoreRevs}). Git older than 2.32 ignores the variable;
+     * blame then fails as it does in a terminal.
      */
     private Map<String, String> envWithoutGlobalIgnoreRevs(Path root) {
-        Map<String, String> env = new LinkedHashMap<>(READ_ENV);
         try {
+            ProcessRunner.Result global = git(root, QUICK, "config", "--global", "--includes", "-z", "--list");
             Path config = Files.createTempFile("editora-git-global", ".config");
             config.toFile().deleteOnExit();
-            String dir = root.toString().replace("\\", "/").replace("\"", "\\\"");
-            Files.writeString(config, "[safe]\n\tdirectory = \"" + dir + "\"\n");
-            ProcessRunner.Result global = git(root, QUICK, "config", "--global", "--includes", "-z", "--list");
-            int count = 0;
-            for (String entry : global.ok() ? global.out().split("\u0000") : new String[0]) {
-                int newline = entry.indexOf('\n');
-                String key = newline < 0 ? entry : entry.substring(0, newline);
-                if (key.isBlank()
-                        || key.equalsIgnoreCase("blame.ignoreRevsFile")
-                        || key.startsWith("include.")
-                        || key.startsWith("includeif.")
-                        || key.startsWith("safe.")) {
-                    continue;
-                }
-                env.put("GIT_CONFIG_KEY_" + count, key);
-                env.put("GIT_CONFIG_VALUE_" + count, newline < 0 ? "true" : entry.substring(newline + 1));
-                count++;
-            }
-            env.put("GIT_CONFIG_COUNT", Integer.toString(count));
+            Files.writeString(
+                    config,
+                    BlameIgnoreRevs.globalConfigWithoutIgnoreRevs(
+                            global.ok() ? global.out() : "", root.toString().replace('\\', '/')));
+            Map<String, String> env = new LinkedHashMap<>(READ_ENV);
             env.put("GIT_CONFIG_GLOBAL", config.toString());
+            return env;
         } catch (IOException | RuntimeException e) {
             return READ_ENV; // blame then fails the way it does in a terminal
         }
-        return env;
     }
 
     private BlameKey blameKey(Path root, Path file, BlameOptions options, BlameIgnoreRevs.Plan plan) {
