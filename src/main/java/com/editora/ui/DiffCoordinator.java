@@ -1131,6 +1131,23 @@ final class DiffCoordinator {
         });
     }
 
+    /**
+     * Lets the user pick one of {@code root}'s tags (newest first) for a tag command; reports when there are
+     * none. {@code onChoose} runs with the tag's short name.
+     */
+    void pickTag(Path root, String title, Consumer<String> onChoose) {
+        git.service().tags(root, tags -> {
+            if (tags.isEmpty()) {
+                host.setStatus(tr("status.git.noTags"));
+                return;
+            }
+            QuickOpen<String> picker = new QuickOpen<>(
+                    title, tr("diff.tagPickerPrompt"), () -> tags, tag -> tag, tag -> tr("diff.tag"), onChoose);
+            picker.setOverlayHost(host.overlayHost());
+            picker.show(host.window());
+        });
+    }
+
     private void openPathVsRef(Path path, Path root, String rel, String ref, String displayRef) {
         if (Files.isDirectory(path)) {
             diffDirectoryVsRef(path, root, rel, ref, displayRef);
@@ -1651,6 +1668,75 @@ final class DiffCoordinator {
                 blobSide(root, hash + ":" + repoRel, root.resolve(repoRel)),
                 DiffViewerPane.EditableSide.NONE,
                 null);
+    }
+
+    /**
+     * Opens the files that differ between two commits as one navigable review tab — a whole commit against
+     * its parent, or two commits picked in the Git Log. Read-only; each file's diff is built when it is first
+     * selected ({@link DirectoryReviewPane}), so a commit touching thousands of files opens at once. A
+     * renamed file's left side is read at its old path; an added or deleted file has an empty side.
+     *
+     * @param leftRev the older side; never read for an added file, so {@code <root commit>^1} is harmless
+     */
+    void reviewRevisions(
+            Path root,
+            String title,
+            String leftRev,
+            String leftLabel,
+            String rightRev,
+            String rightLabel,
+            List<GitService.CommitFile> files,
+            boolean truncated) {
+        if (root == null) {
+            return;
+        }
+        java.util.Map<String, GitService.CommitFile> byPath = new java.util.HashMap<>();
+        List<DirectoryReviewPane.Entry> entries = new ArrayList<>(files.size());
+        for (GitService.CommitFile file : files) {
+            byPath.put(file.path(), file);
+            entries.add(new DirectoryReviewPane.Entry(
+                    file.path(),
+                    switch (file.status()) {
+                        case 'A' -> DirectoryDiff.Kind.RIGHT_ONLY;
+                        case 'D' -> DirectoryDiff.Kind.LEFT_ONLY;
+                        default -> DirectoryDiff.Kind.MODIFIED;
+                    },
+                    -1,
+                    -1));
+        }
+        String summary = tr("diff.revisions.summary", entries.size(), leftLabel, rightLabel)
+                + (truncated ? " · " + tr("diff.directory.truncated") : "");
+        DiffSide empty = callback -> callback.accept(DiffContent.text(""));
+        DirectoryReviewPane review = new DirectoryReviewPane(title, entries, summary, (entry, ready) -> {
+            GitService.CommitFile file = byPath.get(entry.label());
+            Path workingFile = root.resolve(file.path());
+            String leftPath = sourcePath(file.path(), file.origPath(), file.status());
+            String name = file.path().substring(file.path().lastIndexOf('/') + 1);
+            buildDiffPane(
+                    tr("diff.title.commitFile", name, rightLabel),
+                    leftLabel,
+                    rightLabel,
+                    leftPath.substring(leftPath.lastIndexOf('/') + 1),
+                    name,
+                    entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
+                            ? empty
+                            : blobSide(root, leftRev + ":" + leftPath, workingFile),
+                    entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
+                            ? empty
+                            : blobSide(root, rightRev + ":" + file.path(), workingFile),
+                    DiffViewerPane.EditableSide.NONE,
+                    null,
+                    pane -> pane.setExitDiffUiAction(null),
+                    built -> ready.accept(
+                            built == null
+                                    ? null
+                                    : new DirectoryReviewPane.Loaded(
+                                            built.pane(),
+                                            built.model().added(),
+                                            built.model().removed())));
+        });
+        ops.addDiffTab(review);
+        host.setStatus(tr("status.diff.reviewOpened", entries.size()));
     }
 
     /**

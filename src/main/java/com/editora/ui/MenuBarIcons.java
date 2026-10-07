@@ -122,6 +122,9 @@ final class MenuBarIcons {
         add("git.commit", Icons::git);
         add("git.switchBranch", Icons::git);
         add("git.newBranch", Icons::plus);
+        add("git.tag.create", Icons::bookmark);
+        add("git.tag.push", Icons::gitPush);
+        add("git.tag.delete", Icons::trash);
         add("git.clone", Icons::git);
         add("git.push", Icons::gitPush);
         add("git.pull", Icons::arrowDown);
@@ -137,6 +140,8 @@ final class MenuBarIcons {
         add("git.createPatch", Icons::diff);
         add("merge.resolve", Icons::merge);
         add("tool.gitLog", Icons::gitLog);
+        add("git.log.search", Icons::find);
+        add("git.log.toggleAllBranches", Icons::git);
         add("git.fileHistory", Icons::history);
         add("diff.vsHead", Icons::diff);
         add("diff.vsBranch", Icons::diff);
