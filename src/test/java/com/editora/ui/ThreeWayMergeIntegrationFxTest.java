@@ -86,9 +86,16 @@ class ThreeWayMergeIntegrationFxTest {
                     new GitService.RepoState(repo, status, Map.of(), Map.of())));
 
             Object diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+            // A file that no longer matches Git's merge is not replaced unasked: the resolver asks first.
+            java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+            ((DiffCoordinator) diff).mergeSourceChooser = hasMarkers -> {
+                asked.incrementAndGet();
+                return DiffCoordinator.MergeSource.GIT_VERSIONS;
+            };
             FxTestSupport.runOnFx(() -> FxTestSupport.invoke(diff, "resolveConflicts"));
             MergeViewerPane pane = awaitMergePane(fx.controller);
             assertNotNull(pane);
+            assertEquals(removeMarkers ? 1 : 0, asked.get());
 
             ConflictFile conflictFile = FxTestSupport.field(pane, "file");
             Conflict conflict = ((ConflictSegment) conflictFile.segments().get(1)).conflict();

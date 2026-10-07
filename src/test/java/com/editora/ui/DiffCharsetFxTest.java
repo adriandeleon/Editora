@@ -65,9 +65,11 @@ class DiffCharsetFxTest {
         Object ops = FxTestSupport.field(diff, "ops");
 
         applyState(git, repo(repo, "main"));
+        int before = FxTestSupport.callOnFx(
+                () -> ((List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {})).size());
         FxTestSupport.runOnFx(() -> FxTestSupport.call(diff, "diffPathVsHead", new Class<?>[] {Path.class}, file));
 
-        Object pane = awaitPaneWithLeftText(ops);
+        Object pane = awaitNewPane(ops, before);
         assertNotNull(pane, "a diff pane should be created");
         String left = FxTestSupport.field(pane, "leftText");
         assertNotNull(left, "HEAD side text");
@@ -82,6 +84,63 @@ class DiffCharsetFxTest {
         assertFalse(right.contains("�"), "working side must not mojibake: [" + right + "]");
     }
 
+    /**
+     * The viewer holds every side with bare {@code \n}, so a patch written from that text never applied to a
+     * CRLF file. Export puts each side's own line ending back (and keeps a shared legacy charset).
+     */
+    @Test
+    void exportedPatchAppliesToACrlfFile() throws Exception {
+        Path repo = Files.createTempDirectory("editora-diff-crlf");
+        Path file = repo.resolve("notes.txt");
+        Files.writeString(file, "one\r\ntwo\r\nthree\r\n");
+        git(repo, "init", "-q");
+        git(repo, "config", "core.autocrlf", "false");
+        git(repo, "add", ".");
+        git(repo, "-c", "user.email=t@e.st", "-c", "user.name=Test", "commit", "-q", "-m", "init");
+        Files.writeString(file, "one\r\nTWO\r\nthree\r\n");
+
+        Object git = FxTestSupport.field(fx.controller, "git");
+        Object diff = FxTestSupport.field(fx.controller, "diffCoordinator");
+        Object ops = FxTestSupport.field(diff, "ops");
+        applyState(git, repo(repo, "main"));
+        int before = FxTestSupport.callOnFx(
+                () -> ((List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {})).size());
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(diff, "diffPathVsHead", new Class<?>[] {Path.class}, file));
+
+        DiffViewerPane pane = (DiffViewerPane) awaitNewPane(ops, before);
+        assertNotNull(pane, "a diff pane should be created");
+        DiffViewerPane shown = pane;
+        DiffViewerPane.PatchRequest request = FxTestSupport.callOnFx(shown::patchRequest);
+        assertFalse(request.leftText().contains("\r"), "the viewer itself keeps bare \\n");
+        String[] sides = DiffCoordinator.patchSides(request);
+        String patch =
+                com.editora.diff.PatchWriter.unifiedDiff(request.leftLabel(), request.rightLabel(), sides[0], sides[1]);
+        assertTrue(patch.contains("-two\r\n+TWO\r\n"), patch.replace("\r", "\\r"));
+
+        git(repo, "checkout", "-q", "--", "notes.txt");
+        Path patchFile = repo.resolve("changes.patch");
+        Files.write(
+                patchFile,
+                DiffCoordinator.patchBytes(
+                        patch,
+                        request.leftFormat().charset(),
+                        request.rightFormat().charset()));
+        git(repo, "apply", "changes.patch");
+        assertTrue(Files.readString(file).equals("one\r\nTWO\r\nthree\r\n"), "the patch applies to the CRLF file");
+    }
+
+    @Test
+    void patchBytesKeepASharedLegacyCharsetAndOtherwiseUseUtf8() {
+        String patch = "-café\n+cafés\n";
+        org.junit.jupiter.api.Assertions.assertArrayEquals(
+                patch.getBytes(StandardCharsets.ISO_8859_1), DiffCoordinator.patchBytes(patch, "latin1", "latin1"));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(
+                patch.getBytes(StandardCharsets.UTF_8), DiffCoordinator.patchBytes(patch, "latin1", "utf-8"));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(
+                "+€\u4e2d\n".getBytes(StandardCharsets.UTF_8),
+                DiffCoordinator.patchBytes("+€\u4e2d\n", "latin1", "latin1"));
+    }
+
     // --- helpers ---
 
     private void applyState(Object git, GitService.RepoState state) throws Exception {
@@ -94,11 +153,12 @@ class DiffCharsetFxTest {
         return new GitService.RepoState(root, status, Map.of(), Map.of());
     }
 
-    private Object awaitPaneWithLeftText(Object ops) throws Exception {
+    /** The diff pane opened since {@code before} panes were open (the fixture's window is shared). */
+    private Object awaitNewPane(Object ops, int before) throws Exception {
         for (int i = 0; i < 120; i++) {
             Object pane = FxTestSupport.callOnFx(() -> {
                 List<?> panes = (List<?>) FxTestSupport.call(ops, "openDiffPanes", new Class<?>[] {});
-                return panes.isEmpty() ? null : panes.get(0);
+                return panes.size() > before ? panes.get(panes.size() - 1) : null;
             });
             if (pane != null && FxTestSupport.field(pane, "leftText") != null) {
                 return pane;

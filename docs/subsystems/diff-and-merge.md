@@ -13,7 +13,13 @@ EOF states and the viewer presents an explicit final-newline action when they di
 `PatchParser` preserve standard `\ No newline at end of file` markers. `PatchWriter` gives the unterminated
 last line of each side a distinct identity before diffing, so the engine itself emits it as marked context
 when both sides end with it and as a `-line`/`+line` pair otherwise; its EOF shapes are tested by feeding
-every combination to real `git apply`.
+every combination to real `git apply`. The viewer's sides are bare-`\n` text, so each `DiffContent`
+also carries a `SideFormat` (line-ending label and charset, read off the raw decode or the open buffer);
+export re-applies it per side before `PatchWriter` runs on the diff worker (`DiffService.patch`) and
+writes the patch in a legacy single-byte charset both sides share, else UTF-8. `PatchWriter` shares the
+engine's 20,000-edit budget and falls back to one whole-middle hunk. `PatchParser` records the line number
+each hunk header gives every reconstructed line, and `PatchLineNumbers` puts those numbers on the rows of
+a patch-file diff (again after a swap or an option change).
 
 Every side is held in the form an editor buffer of the same bytes holds. `DiffSideText` decodes Git blobs,
 closed files, merge stages and Local History's pre-delete capture exactly as the editor loads a file: the
@@ -45,7 +51,9 @@ blocks above 200 lines or 10,000 candidate pairs fall back to positional alignme
 
 TextMate highlighting has its own serial daemon and paints plain diff rows immediately. A generation check
 rejects styles for superseded content. `DiffCoordinator` independently generations side-fetch and diff
-requests, preventing an older refresh from overwriting a newer one. Rebuilds retain the selected change,
+requests, preventing an older refresh from overwriting a newer one. A pane that is not shown (no scene, or an invisible ancestor such as an
+unselected tab) only records that a refresh is pending and runs it when it becomes visible, so a review of
+many files does not re-read every blob on each focus regain. Rebuilds retain the selected change,
 viewport offsets, focused side, and divider position.
 
 ## Review views
@@ -153,11 +161,14 @@ xdiff does (`xdl_change_compact`, without the indent heuristic): a run of change
 equal lines beside it until it joins a neighbouring run or lines up with the other file's change. Raw
 java-diff-utils deltas describe a line replaced inside a run of identical lines as an insertion plus a
 deletion of the run's last line, and that detached deletion was unified with the other side's real one,
-dropping an edit. Touching (adjacent) changes are still merged independently, which Git reports as a
-conflict; that divergence is deliberate. It automatically composes disjoint changes and
+dropping an edit. Changes that touch are one region, as in Git, so a region Git reported
+as a conflict is never merged unseen. It automatically composes disjoint changes and
 overlapping changes that produce identical text; only divergent overlapping regions become conflicts. Each
 conflict retains an explicit base-presence bit, because two competing insertions have a real but empty
-ancestor region. If all three Git stages are not available, `ConflictParser` remains the fallback for files
+ancestor region. Before the stage merge is shown it is compared with the file (`ThreeWayMerge.agreesWith`: taking ours
+everywhere, and theirs everywhere, must give the same lines from both). A file that has moved on — conflicts
+resolved by hand, markers deleted — is not silently replaced: the user chooses between starting again from
+Git's versions and resolving the markers the file still has. If all three Git stages are not available, `ConflictParser` remains the fallback for files
 that already contain standard merge/diff3 markers. It recognises a marker only as Git writes it — a run of
 marker characters followed by a space or the end of the line, and the `=` separator only as a whole line.
 The run is seven long, or longer when the file's `conflict-marker-size` attribute says so: the opening
