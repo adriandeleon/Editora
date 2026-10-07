@@ -1,0 +1,28 @@
+# Two conflicts in the diff3 style (`git config merge.conflictStyle diff3`): each one carries the
+# common ancestor between ||||||| and =======, so the merge resolver has the base version to work with.
+
+[server]
+<<<<<<< HEAD
+port = 8080
+timeout = 30
+||||||| merged common ancestors
+port = 8000
+timeout = 30
+=======
+port = 8000
+timeout = 60
+>>>>>>> feature/longer-timeouts
+
+[logging]
+level = info
+
+[cache]
+<<<<<<< HEAD
+backend = redis
+ttl = 300
+||||||| merged common ancestors
+backend = memory
+=======
+backend = memcached
+>>>>>>> feature/longer-timeouts
+size = 1024

@@ -1,0 +1,17 @@
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5000
+dbug: Shop.Cart.CartService[0]
+      Loaded cart 7731 with 3 items
+warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+      Failed to determine the https port for redirect.
+fail: Shop.Checkout.CheckoutService[0]
+      Could not reserve stock
+crit: Microsoft.AspNetCore.Server.Kestrel[0]
+      Unable to start Kestrel.
+2026/10/06 09:00:15 [error] 4121#0: *17 connect() failed (111: Connection refused) while connecting to upstream
+2026/10/06 09:00:16 [warn] 4121#0: *18 an upstream response is buffered to a temporary file
+2026/10/06 09:00:17 [notice] 4121#0: signal process started
+Oct 06, 2026 9:00:18 AM com.example.shop.Main start
+SEVERE: java.util.logging puts the level on the line after the timestamp
+Oct 06, 2026 9:00:19 AM com.example.shop.Main start
+WARNING: and so does this one

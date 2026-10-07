@@ -1,8 +1,45 @@
+# A small TOML sample for syntax highlighting.
+# Covers every value type, tables, dotted keys, inline tables, arrays of
+# tables, and the four string forms.
+
 title = "sample"
+version = "1.0.0"
+count = 42
+hex = 0x40
+ratio = -0.75
+big = 1_000_000
+enabled = true
+released = 2026-10-06
+updated = 2026-10-06T09:30:00Z
+
+basic = "escapes: \t tab, \u00e9, quote \""
+literal = 'C:\shelf\items.txt'
+multiline = """
+A multi-line basic string,
+kept as written."""
+raw = '''
+A multi-line literal string: no \escapes here.'''
 
 [owner]
 name = "Editora"
+contact.email = "nobody@example.com" # a dotted key
 
 [deps]
 serde = { version = "1.0", features = ["derive"] }
 list = [1, 2, 3]
+nested = [
+    ["a", "b"],
+    ["c"],
+]
+
+[[shelves]]
+name = "workshop"
+capacity = 16
+
+[[shelves.items]]
+name = "hammer"
+weight_kg = 0.6
+
+[[shelves]]
+name = "library"
+capacity = 64

@@ -1,8 +1,50 @@
+# A small YAML sample for syntax highlighting and folding.
+# Covers scalars of every type, block and flow collections, anchors and
+# aliases, block scalars, quoting, and a second document.
+%YAML 1.2
+---
 name: sample
 version: 1.0.0
-list:
-  - one
-  - two
-nested:
-  flag: true
-  count: 3
+count: 42
+ratio: -0.75
+enabled: true
+nothing: null
+released: 2026-10-06
+
+quoted: "double quotes allow escapes: \t tab, \u00e9"
+single: 'single quotes keep a backslash \ literal'
+plain: no quotes needed here
+
+description: |
+  A literal block scalar keeps its line breaks,
+  exactly as written.
+summary: >-
+  A folded block scalar joins these lines
+  into one, and strips the final newline.
+
+tags: [editor, sample, yaml]
+owner: { name: Editora, verified: false }
+
+defaults: &defaults
+  capacity: 64
+  locked: false
+
+shelves:
+  - name: workshop
+    <<: *defaults
+    items:
+      - name: hammer
+        weight_kg: 0.6
+      - name: anvil
+        weight_kg: 45
+  - name: library
+    <<: *defaults
+    locked: true
+    items: []
+
+? complex key
+: complex value
+---
+# A second document in the same stream.
+kind: note
+text: !!str 123

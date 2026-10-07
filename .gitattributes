@@ -11,6 +11,9 @@ mvnw.cmd -text
 # Binary files: never converted, never diffed as text. (text=auto would detect these by their NUL bytes;
 # naming them means a new one cannot be misdetected.)
 *.png binary
+*.jpg binary
+*.gif binary
+*.bmp binary
 *.ico binary
 *.icns binary
 *.jar binary
