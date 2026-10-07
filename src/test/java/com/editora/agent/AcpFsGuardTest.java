@@ -120,6 +120,41 @@ class AcpFsGuardTest {
         assertEquals(home.resolve("notes.md"), AcpFsGuard.checkWrite(home, config, "notes.md"));
     }
 
+    @Test
+    void writesIntoVersionControlMetadataAreRefused(@TempDir Path tmp) throws IOException {
+        Path root = Files.createDirectories(tmp.resolve("project"));
+        Path git = Files.createDirectories(root.resolve(".git/hooks"));
+        Files.writeString(root.resolve(".git/HEAD"), "ref: refs/heads/master\n");
+        Files.createDirectories(root.resolve("vendor/lib/.git"));
+        for (String path : List.of(
+                ".git/HEAD",
+                ".git/hooks/pre-commit",
+                ".git/new/dir/file",
+                "vendor/lib/.git/config",
+                ".hg/hgrc",
+                ".svn/wc.db",
+                ".jj/repo/store",
+                ".GIT/config",
+                root.resolve(".git/index").toString())) {
+            IOException e = assertThrows(IOException.class, () -> AcpFsGuard.checkWrite(root, null, path), path);
+            assertTrue(e.getMessage().contains("version-control"), e.getMessage());
+        }
+        // a worktree's ".git" is a file naming the real repository: not the agent's to repoint either
+        Path worktree = Files.createDirectories(root.resolve("wt"));
+        Files.writeString(worktree.resolve(".git"), "gitdir: elsewhere\n");
+        assertThrows(IOException.class, () -> AcpFsGuard.checkWrite(root, null, "wt/.git"));
+        // a link does not make the metadata directory writable under another name
+        symlink(root.resolve("meta"), git.getParent());
+        assertThrows(IOException.class, () -> AcpFsGuard.checkWrite(root, null, "meta/config"), "via a link");
+        // reading it, and writing the project's own VCS-related files, are still fine
+        assertEquals(root.resolve(".git/HEAD"), AcpFsGuard.checkRead(root, ".git/HEAD"));
+        assertEquals(root.resolve(".gitignore"), AcpFsGuard.checkWrite(root, null, ".gitignore"));
+        assertEquals(
+                root.resolve(".github/workflows/ci.yml"),
+                AcpFsGuard.checkWrite(root, null, ".github/workflows/ci.yml"));
+        assertEquals(root.resolve("src/git.txt"), AcpFsGuard.checkWrite(root, null, "src/git.txt"));
+    }
+
     // --- through the client: a refused request never reaches the host and is answered with an error ---
 
     private final ObjectMapper mapper = new ObjectMapper();
@@ -225,6 +260,48 @@ class AcpFsGuardTest {
                     request(client, process, "fs/read_text_file", path(inside)).has("error"));
         } finally {
             processField.set(client, null); // fake transport has no operating-system process to reap
+            client.dispose();
+        }
+    }
+
+    /**
+     * The guard resolves a relative path against the session folder. The host used to be handed the raw
+     * string and resolved it again — against the editor's own working directory, which is rarely the project.
+     */
+    @Test
+    void theHostIsHandedThePathTheGuardResolvedNeverTheRawString(@TempDir Path tmp) throws Exception {
+        Path root = Files.createDirectories(tmp.resolve("project"));
+        Path inside = Files.writeString(root.resolve("a.txt"), "x");
+        RecordingHost host = new RecordingHost(null);
+        CapturingProcess process = new CapturingProcess();
+        AcpClient client = new AcpClient(List.of("unused"), root, host);
+        Field processField = AcpClient.class.getDeclaredField("process");
+        processField.setAccessible(true);
+        processField.set(client, process);
+        Field writerField = AcpClient.class.getDeclaredField("writer");
+        writerField.setAccessible(true);
+        writerField.set(client, process.writer);
+        try {
+            JsonNode read = request(
+                    client,
+                    process,
+                    "fs/read_text_file",
+                    mapper.createObjectNode().put("path", "a.txt"));
+            assertFalse(read.has("error"), read.toString());
+            assertEquals(List.of(inside.toString()), host.reads);
+
+            JsonNode write = request(
+                    client,
+                    process,
+                    "fs/write_text_file",
+                    mapper.createObjectNode().put("path", "sub/../sub/todo.txt").put("content", "x"));
+            assertFalse(write.has("error"), write.toString());
+            assertEquals(List.of(root.resolve("sub/todo.txt").toString()), host.writes);
+            for (String handed : host.writes) {
+                assertTrue(Path.of(handed).isAbsolute(), handed);
+            }
+        } finally {
+            processField.set(client, null);
             client.dispose();
         }
     }

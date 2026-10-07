@@ -58,23 +58,31 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         this.host = host;
     }
 
-    /** Runs {@code task} on the FX thread and blocks (with a timeout) for its result. */
+    /** How long an MCP call waits for the FX thread; a call that never started by then is cancelled. */
+    static final long FX_TIMEOUT_MILLIS = 5_000;
+
+    /** How long {@code save_buffer} waits for the write itself (it may be behind a conflict prompt). */
+    static final long SAVE_TIMEOUT_MILLIS = 30_000;
+
+    /**
+     * What MCP clients were last shown of each buffer by {@code read_buffer}, keyed by the buffer itself (an
+     * untitled buffer has no path); see {@link ServedText}. One record per window, not per client: MCP
+     * requests carry no client identity here.
+     */
+    private final ServedText served = new ServedText(new java.util.WeakHashMap<>());
+
+    /**
+     * Runs {@code task} on the FX thread and blocks (with a timeout) for its result. A task the FX thread has
+     * not started when the wait ends is cancelled — a call answered with a timeout is not applied afterwards
+     * — and the failure says which of the two it was (see {@link FxCall}).
+     */
     static <T> T mcpOnFx(java.util.function.Supplier<T> task) {
-        if (javafx.application.Platform.isFxApplicationThread()) {
-            return task.get();
-        }
-        java.util.concurrent.CompletableFuture<T> f = new java.util.concurrent.CompletableFuture<>();
-        javafx.application.Platform.runLater(() -> {
-            try {
-                f.complete(task.get());
-            } catch (Throwable t) {
-                f.completeExceptionally(t);
-            }
-        });
         try {
-            return f.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            return FxCall.call(task, FX_TIMEOUT_MILLIS);
+        } catch (RuntimeException e) {
+            throw e;
         } catch (Exception e) {
-            throw new RuntimeException(e);
+            throw new IllegalStateException(e.getMessage(), e);
         }
     }
 
@@ -106,12 +114,14 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (b == null) {
                 return null;
             }
+            String text = b.getContent();
+            served.served(b, text);
             return new BufferContent(
                     b.getPath() == null ? null : b.getPath().toString(),
                     b.getTitle(),
                     b.getLanguage(),
                     b.isDirty(),
-                    b.getContent());
+                    text);
         });
     }
 
@@ -211,6 +221,10 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
     @Override
     public String editBuffer(String path, String oldText, String newText, boolean replaceAll) {
+        if (oldText == null || oldText.isEmpty()) {
+            // Never "then replace everything": that takes replaceBuffer, which the client must ask for by name.
+            return "old_text is required for a targeted edit.";
+        }
         return mcpOnFx(() -> {
             EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
             if (b == null) {
@@ -219,34 +233,75 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (!b.isEditable()) {
                 return "Buffer is read-only.";
             }
-            CodeArea area = b.getArea();
             String replacement = newText == null ? "" : newText;
-            if (oldText == null || oldText.isEmpty()) {
-                // read_buffer returns the whole file, so a rewrite replaces the whole file: widens a narrowed
-                // buffer first, then one undo step.
-                b.replaceWholeDocument(replacement);
-                return null;
-            }
-            String text = area.getText();
+            // read_buffer serves the whole file, so the match is made against the whole file — also when the
+            // buffer is narrowed: matching the accessible region only made "exactly once" and replace_all
+            // mean something else than the text the client had read.
+            String text = b.getContent();
+            boolean known = served.knows(b, text);
             int first = text.indexOf(oldText);
             if (first < 0) {
                 return "old_text not found in the buffer.";
             }
             if (replaceAll) {
-                area.replaceText(text.replace(oldText, replacement));
-                return null;
-            }
-            if (text.indexOf(oldText, first + 1) >= 0) {
+                replaceWholeDocument(b, text.replace(oldText, replacement));
+            } else if (text.indexOf(oldText, first + 1) >= 0) {
                 return "old_text occurs more than once; pass replace_all or a longer, unique old_text.";
+            } else {
+                CodeArea area = b.getArea();
+                int at = first - b.narrowStart();
+                if (at >= 0 && at + oldText.length() <= area.getLength()) {
+                    area.replaceText(at, at + oldText.length(), replacement); // inside the accessible text
+                } else {
+                    // In the part narrowing holds aside (or across its edge): reachable only by widening.
+                    replaceWholeDocument(
+                            b, text.substring(0, first) + replacement + text.substring(first + oldText.length()));
+                }
             }
-            area.replaceText(first, first + oldText.length(), replacement);
+            if (known) {
+                served.served(b, b.getContent()); // the client knows its own edit of text it had read
+            }
             return null;
         });
     }
 
     @Override
-    public String saveBuffer(String path) {
+    public String replaceBuffer(String path, String newText) {
         return mcpOnFx(() -> {
+            EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
+            if (b == null) {
+                return path == null ? "No active buffer." : "No open buffer for: " + path;
+            }
+            if (!b.isEditable()) {
+                return "Buffer is read-only.";
+            }
+            // The client sends the whole text as it believes it to be. What was typed since its read_buffer —
+            // or unsaved text it never read — would be replaced without notice.
+            String stale = served.check(b, b.getContent(), b.isDirty())
+                    .refusal(path == null ? "The active buffer" : path, "read_buffer");
+            if (stale != null) {
+                return stale;
+            }
+            replaceWholeDocument(b, newText == null ? "" : newText);
+            served.served(b, b.getContent());
+            return null;
+        });
+    }
+
+    /**
+     * FX thread: the one place an MCP call replaces a buffer's whole document (an explicit whole-buffer
+     * replacement, {@code replace_all}, and a targeted edit outside a narrowed region). Widens first, then
+     * one undo step that records only the span that differs.
+     */
+    private static void replaceWholeDocument(EditorBuffer buffer, String text) {
+        buffer.replaceWholeDocument(text);
+    }
+
+    @Override
+    public String saveBuffer(String path) {
+        // FX thread: start the save. The write itself runs on the save executor, so its outcome is awaited
+        // here, on the MCP worker — "accepted for writing" is not "saved".
+        Object started = mcpOnFx(() -> {
             EditorBuffer b = path == null ? host.activeBuffer() : openBufferForPath(path);
             if (b == null) {
                 return path == null ? "No active buffer." : "No open buffer for: " + path;
@@ -255,10 +310,27 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                 // save() would open a Save-As dialog — never pop UI from an agent call.
                 return "Untitled buffer has no file path; Save As must be done in the editor.";
             }
-            return host.fileWorkflows().save(b)
-                    ? null
-                    : "Save did not complete (elevated write pending or the write failed).";
+            return host.fileWorkflows().saveReportingOutcome(b);
         });
+        if (started instanceof String refusal) {
+            return refusal;
+        }
+        java.util.concurrent.CompletableFuture<?> written = (java.util.concurrent.CompletableFuture<?>) started;
+        try {
+            return Boolean.TRUE.equals(written.get(SAVE_TIMEOUT_MILLIS, java.util.concurrent.TimeUnit.MILLISECONDS))
+                    ? null
+                    : "Not saved: the buffer is still unsaved and the file on disk was not updated (the file"
+                            + " changed on disk, is not writable without elevation, or the write failed).";
+        } catch (java.util.concurrent.TimeoutException pending) {
+            return "The save has not finished after " + (SAVE_TIMEOUT_MILLIS / 1000) + " s (the editor may be"
+                    + " waiting for the user to resolve a conflict). Its outcome is unknown: check 'dirty' in"
+                    + " list_open_files before relying on the file.";
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Interrupted while waiting for the save; its outcome is unknown.";
+        } catch (java.util.concurrent.ExecutionException e) {
+            return "Not saved: " + e.getCause();
+        }
     }
 
     @Override
