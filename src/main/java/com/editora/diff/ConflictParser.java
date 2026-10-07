@@ -82,8 +82,21 @@ public final class ConflictParser {
     /** A run of non-conflicting lines. */
     public record PlainSegment(List<String> lines) implements Segment {}
 
-    /** A conflict region. */
-    public record ConflictSegment(Conflict conflict) implements Segment {}
+    /**
+     * A conflict region. {@code raw} holds the lines the region was parsed from, markers included, so a
+     * conflict left unresolved goes back exactly as the file had it (label spacing, trailing blanks); it is
+     * empty for a conflict that was computed rather than read from a file.
+     */
+    public record ConflictSegment(Conflict conflict, List<String> raw) implements Segment {
+
+        public ConflictSegment(Conflict conflict) {
+            this(conflict, List.of());
+        }
+
+        public ConflictSegment {
+            raw = List.copyOf(raw == null ? List.of() : raw);
+        }
+    }
 
     /** A parsed file: its segments in order, with a count of conflict regions. */
     public record ConflictFile(List<Segment> segments) {
@@ -142,22 +155,30 @@ public final class ConflictParser {
 
     /**
      * The marker size of the conflict that opens at {@code lines[i]}, or {@code 0} when that line does not
-     * open one. Seven {@code <} always open a conflict (Git's default). A longer run does so only when the
-     * separator and closing marker of that same size follow, so a decorative line of {@code <} characters
-     * cannot swallow the rest of the file.
+     * open one. A run of {@code <} opens a conflict only as the first line of a well-formed set: its
+     * separator and then its closing marker, of that same size, follow, with no other opening marker of
+     * that size before the separator. A lone marker-looking line — a document that explains Git conflicts,
+     * a decorative rule, a half-deleted conflict — is ordinary text; read as a marker it made everything
+     * after it one side of a conflict, and choosing the other side deleted the rest of the file. Where two
+     * opening markers precede one separator the nearer one opens the conflict, so the region a choice can
+     * remove is the smallest one the markers describe.
      */
     private static int opens(List<String> lines, int i) {
         int size = markerRun(lines.get(i), OURS);
-        if (size <= DEFAULT_MARKER_SIZE) {
-            return size;
+        if (size == 0) {
+            return 0;
         }
         boolean separated = false;
         for (int k = i + 1; k < lines.size(); k++) {
             String line = lines.get(k);
-            if (!separated) {
-                separated = isSeparator(line, size);
-            } else if (isMarker(line, THEIRS, size)) {
-                return size;
+            if (separated) {
+                if (isMarker(line, THEIRS, size)) {
+                    return size;
+                }
+            } else if (isSeparator(line, size)) {
+                separated = true;
+            } else if (isMarker(line, OURS, size) || isMarker(line, THEIRS, size)) {
+                return 0;
             }
         }
         return 0;
@@ -190,6 +211,7 @@ public final class ConflictParser {
                     segments.add(new PlainSegment(List.copyOf(plain)));
                     plain.clear();
                 }
+                int opened = i;
                 String oursLabel = label(line, size);
                 List<String> ours = new ArrayList<>();
                 List<String> base = new ArrayList<>();
@@ -227,15 +249,17 @@ public final class ConflictParser {
                     theirsLabel = label(lines.get(i), size);
                     i++;
                 }
-                segments.add(new ConflictSegment(new Conflict(
-                        oursLabel,
-                        List.copyOf(ours),
-                        baseLabel,
-                        List.copyOf(base),
-                        theirsLabel,
-                        List.copyOf(theirs),
-                        basePresent,
-                        size)));
+                segments.add(new ConflictSegment(
+                        new Conflict(
+                                oursLabel,
+                                List.copyOf(ours),
+                                baseLabel,
+                                List.copyOf(base),
+                                theirsLabel,
+                                List.copyOf(theirs),
+                                basePresent,
+                                size),
+                        lines.subList(opened, i)));
             } else {
                 plain.add(line);
                 i++;
@@ -255,7 +279,8 @@ public final class ConflictParser {
     /**
      * Produces the resolved lines. {@code choices} holds one {@link Choice} per conflict region in order;
      * a missing or {@link Choice#UNRESOLVED} choice leaves that conflict's markers intact (so a partial
-     * resolution is still valid conflict-marked text).
+     * resolution is still valid conflict-marked text). A conflict that was parsed from a file goes back as
+     * the very lines it was read from; only a computed one has its markers generated here.
      */
     public static List<String> resolve(ConflictFile file, List<Choice> choices) {
         List<String> out = new ArrayList<>();
@@ -276,6 +301,10 @@ public final class ConflictParser {
                         out.addAll(c.theirs());
                     }
                     default -> { // UNRESOLVED: keep the conflict markers verbatim (incl. the 3-way base, if any)
+                        if (!cs.raw().isEmpty()) {
+                            out.addAll(cs.raw()); // the file's own lines, not a reconstruction of them
+                            break;
+                        }
                         int size = c.markerSize();
                         out.add(marker(OURS, size, c.oursLabel()));
                         out.addAll(c.ours());
