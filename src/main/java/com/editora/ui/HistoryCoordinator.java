@@ -1152,6 +1152,35 @@ final class HistoryCoordinator {
         }
     }
 
+    /**
+     * {@link #captureBeforeDeleteDurably} for each of {@code files} in turn, for a delete that removes many
+     * at once and goes through no per-file approval (Git's "delete untracked"). Reports {@code true} on the
+     * FX thread once every file Local History can hold is durably recorded — also when there was nothing to
+     * record (history off, binary or oversized files) — and {@code false} at the first one that could not be,
+     * so the caller can leave the files where they are.
+     */
+    void captureAllBeforeDelete(List<Path> files, Consumer<Boolean> completion) {
+        Objects.requireNonNull(completion, "completion");
+        captureNextBeforeDelete(List.copyOf(files), 0, completion);
+    }
+
+    private void captureNextBeforeDelete(List<Path> files, int index, Consumer<Boolean> completion) {
+        if (index >= files.size() || !isEnabled()) {
+            completion.accept(true);
+            return;
+        }
+        // One file per FX turn: a folder of them must not hold the UI for the whole batch.
+        captureBeforeDeleteDurably(
+                files.get(index),
+                capture -> Platform.runLater(() -> {
+                    if (capture.durable()) {
+                        captureNextBeforeDelete(files, index + 1, completion);
+                    } else {
+                        completion.accept(false);
+                    }
+                }));
+    }
+
     /** Restores {@code revision}'s content into the active file via an undoable whole-file replace. */
     CompletableFuture<RestoreResult> restoreHistory(HistoryRevision revision) {
         CompletableFuture<RestoreResult> completion = new CompletableFuture<>();

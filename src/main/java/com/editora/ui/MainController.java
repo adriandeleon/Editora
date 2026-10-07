@@ -5692,6 +5692,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public void captureBeforeDelete(List<Path> files, java.util.function.Consumer<Boolean> completion) {
+            historyCoordinator.captureAllBeforeDelete(files, completion);
+        }
+
+        @Override
         public boolean saveBeforeGit(EditorBuffer buffer) {
             return fileWorkflows.saveSynchronously(buffer) && !buffer.isDirty();
         }
