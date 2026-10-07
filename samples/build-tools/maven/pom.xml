@@ -2,7 +2,8 @@
 <!-- Sample Maven project for exercising Editora's Maven build-tool support.
      Opening any file under this folder should show the Maven toolbar button; its
      actions popup lists the Lifecycle phases, the "release" profile (a checkable
-     toggle), and the surefire "integration-tests" execution goal. Standalone — the
+     toggle), and the surefire "integration-tests" execution goal. `mvn test` runs
+     AppTest, which has one failing and one skipped test on purpose. Standalone — the
      repo's own build never picks it up (it isn't a <module> of the root pom). -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -18,6 +19,15 @@
         <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>5.11.4</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 
     <build>
         <plugins>

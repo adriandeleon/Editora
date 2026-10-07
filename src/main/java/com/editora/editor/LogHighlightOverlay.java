@@ -27,21 +27,26 @@ import org.fxmisc.richtext.CodeArea;
  */
 final class LogHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
-    /** Translucent so they read on any editor theme without per-theme overrides (the search-wash convention). */
-    private static final Color ERROR_BAR = Color.web("#e5484d", 0.95);
+    /** Where a filtered view's levels come from; see {@link #LogHighlightOverlay(CodeArea, LevelSource)}. */
+    interface LevelSource {
+        /** Whether the view is a filtered subset, so a line's level cannot be read off the lines above it. */
+        boolean filtered();
 
-    private static final Color WARN_BAR = Color.web("#e0a800", 0.95);
-    private static final Color INFO_BAR = Color.web("#2da44e", 0.85);
-    private static final Color DEBUG_BAR = Color.web("#8b949e", 0.7);
-    private static final Color TRACE_BAR = Color.web("#8b949e", 0.4);
-    private static final Color ERROR_WASH = Color.web("#e5484d", 0.07);
-    private static final Color WARN_WASH = Color.web("#e0a800", 0.06);
+        /** The level of visible paragraph {@code paragraph} in the complete log (null for none). */
+        LogLevel levelAt(int paragraph);
+    }
+
+    /** Resolved from the editor background on a theme change, never per paint. */
+    private OverlayPalette.LogTints tints = OverlayPalette.logTints(Color.WHITE);
 
     private static final double BAR_WIDTH = 3.0;
+    /** FATAL is told from ERROR by weight as well as by its wash. */
+    private static final double FATAL_BAR_WIDTH = 6.0;
     /** How far above the first visible line we scan to establish the inherited level (bounded → cheap). */
     private static final int INHERIT_SCAN = 400;
 
     private final CodeArea area;
+    private final LevelSource levels;
     private final Canvas canvas = new Canvas(1, 1);
     private boolean active;
     private boolean redrawPending;
@@ -68,8 +73,13 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         };
     }
 
-    LogHighlightOverlay(CodeArea area) {
+    /**
+     * @param levels the levels of a filtered view. There a stack-trace line sits under whatever line the filter
+     *     left above it, so inheriting from the visible text tinted the trace of an ERROR as the WARN before it.
+     */
+    LogHighlightOverlay(CodeArea area, LevelSource levels) {
         this.area = area;
+        this.levels = levels;
         getStyleClass().add("log-highlight-overlay");
         setMouseTransparent(true);
         getChildren().add(canvas);
@@ -80,12 +90,17 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
         });
         area.estimatedScrollXProperty().addListener((o, a, b) -> scheduleRedraw());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        tints = OverlayPalette.logTints(area);
+        area.backgroundProperty().addListener((o, a, b) -> {
+            tints = OverlayPalette.logTints(area);
+            scheduleRedraw();
+        });
     }
 
     /** The same level tints for a split's second {@code view}, kept in step with this one. */
     @Override
     public LogHighlightOverlay follower(CodeArea view) {
-        LogHighlightOverlay second = new LogHighlightOverlay(view);
+        LogHighlightOverlay second = new LogHighlightOverlay(view, levels);
         second.setRenderingActive(rendering);
         second.setActive(active);
         follower = second;
@@ -194,16 +209,21 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
             }
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            LogLevel carry = inheritedLevelAt(first);
+            boolean filtered = levels.filtered();
+            LogLevel carry = filtered ? null : inheritedLevelAt(first);
             for (int p = first; p <= last; p++) {
                 if (area.isFolded(p)) {
                     continue;
                 }
-                String line = area.getParagraph(p).getText();
-                LogLevel own = levelOf(line);
-                LogLevel eff = own != null ? own : carry; // LogFilter.effectiveLevel, through the cache
-                carry = eff;
-                if (eff == null || line.isEmpty()) {
+                LogLevel eff;
+                if (filtered) {
+                    eff = levels.levelAt(p);
+                } else {
+                    LogLevel own = levelOf(area.getParagraph(p).getText());
+                    eff = own != null ? own : carry; // a line without a level belongs to the record above
+                    carry = eff;
+                }
+                if (eff == null || area.getParagraphLength(p) == 0) {
                     continue;
                 }
                 paintLine(g, p, eff, w);
@@ -230,8 +250,9 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
     }
 
     private void paintLine(GraphicsContext g, int paragraph, LogLevel level, double w) {
-        int base = area.getAbsolutePosition(paragraph, 0);
-        Bounds b = toLocal(area.getCharacterBoundsOnScreen(base, base + 1).orElse(null));
+        // The paragraph's bounds, not its first character's: a wrapped line is several rows tall and all of
+        // them belong to the record.
+        Bounds b = toLocal(area.getParagraphBoundsOnScreen(paragraph).orElse(null));
         if (b == null) {
             return;
         }
@@ -246,23 +267,25 @@ final class LogHighlightOverlay extends Region implements SecondaryPane.Followed
             g.fillRect(0, y, w, height);
         }
         g.setFill(barFor(level));
-        g.fillRect(0, y, BAR_WIDTH, height);
+        g.fillRect(0, y, level == LogLevel.FATAL ? FATAL_BAR_WIDTH : BAR_WIDTH, height);
     }
 
-    private static Color barFor(LogLevel level) {
+    private Color barFor(LogLevel level) {
         return switch (level) {
-            case FATAL, ERROR -> ERROR_BAR;
-            case WARN -> WARN_BAR;
-            case INFO -> INFO_BAR;
-            case DEBUG -> DEBUG_BAR;
-            case TRACE -> TRACE_BAR;
+            case FATAL -> tints.fatal();
+            case ERROR -> tints.error();
+            case WARN -> tints.warn();
+            case INFO -> tints.info();
+            case DEBUG -> tints.debug();
+            case TRACE -> tints.trace();
         };
     }
 
-    private static Color washFor(LogLevel level) {
+    private Color washFor(LogLevel level) {
         return switch (level) {
-            case FATAL, ERROR -> ERROR_WASH;
-            case WARN -> WARN_WASH;
+            case FATAL -> tints.fatalWash();
+            case ERROR -> tints.errorWash();
+            case WARN -> tints.warnWash();
             default -> null;
         };
     }

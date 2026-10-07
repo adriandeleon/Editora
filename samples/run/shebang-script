@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""No file extension: the shebang on the first line is what makes this a Python file.
+
+Open it and check the language in the status bar, the highlighting, and the Run gutter glyph.
+"""
+import sys
+
+
+def main() -> int:
+    print(f"Hello from an extensionless script, running on Python {sys.version_info.major}.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

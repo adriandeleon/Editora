@@ -1,5 +1,7 @@
 package com.editora.logviewer;
 
+import java.util.function.IntFunction;
+
 /**
  * Pure navigation over a log's lines: the next / previous line at or above a severity level, for the
  * "jump to next error" commands in the log viewer. Wraps around the ends and never returns the line the
@@ -20,11 +22,19 @@ public final class LogNavigation {
             return -1;
         }
         String[] lines = text.split("\n", -1);
-        int n = lines.length;
+        return nextLevelLine(i -> lines[i], lines.length, fromLine, forward, minLevel);
+    }
+
+    /**
+     * As above over {@code count} lines read through {@code lineAt} — the editor's own paragraphs, so a jump
+     * does not first copy a large log into an array of its lines.
+     */
+    public static int nextLevelLine(
+            IntFunction<String> lineAt, int count, int fromLine, boolean forward, LogLevel minLevel) {
         LogLevel min = minLevel == null ? LogLevel.WARN : minLevel;
-        for (int step = 1; step < n; step++) { // 1 .. n-1 visits every other line exactly once
-            int i = Math.floorMod(fromLine + (forward ? step : -step), n);
-            LogLevel level = LogPatterns.levelOf(lines[i]);
+        for (int step = 1; step < count; step++) { // 1 .. n-1 visits every other line exactly once
+            int i = Math.floorMod(fromLine + (forward ? step : -step), count);
+            LogLevel level = LogPatterns.levelOf(lineAt.apply(i));
             if (level != null && level.atLeast(min)) {
                 return i;
             }

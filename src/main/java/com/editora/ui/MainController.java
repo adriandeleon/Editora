@@ -2079,33 +2079,33 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
 
             @Override
-            public boolean gitAvailable() {
-                return git.isAvailable();
+            public GitPathScope gitScope(Path path) {
+                return git.scopeOf(path);
             }
 
             @Override
             public void gitShowFileHistory(Path file) {
-                git.ifEnabled(() -> gitWindows.gitFileHistoryForPath(file));
+                git.activatingRepositoryOf(file, () -> gitWindows.gitFileHistoryForPath(file));
             }
 
             @Override
             public void gitCompareWithHead(Path file) {
-                git.ifEnabled(() -> diffCoordinator.diffPathVsHead(file));
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsHead(file));
             }
 
             @Override
             public void gitCompareWithBranch(Path file) {
-                git.ifEnabled(() -> diffCoordinator.diffPathVsBranch(file));
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsBranch(file));
             }
 
             @Override
             public void gitCompareWithTag(Path file) {
-                git.ifEnabled(() -> diffCoordinator.diffPathVsTag(file));
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsTag(file));
             }
 
             @Override
             public void gitCompareWithRevision(Path file) {
-                git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(file));
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsCommit(file));
             }
 
             @Override
@@ -2260,12 +2260,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void stageAll() {
-                git.gitOp(tr("status.git.stagedAll"), "add", "-A");
+                git.gitStageAll();
             }
 
             @Override
-            public void commit(String message) {
-                git.gitCommit(message);
+            public void commit(String message, java.util.function.Consumer<Boolean> onDone) {
+                git.gitCommit(message, onDone);
             }
 
             @Override
@@ -2294,7 +2294,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         commitToolWindow = new ToolWindow(
                 "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
         gitLogPanel = new GitLogPanel(gitLogOps = gitWindows.gitLogActions());
-        git.onRepositoryChanged(gitWindows::repositoryChanged);
+        gitWindows.listenTo(git);
         gitLogToolWindow = new ToolWindow(
                 "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
         githubPanel = new GitHubPanel(gitWindows.githubActions());
@@ -5632,9 +5632,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setCommitWindowAvailable(boolean available) {
-            // Also require an open buffer: these act on the active file/tab, so they hide on Welcome
-            // (and any non-buffer tab) even inside a repo.
-            toolWindows.setAvailable(commitToolWindow, available && GitWindowGate.allows(editorArea.selectedTab()));
+            toolWindows.setAvailable(commitToolWindow, available && git.windowsAllowed(editorArea.selectedTab()));
             // Git's answer to "are we in a repo" has just landed, and it arrives asynchronously well after
             // the window (and its menu) were built — this is the signal that ungreys the VCS menu.
             refreshMenuEnablement();
@@ -5646,7 +5644,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             // writes its command transcripts there. Hooked here because this runs on every applyGitState
             // (tab switch / focus / save / mutation), which is exactly when the repo context can change.
             refreshBuildOutputAvailability();
-            toolWindows.setAvailable(gitLogToolWindow, available && GitWindowGate.allows(editorArea.selectedTab()));
+            toolWindows.setAvailable(gitLogToolWindow, available && git.windowsAllowed(editorArea.selectedTab()));
         }
 
         @Override
@@ -5694,8 +5692,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void clearCommitMessage() {
-            gitPanel.clearMessage();
+        public boolean saveBeforeGit(EditorBuffer buffer) {
+            return fileWorkflows.saveSynchronously(buffer) && !buffer.isDirty();
         }
 
         @Override
@@ -8865,19 +8863,19 @@ public class MainController implements com.editora.mcp.McpBridge {
         MenuItem diffHead = LazyContextMenu.item(
                 tr("project.menu.git.compareHead"),
                 Icons.diff(),
-                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsHead(buffer.getPath())));
+                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsHead(buffer.getPath())));
         MenuItem diffBranch = LazyContextMenu.item(
                 tr("project.menu.git.compareBranch"),
                 Icons.diff(),
-                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsBranch(buffer.getPath())));
+                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsBranch(buffer.getPath())));
         MenuItem diffTag = LazyContextMenu.item(
                 tr("project.menu.git.compareTag"),
                 Icons.diff(),
-                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsTag(buffer.getPath())));
+                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsTag(buffer.getPath())));
         MenuItem diffCommit = LazyContextMenu.item(
                 tr("project.menu.git.compareRevision"),
                 Icons.diff(),
-                () -> git.ifEnabled(() -> diffCoordinator.diffPathVsCommit(buffer.getPath())));
+                () -> git.withRepositoryOf(buffer.getPath(), () -> diffCoordinator.diffPathVsCommit(buffer.getPath())));
         MenuItem annotate = new MenuItem(tr("project.menu.git.annotate"));
         annotate.setGraphic(Icons.blame());
         annotate.setOnAction(e -> git.ifEnabled(() -> {
@@ -8955,10 +8953,13 @@ public class MainController implements com.editora.mcp.McpBridge {
             // The Git submenu is only shown for a saved file (an untitled buffer can't be in a repo) and is
             // greyed out when there's no VCS (Git off / not inside a repo) — mirroring the Project tree.
             gitMenu.setVisible(hasPath);
-            gitMenu.setDisable(!git.isAvailable());
+            GitPathScope scope = hasPath ? git.scopeOf(buffer.getPath()) : GitPathScope.NONE;
+            gitMenu.setDisable(scope == GitPathScope.NONE);
+            // Nothing to revert on a clean file; ignore is for untracked ones. For a file of another
+            // repository the status is unknown here, so both stay enabled.
             com.editora.git.GitFileStatus st = git.statusFor(buffer.getPath());
-            revert.setDisable(st == null); // nothing to revert on a clean/untracked-clean file
-            ignore.setDisable(st != com.editora.git.GitFileStatus.UNTRACKED); // ignore = for new (untracked) files
+            revert.setDisable(scope == GitPathScope.ACTIVE && st == null);
+            ignore.setDisable(scope == GitPathScope.ACTIVE && st != com.editora.git.GitFileStatus.UNTRACKED);
             // Save is a no-op for an unchanged, on-disk file; untitled/dirty buffers can always save.
             save.setDisable(hasPath && !buffer.isDirty());
             pin.setText(tr(pinned.contains(tab) ? "menu.unpin" : "menu.pin"));
@@ -9225,9 +9226,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (pluginCoordinator != null) {
             pluginCoordinator.gateToolWindows(buffer);
         }
-        // Git Commit / Git Log act on the active file's repo — hide on a tab with no Git context (e.g. Welcome;
-        // not the diff tabs they open). Otherwise leave them to the Git coordinator's in-repo gating.
-        if (!GitWindowGate.allows(editorArea.selectedTab())) {
+        // Hide Git Commit / Git Log on a tab with no Git context; otherwise the Git coordinator gates them.
+        if (!git.windowsAllowed(editorArea.selectedTab())) {
             if (commitToolWindow != null) {
                 toolWindows.setAvailable(commitToolWindow, false);
             }

@@ -1,0 +1,9 @@
+{"time":"2026-10-06T09:00:00.120Z","level":"info","msg":"server listening","port":8080}
+{"time":"2026-10-06T09:00:01.004Z","level":"debug","msg":"loaded config","path":"/etc/shop/config.yaml"}
+{"msg":"cache miss","key":"cart:7731","level":"warn","time":"2026-10-06T09:00:02.377Z"}
+{"time":"2026-10-06T09:00:02.901Z","level":"error","msg":"checkout failed","err":"pool exhausted","status":500}
+{"level":30,"time":1791277203000,"pid":4121,"hostname":"web-1","msg":"pino: request completed","responseTime":12}
+{"level":40,"time":1791277204000,"pid":4121,"hostname":"web-1","msg":"pino: slow request","responseTime":2140}
+{"level":50,"time":1791277205000,"pid":4121,"hostname":"web-1","msg":"pino: unhandled rejection","err":{"type":"TypeError"}}
+{"level":60,"time":1791277206000,"pid":4121,"hostname":"web-1","msg":"pino: process exiting"}
+{"severity":"INFO","message":"structured logs can call the field severity","timestamp":"2026-10-06T09:00:07Z"}

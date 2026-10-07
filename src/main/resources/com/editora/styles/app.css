@@ -406,6 +406,10 @@
    `.command-palette .list-cell`'s 12.5px wherever the two rules sit in this file. */
 .command-palette.branch-popup .list-cell {
     -fx-font-size: 14px;
+    /* Menu-height rows. The theme's list cell is 3em (42px) high whatever it holds; the dropdown lists
+       every branch and seven actions, and at that height its list showed eight rows of them. */
+    -fx-cell-size: 2em;
+    -fx-padding: 0 16 0 16;
 }
 /* The title/chord pair is shared with the menu bar, so both surfaces are styled from ONE rule and cannot
    drift. The menu's half stays scoped to `.menu-item` on purpose: unscoped it would lose to AtlantaFX's
@@ -908,20 +912,33 @@
 .html-preview-toggle:hover { -fx-opacity: 1; }
 .html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
-/* Floating log-viewer control (Follow / level / regex), top-right of a .log editor. */
+/* The log viewer's control bar (Follow / level / pattern / what is showing), docked above a log's text.
+   A bar of its own, not a control floating over the corner: log lines are the longest the editor shows. */
 .log-controls {
     -fx-background-color: -color-bg-subtle;
-    -fx-border-color: -color-border-default;
-    -fx-border-radius: 4;
-    -fx-background-radius: 4;
-    -fx-padding: 2 4 2 4;
-    -fx-opacity: 0.94;
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 3 12 3 8;
+    -fx-spacing: 6;
 }
-.log-controls:hover { -fx-opacity: 1; }
+/* One height for the three controls: they are a row, and three different heights read as three widgets. */
+.log-controls .log-follow,
+.log-controls .log-level-combo,
+.log-controls .log-filter-field {
+    -fx-min-height: 26;
+    -fx-pref-height: 26;
+    -fx-max-height: 26;
+    -fx-font-size: 12px;
+}
+.log-controls .log-follow { -fx-padding: 0 10 0 6; -fx-graphic-text-gap: 4; }
 .log-controls .log-follow .toolbar-icon { -fx-fill: -color-fg-muted; }
-.log-controls .log-follow:selected { -fx-background-color: -color-accent-muted; }
+.log-controls .log-follow:selected { -fx-background-color: -color-accent-muted; -fx-text-fill: -color-accent-fg; }
 .log-controls .log-follow:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
-.log-controls .log-filter-field { -fx-font-size: 11px; }
+.log-controls .log-level-combo .list-cell { -fx-font-size: 12px; -fx-padding: 0 4 0 6; }
+.log-controls .log-filter-field { -fx-pref-width: 320; -fx-max-width: 480; -fx-padding: 0 8 0 8; }
+/* Not a valid regular expression: it still filters, as plain text. */
+.log-controls .log-filter-field:literal { -fx-border-color: -color-warning-emphasis; -fx-border-radius: 4; }
+.log-controls .log-state { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
 
 /* The preview's −/+ zoom control (top-left of the preview pane). */
 .md-zoom {
@@ -1344,9 +1361,40 @@
 .git-tree .git-status-deleted .git-status-letter { -fx-text-fill: -color-fg-muted; }
 .project-tree .git-status-conflict .git-status-letter,
 .git-tree .git-status-conflict .git-status-letter { -fx-text-fill: -color-danger-fg; }
+/* Git Log and GitHub lists: one text line per row, the height of the Commit window's tree rows. The
+   theme gives every list cell a fixed 3em (42px) whatever it holds, which showed two commits in the
+   default bottom panel. Em-relative so the rows follow the UI font. */
+.git-log-panel .git-tree .list-cell {
+    -fx-cell-size: 1.5em;
+    -fx-padding: 0 4 0 4;
+}
 /* Git Log commit list: the short hash reads in the accent color, the subject in the default text color. */
-.git-log-panel .git-log-hash { -fx-fill: -color-accent-fg; }
-.git-log-panel .git-log-subject { -fx-fill: -color-fg-default; }
+.git-log-panel .git-log-hash { -fx-text-fill: -color-accent-fg; }
+.git-log-panel .git-log-subject { -fx-text-fill: -color-fg-default; }
+/* Author / relative date (Git Log) and the trailing detail of a GitHub row: secondary, but text people read. */
+.git-log-panel .git-log-meta {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+}
+/* Ref chips on a commit row (branches, tags, HEAD). Smaller than the row's text and without vertical
+   padding, so a decorated row stays exactly as high as an undecorated one. */
+.git-log-panel .git-ref {
+    -fx-font-size: 11px;
+    -fx-padding: 0 5 0 5;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 3;
+    -fx-text-fill: -color-fg-muted;
+}
+.git-log-panel .git-ref-head { -fx-text-fill: -color-accent-fg; -fx-font-weight: bold; }
+.git-log-panel .git-ref-local { -fx-text-fill: -color-success-fg; }
+.git-log-panel .git-ref-remote { -fx-text-fill: -state-violet; }
+.git-log-panel .git-ref-tag { -fx-text-fill: -state-olive; }
+/* "Showing the newest N commits" under a commit list that was cut off at its limit. */
+.git-log-panel .git-log-truncated {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 12px;
+    -fx-padding: 2 6 2 6;
+}
 /* GitHub tool window: the Pull Requests | Issues segmented toggle needs a clearly-visible selected state
    (a flat toggle's selected look was barely distinguishable from the unselected one). */
 .github-tab {
@@ -1364,13 +1412,13 @@
 }
 /* Workflow-run state glyphs in the GitHub tool window's Runs segment — same semantic palette as the
    .git-status-* file colors, so every AtlantaFX theme inherits correctly. */
-.git-tree .github-run-success { -fx-fill: -color-success-fg; }
-.git-tree .github-run-failure { -fx-fill: -color-danger-fg; }
-.git-tree .github-run-running { -fx-fill: -color-accent-fg; }
-.git-tree .github-run-queued { -fx-fill: -color-fg-muted; }
-.git-tree .github-run-cancelled { -fx-fill: -color-fg-muted; }
-.git-tree .github-run-skipped { -fx-fill: -color-fg-muted; }
-.git-tree .github-run-unknown { -fx-fill: -color-fg-muted; }
+.git-tree .github-run-success { -fx-text-fill: -color-success-fg; }
+.git-tree .github-run-failure { -fx-text-fill: -color-danger-fg; }
+.git-tree .github-run-running { -fx-text-fill: -color-accent-fg; }
+.git-tree .github-run-queued { -fx-text-fill: -color-fg-muted; }
+.git-tree .github-run-cancelled { -fx-text-fill: -color-fg-muted; }
+.git-tree .github-run-skipped { -fx-text-fill: -color-fg-muted; }
+.git-tree .github-run-unknown { -fx-text-fill: -color-fg-muted; }
 /* PR review tab (GitHub "Files changed" style): a centered scrolling column of file rows. Font sizes are
    em-relative so setFontScale scales the whole tree with the editor text zoom. */
 .pr-review-pane { -fx-background-color: -color-bg-default; }

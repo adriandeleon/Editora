@@ -1377,9 +1377,10 @@ A backlog of planned features and improvements. Unordered within each section.
       `docs/plugins.md`
 - [x] Git history, blame & stash (IntelliJ/VSCode parity) — a **Git Log** tool window (`M-g h` / *Show File
       History*): browse commits, see a commit's files, double-click for a read-only diff, right-click to
-      Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame** (`M-g a`,
-      GitLens-style "author, time ago • summary" on the current line; off by default). **Stash**
-      push/pop/apply/drop (palette + branch dropdown). All Git-gated (off in Simple UI mode)
+      Copy Hash / Checkout / Reset / Revert / Cherry-Pick / New Branch. **Blame** (`M-g a`: a gutter
+      column with each line's author and commit date, shaded by age; off by default). **Stash**
+      push/pop/apply/drop (palette + VCS menu; the branch dropdown offers stash and unstash). All
+      Git-gated (off in Simple UI mode)
 - [x] Simple UI mode — a one-toggle minimal layout (toolbar icon, **View: Toggle Simple UI Mode**,
       Settings → Application, or `--simple`): hides the extra toolbar groups (new-from-template, recent,
       find-in-files, split, project selector), the tool-window stripe, breadcrumb, the entire gutter

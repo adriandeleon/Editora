@@ -1,7 +1,28 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<catalog>
-  <book id="1">
-    <title>Sample</title>
-    <author>Editora</author>
-  </book>
+<!-- A small XML sample: a prolog, a DOCTYPE, namespaces, attributes, entities, CDATA, and a PI. -->
+<!DOCTYPE catalog [
+  <!ENTITY publisher "Editora Press">
+]>
+<?xml-stylesheet type="text/xsl" href="catalog.xsl"?>
+<catalog xmlns="https://example.com/catalog"
+         xmlns:inv="https://example.com/inventory"
+         version="1.0">
+  <shelf name="library" inv:capacity="64">
+    <book id="b1" available="true">
+      <title xml:lang="en">Dune</title>
+      <author>Frank Herbert</author>
+      <publisher>&publisher;</publisher>
+      <pages>612</pages>
+    </book>
+    <book id="b2" available="false">
+      <title xml:lang="en">Emma &amp; Other Stories</title>
+      <author>Jane Austen</author>
+      <notes><![CDATA[Raw text: <not a tag> & not an entity.]]></notes>
+    </book>
+  </shelf>
+  <shelf name="workshop" inv:capacity="16">
+    <inv:tool id="t1" weight-kg="0.6">Hammer</inv:tool>
+    <inv:tool id="t2" weight-kg="45">Anvil</inv:tool>
+    <empty/>
+  </shelf>
 </catalog>

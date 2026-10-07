@@ -115,15 +115,19 @@ Editora is built with the help of AI coding tools.
   round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save
   `trim_trailing_whitespace` / `insert_final_newline`. On by default; toggle via Settings → Editor or the
   "View: Toggle EditorConfig" palette command.
-- **Server log viewer** — `.log` files get severity highlighting (ERROR/WARN/INFO/DEBUG/TRACE, both inline
-  and as a left-edge bar that works even on huge logs), a floating **Follow** toggle (`tail -f` — streams new
-  lines as the file grows and auto-scrolls), **open-the-tail** for very large logs (opens read-only at the
-  end), and **live level + regex filtering** (filter as you type by a level floor and a regex — or a literal
-  substring when it isn't valid regex; a stack trace inherits its record's level so it stays visible).
-  Detects Logback/Log4j, `java.util.logging`, syslog, nginx, structured/JSON, zerolog, and access logs. Logs
-  open in **View mode** (read-only with an "Enable Editing" banner) by default — follow still streams while
-  read-only. On by default (Settings → Editor → Logs, "View: Toggle Log Viewer"); `Log: Toggle Follow` / `Filter by Level` /
-  `Filter by Pattern` / `Clear Filter` / `View as Log` in the palette.
+- **Server log viewer** — log files get severity highlighting (FATAL/ERROR/WARN/INFO/DEBUG/TRACE, both inline
+  and as a left-edge bar that works even on huge logs) and a control bar above the text: a **Follow** toggle
+  (`tail -f` — streams new lines, survives log rotation, and only auto-scrolls while you are at the end),
+  a **level floor**, and a **live pattern filter** (a regular expression, or plain text when it isn't a
+  valid one) with a count of the lines shown. Filters work on whole records — a stack trace stays with the
+  line it belongs to — and filtered lines keep their real line numbers. Very large logs open read-only at
+  their **tail**. Recognised by name (`*.log`, rotated `app.log.1`, `access_log`, `syslog`, `catalina.out`)
+  or by content (`server.out`, extensionless files); `Log: View as Log` toggles it for anything else.
+  Detects Logback/Log4j, `java.util.logging`, syslog, nginx, .NET, klog, structured/JSON (including pino's
+  numeric levels), zerolog, and access logs. Logs open in **View mode** (read-only with an "Enable Editing"
+  banner) by default — follow still streams while read-only. On by default (Settings → Editor → Logs,
+  "View: Toggle Log Viewer"); `Log: Toggle Follow` / `Filter by Level` / `Filter by Pattern` / `Focus Filter` /
+  `Clear Filter` / `Next Warning or Error` in the palette.
 - **Word/line-level undo** — undo/redo breaks at word, whitespace, and newline boundaries (and after a typing pause), so one undo removes a word or line rather than a whole typing burst.
 - **Undo History** — an *Undo History* tool window (`M-g u`) lists in-session document checkpoints; double-click or Enter jumps back to any recent state.
 - **Auto Close Tags** — typing the `>` of an HTML/XML open tag inserts the matching closing tag and
@@ -559,18 +563,28 @@ Editora is built with the help of AI coding tools.
   modified / deleted); and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
   stage, unstage, discard, **Stage All**, and a commit box. The file list is **multi-select** — extend with
   Shift+Up/Down or Shift/Ctrl-click, then right-click to stage, unstage or discard the whole selection in one
-  `git` call (also *Git: Stage/Unstage Selected Files* on the palette) It has a **filter box**
+  `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette). It has a **filter box**
   (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group. Palette/keys cover commit (`C-x g`), stage
   current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
-  repo and opens a file from it — independent of projects). A **Git Log** tool window (`M-g h`, or *Show
-  File History* on a tab) browses commits — select one to see its files. In a file-filtered history,
+  repo and opens a file from it — independent of projects). Fetch prunes remote-tracking branches that were
+  deleted on the server, so a local branch whose upstream is gone is marked as such. The Emacs keymap adds
+  the `vc` chords (`C-x v v` commit, `C-x v P` push, `C-x v +` pull, `C-x v b s` switch branch, `C-x v l` /
+  `C-x v L` file / branch log, `C-x v g` blame); the IntelliJ keymap adds Commit (`Ctrl+K`), Push
+  (`Ctrl+Shift+K`), Update (`Ctrl+T`) and Branches (``Ctrl+Shift+` ``). A **Git Log** tool window (`M-g h`,
+  or *Show File History* on a tab) lists the checked-out branch's commits — short hash, the branches and tags
+  pointing at each commit, subject, author and relative date, one line per commit — and reloads after every
+  Git command; select a commit to see its files. It loads the newest 200 commits and says so when the history
+  is longer. In a file-filtered history,
   double-click a revision's file to compare it with the editable working copy and apply individual lines,
   hunks, or the whole revision; in the full repository log, double-click keeps the read-only parent-to-commit
   diff and **Compare with Working Tree** is available from the file menu. Right-click a commit to Copy Hash /
-  Checkout / Reset / Revert / Cherry-Pick / New Branch. **Inline blame**
-  (`M-g a`, GitLens-style) annotates the current line with "author, time ago • summary" (toggle in
-  *Settings → Git*, off by default). **Stash** push / pop / apply / drop from the palette or the branch
-  dropdown. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
+  Checkout / Reset / Revert / Cherry-Pick / New Branch (the same actions are on the palette as *Git Log: …*;
+  they act on the commit selected in the visible log, and open the log first when it is hidden). **Blame**
+  (`M-g a`) adds a gutter column showing every line's author and commit date, shaded by age, with the
+  commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default). **Stash**
+  push / pop-latest / apply / drop from the palette and the VCS menu; the branch dropdown (branches first,
+  then the actions) offers *Stash Changes* and *Unstash…*. The VCS menu also reaches Stage All, Compare with
+  Branch / Tag / Commit, Resolve Conflicts, Add to .gitignore and Initialize Repository. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
 - **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
   highlights, curved change ribbons and an overview track, collapsed unchanged context, whitespace/wrap
   controls, case-insensitive matching, smart or positional changed-line alignment, state-preserving live
@@ -831,8 +845,9 @@ also enforces the Spotless check and the JaCoCo per-package coverage floors. See
 [`docs/testing.md`](docs/testing.md).
 
 For **manual** smoke-testing and demos there's a curated, feature-organized sample corpus under
-[`samples/`](samples/README.md) (syntax per language, folding, markdown, mermaid, todo, spell, search,
-editorconfig, http, log, diff, encodings — open the relevant file to exercise a feature). Large perf
+[`samples/`](samples/README.md) (syntax per language, navigation, folding, markdown, previews, run and
+debug, build tools with tests, http, log, diff, encodings, … — open the relevant file to exercise a
+feature; its README is the manifest). Large perf
 inputs are generated on demand by `java scripts/GenSamples.java` (a JDK 25 compact source file;
 git-ignored output, not committed).
 

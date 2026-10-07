@@ -1,0 +1,48 @@
+---
+// A small Astro sample: a frontmatter script fence, then an HTML template with
+// expressions, a component, a directive, and scoped style and script blocks.
+interface Props {
+  title: string;
+  items?: { name: string; weightKg: number }[];
+}
+
+const { title, items = [] } = Astro.props;
+const heavy = items.filter((item) => item.weightKg > 10);
+const year = new Date().getFullYear();
+---
+
+<!-- An HTML comment -->
+<section class="shelf" data-count={items.length}>
+  <h2>{title}</h2>
+  {
+    items.length === 0 ? (
+      <p class="empty">Nothing here</p>
+    ) : (
+      <ul>
+        {items.map((item) => (
+          <li class:list={["item", { heavy: item.weightKg > 10 }]}>
+            {item.name} <small>{item.weightKg.toFixed(1)} kg</small>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+  <p>{heavy.length} heavy &middot; &copy; {year}</p>
+  <slot name="footer" />
+</section>
+
+<style>
+  .shelf {
+    padding: 1rem;
+    border: 1px solid #d1d5db;
+  }
+  .heavy {
+    font-weight: 600;
+  }
+</style>
+
+<script>
+  document.querySelectorAll(".item").forEach((el) => {
+    el.addEventListener("click", () => el.classList.toggle("picked"));
+  });
+</script>

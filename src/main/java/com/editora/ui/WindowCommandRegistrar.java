@@ -867,6 +867,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("log.viewAsLog", host.logViewer()::viewAsLog));
         host.registry().register(Command.of("log.setLevelFilter", host.logViewer()::setLevelFilter));
         host.registry().register(Command.of("log.setRegexFilter", host.logViewer()::setRegexFilter));
+        host.registry().register(Command.of("log.focusFilter", host.logViewer()::focusFilter));
         host.registry().register(Command.of("log.clearFilter", host.logViewer()::clearFilter));
         host.registry().register(Command.of("log.nextError", host.logViewer()::jumpToNextError));
         host.registry().register(Command.of("log.previousError", host.logViewer()::jumpToPreviousError));
@@ -1919,8 +1920,8 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "tool.commit",
                         () -> host.git().ifEnabled(() -> host.toolWindows().toggle(host.commitToolWindow()))));
-        // Git (native CLI). Gated by the "Enable Git" setting (default off); also no-op when Git is
-        // absent / not in a repo. The ifGit wrapper disables the commands + keybindings when Git is off.
+        // Git (native CLI). Gated by the "Enable Git" setting (on by default); also a no-op when Git is
+        // absent / not in a repo. The ifEnabled wrapper disables the commands + keybindings when Git is off.
         host.registry().register(Command.of("remote.connect", host.remoteCoordinator()::connect));
         host.registry().register(Command.of("remote.openFile", host.remoteCoordinator()::openFile));
         host.registry().register(Command.of("remote.manageConnections", host.remoteCoordinator()::manageConnections));
@@ -1937,6 +1938,10 @@ final class WindowCommandRegistrar {
                 .register(Command.of("git.unstageFile", () -> host.git().ifEnabled(host.git()::gitUnstageActiveFile)));
         host.registry()
                 .register(Command.of("git.discardFile", () -> host.git().ifEnabled(host.git()::gitDiscardActiveFile)));
+        host.registry().register(Command.of("git.stageAll", () -> host.git().ifEnabled(host.gitWindows()::stageAll)));
+        host.registry()
+                .register(Command.of(
+                        "git.addToGitignore", () -> host.git().ifEnabled(host.gitWindows()::addActiveFileToGitignore)));
         host.registry()
                 .register(Command.of(
                         "git.stageSelected",
@@ -1950,14 +1955,11 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("git.newBranch", () -> host.git().ifEnabled(host.git()::newBranch)));
         // No ifEnabled: a clone runs with no repository at all.
         host.registry().register(Command.of("git.cancel", () -> host.git().cancelNetworkCommand()));
-        host.registry()
-                .register(Command.of(
-                        "git.fetch", () -> host.git().ifEnabled(() -> host.git().gitSync("Fetch", "fetch", "--all"))));
-        host.registry()
-                .register(Command.of(
-                        "git.pull", () -> host.git().ifEnabled(() -> host.git().gitSync("Pull", "pull", "--ff-only"))));
+        host.registry().register(Command.of("git.fetch", () -> host.git().ifEnabled(host.gitWindows()::fetch)));
+        host.registry().register(Command.of("git.pull", () -> host.git().ifEnabled(host.gitWindows()::pull)));
         host.registry().register(Command.of("git.push", () -> host.git().ifEnabled(host.git()::gitPush)));
         // Git Log: act on the commit selected in the Git Log tool window (parity with its right-click menu).
+        // withSelectedCommit never runs on a hidden log: it opens and focuses it and asks for a commit.
         host.registry()
                 .register(Command.of(
                         "git.log.checkout", () -> host.gitWindows().withSelectedCommit(host.gitLogOps()::checkout)));
@@ -2097,6 +2099,12 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "diff.openPatchFile", () -> host.diffCoordinator().openPatchFile(host.activeBuffer())));
+        host.registry()
+                .register(Command.of(
+                        "diff.vsBranch", () -> host.git().ifEnabled(host.gitWindows()::compareActiveWithBranch)));
+        host.registry()
+                .register(
+                        Command.of("diff.vsTag", () -> host.git().ifEnabled(host.gitWindows()::compareActiveWithTag)));
         host.registry()
                 .register(Command.of(
                         "diff.vsCommit", () -> host.git().ifEnabled(host.diffCoordinator()::diffActiveVsCommit)));

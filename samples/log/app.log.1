@@ -1,0 +1,20 @@
+2026-10-05 23:58:01.104 INFO  [main] c.e.shop.Application - Starting Application v2.4.1 using Java 25
+2026-10-05 23:58:01.990 DEBUG [main] c.e.shop.config.DataSourceConfig - Pool size 10, timeout 30000 ms
+2026-10-05 23:58:02.412 INFO  [main] o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080
+2026-10-05 23:59:14.007 WARN  [http-nio-8080-exec-3] c.e.shop.cart.CartService - Cart 7731 has 3 items
+with no price; using the list price:
+  sku=BOLT-M8  sku=PAINT-RED  sku=MILK-1L
+2026-10-05 23:59:14.250 ERROR [http-nio-8080-exec-3] c.e.shop.web.ErrorHandler - Request failed: POST /checkout
+com.example.shop.CheckoutException: could not reserve stock
+	at com.example.shop.checkout.CheckoutService.reserve(CheckoutService.java:88)
+	at com.example.shop.checkout.CheckoutService.checkout(CheckoutService.java:41)
+	at com.example.shop.web.CheckoutController.post(CheckoutController.java:27)
+	... 42 common frames omitted
+Caused by: java.sql.SQLTransientConnectionException: pool exhausted after 30000 ms
+	at com.zaxxer.hikari.pool.HikariPool.getConnection(HikariPool.java:186)
+	at com.example.shop.stock.StockRepository.lock(StockRepository.java:54)
+	... 45 common frames omitted
+2026-10-05 23:59:14.251 INFO  [http-nio-8080-exec-3] c.e.shop.web.AccessLog - POST /checkout 500 30244 ms
+2026-10-05 23:59:20.000 DEBUG [scheduler-1] c.e.shop.jobs.Heartbeat - tick
+2026-10-05 23:59:30.613 TRACE [scheduler-1] c.e.shop.jobs.Heartbeat - an error in the message body is not a level
+2026-10-05 23:59:59.999 FATAL [main] c.e.shop.Application - Out of memory; shutting down

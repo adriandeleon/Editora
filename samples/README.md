@@ -12,10 +12,15 @@ here, and every path listed here must exist.
 This corpus contains **deliberately broken / unusual** files (a bad Mermaid diagram, merge-conflict
 markers, misspellings, non-UTF-8 encodings). That is intentional — see *Conventions* at the bottom.
 
-## syntax/ — one file per core language (highlighting + folding)
+## syntax/ — one file per language (highlighting + folding)
 
-Open and confirm TextMate highlighting and fold chevrons. Languages without a bundled grammar render
-as plain text (expected).
+Open and confirm TextMate highlighting and fold chevrons. Every programming-language sample is a
+complete program of roughly 40–80 lines built around the same small "shelf of items" example, and
+each one opens with a comment listing the constructs it covers (comments of every style, strings
+with escapes, numbers, types, control flow), so a missing color is easy to spot and the same idea
+can be compared across languages. They are long enough for comment toggling (`M-;`), spell check in
+comments, Go to Symbol and the Structure outline. `SamplesCorpusTest` fails if a bundled grammar
+has no sample anywhere in the corpus.
 
 `samples/syntax/Sample.java`, `samples/syntax/sample.py`, `samples/syntax/sample.ts`,
 `samples/syntax/sample.tsx`, `samples/syntax/sample.go`, `samples/syntax/sample.rs`,
@@ -26,7 +31,12 @@ as plain text (expected).
 `samples/syntax/sample.toml`, `samples/syntax/sample.sql`, `samples/syntax/sample.sh`,
 `samples/syntax/sample.ps1`, `samples/syntax/sample.bat`, `samples/syntax/sample.groovy`,
 `samples/syntax/sample.ini`, `samples/syntax/sample.js` (JavaScript, via the TypeScript grammar),
-`samples/syntax/sample.tf` (Terraform/HCL), `samples/syntax/Dockerfile` (matched by filename)
+`samples/syntax/sample.jsx` (JSX, via the TSX grammar), `samples/syntax/sample.astro` (Astro: a
+frontmatter script fence, a template, and style/script blocks), `samples/syntax/sample.tf`
+(Terraform/HCL), `samples/syntax/Dockerfile` (matched by filename)
+
+`samples/syntax/sample.tsx` declares its own minimal JSX types instead of importing React, so a
+language server reports no missing-module error when the corpus is opened without `node_modules`.
 
 Plain-text developer formats: `samples/syntax/sample.patch` (unified diff — added/removed lines
 tint green/red), `samples/syntax/Makefile` (recipe lines are real tabs), `samples/syntax/justfile`,
@@ -35,12 +45,25 @@ tint green/red), `samples/syntax/Makefile` (recipe lines are real tabs), `sample
 **Markwhen** timeline — dates/ranges/`#tags`/`#`-header sections + `//` comments; also has an
 Editor/Split/Preview toggle that renders the timeline). There is deliberately no
 `.gitattributes` sample — a real one would change Git's behavior for this folder (see
-*Conventions*); open any repo's `.gitattributes` to see that grammar.
+*Conventions*); open any repo's `.gitattributes` to see that grammar. The ignore-file grammar
+(`.gitignore` and friends) is covered by `samples/dockerfile/.dockerignore` for the same reason.
 
 ## folding/ — nested fold regions
 
 - `samples/folding/deeply-nested.json` — collapse/expand several nested levels; the gutter chevrons
   and the Structure outline should mirror the nesting.
+
+## navigation/ — sticky scroll, fold levels, outline, related files
+
+- `samples/navigation/Warehouse.java` — a deliberately long (about 240 lines), deeply nested class:
+  the one file in the corpus with enough height and depth for **sticky scroll** (scroll into
+  `Aisle.Shelf.Bin.take` and four scopes stay pinned), **Fold Level 1–5**, **Fold / Unfold
+  Recursively**, **Go to Parent Fold**, the **Structure** outline, **Narrow to Defun**, the
+  **minimap**, and **bracket pair colorization** (the `nested` method has six depths on one line). It
+  compiles and runs (`java samples/navigation/Warehouse.java`).
+- `samples/navigation/geometry.h` + `samples/navigation/geometry.c` — a header/implementation pair
+  for **Go: Related File**. The other related-file pairs live where they are also useful for
+  something else: the web trio under `web/`, and each build-tool project's source + test file.
 
 ## indent/ — auto-indent, smart backspace, closer re-align
 
@@ -74,6 +97,14 @@ them: kill ring (`C-k`/`C-y`/`M-y`), rectangles (`C-x r …`), narrowing (`C-x n
   (exercises the SVG rasterizer).
 - `samples/markdown/math.md` — inline `$…$` and block `$$…$$` math (needs `mathSupport`).
 - `samples/markdown/mermaid-in-markdown.md` — a fenced `mermaid` block renders inline (needs `mmdc`).
+- `samples/markdown/extras.md` — everything `gfm.md` leaves out: YAML front matter, footnotes (reference
+  and inline), strikethrough, inserted text, an autolink, nested and task lists, nested block quotes,
+  an indented code block, and **local** images (`../images/…`, so the preview needs no network).
+  Five heading levels make it the file for the outline and *Markdown: Insert/Update Table of Contents*.
+- `samples/markdown/lint.md` — **Markdown lint**: trips each of the 16 rules exactly where a comment
+  says so (MD001 … MD052), shows a `markdownlint-disable` directive suppressing one, and has a long
+  line for the optional MD013. Try the quick fixes, then undo. It is deliberately malformed — the
+  repo `.editorconfig` exempts it from the final-newline rule so saving it does not "repair" MD047.
 
 ## mermaid/ — standalone diagrams + lint
 
@@ -116,7 +147,7 @@ compiles offline. They cover Typst's common document types:
 ### packages/ — samples that use `@preview` packages (need a one-time network fetch)
 
 These exercise Typst's package system: on first render `typst` downloads the package from the registry and
-caches it under `~/Library/Caches/typst/` (offline afterward). Offline + not-yet-cached → the preview shows
+caches it (`~/Library/Caches/typst/` on macOS, `~/.cache/typst/` on Linux; offline afterward). Offline + not-yet-cached → the preview shows
 the download error. Package versions are pinned to ones that compile with typst 0.15.
 
 - `samples/typst/packages/fletcher-diagram.typ` — an arrow/node diagram (`@preview/fletcher`).
@@ -137,6 +168,14 @@ the download error. Package versions are pinned to ones that compile with typst 
 ## svg/ — SVG image preview
 
 - `samples/svg/shapes.svg` — edit the XML source and the 3-mode preview re-renders the image live (JSVG).
+
+## web/ — HTML live preview + related files
+
+- `samples/web/widget.html` + `samples/web/widget.css` + `samples/web/widget.js` — a small counter
+  page split over three files. Open the HTML file and use its floating browser icon for the **live
+  preview**, then edit the stylesheet or the script. The shared base name makes **Go to Related
+  File** cycle between the three. (`samples/syntax/sample.html` is the single-file version, with
+  embedded `<style>` and `<script>` blocks for the grammar switch.)
 
 ## crontab/ — crontab schedule preview
 
@@ -167,6 +206,9 @@ the download error. Package versions are pinned to ones that compile with typst 
 
 - `samples/dockerfile/Dockerfile` — a multi-stage build; the preview shows a per-stage digest (base image,
   exposed ports, workdir, user, entrypoint/command, health check, build-step count).
+- `samples/dockerfile/.dockerignore` — the **ignore-file grammar** (comments, globs, `**`, a `!`
+  negation, a character class, an escape). Every dotfile ending in `ignore` uses it. A `.dockerignore`
+  is inert here, which a real `.gitignore` would not be.
 
 ## github-actions/ — GitHub Actions workflow preview
 
@@ -204,8 +246,10 @@ inert samples (fake values, not real system files).
 
 ## todo/ — TODO/FIXME highlighting
 
-- `samples/todo/markers.java` — `TODO` (amber) and `FIXME` (red) highlight + appear in the TODO tool
-  window; `NOTE` only highlights if you add it as a custom pattern.
+- `samples/todo/markers.java` — one line per built-in keyword, each in its own color and its own
+  group in the TODO tool window: `TODO` (amber), `FIXME` (red), `HACK` (orange), `NOTE` (blue), `XXX`
+  (magenta) and `DONE` (green, the "marked done" state). Two decoys (`todo`, `TODOS`) must **not**
+  match, and a string literal and a block comment show that both are scanned.
 
 ## spell/ — spell check
 
@@ -265,8 +309,17 @@ A self-contained tree with its own `root = true` so it does not inherit the repo
   class. A ▶ appears on the `void main(` line; running needs JDK 25 on `PATH`.
 - `samples/run/hello.py` — a Python script; the ▶ sits on the `if __name__ == "__main__":` guard
   (needs `python3` on `PATH`).
+- `samples/run/hello.sh` — a shell script; the ▶ sits on the first line and runs the file with `bash`
+  (shell Run follows the Bash LSP toggle).
+- `samples/run/shebang-script` — **no file extension**: the `#!/usr/bin/env python3` first line is
+  what makes it Python. Check the status-bar language, the highlighting and the ▶.
+- `samples/run/debug.py` — a script worth **debugging** (needs the Python adapter, Settings →
+  Debugging): locals, a loop, nested calls, a dictionary that grows, and a caught exception. Lines
+  marked `break here` suggest where to try a plain breakpoint, a conditional one (`n == 15`), a
+  logpoint, a watch on `total`, step-into, and set-value. `samples/run/hello.java` is the Java
+  equivalent for a first breakpoint.
 
-## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup
+## build-tools/ — Maven / Gradle / npm / Cargo / Go toolbar button + actions popup + tests
 
 Five tiny, self-contained projects — one per build tool. Open a file under a project's folder and
 its build-tool toolbar button appears (each button stays hidden until its marker file is detected);
@@ -276,30 +329,50 @@ own `settings.gradle`), and every command is harmless (an `@echo`/`println`, or 
 choose to run). Each needs its tool on `PATH` to actually run (`mvn`/`gradle`/`npm`/`cargo`/`go`); the
 button + popup show regardless. (Build Tools are disabled in Simple UI mode and for remote files.)
 
+Four of the five have **tests**, for the Test Results tool window and the test gutter ▶. Each suite has one
+passing test, one that **fails on purpose** and one that is **skipped on purpose**, so every status
+has an example — a red result here is the sample working, not a regression. Each test file sits
+beside the source it tests under a conventional name, so **Go: Related File** jumps between them.
+
 - `samples/build-tools/maven/pom.xml` + `samples/build-tools/maven/src/main/java/com/example/App.java`
   — the popup lists the Lifecycle phases (a Task each), the `release` **profile** (a checkable
-  toggle → `-Prelease`), and the surefire `integration-tests` execution goal under Plugins.
+  toggle → `-Prelease`), and the surefire `integration-tests` execution goal under Plugins. The
+  `pom.xml` also has a **preview** (coordinates, properties, dependencies and plugins in aligned
+  columns). `samples/build-tools/maven/src/test/java/com/example/AppTest.java` is a JUnit 5 class
+  with a `@ParameterizedTest`, a `@DisplayName`, a `@Disabled` test and a `@Nested` class; `mvn test`
+  downloads JUnit on first run.
 - `samples/build-tools/gradle/build.gradle` + `samples/build-tools/gradle/settings.gradle` — the
   popup shows the static Common section (build/clean/test/assemble/check/jar/run/bootRun) plus
   **Load all tasks…** (runs `gradle tasks --all` to list the rest, including the custom `hello` task).
 - `samples/build-tools/npm/package.json` + `samples/build-tools/npm/index.js` — the popup lists the
   `scripts` (`start`/`build`/`test`/`lint`, each `npm run <name>`) + a Common `install`/`ci`; the
   `packageManager` field would switch the runner (npm/yarn/pnpm/bun).
+  `samples/build-tools/npm/index.test.js` uses Node's built-in test runner (no dependencies); the
+  `test` script prints TAP.
 - `samples/build-tools/cargo/Cargo.toml` + `samples/build-tools/cargo/src/main.rs` — the popup shows
   the standard subcommands, the explicit `cargo-demo` binary under Targets (`cargo run --bin
-  cargo-demo`), and a `--release` toggle.
+  cargo-demo`), and a `--release` toggle. The tests are a `#[cfg(test)]` module in `main.rs`.
 - `samples/build-tools/go/go.mod` + `samples/build-tools/go/main.go` — the popup shows the standard
   `go` subcommands over the whole module (`build ./...`, `run .`, `test ./...`, `vet`, `fmt`, `mod
   tidy`, …); the `module example.com/go-demo` line is the Settings "Found: …" label.
+  `samples/build-tools/go/main_test.go` holds the tests, including a table-driven one with subtests.
 
 ## images/ — image viewer
 
 - `samples/images/sample.png` — opens in the read-only image viewer (zoom out/in/fit/actual, Ctrl+wheel)
-  instead of the hex viewer.
+  instead of the hex viewer. It has an alpha channel.
+- `samples/images/sample.jpg`, `samples/images/sample.gif` (two frames), `samples/images/sample.bmp`
+  (60 × 40, to test zooming in on a small image) — the other raster formats the viewer accepts.
 
 ## http/ — HTTP client
 
 - `samples/http/requests.http` — run the per-request ▶; uses `{{title}}`/`{{token}}` variables.
+- `samples/http/advanced.rest` — the `.rest` extension, and the rest of the format: in-file `@variables`,
+  a **named request** and a later one **chained** to its response (`{{create.response.body.$.json.item}}`),
+  dynamic variables (`{{$uuid}}`, `{{$isoTimestamp}}`, `{{$randomInt}}`), the **Basic auth** shorthand, an
+  **external body** (`< ./body.json`, from `samples/http/body.json`), a **multipart** form, the
+  `@no-redirect` / `@timeout` directives, and a request with no method. Run the first two in order to
+  see chaining. All requests go to httpbin.org, so they need a network connection.
 - `samples/http/http-client.env.json` — `dev`/`prod` environments with **fake** tokens (never real
   secrets).
 
@@ -308,19 +381,46 @@ button + popup show regardless. (Build Tools are disabled in Simple UI mode and 
 - `samples/log/levels.log` — every level TRACE→FATAL; test the level filter + per-level coloring.
 - `samples/log/stacktraces.log` — Java/Python/Node frames; double-click a frame to jump (clickable
   stack traces).
+- `samples/log/app.log.1` — a **rotated** name (recognised without a `.log` extension), in Logback
+  layout, with **multi-line records**: a wrapped warning and an exception with a `Caused by:` chain.
+  Set the level floor to WARN, or filter for `pool`, and check each record stays whole and keeps its
+  real line numbers. One TRACE line has the word "error" in its message and must stay TRACE.
+- `samples/log/json.log` — **structured** logs, one JSON object per line: string levels with the keys
+  in any order, pino's numeric levels (30/40/50/60), and a `severity` field.
+- `samples/log/kubernetes.log` — **klog**: the level is the first letter (`I`/`W`/`E`/`F`).
+- `samples/log/syslog` — an **extensionless** name; only the lines whose message carries a level
+  prefix (`error:`, `warning:`) are colored, the rest stay neutral.
+- `samples/log/access_log` — an Apache/nginx **access log**: the level comes from the status code
+  (2xx/3xx info, 4xx warning, 5xx error).
+- `samples/log/server.out` — recognised by **content**, not by name: .NET console logging (`info:`,
+  `warn:`, `fail:`, `crit:`, each with an indented continuation line), nginx's error log (`[error]`),
+  and `java.util.logging` (`SEVERE:` on the line after the timestamp).
+
+To exercise **Follow**, append to a scratch file under the git-ignored `samples/perf/` folder and open it:
+
+```sh
+mkdir -p samples/perf && while true; do echo "$(date '+%F %T') INFO tick" >> samples/perf/follow.log; sleep 1; done
+```
 
 ## diff/ — diff viewer + merge
 
 - `samples/diff/original.txt` + `samples/diff/modified.txt` — Compare With… to see a side-by-side
   diff.
+- `samples/diff/inventory-before.py` + `samples/diff/inventory-after.py` — a realistic pair for
+  Compare With…: a **moved** function, a rewritten one, a **word-level** change inside a line
+  (`%s` → `%.1f`, `64` → `128`), an **indentation-only** change (try the ignore-whitespace toggle),
+  an added import and an added parameter. Good for next/previous-change navigation and patch export.
 - `samples/diff/conflict.txt` — Git merge-conflict markers; opens in the merge resolver.
+- `samples/diff/conflict-diff3.txt` — two conflicts in the **diff3** style: each carries the common
+  ancestor between `|||||||` and `=======`, with unconflicted text between and after them.
 
 ## encodings/ — charset + EOL detection
 
 Bytes are preserved verbatim via `.gitattributes` (`-text`), so don't "fix" them.
 
 - `samples/encodings/utf8-bom.txt` — UTF-8 with a BOM.
-- `samples/encodings/utf16le.txt` — UTF-16 LE.
+- `samples/encodings/utf16le.txt` — UTF-16 LE (no BOM).
+- `samples/encodings/utf16be.txt` — UTF-16 BE, with a BOM.
 - `samples/encodings/latin1.txt` — ISO-8859-1.
 - `samples/encodings/crlf.txt` — CRLF line endings (status bar should show `CRLF`).
 
@@ -336,6 +436,13 @@ Pass an MB count to scale the huge file, e.g. `java scripts/GenSamples.java 120`
 - **Inert by name.** Config-like samples are named so they can't act on the repo (e.g. there's no
   real `.gitignore` here; the EditorConfig fixture is sandboxed with `root = true`).
 - **No real secrets.** `.http` samples use obviously-fake tokens.
-- **Keep it small.** Sample files are a few lines each; large/perf inputs are generated, not
-  committed.
+- **Keep it small.** A fixture is as long as its feature needs and no longer: most are a few lines,
+  the syntax samples are 40–80, and `navigation/Warehouse.java` is long because length is its point.
+  Large/perf inputs are generated, not committed.
+- **Valid unless broken on purpose.** A sample should compile, parse or render cleanly, so the only
+  squiggles a language server draws are the ones the sample is about. Deliberately broken files say
+  so in a comment and in this README. Samples are self-contained: no imports that need a package
+  install to resolve.
+- **Prefer offline.** Use local images and files where a feature allows it. The HTTP samples and the
+  Markdown badge are the exceptions, and are marked.
 - **Update this README** when you add or remove a sample — `SamplesCorpusTest` fails otherwise.

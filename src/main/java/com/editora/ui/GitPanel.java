@@ -69,7 +69,11 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
         void stageAll();
 
-        void commit(String message);
+        /**
+         * Commits the index with {@code message}. {@code onDone} must be called once, on the FX thread, with
+         * whether a commit was made — until then the panel treats the commit as running.
+         */
+        void commit(String message, java.util.function.Consumer<Boolean> onDone);
 
         void push();
 
@@ -129,6 +133,13 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     /** The status last pushed by the controller, so a filter change can re-render without a fresh {@code
      *  git status} (filtering is a view, not a refresh). */
     private GitStatus lastStatus;
+
+    /** Whether the last status has anything staged — with {@link #committing}, what enables Commit. */
+    private boolean hasStaged;
+    /** A commit is running (hooks can take minutes): no second one may start until it reports back. */
+    private boolean committing;
+    /** Groups the user collapsed; a status update rebuilds the rows but must not reopen them. */
+    private final java.util.EnumSet<Group> collapsed = java.util.EnumSet.noneOf(Group.class);
 
     private final StackPane placeholderPane;
     private final Label placeholder = new Label(tr("gitpanel.placeholder"));
@@ -261,16 +272,31 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         return Icons.toolbarButton(icon, tip, action, "flat", "git-toolbar-button"); // tooltip + accessible name
     }
 
+    /**
+     * Commits — from the button and from Ctrl/Cmd+Enter alike, so the shortcut obeys the button's disabled
+     * state: with nothing staged it used to run {@code git commit} anyway and end in a "Commit failed" dialog,
+     * and during a slow hook a second press queued a second commit.
+     */
     private void doCommit() {
-        String msg = message.getText() == null ? "" : message.getText().strip();
-        if (!msg.isEmpty()) {
-            actions.commit(msg);
+        String submitted = message.getText() == null ? "" : message.getText();
+        String msg = submitted.strip();
+        if (msg.isEmpty() || committing || commitButton.isDisabled()) {
+            return;
         }
+        committing = true;
+        updateCommitEnabled();
+        actions.commit(msg, committed -> {
+            committing = false;
+            updateCommitEnabled();
+            // Clear only the message that was committed: text typed while the commit ran is the next one.
+            if (committed && submitted.equals(message.getText())) {
+                message.clear();
+            }
+        });
     }
 
-    /** Clears the commit message (called by the controller after a successful commit). */
-    public void clearMessage() {
-        message.clear();
+    private void updateCommitEnabled() {
+        commitButton.setDisable(!hasStaged || committing);
     }
 
     /** Sets the action run by the "Clone Repository…" button shown when there's no repo. */
@@ -300,6 +326,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
     public void setStatus(GitStatus status) {
         if (status == null || !status.isRepo()) {
             lastStatus = null;
+            hasStaged = false;
+            updateCommitEnabled();
             reviewButton.setDisable(true);
             reviewWorkingItem.setDisable(true);
             reviewStagedItem.setDisable(true);
@@ -312,12 +340,12 @@ public final class GitPanel extends VBox implements ToolWindowContent {
 
         // The commit affordances read the FULL status, never the filtered view: hiding a staged file behind
         // a filter must not disable Commit.
-        boolean hasStaged = status.files().stream().anyMatch(FileEntry::staged);
+        hasStaged = status.files().stream().anyMatch(FileEntry::staged);
         boolean hasWorking = status.files().stream().anyMatch(file -> file.unstaged() || file.untracked());
         reviewStagedItem.setDisable(!hasStaged);
         reviewWorkingItem.setDisable(!hasWorking);
         reviewButton.setDisable(!hasStaged && !hasWorking);
-        commitButton.setDisable(!hasStaged);
+        updateCommitEnabled();
         commitButton.setText(tr("gitpanel.commit"));
         // Nothing to summarize without a staged diff — grey it out instead of silently no-op'ing on click.
         aiCommitButton.setDisable(!hasStaged);
@@ -337,11 +365,21 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         }
         HBox header = (HBox) getProperties().get("git.header");
         String query = filterQuery();
-        TreeItem<Row> root = new TreeItem<>();
-        addGroup(root, Group.STAGED, matching(lastStatus.files().stream().filter(FileEntry::staged), query));
-        addGroup(root, Group.MODIFIED, matching(lastStatus.files().stream().filter(FileEntry::unstaged), query));
-        addGroup(root, Group.UNTRACKED, matching(lastStatus.files().stream().filter(FileEntry::untracked), query));
-        tree.setRoot(root);
+        // The rows are rebuilt on every status push — tab switch, save, window focus, each stage — so what
+        // the user had in hand is carried across by row identity (group + path), in the SAME root: replacing
+        // the root reset the scroll position, the selection and every collapsed group each time.
+        TreeViewState kept = TreeViewState.capture(tree, GitPanel::rowKey);
+        TreeItem<Row> root = tree.getRoot();
+        if (root == null) {
+            root = new TreeItem<>();
+            tree.setRoot(root);
+        }
+        List<TreeItem<Row>> groups = new ArrayList<>(3);
+        addGroup(groups, Group.STAGED, matching(lastStatus.files().stream().filter(FileEntry::staged), query));
+        addGroup(groups, Group.MODIFIED, matching(lastStatus.files().stream().filter(FileEntry::unstaged), query));
+        addGroup(groups, Group.UNTRACKED, matching(lastStatus.files().stream().filter(FileEntry::untracked), query));
+        root.getChildren().setAll(groups);
+        kept.restore(tree, GitPanel::rowKey);
 
         if (root.getChildren().isEmpty()) {
             boolean filteredOut = !query.isEmpty() && !lastStatus.files().isEmpty();
@@ -418,7 +456,15 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    private void addGroup(TreeItem<Row> root, Group group, List<FileEntry> files) {
+    /** What identifies a row across rebuilds: its group, and for a file its path. */
+    private static String rowKey(Row row) {
+        return switch (row) {
+            case GroupRow g -> g.group().name();
+            case FileRow f -> f.group().name() + '/' + f.entry().path();
+        };
+    }
+
+    private void addGroup(List<TreeItem<Row>> groups, Group group, List<FileEntry> files) {
         // A query naming the group itself ("untracked") lists that whole group, even when no path matches.
         String query = filterQuery();
         if (!query.isEmpty()
@@ -431,11 +477,18 @@ public final class GitPanel extends VBox implements ToolWindowContent {
             return;
         }
         TreeItem<Row> node = new TreeItem<>(new GroupRow(group, files.size()));
-        node.setExpanded(true);
         for (FileEntry f : files) {
             node.getChildren().add(new TreeItem<>(new FileRow(group, f)));
         }
-        root.getChildren().add(node);
+        node.setExpanded(!collapsed.contains(group));
+        node.expandedProperty().addListener((o, was, expanded) -> {
+            if (expanded) {
+                collapsed.remove(group);
+            } else {
+                collapsed.add(group);
+            }
+        });
+        groups.add(node);
     }
 
     /** Every file of {@code group} in the last status, ignoring the filter (the group-title match). */
@@ -677,8 +730,8 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         LinkedHashSet<String> tracked = new LinkedHashSet<>();
         LinkedHashSet<String> untracked = new LinkedHashSet<>();
         for (FileRow r : targets) {
-            if (r.group() == Group.STAGED) {
-                continue;
+            if (r.group() == Group.STAGED || r.entry().unmerged()) {
+                continue; // git refuses to check out an unmerged path: it is resolved, not discarded
             }
             (r.entry().untracked() ? untracked : tracked).add(r.entry().path());
         }
@@ -784,6 +837,9 @@ public final class GitPanel extends VBox implements ToolWindowContent {
         protected void updateItem(Row item, boolean empty) {
             super.updateItem(item, empty);
             getStyleClass().removeAll(STATUS_CLASSES); // includes "git-group-row" + the per-status colors
+            // Cells are recycled: a group row or an empty one must not keep the path of the file row this
+            // cell showed before.
+            setTooltip(null);
             if (empty || item == null) {
                 setText(null);
                 setGraphic(null);

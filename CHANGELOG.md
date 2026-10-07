@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The `samples/` corpus for manual testing now covers more of the editor. Every syntax sample is a
+  complete, commented program instead of a ten-line stub, and there are new fixtures for Astro, JSX and
+  ignore files, sticky scroll and fold levels (one long file), related-file pairs, the HTML live
+  preview, Markdown lint and extensions, every recognised log format, shell and shebang scripts, a
+  script to debug, tests in the Maven, npm, Cargo and Go projects, more of the HTTP client format,
+  diff3 conflicts, and JPEG/GIF/BMP images. A test now fails if a bundled grammar has no sample.
 - After a pull, clicking a file's change graph (`4 ++--`) in the Git tab opens a diff of that file
   between the commit you were on and the one the pull brought. Clicking the file name still opens the
   file.
@@ -37,9 +43,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command had finished. While one runs, the tab's Stop button (or the new `Git: Cancel Running Command`)
   cancels it.
 
+- The log viewer's controls are now a bar above the log instead of a box floating over its first two
+  lines. The bar shows how many lines a filter is showing ("65 of 185 lines"), the Follow button is
+  labelled, the level list includes Fatal, and all three controls can be reached with Tab. A new
+  `Log: Focus Filter` command puts the keyboard in the filter field; Escape returns to the log.
+- A log filter now keeps or hides whole records. A pattern that matches any line of a record shows all of
+  it, so an exception appears with the line that says what failed, and a matched ERROR line keeps its
+  stack trace. Filtered lines keep their real line numbers.
+- More files open as logs: rotated logs (`app.log.1`, `app.log.2026-10-06`), `access_log` / `error_log`,
+  `syslog`, `catalina.out`, `nohup.out`, and files such as `server.out` or an extensionless file in
+  `/var/log` whose content looks like a log. `Log: View as Log` is now a toggle.
+- More log formats get level colours: .NET (`info:`, `warn:`, `fail:`), a lowercase level after a
+  timestamp, syslog `error:` prefixes, klog (Kubernetes), pino/bunyan numeric levels, and a JSON level
+  key anywhere in the line. `Log: Next Error` is renamed `Log: Next Warning or Error`, which is what it does.
+- Following a log no longer drops the top of a large one: the 12 MB limit now applies to what the follow
+  adds, not to what was already open.
+
+- The Git Log shows each commit's author, relative date and its branch, tag, remote and HEAD labels on
+  one line, and long subjects are cut with an ellipsis instead of widening the list. The header names
+  the branch, and a footer says when only the newest 200 commits are listed. Rows in the Git Log and
+  the GitHub window are one text line high; they were twice that. An open log reloads after commit,
+  pull, fetch, push, stash and other Git commands and keeps its selection.
+- The branch dropdown lists branches before actions, with denser rows, so the current branch is visible
+  without scrolling. Its ahead/behind arrows match the status bar. Choosing a remote branch that already
+  has a local branch switches to the local one.
+- Staging or committing saves the repository's unsaved editor buffers first, so Git no longer stages
+  the older version on disk. A buffer that cannot be saved stops the operation.
+- Discard follows the file's status: staged changes are reverted to the last commit, untracked files are
+  deleted, a file with merge conflicts is refused, and a clean file says there is nothing to discard.
+- Fetch prunes remote-tracking branches deleted on the server, so a branch whose upstream is gone is
+  marked.
+- `Git: Cancel Running Command` also stops a running local command, such as a commit stuck in a hook or
+  a long checkout.
+- The status bar says "No VCS" outside a repository and "Git off" when Git support is disabled, and the
+  Commit window offers Clone outside a repository. Cancel, Set Git Command and Switch Branch can be run
+  from the palette there.
+- New commands: `Git: Stage All Changes`, `Git: Add Current File to .gitignore`,
+  `Diff: Compare with Branch…` and `Diff: Compare with Tag…`. The VCS menu adds these and Compare with
+  Commit, Resolve Conflicts, Blame, Drop Stash and Initialize Repository. The Emacs keymap gains
+  `C-x v` version-control chords; the IntelliJ keymap gains Commit, Push, Update Project and Branches.
+- Project-tree and tab-menu Git actions work on files in nested repositories, submodules and other
+  worktrees. In a project window the Commit and Git Log windows stay available on the Welcome and
+  Settings tabs.
+- Authentication failures from Git explain the next step (credential helper, `gh auth setup-git`, SSH
+  agent, host key).
+
 ### Fixed
 
 - Java's **Change signature** code action was listed and then failed with "Could not apply".
+- Git: a click on empty space or a section header in the branch dropdown no longer checks out the
+  selected branch; only a click on a row activates it. Dropdown actions are refused if another
+  repository became active while it was open.
+- Git: unstaging a renamed file also unstages the deletion of its old path, instead of leaving a
+  half-staged rename.
+- Git: the first push of a branch goes to the configured push remote (`branch.<name>.pushRemote`,
+  `remote.pushDefault`) or the only remote, instead of always `origin`.
+- Git: blame, status, diffs and file lists larger than 10 MB are no longer shown or cached in part.
+  Blame uses a compact format, so large files are annotated in full.
+- Git: staging a new executable file or symlink from the diff viewer keeps its mode.
+- Git: blame annotations and gutter change bars follow unsaved line insertions and deletions.
+- Git: the `Git Log: …` palette commands no longer act on a hidden log's remembered selection; they
+  open the log and ask for a commit.
+- Git: the Commit window keeps its selection, collapsed groups and scroll position across status
+  updates. Ctrl/Cmd+Enter no longer commits with nothing staged or while a commit is running, and text
+  typed during a commit is kept.
+- Git: Clone accepts `~` and relative destinations, creates missing parent folders and accepts an
+  existing empty folder.
+- Git: a repository created inside an already-open one is noticed without a manual refresh, and Git is
+  found again after being installed without restarting Editora.
+- Git: blame works in SHA-256 repositories; file names with non-ASCII characters plus a tab, quote or
+  backslash parse correctly under `core.quotePath=false`; an inherited `GIT_DIR` or `GIT_WORK_TREE` no
+  longer redirects every folder to one repository; the Git console no longer stalls on output lines
+  with very long runs of whitespace.
+- Git: remaining English-only error headers are localized, and relative times read "1 day ago" instead
+  of "1 days ago".
+- Following a log through a pattern filter no longer joins lines together (`ERROR bERROR c`), and a line
+  written in two parts is no longer missed by the filter.
+- Pausing and resuming Follow no longer skips the lines written in between, and turning Follow on no
+  longer skips lines written since the file was opened.
+- A log that is being followed no longer raises "File Changed on Disk" every time the window regains
+  focus.
+- Follow now survives log rotation. It waits while the file is missing and reads the new file from its
+  start; before, it stopped with an error that showed only the file's path.
+- New lines in a followed log no longer move the caret, drop the selection, or pull the view to the end
+  while you are reading further up.
+- Applying or clearing a log filter keeps you on the line you were on instead of jumping to the end.
+- Filtering a large log no longer freezes the window while the filter runs, and pressing Enter in the
+  filter field no longer applies the filter twice.
+- The log viewer now recognises all six levels of the .NET console logger. `dbug:` and `trce:` lines were
+  treated as part of the record above them, so they took its colour, level filter and grouping.
+- A level or pattern set from the command palette now shows in the log's controls, and is no longer
+  dropped by the next change made there.
+- In a filtered log, stack-trace lines are tinted with their own record's level, not the level of
+  whichever line the filter left above them.
+- Undo no longer removes the newest lines of a followed log.
+- Followed text is decoded with the file's own encoding (it was always read as UTF-8), and Windows line
+  endings no longer stop `$` from matching.
+- With word wrap on, the level tint covers every row of a wrapped line, not only the first. The tints
+  are now derived from the editor theme, so they are visible on dark themes.
+- A filter pattern that is not a valid regular expression is marked as being matched as plain text.
+- Stack-trace lines such as `at com.example.ERROR_CODES.lookup(...)` are no longer mistaken for ERROR
+  records.
 - An exported patch now applies to a file with Windows (CRLF) line endings. The diff viewer compares text
   with plain line feeds, and the patch was written from that text, so Git rejected it for a CRLF file.
   Each side's own line ending is put back, and a Latin-1 / Windows-1252 file's patch is written in that

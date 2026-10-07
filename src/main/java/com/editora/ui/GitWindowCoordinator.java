@@ -91,6 +91,133 @@ final class GitWindowCoordinator {
         }
     }
 
+    /** {@code git add -A} — the palette/menu twin of the Commit window's Stage All button. */
+    void stageAll() {
+        if (!host.git().reportIfNoRepo()) {
+            host.git().gitOp(tr("status.git.stagedAll"), "add", "-A");
+        }
+    }
+
+    /** The active buffer's file, or null (after reporting it) when the active tab has none. */
+    private Path activeFileOrReport() {
+        EditorBuffer b = host.activeBuffer();
+        Path file = b == null ? null : b.getPath();
+        if (file == null) {
+            host.setStatus(tr("status.noGitFile"));
+        }
+        return file;
+    }
+
+    /** Adds the active file to the repository's {@code .gitignore} (the tab/Project-tree menu action). */
+    void addActiveFileToGitignore() {
+        Path file = activeFileOrReport();
+        if (file != null) {
+            host.git().addToGitignore(file);
+        }
+    }
+
+    /** Diffs the active file against a branch picked from the repository (the Project-tree menu action). */
+    void compareActiveWithBranch() {
+        Path file = activeFileOrReport();
+        if (file != null) {
+            host.diffCoordinator().diffPathVsBranch(file);
+        }
+    }
+
+    /** Diffs the active file against a tag picked from the repository (the Project-tree menu action). */
+    void compareActiveWithTag() {
+        Path file = activeFileOrReport();
+        if (file != null) {
+            host.diffCoordinator().diffPathVsTag(file);
+        }
+    }
+
+    /** How many commits one load of the Git Log lists; a longer history is flagged as truncated. */
+    static final int LOG_LIMIT = 200;
+
+    /**
+     * Subscribes to the Git engine: repository/branch changes re-target the log, and every completed
+     * mutation (commit, pull, fetch, stash, checkout, …) reloads an open one.
+     */
+    void listenTo(GitCoordinator git) {
+        git.onRepositoryChanged(this::repositoryChanged);
+        git.onMutation(this::gitMutated);
+    }
+
+    /**
+     * A Git command finished. History may have moved (a commit, a pull) or only its decorations (a fetch
+     * moves {@code origin/…}, a push too), so an open log is reloaded; the panel keeps its selection when the
+     * same commits come back. A closed log loads on its next open.
+     */
+    void gitMutated() {
+        if (gitLogRoot != null
+                && host.gitLogToolWindow() != null
+                && host.toolWindows().isOpen(host.gitLogToolWindow())) {
+            loadGitLog(gitLogFilter);
+        }
+    }
+
+    /** {@code git fetch --all --prune}: see {@link #FETCH_ARGS}. */
+    void fetch() {
+        host.git().gitSync(tr("gitlabel.fetch"), FETCH_ARGS);
+    }
+
+    /** {@code git pull --ff-only}. */
+    void pull() {
+        host.git().gitSync(tr("gitlabel.pull"), "pull", "--ff-only");
+    }
+
+    /**
+     * Editora's fetch prunes: without it a remote-tracking branch deleted on the server lives on locally
+     * forever, and the "gone" marker the branch dropdown draws for a local branch whose upstream was deleted
+     * never appears. {@code --prune} only removes stale {@code refs/remotes/…}; tags follow the user's own
+     * {@code fetch.pruneTags}, and nothing is written to their configuration.
+     */
+    static final String[] FETCH_ARGS = {"fetch", "--all", "--prune"};
+
+    /**
+     * The local branch a remote-tracking branch would be checked out as: {@code origin/feature/x} →
+     * {@code feature/x}. Empty when {@code remoteBranch} has no remote prefix.
+     */
+    static String localNameOf(String remoteBranch) {
+        int slash = remoteBranch == null ? -1 : remoteBranch.indexOf('/');
+        return slash < 0 ? "" : remoteBranch.substring(slash + 1);
+    }
+
+    /**
+     * What choosing a remote branch in the dropdown does: switch to the local branch of that name when there
+     * is one ({@code git checkout --track origin/x} fails with "a branch named 'x' already exists"), else
+     * create the tracking branch. Returns the local branch to switch to, or {@code null} to create one.
+     */
+    static String existingLocalFor(String remoteBranch, List<com.editora.git.GitService.BranchInfo> local) {
+        String name = localNameOf(remoteBranch);
+        if (name.isEmpty()) {
+            return null;
+        }
+        for (com.editora.git.GitService.BranchInfo b : local) {
+            if (b.name().equals(name)) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Runs a branch-dropdown action only while the repository the dropdown was opened for is still the
+     * active one. The dropdown lists the branches of one repository; every action it offers reaches the
+     * engine's <em>active</em> repository, so after a switch (another window's tab, a worktree) the action
+     * would run — a checkout, a pull — somewhere the list never described. It is refused instead.
+     */
+    private Runnable inRoot(Path root, Runnable action) {
+        return () -> {
+            if (!java.util.Objects.equals(root, host.git().repoRoot())) {
+                host.setStatus(tr("status.git.repoChanged"));
+                return;
+            }
+            action.run();
+        };
+    }
+
     /** Toggles the IntelliJ-style branch dropdown, fetching local + remote branches off-thread first. */
     void chooseBranch() {
         // Toggle: a second click on the git status segment closes the open dropdown. (autoHide fires on
@@ -102,27 +229,30 @@ final class GitWindowCoordinator {
         if (branchPopup.justHidden()) {
             return;
         }
-        if (host.git().repoRoot() == null) {
+        // The repository this request is for. The branch list arrives asynchronously and the dropdown then
+        // stays up for as long as the user reads it; everything below is tied to this root.
+        Path root = host.git().repoRoot();
+        if (root == null) {
             // Not under version control: the dropdown offers only "Clone Git repository…".
             branchPopup.showNoVcs(host.stage(), host.statusBar().gitSegmentNode(), host.git()::cloneRepo);
             return;
         }
-        host.git().service().branches(host.git().repoRoot(), branches -> {
+        host.git().service().branches(root, branches -> {
+            if (!java.util.Objects.equals(root, host.git().repoRoot())) {
+                return; // another repository became active while the branches were being listed
+            }
             List<BranchPopup.MenuAction> actions = List.of(
                     // Each row names its command so the popup takes the VCS menu's own glyph (and chord) for it.
-                    new BranchPopup.MenuAction(tr("branch.newBranch"), "git.newBranch", host.git()::newBranch),
                     new BranchPopup.MenuAction(
-                            tr("branch.pull"),
-                            "git.pull",
-                            () -> host.git().gitSync(tr("gitlabel.pull"), "pull", "--ff-only")),
+                            tr("branch.newBranch"), "git.newBranch", inRoot(root, host.git()::newBranch)),
+                    new BranchPopup.MenuAction(tr("branch.pull"), "git.pull", inRoot(root, this::pull)),
+                    new BranchPopup.MenuAction(tr("branch.fetch"), "git.fetch", inRoot(root, this::fetch)),
+                    new BranchPopup.MenuAction(tr("branch.push"), "git.push", inRoot(root, host.git()::gitPush)),
+                    new BranchPopup.MenuAction(tr("branch.stash"), "git.stash", inRoot(root, host.git()::gitStash)),
                     new BranchPopup.MenuAction(
-                            tr("branch.fetch"),
-                            "git.fetch",
-                            () -> host.git().gitSync(tr("gitlabel.fetch"), "fetch", "--all")),
-                    new BranchPopup.MenuAction(tr("branch.push"), "git.push", host.git()::gitPush),
-                    new BranchPopup.MenuAction(tr("branch.stash"), "git.stash", host.git()::gitStash),
-                    new BranchPopup.MenuAction(tr("branch.unstash"), "git.unstash", host.git()::gitUnstash),
-                    new BranchPopup.MenuAction(tr("branch.commit"), "git.commit", host.git()::gitCommitFocus));
+                            tr("branch.unstash"), "git.unstash", inRoot(root, host.git()::gitUnstash)),
+                    new BranchPopup.MenuAction(
+                            tr("branch.commit"), "git.commit", inRoot(root, host.git()::gitCommitFocus)));
             branchPopup.show(
                     host.stage(),
                     host.statusBar().gitSegmentNode(),
@@ -131,8 +261,16 @@ final class GitWindowCoordinator {
                     branches.remote(),
                     branches.remoteUrl(),
                     actions,
-                    host.git()::checkoutBranch,
-                    host.git()::checkoutRemoteBranch);
+                    name -> inRoot(root, () -> host.git().checkoutBranch(name)).run(),
+                    remote -> inRoot(root, () -> {
+                                String existing = existingLocalFor(remote, branches.local());
+                                if (existing != null) {
+                                    host.git().checkoutBranch(existing);
+                                } else {
+                                    host.git().checkoutRemoteBranch(remote);
+                                }
+                            })
+                            .run());
         });
     }
 
@@ -349,15 +487,49 @@ final class GitWindowCoordinator {
         };
     }
 
-    /** Runs {@code op} on the Git Log panel's selected commit, or reports that none is selected. Git-gated. */
+    /** What a {@code git.log.*} palette command does, given whether the log is on screen and what it selects. */
+    enum LogCommand {
+        /** The log is hidden: show and focus it, and ask for a commit. Nothing runs. */
+        OPEN_AND_ASK,
+        /** The log is on screen but selects nothing: focus it and ask. */
+        ASK,
+        /** The log is on screen with a commit selected: run on that commit. */
+        RUN
+    }
+
+    /**
+     * A {@code git.log.*} command (revert, cherry-pick, checkout, reset…) acts on "the selected commit". A
+     * closed Git Log still remembers its last selection, so running then would revert or reset to a commit
+     * the user cannot see — it never runs on a hidden selection.
+     */
+    static LogCommand logCommand(boolean logOpen, String selectedHash) {
+        if (!logOpen) {
+            return LogCommand.OPEN_AND_ASK;
+        }
+        return selectedHash == null || selectedHash.isBlank() ? LogCommand.ASK : LogCommand.RUN;
+    }
+
+    /**
+     * Runs {@code op} on the commit selected in the <em>visible</em> Git Log; otherwise opens and focuses the
+     * log and asks for a commit to be chosen there first (see {@link #logCommand}). Git-gated.
+     */
     void withSelectedCommit(java.util.function.Consumer<String> op) {
         host.git().ifEnabled(() -> {
-            String hash = host.gitLogPanel().selectedHash();
-            if (hash == null || hash.isBlank()) {
-                host.setStatus(tr("status.git.noCommitSelected"));
+            if (host.git().reportIfNoRepo()) {
                 return;
             }
-            op.accept(hash);
+            String hash = host.gitLogPanel().selectedHash();
+            switch (logCommand(host.toolWindows().isOpen(host.gitLogToolWindow()), hash)) {
+                case OPEN_AND_ASK -> {
+                    openGitLog(gitLogFilter);
+                    host.setStatus(tr("status.git.log.chooseCommit"));
+                }
+                case ASK -> {
+                    host.toolWindows().open(host.gitLogToolWindow(), true);
+                    host.setStatus(tr("status.git.noCommitSelected"));
+                }
+                case RUN -> op.accept(hash);
+            }
         });
     }
 
@@ -428,7 +600,10 @@ final class GitWindowCoordinator {
         openGitLog(b.getPath());
     }
 
-    /** Loads up to 200 commits (whole-repo when {@code file} is null, else that file's history). */
+    /**
+     * Loads up to {@link #LOG_LIMIT} commits: the checked-out branch's history when {@code file} is null, else
+     * that file's.
+     */
     void loadGitLog(Path file) {
         gitLogFilter = file;
         Path root = host.git().repoRoot();
@@ -438,16 +613,17 @@ final class GitWindowCoordinator {
             host.gitLogPanel().setLog(List.of(), null);
         }
         gitLogRoot = root;
-        gitLogBranch = host.git().branchName();
+        String branch = host.git().branchName();
+        gitLogBranch = branch;
         if (root == null) {
             host.gitLogPanel().setLog(List.of(), null);
             host.git().reportIfNoRepo(); // echoes "not a repo" / "git not installed"
             return;
         }
         String name = file != null ? file.getFileName().toString() : null;
-        host.git().service().log(root, file, 200, commits -> {
+        host.git().service().logPage(root, file, LOG_LIMIT, page -> {
             if (generation == gitLogGeneration) {
-                host.gitLogPanel().setLog(commits, name);
+                host.gitLogPanel().setLog(page, name, branch);
             }
         });
     }
@@ -465,6 +641,9 @@ final class GitWindowCoordinator {
         boolean sameRoot = java.util.Objects.equals(root, gitLogRoot);
         if (sameRoot && java.util.Objects.equals(branch, gitLogBranch)) {
             return;
+        }
+        if (!sameRoot && branchPopup.isShown()) {
+            branchPopup.hide(); // it lists the branches of the repository that just stopped being active
         }
         gitLogBranch = branch;
         if (!sameRoot) {
@@ -489,13 +668,16 @@ final class GitWindowCoordinator {
         gitMutateIn(gitLogRoot, successMessage, args);
     }
 
-    /** Runs the mutation in {@code root}, reports, refreshes and reloads the log. */
+    /**
+     * Runs the mutation in {@code root}, reports and refreshes. The log reloads through {@link #gitMutated},
+     * as it does after every other Git command.
+     */
     private void gitMutateIn(Path root, String successMessage, String... args) {
         if (root == null) {
             host.git().reportIfNoRepo();
             return;
         }
-        host.git().mutateWorkingTree(root, successMessage, () -> loadGitLog(gitLogFilter), args);
+        host.git().mutateWorkingTree(root, successMessage, null, args);
     }
 
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
