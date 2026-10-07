@@ -1079,17 +1079,42 @@ final class DiffCoordinator {
                 host.setStatus(tr("status.diff.gitFolderFailed", result.error()));
                 return;
             }
-            openGitDirectoryReview(folder, root, rel, ref, displayRef, result);
+            openGitDirectoryReview(folder, root, rel, ref, displayRef, null, result);
         });
     }
 
+    /**
+     * Opens the changed-files review between two revisions of the repository at {@code root} — the ref↔ref
+     * form of "compare with branch", on the same review surface. Both sides are blobs, so nothing is editable.
+     */
+    void compareRefs(Path root, String leftRef, String rightRef) {
+        if (root == null) {
+            git.reportIfNoRepo();
+            return;
+        }
+        host.setStatus(tr("status.diff.comparingRefs", leftRef, rightRef));
+        git.service().refDiff(root, leftRef, rightRef, result -> {
+            if (!result.ok()) {
+                host.setStatus(tr("status.diff.gitFolderFailed", result.error()));
+                return;
+            }
+            openGitDirectoryReview(root, root, "", leftRef, leftRef, rightRef, result);
+        });
+    }
+
+    /**
+     * The review of {@code result}: {@code ref} on the left and, on the right, the working tree
+     * ({@code rightRef == null}, editable) or another revision (read-only).
+     */
     private void openGitDirectoryReview(
             Path folder,
             Path root,
             String folderRel,
             String ref,
             String displayRef,
+            String rightRef,
             GitService.WorkingTreeDiff result) {
+        boolean working = rightRef == null;
         String prefix = folderRel.isEmpty() ? "" : folderRel + "/";
         List<DirectoryReviewPane.Entry> entries = result.files().stream()
                 .map(file -> new DirectoryReviewPane.Entry(
@@ -1102,41 +1127,47 @@ final class DiffCoordinator {
                         -1,
                         -1))
                 .toList();
-        String summary = tr("diff.directory.gitSummary", entries.size(), displayRef)
+        String summary = (working
+                        ? tr("diff.directory.gitSummary", entries.size(), displayRef)
+                        : tr("diff.directory.refSummary", entries.size(), displayRef, rightRef))
                 + (result.truncated() ? " · " + tr("diff.directory.truncated") : "");
-        DirectoryReviewPane review = new DirectoryReviewPane(
-                tr("diff.title.vsBranch", pathName(folder), displayRef), entries, summary, (entry, ready) -> {
-                    String repoPath = prefix + entry.label();
-                    Path workingFile = root.resolve(repoPath);
-                    DiffSide leftSide = entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
-                            ? callback -> callback.accept(DiffContent.text(""))
-                            : blobSide(root, ref + ":" + repoPath, workingFile);
-                    DiffSide rightSide = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
-                            ? callback -> callback.accept(DiffContent.text(""))
-                            : fileSide(workingFile);
-                    buildDiffPane(
-                            tr("diff.title.vsBranch", entry.label(), displayRef),
-                            displayRef + ":" + repoPath,
-                            workingFile.toString(),
-                            entry.label(),
-                            entry.label(),
-                            leftSide,
-                            rightSide,
-                            DiffViewerPane.EditableSide.RIGHT,
-                            workingFile,
-                            pane -> pane.setExitDiffUiAction(null),
-                            built -> ready.accept(
-                                    built == null
-                                            ? null
-                                            : new DirectoryReviewPane.Loaded(
-                                                    built.pane(),
-                                                    built.model().added(),
-                                                    built.model().removed())));
-                });
+        String reviewTitle = working
+                ? tr("diff.title.vsBranch", pathName(folder), displayRef)
+                : tr("diff.title.refVsRef", displayRef, rightRef);
+        DirectoryReviewPane review = new DirectoryReviewPane(reviewTitle, entries, summary, (entry, ready) -> {
+            String repoPath = prefix + entry.label();
+            Path workingFile = root.resolve(repoPath);
+            DiffSide leftSide = entry.kind() == DirectoryDiff.Kind.RIGHT_ONLY
+                    ? callback -> callback.accept(DiffContent.text(""))
+                    : blobSide(root, ref + ":" + repoPath, workingFile);
+            DiffSide rightSide = entry.kind() == DirectoryDiff.Kind.LEFT_ONLY
+                    ? callback -> callback.accept(DiffContent.text(""))
+                    : working ? fileSide(workingFile) : blobSide(root, rightRef + ":" + repoPath, workingFile);
+            buildDiffPane(
+                    tr("diff.title.vsBranch", entry.label(), working ? displayRef : rightRef),
+                    displayRef + ":" + repoPath,
+                    working ? workingFile.toString() : rightRef + ":" + repoPath,
+                    entry.label(),
+                    entry.label(),
+                    leftSide,
+                    rightSide,
+                    working ? DiffViewerPane.EditableSide.RIGHT : DiffViewerPane.EditableSide.NONE,
+                    working ? workingFile : null,
+                    pane -> pane.setExitDiffUiAction(null),
+                    built -> ready.accept(
+                            built == null
+                                    ? null
+                                    : new DirectoryReviewPane.Loaded(
+                                            built.pane(),
+                                            built.model().added(),
+                                            built.model().removed())));
+        });
         ops.addDiffTab(review);
         host.setStatus(
                 entries.isEmpty()
-                        ? tr("status.diff.gitFolderIdentical", displayRef)
+                        ? (working
+                                ? tr("status.diff.gitFolderIdentical", displayRef)
+                                : tr("status.diff.refsIdentical", displayRef, rightRef))
                         : tr("status.diff.directoryOpened", entries.size()));
     }
 

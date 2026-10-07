@@ -444,6 +444,36 @@
     -fx-text-fill: -color-fg-muted;
     -fx-font-size: 11px;
 }
+/* A local branch whose upstream was deleted on the remote: usually a merged leftover to delete. */
+.branch-upstream.branch-gone {
+    -fx-text-fill: -color-warning-fg;
+}
+/* The per-row "more" button: the visible way into a branch's secondary actions. Compact, so it never
+   grows the menu-height row it sits in. */
+.command-palette.branch-popup .branch-more {
+    -fx-padding: 0 6 0 6;
+    -fx-min-height: 0;
+    -fx-font-size: 13px;
+    -fx-text-fill: -color-fg-muted;
+}
+.command-palette.branch-popup .branch-more:hover {
+    -fx-text-fill: -color-fg-default;
+}
+/* A destructive entry in a branch row's secondary menu (delete). */
+.menu-item.danger > .label {
+    -fx-text-fill: -color-danger-fg;
+}
+/* Git remotes / work trees managers (GitManagerOverlay). */
+.git-manager .list-view {
+    -fx-pref-height: 220px;
+}
+.git-manager .git-manager-detail {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+}
+.git-manager .git-manager-empty {
+    -fx-text-fill: -color-fg-muted;
+}
 /* Remote URL shown in the branch popup header. */
 .branch-remote-url {
     -fx-text-fill: -color-fg-muted;

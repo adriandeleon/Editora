@@ -55,8 +55,12 @@ final class GitWindowCoordinator {
 
     private final Host host;
 
+    /** Branch, remote and work-tree management — the dropdown's row actions and the {@code git.*} commands. */
+    final GitBranchCoordinator branches;
+
     GitWindowCoordinator(Host host) {
         this.host = host;
+        this.branches = new GitBranchCoordinator(host);
     }
 
     /** The path the Git Log is currently filtered to (file history), or null for the whole repo. */
@@ -142,6 +146,7 @@ final class GitWindowCoordinator {
     void listenTo(GitCoordinator git) {
         git.onRepositoryChanged(this::repositoryChanged);
         git.onMutation(this::gitMutated);
+        git.pushHandler = branches::push; // every push answers a non-fast-forward rejection with a choice
     }
 
     /**
@@ -253,12 +258,14 @@ final class GitWindowCoordinator {
                             tr("branch.unstash"), "git.unstash", inRoot(root, host.git()::gitUnstash)),
                     new BranchPopup.MenuAction(
                             tr("branch.commit"), "git.commit", inRoot(root, host.git()::gitCommitFocus)));
+            String current = host.git().branchName();
             branchPopup.show(
                     host.stage(),
                     host.statusBar().gitSegmentNode(),
-                    host.git().branchName(),
+                    current,
                     branches.local(),
                     branches.remote(),
+                    branches.remoteNames(),
                     branches.remoteUrl(),
                     actions,
                     name -> inRoot(root, () -> host.git().checkoutBranch(name)).run(),
@@ -270,7 +277,9 @@ final class GitWindowCoordinator {
                                     host.git().checkoutRemoteBranch(remote);
                                 }
                             })
-                            .run());
+                            .run(),
+                    // Each row's secondary menu (rename, merge, delete…), under the same root guard.
+                    row -> this.branches.rowActions(root, current, branches, row, run -> inRoot(root, run)));
         });
     }
 
