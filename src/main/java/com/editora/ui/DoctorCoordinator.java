@@ -17,8 +17,8 @@ import com.editora.doctor.DoctorCheck;
 import com.editora.doctor.DoctorProbes;
 import com.editora.doctor.DoctorRules;
 import com.editora.doctor.DoctorService;
-import com.editora.doctor.DoctorStatus;
 import com.editora.git.GitService;
+import com.editora.github.GitHubService;
 import com.editora.install.InstallCatalog;
 import com.editora.process.ElevatedSave;
 import com.editora.run.RunService;
@@ -161,20 +161,11 @@ final class DoctorCoordinator {
             specs.add(terminal(git.disabled()));
         }
         boolean ghOn = gitOn && s.isGithubSupport();
-        List<String> ghCmd = ghCommand(s.getGhPath());
+        List<String> ghCmd = GitHubService.commandTokens(s.getGhPath());
         DoctorCheck gh = DoctorCheck.checking("github", "vcs", "GitHub CLI", String.join(" ", ghCmd))
                 .withSettings("github");
         if (ghOn) {
-            specs.add(probe(gh, base -> {
-                DoctorProbes.Presence p = DoctorProbes.version(ghCmd);
-                if (!p.present()) {
-                    return base.missing("doctor.tip.missing", ghCmd.get(0));
-                }
-                boolean auth = DoctorProbes.succeeds(withArgs(ghCmd, "auth", "status"));
-                return DoctorRules.ghStatus(true, auth) == DoctorStatus.OK
-                        ? base.ok(p.version())
-                        : base.warn(p.version(), "doctor.tip.ghAuth");
-            }));
+            specs.add(probe(gh, base -> ghCheck(base, ghCmd.get(0), GitHubService.probe(ghCmd, GH_PROBE_TIMEOUT))));
         } else {
             specs.add(terminal(gh.disabled()));
         }
@@ -482,18 +473,25 @@ final class DoctorCoordinator {
         };
     }
 
-    /** The configured gh command, tokenized exactly like {@code GitHubService.setCommand}. */
-    private static List<String> ghCommand(String configured) {
-        if (configured == null || configured.isBlank()) {
-            return List.of("gh");
+    private static final java.time.Duration GH_PROBE_TIMEOUT = java.time.Duration.ofSeconds(20);
+
+    /**
+     * The gh row for a probe result ({@code null} = gh did not answer in time). The same probe the GitHub
+     * integration uses, so the row cannot disagree with it: being offline is "could not check", not "not
+     * signed in", and a gh too old for the CI-checks indicator is named as such. Pure.
+     */
+    static DoctorCheck ghCheck(DoctorCheck base, String executable, GitHubService.Availability a) {
+        if (a == null || !a.found()) {
+            return base.missing("doctor.tip.missing", executable);
         }
-        List<String> tokens = new ArrayList<>();
-        for (String t : configured.strip().split("\\s+")) {
-            if (!t.isBlank()) {
-                tokens.add(t);
-            }
-        }
-        return tokens.isEmpty() ? List.of("gh") : List.copyOf(tokens);
+        return switch (a.auth()) {
+            case SIGNED_OUT, REJECTED -> base.warn(a.version(), "doctor.tip.ghAuth");
+            case UNVERIFIED -> base.warn(a.version(), "doctor.tip.ghUnverified");
+            case SIGNED_IN ->
+                a.supportsChecks()
+                        ? base.ok(a.version())
+                        : base.warn(a.version(), "doctor.tip.ghOld", com.editora.github.GhVersion.MINIMUM);
+        };
     }
 
     /** The per-agent command overrides map ({@code AcpAgentRegistry.commandFor}'s second argument). */

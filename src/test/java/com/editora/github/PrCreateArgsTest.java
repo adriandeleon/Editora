@@ -83,4 +83,13 @@ class PrCreateArgsTest {
         assertEquals("", args.get(args.indexOf("--title") + 1));
         assertEquals("", args.get(args.indexOf("--body") + 1));
     }
+
+    /** G10: the {@code @} is stripped before de-duplicating — "@a, a" is one person. */
+    @Test
+    void aHandleTypedWithAndWithoutTheAtSignIsOneHandle() {
+        assertEquals(List.of("alice", "bob"), PrCreateArgs.handles("@alice, alice, bob, @Bob"));
+        assertEquals(List.of("@me", "alice"), PrCreateArgs.handles("@me, @ME, alice"));
+        List<String> args = PrCreateArgs.build("t", "", "", false, "@a, a", null, null);
+        assertEquals(List.of("pr", "create", "--title", "t", "--body", "", "--reviewer", "a"), args);
+    }
 }

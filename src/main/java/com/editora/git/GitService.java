@@ -278,19 +278,7 @@ public final class GitService {
      * Public so the Doctor screen checks exactly the command this service runs.
      */
     public static List<String> commandTokens(String command) {
-        if (command == null || command.isBlank()) {
-            return List.of("git");
-        }
-        String raw = command.strip();
-        try {
-            if (Files.isRegularFile(Path.of(raw))) {
-                return List.of(raw);
-            }
-        } catch (RuntimeException notAPath) {
-            // Not a valid path on this platform: a command line.
-        }
-        List<String> tokens = com.editora.run.ProgramArgs.tokenize(raw);
-        return tokens.isEmpty() ? List.of(raw) : List.copyOf(tokens);
+        return com.editora.process.ConfiguredCommand.tokens(command, "git");
     }
 
     /**

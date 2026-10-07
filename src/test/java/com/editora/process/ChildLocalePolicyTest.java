@@ -72,6 +72,7 @@ class ChildLocalePolicyTest {
             Map.entry("diagram/DiagramRenderer.java", 2), // render + export, scrubbed (PlantUML is a JVM)
             Map.entry("externaltool/ExternalToolService.java", 1), // the user's own filters
             Map.entry("git/GitService.java", 1), // user-initiated commands: they run the user's hooks
+            Map.entry("github/GitHubService.java", 1), // a failed CI log, streamed to keep its tail: shown, not parsed
             Map.entry("install/InstallService.java", 5), // npm/pip/gem/… installs + tar extraction
             Map.entry("lsp/LanguageServerSession.java", 1), // language servers
             Map.entry("maven/MavenClasspathResolver.java", 1), // Maven on the user's project

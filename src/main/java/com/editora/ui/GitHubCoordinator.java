@@ -102,15 +102,41 @@ final class GitHubCoordinator {
     private final WindowOps ops;
     private final GitHubService service = new GitHubService();
 
-    /** The repo root whose remote URL has been classified (so the async check runs once per root). */
+    /** The repo root whose remotes have been read (so the async check runs once per root). */
     private Path remoteCheckedRoot;
-    /** Whether {@link #remoteCheckedRoot}'s remote is a GitHub host (drives the always-on surfaces). */
-    private boolean remoteIsGitHub;
+    /**
+     * The URLs of <em>all</em> of {@link #remoteCheckedRoot}'s remotes. Whether one of them is a GitHub host
+     * (which drives the always-on surfaces) is decided against the hosts {@code gh} is signed in to, so it is
+     * derived on demand ({@link #repoIsGitHub}) rather than cached as a boolean.
+     */
+    private List<String> remoteUrls = List.of();
 
     /** The repo root whose open-PR/issue activity has been probed (so the async check runs once per root). */
     private Path activityCheckedRoot;
     /** Whether {@link #activityCheckedRoot} has at least one open PR or issue (gates the tool-window stripe). */
     private boolean hasActivity;
+    /** An activity probe is running: do not start another for the same root. */
+    private boolean activityProbing;
+    /**
+     * The last activity probe could not find out (offline, rate limit): that is not "no activity", so it is
+     * asked again — at the earliest at {@link #activityRetryAtNanos}, by {@link #activityRetry} or the next
+     * gating, and automatically at most {@link #MAX_ACTIVITY_RETRIES} times.
+     */
+    private boolean activityUnknown;
+
+    private long activityRetryAtNanos;
+    private int activityRetries;
+    private final javafx.animation.PauseTransition activityRetry = new javafx.animation.PauseTransition();
+
+    private static final int MAX_ACTIVITY_RETRIES = 4;
+    /** The first automatic retry's delay; each later one doubles it. (A field so a test need not wait.) */
+    java.time.Duration activityRetryAfter = java.time.Duration.ofSeconds(15);
+
+    /**
+     * A command that meets a cached "gh missing / not signed in" re-probes — but not more often than this.
+     * (A field so a test need not wait.)
+     */
+    java.time.Duration negativeReprobeAfter = java.time.Duration.ofSeconds(5);
 
     /** A pull request is a number <em>in a repository</em>: #7 of two repositories are two pull requests. */
     record ReviewKey(Path dir, int number) {}
@@ -157,13 +183,38 @@ final class GitHubCoordinator {
         return host.settings().isGithubSupport() && !host.simpleModeActive();
     }
 
-    /** Runs {@code action} only when GitHub is enabled; otherwise reports it (disables the command). */
+    /**
+     * Runs {@code action} only when GitHub is enabled <em>and Git support is on</em>; otherwise reports which
+     * of the two is off (disables the command).
+     */
     void ifEnabled(Runnable action) {
-        if (isEnabled()) {
+        String off = disabledReason();
+        if (off == null) {
             action.run();
         } else {
-            host.setStatus(tr("statusbar.tip.githubDisabled"));
+            host.setStatus(off);
         }
+    }
+
+    /**
+     * Why no GitHub command can run at all, or {@code null}: the integration is switched off, or Git support
+     * is — GitHub rides on the Git integration (the repository, its branch, its remotes), so with Git off
+     * the tool window never appears and no command has a repository. Said in so many words, with the command
+     * that turns Git on, instead of "open a file inside a GitHub repository".
+     */
+    private String disabledReason() {
+        if (!isEnabled()) {
+            return tr("statusbar.tip.githubDisabled");
+        }
+        if (!git.isEnabled()) {
+            return tr("status.github.gitDisabled", tr("command.view.toggleGit"));
+        }
+        return null;
+    }
+
+    /** How many {@code gh} calls are queued or running — for a busy indicator ({@code greaterThan(0)}). */
+    javafx.beans.property.ReadOnlyIntegerProperty callsInFlightProperty() {
+        return service.activeCallsProperty();
     }
 
     /**
@@ -178,15 +229,25 @@ final class GitHubCoordinator {
             ops.setStatusBarChecks(null);
             return;
         }
-        service.setCommand(host.settings().getGhPath());
-        service.detect(a -> {
+        // This runs on every settings save. The cached answer is dropped only when the gh command actually
+        // changed; a good answer for the same command is simply re-applied (no gh process per save), and
+        // anything else is re-probed with the last answer left standing meanwhile — so an open tool window
+        // is not closed, nor a command answered "Checking for the gh CLI…", by an unrelated setting.
+        boolean commandChanged = service.setCommand(host.settings().getGhPath());
+        GitHubService.Availability cached = service.availability();
+        Consumer<GitHubService.Availability> apply = a -> {
             // Installation, not authentication, determines the first-run visibility default. Availability
             // still requires authentication + a GitHub repo with activity, so this never exposes a dead stripe.
             if (a.found()) {
                 ops.enableGitHubWindowByDefault();
             }
             applyGating();
-        });
+        };
+        if (!commandChanged && cached != null && cached.authenticated()) {
+            apply.accept(cached);
+        } else {
+            service.detect(apply);
+        }
     }
 
     /** Re-derives the tool-window availability from cached state (called on tab switch, cheap/sync). */
@@ -208,40 +269,67 @@ final class GitHubCoordinator {
         }
     }
 
-    /** Whether the repo has open PRs/issues, probed off-thread once per root (cached; re-gates on completion). */
+    /**
+     * Whether the repo has open PRs/issues, probed off-thread once per root (cached; re-gates on completion).
+     * Only a real answer is cached: a probe that could not find out keeps the previous answer and is retried.
+     */
     private boolean hasOpenActivity() {
         Path root = git.repoRoot();
         if (root == null) {
             return false;
         }
-        if (!root.equals(activityCheckedRoot) || activityStale) {
+        boolean sameRoot = root.equals(activityCheckedRoot);
+        boolean retryDue = activityUnknown && System.nanoTime() - activityRetryAtNanos >= 0;
+        if (!sameRoot || activityStale || (retryDue && !activityProbing)) {
             // A re-probe of the SAME root keeps its last answer while it runs: forcing "no activity" would
             // close the open tool window on every github.refresh. A new root is unknown until probed.
-            boolean previous = root.equals(activityCheckedRoot) && hasActivity;
+            boolean previous = sameRoot && hasActivity;
+            if (!sameRoot || activityStale) {
+                activityRetries = 0;
+            }
             activityCheckedRoot = root;
             activityStale = false;
+            activityUnknown = false;
+            activityProbing = true;
+            activityRetry.stop();
             hasActivity = previous;
-            service.hasOpenActivity(root, any -> {
-                if (root.equals(activityCheckedRoot)) { // still the current root
-                    hasActivity = any;
-                    applyGating();
+            service.openActivity(root, activity -> {
+                if (!root.equals(activityCheckedRoot)) {
+                    return; // no longer the current root (its own probe is running)
                 }
+                activityProbing = false;
+                if (activity == GitHubService.Activity.UNKNOWN) {
+                    activityUnknown = true;
+                    activityRetryAtNanos = System.nanoTime() + activityRetryAfter.toNanos();
+                    if (activityRetries++ < MAX_ACTIVITY_RETRIES) {
+                        activityRetry.setDuration(javafx.util.Duration.millis(
+                                activityRetryAfter.toMillis() * (double) (1L << (activityRetries - 1)) + 50));
+                        activityRetry.setOnFinished(e -> applyGating());
+                        activityRetry.playFromStart();
+                    }
+                    return;
+                }
+                hasActivity = activity == GitHubService.Activity.YES;
+                applyGating();
             });
         }
         return hasActivity;
     }
 
-    /** Whether {@code gh} is present + authenticated (from the cached probe; false until probed). */
+    /** Whether {@code gh} is present + has a sign-in (from the cached probe; false until probed). */
     private boolean ready() {
         GitHubService.Availability a = service.availability();
         return a != null && a.ready();
     }
 
     /**
-     * Whether the current repo's remote is a GitHub host — gates the always-on surfaces (the tool window +
-     * checks) so they stay hidden on a GitLab/Gitea repo. The remote URL is resolved off-thread once per repo
-     * root (via the shared {@code GitService}) then re-gated; the palette commands still run regardless and
-     * surface gh's own error. Returns false until the async classification for a new root completes.
+     * Whether one of the current repo's remotes is a GitHub host — gates the always-on surfaces (the tool
+     * window + checks) so they stay hidden on a GitLab/Gitea repo. Every remote counts, not only
+     * {@code origin} (gh works from a fork whose GitHub remote is {@code upstream}), and "a GitHub host" is
+     * one {@code gh} is signed in to when that is known ({@link GitHubRemote#anyGitHub}). The remotes are
+     * read off-thread once per repo root (via the shared {@code GitService}) then re-gated; the palette
+     * commands still run regardless and surface gh's own error. Returns false until the remotes of a new
+     * root have been read.
      */
     private boolean repoIsGitHub() {
         Path root = git.repoRoot();
@@ -249,24 +337,30 @@ final class GitHubCoordinator {
             return false;
         }
         if (!root.equals(remoteCheckedRoot) || remoteStale) {
-            boolean previous = root.equals(remoteCheckedRoot) && remoteIsGitHub; // see hasOpenActivity()
+            List<String> previous = root.equals(remoteCheckedRoot) ? remoteUrls : List.of(); // see hasOpenActivity()
             remoteCheckedRoot = root;
             remoteStale = false;
-            remoteIsGitHub = previous;
-            git.service().branches(root, b -> {
+            remoteUrls = previous;
+            git.service().remotes(root, remotes -> {
                 if (root.equals(remoteCheckedRoot)) { // still the current root
-                    remoteIsGitHub = GitHubRemote.isGitHub(b.remoteUrl());
+                    List<String> urls = new java.util.ArrayList<>();
+                    for (com.editora.git.GitRemotes.Remote remote : remotes) {
+                        urls.add(remote.fetchUrl());
+                        urls.add(remote.pushUrl());
+                    }
+                    remoteUrls = urls;
                     applyGating();
                 }
             });
         }
-        return remoteIsGitHub;
+        GitHubService.Availability a = service.availability();
+        return GitHubRemote.anyGitHub(remoteUrls, a == null ? List.of() : a.hosts());
     }
 
     // --- readiness guard shared by every gh flow -------------------------------------------------
 
     /** Runs {@code then} with the repo working directory once GitHub is enabled + {@code gh} is usable + in a
-     *  repo; otherwise echoes the precise reason (disabled / gh missing / not authenticated / no repo). */
+     *  repo; otherwise echoes the precise reason (disabled / Git off / gh missing / not signed in / no repo). */
     private void ready(Consumer<Path> then) {
         readyIn(null, then);
     }
@@ -276,21 +370,28 @@ final class GitHubCoordinator {
      * review tab: {@code captured} (when non-null) is used instead of the active tab's repository, which is a
      * different one, or none at all, by the time the row or the tab's own link is clicked. Returns the reason
      * the action could not run (already echoed), or {@code null} when {@code then} ran.
+     *
+     * <p>A cached "gh missing / not signed in" is not final: meeting it starts a fresh probe (bounded by
+     * {@link #negativeReprobeAfter}), so installing gh or running {@code gh auth login} takes effect
+     * without {@code github.refresh}. An unverified sign-in (GitHub was unreachable when probed) lets the
+     * command run — if GitHub still cannot be reached, gh says exactly that.
      */
     private String readyIn(Path captured, Consumer<Path> then) {
-        String reason = null;
+        String reason = disabledReason();
         Path dir = null;
         GitHubService.Availability a = service.availability();
-        if (!isEnabled()) {
-            reason = tr("statusbar.tip.githubDisabled");
+        if (reason != null) {
+            // disabled, or Git support is off
         } else if (a == null) {
             service.detect(av -> applyGating()); // not probed yet — kick one off; the user can retry
             reason = tr("status.github.checking");
-        } else if (!a.found()) {
-            reason = tr("status.github.ghNotFound");
-        } else if (!a.authenticated()) {
-            reason = tr("status.github.notAuthenticated");
+        } else if (!a.ready()) {
+            reason = notReadyReason(a);
+            reprobe(a);
         } else {
+            if (a.unverified()) {
+                reprobe(a);
+            }
             dir = captured != null ? captured : contextDir();
             if (dir == null) {
                 reason = tr("status.github.noRepo");
@@ -302,6 +403,32 @@ final class GitHubCoordinator {
         }
         then.accept(dir);
         return null;
+    }
+
+    /** Why {@code gh} cannot be used, for an availability that is not {@link GitHubService.Availability#ready()}. */
+    private static String notReadyReason(GitHubService.Availability a) {
+        if (!a.found()) {
+            return tr("status.github.ghNotFound");
+        }
+        return tr(
+                a.auth() == GitHubService.AuthState.REJECTED
+                        ? "status.github.tokenRejected"
+                        : "status.github.notAuthenticated");
+    }
+
+    /**
+     * Asks {@code gh} again after a command met the cached answer {@code was} (see {@link #readyIn}). When
+     * that turns "not usable" into "usable", the surfaces are re-gated, the tool window reloads, and the
+     * status bar says so — the command the user just ran can simply be run again.
+     */
+    private void reprobe(GitHubService.Availability was) {
+        service.redetectIfOlderThan(negativeReprobeAfter, now -> {
+            applyGating();
+            if (now.ready() && !was.ready() && isEnabled()) {
+                host.setStatus(tr("status.github.ready"));
+                ops.reloadGitHubPanel();
+            }
+        });
     }
 
     /** The working directory for {@code gh}: the git repo root, else the active file's folder, else null. */
@@ -329,7 +456,10 @@ final class GitHubCoordinator {
         activityStale = true;
         ifEnabled(() -> service.detect(a -> {
             applyGating();
-            host.setStatus(tr(a.ready() ? "status.github.ready" : "status.github.notReady"));
+            host.setStatus(
+                    !a.ready()
+                            ? notReadyReason(a)
+                            : tr(a.unverified() ? "status.github.unverified" : "status.github.ready"));
             if (a.ready()) {
                 refreshChecks(contextDir());
             }
@@ -437,6 +567,9 @@ final class GitHubCoordinator {
                 return;
             }
             openReview(dir, number, detailSlot[0], res.files());
+            if (res.truncated()) {
+                host.setStatus(tr("status.github.diffCannotShowAll")); // an incomplete file list must say so
+            }
         };
         service.prView(dir, number, d -> {
             detailSlot[0] = d;
@@ -574,6 +707,17 @@ final class GitHubCoordinator {
     /** Bumped per log request so a superseded (or Stopped) fetch is dropped instead of painting the console. */
     private long ciLogGen;
 
+    /** The log fetch in flight: Stop, or asking for another log, kills its {@code gh} rather than abandon it. */
+    private com.editora.process.ProcessRunner.Cancellation ciLogCall;
+
+    private void cancelCiLogFetch() {
+        ciLogGen++;
+        if (ciLogCall != null) {
+            ciLogCall.cancel();
+            ciLogCall = null;
+        }
+    }
+
     /**
      * Dumps a failed run's log ({@code gh run view <id> --log-failed}) into the shared Output console's
      * CI tab, where {@code RunPanel.installLinkClicks} + {@code MainController.openRunLink} make its stack
@@ -585,10 +729,11 @@ final class GitHubCoordinator {
 
     private void viewRunLog(Path listedIn, long runId, String workflowName) {
         readyIn(listedIn, dir -> {
-            long gen = ++ciLogGen;
-            // There's no live process to kill — Stop just abandons the pending delivery.
-            ops.ciLogStarted(workflowName + " · run " + runId, () -> ciLogGen++);
-            service.runFailedLog(dir, runId, res -> {
+            cancelCiLogFetch(); // a log still downloading is superseded: stop its gh
+            long gen = ciLogGen;
+            // Stop kills gh (a large log takes a while to download) and drops the pending delivery.
+            ops.ciLogStarted(workflowName + " · run " + runId, this::cancelCiLogFetch);
+            ciLogCall = service.runFailedLog(dir, runId, res -> {
                 if (gen != ciLogGen) {
                     return; // superseded by another request, or stopped
                 }
@@ -1049,6 +1194,7 @@ final class GitHubCoordinator {
     }
 
     void shutdown() {
+        activityRetry.stop();
         service.shutdown();
     }
 }
