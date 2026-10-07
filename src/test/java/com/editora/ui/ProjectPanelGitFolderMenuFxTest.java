@@ -25,6 +25,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -52,8 +53,8 @@ class ProjectPanelGitFolderMenuFxTest {
                 public void showLocalHistory(Path file) {}
 
                 @Override
-                public boolean gitAvailable() {
-                    return true;
+                public GitPathScope gitScope(Path path) {
+                    return GitPathScope.ACTIVE;
                 }
 
                 @Override
@@ -115,6 +116,63 @@ class ProjectPanelGitFolderMenuFxTest {
         fire(git, "project.menu.git.compareRevision");
 
         assertEquals(Map.of("head", folder, "branch", folder, "tag", folder, "revision", folder), calls);
+    }
+
+    /**
+     * The tree's status colouring is the active repository's. For a file of a nested repository it knows
+     * nothing — which used to read as "clean", greying out Revert and Add to .gitignore for good.
+     */
+    @Test
+    void aFileOfAnotherRepositoryKeepsItsStatusDependentGitActions(@TempDir Path folder) throws Exception {
+        Path file = Files.writeString(folder.resolve("inner.txt"), "x");
+        AtomicReference<GitPathScope> scope = new AtomicReference<>(GitPathScope.ACTIVE);
+        ProjectPanel.FileActions actions = (ProjectPanel.FileActions) java.lang.reflect.Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[] {ProjectPanel.FileActions.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "gitScope" -> scope.get();
+                    case "localHistoryEnabled" -> true;
+                    default -> method.getReturnType() == boolean.class ? Boolean.FALSE : null;
+                });
+        ContextMenu context = FxTestSupport.callOnFx(() -> {
+            ProjectPanel panel = new ProjectPanel(f -> {}, (a, b) -> {}, f -> {}, f -> false);
+            panel.setFileActions(actions);
+            return (ContextMenu) FxTestSupport.call(
+                    panel,
+                    "contextMenuFor",
+                    new Class<?>[] {TreeItem.class, boolean.class, boolean.class},
+                    new TreeItem<>(file),
+                    false,
+                    false);
+        });
+        Menu git = (Menu) context.getItems().stream()
+                .filter(item -> item instanceof Menu && tr("project.menu.git").equals(item.getText()))
+                .findFirst()
+                .orElseThrow();
+        MenuItem revert = item(git, "project.menu.git.revert");
+        MenuItem ignore = item(git, "project.menu.git.addToGitignore");
+
+        FxTestSupport.runOnFx(() -> context.getOnShowing().handle(null));
+        assertFalse(git.isDisable());
+        assertTrue(revert.isDisable(), "active repository, no change recorded for the file: nothing to revert");
+        assertTrue(ignore.isDisable());
+
+        scope.set(GitPathScope.OTHER);
+        FxTestSupport.runOnFx(() -> context.getOnShowing().handle(null));
+        assertFalse(git.isDisable());
+        assertFalse(revert.isDisable(), "its status is unknown here; the action asks git and reports");
+        assertFalse(ignore.isDisable());
+
+        scope.set(GitPathScope.NONE);
+        FxTestSupport.runOnFx(() -> context.getOnShowing().handle(null));
+        assertTrue(git.isDisable(), "no repository at all: the submenu is greyed");
+    }
+
+    private static MenuItem item(Menu menu, String key) {
+        return menu.getItems().stream()
+                .filter(i -> tr(key).equals(i.getText()))
+                .findFirst()
+                .orElseThrow();
     }
 
     @Test

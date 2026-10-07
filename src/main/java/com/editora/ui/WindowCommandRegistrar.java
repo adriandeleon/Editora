@@ -1944,10 +1944,13 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("git.cancel", () -> host.git().cancelNetworkCommand()));
         host.registry()
                 .register(Command.of(
-                        "git.fetch", () -> host.git().ifEnabled(() -> host.git().gitSync("Fetch", "fetch", "--all"))));
+                        "git.fetch",
+                        () -> host.git().ifEnabled(() -> host.git().gitSync(tr("gitlabel.fetch"), "fetch", "--all"))));
         host.registry()
                 .register(Command.of(
-                        "git.pull", () -> host.git().ifEnabled(() -> host.git().gitSync("Pull", "pull", "--ff-only"))));
+                        "git.pull",
+                        () -> host.git()
+                                .ifEnabled(() -> host.git().gitSync(tr("gitlabel.pull"), "pull", "--ff-only"))));
         host.registry().register(Command.of("git.push", () -> host.git().ifEnabled(host.git()::gitPush)));
         // Git Log: act on the commit selected in the Git Log tool window (parity with its right-click menu).
         host.registry()

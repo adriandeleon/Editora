@@ -16,6 +16,7 @@ Do not pass the controller itself or add inheritance to share its fields.
 | `PreviewCoordinator` | Preview modes, Markdown/CSV editing and lint integration |
 | `ExportCoordinator` | Export, copying, print preparation and export service shutdown |
 | `GitWindowCoordinator` | Git window actions and navigation. The Git Log owns the repository root it listed: it is cleared and reloaded when `GitCoordinator` reports another active root or branch, and every row action runs in that root, captured before any dialog |
+| `GitCoordinator` | The Git engine facade and repository state for the window, plus stage/unstage/commit/discard. Rules it owns: unsaved buffers of the repository are saved through the normal save path before stage and commit (git only reads the disk); the command of a discard comes from the path's status (`GitDiscardPlan`); a path picked in the Project tree is resolved to *its* repository (`GitPathScope`), which need not be the active one; outside a repository the Commit window stays (placeholder + Clone) and the status bar says "No VCS" |
 | `WindowChromeCoordinator` | Chrome visibility, focus modes and overlays |
 | `WindowMcpBridge` | Window-facing MCP operations; the controller retains the public facade |
 | `FileWorkflowCoordinator` | Loading, saving, autosave and elevated saves |

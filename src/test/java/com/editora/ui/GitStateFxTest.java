@@ -101,6 +101,59 @@ class GitStateFxTest {
     }
 
     /**
+     * Outside a repository the status bar says "No VCS" (one click from Clone / Init) and the Commit window
+     * stays, showing "Not a Git repository" with its Clone button. Both used to be hidden there, so neither
+     * text was ever seen. With Git switched off the segment says so and the windows go.
+     */
+    @Test
+    void outsideARepositoryTheStatusBarSaysNoVcsAndTheCommitWindowOffersClone() throws Exception {
+        StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+        javafx.scene.control.Label segment = FxTestSupport.field(statusBar, "git");
+        ToolWindowManager toolWindows = FxTestSupport.field(fx.controller, "toolWindows");
+        ToolWindow commit = FxTestSupport.field(fx.controller, "commitToolWindow");
+        ToolWindow log = FxTestSupport.field(fx.controller, "gitLogToolWindow");
+        java.util.Set<ToolWindow> unavailable = FxTestSupport.field(toolWindows, "unavailable");
+        GitPanel panel = FxTestSupport.field(fx.controller, "gitPanel");
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                fx.controller,
+                "addBuffer",
+                new Class<?>[] {com.editora.editor.EditorBuffer.class, boolean.class},
+                new com.editora.editor.EditorBuffer(),
+                true));
+
+        Object coordinator = git();
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(coordinator, "applySupport")); // Git is on (see setUp)
+
+        applyGitState(repo(Path.of("/work/repo"), "main", "origin/main", 0, 0));
+        assertTrue(FxTestSupport.callOnFx(segment::getText).contains("main"));
+        assertFalse(unavailable.contains(log));
+
+        applyGitState(GitService.RepoState.NONE);
+        assertEquals(com.editora.i18n.Messages.tr("statusbar.noVcs"), FxTestSupport.callOnFx(segment::getText));
+        assertTrue(FxTestSupport.callOnFx(segment::isVisible), "the segment is shown, not hidden");
+        assertFalse(FxTestSupport.callOnFx(segment::isDisable), "and clickable: it opens Clone / Init");
+        assertFalse(unavailable.contains(commit), "the Commit window stays available");
+        assertTrue(unavailable.contains(log), "the Log has nothing to list");
+        javafx.scene.Node placeholder = FxTestSupport.field(panel, "placeholderPane");
+        assertTrue(FxTestSupport.callOnFx(() -> panel.getChildren().contains(placeholder)), "…with its Clone button");
+
+        fx.shared.getSettings().setGitSupport(false);
+        Object git = git();
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(git, "applySupport"));
+        assertEquals(com.editora.i18n.Messages.tr("statusbar.gitOff"), FxTestSupport.callOnFx(segment::getText));
+        assertTrue(FxTestSupport.callOnFx(segment::isVisible));
+        assertTrue(FxTestSupport.callOnFx(segment::isDisable));
+        assertTrue(unavailable.contains(commit), "Git off: no Commit window");
+
+        fx.shared.getSettings().setGitSupport(true);
+        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(git, "applySupport"));
+        assertEquals(
+                com.editora.i18n.Messages.tr("statusbar.noVcs"),
+                FxTestSupport.callOnFx(segment::getText),
+                "switched back on: no longer \"Git off\"");
+    }
+
+    /**
      * The {@code git.clone} form (moved into {@link GitCoordinator#cloneRepo()}) renders as an in-scene
      * overlay through the coordinator's {@code CoordinatorHost}/{@code WindowOps} wiring — no network.
      */

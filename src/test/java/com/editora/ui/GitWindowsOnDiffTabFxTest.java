@@ -70,9 +70,22 @@ class GitWindowsOnDiffTabFxTest {
 
     @Test
     void aTabWithNoGitContextStillHidesThem() {
-        assertFalse(GitWindowGate.allows(null));
+        assertFalse(GitWindowGate.allows(null, false));
         Tab welcome = new Tab("Welcome");
         welcome.setUserData("welcome");
-        assertFalse(GitWindowGate.allows(welcome));
+        assertFalse(GitWindowGate.allows(welcome, false));
+    }
+
+    /**
+     * In a project window the Git UI falls back to the project root's repository on a tab without a file, so
+     * the Commit window (and a half-written commit message) must not vanish on Welcome, Settings or with
+     * every tab closed.
+     */
+    @Test
+    void aProjectWindowKeepsThemOnATabWithoutAFile() {
+        Tab welcome = new Tab("Welcome");
+        welcome.setUserData("welcome");
+        assertTrue(GitWindowGate.allows(welcome, true), "Welcome / Settings");
+        assertTrue(GitWindowGate.allows(null, true), "no tab at all");
     }
 }

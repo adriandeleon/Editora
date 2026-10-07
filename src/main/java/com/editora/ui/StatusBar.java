@@ -61,7 +61,7 @@ public final class StatusBar extends HBox {
     private final ProgressBar backgroundProgress = new ProgressBar(0);
 
     private final MessageLogPopup messageLogPopup = new MessageLogPopup();
-    /** Git branch + ahead/behind; clickable to switch branches. Hidden outside a Git repo. */
+    /** Git branch + ahead/behind, "No VCS" outside a repository, "Git off" when disabled; opens the dropdown. */
     private final Label git = segment("git.switchBranch", tr("statusbar.tip.gitSwitch"));
     /** GitHub PR CI checks roll-up (✓/✗/○ + fail count); clickable → refresh. Hidden unless the current
      *  branch has a PR with checks. */
@@ -468,20 +468,32 @@ public final class StatusBar extends HBox {
         gitFeatureEnabled = enabled;
         git.setDisable(!enabled);
         if (!enabled) {
+            gitInRepo = false;
             git.setText(tr("statusbar.gitOff"));
             git.getTooltip().setText(tr("statusbar.tip.gitDisabled"));
+        } else if (!gitInRepo) {
+            showNoVcs();
         }
         applyGitVisibility();
     }
 
+    /** "No VCS": Git is on but there is no repository here. Clicking opens the dropdown's Clone / Init. */
+    private void showNoVcs() {
+        git.setText(tr("statusbar.noVcs"));
+        git.getTooltip().setText(tr("statusbar.tip.gitNoVcs"));
+    }
+
     /**
-     * Updates the Git branch segment. Shown only when the active file is inside a repo: a {@code null}/blank
-     * {@code branch} (no version control for this file, or no file) <em>hides</em> the segment entirely;
-     * otherwise it shows {@code ⎇ branch} with optional {@code ↑ahead ↓behind}.
+     * Updates the Git branch segment: {@code ⎇ branch} with optional {@code ↑ahead ↓behind} inside a
+     * repository, "No VCS" for a {@code null}/blank {@code branch} (no version control for this file, or no
+     * file). While Git is off the segment keeps saying so.
      */
     public void setGitBranch(String branch, int ahead, int behind) {
         if (branch == null || branch.isBlank()) {
             gitInRepo = false;
+            if (gitFeatureEnabled) {
+                showNoVcs();
+            }
             applyGitVisibility();
             return;
         }
@@ -498,9 +510,12 @@ public final class StatusBar extends HBox {
         applyGitVisibility();
     }
 
-    /** The branch segment shows only when Git is on, the active file is in a repo, and not in Simple UI mode. */
+    /**
+     * The segment is part of the bar in every Git state — branch, "No VCS" or "Git off" — so the dropdown
+     * (and with it Clone and Init) is always one click away. Simple UI mode has no Git at all and hides it.
+     */
     private void applyGitVisibility() {
-        boolean vis = gitFeatureEnabled && gitInRepo && !simpleMode;
+        boolean vis = !simpleMode;
         git.setVisible(vis);
         git.setManaged(vis);
     }

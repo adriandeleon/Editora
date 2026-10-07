@@ -92,8 +92,11 @@ final class GitCoordinator {
         /** After a branch switch / pull, silently reload any open buffer whose file changed on disk. */
         void reloadAllFromDiskSilently();
 
-        /** Clears the Commit tool window's message box (after a successful commit). */
-        void clearCommitMessage();
+        /**
+         * Saves {@code buffer} through the window's ordinary save path (encoding, line endings, format on
+         * save) and waits for the write; false when it is not on disk afterwards.
+         */
+        boolean saveBeforeGit(EditorBuffer buffer);
 
         /** Opens the Commit tool window. */
         void openCommitWindow();
@@ -173,6 +176,11 @@ final class GitCoordinator {
      *  (the "No VCS" state has no repo). Drives whether repo-only menu items are shown/enabled. */
     boolean isAvailable() {
         return isEnabled() && repoRoot != null;
+    }
+
+    /** Whether the Commit / Log tool windows have a Git context on {@code selected} (see {@link GitWindowGate}). */
+    boolean windowsAllowed(javafx.scene.control.Tab selected) {
+        return GitWindowGate.allows(selected, ops.projectRoot() != null);
     }
 
     /** Runs {@code action} only when Git is enabled; otherwise reports it (disables the keybinding/command). */
@@ -285,9 +293,9 @@ final class GitCoordinator {
         repoRoot = state.root();
         lastStatus = state.isRepo() ? state.status() : GitStatus.NOT_A_REPO;
         EditorBuffer b = host.activeBuffer();
-        // The Commit / Log tool windows are only available inside a Git repo (transient, doesn't touch the
-        // user's show/hide preference).
-        ops.setCommitWindowAvailable(state.isRepo());
+        // The Log needs a repository. The Commit window does not: outside one it shows "Not a Git repository"
+        // with a Clone button, which is the way in. (Transient; the user's show/hide preference is untouched.)
+        ops.setCommitWindowAvailable(isEnabled());
         ops.setGitLogWindowAvailable(state.isRepo());
         if (!state.isRepo()) {
             branchName = "";
@@ -533,17 +541,51 @@ final class GitCoordinator {
         if (reportIfNoRepo()) {
             return;
         }
+        gitOpIn(repoRoot, successMessage, args);
+    }
+
+    /** {@link #gitOp} in the repository the caller resolved its arguments against. */
+    private void gitOpIn(Path root, String successMessage, String... args) {
         service.runWorktreeMutation(
-                repoRoot,
+                root,
                 running(args, r -> {
                     if (r.ok()) {
                         host.setStatus(successMessage);
                     } else {
-                        gitError("Git command failed", r.message());
+                        gitError(tr("status.git.opFailed"), r.message());
                     }
                     afterMutation();
                 }),
                 args);
+    }
+
+    /**
+     * Writes the unsaved buffers of {@code root} that {@code pathspecs} select (all of them when empty) to
+     * disk before git reads those files. git only ever sees the saved copy, so staging or committing a file
+     * that is still being edited silently recorded its <em>previous</em> text. Each buffer goes through the
+     * window's normal save; one that cannot be saved stops the operation, with the reason in the status bar.
+     *
+     * @return false when a buffer could not be saved — the caller must not run its command
+     */
+    private boolean saveUnsaved(Path root, List<String> pathspecs) {
+        List<EditorBuffer> unsaved = new ArrayList<>();
+        host.forEachBuffer(buffer -> {
+            Path file = buffer.getPath();
+            if (file == null || !buffer.isDirty() || !Vfs.isLocal(file)) {
+                return;
+            }
+            String relative = GitService.repoRelative(root, file);
+            if (relative != null && (pathspecs.isEmpty() || pathspecs.stream().anyMatch(p -> selects(p, relative)))) {
+                unsaved.add(buffer);
+            }
+        });
+        for (EditorBuffer buffer : unsaved) {
+            if (!ops.saveBeforeGit(buffer)) {
+                host.setError(tr("status.git.unsavedFailed", buffer.getTitle()));
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -593,31 +635,69 @@ final class GitCoordinator {
      * multi-select). One invocation — and therefore one refresh — for the whole set.
      */
     void gitStagePaths(List<String> paths) {
-        if (paths.isEmpty()) {
+        if (!paths.isEmpty() && !reportIfNoRepo()) {
+            stageIn(repoRoot, paths);
+        }
+    }
+
+    private void stageIn(Path root, List<String> paths) {
+        if (!saveUnsaved(root, paths)) {
             return;
         }
-        gitOp(
+        gitOpIn(
+                root,
                 paths.size() == 1 ? tr("status.git.staged", paths.get(0)) : tr("status.git.stagedMany", paths.size()),
                 argv(paths, "add", "--"));
     }
 
+    /** {@code git add -A}: the Commit window's Stage All. */
+    void gitStageAll() {
+        if (!reportIfNoRepo() && saveUnsaved(repoRoot, List.of())) {
+            gitOpIn(repoRoot, tr("status.git.stagedAll"), "add", "-A");
+        }
+    }
+
     /** {@code git reset -q HEAD} over one or more repo-relative paths; mirrors {@link #gitStagePaths}. */
     void gitUnstagePaths(List<String> paths) {
-        if (paths.isEmpty()) {
-            return;
+        if (!paths.isEmpty() && !reportIfNoRepo()) {
+            unstageIn(repoRoot, lastStatus, paths);
         }
+    }
+
+    private void unstageIn(Path root, GitStatus status, List<String> paths) {
         // "Unstaging" an unmerged path would drop its merge stages 1/2/3: Git would no longer know the file
         // is conflicted and would let the merge be committed with one side's change silently missing.
-        String conflicted = firstUnmergedUnder(lastStatus, paths);
+        String conflicted = firstUnmergedUnder(status, paths);
         if (conflicted != null) {
             host.setStatus(tr("status.git.unstageConflict", conflicted));
             return;
         }
-        gitOp(
+        gitOpIn(
+                root,
                 paths.size() == 1
                         ? tr("status.git.unstaged", paths.get(0))
                         : tr("status.git.unstagedMany", paths.size()),
-                argv(paths, "reset", "-q", "HEAD", "--"));
+                argv(withRenameSources(status, paths), "reset", "-q", "HEAD", "--"));
+    }
+
+    /**
+     * {@code pathspecs} plus the original path of every staged rename or copy they select. A staged rename is
+     * two index changes — the new path added, the old one deleted — and resetting only the new path left the
+     * deletion staged: the next commit then recorded the file as deleted and nothing else.
+     */
+    static List<String> withRenameSources(GitStatus status, List<String> pathspecs) {
+        if (status == null) {
+            return pathspecs;
+        }
+        java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>(pathspecs);
+        for (GitStatus.FileEntry entry : status.files()) {
+            if (entry.origPath() != null
+                    && entry.staged()
+                    && pathspecs.stream().anyMatch(spec -> selects(spec, entry.path()))) {
+                out.add(entry.origPath());
+            }
+        }
+        return List.copyOf(out);
     }
 
     /** The first unmerged path one of {@code pathspecs} (a file or a folder) selects, or {@code null}. */
@@ -644,78 +724,97 @@ final class GitCoordinator {
         return out;
     }
 
-    /** Confirms then discards a file's changes (or deletes an untracked file) — destructive. */
-    void discardChanges(String path, boolean untracked) {
-        discardChanges(untracked ? List.of() : List.of(path), untracked ? List.of(path) : List.of());
-    }
-
     /**
      * Confirms <em>once</em> then reverts the given repo-relative paths — destructive. {@code tracked}
      * paths are checked out from the index/HEAD, {@code untracked} ones are deleted; a mixed set says so
      * in the prompt and then runs both commands (each over its whole list, so at most two invocations).
      */
     void discardChanges(List<String> tracked, List<String> untracked) {
+        discard(repoRoot, lastStatus, new Discard(tracked, List.of(), untracked));
+    }
+
+    /**
+     * The paths of one discard, by the command each needs: {@code worktree} paths are restored from the
+     * index ({@code checkout --}), {@code head} paths have staged changes and go back to the last commit
+     * ({@code restore --staged --worktree --source=HEAD}), {@code untracked} ones are deleted ({@code clean}).
+     */
+    private record Discard(List<String> worktree, List<String> head, List<String> untracked) {
+        boolean isEmpty() {
+            return worktree.isEmpty() && head.isEmpty() && untracked.isEmpty();
+        }
+
+        List<String> affected() {
+            List<String> all = new ArrayList<>(worktree);
+            all.addAll(head);
+            all.addAll(untracked);
+            return all;
+        }
+    }
+
+    private void discard(Path root, GitStatus status, Discard discard) {
         // The paths are relative to the repository shown when the user chose them. The modal dialog below
         // runs a nested event loop in which a tab switch or a refresh can move repoRoot to another repository
         // (one worktree per task makes that ordinary), so the root is captured first and passed through.
-        Path root = repoRoot;
-        if (root == null || (tracked.isEmpty() && untracked.isEmpty())) {
+        if (root == null || discard.isEmpty()) {
             return;
         }
-        if (!confirmDestructive(tr("dialog.discard.title"), discardPrompt(tracked, untracked), tr("dialog.discard"))) {
+        // git refuses to check out an unmerged path, and forcing it would silently take one side of the merge.
+        String conflicted = firstUnmergedUnder(status, discard.worktree());
+        if (conflicted != null) {
+            host.setStatus(tr("status.git.discardConflict", conflicted));
             return;
         }
-        List<String> affected = new ArrayList<>(tracked.size() + untracked.size());
-        affected.addAll(tracked);
-        affected.addAll(untracked);
+        if (!confirmDestructive(tr("dialog.discard.title"), discardPrompt(discard), tr("dialog.discard"))) {
+            return;
+        }
+        List<String> affected = discard.affected();
         invalidatePendingWrites(root, affected);
-        runDiscardCommands(root, tracked, untracked, affected);
-    }
-
-    /** Runs a mixed discard in order and refreshes/reloads once, after every requested path was attempted. */
-    private void runDiscardCommands(Path root, List<String> tracked, List<String> untracked, List<String> affected) {
-        List<String[]> commands = new ArrayList<>(2);
-        if (!tracked.isEmpty()) {
-            commands.add(argv(tracked, "checkout", "--"));
+        List<String[]> commands = new ArrayList<>(3);
+        if (!discard.worktree().isEmpty()) {
+            commands.add(argv(discard.worktree(), "checkout", "--"));
         }
-        if (!untracked.isEmpty()) {
-            commands.add(argv(untracked, "clean", "-f", "--"));
+        if (!discard.head().isEmpty()) {
+            commands.add(argv(discard.head(), "restore", "--staged", "--worktree", "--source=HEAD", "--"));
         }
+        if (!discard.untracked().isEmpty()) {
+            commands.add(argv(discard.untracked(), "clean", "-f", "--"));
+        }
+        // Mixed sets run in order; one refresh/reload after every requested path was attempted.
         service.runWorktreeMutation(
-                root,
-                commands,
-                running(commands.get(0), result -> finishDiscard(root, result, tracked, untracked, affected)));
+                root, commands, running(commands.get(0), result -> finishDiscard(root, result, discard, affected)));
     }
 
-    private void finishDiscard(
-            Path root,
-            ProcessRunner.Result result,
-            List<String> tracked,
-            List<String> untracked,
-            List<String> affected) {
+    private void finishDiscard(Path root, ProcessRunner.Result result, Discard discard, List<String> affected) {
         invalidatePendingWrites(root, affected);
         if (result != null && result.ok()) {
-            host.setStatus(discardSuccessMessage(tracked, untracked));
+            host.setStatus(discardSuccessMessage(discard));
         } else {
-            gitError("Git command failed", result == null ? "Git command failed" : result.message());
+            gitError(tr("status.git.opFailed"), result == null ? tr("status.git.opFailed") : result.message());
         }
         afterMutation();
         ops.reloadAllFromDiskSilently();
     }
 
-    private static String discardSuccessMessage(List<String> tracked, List<String> untracked) {
+    private static String discardSuccessMessage(Discard discard) {
+        List<String> untracked = discard.untracked();
         if (!untracked.isEmpty()) {
             return untracked.size() == 1
                     ? tr("status.git.deleted", untracked.get(0))
                     : tr("status.git.deletedMany", untracked.size());
         }
-        return tracked.size() == 1
+        List<String> tracked = discard.head().isEmpty() ? discard.worktree() : discard.head();
+        return tracked.size() == 1 || !discard.head().isEmpty()
                 ? tr("status.git.discarded", tracked.get(0))
                 : tr("status.git.discardedMany", tracked.size());
     }
 
     /** The confirmation body: names the single file, else counts, and spells out a mixed set exactly. */
-    private static String discardPrompt(List<String> tracked, List<String> untracked) {
+    private static String discardPrompt(Discard discard) {
+        if (!discard.head().isEmpty()) {
+            return tr("dialog.discard.toHead", discard.head().get(0)); // staged changes go too: say so
+        }
+        List<String> tracked = discard.worktree();
+        List<String> untracked = discard.untracked();
         if (untracked.isEmpty()) {
             return tracked.size() == 1
                     ? tr("dialog.discard.tracked", tracked.get(0))
@@ -730,18 +829,28 @@ final class GitCoordinator {
     }
 
     void gitCommit(String message) {
-        if (repoRoot == null) {
+        gitCommit(message, committed -> {});
+    }
+
+    /**
+     * Commits the index. {@code onDone} is told — on the FX thread, exactly once — whether a commit was made,
+     * so the Commit window can re-enable itself and clear the message it submitted (and only that).
+     */
+    void gitCommit(String message, Consumer<Boolean> onDone) {
+        Path root = repoRoot;
+        if (root == null || !saveUnsaved(root, List.of())) {
+            onDone.accept(false);
             return;
         }
         String[] args = {"commit", "-m", message};
         service.runWorktreeMutation(
-                repoRoot,
+                root,
                 running(args, r -> {
+                    onDone.accept(r.ok());
                     if (r.ok()) {
-                        ops.clearCommitMessage();
                         host.setStatus(tr("status.committed"));
                     } else {
-                        gitError("Commit failed", r.message());
+                        gitError(tr("status.git.commitFailed"), r.message());
                     }
                     afterMutation();
                 }),
@@ -761,7 +870,7 @@ final class GitCoordinator {
             if (r.ok()) {
                 host.setStatus(tr("status.switchedBranch", name));
             } else {
-                gitError("Couldn't switch to " + name, r.message());
+                gitError(tr("status.git.switchFailed", name), r.message());
             }
         });
     }
@@ -860,7 +969,7 @@ final class GitCoordinator {
             if (r.ok()) {
                 host.setStatus(tr("status.checkedOut", remote));
             } else {
-                gitError("Couldn't check out " + remote, r.message());
+                gitError(tr("status.git.checkoutFailed", remote), r.message());
             }
         });
     }
@@ -882,7 +991,7 @@ final class GitCoordinator {
                         if (r.ok()) {
                             host.setStatus(tr("status.createdBranch", name));
                         } else {
-                            gitError("Couldn't create branch " + name, r.message());
+                            gitError(tr("status.git.createBranchFailed", name), r.message());
                         }
                         afterMutation();
                     }),
@@ -910,7 +1019,7 @@ final class GitCoordinator {
                     ops.reloadAllFromDiskSilently();
                 }
             } else {
-                gitError(label + " failed", r.message());
+                gitError(tr("status.git.syncFailed", label), r.message());
             }
             afterMutation();
         });
@@ -974,80 +1083,160 @@ final class GitCoordinator {
 
     /** Stages the active file (palette {@code git.stageFile}). */
     void gitStageActiveFile() {
-        EditorBuffer b = host.activeBuffer();
-        Path file = b == null ? null : b.getPath();
-        if (file == null || repoRoot == null) {
-            host.setStatus(tr("status.noGitFile"));
-            return;
+        Path file = activeGitFile();
+        if (file != null) {
+            gitStagePath(file);
         }
-        // rel() forward-slash-normalizes the pathspec (git treats "\" as an escape on Windows).
-        gitStagePath(file);
     }
 
     /** Unstages the active file (palette {@code git.unstageFile}; mirrors {@link #gitStageActiveFile}). */
     void gitUnstageActiveFile() {
-        EditorBuffer b = host.activeBuffer();
-        Path file = b == null ? null : b.getPath();
-        if (file == null || repoRoot == null) {
-            host.setStatus(tr("status.noGitFile"));
-            return;
+        Path file = activeGitFile();
+        if (file != null) {
+            gitUnstagePath(file);
         }
-        gitUnstagePath(file);
     }
 
     /** Discards the active file's changes (palette {@code git.discardFile}; confirms first). */
     void gitDiscardActiveFile() {
+        Path file = activeGitFile();
+        if (file != null) {
+            gitRevertPath(file);
+        }
+    }
+
+    /** The active buffer's file when there is a repository to act in; otherwise reports it and returns null. */
+    private Path activeGitFile() {
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
         if (file == null || repoRoot == null) {
             host.setStatus(tr("status.noGitFile"));
-            return;
+            return null;
         }
-        discardChanges(rel(file), false);
+        return file;
     }
 
-    // --- Project-tree file/folder actions (act on a given path, not the active buffer) ------------
+    // --- actions on a given path (the Project tree, the tab menu, the active file) ----------------
 
-    /** Repo-relative (forward-slash) path for {@code file}, or {@code null} when there's no repo/path. */
-    private String rel(Path file) {
-        // Delegates to repoRelative, which symlink-resolves both sides: repoRoot comes from git (real path)
-        // while the buffer's file is as-opened, so a plain relativize produced a bogus `../…` pathspec — and
-        // then git add/reset/checkout on it failed — for any repo reached through a symlink (a macOS /tmp
-        // project, a symlinked work dir). Returns null when the file isn't under the repo, as before.
-        return GitService.repoRelative(repoRoot, file);
+    /**
+     * Which repository {@code file} belongs to, relative to the active one; {@link GitPathScope#NONE} when
+     * Git is off. The Project tree's menu uses it to decide what it can enable.
+     */
+    GitPathScope scopeOf(Path file) {
+        return isEnabled() ? GitPathScope.of(file, repoRoot) : GitPathScope.NONE;
+    }
+
+    /**
+     * Runs {@code action} with the repository {@code file} belongs to and that repository's status.
+     *
+     * <p>The Git UI follows the active tab, but a path picked in the Project tree can sit in a nested
+     * repository, a submodule or another worktree. Its path was computed against the active root, which
+     * produced either no pathspec at all (the action silently did nothing) or one the outer repository
+     * rejects. The active repository is answered at once from the last status; another one is asked for.
+     */
+    private void inRepositoryOf(Path file, java.util.function.BiConsumer<Path, GitStatus> action) {
+        switch (GitPathScope.of(file, repoRoot)) {
+            case ACTIVE -> action.accept(repoRoot, lastStatus);
+            case OTHER ->
+                service.status(file, state -> {
+                    if (state.isRepo()) {
+                        action.accept(state.root(), state.status());
+                    } else {
+                        host.setStatus(tr(service.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+                    }
+                });
+            case NONE -> host.setStatus(tr(service.gitAvailable() ? "status.notARepo" : "status.gitNotInstalled"));
+        }
+    }
+
+    /**
+     * Runs an action written against {@link #repoRoot()} (compare with HEAD / a branch / a tag / a revision)
+     * for a path that may belong to another repository: {@link #repoRoot()} answers that repository for the
+     * duration of {@code action}, which must read it before returning — as those actions do, because the root
+     * can change under any callback they register.
+     */
+    void withRepositoryOf(Path file, Runnable action) {
+        ifEnabled(() -> inRepositoryOf(file, (root, status) -> {
+            Path activeRoot = repoRoot;
+            GitStatus activeStatus = lastStatus;
+            repoRoot = root;
+            lastStatus = status;
+            try {
+                action.run();
+            } finally {
+                repoRoot = activeRoot;
+                lastStatus = activeStatus;
+            }
+        }));
+    }
+
+    /**
+     * Runs an action that needs {@code file}'s repository to be the <em>active</em> one (its history in the
+     * Git Log, which lists the active repository). A file of another repository is opened first — the Git UI
+     * follows the active tab — and the action runs once that repository's state has been applied.
+     */
+    void activatingRepositoryOf(Path file, Runnable action) {
+        ifEnabled(() -> {
+            if (GitPathScope.of(file, repoRoot) != GitPathScope.OTHER || Files.isDirectory(file)) {
+                action.run();
+                return;
+            }
+            ops.openPath(file);
+            // Queued behind the refresh the tab switch started, so normally that has been applied by now.
+            service.status(file, state -> {
+                if (state.isRepo() && !state.root().equals(repoRoot)) {
+                    applyState(state);
+                }
+                action.run();
+            });
+        });
+    }
+
+    /** The literal pathspec for {@code file} in {@code root} ({@code .} for the root itself), or null. */
+    private static String pathspec(Path root, Path file) {
+        // repoRelative symlink-resolves both sides (the root comes from git as a real path, the file is
+        // as-opened) and forward-slash-normalizes the result (git treats "\" as an escape on Windows).
+        String relative = GitService.repoRelative(root, file);
+        return relative != null && relative.isEmpty() ? "." : relative;
     }
 
     /** {@code git add -- <path>} for a file or folder (the Project-tree "Stage" action). */
     void gitStagePath(Path file) {
-        String rel = rel(file);
-        if (rel == null || reportIfNoRepo()) {
-            return;
-        }
-        gitStagePaths(List.of(rel));
+        inRepositoryOf(file, (root, status) -> {
+            String spec = pathspec(root, file);
+            if (spec != null) {
+                stageIn(root, List.of(spec));
+            }
+        });
     }
 
     /** {@code git reset -q HEAD -- <path>} for a file or folder (the Project-tree "Unstage" action). */
     void gitUnstagePath(Path file) {
-        String rel = rel(file);
-        if (rel == null || reportIfNoRepo()) {
-            return;
-        }
-        gitUnstagePaths(List.of(rel));
+        inRepositoryOf(file, (root, status) -> {
+            String spec = pathspec(root, file);
+            if (spec != null) {
+                unstageIn(root, status, List.of(spec));
+            }
+        });
     }
 
     /**
-     * Reverts local changes to {@code file} (the Project-tree "Revert" action) — {@code git clean} for an
-     * untracked file (delete it), else {@code git checkout} (discard worktree changes). Confirms first (via
-     * {@link #discardChanges}). A directory reverts the tracked changes under it.
+     * Reverts local changes to {@code file} — the Project-tree "Revert" action and the active file's Discard.
+     * What runs depends on the path's status ({@link GitDiscardPlan}): an untracked file is deleted, unstaged
+     * changes are restored from the index, staged ones from the last commit, an unmerged path is refused and
+     * a path without changes is reported as such. Confirms first. A folder reverts the tracked changes under it.
      */
     void gitRevertPath(Path file) {
-        String rel = rel(file);
-        if (rel == null || reportIfNoRepo()) {
-            return;
-        }
-        boolean untracked =
-                lastStatusByPath.get(file.toAbsolutePath().normalize()) == com.editora.git.GitFileStatus.UNTRACKED;
-        discardChanges(rel, untracked);
+        inRepositoryOf(file, (root, status) -> {
+            GitDiscardPlan plan = GitDiscardPlan.of(status, pathspec(root, file));
+            switch (plan.kind()) {
+                case NOTHING -> host.setStatus(tr("status.git.nothingToDiscard", file.getFileName()));
+                case CONFLICT -> host.setStatus(tr("status.git.discardConflict", plan.subject()));
+                case UNTRACKED -> discard(root, status, new Discard(List.of(), List.of(), plan.specs()));
+                case WORKTREE -> discard(root, status, new Discard(plan.specs(), List.of(), List.of()));
+                case HEAD -> discard(root, status, new Discard(List.of(), plan.specs(), List.of()));
+            }
+        });
     }
 
     /** The Git working-tree status of {@code file} (null = clean / not tracked-as-changed), for menu
@@ -1062,12 +1251,16 @@ final class GitCoordinator {
      * Writes the small file on the FX thread then refreshes so the now-ignored file drops from the tree color.
      */
     void addToGitignore(Path file) {
-        String rel = rel(file);
-        if (rel == null || reportIfNoRepo()) {
+        inRepositoryOf(file, (root, status) -> addToGitignore(root, file));
+    }
+
+    private void addToGitignore(Path root, Path file) {
+        String rel = GitService.repoRelative(root, file);
+        if (rel == null || rel.isEmpty()) {
             return;
         }
         String entry = com.editora.git.GitIgnore.entryFor(rel, java.nio.file.Files.isDirectory(file));
-        Path ignore = repoRoot.resolve(".gitignore");
+        Path ignore = root.resolve(".gitignore");
         try {
             String existing = java.nio.file.Files.exists(ignore) ? java.nio.file.Files.readString(ignore) : "";
             String updated = com.editora.git.GitIgnore.withEntry(existing, entry);
@@ -1079,7 +1272,7 @@ final class GitCoordinator {
             host.setStatus(tr("status.git.addedToGitignore", entry));
             afterMutation();
         } catch (java.io.IOException e) {
-            gitError("Could not update .gitignore", String.valueOf(e.getMessage()));
+            gitError(tr("status.git.gitignoreFailed"), String.valueOf(e.getMessage()));
         }
     }
 
@@ -1246,7 +1439,8 @@ final class GitCoordinator {
             return;
         }
         host.setStatus(summary);
-        String body = detail == null || detail.isBlank() ? summary : detail.strip();
+        // A sign-in failure gets its next step appended: git's own line ("terminal prompts disabled") has none.
+        String body = detail == null || detail.isBlank() ? summary : GitAuthFailure.withGuidance(detail.strip());
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.initOwner(host.window());
         alert.setTitle(tr("dialog.git.title"));
@@ -1336,10 +1530,7 @@ final class GitCoordinator {
             if (!dirEdited[0]) {
                 String name = repoNameFromUrl(b);
                 autoFilling[0] = true;
-                dirField.setText(
-                        name.isEmpty()
-                                ? ""
-                                : Path.of(defaultParent).resolve(name).toString());
+                dirField.setText(suggestedCloneDir(defaultParent, name));
                 autoFilling[0] = false;
             }
         });
@@ -1354,9 +1545,8 @@ final class GitCoordinator {
             File parent = chooser.showDialog(host.window());
             if (parent != null) {
                 String name = repoNameFromUrl(urlField.getText());
-                dirField.setText(parent.toPath()
-                        .resolve(name.isEmpty() ? "repository" : name)
-                        .toString());
+                String suggested = suggestedCloneDir(parent.getPath(), name.isEmpty() ? "repository" : name);
+                dirField.setText(suggested.isEmpty() ? parent.getPath() : suggested);
             }
         });
 
@@ -1388,23 +1578,43 @@ final class GitCoordinator {
                 valid,
                 () -> {
                     String url = urlField.getText().strip();
-                    Path destination = Path.of(dirField.getText().strip());
-                    if (Files.exists(destination)) {
-                        host.setStatus(tr("status.destExists", destination));
+                    // Resolved like the folder typed for git.init (~ and relative paths), validated, and
+                    // its missing parent folders created — git creates the target, not what is above it.
+                    CloneDestination target = CloneDestination.prepare(
+                            dirField.getText(), defaultParent.isBlank() ? null : Path.of(defaultParent), defaultParent);
+                    if (!target.ok()) {
+                        host.setError(tr(target.errorKey(), target.shown()));
                         return;
                     }
+                    Path destination = target.path();
                     host.setStatus(tr("status.cloning", url));
                     service.clone(url, destination, running(new String[] {"clone"}, r -> {
                         if (r.ok()) {
                             host.setStatus(tr("status.clonedInto", destination));
                             openClonedEntry(destination);
                         } else {
-                            gitError("Clone failed", r.message());
+                            gitError(tr("status.git.cloneFailed"), r.message());
                         }
                     }));
                 },
                 null,
                 false);
+    }
+
+    /**
+     * The folder the clone form proposes: {@code parent/name}, or {@code ""} when the two do not make a path
+     * (a repository name taken from a pasted URL can hold characters the file system rejects — that used to
+     * throw from inside the text field's listener on every keystroke).
+     */
+    static String suggestedCloneDir(String parent, String name) {
+        if (name == null || name.isBlank()) {
+            return "";
+        }
+        try {
+            return Path.of(parent == null ? "" : parent).resolve(name).toString();
+        } catch (java.nio.file.InvalidPathException e) {
+            return "";
+        }
     }
 
     /**
