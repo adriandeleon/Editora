@@ -436,6 +436,9 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.applyFailed", target.getFileName()));
             return false;
         }
+        if (!NoUndoGuard.allow(b, tr("noUndo.op.diff"))) {
+            return false;
+        }
         b.replaceWholeDocument(newText); // widens first: newText is whole-document text
         host.setStatus(tr("status.diff.applied"));
         refreshOpenDiffs();
@@ -450,7 +453,8 @@ final class DiffCoordinator {
                 || !buffer.isEditable()
                 || buffer.isDisposed()
                 || buffer.isTruncatedLoad()
-                || !java.util.Objects.equals(expectedText, buffer.getContent())) {
+                || !java.util.Objects.equals(expectedText, buffer.getContent())
+                || !NoUndoGuard.allow(buffer, tr("noUndo.op.diff"))) {
             if (existing == null && buffer != null) {
                 ops.discardBackgroundBuffer(buffer);
             }
@@ -488,7 +492,8 @@ final class DiffCoordinator {
                 || !buffer.isEditable()
                 || buffer.isDisposed()
                 || buffer.isTruncatedLoad()
-                || !java.util.Objects.equals(expectedText, buffer.getContent())) {
+                || !java.util.Objects.equals(expectedText, buffer.getContent())
+                || !NoUndoGuard.allow(buffer, tr("noUndo.op.diff"))) {
             return false;
         }
         buffer.replaceWholeDocument(newText);
@@ -1877,6 +1882,12 @@ final class DiffCoordinator {
                 ops.discardBackgroundBuffer(target);
             }
             host.setStatus(tr("status.merge.stale"));
+            return false;
+        }
+        if (!NoUndoGuard.allow(target, tr("noUndo.op.diff"))) {
+            if (reopened) {
+                ops.discardBackgroundBuffer(target);
+            }
             return false;
         }
         target.replaceWholeDocument(resolvedText);

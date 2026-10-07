@@ -987,6 +987,11 @@ final class AgentCoordinator implements AcpClient.Host {
         if (stale != null) {
             return stale;
         }
+        // A buffer without undo (large-file mode) keeps a Local History copy first, or refuses.
+        NoUndoGuard.Verdict verdict = NoUndoGuard.check(open, tr("noUndo.op.agent"));
+        if (!verdict.allowed()) {
+            return verdict.message();
+        }
         // The agent read getContent() (the whole file), so widen a narrowed buffer rather than nest the file in it.
         open.replaceWholeDocument(body);
         served.served(key, open.getContent()); // its own write is text it knows

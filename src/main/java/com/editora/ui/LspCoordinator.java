@@ -2861,6 +2861,9 @@ final class LspCoordinator {
                 host.setStatus(tr("status.lsp.formatNoChange"));
                 return;
             }
+            if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
+                return;
+            }
             buffer.applyLspEdits(edits);
             host.setStatus(tr("status.lsp.formatted"));
         });
@@ -3801,6 +3804,13 @@ final class LspCoordinator {
             editUnplaceable(unplaceable); // before any buffer changes: all of the edit lands, or none of it
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
             return;
+        }
+        // Buffers without undo (large-file mode) keep a Local History copy first; one refusal stops the edit.
+        for (EditorBuffer buffer : new java.util.LinkedHashSet<>(buffers)) {
+            if (!NoUndoGuard.allow(buffer, tr("noUndo.op.lsp"))) {
+                rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);
+                return;
+            }
         }
         if (!applyWorkspaceTextEdits(mapped, buffers, transaction)) {
             rollbackWorkspaceAsync(creates, renames, deletes, transaction, done);

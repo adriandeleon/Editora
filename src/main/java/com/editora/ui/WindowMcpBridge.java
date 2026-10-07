@@ -10,6 +10,8 @@ import com.editora.config.ProjectManager;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 
+import static com.editora.i18n.Messages.tr;
+
 /** Adapts MCP operations to the owning window. */
 final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     interface Host {
@@ -243,10 +245,16 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (first < 0) {
                 return "old_text not found in the buffer.";
             }
+            if (!replaceAll && text.indexOf(oldText, first + 1) >= 0) {
+                return "old_text occurs more than once; pass replace_all or a longer, unique old_text.";
+            }
+            // A buffer without undo (large-file mode) keeps a Local History copy first, or refuses.
+            NoUndoGuard.Verdict verdict = NoUndoGuard.check(b, tr("noUndo.op.agent"));
+            if (!verdict.allowed()) {
+                return verdict.message();
+            }
             if (replaceAll) {
                 replaceWholeDocument(b, text.replace(oldText, replacement));
-            } else if (text.indexOf(oldText, first + 1) >= 0) {
-                return "old_text occurs more than once; pass replace_all or a longer, unique old_text.";
             } else {
                 CodeArea area = b.getArea();
                 int at = first - b.narrowStart();
@@ -281,6 +289,10 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                     .refusal(path == null ? "The active buffer" : path, "read_buffer");
             if (stale != null) {
                 return stale;
+            }
+            NoUndoGuard.Verdict verdict = NoUndoGuard.check(b, tr("noUndo.op.agent"));
+            if (!verdict.allowed()) {
+                return verdict.message();
             }
             replaceWholeDocument(b, newText == null ? "" : newText);
             served.served(b, b.getContent());
