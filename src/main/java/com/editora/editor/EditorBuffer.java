@@ -7798,6 +7798,11 @@ public class EditorBuffer implements TabContent {
         this.charsetAssumed = assumed;
     }
 
+    /** The charset the file has on disk: the one it was decoded with, or the one a save last wrote. */
+    public String getDetectedCharset() {
+        return detectedCharset;
+    }
+
     public void setCharsetOverride(String charset) {
         this.charsetOverride = charset;
     }

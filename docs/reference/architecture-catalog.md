@@ -332,7 +332,11 @@ icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside 
   else the buffer's own `lineEnding`: the RichTextFX document never holds `\r`, so
   `EditorBuffer.setInitialContent` records the file's dominant ending via the pure `editor/LineEndings`
   before normalising to LF, `savePayload` re-applies it when no `end_of_line` rule is in force, and
-  `chooseLineEndings` changes that field — refused with a status message while EditorConfig fixes it),
+  `chooseLineEndings` changes that field — refused with a status message while EditorConfig fixes it; a
+  file that *mixes* terminators is tracked by `ui/MixedLineEndings`, which keeps its loaded bytes: an
+  unedited save writes those bytes back, an edited one normalises after copying them to
+  `<config>/line-ending-originals` and says so (`ui/SaveNotes`, which also reports a charset/BOM change or
+  dropped trailing line breaks caused by a rule), and binary content needs the user's consent first),
   ruler column (`setRulerColumn`, OFF hides), charset
   (`setCharsetOverride`/`getEffectiveCharset`) — plus `setEditorConfigProps` for save time; called from
   `applyViewSettings`. `applyEditorConfigSupport()` (mirrors `applyGitSupport`: init + every settings
