@@ -90,10 +90,40 @@ public final class DiffViewerPane implements TabContent {
     private final IGrammar grammar;
     private String fontStyle; // mutable so text zoom can resize the diff areas live (#533)
     private final boolean showLineNumbers;
-    private java.util.function.Consumer<String> onExportPatch = p -> {};
+    private java.util.function.Consumer<PatchRequest> onExportPatch = p -> {};
+    private SideFormat leftFormat = SideFormat.DEFAULT;
+    private SideFormat rightFormat = SideFormat.DEFAULT;
+
+    /**
+     * How a side's source bytes spell what the viewer holds as bare-{@code \n} text: its line ending (a
+     * {@link com.editora.editor.LineEndings} label) and charset name. Only an exported patch needs them — it
+     * has to match the file's bytes to apply.
+     */
+    public record SideFormat(String lineEnding, String charset) {
+        public static final SideFormat DEFAULT =
+                new SideFormat(com.editora.editor.LineEndings.LF, com.editora.editorconfig.EditorConfigCharset.UTF_8);
+
+        public SideFormat {
+            lineEnding = lineEnding == null ? com.editora.editor.LineEndings.LF : lineEnding;
+            charset = charset == null ? com.editora.editorconfig.EditorConfigCharset.UTF_8 : charset;
+        }
+    }
+
+    /** What "export patch" asks for: both displayed sides with their labels and source formats. */
+    public record PatchRequest(
+            String leftLabel,
+            String rightLabel,
+            String leftText,
+            String rightText,
+            SideFormat leftFormat,
+            SideFormat rightFormat) {}
+
     private java.util.function.Consumer<DiffEngine.DiffOptions> onOptionsChanged = o -> {};
     /** Re-fetches both sides + re-renders if changed (set by the controller); the file-on-disk refresh. */
     private Runnable refresher = () -> {};
+
+    private boolean refreshPending;
+    private boolean awaitingShown;
 
     /** Which side is the editable/local file that "apply change" writes into (NONE = read-only diff). */
     public enum EditableSide {
@@ -142,6 +172,10 @@ public final class DiffViewerPane implements TabContent {
     private boolean resultEditingEnabled;
     private boolean applyPending;
     private int unappliedUndoDepth;
+    /** Whether the buffer holds changes made from this pane (an apply, or an undo of one) since its last Save. */
+    private boolean unsavedApplies;
+
+    private java.util.function.BooleanSupplier undoAvailable = () -> true;
 
     private boolean unified; // false = side-by-side (default)
     private DiffEngine.DiffOptions options = DiffEngine.DiffOptions.DEFAULT;
@@ -293,8 +327,19 @@ public final class DiffViewerPane implements TabContent {
         });
     }
 
-    public void setOnExportPatch(java.util.function.Consumer<String> onExportPatch) {
+    public void setOnExportPatch(java.util.function.Consumer<PatchRequest> onExportPatch) {
         this.onExportPatch = onExportPatch == null ? p -> {} : onExportPatch;
+    }
+
+    /** Records the source format of the sides as displayed now (after any swap); see {@link SideFormat}. */
+    public void setSideFormats(SideFormat left, SideFormat right) {
+        leftFormat = left == null ? SideFormat.DEFAULT : left;
+        rightFormat = right == null ? SideFormat.DEFAULT : right;
+    }
+
+    /** The current export request: the displayed sides, their {@code a/}/{@code b/} labels and formats. */
+    public PatchRequest patchRequest() {
+        return new PatchRequest("a/" + leftName, "b/" + rightName, leftText, rightText, leftFormat, rightFormat);
     }
 
     public void setOnOptionsChanged(java.util.function.Consumer<DiffEngine.DiffOptions> listener) {
@@ -444,12 +489,19 @@ public final class DiffViewerPane implements TabContent {
         }
     }
 
+    /** Lets the Undo button check that the target still has something to undo before it counts one. */
+    public void setUndoAvailable(java.util.function.BooleanSupplier available) {
+        undoAvailable = available == null ? () -> true : available;
+    }
+
     /** Enables document/index mutation only while both fetched sides are exact source text. */
     public void setMutationAllowed(boolean allowed) {
         if (mutationAllowed == allowed) {
             return;
         }
         mutationAllowed = allowed;
+        // A binary or oversized side is shown as a one-line description; a patch of that is not a patch.
+        exportButton.setDisable(!allowed);
         boolean editable = canMutate();
         for (Button b : new Button[] {applyAllButton, undoButton, saveButton}) {
             b.setVisible(editable);
@@ -479,9 +531,69 @@ public final class DiffViewerPane implements TabContent {
                 && model.quality() != com.editora.diff.DiffModels.Quality.METADATA_ONLY;
     }
 
-    /** Re-fetches both sides and re-renders if they changed (no-op when content is identical). */
+    /**
+     * Re-fetches both sides and re-renders if they changed (no-op when content is identical). A pane nobody
+     * can see — an unselected tab, a file of a review that is not the one shown — only notes that it is out
+     * of date and catches up when it is shown: every focus regain, file-watcher batch and apply refreshes
+     * every open diff, and a review of 200 files used to answer each with 200 blob reads.
+     */
     public void refresh() {
+        if (!isShown()) {
+            refreshPending = true;
+            awaitShown();
+            return;
+        }
+        refreshPending = false;
         refresher.run();
+    }
+
+    /** Whether a refresh was skipped while the pane was hidden and has not run yet. */
+    public boolean isRefreshPending() {
+        return refreshPending;
+    }
+
+    private boolean isShown() {
+        if (root.getScene() == null) {
+            return false;
+        }
+        for (Node node = root; node != null; node = node.getParent()) {
+            if (!node.isVisible()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Runs the pending refresh once whatever hides the pane (no scene, an invisible ancestor) changes. */
+    private void awaitShown() {
+        if (awaitingShown) {
+            return;
+        }
+        javafx.beans.value.ObservableValue<?> gate = root.sceneProperty();
+        if (root.getScene() != null) {
+            for (Node node = root; node != null; node = node.getParent()) {
+                if (!node.isVisible()) {
+                    gate = node.visibleProperty();
+                    break;
+                }
+            }
+        }
+        awaitingShown = true;
+        javafx.beans.value.ObservableValue<?> watched = gate;
+        watched.addListener(new javafx.beans.InvalidationListener() {
+            @Override
+            public void invalidated(javafx.beans.Observable changed) {
+                watched.removeListener(this);
+                // Later: a node is attached to its parent before the scene reaches it, and a tab's content
+                // turns visible before the selection change has finished.
+                Platform.runLater(() -> {
+                    awaitingShown = false;
+                    if (refreshPending) {
+                        refresh();
+                    }
+                });
+            }
+        });
     }
 
     /** Whether the displayed content already equals {@code l}/{@code r} (so a refresh can skip a rebuild,
@@ -557,6 +669,9 @@ public final class DiffViewerPane implements TabContent {
         String oldLeftName = leftName;
         leftName = rightName;
         rightName = oldLeftName;
+        SideFormat oldLeftFormat = leftFormat;
+        leftFormat = rightFormat;
+        rightFormat = oldLeftFormat;
         String oldLeftHeader = headerLeft;
         headerLeft = headerRight;
         headerRight = oldLeftHeader;
@@ -647,10 +762,8 @@ public final class DiffViewerPane implements TabContent {
         updateSummary();
         Button next = iconButton(Icons.arrowDown(), tr("diff.nextChange"), this::nextChange);
         Button prev = iconButton(Icons.arrowUp(), tr("diff.prevChange"), this::prevChange);
-        exportButton = iconButton(
-                Icons.saveAs(),
-                tr("diff.tooltip.exportPatch"),
-                () -> onExportPatch.accept(patchText("a/" + leftName, "b/" + rightName)));
+        exportButton =
+                iconButton(Icons.saveAs(), tr("diff.tooltip.exportPatch"), () -> onExportPatch.accept(patchRequest()));
         exportButton.setAccessibleText(tr("diff.exportPatch"));
         whitespaceButton.getStyleClass().addAll("flat", "diff-option-button");
         whitespaceButton.setFocusTraversable(false);
@@ -704,14 +817,23 @@ public final class DiffViewerPane implements TabContent {
         // Undo / Save the applied changes (shown only when a side is editable).
         editButton(undoButton, Icons.undo(), tr("diff.undo"), () -> {
             if (unappliedUndoDepth > 0) {
+                if (!undoAvailable.getAsBoolean()) {
+                    // The buffer was closed or its history is gone: there is nothing left to take back.
+                    unappliedUndoDepth = 0;
+                    updateEditButtons();
+                    return;
+                }
                 onUndo.run();
                 unappliedUndoDepth--;
+                // Undoing changes the buffer again: after a Save it is unsaved once more.
+                unsavedApplies = true;
                 updateEditButtons();
             }
         });
         editButton(saveButton, Icons.save(), tr("diff.save"), () -> {
             onSave.run();
-            saveButton.setDisable(true);
+            unsavedApplies = false;
+            updateEditButtons();
         });
         saveButton.getStyleClass().add("success");
         updateEditButtons();
@@ -1243,6 +1365,7 @@ public final class DiffViewerPane implements TabContent {
                 String current = resultArea == null ? text : resultArea.getText();
                 resultDirty = !java.util.Objects.equals(current, text);
                 unappliedUndoDepth++;
+                unsavedApplies = true;
                 resultDiffDelay.stop();
                 onResultEdited.accept(current);
             }
@@ -2214,6 +2337,7 @@ public final class DiffViewerPane implements TabContent {
             applyPending = false;
             if (Boolean.TRUE.equals(applied)) {
                 unappliedUndoDepth++;
+                unsavedApplies = true;
             }
             updateEditButtons();
         });
@@ -2221,7 +2345,7 @@ public final class DiffViewerPane implements TabContent {
 
     private void updateEditButtons() {
         undoButton.setDisable(unappliedUndoDepth <= 0);
-        saveButton.setDisable(unappliedUndoDepth <= 0);
+        saveButton.setDisable(!unsavedApplies);
         applyAllButton.setDisable(resultEditing || applyPending);
     }
 
