@@ -124,6 +124,38 @@ class GitConfirmationsSayWhatIsLostFxTest {
         }
     }
 
+    /** The Project tree's Revert on an untracked folder passes the folder's path, without Git's trailing slash. */
+    @Test
+    void revertingAnUntrackedFolderFromTheProjectTreeIsTheSameFolderDelete(@TempDir Path dir) throws Exception {
+        GitTestRepo repo = GitTestRepo.init(dir);
+        repo.write("tracked.txt", "tracked\n");
+        repo.commitAll("base");
+        Path a = repo.write("scratch/a.txt", "a\n");
+        Path b = repo.write("scratch/deep/b.txt", "b\n");
+        boolean linked = true;
+        try {
+            Files.createSymbolicLink(repo.root.resolve("scratch/link"), Path.of("a.txt"));
+        } catch (java.io.IOException | UnsupportedOperationException noSymlinks) {
+            linked = false;
+        }
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            GitCoordinator coordinator = applyRepo(fx, repo.root, "main");
+            CountDownLatch deleted = watchStatus(fx, tr("status.git.deleted", "scratch"));
+
+            assertEquals(
+                    tr("dialog.discard.untrackedFolder", "scratch", linked ? 3 : 2),
+                    confirmationAfter(() -> coordinator.discardChanges(List.of(), List.of("scratch"))));
+            pressDialog(ButtonBar.ButtonData.OK_DONE);
+            async.await(deleted, "untracked folder delete from the project tree");
+
+            assertFalse(Files.exists(repo.root.resolve("scratch")), "git clean removed the folder");
+            assertDeletedCopy(fx, a, "a\n");
+            assertDeletedCopy(fx, b, "b\n");
+        }
+    }
+
     @Test
     void aSingleUntrackedFileIsAlsoKeptInLocalHistoryBeforeItIsDeleted(@TempDir Path dir) throws Exception {
         GitTestRepo repo = GitTestRepo.init(dir);

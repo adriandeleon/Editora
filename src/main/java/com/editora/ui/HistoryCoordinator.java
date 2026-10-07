@@ -1169,6 +1169,11 @@ final class HistoryCoordinator {
             completion.accept(true);
             return;
         }
+        if (!Files.isRegularFile(files.get(index))) {
+            // A symbolic link, or a file that is already gone: no text for Local History to hold.
+            captureNextBeforeDelete(files, index + 1, completion);
+            return;
+        }
         // One file per FX turn: a folder of them must not hold the UI for the whole batch.
         captureBeforeDeleteDurably(
                 files.get(index),

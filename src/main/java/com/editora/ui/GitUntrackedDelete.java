@@ -1,5 +1,8 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -21,24 +24,37 @@ final class GitUntrackedDelete {
 
     private GitUntrackedDelete() {}
 
-    /** Whether an untracked status row names a folder: Git writes those with a trailing slash. */
-    static boolean isFolder(String pathspec) {
-        return pathspec != null && pathspec.endsWith("/");
+    /**
+     * Whether an untracked pathspec names a folder. Git writes a folder's status row with a trailing slash;
+     * the Project tree's Revert passes the folder's own path, which has none, so the disk is asked too. A
+     * symbolic link to a folder is a single file to {@code git clean}.
+     */
+    static boolean isFolder(Path root, String pathspec) {
+        if (pathspec == null) {
+            return false;
+        }
+        if (pathspec.endsWith("/")) {
+            return true;
+        }
+        try {
+            return root != null && Files.isDirectory(root.resolve(pathspec), LinkOption.NOFOLLOW_LINKS);
+        } catch (InvalidPathException notAPath) {
+            return false;
+        }
     }
 
-    static boolean anyFolder(List<String> pathspecs) {
-        return pathspecs.stream().anyMatch(GitUntrackedDelete::isFolder);
+    /** How many of {@code pathspecs} are folders ({@link #isFolder}). */
+    static int folders(Path root, List<String> pathspecs) {
+        return (int) pathspecs.stream().filter(spec -> isFolder(root, spec)).count();
     }
 
     /**
-     * The confirmation for deleting {@code untracked} rows of which at least one is a folder, together with
-     * discarding {@code tracked} tracked files (0 for none). {@code files} are the files Git lists under the
-     * rows; {@code historyOn} says whether Local History will keep copies, so the text can say when it will
-     * not keep all of them.
+     * The confirmation for deleting {@code untracked} rows of which {@code folders} (at least one) are
+     * folders, together with discarding {@code tracked} tracked files (0 for none). {@code files} are the
+     * files Git lists under the rows; {@code historyOn} says whether Local History will keep copies, so the
+     * text can say when it will not keep all of them.
      */
-    static String prompt(int tracked, List<String> untracked, List<String> files, boolean historyOn) {
-        int folders =
-                (int) untracked.stream().filter(GitUntrackedDelete::isFolder).count();
+    static String prompt(int tracked, List<String> untracked, int folders, List<String> files, boolean historyOn) {
         String text;
         if (tracked > 0) {
             text = tr("dialog.discard.mixedWithFolders", tracked, files.size(), folders);

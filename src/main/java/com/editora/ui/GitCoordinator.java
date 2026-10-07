@@ -780,7 +780,8 @@ final class GitCoordinator {
             return;
         }
         List<String> untracked = discard.untracked();
-        if (GitUntrackedDelete.anyFolder(untracked)) {
+        int folders = GitUntrackedDelete.folders(root, untracked);
+        if (folders > 0) {
             // Git shows a wholly untracked folder as one row; ask it what deleting that row removes.
             service.untrackedFiles(root, untracked, files -> {
                 if (files == null) {
@@ -789,7 +790,7 @@ final class GitCoordinator {
                 }
                 boolean historyOn = host.settings().isLocalHistory() && !host.simpleModeActive();
                 String prompt = GitUntrackedDelete.prompt(
-                        discard.worktree().size() + discard.head().size(), untracked, files, historyOn);
+                        discard.worktree().size() + discard.head().size(), untracked, folders, files, historyOn);
                 confirmAndDiscard(root, discard, prompt, GitUntrackedDelete.captures(root, files));
             });
             return;

@@ -1,5 +1,6 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,6 +9,7 @@ import com.editora.git.GitService.LeftBehind;
 import com.editora.i18n.Messages;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,25 +27,32 @@ class GitLossWarningsTest {
     // --- untracked folders (V5) ---------------------------------------------------------------------------
 
     @Test
-    void anUntrackedFolderRowIsNamedAFolderWithItsFileCount() {
-        assertTrue(GitUntrackedDelete.isFolder("newdir/"));
-        assertFalse(GitUntrackedDelete.isFolder("newdir"));
-        assertFalse(GitUntrackedDelete.anyFolder(List.of("a.txt", "b.txt")));
+    void anUntrackedFolderRowIsNamedAFolderWithItsFileCount(@TempDir Path root) throws Exception {
+        Files.createDirectories(root.resolve("fromtree/sub"));
+        Files.writeString(root.resolve("plain.txt"), "x");
+        assertTrue(GitUntrackedDelete.isFolder(root, "newdir/"), "a status row for a folder ends in a slash");
+        assertTrue(GitUntrackedDelete.isFolder(root, "fromtree"), "the Project tree passes the folder's own path");
+        assertTrue(GitUntrackedDelete.isFolder(root, "fromtree/sub"));
+        assertFalse(GitUntrackedDelete.isFolder(root, "plain.txt"));
+        assertFalse(GitUntrackedDelete.isFolder(root, "gone.txt"));
+        assertEquals(2, GitUntrackedDelete.folders(root, List.of("newdir/", "plain.txt", "fromtree")));
+        assertEquals(0, GitUntrackedDelete.folders(root, List.of("plain.txt", "gone.txt")));
 
         assertEquals(
                 "Delete untracked folder \"newdir/\" and the 3 files in it? This cannot be undone.",
-                GitUntrackedDelete.prompt(0, List.of("newdir/"), List.of("newdir/a", "newdir/b", "newdir/s/c"), true));
+                GitUntrackedDelete.prompt(
+                        0, List.of("newdir/"), 1, List.of("newdir/a", "newdir/b", "newdir/s/c"), true));
         assertEquals(
                 "Delete untracked folder \"one/\" and the 1 file in it? This cannot be undone.",
-                GitUntrackedDelete.prompt(0, List.of("one/"), List.of("one/a"), true));
+                GitUntrackedDelete.prompt(0, List.of("one/"), 1, List.of("one/a"), true));
         assertEquals(
                 "Delete 4 untracked files, including everything in 2 untracked folders? This cannot be undone.",
                 GitUntrackedDelete.prompt(
-                        0, List.of("a/", "b/", "c.txt"), List.of("a/1", "a/2", "b/1", "c.txt"), true));
+                        0, List.of("a/", "b/", "c.txt"), 2, List.of("a/1", "a/2", "b/1", "c.txt"), true));
         assertEquals(
                 "Discard changes to 2 tracked files and delete 3 untracked files, including everything in 1 untracked"
                         + " folder? This cannot be undone.",
-                GitUntrackedDelete.prompt(2, List.of("a/", "c.txt"), List.of("a/1", "a/2", "c.txt"), true));
+                GitUntrackedDelete.prompt(2, List.of("a/", "c.txt"), 1, List.of("a/1", "a/2", "c.txt"), true));
     }
 
     @Test
@@ -52,17 +61,17 @@ class GitLossWarningsTest {
         for (int i = 0; i < GitUntrackedDelete.MAX_HISTORY_CAPTURES + 5; i++) {
             many.add("gen/f" + i + ".txt");
         }
-        Path root = Path.of("/repo");
+        Path root = Path.of("repo").toAbsolutePath();
         List<Path> captured = GitUntrackedDelete.captures(root, many);
         assertEquals(GitUntrackedDelete.MAX_HISTORY_CAPTURES, captured.size());
         assertEquals(root.resolve("gen/f0.txt"), captured.get(0));
 
         String limit = tr("dialog.discard.historyLimit", GitUntrackedDelete.MAX_HISTORY_CAPTURES);
-        assertTrue(GitUntrackedDelete.prompt(0, List.of("gen/"), many, true).endsWith("\n\n" + limit));
+        assertTrue(GitUntrackedDelete.prompt(0, List.of("gen/"), 1, many, true).endsWith("\n\n" + limit));
         assertFalse(
-                GitUntrackedDelete.prompt(0, List.of("gen/"), many, false).contains(limit),
+                GitUntrackedDelete.prompt(0, List.of("gen/"), 1, many, false).contains(limit),
                 "nothing is kept with Local History off, so no promise about it is made");
-        assertFalse(GitUntrackedDelete.prompt(0, List.of("gen/"), many.subList(0, 3), true)
+        assertFalse(GitUntrackedDelete.prompt(0, List.of("gen/"), 1, many.subList(0, 3), true)
                 .contains(limit));
     }
 
