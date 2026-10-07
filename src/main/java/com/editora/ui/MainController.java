@@ -6973,6 +6973,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                     config.getWorkspaceState().setHttpEnvironment(env);
                     config.save();
                 }
+
+                @Override
+                public HistoryCoordinator history() {
+                    return historyCoordinator;
+                }
             });
 
     // --- AI Agent (an embedded ACP agent — Claude Code etc. — in the chat tool window) -------------

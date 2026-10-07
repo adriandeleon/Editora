@@ -1110,6 +1110,62 @@ final class HistoryCoordinator {
         }
     }
 
+    /**
+     * What {@link #captureBeforeOverwriteDurably} found: {@code safe} when the file may be replaced,
+     * {@code recorded} when its content is now a durable history revision, and the exact bytes that were read
+     * (null when the file is too large to hold) so the caller can replace only an unchanged file.
+     */
+    record OverwriteCapture(boolean safe, boolean recorded, byte[] expectedBytes) {
+        OverwriteCapture {
+            expectedBytes = expectedBytes == null ? null : expectedBytes.clone();
+        }
+    }
+
+    /**
+     * Captures a regular file immediately before something outside the editor's own save path replaces it
+     * (an HTTP {@code >>!} response redirect), and acknowledges only once the revision is durable. Mirrors
+     * {@link #captureBeforeDeleteDurably}: binary and oversized files, and every file while the feature is
+     * off, are outside Local History's contract — they are reported as safe to replace but not recorded, so
+     * the caller can say so. A file that could not be read, or a revision that could not be stored, is not
+     * safe to replace.
+     */
+    void captureBeforeOverwriteDurably(Path file, Consumer<OverwriteCapture> completion) {
+        Objects.requireNonNull(completion, "completion");
+        if (file == null) {
+            completion.accept(new OverwriteCapture(false, false, null));
+            return;
+        }
+        if (!com.editora.vfs.Vfs.isLocal(file)) {
+            completion.accept(new OverwriteCapture(true, false, null)); // history is local-only by contract
+            return;
+        }
+        try {
+            if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                completion.accept(new OverwriteCapture(false, false, null));
+                return;
+            }
+            if (Files.size(file) > EditorBuffer.LARGE_FILE_BYTES) {
+                completion.accept(new OverwriteCapture(true, false, null));
+                return;
+            }
+            byte[] bytes = Files.readAllBytes(file);
+            if (!isEnabled() || com.editora.diff.BinaryDiff.isProbablyBinary(bytes)) {
+                completion.accept(new OverwriteCapture(true, false, bytes));
+                return;
+            }
+            String text = LineEndings.toLf(decodeCaptured(bytes, charsetRuleFor(file)));
+            recordFor(
+                    file,
+                    text,
+                    HistoryRevision.REASON_EXTERNAL,
+                    "",
+                    false,
+                    durable -> onFx(() -> completion.accept(new OverwriteCapture(durable, durable, bytes))));
+        } catch (IOException | RuntimeException failure) {
+            completion.accept(new OverwriteCapture(false, false, null));
+        }
+    }
+
     /** Restores {@code revision}'s content into the active file via an undoable whole-file replace. */
     CompletableFuture<RestoreResult> restoreHistory(HistoryRevision revision) {
         CompletableFuture<RestoreResult> completion = new CompletableFuture<>();

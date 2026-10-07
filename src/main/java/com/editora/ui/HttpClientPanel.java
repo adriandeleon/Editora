@@ -309,6 +309,9 @@ public final class HttpClientPanel extends VBox {
         for (String w : r.warnings()) {
             head.append("⚠  ").append(w).append('\n'); // an unsent header, a truncated body, a missing file…
         }
+        for (String w : r.written()) {
+            head.append("→  ").append(w).append('\n'); // the files a ">>" redirect created or replaced
+        }
         if (r.failed()) {
             head.append("⚠  ").append(r.error());
         } else {

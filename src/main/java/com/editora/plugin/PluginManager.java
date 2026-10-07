@@ -74,6 +74,10 @@ public final class PluginManager {
                 LOG.log(Level.WARNING, "Failed to list plugins dir " + pluginsDir, e);
             }
             for (Path dir : dirs) {
+                String folder = dir.getFileName().toString();
+                if (folder.startsWith(".") || PluginInstaller.isReservedId(folder)) {
+                    continue; // an install being staged, or a built-in tool folder (plugins/lsp, …): not a plugin
+                }
                 Path manifestFile = dir.resolve("plugin.json");
                 if (!Files.isRegularFile(manifestFile)) {
                     continue; // not a plugin folder
@@ -172,6 +176,17 @@ public final class PluginManager {
         }
         if (manifest.id == null || manifest.id.isBlank()) {
             manifest.id = dir.getFileName().toString();
+        } else if (!PluginInstaller.isSafeId(manifest.id.strip()) || PluginInstaller.isReservedId(manifest.id)) {
+            // The id is used as a key and, historically, as a path under the plugins folder: "..", an absolute
+            // path or a built-in folder name must never get that far. The folder is listed (so it can be seen
+            // and removed) under its own name, and nothing from it is loaded.
+            String declared = manifest.id;
+            manifest.id = dir.getFileName().toString();
+            if (manifest.name == null || manifest.name.isBlank()) {
+                manifest.name = manifest.id;
+            }
+            return new PluginDescriptor(
+                    manifest, dir, false, null, "Invalid plugin id in plugin.json: \"" + declared + "\"");
         }
         boolean enabled = isEnabled.test(manifest.id);
         ClassLoader loader = null;

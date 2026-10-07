@@ -1648,7 +1648,8 @@ final class DiffCoordinator {
                 return;
             }
             try {
-                Files.write(
+                // Staged: a failed write must not empty a patch the Save dialog agreed to replace.
+                com.editora.io.StagedExport.write(
                         f.toPath(),
                         patchBytes(
                                 patch,
