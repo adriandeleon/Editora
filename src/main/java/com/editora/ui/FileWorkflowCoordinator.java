@@ -928,13 +928,15 @@ final class FileWorkflowCoordinator {
         }
         if (load.log()) {
             host.logViewer().recordLoadOffset(buffer, load.logOffset());
+        } else if (!load.truncated()) {
+            host.logViewer().sniffLoaded(buffer, load.content()); // a log its name does not announce
         }
         if (load.truncated()) {
-            return load.file().getFileName()
-                    + (load.tail() ? " — very large log (" : " — very large file (")
-                    + StatusBar.formatSize(load.size())
-                    + (load.tail() ? "): read-only, showing last " : "): read-only, showing first ")
-                    + StatusBar.formatSize(load.content().length());
+            return tr(
+                    load.tail() ? "status.load.hugeLog" : "status.load.hugeFile",
+                    load.file().getFileName(),
+                    StatusBar.formatSize(load.size()),
+                    StatusBar.formatSize(load.content().length()));
         }
         if (load.charsetAssumed()) {
             return tr(
@@ -1020,6 +1022,9 @@ final class FileWorkflowCoordinator {
         Path file = buffer.getPath();
         if (com.editora.vfs.Vfs.isRemote(file)) {
             return; // remote (SFTP) mtime polling would be a network call per focus — skipped for now
+        }
+        if (buffer.isLogFollowing()) {
+            return; // the follow is what is reading the file's changes; "reload?" would ask about each of them
         }
         if (!verifyingExternalChange.add(buffer)) {
             return; // a check of this buffer is already on its way back

@@ -18,8 +18,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   command had finished. While one runs, the tab's Stop button (or the new `Git: Cancel Running Command`)
   cancels it.
 
+- The log viewer's controls are now a bar above the log instead of a box floating over its first two
+  lines. The bar shows how many lines a filter is showing ("65 of 185 lines"), the Follow button is
+  labelled, the level list includes Fatal, and all three controls can be reached with Tab. A new
+  `Log: Focus Filter` command puts the keyboard in the filter field; Escape returns to the log.
+- A log filter now keeps or hides whole records. A pattern that matches any line of a record shows all of
+  it, so an exception appears with the line that says what failed, and a matched ERROR line keeps its
+  stack trace. Filtered lines keep their real line numbers.
+- More files open as logs: rotated logs (`app.log.1`, `app.log.2026-10-06`), `access_log` / `error_log`,
+  `syslog`, `catalina.out`, `nohup.out`, and files such as `server.out` or an extensionless file in
+  `/var/log` whose content looks like a log. `Log: View as Log` is now a toggle.
+- More log formats get level colours: .NET (`info:`, `warn:`, `fail:`), a lowercase level after a
+  timestamp, syslog `error:` prefixes, klog (Kubernetes), pino/bunyan numeric levels, and a JSON level
+  key anywhere in the line. `Log: Next Error` is renamed `Log: Next Warning or Error`, which is what it does.
+- Following a log no longer drops the top of a large one: the 12 MB limit now applies to what the follow
+  adds, not to what was already open.
+
 ### Fixed
 
+- Following a log through a pattern filter no longer joins lines together (`ERROR bERROR c`), and a line
+  written in two parts is no longer missed by the filter.
+- Pausing and resuming Follow no longer skips the lines written in between, and turning Follow on no
+  longer skips lines written since the file was opened.
+- A log that is being followed no longer raises "File Changed on Disk" every time the window regains
+  focus.
+- Follow now survives log rotation. It waits while the file is missing and reads the new file from its
+  start; before, it stopped with an error that showed only the file's path.
+- New lines in a followed log no longer move the caret, drop the selection, or pull the view to the end
+  while you are reading further up.
+- Applying or clearing a log filter keeps you on the line you were on instead of jumping to the end.
+- Filtering a large log no longer freezes the window while the filter runs, and pressing Enter in the
+  filter field no longer applies the filter twice.
+- A level or pattern set from the command palette now shows in the log's controls, and is no longer
+  dropped by the next change made there.
+- In a filtered log, stack-trace lines are tinted with their own record's level, not the level of
+  whichever line the filter left above them.
+- Undo no longer removes the newest lines of a followed log.
+- Followed text is decoded with the file's own encoding (it was always read as UTF-8), and Windows line
+  endings no longer stop `$` from matching.
+- With word wrap on, the level tint covers every row of a wrapped line, not only the first. The tints
+  are now derived from the editor theme, so they are visible on dark themes.
+- A filter pattern that is not a valid regular expression is marked as being matched as plain text.
+- Stack-trace lines such as `at com.example.ERROR_CODES.lookup(...)` are no longer mistaken for ERROR
+  records.
 - An exported patch now applies to a file with Windows (CRLF) line endings. The diff viewer compares text
   with plain line feeds, and the patch was written from that text, so Git rejected it for a CRLF file.
   Each side's own line ending is put back, and a Latin-1 / Windows-1252 file's patch is written in that

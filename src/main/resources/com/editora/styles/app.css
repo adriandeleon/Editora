@@ -908,20 +908,33 @@
 .html-preview-toggle:hover { -fx-opacity: 1; }
 .html-preview-toggle:hover .toolbar-icon { -fx-fill: -color-accent-fg; }
 
-/* Floating log-viewer control (Follow / level / regex), top-right of a .log editor. */
+/* The log viewer's control bar (Follow / level / pattern / what is showing), docked above a log's text.
+   A bar of its own, not a control floating over the corner: log lines are the longest the editor shows. */
 .log-controls {
     -fx-background-color: -color-bg-subtle;
-    -fx-border-color: -color-border-default;
-    -fx-border-radius: 4;
-    -fx-background-radius: 4;
-    -fx-padding: 2 4 2 4;
-    -fx-opacity: 0.94;
+    -fx-border-color: transparent transparent -color-border-muted transparent;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 3 12 3 8;
+    -fx-spacing: 6;
 }
-.log-controls:hover { -fx-opacity: 1; }
+/* One height for the three controls: they are a row, and three different heights read as three widgets. */
+.log-controls .log-follow,
+.log-controls .log-level-combo,
+.log-controls .log-filter-field {
+    -fx-min-height: 26;
+    -fx-pref-height: 26;
+    -fx-max-height: 26;
+    -fx-font-size: 12px;
+}
+.log-controls .log-follow { -fx-padding: 0 10 0 6; -fx-graphic-text-gap: 4; }
 .log-controls .log-follow .toolbar-icon { -fx-fill: -color-fg-muted; }
-.log-controls .log-follow:selected { -fx-background-color: -color-accent-muted; }
+.log-controls .log-follow:selected { -fx-background-color: -color-accent-muted; -fx-text-fill: -color-accent-fg; }
 .log-controls .log-follow:selected .toolbar-icon { -fx-fill: -color-accent-fg; }
-.log-controls .log-filter-field { -fx-font-size: 11px; }
+.log-controls .log-level-combo .list-cell { -fx-font-size: 12px; -fx-padding: 0 4 0 6; }
+.log-controls .log-filter-field { -fx-pref-width: 320; -fx-max-width: 480; -fx-padding: 0 8 0 8; }
+/* Not a valid regular expression: it still filters, as plain text. */
+.log-controls .log-filter-field:literal { -fx-border-color: -color-warning-emphasis; -fx-border-radius: 4; }
+.log-controls .log-state { -fx-text-fill: -color-fg-muted; -fx-font-size: 12px; }
 
 /* The preview's −/+ zoom control (top-left of the preview pane). */
 .md-zoom {

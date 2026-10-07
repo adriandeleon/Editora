@@ -681,6 +681,10 @@ public class EditorBuffer implements TabContent {
 
     private final FoldManager folds = new FoldManager(area, this::documentTextSnapshot);
 
+    {
+        folds.setLineNumbers(logView::lineNumberAt, logView::lineNumberSpan); // a filtered log keeps its numbers
+    }
+
     /** Pinned enclosing-scope headers over the top of the code pane; see {@link StickyScroll}. */
     private final StickyScrollBar stickyScroll = new StickyScrollBar();
 
@@ -2681,7 +2685,19 @@ public class EditorBuffer implements TabContent {
 
     private LogHighlightOverlay logOverlay() {
         if (logOverlay == null) {
-            logOverlay = attachLazyOverlay(new LogHighlightOverlay(area), whitespace);
+            logOverlay = attachLazyOverlay(
+                    new LogHighlightOverlay(area, new LogHighlightOverlay.LevelSource() {
+                        @Override
+                        public boolean filtered() {
+                            return logView.filtered();
+                        }
+
+                        @Override
+                        public LogLevel levelAt(int paragraph) {
+                            return logView.levelAt(paragraph);
+                        }
+                    }),
+                    whitespace);
         }
         return logOverlay;
     }
@@ -4647,7 +4663,12 @@ public class EditorBuffer implements TabContent {
         return "log".equals(language) || logViewForced;
     }
 
-    /** Forces (or clears) log-viewer mode on a buffer whose extension isn't {@code .log}; rebuilds the host. */
+    /** Whether this buffer is shown as a log by request ("View as Log", or its content) rather than by name. */
+    public boolean isLogViewForced() {
+        return logViewForced;
+    }
+
+    /** Forces (or clears) log-viewer mode on a buffer whose name isn't a log's; rebuilds the host. */
     public void setLogViewForced(boolean forced) {
         if (this.logViewForced == forced) {
             return;
@@ -4656,13 +4677,14 @@ public class EditorBuffer implements TabContent {
         rebuildViewHost();
     }
 
-    /** Overlays the log control (Follow / level / regex) top-right of the code pane; {@code null} removes it. */
+    /**
+     * Docks the log control (Follow / level / pattern) above the text; {@code null} removes it. It is a bar of
+     * its own rather than a control floating in the corner: log lines are the longest lines the editor shows,
+     * and a floating control sat on top of the end of the first two.
+     */
     public void setLogControl(Node control) {
-        if (logControl != null && logControl != control) {
-            removeCornerControl(logControl);
-        }
         this.logControl = control;
-        rebuildViewHost();
+        refreshTopBars();
     }
 
     /** Whether the floating log control is currently attached. */
@@ -4941,7 +4963,7 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** Whether a level/regex filter is currently narrowing the visible lines. */
+    /** Whether a level/pattern filter is currently narrowing the visible lines. */
     public boolean isLogFiltered() {
         return logView.filtered();
     }
@@ -4961,17 +4983,62 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * Narrows the visible lines to those at or above {@code minLevel} that match {@code regex};
-     * {@code null}/{@code null} clears the filter. {@link #getContent()} stays the whole log throughout.
+     * Narrows the visible lines to the records at or above {@code minLevel} that match {@code pattern} (a
+     * regular expression, or plain text when it is not a valid one); {@code null}/{@code null} clears the
+     * filter. {@link #getContent()} stays the whole log throughout.
      */
-    public void applyLogFilter(LogLevel minLevel, java.util.regex.Pattern regex) {
+    public void applyLogFilter(LogLevel minLevel, String pattern) {
         widen(); // the filter is derived from the area, which must therefore be the whole document
-        logView.applyFilter(minLevel, regex);
+        logView.applyFilter(minLevel, pattern);
+    }
+
+    /** Whether {@code minLevel}/{@code pattern} is the filter already showing. */
+    public boolean showsLogFilter(LogLevel minLevel, String pattern) {
+        return logView.showsFilter(minLevel, pattern);
+    }
+
+    /**
+     * The text a log filter is computed from, and {@link #logFilterEpoch()} the token to hand back with the
+     * result: a large log is filtered off the FX thread, and {@link #installLogFilter} takes the result only
+     * if the text has done nothing but grow since.
+     */
+    public String logFilterSource() {
+        widen();
+        return logView.filterSource();
+    }
+
+    public int logFilterEpoch() {
+        return logView.epoch();
+    }
+
+    /** Shows a filter computed from {@link #logFilterSource()}; false (and no change) when it is stale. */
+    public boolean installLogFilter(
+            com.editora.logviewer.LogFilter.Run run, int epoch, LogLevel minLevel, String pattern) {
+        return logView.install(run, epoch, minLevel, pattern);
     }
 
     /** The current level floor of the active filter (null when unfiltered or no floor). */
     public LogLevel getLogMinLevel() {
         return logView.minLevel();
+    }
+
+    /** The pattern of the active filter as typed (null when unfiltered or no pattern). */
+    public String getLogPattern() {
+        return logView.query();
+    }
+
+    /** Lines the active filter shows, and lines in the whole log. Only meaningful while {@link #isLogFiltered()}. */
+    public int logVisibleLines() {
+        return logView.visibleLines();
+    }
+
+    public int logTotalLines() {
+        return logView.totalLines();
+    }
+
+    /** Runs when the log view's counts, follow or trimmed state change (the log control shows them). */
+    public void setOnLogStateChanged(Runnable listener) {
+        logView.setOnStateChanged(listener);
     }
 
     /** Appends {@code text} read from the file's tail (filtered when a filter is active); never dirties. */
@@ -4982,6 +5049,11 @@ public class EditorBuffer implements TabContent {
     /** Replaces the whole buffer with {@code fullText} (e.g. on log rotation), keeping any active filter. */
     public void resetLogContent(String fullText) {
         logView.reset(fullText);
+    }
+
+    /** The charset the file was decoded with — what text read from its tail must be decoded with too. */
+    public java.nio.charset.Charset logCharset() {
+        return com.editora.editorconfig.EditorConfigCharset.charsetFor(detectedCharset);
     }
 
     /** Injects the debounced HTML-edit listener (fires the live-preview reload); {@code null} disables it. */
@@ -6382,7 +6454,6 @@ public class EditorBuffer implements TabContent {
     private void detachViewModeControl() {
         removeCornerControl(viewModeControl);
         removeCornerControl(htmlPreviewControl);
-        removeCornerControl(logControl);
     }
 
     private void removeCornerControl(Node control) {
@@ -6406,7 +6477,6 @@ public class EditorBuffer implements TabContent {
     private void attachControlToCodePane() {
         placeCornerControl(markdownViewMode == MarkdownViewMode.EDITOR ? viewModeControl : null);
         placeCornerControl(htmlPreviewControl);
-        placeCornerControl(logControl);
         placeStickyScroll();
     }
 
@@ -6585,7 +6655,9 @@ public class EditorBuffer implements TabContent {
 
     /** The document's fixed-size undo history (bounded, so it can't grow without limit), shared by both views. */
     private UndoManager<?> boundedUndoManager() {
-        return CompletionUndoFactory.forDocument(area, () -> focusedArea, UNDO_HISTORY, UndoMerge.PAUSE);
+        // A followed log's new lines are not edits: they stay out of the history (see LogView#adjusting).
+        return CompletionUndoFactory.forDocument(
+                area, () -> focusedArea, UNDO_HISTORY, UndoMerge.PAUSE, logView::adjusting);
     }
 
     /** Ends the current undo group at a word/line boundary (see {@link UndoMerge}); no-op for huge files. */
@@ -8038,8 +8110,10 @@ public class EditorBuffer implements TabContent {
             // through the elevated write.
             boolean adminOffer = !canEdit && adminEditAvailable;
             enableEditingButton.setText(tr(adminOffer ? "viewmode.editAsAdmin" : "viewmode.enableEditing"));
-            enableEditingButton.setVisible(canEdit || adminOffer);
-            enableEditingButton.setManaged(canEdit || adminOffer);
+            // A filtered log is a read-only subset whatever the mode: offering to edit it would do nothing.
+            boolean offer = (canEdit || adminOffer) && !logView.filtered();
+            enableEditingButton.setVisible(offer);
+            enableEditingButton.setManaged(offer);
             viewModeNote.setVisible(!canEdit && !adminOffer);
             viewModeNote.setManaged(!canEdit && !adminOffer);
         }
@@ -8050,12 +8124,15 @@ public class EditorBuffer implements TabContent {
     /** Puts the active top bars into {@code outer.setTop}: the install banner above the view-mode banner
      *  (a {@code VBox} when both show), or {@code null} when neither does. */
     private void refreshTopBars() {
-        java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(2);
+        java.util.List<javafx.scene.Node> bars = new java.util.ArrayList<>(3);
         if (installBarShown && installBar != null) {
             bars.add(installBar);
         }
         if (viewModeBarVisible && viewModeBar != null) {
             bars.add(viewModeBar);
+        }
+        if (logControl != null) {
+            bars.add(logControl);
         }
         if (bars.isEmpty()) {
             outer.setTop(null);

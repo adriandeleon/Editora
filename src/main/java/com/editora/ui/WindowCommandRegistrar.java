@@ -867,6 +867,7 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("log.viewAsLog", host.logViewer()::viewAsLog));
         host.registry().register(Command.of("log.setLevelFilter", host.logViewer()::setLevelFilter));
         host.registry().register(Command.of("log.setRegexFilter", host.logViewer()::setRegexFilter));
+        host.registry().register(Command.of("log.focusFilter", host.logViewer()::focusFilter));
         host.registry().register(Command.of("log.clearFilter", host.logViewer()::clearFilter));
         host.registry().register(Command.of("log.nextError", host.logViewer()::jumpToNextError));
         host.registry().register(Command.of("log.previousError", host.logViewer()::jumpToPreviousError));

@@ -488,7 +488,7 @@ public final class FoldManager {
         // line number is now set directly (no live binding), re-pad the visible rows when that width
         // changes — i.e. the count crossed a power of 10. Runs only on this debounced recompute, not per
         // keystroke; offscreen rows get the right width when they're next built.
-        int d = digits(total);
+        int d = digits(lineCount());
         if (d != lastLineDigits) {
             lastLineDigits = d;
             repadVisibleLineNumbers(total);
@@ -598,6 +598,27 @@ public final class FoldManager {
     }
 
     /** Recreates the visible rows' gutter graphics so their line numbers re-pad to a new digit width. */
+    /** {@code -1}: the paragraph is its own line number. {@code 0}: the row has none. */
+    private java.util.function.IntUnaryOperator lineNumberAt = paragraph -> -1;
+
+    private java.util.function.IntSupplier lineNumberSpan = () -> -1;
+
+    /**
+     * Line numbers that are not simply the paragraph's position: a filtered log shows a subset of its lines,
+     * and each keeps the number it has in the whole log. {@code numberAt} answers {@code -1} for "this
+     * paragraph's own position" and {@code 0} for "no number"; {@code span} is the largest number to make
+     * room for ({@code -1}: the paragraph count).
+     */
+    void setLineNumbers(java.util.function.IntUnaryOperator numberAt, java.util.function.IntSupplier span) {
+        lineNumberAt = numberAt;
+        lineNumberSpan = span;
+    }
+
+    private int lineCount() {
+        int span = lineNumberSpan.getAsInt();
+        return span < 0 ? area.getParagraphs().size() : Math.max(span, 1);
+    }
+
     private void repadVisibleLineNumbers(int total) {
         recreateVisibleGutter(area, null, total);
         CodeArea second = secondView.get();
@@ -1387,7 +1408,7 @@ public final class FoldManager {
      * that begin a foldable region. Clicking the chevron toggles that region.
      */
     public IntFunction<Node> gutterFactory(boolean showLineNumbers) {
-        lastLineDigits = digits(area.getParagraphs().size());
+        lastLineDigits = digits(lineCount());
         return idx -> buildGutter(idx, showLineNumbers);
     }
 
@@ -1530,7 +1551,11 @@ public final class FoldManager {
             // on every scroll (a layout-forced scroll sweep over README.md was ~12-21% faster without it).
             // Padding re-pads via repadVisibleLineNumbers() only when the digit width of the line count
             // actually changes (a power-of-10 crossing — rare), not per row.
-            lineNo.setText(formatLineNo(idx + 1, area.getParagraphs().size()));
+            int number = lineNumberAt.applyAsInt(idx);
+            lineNo.setText(
+                    number == 0
+                            ? " ".repeat(digits(lineCount()))
+                            : formatLineNo(number < 0 ? idx + 1 : number, lineCount()));
             box.getChildren().add(lineNo);
         }
 

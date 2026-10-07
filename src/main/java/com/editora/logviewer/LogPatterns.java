@@ -18,16 +18,25 @@ public final class LogPatterns {
     /** Only the leading slice of a line is scanned for a level token (frameworks front-load it). */
     private static final int LEVEL_SCAN_PREFIX = 96;
 
-    private static final String LEVEL_WORDS = "TRACE|TRC|FINEST|FINER|VERBOSE|DEBUG|DBG|FINE|CONFIG"
-            + "|INFO(?:RMATION)?|INF|NOTICE|WARN(?:ING)?|WRN|ERROR|ERR|SEVERE|FAIL(?:URE)?"
-            + "|FATAL|FTL|CRIT(?:ICAL)?|ALERT|EMERG(?:ENCY)?|PANIC|PNC";
+    /** A JSON record is one object per line with its keys in any order, so the level may sit anywhere in it. */
+    private static final int JSON_SCAN_LIMIT = 4096;
+
+    private static final String LEVEL_WORDS = LogLevel.wordAlternation();
+
+    private static final String TIMESTAMP = "(?:\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}"
+            + "|\\d{2}:\\d{2}:\\d{2}"
+            + "|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2})";
 
     /**
      * An UPPERCASE level keyword as a standalone token (case-sensitive on purpose). Real logs emit the
      * level in upper case — matching case-insensitively would colour the lowercase word "error" inside an
-     * ordinary message/prose line. Lowercase levels are still recognized when bracketed or key=value (below).
+     * ordinary message/prose line. Lowercase levels are recognized only in the positions below.
+     *
+     * <p>A word that is part of an identifier or a file name is not a level: {@code ERROR_CODES},
+     * {@code com.example.ERROR}, {@code CONFIG.java}.
      */
-    private static final Pattern LEVEL_UPPER = Pattern.compile("(?<![A-Za-z])(?:" + LEVEL_WORDS + ")(?![A-Za-z])");
+    private static final Pattern LEVEL_UPPER =
+            Pattern.compile("(?<![A-Za-z0-9_.$])(?:" + LEVEL_WORDS + ")(?![A-Za-z0-9_])(?!\\.[A-Za-z])");
 
     /** A bracketed level, any case — nginx ({@code [error]}), many C/Go loggers ({@code [warn]}). */
     private static final Pattern LEVEL_BRACKETED = Pattern.compile("(?i)\\[\\s*(" + LEVEL_WORDS + ")\\s*\\]");
@@ -36,14 +45,34 @@ public final class LogPatterns {
     private static final Pattern LEVEL_KEYVALUE =
             Pattern.compile("(?i)\"?(?:level|lvl|severity|levelname)\"?\\s*[=:]\\s*\"?(" + LEVEL_WORDS + ")");
 
+    /** pino / bunyan: {@code "level":50} — 10 trace, 20 debug, 30 info, 40 warn, 50 error, 60 fatal. */
+    private static final Pattern LEVEL_NUMERIC = Pattern.compile("\"level\"\\s*:\\s*(\\d{2})\\b");
+
+    /**
+     * A level of any case that opens the line: after a timestamp ({@code 2026-10-06T12:00:00Z error …}), or as
+     * the first word followed by a colon ({@code info: …} — .NET, and most command-line tools' {@code error:}).
+     * Without the colon a first word is not enough: "Note the …" and "Fail fast …" are prose.
+     */
+    private static final Pattern LEVEL_LEADING = Pattern.compile("(?i)^\\s*(?:\\[?" + TIMESTAMP
+            + "[.,\\d]*(?:Z|[+-]\\d{2}:?\\d{2})?\\]?\\s+(" + LEVEL_WORDS + ")(?=[:\\s\\]]|$)"
+            + "|(" + LEVEL_WORDS + ")\\s*:)");
+
+    /** syslog with a message-level prefix: {@code Oct  6 12:00:00 host sshd[123]: error: …}. */
+    private static final Pattern LEVEL_SYSLOG = Pattern.compile(
+            "(?i)^[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}\\s+\\S+\\s+[^:\\s]+:\\s+(" + LEVEL_WORDS + "):");
+
+    /** klog (Kubernetes): the level is the first letter — {@code E1006 12:00:00.000000 1 file.go:1] …}. */
+    private static final Pattern LEVEL_KLOG = Pattern.compile("^([IWEF])\\d{4} \\d{2}:\\d{2}:\\d{2}\\.\\d+\\s");
+
+    /** A stack-trace line: never a record of its own, whatever words its class and file names contain. */
+    private static final Pattern CONTINUATION =
+            Pattern.compile("^(?:\\s+at\\s|\\s*\\.\\.\\. \\d+ |Caused by:|\\s*Suppressed:)");
+
     /** Apache/Nginx combined-log-format-ish request + status: {@code "GET /path HTTP/1.1" 500}. */
     private static final Pattern ACCESS_STATUS = Pattern.compile("\"[A-Z]+ [^\"]*HTTP/\\d(?:\\.\\d)?\"\\s+(\\d{3})\\b");
 
     /** A leading date/time stamp (ISO-8601, {@code yyyy-MM-dd HH:mm:ss}, syslog {@code Mon dd HH:mm:ss}). */
-    private static final Pattern LEADING_TIMESTAMP =
-            Pattern.compile("^\\s*(?:\\[)?(?:\\d{4}[-/]\\d{2}[-/]\\d{2}[ T]\\d{2}:\\d{2}:\\d{2}"
-                    + "|\\d{2}:\\d{2}:\\d{2}"
-                    + "|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2})");
+    private static final Pattern LEADING_TIMESTAMP = Pattern.compile("^\\s*(?:\\[)?" + TIMESTAMP);
 
     private LogPatterns() {}
 
@@ -55,6 +84,18 @@ public final class LogPatterns {
     public static LogLevel levelOf(String line) {
         if (line == null || line.isEmpty()) {
             return null;
+        }
+        if (CONTINUATION.matcher(line).find()) {
+            return null;
+        }
+        Matcher klog = LEVEL_KLOG.matcher(line);
+        if (klog.find()) {
+            return switch (klog.group(1).charAt(0)) {
+                case 'E' -> LogLevel.ERROR;
+                case 'W' -> LogLevel.WARN;
+                case 'F' -> LogLevel.FATAL;
+                default -> LogLevel.INFO;
+            };
         }
         String prefix = line.length() > LEVEL_SCAN_PREFIX ? line.substring(0, LEVEL_SCAN_PREFIX) : line;
         Matcher upper = LEVEL_UPPER.matcher(prefix);
@@ -71,9 +112,38 @@ public final class LogPatterns {
                 return level;
             }
         }
-        Matcher kv = LEVEL_KEYVALUE.matcher(prefix);
+        boolean json = line.charAt(0) == '{';
+        String fields = !json ? prefix : line.length() > JSON_SCAN_LIMIT ? line.substring(0, JSON_SCAN_LIMIT) : line;
+        Matcher kv = LEVEL_KEYVALUE.matcher(fields);
         if (kv.find()) {
             LogLevel level = LogLevel.fromToken(kv.group(1));
+            if (level != null) {
+                return level;
+            }
+        }
+        if (json) {
+            Matcher numeric = LEVEL_NUMERIC.matcher(fields);
+            if (numeric.find()) {
+                int n = Integer.parseInt(numeric.group(1));
+                return n >= 60
+                        ? LogLevel.FATAL
+                        : n >= 50
+                                ? LogLevel.ERROR
+                                : n >= 40
+                                        ? LogLevel.WARN
+                                        : n >= 30 ? LogLevel.INFO : n >= 20 ? LogLevel.DEBUG : LogLevel.TRACE;
+            }
+        }
+        Matcher leading = LEVEL_LEADING.matcher(prefix);
+        if (leading.find()) {
+            LogLevel level = LogLevel.fromToken(leading.group(1) != null ? leading.group(1) : leading.group(2));
+            if (level != null) {
+                return level;
+            }
+        }
+        Matcher syslog = LEVEL_SYSLOG.matcher(prefix);
+        if (syslog.find()) {
+            LogLevel level = LogLevel.fromToken(syslog.group(1));
             if (level != null) {
                 return level;
             }
