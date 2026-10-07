@@ -56,7 +56,9 @@ is following, so a log that is being followed never raises "File Changed on Disk
 **Rotation.** A file is rotated when it shrinks or when its file key changes
 (`BasicFileAttributes.fileKey`, null on Windows). A missing file is not an error: the poll waits
 and reads the new file from its first byte. A file truncated and rewritten in place to beyond the
-old offset between two polls cannot be told from growth; `tail -f` has the same limit.
+old offset between two polls cannot be told from growth; `tail -f` has the same limit. A rotation
+replaces the whole buffer, so it is not applied to a buffer with unsaved edits: the follow stops
+with a status message and the disk snapshot stays that of the old file, so saving asks first.
 
 **Memory.** A follow may add `LogView.FOLLOW_CAP` characters to what the buffer held when it
 started; past that the oldest lines go and the buffer becomes unsaveable (`trimmed()`). A filter on
