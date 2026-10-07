@@ -288,6 +288,33 @@ cleanup on virtual threads; only RichTextFX mutation and tab/session bookkeeping
 Resource preflight includes dirty deletion targets, overwritten destinations, narrowed buffers, and buffers
 in other windows. Path changes retire the old URI before registering the new one.
 
+**The dirty-target preflight is asked twice.** `resourceTargetsSafe` runs before anything is loaded or
+staged and again in `finishWorkspaceEdit`, in the same FX turn that retires the tabs: staging takes several
+FX turns, and a keystroke in any window during them must not be closed away with its file. A refusal there
+rolls the staged files back and names the unsaved file.
+
+**Text edits are all-or-nothing per transaction.** `EditorBuffer.applyLspEditsAtomically` refuses a batch
+with an overlapping, out-of-range, or negative edit (the lenient `applyLspEdits` — Format Document,
+completion imports — still skips one); `finishWorkspaceEdit` asks `canPlaceLspEdits` of every buffer before
+it changes the first. `WorkspaceEditMapper` refuses an edit with a missing range or a negative position
+instead of dropping it. `lspOffset` snaps a column inside a surrogate pair back to the pair's start.
+
+**What an edit destroys is shown, asked about, and kept.** `WorkspaceEditHazards` (pure) lists the deletes
+of existing paths and the creates/renames that replace an existing file. The rename preview shows them as
+rows that can be unticked (`RenamePreview.filter` drops an unticked one; `excludedButDeleted` refuses a
+ticked delete that covers an unticked row). An unpreviewed edit — code action, refactoring command,
+`workspace/applyEdit` — goes through `applyWorkspaceEditsConfirmed`, which asks before a recursive folder
+delete or an overwrite. Before staging, each file about to be deleted or replaced is copied to Local
+History (`Ops.captureBeforeDestruction`, at most `MAX_CAPTURED_PER_EDIT` per edit); a failed copy refuses
+the edit.
+
+**Staging is journaled.** `WorkspaceEditJournal` appends one forced line to
+`<configDir>/lsp-edit-journal/<uuid>.journal` before each move to a hidden `.editora-lsp-*` name, a `COMMIT`
+line once the edit is decided, and removes the file after commit cleanup or a complete rollback. A journal
+that survives (a crash, or a rollback that could not restore everything) is found by
+`offerInterruptedEdits` the next time a window opens that project: the user chooses to restore, leave, or
+be asked later, and recovery never overwrites an existing path. Nothing is removed without that answer.
+
 **Moved and deleted files are followed by buffer identity, not by path.** The open buffer for every rename
 source and delete target is resolved, with the buffer's own path, *before* the filesystem transaction —
 afterwards the file is gone, so the server's spelling of the old path can no longer be canonicalised, and
