@@ -46,7 +46,8 @@ path and refuse stale content. The optional Result editor is a separate editable
 short pause, applies once as an undoable edit, and prevents side swapping while dirty.
 
 **Swap sides** flips labels, displayed content, connector geometry, and patch direction while retaining the
-same local target for edits and refreshes. Export Patch always uses the original compared text.
+same local target for edits and refreshes. Export Patch always uses the original compared text, with each
+side's own line ending put back so the patch applies to a CRLF file; it is computed off the FX thread.
 
 Git-backed comparisons additionally offer Stage, Unstage, Revert, Copy Hunk, and Open Changed Line actions.
 

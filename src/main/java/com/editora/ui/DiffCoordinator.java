@@ -26,6 +26,7 @@ import com.editora.diff.DiffModels.DiffModel;
 import com.editora.diff.DiffService;
 import com.editora.diff.DiffText;
 import com.editora.diff.DirectoryDiff;
+import com.editora.diff.PatchLineNumbers;
 import com.editora.diff.PatchParser;
 import com.editora.diff.ThreeWayMerge;
 import com.editora.editor.EditorBuffer;
@@ -58,13 +59,26 @@ final class DiffCoordinator {
     private record BuiltDiff(DiffViewerPane pane, DiffModel model) {}
 
     /** Exact source text or a render-only surrogate such as a binary description. */
-    record DiffContent(String text, boolean applicable) {
+    record DiffContent(String text, boolean applicable, DiffViewerPane.SideFormat format) {
         static DiffContent text(String text) {
-            return new DiffContent(text == null ? "" : text, true);
+            return new DiffContent(text == null ? "" : text, true, DiffViewerPane.SideFormat.DEFAULT);
+        }
+
+        /** Exact text plus how its source spells it (line-ending label, charset) for patch export. */
+        static DiffContent text(String text, String lineEnding, String charset) {
+            return new DiffContent(text == null ? "" : text, true, new DiffViewerPane.SideFormat(lineEnding, charset));
+        }
+
+        /** Decoded source bytes: the text in the editor's form, the format read off the raw decode. */
+        static DiffContent decoded(EditorConfigCharset.Decoded raw) {
+            return text(
+                    com.editora.editor.LineEndings.toLf(raw.text()),
+                    com.editora.editor.LineEndings.dominant(raw.text()),
+                    raw.charset());
         }
 
         static DiffContent presentation(String text) {
-            return new DiffContent(text == null ? "" : text, false);
+            return new DiffContent(text == null ? "" : text, false, DiffViewerPane.SideFormat.DEFAULT);
         }
     }
 
@@ -245,6 +259,7 @@ final class DiffCoordinator {
                         host.settings().isShowLineNumbers(),
                         target == null ? null : target.toString());
                 pane.setMutationAllowed(leftContent.applicable() && rightContent.applicable());
+                pane.setSideFormats(leftContent.format(), rightContent.format());
                 ops.prepareDiffPane(pane);
                 pane.setOnExportPatch(this::exportPatch);
                 pane.setOptions(lastDiffOptions);
@@ -317,6 +332,10 @@ final class DiffCoordinator {
                             },
                             () -> undoLocal(target),
                             () -> saveLocal(target));
+                    pane.setUndoAvailable(() -> {
+                        EditorBuffer open = ops.openBufferFor(target);
+                        return open != null && open.getArea().isUndoAvailable();
+                    });
                     pane.setOnResultEdited(draft -> {
                         long requested = generation.incrementAndGet();
                         String left = pane.editableSide() == DiffViewerPane.EditableSide.LEFT ? draft : current[0];
@@ -349,6 +368,9 @@ final class DiffCoordinator {
                         String displayLeft = swapped[0] ? r : l;
                         String displayRight = swapped[0] ? l : r;
                         pane.setMutationAllowed(lContent.applicable() && rContent.applicable());
+                        pane.setSideFormats(
+                                swapped[0] ? rContent.format() : lContent.format(),
+                                swapped[0] ? lContent.format() : rContent.format());
                         String editable =
                                 pane.editableSide() == DiffViewerPane.EditableSide.RIGHT ? displayRight : displayLeft;
                         if (pane.hasDirtyResult()) {
@@ -577,7 +599,7 @@ final class DiffCoordinator {
                     patchText(fp.newLines(), fp.newFinalNewline()),
                     lastDiffOptions,
                     model -> {
-                        models.set(index, model);
+                        models.set(index, PatchLineNumbers.renumber(model, fp.oldLineNumbers(), fp.newLineNumbers()));
                         if (remaining.decrementAndGet() == 0) {
                             if (models.contains(null)) {
                                 host.setStatus(tr("status.diff.tooLarge"));
@@ -622,6 +644,8 @@ final class DiffCoordinator {
             // One generation for both requests, as in buildDiffPane: an option toggle issued while a swap
             // was pending was computed for the unswapped texts and then installed beside the swapped ones.
             AtomicLong generation = new AtomicLong();
+            // The patch's own line numbers, in the order the sides are displayed now.
+            List<List<Integer>> numbers = new ArrayList<>(List.of(fp.oldLineNumbers(), fp.newLineNumbers()));
             pane.setOnSwapRequested((newLeft, newRight) -> {
                 long requested = generation.incrementAndGet();
                 diffService.compute(newLeft, newRight, lastDiffOptions, model -> {
@@ -636,7 +660,8 @@ final class DiffCoordinator {
                     }
                     current[0] = newLeft;
                     current[1] = newRight;
-                    pane.swapSides(model);
+                    Collections.reverse(numbers);
+                    pane.swapSides(PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
                 });
             });
             pane.setOnOptionsChanged(opts -> {
@@ -646,7 +671,8 @@ final class DiffCoordinator {
                 String right = current[1];
                 diffService.compute(left, right, opts, model -> {
                     if (model != null && requested == generation.get()) {
-                        pane.updateContent(left, right, model);
+                        pane.updateContent(
+                                left, right, PatchLineNumbers.renumber(model, numbers.get(0), numbers.get(1)));
                     }
                 });
             });
@@ -905,7 +931,7 @@ final class DiffCoordinator {
             EditorBuffer open = ops.openBufferFor(path);
             if (open != null) {
                 // The whole document: text() is only the accessible region of a narrowed buffer.
-                callback.accept(DiffContent.text(open.getContent()));
+                callback.accept(DiffContent.text(open.getContent(), open.getLineEnding(), open.getEffectiveCharset()));
                 return;
             }
             submitFileRead(() -> {
@@ -1536,8 +1562,7 @@ final class DiffCoordinator {
             if (BinaryDiff.isProbablyBinary(bytes)) {
                 return DiffContent.presentation(BinaryDiff.describe(bytes));
             }
-            return DiffContent.text(DiffSideText.decode(bytes, ops.editorConfigCharset(abs), null)
-                    .text());
+            return DiffContent.decoded(DiffSideText.decodeRaw(bytes, ops.editorConfigCharset(abs), null));
         } catch (IOException e) {
             return DiffContent.presentation("");
         }
@@ -1584,8 +1609,7 @@ final class DiffCoordinator {
             onText.accept(
                     BinaryDiff.isProbablyBinary(bytes)
                             ? DiffContent.presentation(BinaryDiff.describe(bytes))
-                            : DiffContent.text(DiffSideText.decode(bytes, ecCharset, openCharset(file))
-                                    .text()));
+                            : DiffContent.decoded(DiffSideText.decodeRaw(bytes, ecCharset, openCharset(file))));
         });
     }
 
@@ -1598,26 +1622,67 @@ final class DiffCoordinator {
         return tr("diff.side.tooLarge") + " ⟦" + identity + "⟧";
     }
 
-    /** Saves a unified-diff patch (the diff viewer's export action) via a file chooser. */
-    private void exportPatch(String patch) {
-        if (patch == null || patch.isEmpty()) {
-            host.setStatus(tr("status.diff.identical"));
-            return;
+    /**
+     * Saves a unified-diff patch (the diff viewer's export action) via a file chooser. The patch is written
+     * for the sides' <em>source bytes</em>, not the viewer's text: each side's lines get their file's line
+     * ending back (the viewer holds bare {@code \n}, and a patch without the {@code \r} never applied to a
+     * CRLF file), and a legacy single-byte charset both sides share is kept. Computed off the FX thread.
+     */
+    private void exportPatch(DiffViewerPane.PatchRequest request) {
+        String[] sides = patchSides(request);
+        diffService.patch(request.leftLabel(), request.rightLabel(), sides[0], sides[1], patch -> {
+            if (patch == null) {
+                host.setStatus(tr("status.diff.tooLarge"));
+                return;
+            }
+            if (patch.isEmpty()) {
+                host.setStatus(tr("status.diff.identical"));
+                return;
+            }
+            FileChooser fc = new FileChooser();
+            fc.setTitle(tr("diff.exportPatch"));
+            fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));
+            fc.setInitialFileName("changes.patch");
+            java.io.File f = fc.showSaveDialog(host.window());
+            if (f == null) {
+                return;
+            }
+            try {
+                Files.write(
+                        f.toPath(),
+                        patchBytes(
+                                patch,
+                                request.leftFormat().charset(),
+                                request.rightFormat().charset()));
+                host.setStatus(tr("status.diff.patchSaved", f.getName()));
+            } catch (IOException e) {
+                host.setStatus(tr("status.diff.patchFailed", e.getMessage() == null ? "" : e.getMessage()));
+            }
+        });
+    }
+
+    /** The two texts a patch is written from: each displayed side with its source's line ending put back. */
+    static String[] patchSides(DiffViewerPane.PatchRequest request) {
+        return new String[] {
+            com.editora.editor.LineEndings.apply(
+                    request.leftText(), request.leftFormat().lineEnding()),
+            com.editora.editor.LineEndings.apply(
+                    request.rightText(), request.rightFormat().lineEnding())
+        };
+    }
+
+    /**
+     * The bytes of an exported patch: in the sides' own charset when both are the same single-byte legacy
+     * charset that can spell every character of it (so the patch's lines are the file's bytes), else UTF-8.
+     * No byte-order mark either way — it would become part of the first header line.
+     */
+    static byte[] patchBytes(String patch, String leftCharset, String rightCharset) {
+        boolean legacy =
+                EditorConfigCharset.LATIN1.equals(leftCharset) || EditorConfigCharset.WINDOWS_1252.equals(leftCharset);
+        if (legacy && leftCharset.equals(rightCharset) && EditorConfigCharset.canEncode(patch, leftCharset)) {
+            return patch.getBytes(EditorConfigCharset.charsetFor(leftCharset));
         }
-        FileChooser fc = new FileChooser();
-        fc.setTitle(tr("diff.exportPatch"));
-        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));
-        fc.setInitialFileName("changes.patch");
-        java.io.File f = fc.showSaveDialog(host.window());
-        if (f == null) {
-            return;
-        }
-        try {
-            Files.writeString(f.toPath(), patch);
-            host.setStatus(tr("status.diff.patchSaved", f.getName()));
-        } catch (IOException e) {
-            host.setStatus(tr("status.diff.patchFailed", e.getMessage() == null ? "" : e.getMessage()));
-        }
+        return patch.getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
     /** Opens the merge-conflict resolution view for the active buffer (if it has conflict markers). */
@@ -1679,10 +1744,65 @@ final class DiffCoordinator {
                                                         host.setStatus(tr("status.merge.stale"));
                                                         return;
                                                     }
-                                                    openMergePane(b, text, format, result.file());
+                                                    openStageMerge(b, text, format, hasMarkers, result.file());
                                                 });
                                             });
                                         })));
+    }
+
+    /** Where the resolver takes its conflicts from when the file no longer matches Git's three versions. */
+    enum MergeSource {
+        /** Merge Git's three versions again; applying replaces what the file holds now. */
+        GIT_VERSIONS,
+        /** Resolve the conflict markers the file contains, keeping everything else in it. */
+        FILE_MARKERS,
+        CANCEL
+    }
+
+    /** Asks which {@link MergeSource} to use; replaceable so a test need not show a dialog. */
+    java.util.function.Function<Boolean, MergeSource> mergeSourceChooser = this::askMergeSource;
+
+    /**
+     * Opens the resolver on the merge of Git's three versions — unless the file has moved on from it. Then
+     * conflicts resolved by hand (or any other edit since Git wrote the markers) are not in that merge, and
+     * applying its result would silently replace them, so the user chooses what to start from.
+     */
+    private void openStageMerge(
+            EditorBuffer buffer,
+            String sourceText,
+            DiffText format,
+            boolean hasMarkers,
+            ConflictParser.ConflictFile merged) {
+        ConflictParser.ConflictFile written = ConflictParser.parse(format.lines());
+        MergeSource source = ThreeWayMerge.agreesWith(merged, written)
+                ? MergeSource.GIT_VERSIONS
+                : mergeSourceChooser.apply(hasMarkers);
+        switch (source) {
+            case GIT_VERSIONS -> openMergePane(buffer, sourceText, format, merged);
+            case FILE_MARKERS -> openMergePane(buffer, sourceText, format, written);
+            case CANCEL -> host.setStatus(tr("status.merge.cancelled"));
+        }
+    }
+
+    private MergeSource askMergeSource(boolean hasMarkers) {
+        javafx.scene.control.ButtonType git = new javafx.scene.control.ButtonType(
+                tr("merge.edited.useGit"), javafx.scene.control.ButtonBar.ButtonData.OTHER);
+        javafx.scene.control.ButtonType file = new javafx.scene.control.ButtonType(
+                tr("merge.edited.useFile"), javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        javafx.scene.control.Alert ask = new javafx.scene.control.Alert(
+                javafx.scene.control.Alert.AlertType.CONFIRMATION,
+                tr(hasMarkers ? "merge.edited.message" : "merge.edited.messageNoMarkers"));
+        ask.getButtonTypes().setAll(git, javafx.scene.control.ButtonType.CANCEL);
+        if (hasMarkers) {
+            ask.getButtonTypes().add(0, file);
+        }
+        ask.initOwner(host.window());
+        ask.setTitle(tr("merge.edited.title"));
+        ask.setHeaderText(null);
+        javafx.scene.control.ButtonType chosen = ask.showAndWait().orElse(javafx.scene.control.ButtonType.CANCEL);
+        return chosen == git
+                ? MergeSource.GIT_VERSIONS
+                : chosen == file ? MergeSource.FILE_MARKERS : MergeSource.CANCEL;
     }
 
     /** A merge stage in the buffer's own form; the resolution built from it replaces the buffer's text. */

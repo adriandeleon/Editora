@@ -61,6 +61,31 @@ public final class DiffService {
         }
     }
 
+    /**
+     * Writes the unified diff of two texts off-thread ({@link PatchWriter}) and posts it on the FX thread —
+     * {@code null} when it could not be produced. Export ran this on the FX thread, where one large rewritten
+     * file froze the window.
+     */
+    public void patch(
+            String leftLabel, String rightLabel, String leftText, String rightText, Consumer<String> onResult) {
+        try {
+            exec.submit(() -> {
+                String computed;
+                try {
+                    computed = PatchWriter.unifiedDiff(leftLabel, rightLabel, leftText, rightText);
+                } catch (Throwable failed) { // as in compute: the caller must still hear back
+                    computed = null;
+                }
+                String patch = computed;
+                Platform.runLater(() -> onResult.accept(patch));
+            });
+        } catch (RejectedExecutionException shuttingDown) {
+            if (!exec.isShutdown()) {
+                throw shuttingDown;
+            }
+        }
+    }
+
     static DiffModel model(String leftText, String rightText, DiffEngine.DiffOptions opts) {
         List<String> left = DiffEngine.lines(leftText);
         List<String> right = DiffEngine.lines(rightText);

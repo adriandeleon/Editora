@@ -137,6 +137,62 @@ class DiffEngineTest {
     }
 
     @Test
+    void unifiedRowsListABlocksRemovalsBeforeItsAdditions() {
+        DiffModel model = DiffEngine.compute(
+                List.of("keep", "int a = 1;", "int b = 2;", "end"),
+                List.of("keep", "int a = 10;", "int b = 20;", "end"),
+                DiffEngine.DiffOptions.DEFAULT);
+
+        assertEquals(
+                List.of("keep", "int a = 1;", "int b = 2;", "int a = 10;", "int b = 20;", "end"),
+                model.unified().stream().map(DiffModels.UnifiedRow::text).toList());
+    }
+
+    /** Past the edit budget the linear alignment still honours the comparison rules. */
+    @Test
+    void coarseFallbackComparesWithTheWhitespaceAndCaseRules() {
+        List<String> left = List.of("a", "b", "c");
+        List<String> right = new java.util.ArrayList<>(List.of("  a", "B"));
+        right.addAll(java.util.Collections.nCopies(DiffEngine.MAX_LINE_EDITS + 1, "filler"));
+        right.add("c  ");
+
+        DiffModel model = DiffEngine.compute(
+                left,
+                right,
+                DiffEngine.DiffOptions.DEFAULT
+                        .withWhitespace(DiffEngine.WhitespaceMode.TRIM)
+                        .withIgnoreCase(true));
+
+        assertEquals(0, model.removed());
+        assertEquals(DiffEngine.MAX_LINE_EDITS + 1, model.added());
+        assertEquals(RowType.EQUAL, model.rows().get(0).type());
+        assertEquals("a", model.rows().get(0).left());
+        assertEquals("  a", model.rows().get(0).right());
+    }
+
+    /** Unpaired lines of a rewritten block read removed-then-added, never the new lines above the old. */
+    @Test
+    void smartAlignmentListsRemovedLinesBeforeTheirReplacements() {
+        List<String> left = List.of("head", "int count = items.size();", "return count * 2;", "tail");
+        List<String> right = List.of("head", "var total = compute(list);", "log.info(\"done\");", "tail");
+
+        List<RowType> types = DiffEngine.compute(left, right, DiffEngine.DiffOptions.DEFAULT).rows().stream()
+                .map(DiffModels.Row::type)
+                .toList();
+        assertEquals(List.of(RowType.EQUAL, RowType.MODIFIED, RowType.REMOVED, RowType.ADDED, RowType.EQUAL), types);
+
+        List<RowType> unrelated = DiffEngine.compute(
+                        List.of("a1", "b1", "c1"), List.of("a2", "b2", "c2"), DiffEngine.DiffOptions.DEFAULT)
+                .rows()
+                .stream()
+                .map(DiffModels.Row::type)
+                .toList();
+        assertEquals(
+                List.of(RowType.REMOVED, RowType.REMOVED, RowType.REMOVED, RowType.ADDED, RowType.ADDED, RowType.ADDED),
+                unrelated);
+    }
+
+    @Test
     void smartAlignmentLeavesInsertedLineUnpairedAndMatchesRelatedLines() {
         List<String> left = List.of("start", "int alpha = loadAlpha();", "int beta = loadBeta();", "finish");
         List<String> right = List.of(

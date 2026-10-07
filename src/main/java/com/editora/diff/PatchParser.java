@@ -32,7 +32,9 @@ public final class PatchParser {
      *  side left as-is; either may be {@code ""} when the header was missing entirely. {@code additions}/
      *  {@code deletions} count the {@code +}/{@code -} tagged hunk lines — the true diff stat, unlike
      *  {@code oldLines.size()}/{@code newLines.size()} which also include the context lines carried on both
-     *  sides. */
+     *  sides. {@code oldLineNumbers}/{@code newLineNumbers} give each reconstructed line the number its hunk
+     *  header ({@code @@ -a,b +c,d @@}) places it at in the real file — the lines of every hunk are held back
+     *  to back, so their index is not their line number; empty when unknown. */
     public record FilePatch(
             String oldPath,
             String newPath,
@@ -41,7 +43,36 @@ public final class PatchParser {
             int additions,
             int deletions,
             boolean oldFinalNewline,
-            boolean newFinalNewline) {
+            boolean newFinalNewline,
+            List<Integer> oldLineNumbers,
+            List<Integer> newLineNumbers) {
+
+        public FilePatch {
+            oldLineNumbers = List.copyOf(oldLineNumbers == null ? List.of() : oldLineNumbers);
+            newLineNumbers = List.copyOf(newLineNumbers == null ? List.of() : newLineNumbers);
+        }
+
+        public FilePatch(
+                String oldPath,
+                String newPath,
+                List<String> oldLines,
+                List<String> newLines,
+                int additions,
+                int deletions,
+                boolean oldFinalNewline,
+                boolean newFinalNewline) {
+            this(
+                    oldPath,
+                    newPath,
+                    oldLines,
+                    newLines,
+                    additions,
+                    deletions,
+                    oldFinalNewline,
+                    newFinalNewline,
+                    List.of(),
+                    List.of());
+        }
 
         public FilePatch(
                 String oldPath,
@@ -59,6 +90,10 @@ public final class PatchParser {
         String newPath = "";
         final List<String> oldLines = new ArrayList<>();
         final List<String> newLines = new ArrayList<>();
+        final List<Integer> oldLineNumbers = new ArrayList<>();
+        final List<Integer> newLineNumbers = new ArrayList<>();
+        int oldLine = 1;
+        int newLine = 1;
         int additions;
         int deletions;
         boolean oldFinalNewline = true;
@@ -122,17 +157,21 @@ public final class PatchParser {
                 switch (tag) {
                     case '+' -> {
                         cur.newLines.add(rest);
+                        cur.newLineNumbers.add(cur.newLine++);
                         cur.additions++;
                         newRemaining--;
                     }
                     case '-' -> {
                         cur.oldLines.add(rest);
+                        cur.oldLineNumbers.add(cur.oldLine++);
                         cur.deletions++;
                         oldRemaining--;
                     }
                     default -> { // ' ' (context) or any unrecognized tag: treat as common to both sides
                         cur.oldLines.add(rest);
                         cur.newLines.add(rest);
+                        cur.oldLineNumbers.add(cur.oldLine++);
+                        cur.newLineNumbers.add(cur.newLine++);
                         oldRemaining--;
                         newRemaining--;
                     }
@@ -153,6 +192,8 @@ public final class PatchParser {
                 oldRemaining = hm.group(2) != null ? Integer.parseInt(hm.group(2)) : 1;
                 newRemaining = hm.group(4) != null ? Integer.parseInt(hm.group(4)) : 1;
                 inHunk = oldRemaining > 0 || newRemaining > 0;
+                cur.oldLine = Math.max(1, Integer.parseInt(hm.group(1)));
+                cur.newLine = Math.max(1, Integer.parseInt(hm.group(3)));
                 continue;
             }
             if (hunklessSections && line.startsWith("diff --git ")) {
@@ -204,7 +245,9 @@ public final class PatchParser {
                 p.additions,
                 p.deletions,
                 p.oldFinalNewline,
-                p.newFinalNewline);
+                p.newFinalNewline,
+                p.oldLineNumbers,
+                p.newLineNumbers);
     }
 
     /** The two paths of a {@code diff --git a/<old> b/<new>} line (either may be C-quoted). */

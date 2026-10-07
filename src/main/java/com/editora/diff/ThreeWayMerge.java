@@ -108,6 +108,26 @@ public final class ThreeWayMerge {
     }
 
     /**
+     * Whether {@code written} — the conflict-marked text the file holds — is still the merge {@code merged}
+     * describes: taking "ours" everywhere gives the same lines in both, and so does taking "theirs". It is
+     * not once someone has resolved a conflict by hand or edited the file since Git wrote it, and a
+     * resolution built from {@code merged} would then replace that work. Where the two only draw a conflict's
+     * boundaries differently, both tests still pass.
+     */
+    public static boolean agreesWith(ConflictFile merged, ConflictFile written) {
+        for (ConflictParser.Choice side : List.of(ConflictParser.Choice.OURS, ConflictParser.Choice.THEIRS)) {
+            List<String> fromMerge =
+                    ConflictParser.resolve(merged, java.util.Collections.nCopies(merged.conflictCount(), side));
+            List<String> fromFile =
+                    ConflictParser.resolve(written, java.util.Collections.nCopies(written.conflictCount(), side));
+            if (!fromMerge.equals(fromFile)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * One side's changes against the base, in a canonical position.
      *
      * <p>The raw deltas of a line differ are not unique where lines repeat: a line replaced inside a run of
@@ -273,20 +293,18 @@ public final class ThreeWayMerge {
         return true;
     }
 
-    /** Adjacent replacements are independent; insertions at a replacement boundary are kept together. */
+    /**
+     * Whether {@code first} ends with at least one untouched base line before {@code second} starts. Changes
+     * that merely touch are one region, as in Git: merged independently, a region Git had reported as a
+     * conflict was resolved without ever being shown, and when each side deleted a different one of two
+     * identical neighbouring lines both were gone.
+     */
     private static boolean strictlyBefore(Change first, Change second) {
-        return first.end() < second.start()
-                || (first.end() == second.start() && !first.insertion() && !second.insertion());
+        return first.end() < second.start();
     }
 
     private static boolean overlapsRegion(Change change, int start, int end) {
-        if (change.insertion()) {
-            return change.start() >= start && change.start() <= end;
-        }
-        if (start == end) {
-            return change.start() <= start && change.end() >= end;
-        }
-        return change.start() < end && change.end() > start;
+        return change.start() <= end && change.end() >= start;
     }
 
     private static List<String> apply(List<String> base, int start, int end, List<Change> changes) {
