@@ -49,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Applying or clearing a log filter keeps you on the line you were on instead of jumping to the end.
 - Filtering a large log no longer freezes the window while the filter runs, and pressing Enter in the
   filter field no longer applies the filter twice.
+- The log viewer now recognises all six levels of the .NET console logger. `dbug:` and `trce:` lines were
+  treated as part of the record above them, so they took its colour, level filter and grouping.
 - A level or pattern set from the command palette now shows in the log's controls, and is no longer
   dropped by the next change made there.
 - In a filtered log, stack-trace lines are tinted with their own record's level, not the level of
