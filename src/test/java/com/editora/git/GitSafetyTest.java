@@ -124,6 +124,9 @@ class GitSafetyTest {
         assertFalse(plain.containsKey("LC_ALL"), "LC_ALL=C is what broke JVM hooks on non-ASCII paths");
         assertFalse(plain.containsKey("LC_CTYPE"));
         assertEquals("0", plain.get("GIT_TERMINAL_PROMPT"));
+        // No terminal, so no editor: rebase --continue and a merge commit keep git's prepared message
+        // instead of starting $EDITOR and waiting on it for the whole mutation ceiling.
+        assertEquals(":", plain.get("GIT_EDITOR"));
 
         // An inherited LC_ALL would override LC_MESSAGES: it is blanked and its charset kept in LC_CTYPE.
         java.util.Map<String, String> all = GitSafety.userEnv(java.util.Map.of("LC_ALL", "de_DE.UTF-8"));

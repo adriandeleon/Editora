@@ -61,19 +61,32 @@ import com.editora.process.ProcessRunner;
  */
 public final class GitService {
 
-    /** Combined refresh payload: the repo root, its status, the active file's gutter change map, and a
-     *  per-line hunk-text map (for the change-bar hover tooltip). */
+    /** Combined refresh payload: the repo root, its status, the active file's gutter change map, a
+     *  per-line hunk-text map (for the change-bar hover tooltip), git's reason when it refuses to work in the
+     *  folder, and the multi-step operation (merge, rebase, …) the repository is in the middle of. */
     public record RepoState(
             Path root,
             Path diffFile,
             GitStatus status,
             Map<Integer, ChangeType> changes,
             Map<Integer, String> hunks,
-            String refusal) {
+            String refusal,
+            GitOperation operation) {
         public static final RepoState NONE = new RepoState(null, null, GitStatus.NOT_A_REPO, Map.of(), Map.of());
 
         public RepoState {
             refusal = refusal == null ? "" : refusal;
+            operation = operation == null ? GitOperation.NONE : operation;
+        }
+
+        public RepoState(
+                Path root,
+                Path diffFile,
+                GitStatus status,
+                Map<Integer, ChangeType> changes,
+                Map<Integer, String> hunks,
+                String refusal) {
+            this(root, diffFile, status, changes, hunks, refusal, GitOperation.NONE);
         }
 
         public RepoState(
@@ -87,6 +100,11 @@ public final class GitService {
 
         public RepoState(Path root, GitStatus status, Map<Integer, ChangeType> changes, Map<Integer, String> hunks) {
             this(root, null, status, changes, hunks, "");
+        }
+
+        /** This state with {@code operation} as the merge / rebase / cherry-pick / revert in progress. */
+        public RepoState withOperation(GitOperation operation) {
+            return new RepoState(root, diffFile, status, changes, hunks, refusal, operation);
         }
 
         /**
@@ -473,7 +491,49 @@ public final class GitService {
         statusBackoff.succeeded(root);
         GitStatus status = StatusParser.parse(st.out());
         GitDiff diff = diffFile != null ? diffHead(root, diffFile) : GitDiff.EMPTY;
-        return new RepoState(root, diffFile, status, diff.changes(), diff.hunks());
+        return new RepoState(root, diffFile, status, diff.changes(), diff.hunks(), "", operationIn(root));
+    }
+
+    // --- the operation in progress (merge / rebase / cherry-pick / revert) -------------------------
+
+    /**
+     * Repository root → the git directory of <em>that work tree</em>, where git keeps the state of a merge,
+     * rebase, cherry-pick or revert. Learned from the same {@code rev-parse} that resolves the root
+     * ({@link #lookupRoot}) — a linked work tree's is {@code <main>/.git/worktrees/<name>}, a submodule's is
+     * under the superproject — and then kept: every status refresh reads the operation with a few
+     * {@code stat} calls and no process.
+     */
+    private final Map<Path, Path> gitDirs = new ConcurrentHashMap<>();
+
+    /**
+     * Records {@code root}'s git directory from a {@code rev-parse --git-dir} answer given in {@code cwd}:
+     * git prints it relative to the directory it ran in ({@code .git}) or absolute.
+     */
+    private void rememberGitDir(Path root, Path cwd, String answer) {
+        if (answer.isEmpty()) {
+            return;
+        }
+        try {
+            gitDirs.put(root, cwd.resolve(answer).normalize());
+        } catch (RuntimeException notAPath) {
+            gitDirs.remove(root);
+        }
+    }
+
+    /**
+     * The operation {@code root} is in the middle of, read from its git directory's state files
+     * ({@link GitOperation#detect}). {@link GitOperation#NONE} when the directory cannot be resolved.
+     */
+    private GitOperation operationIn(Path root) {
+        Path gitDir = gitDirs.get(root);
+        if (gitDir == null || !Files.isDirectory(gitDir)) {
+            // Not learned with the root (it was cached before, or the directory has moved): ask once.
+            gitDirs.remove(root);
+            ProcessRunner.Result r = git(root, QUICK, "rev-parse", "--git-dir");
+            rememberGitDir(root, root, r.ok() ? r.out().strip() : "");
+            gitDir = gitDirs.get(root);
+        }
+        return GitOperation.detect(gitDir);
     }
 
     private GitDiff diffHead(Path root, Path file) {
@@ -1778,12 +1838,16 @@ public final class GitService {
                         < (negative.refusal().isEmpty() ? NOT_A_REPO_TTL : REFUSED_TTL).toNanos()) {
             return new RootLookup(null, negative.refusal());
         }
-        ProcessRunner.Result r = git(dir, QUICK, "rev-parse", "--show-toplevel");
+        // One process answers both questions: the work tree's root, and (second line) its git directory,
+        // where the state of a merge or rebase in progress is read from on every later refresh.
+        ProcessRunner.Result r = git(dir, QUICK, "rev-parse", "--show-toplevel", "--git-dir");
         Path root = null;
         if (r.ok()) {
-            String top = r.out().strip();
+            String[] lines = r.out().strip().split("\\R");
+            String top = lines[0].strip();
             if (!top.isEmpty()) {
                 root = Path.of(top);
+                rememberGitDir(root, dir, lines.length > 1 ? lines[1].strip() : "");
             }
         }
         if (root != null) {
@@ -2022,6 +2086,7 @@ public final class GitService {
     public void invalidateCaches() {
         rootCache.clear();
         negativeRoots.clear();
+        gitDirs.clear();
         statusBackoff.clear();
         Availability availability = gitAvailable;
         if (availability != null && !availability.available()) {

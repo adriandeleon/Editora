@@ -134,6 +134,11 @@ public final class GitSafety {
         env.put("COLUMNS", "1000");
         env.put("LC_MESSAGES", "C");
         env.put("LANGUAGE", "C");
+        // No command Editora runs wants an editor: a commit gets its message with -m, and continuing a
+        // rebase or concluding a merge keeps the prepared one. Left to git, those two open $EDITOR — with no
+        // terminal a vi simply waits, holding the lane until the mutation ceiling. ":" is git's own "no
+        // editor": the prepared message is used as it is. The environment variable outranks core.editor.
+        env.put("GIT_EDITOR", ":");
         String all = inherited == null ? null : inherited.get("LC_ALL");
         if (all != null && !all.isEmpty()) {
             env.put("LC_ALL", "");
