@@ -49,6 +49,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   the five keymaps + per-OS variants, `KeyDispatcher`, the keybinding editor.
 - [subsystems/config-and-migrations.md](subsystems/config-and-migrations.md) — the config dir,
   `SharedConfig`/`ConfigManager`, `ConfigWriter`, and schema versioning + migrations.
+- [subsystems/crash-recovery.md](subsystems/crash-recovery.md) — recovery copies of unsaved buffers,
+  per-process session locks, when a copy is taken and dropped, and the offer on the next launch.
 - [subsystems/navigation.md](subsystems/navigation.md) — ranking (`FuzzyMatch`), the server-free
   symbol index, Search Everywhere, and the flow features (recent locations, peek, sticky scroll).
 - [subsystems/project-map.md](subsystems/project-map.md) — the Project tool window's Canvas-based

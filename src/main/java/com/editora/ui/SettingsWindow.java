@@ -386,6 +386,7 @@ public class SettingsWindow {
     private Label githubStatusLabel;
     private CheckBox updateCheckCheck;
     private CheckBox localHistoryCheck;
+    private CheckBox crashRecoveryCheck;
     private Spinner<Integer> historyMaxPerFileSpinner;
     private Spinner<Integer> historyMaxAgeSpinner;
     private Spinner<Integer> historyMaxTotalSpinner;
@@ -1397,6 +1398,7 @@ public class SettingsWindow {
 
         updateCheckCheck = viewCheck(tr("settings.checkForUpdates"), Settings::setUpdateCheck);
 
+        crashRecoveryCheck = viewCheck(tr("settings.crashRecovery"), Settings::setCrashRecovery);
         localHistoryCheck = new CheckBox(tr("settings.enableLocalHistory"));
         historyMaxPerFileSpinner = historySpinner(1, Settings.MAX_HISTORY_PER_FILE, 50, Settings::setHistoryMaxPerFile);
         historyMaxAgeSpinner = historySpinner(0, Settings.MAX_HISTORY_AGE_DAYS, 30, Settings::setHistoryMaxAgeDays);
@@ -3212,6 +3214,12 @@ public class SettingsWindow {
                 "projects workspace folder");
         checkRow(features, Category.WORKSPACE, projectHiddenCheck, null, "project tree hidden dot files folders show");
         checkRow(features, Category.WORKSPACE, notesCheck, null, "personal notes annotations enable feature");
+        checkRow(
+                features,
+                Category.WORKSPACE,
+                crashRecoveryCheck,
+                tr("settings.crashRecovery.note"),
+                "crash recovery unsaved edits restore backup hot exit power loss kill");
         Card history = card(p, tr("settings.section.localHistory"));
         checkRow(
                 history,
@@ -7746,6 +7754,7 @@ public class SettingsWindow {
             refreshGithubStatus();
             updateCheckCheck.setSelected(settings.isUpdateCheck());
             localHistoryCheck.setSelected(settings.isLocalHistory());
+            crashRecoveryCheck.setSelected(settings.isCrashRecovery());
             historyMaxPerFileSpinner.getValueFactory().setValue(settings.getHistoryMaxPerFile());
             historyMaxAgeSpinner.getValueFactory().setValue(settings.getHistoryMaxAgeDays());
             historyMaxTotalSpinner.getValueFactory().setValue(settings.getHistoryMaxTotalMb());

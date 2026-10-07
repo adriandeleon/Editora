@@ -109,10 +109,19 @@ public class WindowManager {
     /** A live window: its project key ({@code ""} = the global session), its stage, controller and config. */
     private record Holder(String key, Stage stage, MainController controller, ConfigManager config) {}
 
+    /** Crash recovery for every window of this process; does nothing on disk until a buffer is unsaved. */
+    private final com.editora.recovery.RecoveryService recovery;
+
+    com.editora.recovery.RecoveryService recovery() {
+        return recovery;
+    }
+
     public WindowManager(SharedConfig shared, KeymapManager keymap, HostServices hostServices) {
         this.shared = shared;
         this.keymap = keymap;
         this.hostServices = hostServices;
+        this.recovery =
+                new com.editora.recovery.RecoveryService(shared.getConfigDir(), javafx.application.Platform::runLater);
         // Make the (single, shared) keymap available to plain text fields and consoles, so they can install
         // the configured caret/editing chords without threading it through their constructors (see
         // TextInputKeymap). Done here, by the keymap's owner, so every window this manager builds — including
