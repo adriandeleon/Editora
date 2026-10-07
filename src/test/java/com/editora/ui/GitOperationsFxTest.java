@@ -370,7 +370,7 @@ class GitOperationsFxTest {
             open(fx.controller, story);
             GitCoordinator git = activate(async, fx, repo.root);
 
-            CountDownLatch stopped = watchStatus(fx, tr("status.git.stashConflicts")::equals);
+            CountDownLatch stopped = watchStatus(fx, tr("stash.conflict.pop")::equals);
             FxTestSupport.runOnFx(git::gitStashPop);
             async.await(stopped, "the pop stopping on the conflict");
             assertNoDialog();
