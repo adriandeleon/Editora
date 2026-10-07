@@ -89,7 +89,7 @@ public final class ProcessRunner {
      * environment (on top of the inherited environment + {@code LC_ALL=C}).
      */
     public static Result run(Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv) {
-        return run(workingDir, timeout, command, extraEnv, null);
+        return run(workingDir, timeout, command, extraEnv, (String) null);
     }
 
     /**
@@ -100,6 +100,20 @@ public final class ProcessRunner {
     public static Result run(
             Path workingDir, Duration timeout, List<String> command, Map<String, String> extraEnv, String stdin) {
         return decoded(runRaw(workingDir, timeout, command, extraEnv, utf8(stdin), false, false));
+    }
+
+    /**
+     * As {@link #run(Path, Duration, List, Map)} — parse-stable output, no stdin — for a read slow enough to
+     * be worth stopping (a history search through file contents). {@code cancel} kills the process tree; the
+     * result is then {@link Result#cancelled()}.
+     */
+    public static Result run(
+            Path workingDir,
+            Duration timeout,
+            List<String> command,
+            Map<String, String> extraEnv,
+            Cancellation cancel) {
+        return decoded(runRaw(workingDir, timeout, command, extraEnv, null, false, false, null, null, cancel));
     }
 
     /**

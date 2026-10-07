@@ -823,6 +823,9 @@ public final class GitService {
      * them.
      */
     public void logPage(Path root, GitLog.Request request, Consumer<GitLog.Page> onResult) {
+        // The listing this one replaces is of no use any more: a content search still running for it is
+        // killed rather than left to hold the lane (and a CPU) until it finishes or times out.
+        cancelHistoryRead();
         long gen = logGen.incrementAndGet();
         submit(historyExec, () -> {
             if (gen != logGen.get()) {
@@ -830,10 +833,27 @@ public final class GitService {
             }
             GitLog.Page page = GitLog.Page.EMPTY;
             if (gitAvailable() && root != null) {
-                ProcessRunner.Result r = git(
-                        root,
-                        request.query().readsContent() ? HISTORY_SEARCH : QUICK,
-                        GitLog.logArgs(request).toArray(new String[0]));
+                ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
+                historyRead = cancel;
+                ProcessRunner.Result r;
+                try {
+                    // Raised again after the handle is published: a request that arrived in between has
+                    // already looked for a handle to cancel and found the previous one.
+                    if (gen != logGen.get()) {
+                        return;
+                    }
+                    r = completeOrFailed(ProcessRunner.run(
+                            root,
+                            request.query().readsContent() ? HISTORY_SEARCH : QUICK,
+                            backgroundArgv(GitLog.logArgs(request).toArray(new String[0])),
+                            READ_ENV,
+                            cancel));
+                } finally {
+                    historyRead = null;
+                }
+                if (r.cancelled() || gen != logGen.get()) {
+                    return; // superseded or cleared: nobody is waiting for these rows
+                }
                 if (!r.ok()) {
                     page = noCommitsYet(r) ? GitLog.Page.EMPTY : GitLog.Page.failed(r.message());
                 } else if (request.follows()) {
@@ -848,6 +868,24 @@ public final class GitService {
     }
 
     private final AtomicLong logGen = new AtomicLong();
+
+    /** The Git Log listing now being read, or null; see {@link #cancelHistoryRead}. */
+    private volatile ProcessRunner.Cancellation historyRead;
+
+    /**
+     * Stops the Git Log listing that is being read — a {@code content:} search can run for seconds, or
+     * minutes on a large repository — and drops the ones still queued; none of their callbacks is invoked.
+     * Called when the search is cleared or replaced. False when nothing was running.
+     */
+    public boolean cancelHistoryRead() {
+        logGen.incrementAndGet();
+        ProcessRunner.Cancellation cancel = historyRead;
+        if (cancel == null) {
+            return false;
+        }
+        cancel.cancel();
+        return true;
+    }
 
     /**
      * Whether a failed {@code git log} only says that the branch is unborn (a repository straight after
@@ -1855,7 +1893,41 @@ public final class GitService {
      * ({@link #withProgress}).
      */
     static String[] cloneArgs(String url, String destination) {
-        return new String[] {"clone", "--progress", "--", url == null ? "" : url, destination};
+        return cloneArgs(url, destination, CloneOptions.NONE);
+    }
+
+    /**
+     * What the clone form can ask for beyond a URL and a folder.
+     *
+     * @param depth {@code --depth}: how many commits of history to fetch; 0 or less for all of it
+     * @param branch {@code --branch}: the branch (or tag) to check out; blank for the remote's default
+     * @param recurseSubmodules {@code --recurse-submodules}: also clone the submodules
+     */
+    public record CloneOptions(int depth, String branch, boolean recurseSubmodules) {
+        public static final CloneOptions NONE = new CloneOptions(0, "", false);
+
+        public CloneOptions {
+            branch = branch == null ? "" : branch.strip();
+        }
+    }
+
+    /**
+     * {@link #cloneArgs(String, String)} with {@code options}. The branch is typed text like the URL: it is
+     * given as {@code --branch=<name>}, one argument, so a name beginning with {@code -} stays a value.
+     */
+    static String[] cloneArgs(String url, String destination, CloneOptions options) {
+        List<String> args = new ArrayList<>(List.of("clone", "--progress"));
+        if (options.depth() > 0) {
+            args.add("--depth=" + options.depth());
+        }
+        if (!options.branch().isEmpty()) {
+            args.add("--branch=" + options.branch());
+        }
+        if (options.recurseSubmodules()) {
+            args.add("--recurse-submodules");
+        }
+        args.addAll(List.of("--", url == null ? "" : url, destination));
+        return args.toArray(String[]::new);
     }
 
     /**
@@ -1864,6 +1936,11 @@ public final class GitService {
      * credentials/SSH. Posts the {@link ProcessRunner.Result} on the FX thread.
      */
     public void clone(String url, Path destination, Consumer<ProcessRunner.Result> onResult) {
+        clone(url, destination, CloneOptions.NONE, onResult);
+    }
+
+    /** {@link #clone(String, Path, Consumer)} with a depth, a branch and/or submodules ({@link CloneOptions}). */
+    public void clone(String url, Path destination, CloneOptions options, Consumer<ProcessRunner.Result> onResult) {
         submit(networkExec, () -> {
             ProcessRunner.Result r;
             if (!gitAvailable()) {
@@ -1875,7 +1952,7 @@ public final class GitService {
                         () -> gitStreamed(
                                 parent,
                                 NETWORK,
-                                cloneArgs(url, destination.toAbsolutePath().toString())));
+                                cloneArgs(url, destination.toAbsolutePath().toString(), options)));
             }
             Platform.runLater(() -> onResult.accept(r));
         });
@@ -1933,6 +2010,7 @@ public final class GitService {
      * among {@code args} is resolved here, when the command starts.
      */
     public void runNetwork(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
+        userNetworkCommandIn(root);
         submitNetworkInRequestOrder(() -> {
             ProcessRunner.Result r = gitAvailable() && root != null
                     ? userCommand(
@@ -1955,8 +2033,205 @@ public final class GitService {
 
     /** Network form used by pull; fetch and push do not need the working-tree boundary. */
     public void runNetworkWorktreeMutation(Path root, Consumer<ProcessRunner.Result> onResult, String... args) {
+        userNetworkCommandIn(root);
         runWorktreeMutation(
                 networkExec, networkCommands, root, NETWORK, java.util.Collections.singletonList(args), null, onResult);
+    }
+
+    // --- auto-fetch (a background network command) ---------------------------------------------------
+
+    /** Repositories the user ran a fetch, pull or push in during this session (every window's). */
+    private static final Set<Path> USER_NETWORK_ROOTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private void userNetworkCommandIn(Path root) {
+        if (root != null) {
+            USER_NETWORK_ROOTS.add(root.toAbsolutePath().normalize());
+        }
+        // The user's command goes first: a background fetch in its way is stopped, not waited for.
+        ProcessRunner.Cancellation background = autoFetchCommand;
+        if (background != null) {
+            background.cancel();
+        }
+    }
+
+    /**
+     * Whether the user has run a fetch, pull or push in {@code root} since Editora started — i.e. has already
+     * chosen to let this repository's transport configuration run. One of the two things that allow an
+     * automatic fetch there (the other is a trusted folder); see {@link GitSafety#autoFetchEnv}.
+     */
+    public boolean userRanNetworkCommandIn(Path root) {
+        return root != null && USER_NETWORK_ROOTS.contains(root.toAbsolutePath().normalize());
+    }
+
+    /** A background fetch gives up long before a user's would: nobody is waiting for it. */
+    static final Duration AUTO_FETCH = Duration.ofMinutes(2);
+
+    /** The background fetch now running, or null. */
+    private volatile ProcessRunner.Cancellation autoFetchCommand;
+
+    /** Whether a user command is running or waiting on the network lane. */
+    public boolean networkBusy() {
+        return networkCommands.get() > 0
+                || pendingNetwork.get() > 0
+                || parkedMutations.get() > 0
+                || autoFetchCommand != null;
+    }
+
+    /**
+     * {@code git fetch --prune} of {@code root} on Editora's own initiative ("Fetch automatically"). A
+     * background command in every respect: the hardened argv of a background read, never logged to the Git
+     * console, never prompting — no terminal, no askpass program, no credential-manager window, ssh in batch
+     * mode ({@link GitSafety#autoFetchEnv}) — and stopped the moment the user starts a network command of
+     * their own. It does not run at all while one is running or queued.
+     *
+     * <p>{@code onResult} gets the result on the FX thread, or {@code null} when nothing was run (git missing,
+     * the lane busy, the window closing).
+     */
+    public void autoFetch(Path root, Consumer<ProcessRunner.Result> onResult) {
+        if (root == null || networkBusy()) {
+            Platform.runLater(() -> onResult.accept(null));
+            return;
+        }
+        ProcessRunner.Cancellation cancel = new ProcessRunner.Cancellation();
+        autoFetchCommand = cancel;
+        boolean queued = submit(networkExec, () -> {
+            ProcessRunner.Result result = null;
+            try {
+                if (gitAvailable() && pendingNetwork.get() == 0 && !cancel.cancelled()) {
+                    // The user's own ssh command — configured or exported — is left alone; only when there is
+                    // none does Editora name one, to put ssh in batch mode.
+                    boolean ownSsh = git(root, QUICK, "config", "--get", "core.sshCommand")
+                            .ok();
+                    List<String> argv = new ArrayList<>(GIT_CMD);
+                    argv.addAll(GitSafety.BACKGROUND_CONFIG);
+                    argv.addAll(GitSafety.AUTO_FETCH_CONFIG);
+                    argv.addAll(List.of("fetch", "--prune", "--quiet"));
+                    result = ProcessRunner.run(
+                            root, AUTO_FETCH, argv, GitSafety.autoFetchEnv(System.getenv(), ownSsh), cancel);
+                }
+            } finally {
+                autoFetchCommand = null;
+            }
+            ProcessRunner.Result posted = result;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
+        if (!queued) {
+            autoFetchCommand = null;
+        }
+    }
+
+    // --- the Commit window's reads ---------------------------------------------------------------------
+
+    /**
+     * The commit {@code HEAD} names, for amending or undoing it.
+     *
+     * @param parents its parents' hashes: none for a root commit, two or more for a merge
+     * @param message the whole message ({@code %B})
+     * @param upstream the branch's upstream ({@code origin/main}), or {@code ""} when it has none
+     * @param pushed whether the upstream already contains this commit — rewriting it then needs a force push
+     */
+    public record HeadCommit(
+            String hash,
+            String shortHash,
+            String subject,
+            List<String> parents,
+            String message,
+            String upstream,
+            boolean pushed) {}
+
+    /** The {@link HeadCommit}, or {@code null} on a branch with no commits yet. Posts on the FX thread. */
+    public void headCommit(Path root, Consumer<HeadCommit> onResult) {
+        submit(exec, () -> {
+            HeadCommit head = gitAvailable() && root != null ? headCommitNow(root) : null;
+            Platform.runLater(() -> onResult.accept(head));
+        });
+    }
+
+    private static HeadCommit headCommitNow(Path root) {
+        ProcessRunner.Result r = git(root, QUICK, "log", "-1", "--no-color", "--format=%H%x00%h%x00%P%x00%s%x00%B");
+        String[] parts = r.ok() ? r.out().split("\0", 5) : new String[0];
+        if (parts.length < 5 || parts[0].isBlank()) {
+            return null;
+        }
+        List<String> parents =
+                parts[2].isBlank() ? List.of() : List.of(parts[2].strip().split(" "));
+        ProcessRunner.Result tracking =
+                git(root, QUICK, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}");
+        String upstream = tracking.ok() ? tracking.out().strip() : "";
+        boolean pushed = !upstream.isEmpty()
+                && git(root, QUICK, "merge-base", "--is-ancestor", "HEAD", "@{upstream}")
+                        .ok();
+        return new HeadCommit(
+                parts[0].strip(), parts[1], parts[3], parents, parts[4].stripTrailing(), upstream, pushed);
+    }
+
+    /** The largest commit template read into the message box. */
+    static final long TEMPLATE_MAX_BYTES = 64 * 1024;
+
+    /**
+     * The repository's commit template and comment character.
+     *
+     * @param text the content of the {@code commit.template} file, or {@code ""} when none is configured (or
+     *     it cannot be read)
+     * @param commentChar {@code core.commentChar}; {@code #} unless configured
+     */
+    public record CommitTemplate(String text, char commentChar) {
+        public static final CommitTemplate NONE = new CommitTemplate("", '#');
+
+        public boolean configured() {
+            return !text.isEmpty();
+        }
+    }
+
+    /** Reads {@link CommitTemplate} for {@code root}. Posts on the FX thread. */
+    public void commitTemplate(Path root, Consumer<CommitTemplate> onResult) {
+        submit(exec, () -> {
+            CommitTemplate template = gitAvailable() && root != null ? commitTemplateNow(root) : CommitTemplate.NONE;
+            Platform.runLater(() -> onResult.accept(template));
+        });
+    }
+
+    private static CommitTemplate commitTemplateNow(Path root) {
+        ProcessRunner.Result comment = git(root, QUICK, "config", "--get", "core.commentChar");
+        String configured = comment.ok() ? comment.out().strip() : "";
+        char commentChar = configured.length() == 1 ? configured.charAt(0) : '#';
+        // --type=path expands "~/"; a relative path is relative to the top of the work tree, as for git.
+        ProcessRunner.Result path = git(root, QUICK, "config", "--type=path", "--get", "commit.template");
+        String name = path.ok() ? path.out().strip() : "";
+        if (name.isEmpty()) {
+            return new CommitTemplate("", commentChar);
+        }
+        try {
+            Path file = root.resolve(name);
+            // A regular file of a sane size: the name comes from configuration, and a device or a pipe would
+            // never finish reading.
+            if (Files.isRegularFile(file) && Files.size(file) <= TEMPLATE_MAX_BYTES) {
+                return new CommitTemplate(Files.readString(file).replace("\r\n", "\n"), commentChar);
+            }
+        } catch (java.io.IOException | RuntimeException unreadable) {
+            // Not UTF-8, not readable, not a valid path: no template, exactly as if none were configured.
+        }
+        return new CommitTemplate("", commentChar);
+    }
+
+    /**
+     * Lines added and deleted per file, for the staged and for the unstaged changes: one
+     * {@code diff --numstat} each. A background read (no external diff driver, no textconv). An unreadable
+     * side is simply empty. Posts on the FX thread.
+     */
+    public void lineCounts(Path root, Consumer<GitNumstat.Changes> onResult) {
+        submit(exec, () -> {
+            GitNumstat.Changes changes = GitNumstat.Changes.NONE;
+            if (gitAvailable() && root != null) {
+                ProcessRunner.Result staged = git(root, QUICK, "diff", "--cached", "--numstat", "-z");
+                ProcessRunner.Result unstaged = git(root, QUICK, "diff", "--numstat", "-z");
+                changes = new GitNumstat.Changes(
+                        staged.ok() ? GitNumstat.parse(staged.out()) : Map.of(),
+                        unstaged.ok() ? GitNumstat.parse(unstaged.out()) : Map.of());
+            }
+            GitNumstat.Changes posted = changes;
+            Platform.runLater(() -> onResult.accept(posted));
+        });
     }
 
     /**
@@ -2478,8 +2753,23 @@ public final class GitService {
      * local lane passes the task on when its turn comes; the local lane itself never waits for the network.
      */
     private void submitNetworkInRequestOrder(Runnable task) {
-        submit(exec, () -> submit(networkExec, task));
+        pendingNetwork.incrementAndGet();
+        boolean queued = submit(exec, () -> {
+            boolean passedOn = submit(networkExec, () -> {
+                pendingNetwork.decrementAndGet();
+                task.run();
+            });
+            if (!passedOn) {
+                pendingNetwork.decrementAndGet();
+            }
+        });
+        if (!queued) {
+            pendingNetwork.decrementAndGet();
+        }
     }
+
+    /** User network commands requested but not yet started; a background fetch stays out of their way. */
+    private final AtomicInteger pendingNetwork = new AtomicInteger();
 
     /**
      * Runs a user-initiated command and counts it as in flight for its lane, so {@link #shutdown()} can tell

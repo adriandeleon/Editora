@@ -28,7 +28,9 @@ public enum StashOutcome {
             return APPLIED;
         }
         String text = ((out == null ? "" : out) + "\n" + (err == null ? "" : err)).toLowerCase(Locale.ROOT);
-        if (text.contains("conflict (") || text.contains("merge conflict in") || text.contains("needs merge")) {
+        // A stash also reports "Merge conflict in <path>" on its own, and "needs merge" for a path that
+        // was already unmerged.
+        if (GitConflicts.mentionsConflict(text) || text.contains("merge conflict in") || text.contains("needs merge")) {
             return CONFLICT;
         }
         if (text.contains("would be overwritten")) {

@@ -147,6 +147,43 @@ public final class GitSafety {
         return java.util.Collections.unmodifiableMap(env);
     }
 
+    /**
+     * Extra {@code -c} overrides of the automatic fetch: no askpass program from configuration (an empty
+     * value is "none" to git, where an unset one falls through to {@code SSH_ASKPASS}), and a credential
+     * helper that would open a window is told not to.
+     */
+    static final List<String> AUTO_FETCH_CONFIG = List.of("-c", "core.askPass=", "-c", "credential.interactive=false");
+
+    /**
+     * Environment of the automatic background fetch: a background read's, plus everything that keeps a
+     * command nobody asked for from asking for anything. {@code GIT_ASKPASS} and {@code SSH_ASKPASS} are set
+     * to the empty string (git and ssh both read that as "no askpass program"), {@code SSH_ASKPASS_REQUIRE}
+     * to {@code never} (OpenSSH 8.4+), and Git Credential Manager is told not to interact.
+     *
+     * <p>ssh itself is put in batch mode — no passphrase or host-key question, it fails instead — through
+     * {@code GIT_SSH_COMMAND}, but only when the user has not chosen an ssh command of their own:
+     * {@code GIT_SSH_COMMAND} outranks {@code core.sshCommand}, so setting it would replace theirs.
+     * {@code userSshCommand} says the repository or the user's configuration has one; an exported
+     * {@code GIT_SSH_COMMAND} or {@code GIT_SSH} is read from {@code inherited}. Pure.
+     */
+    static Map<String, String> autoFetchEnv(Map<String, String> inherited, boolean userSshCommand) {
+        Map<String, String> env = new java.util.LinkedHashMap<>(BACKGROUND_ENV);
+        env.put("GIT_ASKPASS", "");
+        env.put("SSH_ASKPASS", "");
+        env.put("SSH_ASKPASS_REQUIRE", "never");
+        env.put("GCM_INTERACTIVE", "never");
+        boolean exported =
+                inherited != null && (notBlank(inherited.get("GIT_SSH_COMMAND")) || notBlank(inherited.get("GIT_SSH")));
+        if (!userSshCommand && !exported) {
+            env.put("GIT_SSH_COMMAND", "ssh -o BatchMode=yes");
+        }
+        return java.util.Collections.unmodifiableMap(env);
+    }
+
+    private static boolean notBlank(String value) {
+        return value != null && !value.isBlank();
+    }
+
     /** {@code -c key=value} pairs that neutralise repository-controlled program execution. */
     static List<String> backgroundConfig(boolean windows) {
         String nullDevice = windows ? "NUL" : "/dev/null";

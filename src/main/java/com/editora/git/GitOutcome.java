@@ -48,10 +48,7 @@ public enum GitOutcome {
         if (text.contains("[rejected]") && (text.contains("(non-fast-forward)") || text.contains("(fetch first)"))) {
             return NON_FAST_FORWARD;
         }
-        if (text.contains("conflict (")
-                || text.contains("automatic merge failed")
-                || text.contains("could not apply ")
-                || text.contains("resolve all conflicts manually")) {
+        if (GitConflicts.mentionsConflict(text)) {
             return CONFLICT;
         }
         if (text.contains("is not fully merged")) {

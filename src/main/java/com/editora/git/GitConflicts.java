@@ -77,21 +77,27 @@ public final class GitConflicts {
     }
 
     /**
+     * Whether git's output (lower-cased, stdout and stderr together) says a command left conflicts behind —
+     * the one place that reads it, for {@link GitOutcome}, {@link StashOutcome} and {@link #stoppedOnConflict}.
+     * Each conflicted path is announced as {@code CONFLICT (content): …}; a merge adds "Automatic merge
+     * failed", the sequencer "could not apply" / "after resolving the conflicts" / "Resolve all conflicts
+     * manually". Git's messages are English for every command Editora runs. Pure.
+     */
+    static boolean mentionsConflict(String lowerCaseOutput) {
+        return lowerCaseOutput.contains("conflict (")
+                || lowerCaseOutput.contains("automatic merge failed")
+                || lowerCaseOutput.contains("could not apply ")
+                || lowerCaseOutput.contains("after resolving the conflicts")
+                || lowerCaseOutput.contains("resolve all conflicts manually");
+    }
+
+    /**
      * Whether a failed merge, pull, rebase, cherry-pick, revert or stash pop/apply stopped because of
      * conflicts — the repository is now waiting for them to be resolved — rather than refusing to start.
      * The first is a state to show (the Conflicts group, the operation banner); only the second is an error
-     * to put in a dialog. Read from git's English output, which every command Editora runs is pinned to:
-     * each conflicted path is announced as {@code CONFLICT (content): …}, and the sequencer adds "could not
-     * apply" / "after resolving the conflicts". Pure.
+     * to put in a dialog. {@link GitOutcome#CONFLICT}, as a question.
      */
     public static boolean stoppedOnConflict(ProcessRunner.Result result) {
-        if (result == null || result.ok() || result.cancelled() || result.timedOut()) {
-            return false;
-        }
-        String text = (result.out() == null ? "" : result.out()) + '\n' + (result.err() == null ? "" : result.err());
-        return text.contains("CONFLICT (")
-                || text.contains("Automatic merge failed")
-                || text.contains("after resolving the conflicts")
-                || text.contains("Resolve all conflicts manually");
+        return GitOutcome.of(result) == GitOutcome.CONFLICT;
     }
 }

@@ -14,11 +14,34 @@ class GitPullModeTest {
     @Test
     void eachModeHasItsArguments() {
         assertArrayEquals(new String[] {"pull", "--ff-only"}, GitPullMode.FF_ONLY.args());
-        assertArrayEquals(new String[] {"pull", "--rebase"}, GitPullMode.REBASE.args());
         assertArrayEquals(
-                new String[] {"pull", "--no-rebase", "--no-edit"},
+                new String[] {"pull", "--rebase", "--autostash"},
+                GitPullMode.REBASE.args(),
+                "a rebase refuses a dirty tree: local changes are stashed across it");
+        assertArrayEquals(
+                new String[] {"pull", "--no-rebase", "--no-edit", "--autostash"},
                 GitPullMode.MERGE.args(),
                 "--no-rebase overrides pull.rebase=true; --no-edit because there is no terminal for an editor");
+    }
+
+    /** What an --autostash pull did with the uncommitted changes, read from git's own lines. */
+    @Test
+    void theAutostashOutcomeIsReadFromGitsOutput() {
+        assertEquals(GitPullMode.Autostash.NONE, GitPullMode.autostash(null));
+        assertEquals(
+                GitPullMode.Autostash.NONE,
+                GitPullMode.autostash(new ProcessRunner.Result(0, "Already up to date.\n", "")));
+        assertEquals(
+                GitPullMode.Autostash.APPLIED,
+                GitPullMode.autostash(new ProcessRunner.Result(
+                        0, "", "Created autostash: 1a2b3c4\nApplied autostash.\nSuccessfully rebased.\n")));
+        assertEquals(
+                GitPullMode.Autostash.KEPT_IN_STASH,
+                GitPullMode.autostash(new ProcessRunner.Result(
+                        0,
+                        "",
+                        "Applying autostash resulted in conflicts.\nYour changes are safe in the stash.\n"
+                                + "You can run \"git stash pop\" or \"git stash drop\" at any time.\n")));
     }
 
     @Test

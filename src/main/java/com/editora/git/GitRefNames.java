@@ -1,8 +1,8 @@
 package com.editora.git;
 
 /**
- * Pure validation of a name the user typed for a branch (or a remote) against the rules of
- * {@code git check-ref-format --branch}. Checked before the name reaches an argv, so a bad one is refused
+ * Pure validation of a name the user typed for a branch, a tag or a remote against the rules of
+ * {@code git check-ref-format} (the unit test compares it with the installed git over a table of names). Checked before the name reaches an argv, so a bad one is refused
  * with a sentence instead of a git usage error — and so a name that git would read as an option, or that
  * names something other than a branch ({@code HEAD}, {@code a..b}, {@code x@{1}}), never gets that far.
  * Toolkit-free and unit-tested.
@@ -67,6 +67,15 @@ public final class GitRefNames {
 
     /** Whether {@code name} can be given to git as a new branch name. */
     public static boolean isValidBranch(String name) {
+        return problem(name) == null;
+    }
+
+    /**
+     * Whether {@code name} can be given to git as a new tag name. The rules are the branch rules: the same
+     * spelling ({@code refs/tags/<name>}), no leading {@code -}, and neither {@code @} nor {@code HEAD},
+     * which as revisions mean the checked-out commit.
+     */
+    public static boolean isValidTag(String name) {
         return problem(name) == null;
     }
 
