@@ -123,6 +123,11 @@ public final class TestSourceLocator {
         return "^(" + String.join("|", top) + ")$";
     }
 
+    /** A class name as shown to the user: the last dot-segment, a nested class as {@code Outer.Inner}. */
+    public static String displayName(String className) {
+        return filterClassName(className).replace('$', '.');
+    }
+
     /** The last dot-segment of a fully-qualified name (strips any nested-class {@code $} suffix too). */
     public static String simpleName(String className) {
         String name = className;

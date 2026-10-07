@@ -8,8 +8,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 /**
- * The jdtls source-generation prompts (#741) — Generate toString / hashCode+equals / Constructors, and
- * Override-Implement Methods.
+ * The jdtls source-generation prompts (#741) — Generate toString / hashCode+equals / Constructors /
+ * Getters and Setters / Delegate Methods, and Override-Implement Methods.
  *
  * <p>These are <b>client-driven</b> flows, which is why they need code here at all. Once
  * {@code extendedClientCapabilities} declares the matching {@code *PromptSupport} flag, jdtls stops
@@ -49,7 +49,19 @@ public final class JdtlsGenerate {
                 "java.action.overrideMethodsPrompt",
                 "java/listOverridableMethods",
                 "java/addOverridableMethods",
-                "methods");
+                "methods"),
+        /** The check response is a bare array of accessor fields, so there is no items field. */
+        ACCESSORS(
+                "java.action.generateAccessorsPrompt",
+                "java/resolveUnimplementedAccessors",
+                "java/generateAccessors",
+                null),
+        /** Two levels — a field, then that field's methods; see {@link #delegateFields}. */
+        DELEGATE_METHODS(
+                "java.action.generateDelegateMethodsPrompt",
+                "java/checkDelegateMethodsStatus",
+                "java/generateDelegateMethods",
+                "delegateFields");
 
         private final String command;
         private final String checkRequest;
@@ -75,7 +87,7 @@ public final class JdtlsGenerate {
             return generateRequest;
         }
 
-        /** The array in the check response holding the choosable candidates. */
+        /** The array in the check response holding the choosable candidates; null when the response is the array. */
         public String itemsField() {
             return itemsField;
         }
@@ -109,8 +121,11 @@ public final class JdtlsGenerate {
      */
     public static List<Candidate> candidates(Kind kind, JsonElement checkResponse) {
         List<Candidate> out = new ArrayList<>();
-        if (kind == null || checkResponse == null || !checkResponse.isJsonObject()) {
-            return out;
+        if (kind == Kind.ACCESSORS) {
+            return accessorCandidates(checkResponse);
+        }
+        if (kind == null || kind == Kind.DELEGATE_METHODS || checkResponse == null || !checkResponse.isJsonObject()) {
+            return out; // delegate methods are chosen per field: delegateFields
         }
         JsonElement arr = checkResponse.getAsJsonObject().get(kind.itemsField());
         if (arr == null || !arr.isJsonArray()) {
@@ -154,6 +169,94 @@ public final class JdtlsGenerate {
             sb.append(" : ").append(type);
         }
         return sb.toString();
+    }
+
+    /**
+     * The fields a {@code java/resolveUnimplementedAccessors} response lists, all pre-selected: the action
+     * without a prompt generates every one, so the picker starts from the same result and lets the user
+     * take fields out. The label names which accessors the field is still missing.
+     */
+    private static List<Candidate> accessorCandidates(JsonElement checkResponse) {
+        List<Candidate> out = new ArrayList<>();
+        if (checkResponse == null || !checkResponse.isJsonArray()) {
+            return out;
+        }
+        for (JsonElement e : checkResponse.getAsJsonArray()) {
+            if (e == null || !e.isJsonObject()) {
+                continue;
+            }
+            JsonObject o = e.getAsJsonObject();
+            String name = string(o, "fieldName");
+            StringBuilder sb = new StringBuilder(name == null || name.isBlank() ? "?" : name);
+            String type = string(o, "typeName");
+            if (type != null && !type.isBlank()) {
+                sb.append(" : ").append(type);
+            }
+            boolean getter = bool(o, "generateGetter");
+            boolean setter = bool(o, "generateSetter");
+            if (getter || setter) {
+                sb.append("  (")
+                        .append(getter ? "get" : "")
+                        .append(getter && setter ? ", " : "")
+                        .append(setter ? "set" : "")
+                        .append(')');
+            }
+            out.add(new Candidate(sb.toString(), true, e));
+        }
+        return out;
+    }
+
+    /** A field whose methods can be delegated to: its label, its untouched JSON, and its methods. */
+    public record DelegateField(String label, JsonElement field, List<Candidate> methods) {}
+
+    /**
+     * The fields a {@code java/checkDelegateMethodsStatus} response offers, each with the methods not yet
+     * delegated. A field with no method left is dropped, so an empty list means there is nothing to generate.
+     */
+    public static List<DelegateField> delegateFields(JsonElement checkResponse) {
+        List<DelegateField> out = new ArrayList<>();
+        if (checkResponse == null || !checkResponse.isJsonObject()) {
+            return out;
+        }
+        JsonElement arr = checkResponse.getAsJsonObject().get(Kind.DELEGATE_METHODS.itemsField());
+        if (arr == null || !arr.isJsonArray()) {
+            return out;
+        }
+        for (JsonElement e : arr.getAsJsonArray()) {
+            if (e == null || !e.isJsonObject()) {
+                continue;
+            }
+            JsonElement field = e.getAsJsonObject().get("field");
+            JsonElement methods = e.getAsJsonObject().get("delegateMethods");
+            if (field == null || !field.isJsonObject() || methods == null || !methods.isJsonArray()) {
+                continue;
+            }
+            List<Candidate> rows = new ArrayList<>();
+            for (JsonElement m : methods.getAsJsonArray()) {
+                if (m != null && m.isJsonObject()) {
+                    rows.add(new Candidate(label(m.getAsJsonObject()), false, m));
+                }
+            }
+            if (!rows.isEmpty()) {
+                out.add(new DelegateField(label(field.getAsJsonObject()), field, List.copyOf(rows)));
+            }
+        }
+        return out;
+    }
+
+    /** The parameter of {@code java/generateDelegateMethods}: one entry per chosen method of {@code field}. */
+    public static JsonObject delegateParams(JsonElement actionParams, DelegateField field, List<Candidate> chosen) {
+        JsonArray entries = new JsonArray();
+        for (Candidate c : chosen) {
+            JsonObject entry = new JsonObject();
+            entry.add("field", field.field());
+            entry.add("delegateMethod", c.raw());
+            entries.add(entry);
+        }
+        JsonObject params = new JsonObject();
+        params.add("context", actionParams);
+        params.add("delegateEntries", entries);
+        return params;
     }
 
     /** A check response together with the choices rendered from it. Constructors need the response's
@@ -231,6 +334,9 @@ public final class JdtlsGenerate {
                 params.add("fields", picked);
             }
             case OVERRIDE_METHODS -> params.add("overridableMethods", picked);
+            case ACCESSORS -> params.add("accessors", picked);
+            case DELEGATE_METHODS ->
+                throw new IllegalArgumentException("delegate methods are assembled by delegateParams");
         }
         return params;
     }

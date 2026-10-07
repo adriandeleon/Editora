@@ -204,12 +204,12 @@ public class EditorBuffer implements TabContent {
 
         @Override
         public int lspOffset(CodeArea a, int line, int col) {
-            return EditorBuffer.this.lspOffset(a, line, col);
+            return LspEditPlacement.offset(a, line, col);
         }
 
         @Override
         public int[] lspPosition(CodeArea a, int offset) {
-            return EditorBuffer.this.lspPosition(a, offset);
+            return LspEditPlacement.position(a, offset);
         }
     });
 
@@ -975,6 +975,7 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
         installOccurrenceTrigger(area); // LSP document highlight (#675)
+        installCodeLensClick(area);
         // When an edit shifts bookmarks, repaint the affected lines' gutter markers after the edit's own
         // graphic rebuild settles (deferred to the next pulse), so the moved marker follows its line.
         bookmarks.setOnLinesRepaint(lines -> Platform.runLater(() -> lines.forEach(this::refreshGutterLine)));
@@ -997,7 +998,7 @@ public class EditorBuffer implements TabContent {
             documentSnapshots.invalidate();
             completionActions.documentChanged(c);
             if (!completionEditTrackers.isEmpty()) {
-                int[] start = lspPosition(area, c.getPosition());
+                int[] start = LspEditPlacement.position(area, c.getPosition());
                 int[] before = completionChangeEnd(start, c.getRemoved());
                 int[] after = completionChangeEnd(start, c.getInserted());
                 var change = new LspEditShift.Change(start[0], start[1], before[0], before[1], after[0], after[1]);
@@ -1023,6 +1024,7 @@ public class EditorBuffer implements TabContent {
         // order HighlightDirty maps its range through them.
         configureSettledEditDispatcher();
         settledEditSub = area.multiPlainChanges().subscribe(changes -> {
+            shiftCodeLenses(changes);
             gitLines.edited(changes, this::refreshGutterLine, area2); // bars + blame follow inserted/removed lines
             for (var change : changes) {
                 int removed = change.getRemoved().length();
@@ -2747,8 +2749,8 @@ public class EditorBuffer implements TabContent {
         }
         java.util.List<int[]> triples = new java.util.ArrayList<>(spans.size());
         for (OccurrenceSpan s : spans) {
-            int from = lspOffset(area, s.startLine(), s.startCol());
-            int to = lspOffset(area, s.endLine(), s.endCol());
+            int from = LspEditPlacement.offset(area, s.startLine(), s.startCol());
+            int to = LspEditPlacement.offset(area, s.endLine(), s.endCol());
             if (to > from) {
                 triples.add(new int[] {from, to, s.write() ? 1 : 0});
             }
@@ -2806,12 +2808,144 @@ public class EditorBuffer implements TabContent {
             return;
         }
         inlayFactoryInstalled = true;
-        java.util.function.IntFunction<java.util.List<org.fxmisc.richtext.Inlay>> factory =
-                line -> inlayHintsByLine.get(line);
+        java.util.function.IntFunction<java.util.List<org.fxmisc.richtext.Inlay>> factory = this::inlaysOn;
         area.setInlayFactory(factory);
         if (area2 != null) {
             area2.setInlayFactory(factory);
         }
+    }
+
+    /** The inlays of one line: its hints, then — after the last character — its code lens. */
+    private java.util.List<org.fxmisc.richtext.Inlay> inlaysOn(int line) {
+        java.util.List<org.fxmisc.richtext.Inlay> hints = inlayHintsByLine.get(line);
+        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
+        if (lenses == null || line < 0 || line >= area.getParagraphs().size()) {
+            return hints;
+        }
+        StringBuilder lens = new StringBuilder();
+        for (CodeLens l : lenses) {
+            lens.append(lens.isEmpty() ? "" : "  ·  ").append(l.label());
+        }
+        java.util.List<org.fxmisc.richtext.Inlay> out =
+                hints == null ? new java.util.ArrayList<>(1) : new java.util.ArrayList<>(hints);
+        out.add(new org.fxmisc.richtext.Inlay(area.getParagraphLength(line), lens.toString(), CODE_LENS_STYLE));
+        return out;
+    }
+
+    /**
+     * One code lens: the 0-based line it annotates, what it says ({@code 3 references}), and an opaque
+     * token the click handler gets back (the coordinator's own description of what the lens does).
+     */
+    public record CodeLens(int line, String label, Object token) {}
+
+    private static final String CODE_LENS_STYLE = "code-lens";
+
+    /** 0-based line → the lenses drawn after it, joined. Read live by the areas' inlay factory. */
+    private java.util.Map<Integer, java.util.List<CodeLens>> codeLensByLine = java.util.Map.of();
+
+    private java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> codeLensHandler = (line, lenses) -> {};
+
+    /**
+     * Sets the code lenses, each drawn after the end of its line through the same inlay mechanism as the
+     * hints (so it is not part of the document either). Several lenses on one line are joined. Null or
+     * empty clears them.
+     */
+    public void setCodeLenses(java.util.List<CodeLens> lenses) {
+        java.util.Map<Integer, java.util.List<CodeLens>> byLine = new java.util.HashMap<>();
+        if (lenses != null) {
+            for (CodeLens lens : lenses) {
+                byLine.computeIfAbsent(lens.line(), k -> new java.util.ArrayList<>(1))
+                        .add(lens);
+            }
+        }
+        if (byLine.equals(codeLensByLine)) {
+            return;
+        }
+        codeLensByLine = byLine.isEmpty() ? java.util.Map.of() : byLine;
+        ensureInlayFactory();
+        refreshInlayAreas();
+    }
+
+    /** What a click on a line's code lens does: gets the line as it is now, and the lenses on it. */
+    public void setCodeLensHandler(java.util.function.BiConsumer<Integer, java.util.List<CodeLens>> handler) {
+        this.codeLensHandler = handler == null ? (line, lenses) -> {} : handler;
+    }
+
+    /** The lenses on {@code line} (0-based) — empty when it has none. */
+    public java.util.List<CodeLens> codeLensesOn(int line) {
+        return codeLensByLine.getOrDefault(line, java.util.List.of());
+    }
+
+    /** Runs the click action of the lenses on {@code line}, as a click on them does. */
+    public void activateCodeLens(int line) {
+        java.util.List<CodeLens> lenses = codeLensByLine.get(line);
+        if (lenses != null) {
+            codeLensHandler.accept(line, lenses);
+        }
+    }
+
+    /**
+     * Keeps the lenses on their declarations while the answer to the next request is on its way: a change
+     * that adds or removes lines moves the lenses below it, and drops those inside the removed text.
+     */
+    private void shiftCodeLenses(java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes) {
+        if (codeLensByLine.isEmpty()) {
+            return;
+        }
+        java.util.Map<Integer, java.util.List<CodeLens>> moved = codeLensByLine;
+        if (changes.size() == 1) {
+            var change = changes.get(0);
+            int removedLines = newlines(change.getRemoved());
+            int delta = newlines(change.getInserted()) - removedLines;
+            if (delta == 0 && removedLines == 0) {
+                return;
+            }
+            var at = area.offsetToPosition(
+                    Math.min(change.getPosition(), area.getLength()),
+                    org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
+            moved = CodeLensShift.shift(
+                    codeLensByLine,
+                    at.getMajor(),
+                    at.getMinor() == 0,
+                    removedLines,
+                    change.getRemoved().endsWith("\n"),
+                    delta);
+        } else if (changes.stream().anyMatch(c -> newlines(c.getRemoved()) + newlines(c.getInserted()) > 0)) {
+            // Each change of a batch is in the coordinates of the step it ran in; rather than replay
+            // them, drop the lenses until the next answer.
+            moved = java.util.Map.of();
+        } else {
+            return;
+        }
+        codeLensByLine = moved.isEmpty() ? java.util.Map.of() : moved;
+        refreshInlayAreas();
+    }
+
+    private static int newlines(String text) {
+        int n = 0;
+        for (int i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+            n++;
+        }
+        return n;
+    }
+
+    /** A click on a code lens runs its action instead of placing the caret. */
+    private void installCodeLensClick(CodeArea a) {
+        a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
+            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || codeLensByLine.isEmpty()) {
+                return;
+            }
+            for (javafx.scene.Node n = e.getPickResult().getIntersectedNode(); n != null && n != a; n = n.getParent()) {
+                if (n.getStyleClass().contains(CODE_LENS_STYLE)) {
+                    int offset = a.hit(e.getX(), e.getY()).getInsertionIndex();
+                    int line = a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                            .getMajor();
+                    e.consume();
+                    activateCodeLens(line);
+                    return;
+                }
+            }
+        });
     }
 
     private void refreshInlayAreas() {
@@ -3956,7 +4090,7 @@ public class EditorBuffer implements TabContent {
             return null; // the plain script/Makefile/.http ▶ keeps its untooltipped look
         }
         return t.methodName() == null
-                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.simpleName(t.className()))
+                ? tr("testrunner.gutter.runClass", com.editora.test.TestSourceLocator.displayName(t.className()))
                 : tr("testrunner.gutter.runMethod", t.methodName());
     }
 
@@ -6566,6 +6700,7 @@ public class EditorBuffer implements TabContent {
         addAutoIndent(area2);
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
+        installCodeLensClick(area2);
         installImageDrop(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
@@ -9187,13 +9322,15 @@ public class EditorBuffer implements TabContent {
     /** Capture the acceptance independently of future completions and track safe typing until resolve lands. */
     public java.util.function.Consumer<java.util.List<LspTextEdit>> trackCompletionAdditionalEdits() {
         var shift = completionActions.pendingCompletionShift;
-        int start = shift == null ? area.getCaretPosition() : lspOffset(area, shift.startLine(), shift.startCol());
+        int start = shift == null
+                ? area.getCaretPosition()
+                : LspEditPlacement.offset(area, shift.startLine(), shift.startCol());
         int end = start;
         String line = area.getParagraph(
                         area.offsetToPosition(start, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                                 .getMajor())
                 .getText();
-        int column = lspPosition(area, start)[1];
+        int column = LspEditPlacement.position(area, start)[1];
         while (column < line.length() && Character.isJavaIdentifierPart(line.charAt(column++))) end++;
         var tracker = new CompletionEditTracker(shift, start, end);
         if (completionEditTrackers.size() >= 8) completionEditTrackers.removeFirst();
@@ -9252,7 +9389,7 @@ public class EditorBuffer implements TabContent {
         if (edits == null || edits.isEmpty()) {
             return true;
         }
-        return isEditable() && placeLspEdits(focusedArea != null ? focusedArea : area, edits, true) != null;
+        return isEditable() && LspEditPlacement.place(focusedArea != null ? focusedArea : area, edits, true) != null;
     }
 
     /**
@@ -9265,163 +9402,12 @@ public class EditorBuffer implements TabContent {
         else applyLspEditsNow(edits, false, false);
     }
 
-    /** Edits resolved to absolute, ascending, non-overlapping {@code {start, end}} ranges and their texts. */
-    private record LspPlacement(java.util.List<int[]> ranges, java.util.List<String> texts) {}
-
-    /**
-     * Resolves each edit to an absolute range against the current document. Lenient ({@code strict} false):
-     * an edit that cannot be placed is left out. Strict: one such edit makes the whole set unplaceable and
-     * the result is {@code null}.
-     */
-    private static LspPlacement placeLspEdits(CodeArea a, java.util.List<LspTextEdit> edits, boolean strict) {
-        int len = a.getLength();
-        int lineCount = a.getParagraphs().size();
-        java.util.List<int[]> ranges = new java.util.ArrayList<>(); // {start, end}
-        java.util.List<String> texts = new java.util.ArrayList<>();
-        java.util.List<LspTextEdit> asc = new java.util.ArrayList<>(edits);
-        if (strict) {
-            for (LspTextEdit e : asc) {
-                // A negative coordinate would be clamped onto line/column 0 — somewhere the server never
-                // meant. The lenient path keeps that clamp; a strict set is refused instead.
-                if (e == null || e.startLine() < 0 || e.startCol() < 0 || e.endLine() < 0 || e.endCol() < 0) {
-                    return null;
-                }
-            }
-        }
-        asc.sort((x, y) -> Integer.compare(lspEditOffset(a, x), lspEditOffset(a, y)));
-        int last = 0;
-        for (LspTextEdit e : asc) {
-            try {
-                if (e.startLine() > lineCount || (e.startLine() == lineCount && e.startCol() > 0)) {
-                    if (strict) {
-                        return null;
-                    }
-                    continue; // start beyond the document — a stale edit; clamping would misplace it (#667)
-                }
-                int s = lspOffset(a, e.startLine(), e.startCol());
-                int en = lspOffset(a, e.endLine(), e.endCol());
-                int from = Math.min(s, en);
-                int to = Math.max(s, en);
-                if (from < last || to > len) {
-                    if (strict) {
-                        return null;
-                    }
-                    continue; // overlaps a previous edit or out of range — skip (rare; positions shifted)
-                }
-                ranges.add(new int[] {from, to});
-                texts.add(e.newText() == null ? "" : e.newText());
-                last = to;
-            } catch (RuntimeException ignored) {
-                // Position no longer valid (document changed under us) — skip this edit.
-                if (strict) {
-                    return null;
-                }
-            }
-        }
-        return new LspPlacement(ranges, texts);
-    }
-
     /** Returns whether the edits were placed; lenient mode always answers true. */
     private boolean applyLspEditsNow(java.util.List<LspTextEdit> edits, boolean preserveCaret, boolean strict) {
         if (edits == null || edits.isEmpty() || !isEditable()) {
             return !strict;
         }
-        CodeArea a = focusedArea != null ? focusedArea : area;
-        int caretBefore = a.getCaretPosition();
-        int anchorBefore = a.getAnchor();
-        LspEditView.Before view = preserveCaret ? null : LspEditView.capture(a);
-        // Resolve each edit to an absolute [start,end] against the current document, keep valid + non-overlapping,
-        // sorted ascending. Applying them as ONE MultiChangeBuilder commit makes the whole set a single undo
-        // unit — a multi-line Format Document (or an auto-import's additional edits) was previously one
-        // replaceText per edit, so it took many Ctrl-Z to revert (#415, the Format-Document sub-item).
-        LspPlacement placement = placeLspEdits(a, edits, strict);
-        if (placement == null) {
-            return false;
-        }
-        java.util.List<int[]> ranges = placement.ranges();
-        java.util.List<String> texts = placement.texts();
-        if (ranges.isEmpty()) {
-            return true;
-        }
-        if (ranges.size() == 1) {
-            a.replaceText(ranges.get(0)[0], ranges.get(0)[1], texts.get(0));
-            restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
-            return true;
-        }
-        // Apply BOTTOM-TO-TOP. The fork's MultiChangeBuilder applies its replacements *sequentially against
-        // the progressively-edited document* (documented in CLAUDE.md), so absolute offsets computed against
-        // the ORIGINAL text are only valid while nothing before them has changed length. Feeding ascending
-        // order silently corrupted every edit after the first length-changing one — which is exactly what
-        // Format Document does (re-indent = grow/shrink), so it mangled the file. Descending order keeps
-        // every offset valid because each edit lies before the region already rewritten. (The LSP spec gives
-        // the same rule for applying a TextEdit[].) Same-length edits hid this in the original test.
-        org.fxmisc.richtext.MultiChangeBuilder<?, ?, ?> builder = a.createMultiChange(ranges.size());
-        for (int i = ranges.size() - 1; i >= 0; i--) {
-            builder.replaceTextAbsolutely(ranges.get(i)[0], ranges.get(i)[1], texts.get(i));
-        }
-        builder.commit(); // one undo unit for the whole edit set
-        restoreCaretAfterEdits(a, view, caretBefore, anchorBefore, ranges, texts);
-        return true;
-    }
-
-    /** Puts the caret back where it was, translated across the edits just applied; see {@code LspEditShift}. */
-    private static void restoreCaretAfterEdits(
-            CodeArea a,
-            LspEditView.Before view,
-            int caretBefore,
-            int anchorBefore,
-            java.util.List<int[]> ranges,
-            java.util.List<String> texts) {
-        if (view != null) {
-            LspEditView.restore(a, view, ranges, texts); // format / quick fix / rename: see LspEditView
-            return;
-        }
-        int target = LspEditShift.caretAfterEdits(caretBefore, ranges, texts);
-        int anchor = LspEditShift.caretAfterEdits(anchorBefore, ranges, texts);
-        a.selectRange(Math.max(0, Math.min(anchor, a.getLength())), Math.max(0, Math.min(target, a.getLength())));
-        a.requestFollowCaret();
-    }
-
-    private static int lspEditOffset(CodeArea a, LspTextEdit e) {
-        try {
-            return lspOffset(a, e.startLine(), e.startCol());
-        } catch (RuntimeException ex) {
-            return 0;
-        }
-    }
-
-    /**
-     * Absolute offset for a 0-based LSP line/character, clamped to the document/paragraph bounds. A line past
-     * the last one is the document <em>end</em> (as in {@code LspPositions.offset}), not the start of the
-     * last line: {@code (lineCount, 0)} is how a server addresses "after everything".
-     */
-    private static int lspOffset(CodeArea a, int line, int col) {
-        if (line >= a.getParagraphs().size()) {
-            return a.getLength();
-        }
-        int par = Math.max(0, line);
-        var paragraph = a.getParagraph(par);
-        int column = Math.max(0, Math.min(col, paragraph.length()));
-        // A column between the two halves of a surrogate pair addresses no character: editing there
-        // leaves two lone surrogates, which are then saved as '?'. Snap back to the pair's start.
-        if (column > 0
-                && column < paragraph.length()
-                && Character.isLowSurrogate(paragraph.charAt(column))
-                && Character.isHighSurrogate(paragraph.charAt(column - 1))) {
-            column--;
-        }
-        return a.getAbsolutePosition(par, column);
-    }
-
-    /**
-     * The 0-based LSP {@code {line, character}} of an absolute offset (the inverse of {@link #lspOffset}),
-     * clamped to the document. {@code Backward} bias so an offset at a line's end reads as that line's last
-     * column rather than the next line's column 0 — the two ends of the accept's change must agree.
-     */
-    private static int[] lspPosition(CodeArea a, int offset) {
-        int clamped = Math.max(0, Math.min(offset, a.getLength()));
-        var pos = a.offsetToPosition(clamped, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
-        return new int[] {pos.getMajor(), pos.getMinor()};
+        return LspEditPlacement.apply(focusedArea != null ? focusedArea : area, edits, preserveCaret, strict);
     }
 
     private static void toggleStyleClass(Node node, String styleClass, boolean on) {

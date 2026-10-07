@@ -240,6 +240,7 @@ public class SettingsWindow {
     private CheckBox completionDocCheck;
     private CheckBox semanticHighlightCheck;
     private CheckBox inlayHintsCheck;
+    private CheckBox codeLensCheck;
     private ComboBox<String> inlayHintModeCombo;
     private CheckBox onTypeFormattingCheck;
     private CheckBox pasteImportsCheck;
@@ -1190,6 +1191,7 @@ public class SettingsWindow {
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
         inlayHintsCheck = viewCheck(tr("settings.inlayHints"), Settings::setInlayHints);
+        codeLensCheck = viewCheck(tr("settings.codeLens"), Settings::setCodeLens);
         inlayHintModeCombo = new ComboBox<>();
         inlayHintModeCombo.getItems().setAll("literals", "all");
         inlayHintModeCombo.setConverter(new StringConverter<>() {
@@ -3333,6 +3335,13 @@ public class SettingsWindow {
                 null,
                 "inlay hints parameter names inferred types lsp annotations");
         inlayHintsCheck.disableProperty().bind(lspCheck.selectedProperty().not());
+        checkRow(
+                lsp,
+                Category.COMPLETION,
+                codeLensCheck,
+                tr("settings.codeLens.note"),
+                "code lens vision references usages implementations count lsp");
+        codeLensCheck.disableProperty().bind(lspCheck.selectedProperty().not());
         controlRow(
                 lsp,
                 Category.COMPLETION,
@@ -7680,6 +7689,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(settings.isCompletionDoc());
             semanticHighlightCheck.setSelected(settings.isSemanticHighlight());
             inlayHintsCheck.setSelected(settings.isInlayHints());
+            codeLensCheck.setSelected(settings.isCodeLens());
             inlayHintModeCombo.setValue(settings.getInlayHintMode());
             onTypeFormattingCheck.setSelected(settings.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(settings.isLspPasteImports());
@@ -8321,6 +8331,7 @@ public class SettingsWindow {
             completionDocCheck.setSelected(s.isCompletionDoc());
             semanticHighlightCheck.setSelected(s.isSemanticHighlight());
             inlayHintsCheck.setSelected(s.isInlayHints());
+            codeLensCheck.setSelected(s.isCodeLens());
             inlayHintModeCombo.setValue(s.getInlayHintMode());
             onTypeFormattingCheck.setSelected(s.isLspOnTypeFormatting());
             pasteImportsCheck.setSelected(s.isLspPasteImports());

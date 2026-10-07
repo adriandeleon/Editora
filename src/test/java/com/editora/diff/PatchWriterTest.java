@@ -225,6 +225,8 @@ class PatchWriterTest {
         assertEquals(1, patch.lines().filter(line -> line.startsWith("@@")).count(), patch);
         Assumptions.assumeTrue(gitAvailable(), "git is not installed");
         run(dir, null, "git", "init", "-q");
+        // Git for Windows ships core.autocrlf=true, under which `git apply` writes the file back with CRLF.
+        run(dir, null, "git", "config", "core.autocrlf", "false");
         Path file = dir.resolve("f.txt");
         Files.writeString(file, before);
         assertEquals(0, run(dir, patch, "git", "apply", "-").exit(), patch);
