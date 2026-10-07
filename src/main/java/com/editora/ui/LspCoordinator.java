@@ -23,6 +23,7 @@ import com.editora.editor.LspDiagnostic;
 import com.editora.editor.MarkdownRenderer;
 import com.editora.lsp.InlayHintFilter;
 import com.editora.lsp.JdtlsGenerate;
+import com.editora.lsp.JdtlsRefactor;
 import com.editora.lsp.LspManager;
 import org.fxmisc.richtext.CodeArea;
 
@@ -2188,6 +2189,10 @@ final class LspCoordinator {
         if (kind == null || params == null) {
             return false;
         }
+        if (kind == JdtlsGenerate.Kind.DELEGATE_METHODS) {
+            runDelegatePrompt(path, item, params);
+            return true;
+        }
         lspManager.jdtlsGenerateCandidates(path, kind, params, plan -> {
             List<JdtlsGenerate.Candidate> candidates = plan.candidates();
             List<JdtlsGenerate.Candidate> constructors = kind == JdtlsGenerate.Kind.CONSTRUCTORS
@@ -2233,6 +2238,269 @@ final class LspCoordinator {
             }
         });
         return true;
+    }
+
+    /**
+     * Generate Delegate Methods: a field first (only asked when several can be delegated to), then the
+     * methods of that field to forward.
+     */
+    private void runDelegatePrompt(Path path, LspManager.CodeActionItem item, Object params) {
+        JdtlsGenerate.Kind kind = JdtlsGenerate.Kind.DELEGATE_METHODS;
+        lspManager.jdtlsRequest(path, kind.checkRequest(), params, status -> {
+            List<JdtlsGenerate.DelegateField> fields = JdtlsGenerate.delegateFields(status);
+            if (fields.isEmpty()) {
+                host.setStatus(tr("status.lsp.generateNothing", item.title()));
+                return;
+            }
+            java.util.function.Consumer<JdtlsGenerate.DelegateField> withField = field -> MultiSelectPicker.show(
+                    host.overlayHost(),
+                    item.title() + " — " + field.label(),
+                    pickerRows(field.methods()),
+                    chosen -> applyJdtlsEdit(
+                            path,
+                            item,
+                            kind.generateRequest(),
+                            JdtlsGenerate.delegateParams(LspManager.asJson(params), field, chosen)));
+            if (fields.size() == 1) {
+                withField.accept(fields.get(0));
+            } else {
+                pickOne(item.title(), tr("picker.generate.delegateField"), fields, f -> f.label(), f -> "", withField);
+            }
+        });
+    }
+
+    /** Sends a {@code java/…} request that answers with an edit, applies it, and reports the outcome. */
+    private void applyJdtlsEdit(Path path, LspManager.CodeActionItem item, String method, Object params) {
+        beginReportedEdit();
+        lspManager.jdtlsApplyEdit(path, method, params, item.expectedDocuments(), (ok, refused) -> {
+            if (!ok && refused != null) {
+                host.setError(refused); // the server's own reason beats "could not apply"
+                return;
+            }
+            reportEdit(
+                    ok,
+                    tr("status.lsp.codeActionApplied", item.title()),
+                    tr("status.lsp.codeActionFailed", item.title()));
+        });
+    }
+
+    /** A single-choice picker over {@code items}; {@code onChoose} is not called when it is dismissed. */
+    private <T> void pickOne(
+            String title,
+            String prompt,
+            List<T> items,
+            java.util.function.Function<T, String> label,
+            java.util.function.Function<T, String> detail,
+            java.util.function.Consumer<T> onChoose) {
+        QuickOpen<T> picker = new QuickOpen<>(title, prompt, () -> items, label, detail, chosen -> {
+            if (chosen != null) {
+                onChoose.accept(chosen);
+            }
+        });
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.window());
+    }
+
+    /**
+     * Carries out a jdtls refactoring the client has to drive — Move, Extract Interface, Change Signature
+     * ({@link JdtlsRefactor}) — if {@code item} is one, and reports whether it took over.
+     *
+     * <p>Like the generate prompts these must not reach {@code applyCodeAction}: their command,
+     * {@code java.action.applyRefactoringCommand}, is not one the server executes.
+     */
+    private boolean runRefactorCommand(Path path, LspManager.CodeActionItem item) {
+        JdtlsRefactor.Request request =
+                JdtlsRefactor.parse(LspManager.commandIdOf(item.raw()), LspManager.commandArguments(item.raw()));
+        if (request == null) {
+            return false;
+        }
+        String uri = request.documentUri();
+        switch (request.name()) {
+            case JdtlsRefactor.MOVE_FILE -> {
+                String source = request.info("uri") == null ? uri : request.info("uri");
+                moveTo(
+                        path,
+                        item,
+                        "moveResource",
+                        source,
+                        null,
+                        tr("picker.refactor.package"),
+                        r -> JdtlsRefactor.packages(r, false));
+            }
+            case JdtlsRefactor.MOVE_INSTANCE_METHOD ->
+                moveTo(
+                        path,
+                        item,
+                        "moveInstanceMethod",
+                        uri,
+                        request.params(),
+                        tr("picker.refactor.moveTarget"),
+                        JdtlsRefactor::instanceTargets);
+            case JdtlsRefactor.MOVE_STATIC_MEMBER -> moveToType(path, item, "moveStaticMember", request);
+            case JdtlsRefactor.MOVE_TYPE -> moveType(path, item, request);
+            case JdtlsRefactor.EXTRACT_INTERFACE -> extractInterface(path, item, request);
+            case JdtlsRefactor.CHANGE_SIGNATURE -> changeSignature(path, item, request);
+            default ->
+                // A refactoring that needs no choice from the user: the edit is one request away.
+                applyJdtlsEdit(path, item, "java/getRefactorEdit", refactorEdit(request, null));
+        }
+        return true;
+    }
+
+    private com.google.gson.JsonObject refactorEdit(
+            JdtlsRefactor.Request request, com.google.gson.JsonArray arguments) {
+        int tabSize = host.settings().getTabSize();
+        EditorBuffer buffer = activeLspBuffer();
+        boolean spaces = buffer == null || buffer.detectInsertSpaces(tabSize);
+        return JdtlsRefactor.refactorEditParams(request.name(), request.params(), tabSize, spaces, arguments);
+    }
+
+    /** Asks the server where {@code source} can move, lets the user choose, and moves it there. */
+    private void moveTo(
+            Path path,
+            LspManager.CodeActionItem item,
+            String moveKind,
+            String source,
+            com.google.gson.JsonElement params,
+            String prompt,
+            java.util.function.Function<com.google.gson.JsonElement, List<JdtlsRefactor.Destination>> read) {
+        lspManager.jdtlsRequest(
+                path, "java/getMoveDestinations", JdtlsRefactor.moveParams(moveKind, source, params, null), answer -> {
+                    String refused = JdtlsRefactor.errorMessage(answer);
+                    List<JdtlsRefactor.Destination> targets = read.apply(answer);
+                    if (refused != null || targets.isEmpty()) {
+                        host.setError(refused != null ? refused : tr("status.lsp.refactorNoTarget", item.title()));
+                        return;
+                    }
+                    pickDestination(
+                            item,
+                            prompt,
+                            targets,
+                            target -> applyJdtlsEdit(
+                                    path,
+                                    item,
+                                    "java/move",
+                                    JdtlsRefactor.moveParams(moveKind, source, params, target.raw())));
+                });
+    }
+
+    /** Moves a static member or a nested type into another type of the same project. */
+    private void moveToType(Path path, LspManager.CodeActionItem item, String moveKind, JdtlsRefactor.Request request) {
+        lspManager.jdtlsRequest(
+                path, "java/searchSymbols", JdtlsRefactor.searchTypesParams(request.info("projectName")), answer -> {
+                    List<JdtlsRefactor.Destination> types =
+                            JdtlsRefactor.types(answer, request.info("enclosingTypeName"));
+                    if (types.isEmpty()) {
+                        host.setError(tr("status.lsp.refactorNoTarget", item.title()));
+                        return;
+                    }
+                    pickDestination(
+                            item,
+                            tr("picker.refactor.class"),
+                            types,
+                            target -> applyJdtlsEdit(
+                                    path,
+                                    item,
+                                    "java/move",
+                                    JdtlsRefactor.moveParams(
+                                            moveKind, request.documentUri(), request.params(), target.raw())));
+                });
+    }
+
+    /** Move Type: into a file of its own, or into another class — asked only when both are possible. */
+    private void moveType(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
+        Runnable newFile = () -> applyJdtlsEdit(
+                path,
+                item,
+                "java/move",
+                JdtlsRefactor.moveParams("moveTypeToNewFile", request.documentUri(), request.params(), null));
+        Runnable otherClass = () -> moveToType(path, item, "moveTypeToClass", request);
+        boolean toFile = request.supportsDestination("newFile");
+        boolean toClass = request.supportsDestination("class");
+        if (toFile && toClass) {
+            String fileLabel = tr("picker.refactor.moveType.newFile");
+            pickOne(
+                    item.title(),
+                    tr("picker.refactor.moveTarget"),
+                    List.of(fileLabel, tr("picker.refactor.moveType.class")),
+                    s -> s,
+                    s -> "",
+                    chosen -> (chosen.equals(fileLabel) ? newFile : otherClass).run());
+        } else if (toClass) {
+            otherClass.run();
+        } else {
+            newFile.run();
+        }
+    }
+
+    private void pickDestination(
+            LspManager.CodeActionItem item,
+            String prompt,
+            List<JdtlsRefactor.Destination> targets,
+            java.util.function.Consumer<JdtlsRefactor.Destination> onChoose) {
+        pickOne(item.title(), prompt, targets, JdtlsRefactor.Destination::label, d -> d.detail(), onChoose);
+    }
+
+    /** Extract Interface: which methods, the interface's name, and the package it is created in. */
+    private void extractInterface(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
+        lspManager.jdtlsRequest(path, "java/checkExtractInterfaceStatus", request.params(), status -> {
+            List<JdtlsGenerate.Candidate> members = JdtlsRefactor.interfaceMembers(status);
+            List<JdtlsRefactor.Destination> packages = JdtlsRefactor.interfacePackages(status);
+            if (members.isEmpty() || packages.isEmpty()) {
+                host.setStatus(tr("status.lsp.generateNothing", item.title()));
+                return;
+            }
+            String subType = JdtlsRefactor.subTypeName(status);
+            MultiSelectPicker.show(
+                    host.overlayHost(),
+                    item.title(),
+                    pickerRows(members),
+                    chosen -> host.promptText(
+                            item.title(),
+                            tr("prompt.refactor.interfaceName"),
+                            subType == null ? "" : subType + "Interface",
+                            typed -> {
+                                String name = typed.strip();
+                                if (!JdtlsRefactor.isTypeName(name)) {
+                                    host.setError(tr("status.lsp.refactorBadName", name));
+                                    return;
+                                }
+                                java.util.function.Consumer<JdtlsRefactor.Destination> create = pkg -> applyJdtlsEdit(
+                                        path,
+                                        item,
+                                        "java/getRefactorEdit",
+                                        refactorEdit(
+                                                request, JdtlsRefactor.extractInterfaceArguments(chosen, name, pkg)));
+                                if (packages.size() == 1) {
+                                    create.accept(packages.get(0));
+                                } else {
+                                    pickDestination(item, tr("picker.refactor.package"), packages, create);
+                                }
+                            }));
+        });
+    }
+
+    /** Change Signature: the method's signature is edited as one line of text. */
+    private void changeSignature(Path path, LspManager.CodeActionItem item, JdtlsRefactor.Request request) {
+        lspManager.jdtlsRequest(path, "java/getChangeSignatureInfo", request.params(), info -> {
+            String refused = JdtlsRefactor.errorMessage(info);
+            String signature = JdtlsRefactor.signatureText(info);
+            if (refused != null || signature.isEmpty()) {
+                host.setError(refused != null ? refused : tr("status.lsp.codeActionFailed", item.title()));
+                return;
+            }
+            host.promptText(item.title(), tr("prompt.refactor.signature"), signature, typed -> {
+                if (typed.strip().equals(signature)) {
+                    return; // nothing changed
+                }
+                com.google.gson.JsonArray arguments = JdtlsRefactor.changeSignatureArguments(info, typed);
+                if (arguments == null) {
+                    host.setError(tr("status.lsp.refactorBadSignature"));
+                    return;
+                }
+                applyJdtlsEdit(path, item, "java/getRefactorEdit", refactorEdit(request, arguments));
+            });
+        });
     }
 
     private static List<MultiSelectPicker.Item<JdtlsGenerate.Candidate>> pickerRows(
@@ -2923,6 +3191,9 @@ final class LspCoordinator {
         }
         if (runGeneratePrompt(path, item)) {
             return; // a jdtls generate prompt: we drive it, not the server (#741)
+        }
+        if (runRefactorCommand(path, item)) {
+            return; // likewise a refactoring that asks the user where to, or what
         }
         LspManager.CodeActionItem applied = item;
         beginReportedEdit();

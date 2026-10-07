@@ -2679,6 +2679,20 @@ public final class LspManager {
         return args == null || args.isEmpty() ? null : args.get(0);
     }
 
+    /** Every argument of the command an opaque code-action payload carries, as JSON; empty without one. */
+    public static List<JsonElement> commandArguments(Object raw) {
+        org.eclipse.lsp4j.Command cmd = commandOf(raw);
+        List<Object> args = cmd == null ? null : cmd.getArguments();
+        if (args == null) {
+            return List.of();
+        }
+        List<JsonElement> out = new ArrayList<>();
+        for (Object arg : args) {
+            out.add(arg == null ? com.google.gson.JsonNull.INSTANCE : asJson(arg));
+        }
+        return out;
+    }
+
     private static org.eclipse.lsp4j.Command commandOf(Object raw) {
         if (raw instanceof org.eclipse.lsp4j.Command cmd) {
             return cmd;
@@ -3129,12 +3143,16 @@ public final class LspManager {
         caps.put("hashCodeEqualsPromptSupport", true);
         caps.put("generateConstructorsPromptSupport", true);
         caps.put("overrideMethodsPromptSupport", true);
-        // Deliberately NOT declared yet — their prompts aren't built, and declaring one would replace a
-        // working action with a command nothing handles (see the contract above):
-        //   advancedGenerateAccessorsSupport   — accessors work today WITHOUT any flag; enabling this would
-        //                                        break them until the picker lands. The riskiest of the set.
-        //   generateDelegateMethodsPromptSupport — two-level payload (field → its methods), not a flat list.
-        //   extractInterfaceSupport            — two-stage: pick members, then pick a destination package.
+        // Backed by JdtlsGenerate's accessor and delegate-method prompts.
+        caps.put("advancedGenerateAccessorsSupport", true);
+        caps.put("generateDelegateMethodsPromptSupport", true);
+        // Backed by JdtlsRefactor: java.action.applyRefactoringCommand is carried out by the client.
+        // jdtls offers Extract Interface only with both flags. The second one also turns the extract
+        // refactorings (variable, constant, method, field) into that same command; each is one
+        // java/getRefactorEdit away.
+        caps.put("extractInterfaceSupport", true);
+        caps.put("advancedExtractRefactoringSupport", true);
+        caps.put("moveRefactoringSupport", true);
         return Map.copyOf(caps);
     }
 
@@ -3585,8 +3603,58 @@ public final class LspManager {
                 });
     }
 
+    /**
+     * Sends a custom {@code java/…} request and delivers its untyped JSON answer on the FX thread —
+     * {@code null} when there is no session or the request fails. For the look-ups a client-driven
+     * refactoring makes before it asks for an edit (destinations, candidates, a method's signature).
+     */
+    public void jdtlsRequest(Path file, String method, Object params, Consumer<JsonElement> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(null));
+            return;
+        }
+        s.rawRequest(method, params).whenComplete((r, e) -> {
+            JsonElement json = e != null ? null : asJson(r);
+            Platform.runLater(() -> cb.accept(json));
+        });
+    }
+
+    /**
+     * Sends a custom {@code java/…} request whose answer is, or wraps, a {@code WorkspaceEdit}
+     * ({@link JdtlsRefactor#editOf}) and applies it. {@code cb} gets whether an edit was applied, and the
+     * server's own {@code errorMessage} when it refused the refactoring (else null).
+     */
+    public void jdtlsApplyEdit(
+            Path file,
+            String method,
+            Object params,
+            Map<Path, String> expectedAtAction,
+            java.util.function.BiConsumer<Boolean, String> cb) {
+        LanguageServerSession s = sessionFor(file);
+        if (s == null) {
+            Platform.runLater(() -> cb.accept(false, null));
+            return;
+        }
+        EditBasis expected = expectedAtAction == null || expectedAtAction.isEmpty()
+                ? editBasis(s)
+                : new EditBasis(expectedAtAction, System.currentTimeMillis());
+        s.rawRequest(method, params).whenComplete((r, e) -> {
+            JsonElement json = e != null ? null : asJson(r);
+            String refused = JdtlsRefactor.errorMessage(json);
+            org.eclipse.lsp4j.WorkspaceEdit edit = asWorkspaceEdit(JdtlsRefactor.editOf(json));
+            Platform.runLater(() -> {
+                if (edit == null) {
+                    cb.accept(false, refused);
+                } else {
+                    applyWorkspaceEdit(edit, expected, ok -> cb.accept(ok, refused));
+                }
+            });
+        });
+    }
+
     /** The raw result as gson, or null — the custom {@code java/…} requests answer as untyped JSON. */
-    private static com.google.gson.JsonElement asJson(Object raw) {
+    public static com.google.gson.JsonElement asJson(Object raw) {
         if (raw instanceof com.google.gson.JsonElement json) {
             return json;
         }

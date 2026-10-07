@@ -606,16 +606,32 @@ class LspManagerTest {
     }
 
     /**
-     * Not yet drivable, so not declared. Accessors are the dangerous one: they work today <em>without</em>
-     * any flag, so declaring it early is a regression rather than a missing feature.
+     * The flags that turn a working action into a client-side command are declared together with the code
+     * that carries the command out: the accessor and delegate prompts in {@link JdtlsGenerate}, and
+     * {@code java.action.applyRefactoringCommand} in {@link JdtlsRefactor}.
      */
     @Test
-    void theCapabilitiesWithoutAPickerAreNotDeclared() {
+    void theClientDrivenRefactoringsAreDeclaredWithTheirDrivers() {
         var caps = LspManager.javaExtendedClientCapabilities();
 
-        assertFalse(caps.containsKey("advancedGenerateAccessorsSupport"), "would break working accessors");
-        assertFalse(caps.containsKey("generateDelegateMethodsPromptSupport"), "two-level payload");
-        assertFalse(caps.containsKey("extractInterfaceSupport"), "two-stage flow");
+        assertEquals(Boolean.TRUE, caps.get("advancedGenerateAccessorsSupport"));
+        assertNotNull(JdtlsGenerate.forCommand("java.action.generateAccessorsPrompt"));
+        assertEquals(Boolean.TRUE, caps.get("moveRefactoringSupport"));
+        assertEquals(Boolean.TRUE, caps.get("extractInterfaceSupport"));
+        assertEquals(
+                Boolean.TRUE,
+                caps.get("advancedExtractRefactoringSupport"),
+                "jdtls offers Extract Interface only with both flags");
+    }
+
+    /** Each of these changes an answer into something that needs a client flow Editora does not have. */
+    @Test
+    void theCapabilitiesWithoutAClientFlowAreNotDeclared() {
+        var caps = LspManager.javaExtendedClientCapabilities();
+
+        assertFalse(caps.containsKey("inferSelectionSupport"), "extract with no selection: an expression picker");
+        assertFalse(caps.containsKey("advancedIntroduceParameterRefactoringSupport"), "needs inferSelection");
+        assertFalse(caps.containsKey("advancedOrganizeImportsSupport"), "an ambiguous-import chooser");
     }
 
     /** The options object must still carry what it did before — the flags are additive to it. */
