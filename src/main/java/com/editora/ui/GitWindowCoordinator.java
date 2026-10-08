@@ -493,16 +493,18 @@ final class GitWindowCoordinator {
                 if (root == null) {
                     return;
                 }
-                host.diffCoordinator()
-                        .diffCommitFileVsWorking(
-                                root,
-                                hash,
-                                repoRel,
-                                historyWorkingFile(
-                                        root,
-                                        gitLogFilter,
-                                        repoRel,
-                                        host.gitLogPanel().followedPath(hash)));
+                Path working = historyWorkingFile(
+                        root, gitLogFilter, repoRel, host.gitLogPanel().followedPath(hash));
+                if (!Files.isRegularFile(working) && host.openBufferFor(working) == null) {
+                    // A deleted file has nothing to compare with: show what the commit did to it instead
+                    // of answering only that the file is gone.
+                    host.diffCoordinator()
+                            .diffCommitFile(
+                                    root, hash, repoRel, host.gitLogPanel().followedOrigPath(hash, repoRel));
+                    host.setStatus(tr("status.git.history.noWorkingCopy", repoRel));
+                    return;
+                }
+                host.diffCoordinator().diffCommitFileVsWorking(root, hash, repoRel, working);
             }
 
             @Override
@@ -765,7 +767,7 @@ final class GitWindowCoordinator {
     void showFileHistory() {
         EditorBuffer b = host.activeBuffer();
         if (b == null || b.getPath() == null) {
-            host.setStatus(tr("status.diff.noFile"));
+            host.setStatus(tr("status.git.history.noFile"));
             return;
         }
         openGitLog(b.getPath());
@@ -798,21 +800,108 @@ final class GitWindowCoordinator {
             host.git().reportIfNoRepo(); // echoes "not a repo" / "git not installed"
             return;
         }
+        if (file != null) {
+            // A file history has one path: a path: term cannot narrow it, so it is not kept as "searched".
+            String search = com.editora.git.GitLogQuery.withoutPathTerms(gitLogSearch);
+            if (!search.equals(gitLogSearch)) {
+                gitLogSearch = search;
+                host.setStatus(tr("status.git.log.pathIgnored"));
+            }
+        }
         com.editora.git.GitLogQuery query = com.editora.git.GitLogQuery.parse(gitLogSearch);
         boolean all = gitLogAllBranches;
         Object listing = List.of(root, file == null ? "" : file, all, gitLogSearch);
-        int size = reloadSize(host.gitLogPanel().loadedCount(), listing.equals(gitLogListing), logPageSize);
-        com.editora.git.GitLog.Request request = new com.editora.git.GitLog.Request(all, file, query, 0, size);
+        boolean searchedFile = file != null && !query.isEmpty();
+        // A searched file history is read whole (see searchFileHistory); everything else a page at a time.
+        int size = searchedFile
+                ? LOG_RELOAD_LIMIT
+                : reloadSize(host.gitLogPanel().loadedCount(), listing.equals(gitLogListing), logPageSize);
+        com.editora.git.GitLog.Request request = new com.editora.git.GitLog.Request(
+                all, file, searchedFile ? com.editora.git.GitLogQuery.NONE : query, 0, size);
         GitLogPanel.View view = new GitLogPanel.View(
                 file != null ? file.getFileName().toString() : null, branch, all, gitLogSearch, request.graphable());
+        host.gitLogPanel().setShallow(shallow(root));
         gitLogLoading = true;
         host.git().service().logPage(root, request, page -> {
-            if (generation == gitLogGeneration) {
-                gitLogLoading = false;
-                gitLogListing = listing;
-                host.gitLogPanel().setLog(page, view);
+            if (generation != gitLogGeneration) {
+                return;
             }
+            if (searchedFile && page.error().isEmpty() && !page.entries().isEmpty()) {
+                searchFileHistory(root, page, query, all, generation, listing, view);
+                return;
+            }
+            gitLogLoading = false;
+            gitLogListing = listing;
+            host.gitLogPanel().setLog(page, view);
         });
+    }
+
+    /**
+     * Narrows a file history to the commits {@code query} finds. {@code --follow} cannot be searched — the
+     * message, author and date limits drop the commit that renamed the file before git diffs it, and with
+     * it every commit under the old name — so the search runs over every name the file has had
+     * ({@link com.editora.git.GitLog#followedPaths}) and the unsearched {@code history} keeps the commits
+     * it found: the rows, their order and the file's path in each stay those of the followed history.
+     */
+    private void searchFileHistory(
+            Path root,
+            com.editora.git.GitLog.Page history,
+            com.editora.git.GitLogQuery query,
+            boolean all,
+            long generation,
+            Object listing,
+            GitLogPanel.View view) {
+        com.editora.git.GitLog.Request search = new com.editora.git.GitLog.Request(
+                all, null, query.withoutPaths(), com.editora.git.GitLog.followedPaths(history), 0, LOG_RELOAD_LIMIT);
+        host.git().service().logPage(root, search, found -> {
+            if (generation != gitLogGeneration) {
+                return;
+            }
+            gitLogLoading = false;
+            gitLogListing = listing;
+            host.gitLogPanel().setLog(searchedHistory(history, found), view);
+        });
+    }
+
+    /** The commits of {@code history} that the search {@code found}, or the search's failure. Pure. */
+    static com.editora.git.GitLog.Page searchedHistory(
+            com.editora.git.GitLog.Page history, com.editora.git.GitLog.Page found) {
+        if (!found.error().isEmpty()) {
+            return found;
+        }
+        java.util.Set<String> hashes = new java.util.HashSet<>();
+        for (com.editora.git.GitLog.Entry entry : found.entries()) {
+            hashes.add(entry.hash());
+        }
+        return history.keep(hashes);
+    }
+
+    /**
+     * Whether {@code root} is a shallow clone: git keeps the cut-off commits in a {@code shallow} file of
+     * the repository's (common) git directory. Two or three {@code stat}s and at most two tiny reads.
+     */
+    static boolean shallow(Path root) {
+        if (root == null) {
+            return false;
+        }
+        try {
+            Path git = root.resolve(".git");
+            if (Files.isRegularFile(git)) { // a worktree or submodule: "gitdir: <path>"
+                String pointer = Files.readString(git).strip();
+                if (!pointer.startsWith("gitdir:")) {
+                    return false;
+                }
+                git = root.resolve(pointer.substring("gitdir:".length()).strip())
+                        .normalize();
+                Path common = git.resolve("commondir");
+                if (Files.isRegularFile(common)) { // a worktree shares the main repository's objects
+                    git = git.resolve(Files.readString(common).strip()).normalize();
+                }
+            }
+            return Files.isRegularFile(git.resolve("shallow"));
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
     }
 
     /**
@@ -834,6 +923,24 @@ final class GitWindowCoordinator {
         int loaded = panel.loadedCount();
         Path file = gitLogFilter;
         gitLogLoadingMore = true;
+        if (file != null) {
+            // A file history is asked for again from the top, one page deeper: --skip counts every commit
+            // git walks under --follow, not the ones it lists, so it cannot address the next page.
+            com.editora.git.GitLog.Request deeper = new com.editora.git.GitLog.Request(
+                    gitLogAllBranches, file, com.editora.git.GitLogQuery.NONE, 0, loaded + logPageSize);
+            host.git().service().logPage(root, deeper, page -> {
+                if (generation != gitLogGeneration) {
+                    return;
+                }
+                gitLogLoadingMore = false;
+                if (com.editora.git.GitLog.continuesFromTop(page, loaded, anchor)) {
+                    panel.appendLog(page.drop(loaded));
+                } else {
+                    loadGitLog(file); // history moved: reload to the depth already on screen
+                }
+            });
+            return;
+        }
         com.editora.git.GitLog.Request request = new com.editora.git.GitLog.Request(
                 gitLogAllBranches, file, com.editora.git.GitLogQuery.parse(gitLogSearch), loaded - 1, logPageSize + 1);
         host.git().service().logPage(root, request, page -> {
@@ -1175,9 +1282,10 @@ final class GitWindowCoordinator {
             gitLogGeneration++;
             gitLogLoading = false;
             gitLogLoadingMore = false;
-            if (gitLogFilter != null && (root == null || !gitLogFilter.startsWith(root))) {
-                gitLogFilter = null; // a file history of the previous repository
-            }
+            // A file history belongs to the repository it was opened in. A path prefix cannot tell: the
+            // file of a nested repository or a submodule lies under the outer root too, and listing it
+            // there answered "No commits".
+            gitLogFilter = null;
             gitLogSearch = ""; // a search of the previous repository's history
             gitLogListing = null;
             if (host.gitLogPanel() != null) {
@@ -1211,7 +1319,7 @@ final class GitWindowCoordinator {
     /** Project-tree Git ▸ Show File History for {@code file}: loads that file's Git log + opens the window. */
     void gitFileHistoryForPath(Path file) {
         if (file == null || Files.isDirectory(file)) {
-            host.setStatus(tr("status.diff.noFile"));
+            host.setStatus(tr("status.git.history.noFile"));
             return;
         }
         openGitLog(file);

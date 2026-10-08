@@ -88,7 +88,11 @@ final class TabContextMenu {
         MenuItem history = LazyContextMenu.item(
                 tr("project.menu.git.fileHistory"),
                 Icons.gitLog(),
-                () -> c.git.ifEnabled(() -> c.gitWindows.gitFileHistoryForPath(buffer.getPath())));
+                // In the file's own repository, as from the Project tree: a right-click does not select the
+                // tab, and the log lists the active repository — which answered "outside repository" for a
+                // background tab of another one, and "No commits" for a file of a nested one.
+                () -> c.git.activatingRepositoryOf(
+                        buffer.getPath(), () -> c.gitWindows.gitFileHistoryForPath(buffer.getPath())));
         gitMenu.getItems()
                 .addAll(
                         stage,

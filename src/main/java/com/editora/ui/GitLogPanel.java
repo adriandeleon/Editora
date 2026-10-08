@@ -69,9 +69,13 @@ import static com.editora.i18n.Messages.tr;
  * whole history (see {@link com.editora.git.GitLogQuery}). Selecting a commit asks the controller (via
  * {@link Actions}) for its files and details. In whole-repository mode, double-clicking a file opens its
  * commit-vs-parent diff; in file-history mode it compares that revision with the editable working file
- * instead. Enter or a double-click on a commit opens the whole commit as one multi-file review; with two
- * commits selected it compares them. Like {@link GitPanel} it is purely a view — the controller knows the
- * repo root and runs {@code git}.
+ * instead. Enter or a double-click on a commit opens the whole commit as one multi-file review — in a file
+ * history, what the commit changed in that file, which is the question a file history is opened to answer;
+ * with two commits selected it compares them. Like {@link GitPanel} it is purely a view — the controller
+ * knows the repo root and runs {@code git}.
+ *
+ * <p>A file history is headed by a chip — "Git history: Foo.java ✕" — whose ✕ (or Escape in the commit
+ * list) goes back to the branch's log. The toolbar buttons take keyboard focus.
  */
 public final class GitLogPanel extends VBox implements ToolWindowContent {
 
@@ -200,6 +204,8 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
     private final Button loadMoreButton = new Button(tr("gitlog.loadMore"));
     private final HBox footer = new HBox(8, truncatedLabel, loadMoreButton);
+    /** The repository is a shallow clone: where the loaded history ends is where the clone was cut. */
+    private boolean shallow;
 
     private View view = View.NONE;
     private boolean hasMore;
@@ -244,14 +250,22 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
 
         filterLabel.getStyleClass().add("git-branch-label");
         filterLabel.setMinWidth(0);
-        filterLabel.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(filterLabel, Priority.ALWAYS);
-        showAllButton = iconButton(Icons.gitLog(), tr("gitlog.showAllTip"), actions::showAll);
+        filterLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+        // The way back from a file history is a ✕ on its header, as on the search chip: an icon button
+        // that looked like the tool window's own icon said nothing about where it led.
+        showAllButton = new Button("✕");
+        showAllButton.getStyleClass().add("project-filter-clear");
+        showAllButton.setMinWidth(Region.USE_PREF_SIZE);
+        Icons.name(showAllButton, tr("gitlog.showAllTip"));
+        showAllButton.setOnAction(e -> actions.showAll());
         showAllButton.setVisible(false);
         showAllButton.setManaged(false);
+        HBox header = new HBox(2, filterLabel, showAllButton);
+        header.setAlignment(Pos.CENTER_LEFT);
+        header.setMinWidth(0);
+        HBox.setHgrow(header, Priority.ALWAYS);
         allBranchesButton.setGraphic(Icons.git());
         allBranchesButton.getStyleClass().addAll("flat", "git-toolbar-button");
-        allBranchesButton.setFocusTraversable(false);
         Icons.name(allBranchesButton, tr("gitlog.allBranchesTip"));
         // The button shows what is listed, not what was clicked: it follows the next setLog.
         allBranchesButton.setOnAction(e -> {
@@ -263,7 +277,6 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         searchLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
         Button endSearch = new Button("✕");
         endSearch.getStyleClass().add("project-filter-clear");
-        endSearch.setFocusTraversable(false);
         Icons.name(endSearch, tr("gitlog.clearSearch"));
         endSearch.setOnAction(e -> actions.searchHistory(""));
         searchChip.getChildren().setAll(searchLabel, endSearch);
@@ -272,7 +285,11 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         searchChip.setVisible(false);
         searchChip.setManaged(false);
         Button refresh = iconButton(Icons.refresh(), tr("gitlog.refreshTip"), actions::refresh);
-        HBox toolbar = new HBox(2, filterLabel, searchChip, allBranchesButton, showAllButton, refresh);
+        // Every toolbar control is a Tab stop: without a mouse there was no way to them at all.
+        for (javafx.scene.control.ButtonBase button : List.of(showAllButton, endSearch, allBranchesButton, refresh)) {
+            button.setFocusTraversable(true);
+        }
+        HBox toolbar = new HBox(2, header, searchChip, allBranchesButton, refresh);
         toolbar.getStyleClass().add("git-toolbar");
         toolbar.setAlignment(Pos.CENTER_LEFT);
 
@@ -320,6 +337,9 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         commits.addEventHandler(KeyEvent.KEY_PRESSED, e -> {
             if (e.getCode() == KeyCode.ENTER) {
                 openSelectedCommits();
+                e.consume();
+            } else if (e.getCode() == KeyCode.ESCAPE && view.fileHistory()) {
+                actions.showAll(); // out of the file history, back to the branch's log
                 e.consume();
             }
         });
@@ -510,10 +530,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         searchLabel.setText(searching ? tr("gitlog.searching", view.search()) : "");
         searchChip.setVisible(searching);
         searchChip.setManaged(searching);
-        placeholder.setText(
-                !page.error().isEmpty()
-                        ? tr("gitlog.failed", page.error())
-                        : tr(searching ? "gitlog.noMatches" : "gitlog.noCommits"));
+        placeholder.setText(placeholderText(page.error(), view));
         hasMore = page.truncated();
         loadingMore = false;
         if (!sameListing || !allCommits.equals(page.entries())) {
@@ -542,6 +559,27 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
             focusPending = false;
             commits.requestFocus();
         }
+    }
+
+    /**
+     * What an empty list says: git's error; that the search found nothing; that the file of a file history
+     * has never been committed (untracked, ignored or only staged — "No commits." read as if its history
+     * were lost); or that the branch has no commits.
+     */
+    static String placeholderText(String error, View view) {
+        if (error != null && !error.isEmpty()) {
+            return tr("gitlog.failed", error);
+        }
+        if (!view.search().isEmpty()) {
+            return tr("gitlog.noMatches");
+        }
+        return view.fileHistory() ? tr("gitlog.noFileCommits", view.fileName()) : tr("gitlog.noCommits");
+    }
+
+    /** Whether the repository is a shallow clone; said under the commits once all of them are loaded. */
+    public void setShallow(boolean shallow) {
+        this.shallow = shallow;
+        updateFooter();
     }
 
     /**
@@ -603,6 +641,15 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         return file == null ? null : file.path();
     }
 
+    /**
+     * In a file history: the path the file was renamed from in commit {@code hash}, when
+     * {@code repoRelativePath} is that file there and the commit renamed it; else null.
+     */
+    public String followedOrigPath(String hash, String repoRelativePath) {
+        CommitFile file = followed.get(hash);
+        return file != null && file.path().equals(repoRelativePath) ? file.origPath() : null;
+    }
+
     /** Asks for the next page, once: from the footer button, or when the list is scrolled near its end. */
     private void requestMore() {
         if (hasMore && !loadingMore) {
@@ -622,12 +669,16 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     private void updateFooter() {
-        footer.setVisible(hasMore);
-        footer.setManaged(hasMore);
-        truncatedLabel.setText(hasMore ? tr("gitlog.truncated", allCommits.size()) : "");
+        // A shallow clone ends where it was cut, not where the history began: say so under the last row.
+        boolean cut = shallow && !hasMore && !allCommits.isEmpty();
+        footer.setVisible(hasMore || cut);
+        footer.setManaged(hasMore || cut);
+        truncatedLabel.setText(hasMore ? tr("gitlog.truncated", allCommits.size()) : cut ? tr("gitlog.shallow") : "");
         // Visible and managed with the footer (GitLogRowsFxTest reads them off the label).
-        truncatedLabel.setVisible(hasMore);
-        truncatedLabel.setManaged(hasMore);
+        truncatedLabel.setVisible(hasMore || cut);
+        truncatedLabel.setManaged(hasMore || cut);
+        loadMoreButton.setVisible(hasMore);
+        loadMoreButton.setManaged(hasMore);
         loadMoreButton.setDisable(loadingMore);
         loadMoreButton.setText(tr(loadingMore ? "gitlog.loadingMore" : "gitlog.loadMore"));
     }
@@ -642,7 +693,7 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
     }
 
     /**
-     * "History: Foo.java" for a file; "Commits on main" for the branch (never "all commits": it is one
+     * "Git history: Foo.java" for a file; "Commits on main" for the branch (never "all commits": it is one
      * branch) and "Commits on all branches" when it is not.
      */
     static String headerText(View view) {
@@ -837,13 +888,23 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
         return hashes;
     }
 
-    /** Enter / double-click on the commit list: two selected commits are compared, one is opened as a review. */
+    /**
+     * Enter / double-click on the commit list: two selected commits are compared, one is opened — as a
+     * review of everything it changed, or in a file history as its change to that file (the whole commit
+     * is still "Review Commit" in the row's menu).
+     */
     private void openSelectedCommits() {
         List<String> selected = selectedHashes();
+        String hash = selectedHash();
         if (selected.size() == 2) {
             actions.compareCommits(selected.get(1), selected.get(0)); // the lower row is the older commit
-        } else if (selectedHash() != null) {
-            actions.reviewCommit(selectedHash());
+        } else if (hash != null) {
+            CommitFile file = view.fileHistory() ? followed.get(hash) : null;
+            if (file != null) {
+                actions.openFileDiff(hash, file.path(), file.origPath());
+            } else {
+                actions.reviewCommit(hash);
+            }
         }
     }
 
@@ -1225,8 +1286,23 @@ public final class GitLogPanel extends VBox implements ToolWindowContent {
                             item(tr("gitlog.menu.resetSoft"), null, () -> actions.reset(h, "soft")),
                             item(tr("gitlog.menu.resetMixed"), null, () -> actions.reset(h, "mixed")),
                             item(tr("gitlog.menu.resetHard"), null, () -> actions.reset(h, "hard")));
-            ContextMenu menu =
-                    new ContextMenu(copy, review, compare, patch, new SeparatorMenuItem(), checkout, newBranch, newTag);
+            ContextMenu menu = new ContextMenu();
+            // In a file history the row is first of all a version of that file.
+            CommitFile file = view.fileHistory() ? followed.get(h) : null;
+            if (file != null) {
+                menu.getItems()
+                        .addAll(
+                                item(
+                                        tr("gitlog.menu.showDiff"),
+                                        Icons.diff(),
+                                        () -> actions.openFileDiff(h, file.path(), file.origPath())),
+                                item(
+                                        tr("gitlog.menu.compareWorking"),
+                                        Icons.merge(),
+                                        () -> actions.compareFileWithWorking(h, file.path())),
+                                new SeparatorMenuItem());
+            }
+            menu.getItems().addAll(copy, review, compare, patch, new SeparatorMenuItem(), checkout, newBranch, newTag);
             // One submenu per tag on the row: which tag is meant is never a guess.
             for (String tag : c.tags()) {
                 Menu tagMenu = new Menu(tr("gitlog.menu.tag", tag));
