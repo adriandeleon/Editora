@@ -6,6 +6,7 @@ import java.util.List;
 import javafx.scene.Node;
 import javafx.scene.Parent;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.layout.Region;
 import javafx.stage.Stage;
@@ -83,6 +84,99 @@ class ExportPrintSettingsFxTest {
                     stage.close();
                 }
             });
+        }
+    }
+
+    /**
+     * Orientation, margins and code font size: three rows beside "PDF page size", each saying it is for
+     * PDFs and not for printing, each writing its setting, each found by the settings search.
+     */
+    @Test
+    void thePdfPageRowsAreShownWiredAndSearchable() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow window = FxTestSupport.field(fx.controller, "settingsWindow");
+                window.show(new Stage());
+                Stage stage = FxTestSupport.field(window, "stage");
+                try {
+                    java.util.Map<?, Region> pages = FxTestSupport.field(window, "pages");
+                    List<String> texts = new ArrayList<>();
+                    pages.values().forEach(page -> labels(page, texts));
+                    for (String key : new String[] {
+                        "settings.pdf.orientation",
+                        "settings.pdf.orientation.desc",
+                        "settings.pdf.margins",
+                        "settings.pdf.margins.desc",
+                        "settings.pdf.codeFontSize",
+                        "settings.pdf.codeFontSize.desc"
+                    }) {
+                        assertTrue(texts.contains(tr(key)), key + " is not shown on any settings page");
+                    }
+                    assertTrue(tr("settings.pdf.orientation.desc").contains("Page Setup"), "says what printing uses");
+                    assertTrue(tr("settings.pdf.margins.desc").contains("Page Setup"), "says what printing uses");
+                    assertTrue(tr("settings.pdf.codeFontSize.desc").contains("printing"), "says printing is apart");
+                    // The rows follow the page size row, in the same card.
+                    int size = texts.indexOf(tr("settings.pdf.pageSize"));
+                    assertTrue(size >= 0 && size < texts.indexOf(tr("settings.pdf.orientation")));
+                    assertTrue(
+                            texts.indexOf(tr("settings.pdf.orientation")) < texts.indexOf(tr("settings.pdf.margins")));
+                    assertTrue(
+                            texts.indexOf(tr("settings.pdf.margins")) < texts.indexOf(tr("settings.pdf.codeFontSize")));
+
+                    com.editora.config.Settings settings = fx.shared.getSettings();
+                    ComboBox<String> orientation = FxTestSupport.field(window, "pdfOrientationCombo");
+                    ComboBox<String> margins = FxTestSupport.field(window, "pdfMarginsCombo");
+                    ComboBox<Integer> fontSize = FxTestSupport.field(window, "pdfCodeFontSizeCombo");
+                    assertEquals("portrait", orientation.getValue(), "today's page by default");
+                    assertEquals("normal", margins.getValue());
+                    assertEquals(9, fontSize.getValue());
+                    assertEquals(com.editora.config.Settings.PDF_ORIENTATIONS, orientation.getItems());
+                    assertEquals(com.editora.config.Settings.PDF_MARGINS, margins.getItems());
+                    assertEquals(com.editora.config.Settings.PDF_CODE_FONT_SIZES, fontSize.getItems());
+                    assertEquals("Landscape", orientation.getConverter().toString("landscape"));
+                    assertEquals(
+                            tr("settings.pdf.margins.narrow"),
+                            margins.getConverter().toString("narrow"));
+                    assertEquals("11 pt", fontSize.getConverter().toString(11));
+
+                    orientation.setValue("landscape");
+                    margins.setValue("narrow");
+                    fontSize.setValue(11);
+                    assertEquals("landscape", settings.getPdfOrientation(), "the row writes the setting");
+                    assertEquals("narrow", settings.getPdfMargins());
+                    assertEquals(11, settings.getPdfCodeFontSize());
+
+                    // The search index is the row's keywords plus its shown text.
+                    javafx.scene.control.TextField search = FxTestSupport.field(window, "searchField");
+                    for (String[] query : new String[][] {
+                        {"orientation", "settings.pdf.orientation"},
+                        {"landscape", "settings.pdf.orientation"},
+                        {"margin", "settings.pdf.margins"},
+                        {"font size", "settings.pdf.codeFontSize"}
+                    }) {
+                        search.setText(query[0]);
+                        List<String> shown = new ArrayList<>();
+                        pages.values().forEach(page -> collectVisible(page, shown));
+                        assertTrue(shown.contains(tr(query[1])), "searching \"" + query[0] + "\" finds " + query[1]);
+                    }
+                    search.setText("");
+                } finally {
+                    stage.close();
+                }
+            });
+        }
+    }
+
+    /** Adds the text of every label under {@code node} that a search left shown (visible and managed). */
+    private static void collectVisible(Node node, List<String> out) {
+        if (!node.isVisible() || !node.isManaged()) {
+            return;
+        }
+        if (node instanceof Label label && label.getText() != null) {
+            out.add(label.getText());
+        }
+        if (node instanceof Parent p) {
+            p.getChildrenUnmodifiable().forEach(c -> collectVisible(c, out));
         }
     }
 }
