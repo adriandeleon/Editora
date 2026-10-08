@@ -59,7 +59,9 @@ class JavaTypingSoakProbeTest {
         System.exit(status);
     }
 
+    // Types for lsp.java.soak.seconds — half an hour unless told otherwise: far past the suite's default.
     @Test
+    @Timeout(value = 12, unit = TimeUnit.HOURS)
     void sustainedTypingInRealProjects() throws Exception {
         String command = System.getProperty("lsp.java.probe.command");
         String maven = System.getProperty("lsp.java.soak.maven");

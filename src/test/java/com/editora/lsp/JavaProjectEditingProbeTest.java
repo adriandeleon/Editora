@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.lsp4j.*;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -21,7 +22,9 @@ class JavaProjectEditingProbeTest {
 
     private Path root;
 
+    // A real project import, then lsp.java.probe.rounds rounds of edits: not bounded by the suite's default.
     @Test
+    @Timeout(value = 2, unit = TimeUnit.HOURS)
     void projectResolutionAndImportFreshness() throws Exception {
         String command = System.getProperty("lsp.java.probe.command");
         assumeTrue(command != null, "set -Dlsp.java.probe.command=/path/to/jdtls");

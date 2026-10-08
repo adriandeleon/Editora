@@ -62,6 +62,24 @@ Because the backend ships inside JavaFX, it can never go stale on a JavaFX bump 
 previously self-built Monocle backend it replaced (see
 [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)).
 
+### The suite-wide timeout
+
+`src/test/resources/junit-platform.properties` sets `junit.jupiter.execution.timeout.default = 5 m`:
+no test method and no lifecycle method (`@BeforeAll`, `@BeforeEach`, …) may run longer. A test that
+waits forever is then reported by name instead of holding its CI job until the job's own 30-minute
+limit kills it. The slowest whole test class in CI takes about a minute, so the limit only ever
+catches a hang.
+
+- The timeout **interrupts** the thread running the test. A wait that ignores interruption is only
+  reported once it returns, and a test that leaves the FX thread itself stuck (a dialog nobody
+  answers) still stalls every FX test after it — each for five minutes.
+- A test that is meant to run longer says so with its own `@Timeout`, which wins over the default. The
+  long opt-in probes (`JavaTypingSoakProbeTest`, `JavaProjectEditingProbeTest`,
+  `JavaEditingCostProbeTest`) do.
+- Timeouts are off while a debugger is attached (`junit.jupiter.execution.timeout.mode =
+  disabled_on_debug`). To run without them otherwise, pass
+  `-Djunit.jupiter.execution.timeout.mode=disabled`.
+
 ## JDK compatibility lanes
 
 CI compiles and tests the project twice: with the supported Temurin JDK 25 baseline and with
