@@ -1227,10 +1227,7 @@ final class WindowCommandRegistrar {
                                 .newFromTemplate(host.templateActions().defaultNewDir())));
         host.registry().register(Command.of("project.newFromTemplate", host.templateActions()::newProjectFromTemplate));
         host.registry().register(Command.of("project.editSettings", host::editProjectSettings));
-        host.registry().register(Command.of("template.reload", () -> {
-            host.templateActions().templates.reload();
-            host.setStatus(tr("status.templatesReloaded"));
-        }));
+        host.registry().register(Command.of("template.reload", host.templateActions()::reloadTemplates));
         host.registry().register(Command.of("template.editUser", host.templateActions()::editUserTemplates));
         host.registry()
                 .register(Command.of(

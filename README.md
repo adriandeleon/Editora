@@ -499,13 +499,25 @@ Editora is built with the help of AI coding tools.
   Enum, Annotation, `package-info.java`), Web, Scripts, Languages, Data &amp; Config, Docs &amp; Diagrams, Build
   &amp; Ops — about fifty types in all. Name it and it opens, with the caret already in the body. A new Java
   file gets its **package declaration from the folder it is created in** (`src/main/java/demo` →
-  `package demo;`), and a qualified name (`text.Slug`) creates the sub-package folder. The typed name wins
-  over the type's extension, so `notes.json` under Text File is JSON. Also on the palette as *File: New File
-  of Type…*, which creates in the active file's folder.
-- **File templates** _(Beta)_ — "New File From Template" (`C-c C-n`) creates a file (or a whole set of files) from
-  a reusable template, prompting for any `${variables}` in a wizard and placing the caret at `${cursor}`.
-  Bundled templates (Java class, HTML page / multi-file bundle, Markdown doc, Python script) plus your
-  own in `~/.editora/templates/`.
+  `package demo;`; only source roots inside the project count), and a qualified name (`text.Slug`) creates
+  the sub-package folder. A known extension in the typed name wins over the type's, so `notes.json` under
+  Text File is JSON while `release-1.2` under Markdown is `release-1.2.md`. Names that cannot be a file on
+  every platform (`CON`, `a?b`, a trailing dot) and Java keywords are refused with the reason. Shell
+  scripts are created executable. Also on the palette as *File: New File of Type…*, which creates in the
+  active file's folder.
+- **File templates** _(Beta)_ — *Template: New File From Template…* (`C-c C-n` in the Emacs keymap) creates a
+  file, or a whole set of files, from a reusable template. A wizard asks for the template's variables — the
+  class, file or package name included — and the new file opens with the caret at `${cursor}`. Nine templates
+  ship: Java Class (with the package of the folder it is created in), Java Compact Source, HTML Page,
+  Markdown Document, Python Script, Shell Script, Zsh Script (both created executable), and the multi-file
+  HTML Page + CSS and Python Project. A multi-file template always asks for its folder, lists any files that
+  are already there before writing anything, and never overwrites one. *Project: New Project From Template…*
+  asks for a project name and a location, creates that folder and opens it as a project. Your own templates
+  are JSON files in `~/.editora/templates/` (they override a plugin's or a bundled template with the same
+  id) — manage them in Settings → Templates, or run *Template: Edit User Templates…* to open one, start a
+  new one, or copy a bundled template to customize. In a template only `${variable}`,
+  `${variable:default}` and `${cursor}` are special; everything else (`$1`, `$HOME`, backslashes) is written
+  as is, and `$${name}` gives a literal `${name}`.
 - **Autocomplete** — appears as you type (and on demand via `C-M-i` / `M-/`). In **code**, a popup of
   **snippet** completions (accepting expands the snippet with its tab stops; Enter/Tab accept, arrows
   navigate). In **prose** (plain text / Markdown), inline **"ghost text"** — a single greyed

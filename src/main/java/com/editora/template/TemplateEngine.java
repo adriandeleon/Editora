@@ -2,83 +2,169 @@ package com.editora.template;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.editora.snippet.ParsedSnippet;
-import com.editora.snippet.SnippetParser;
+import com.editora.io.PathContainment;
 
 /**
- * Pure template rendering, layered on {@link SnippetParser}: variable discovery (which named variables a
- * template body references and so must be asked of the user), substitution (reusing the snippet parser,
- * with {@code ${cursor}} rewritten to {@code $0} = the final caret), file-name expansion, and
- * target-path resolution with a traversal guard. No toolkit — unit-tested.
+ * Pure template rendering: variable discovery (which variables the wizard must ask for), substitution,
+ * file-name expansion, and target-path resolution with a containment guard.
+ *
+ * <h2>Syntax</h2>
+ *
+ * A template is plain text in which exactly three forms mean something:
+ *
+ * <ul>
+ *   <li>{@code ${name}} — a variable ({@code name} is a letter or {@code _} followed by letters, digits or
+ *       {@code _}): a built-in ({@link TemplateVariableResolver}) or one the wizard asks for;
+ *   <li>{@code ${name:default}} — the same, with the value used when nothing supplies one (and the
+ *       wizard's pre-fill); the default runs to the first <code>}</code>;
+ *   <li>{@code ${cursor}} — where the caret lands; removed from the text.
+ * </ul>
+ *
+ * Everything else is literal and written out character for character: {@code $name}, {@code $1},
+ * {@code $@}, {@code ${arr[0]}}, {@code ${1:-x}}, {@code $(date)} and backslashes all survive, because a
+ * template body is a file (a shell script, an awk program, a Makefile), not a snippet. A literal
+ * {@code ${name}} is written {@code $${name}}: {@code $$} directly before a brace collapses to one
+ * {@code $} and what follows is text.
+ *
+ * <p>This deliberately does <em>not</em> go through the snippet parser, whose {@code $1} tab stops,
+ * {@code $name} variables and backslash escapes are right for a snippet typed into a buffer and wrong for
+ * a file written to disk. No toolkit — unit-tested.
  */
 public final class TemplateEngine {
 
     /** Matches a {@code ${name}} or {@code ${name:default}} reference (name starts with a letter/_). */
     private static final Pattern VAR = Pattern.compile("\\$\\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\\}");
 
+    /** Resolves a variable name to its value, or null when nothing supplies one. */
+    @FunctionalInterface
+    public interface Variables {
+        String resolve(String name);
+    }
+
     /**
      * Built-ins that are normally <em>derived from the target file name</em> ({@code fileName},
-     * {@code baseName}, {@code extension}). When the <b>file-name pattern itself</b> references one of
-     * them, there is nothing to derive from yet (a new-from-template file has no name), so it must be
-     * prompted instead — see {@link #discoverVariablesForNewFile}.
+     * {@code baseName}, {@code extension}). When there is no file name to derive them from — the file-name
+     * pattern itself uses one, or the template is multi-file — they must be asked for instead.
      */
-    private static final java.util.Set<String> FILE_IDENTITY = java.util.Set.of("fileName", "baseName", "extension");
+    private static final Set<String> FILE_IDENTITY = Set.of("fileName", "baseName", "extension");
 
     private TemplateEngine() {}
 
-    /** A named variable a template references that is not a built-in: its {@code name} and default value. */
+    /** A variable the wizard asks for: its {@code name} and the pre-filled default value. */
     public record TemplateVar(String name, String defaultValue) {}
 
+    /** Rendered text, the caret offset ({@code ${cursor}}, else the end), and whether a cursor was marked. */
+    public record Rendered(String text, int caret, boolean hasCursor) {}
+
+    /** What the surroundings already know, so the wizard does not ask for it. */
+    public record Context(boolean projectNameKnown) {
+        public static final Context NONE = new Context(false);
+    }
+
     /**
-     * The distinct, ordered named variables across {@code texts} (body + fileName + paths) that are
-     * <em>not</em> built-in (so the wizard must prompt for them). The first occurrence's {@code :default}
-     * is kept as the pre-fill ({@code ""} when none).
+     * The distinct, ordered named variables across {@code texts} that are <em>not</em> built-in. The first
+     * default given for a name is kept as the pre-fill ({@code ""} when none).
      */
     public static List<TemplateVar> discoverVariables(String... texts) {
         Map<String, String> seen = new LinkedHashMap<>();
         for (String text : texts) {
-            collect(text, false, seen);
+            collect(text, Set.of(), seen);
         }
         return toVars(seen);
     }
 
     /**
-     * Like {@link #discoverVariables}, but for creating a <em>new file</em> from a single-file template:
-     * a file-identity built-in ({@code fileName}/{@code baseName}/{@code extension}) referenced in the
-     * {@code fileNamePattern} is treated as a prompted variable, because there is no source file to
-     * derive it from yet. The same name used only in {@code otherTexts} (the body) is still auto-derived.
-     * The prompted answer then feeds both the file-name expansion and the body (the resolver checks the
-     * wizard answers before its built-ins), so {@code ${baseName:Main}.java} finally asks for the name.
+     * Like {@link #discoverVariables}, but a file-identity built-in ({@code fileName}/{@code baseName}/
+     * {@code extension}) referenced in the {@code fileNamePattern} is treated as a prompted variable,
+     * because there is no source file to derive it from yet.
      */
     public static List<TemplateVar> discoverVariablesForNewFile(String fileNamePattern, String... otherTexts) {
         Map<String, String> seen = new LinkedHashMap<>();
-        collect(fileNamePattern, true, seen); // file-name pattern first, so its default (e.g. "Main") wins
+        collect(fileNamePattern, FILE_IDENTITY, seen);
         for (String text : otherTexts) {
-            collect(text, false, seen);
+            collect(text, Set.of(), seen);
         }
         return toVars(seen);
     }
 
-    /** Collects non-built-in {@code ${name[:default]}} refs from {@code text}; when {@code allowFileIdentity}
-     *  is set, the file-identity built-ins are also collected (they can't be derived in this position). */
-    private static void collect(String text, boolean allowFileIdentity, Map<String, String> seen) {
+    /**
+     * The variables the wizard must ask for to apply {@code t}: every name that is not a built-in, plus the
+     * built-ins the context cannot supply a real value for —
+     *
+     * <ul>
+     *   <li>{@code fileName}/{@code baseName}/{@code extension}: used in a single-file template's file-name
+     *       pattern (there is no name to derive them from yet), or anywhere in a multi-file template (which
+     *       has no one driving file);
+     *   <li>{@code packageName}: unless the template creates a single Java file, whose package comes from
+     *       the folder it is created in ({@link NewFileContent#packageFor});
+     *   <li>{@code projectName}: when there is no project to name.
+     * </ul>
+     *
+     * A prompted built-in keeps its {@code :default} as the pre-fill, and its answer feeds every use of the
+     * name (the resolver checks the wizard's answers before its own values).
+     */
+    public static List<TemplateVar> promptedVariables(Template t, Context context) {
+        Map<String, String> seen = new LinkedHashMap<>();
+        Set<String> ask = new HashSet<>();
+        if (context == null || !context.projectNameKnown()) {
+            ask.add("projectName");
+        }
+        if (t.isMultiFile()) {
+            ask.addAll(FILE_IDENTITY);
+            ask.add("packageName");
+            for (TemplateFile f : t.files()) {
+                collect(f.path(), ask, seen);
+            }
+            for (TemplateFile f : t.files()) {
+                collect(f.body(), ask, seen);
+            }
+        } else {
+            if (!createsJavaFile(t)) {
+                ask.add("packageName");
+            }
+            Set<String> inName = new HashSet<>(ask);
+            inName.addAll(FILE_IDENTITY);
+            collect(t.fileName(), inName, seen); // file-name pattern first, so its default ("Main") wins
+            collect(t.body(), ask, seen);
+        }
+        return toVars(seen);
+    }
+
+    /** True for a single-file template whose file is Java source (by its file-name pattern, else language). */
+    public static boolean createsJavaFile(Template t) {
+        if (t == null || t.isMultiFile()) {
+            return false;
+        }
+        String fileName = t.fileName() == null ? "" : t.fileName().trim();
+        if (!fileName.isEmpty()) {
+            return fileName.toLowerCase(Locale.ROOT).endsWith(".java");
+        }
+        return "java".equalsIgnoreCase(t.language() == null ? "" : t.language().trim());
+    }
+
+    /** Collects {@code ${name[:default]}} refs from {@code text} that are not built-in, or are in {@code ask}. */
+    private static void collect(String text, Set<String> ask, Map<String, String> seen) {
         if (text == null) {
             return;
         }
-        Matcher m = VAR.matcher(text);
-        while (m.find()) {
-            String name = m.group(1);
-            if (TemplateVariableResolver.isBuiltIn(name) && !(allowFileIdentity && FILE_IDENTITY.contains(name))) {
-                continue;
+        scan(text, (name, def, literal, offset) -> {
+            if (!name.equals("cursor") && (!TemplateVariableResolver.isBuiltIn(name) || ask.contains(name))) {
+                String had = seen.get(name);
+                if (had == null || (had.isEmpty() && def != null && !def.isEmpty())) {
+                    seen.put(name, def == null ? "" : def); // the first default given is the pre-fill
+                }
             }
-            seen.putIfAbsent(name, m.group(2) == null ? "" : m.group(2));
-        }
+            return "";
+        });
     }
 
     private static List<TemplateVar> toVars(Map<String, String> seen) {
@@ -87,21 +173,76 @@ public final class TemplateEngine {
         return out;
     }
 
-    /**
-     * Substitutes {@code body} into a {@link ParsedSnippet}: {@code ${cursor}} becomes {@code $0} (the
-     * final caret), {@code ${var}}/{@code ${var:default}} are resolved by {@code vars}, and any numeric
-     * {@code $1…} stays a navigable tab stop.
-     */
-    public static ParsedSnippet substitute(String body, SnippetParser.Variables vars) {
-        String prepared = (body == null ? "" : body).replace("${cursor}", "$0");
-        return SnippetParser.parse(prepared, vars);
+    /** Called for each variable reference with the output offset it sits at; returns its replacement. */
+    private interface Visitor {
+        String visit(String name, String defaultValue, String literal, int outputOffset);
     }
 
-    /** Expands a single-line pattern (file name) to plain text — no tab stops, {@code ${cursor}} dropped. */
-    public static String expand(String pattern, SnippetParser.Variables vars) {
-        String out = SnippetParser.parse((pattern == null ? "" : pattern).replace("${cursor}", ""), vars)
-                .text();
-        return collapseDuplicateExtension(out);
+    /**
+     * Walks {@code text}, copying literal text to the result and replacing each variable reference by what
+     * {@code visitor} returns. <code>$${</code> is the escape for a literal <code>${</code>.
+     */
+    private static String scan(String text, Visitor visitor) {
+        StringBuilder out = new StringBuilder(text.length() + 16);
+        Matcher m = VAR.matcher(text);
+        int i = 0;
+        int n = text.length();
+        while (i < n) {
+            int dollar = text.indexOf('$', i);
+            if (dollar < 0) {
+                out.append(text, i, n);
+                break;
+            }
+            out.append(text, i, dollar);
+            if (text.startsWith("$${", dollar)) {
+                out.append("${"); // escaped: the reference that follows is literal text
+                i = dollar + 3;
+            } else if (text.startsWith("${", dollar) && m.region(dollar, n).lookingAt()) {
+                out.append(visitor.visit(m.group(1), m.group(2), m.group(), out.length()));
+                i = m.end();
+            } else {
+                out.append('$');
+                i = dollar + 1;
+            }
+        }
+        return out.toString();
+    }
+
+    /**
+     * Renders {@code body}: {@code ${cursor}} is removed and its offset reported (the first one wins; with
+     * none the caret goes to the end), and each variable becomes its value, else its default, else — for a
+     * built-in with nothing to say — nothing, else the reference itself, unchanged.
+     */
+    public static Rendered render(String body, Variables vars) {
+        int[] caret = {-1};
+        String text = scan(body == null ? "" : body, (name, def, literal, offset) -> {
+            if (name.equals("cursor")) {
+                if (caret[0] < 0) {
+                    caret[0] = offset;
+                }
+                return "";
+            }
+            String value = vars == null ? null : vars.resolve(name);
+            if (value != null) {
+                return value;
+            }
+            if (def != null) {
+                return def;
+            }
+            return TemplateVariableResolver.isBuiltIn(name) ? "" : literal;
+        });
+        boolean hasCursor = caret[0] >= 0;
+        return new Rendered(text, hasCursor ? caret[0] : text.length(), hasCursor);
+    }
+
+    /** True when {@code body} marks a caret position with {@code ${cursor}}. */
+    public static boolean hasCursor(String body) {
+        return body != null && render(body, name -> "").hasCursor();
+    }
+
+    /** Expands a single-line pattern (file name) to plain text — {@code ${cursor}} dropped. */
+    public static String expand(String pattern, Variables vars) {
+        return collapseDuplicateExtension(render(pattern, vars).text());
     }
 
     /**
@@ -129,19 +270,45 @@ public final class TemplateEngine {
     }
 
     /**
-     * Resolves a multi-file template's {@code pathPattern} against {@code dir}, or {@code null} if the
-     * result escapes {@code dir} (a {@code ../} traversal guard). The path may itself contain variables.
+     * Resolves a template's {@code pathPattern} (a multi-file path, or a single file's name) against
+     * {@code dir}, or {@code null} when the result is not a file <em>really</em> inside {@code dir}:
+     *
+     * <ul>
+     *   <li>the expanded path is empty, absolute, or climbs out with {@code ..} — checked on the expanded
+     *       text, so a variable that expands to {@code ../x} is caught too;
+     *   <li>a segment is not a portable file name ({@link PortableFileName});
+     *   <li>the canonical location is outside {@code dir}'s — a directory inside the target that is a
+     *       symbolic link to somewhere else ({@link PathContainment#isWithin}).
+     * </ul>
      */
-    public static Path resolveTargetPath(Path dir, String pathPattern, SnippetParser.Variables vars) {
-        if (dir == null) {
+    public static Path resolveTargetPath(Path dir, String pathPattern, Variables vars) {
+        return containedPath(dir, expand(pathPattern, vars));
+    }
+
+    /** As {@link #resolveTargetPath}, for a relative path that is already expanded. */
+    public static Path containedPath(Path dir, String relativePath) {
+        if (dir == null || relativePath == null) {
             return null;
         }
-        String rel = expand(pathPattern, vars).trim();
-        if (rel.isEmpty()) {
+        String rel = relativePath.trim().replace('\\', '/');
+        if (rel.isEmpty() || rel.startsWith("/") || rel.endsWith("/")) {
             return null;
+        }
+        for (String segment : rel.split("/", -1)) {
+            if (!PortableFileName.isPortable(segment)) {
+                return null;
+            }
         }
         Path base = dir.toAbsolutePath().normalize();
-        Path resolved = base.resolve(rel).normalize();
-        return resolved.startsWith(base) ? resolved : null;
+        Path resolved;
+        try {
+            resolved = base.resolve(rel).normalize();
+        } catch (java.nio.file.InvalidPathException e) {
+            return null;
+        }
+        if (!resolved.startsWith(base) || resolved.equals(base)) {
+            return null;
+        }
+        return PathContainment.isWithin(base, resolved) ? resolved : null;
     }
 }

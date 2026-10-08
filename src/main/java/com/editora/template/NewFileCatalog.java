@@ -215,6 +215,16 @@ public final class NewFileCatalog {
     private static final Map<String, NewFileType> BY_ID =
             all().stream().collect(java.util.stream.Collectors.toUnmodifiableMap(NewFileType::id, t -> t));
 
+    private static final java.util.Set<String> EXTENSIONS = all().stream()
+            .map(NewFileType::extension)
+            .filter(e -> !e.isEmpty())
+            .collect(java.util.stream.Collectors.toUnmodifiableSet());
+
+    /** Every extension a catalog type creates (lower case, no dot). */
+    public static java.util.Set<String> extensions() {
+        return EXTENSIONS;
+    }
+
     /** The type with this id, or null. */
     public static NewFileType byId(String id) {
         return id == null ? null : BY_ID.get(id);
