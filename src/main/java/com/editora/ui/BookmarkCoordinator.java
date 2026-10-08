@@ -478,6 +478,12 @@ final class BookmarkCoordinator {
             host.setStatus(tr("status.bookmarks.noFile"));
             return;
         }
+        if (b.isNarrowed()) {
+            // The caret line is region-relative and a narrowed buffer is never persisted, so the bookmark
+            // could not be found in the store — and the store must not be rewritten from that lookup.
+            host.setStatus(tr("status.bookmarks.mnemonicNarrowed"));
+            return;
+        }
         int line = b.getFocusedArea().getCurrentParagraph();
         Path file = b.getPath();
         ops.promptText(tr("dialog.bookmarkMnemonic.title"), tr("dialog.bookmarkMnemonic.content"), "", typed -> {
@@ -493,8 +499,10 @@ final class BookmarkCoordinator {
             }
             persistBookmarks(b); // the map must hold this bookmark before assign() can find it
             var updated = BookmarkMnemonics.assign(ops.bookmarks(), file.toString(), line, m);
-            ops.bookmarks().clear();
-            ops.bookmarks().putAll(updated);
+            // In place, key by key: assign() answers with an unordered copy (and with the very map it was
+            // given when the bookmark is not there), so clear-then-putAll shuffled the files' order in the
+            // Bookmarks tool window and could empty the store.
+            ops.bookmarks().replaceAll((key, marks) -> updated.getOrDefault(key, marks));
             ops.saveBookmarks();
             restoreBookmarks(b); // pull the mnemonic back into the live manager
             refreshViews();

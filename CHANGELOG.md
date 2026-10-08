@@ -33,6 +33,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Paging a full-width Markdown preview (Space, Page Down) just after it rendered jumped to wherever the
+  hidden editor was scrolled instead of moving one page, and a re-render put the preview back there too.
+  The preview follows the editor's scroll position only in Split view now.
+- Right-clicking a class row in Test Results opened no menu, so "Go to Test Class", "Rerun This Class"
+  and "Debug This Class" could not be reached; only test rows had one.
+- **Setting a bookmark mnemonic in a narrowed buffer no longer deletes the project's bookmarks.** The
+  bookmark could not be found in the store while the buffer was narrowed, and the store was then emptied.
+  The command is now refused until the buffer is widened. Setting a mnemonic also no longer shuffles the
+  order of the files in the Bookmarks tool window.
+- A Word (`.docx`) export no longer puts an empty paragraph in front of every Mermaid block or display
+  formula it has to write as source — which, without `mmdc` installed, was every Mermaid block.
+- Dragging a picture from a browser into a Markdown document no longer inserts an empty link (`![](< >)`)
+  when the drag carries neither pixels nor an address; it reports that the picture could not be inserted.
 - **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
   turned out to be incomplete or not the expected tool was unpacked over the installed version before it
   was checked: the working version was gone, and the half-unpacked folder was then detected as installed,
@@ -52,6 +65,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Buffer: Toggle Pin` on the Welcome tab (or an image, PDF or hex tab) no longer fails with an internal
   error after pinning the tab, which left a Welcome tab that Close All skipped. It now says there is no
   file open.
+- Scrolling a file with code lenses on no longer leaves the language server counting references for the
+  lines scrolled away from: a superseded code-lens request now cancels the `codeLens/resolve` requests it
+  had started (with jdtls, a reference search each).
+- **Project filter: Enter opens the first match.** After typing in the Project tool window's filter, Enter
+  did nothing, because no match was highlighted — and Down first landed on the project's own row, where
+  Enter collapsed the result list. The first match is now highlighted when the results arrive, so Enter
+  opens it and Down moves on from there.
+- **Project tree: a folder you close and reopen shows what it holds now.** Files added to or removed from
+  a folder while it was closed in the tree did not appear when it was opened again — only after the
+  window lost and regained focus. A reopened folder is now listed again, and a closed one is no longer
+  watched for changes.
+- **Project Map: Escape on a preview card's right-click menu closes only the menu.** It closed the card
+  as well.
+- The systemd timer preview described `OnCalendar=*:30` as "Daily at minute 30 past every hour"; it now
+  reads "At minute 30 past every hour".
+- AI Agent: starting a new session, switching agent or resuming a past chat no longer puts
+  "(agent exited)" into the fresh transcript, and the first prompt after it keeps its "Working…" state
+  and Stop button until the reply is complete. The process the editor had just stopped was reported as
+  an agent that quit, which could also discard the session that replaced it.
+- Settings: the Install button for the `typst` program (Typst page) and the one for Typst's language
+  server (Language Servers page) shared one "installed" state. One of them never changed to
+  "Installed", and the other showed whichever of the two checks finished last.
+- Settings ▸ Keymaps: the Up arrow on the first shortcut row moved the focus out of the list, to the
+  filter field. It now stays on the row, as the Down arrow does on the last one.
 - Save As into a folder reached through a symbolic link (`/home` on some Linux systems, `/tmp` and `/var`
   on macOS) lost the personal notes of the copy: they were stored under the path as typed and looked up
   under the real one. A file that does not exist yet is now keyed the way it will be once it is written.

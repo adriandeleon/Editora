@@ -31,6 +31,55 @@ public final class LspTestHooks {
         return created; // grows as sessions are created, so a test can set canned responses on one
     }
 
+    /**
+     * As {@link #useFakeSessions(LspManager, ServerCapabilities)}, with each fake also answering the custom
+     * {@code java/…} requests and notifications (which otherwise go to a launcher a fake session has not got).
+     */
+    public static java.util.List<FakeLanguageServer> useFakeSessionsWithRawRequests(
+            LspManager manager, ServerCapabilities capabilities) {
+        java.util.List<FakeLanguageServer> created = new java.util.concurrent.CopyOnWriteArrayList<>();
+        manager.setSessionStarterForTest(session -> {
+            FakeLanguageServer fake = new FakeLanguageServer();
+            created.add(fake);
+            session.setRawSinkForTest(fake.rawSink());
+            session.attachForTest(fake, capabilities);
+        });
+        return created;
+    }
+
+    /** Plays the server serving {@code file} dying on its own — a crash, not a shutdown the editor asked for. */
+    public static void simulateServerDeath(LspManager manager, java.nio.file.Path file) {
+        manager.sessionForTest(file).simulateServerDeathForTest();
+    }
+
+    /** Plays a server's {@code workspace/…/refresh} request of {@code kind} for {@code file}'s session. */
+    public static void refresh(LspManager manager, java.nio.file.Path file, String kind) {
+        LanguageServerSession session = manager.sessionForTest(file);
+        switch (kind) {
+            case "diagnostics" -> session.refreshDiagnostics();
+            case "semanticTokens" -> session.refreshSemanticTokens();
+            case "inlayHints" -> session.refreshInlayHints();
+            case "foldingRanges" -> session.refreshFoldingRanges();
+            default -> throw new IllegalArgumentException("not a refresh a server can ask for: " + kind);
+        }
+    }
+
+    /** Plays a server's {@code $/progress} begin (a title) or end (a null title) for {@code file}'s session. */
+    public static void progress(LspManager manager, java.nio.file.Path file, String beginTitle) {
+        org.eclipse.lsp4j.WorkDoneProgressNotification value;
+        if (beginTitle == null) {
+            value = new org.eclipse.lsp4j.WorkDoneProgressEnd();
+        } else {
+            var begin = new org.eclipse.lsp4j.WorkDoneProgressBegin();
+            begin.setTitle(beginTitle);
+            value = begin;
+        }
+        manager.sessionForTest(file)
+                .notifyProgress(new org.eclipse.lsp4j.ProgressParams(
+                        org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft("token"),
+                        org.eclipse.lsp4j.jsonrpc.messages.Either.forLeft(value)));
+    }
+
     /** The command the manager is configured to launch for {@code serverId} — what {@code configure} was given. */
     public static String configuredCommand(LspManager manager, String serverId) {
         return manager.configuredCommandForTest(serverId);

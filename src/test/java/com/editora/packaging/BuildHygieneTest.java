@@ -217,6 +217,9 @@ class BuildHygieneTest {
             if (child(rule, "element") == null || child(rule, "limits") == null) {
                 continue; // an enforcer rule, not a JaCoCo one
             }
+            if (child(rule, "includes") == null) {
+                continue; // the whole-build rule: it names no package, and the guide states it in prose
+            }
             String minimum = text(child(child(rule, "limits"), "limit"), "minimum");
             for (Element include : children(child(rule, "includes"), "include")) {
                 floors.put(include.getTextContent().trim().replaceFirst("^com\\.editora\\.", ""), minimum);

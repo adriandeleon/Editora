@@ -70,6 +70,23 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set (before the client connects), sessions advertise {@code supportsDelayedStackTraceLoading}. */
     public volatile boolean delayedStackTraceLoading;
 
+    /** When set (before the client connects), sessions advertise {@code supportsGotoTargetsRequest}. */
+    public volatile boolean gotoTargets;
+
+    /** When set (before the client connects), every {@code launch}/{@code attach} is refused with this message. */
+    public volatile String launchFailure;
+
+    /** When set, the {@code launch} of every connection after the first (a child session) is refused with it. */
+    public volatile String childLaunchFailure;
+
+    /**
+     * When set (before the client connects), what every new session's {@link Session#breakpointAnswer} starts
+     * as — for the {@code setBreakpoints} a client sends as soon as it is connected, before a test can reach
+     * the session.
+     */
+    public volatile java.util.function.Function<SetBreakpointsArguments, List<org.eclipse.lsp4j.debug.Breakpoint>>
+            sessionBreakpointAnswer;
+
     public FakeDebugAdapter(boolean multiSession) throws IOException {
         this(multiSession, InetAddress.getLoopbackAddress());
     }
@@ -157,6 +174,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
         private Session(Socket socket, boolean first) {
             this.socket = socket;
             this.first = first;
+            this.breakpointAnswer = sessionBreakpointAnswer;
         }
 
         private volatile org.eclipse.lsp4j.jsonrpc.RemoteEndpoint remote;
@@ -325,6 +343,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             if (delayedStackTraceLoading) {
                 capabilities.setSupportsDelayedStackTraceLoading(true);
             }
+            if (gotoTargets) {
+                capabilities.setSupportsGotoTargetsRequest(true);
+            }
             CompletableFuture<Capabilities> reply = CompletableFuture.completedFuture(capabilities);
             // The event follows the response, as the protocol orders them.
             CompletableFuture.runAsync(() -> client.initialized());
@@ -335,6 +356,12 @@ public final class FakeDebugAdapter implements AutoCloseable {
         public CompletableFuture<Void> launch(Map<String, Object> args) {
             launchArgs = args;
             record("launch");
+            if (launchFailure != null) {
+                return refused(launchFailure);
+            }
+            if (!first && childLaunchFailure != null) {
+                return refused(childLaunchFailure);
+            }
             if (multiSession && first) {
                 CompletableFuture.runAsync(this::requestChildSession);
             }
@@ -346,6 +373,9 @@ public final class FakeDebugAdapter implements AutoCloseable {
             launchArgs = args;
             attached = true;
             record("attach");
+            if (launchFailure != null) {
+                return refused(launchFailure);
+            }
             return CompletableFuture.completedFuture(null);
         }
 
@@ -398,7 +428,11 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         @Override
         public CompletableFuture<ThreadsResponse> threads() {
+            String failure = threadsFailure; // read before the request is announced: a test may clear it then
             record("threads");
+            if (failure != null) {
+                return refused(failure);
+            }
             List<org.eclipse.lsp4j.debug.Thread> all = new java.util.ArrayList<>();
             all.add(thread(7, "main"));
             for (int id : runningThreads) {
@@ -593,6 +627,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
         @Override
         public CompletableFuture<org.eclipse.lsp4j.debug.EvaluateResponse> evaluate(
                 org.eclipse.lsp4j.debug.EvaluateArguments args) {
+            evaluateRequests.add(args);
             record("evaluate");
             if (args.getExpression().startsWith("bad")) {
                 return refused("Cannot evaluate: " + args.getExpression());
@@ -613,6 +648,69 @@ public final class FakeDebugAdapter implements AutoCloseable {
             org.eclipse.lsp4j.debug.SetVariableResponse response = new org.eclipse.lsp4j.debug.SetVariableResponse();
             response.setValue(args.getValue());
             return CompletableFuture.completedFuture(response);
+        }
+        // --- scripted control: pause, jump to line, continued ------------------------------------------
+
+        /** The thread id of every {@code pause} request, in arrival order. */
+        public final List<Integer> pausedThreads = new CopyOnWriteArrayList<>();
+        /** The targets {@code gotoTargets} answers with; empty: the line has none. */
+        public volatile List<Integer> gotoTargetIds = List.of();
+        /** When set, every {@code gotoTargets} is refused with this message. */
+        public volatile String gotoTargetsFailure;
+        /** When set, every {@code goto} is refused with this message. */
+        public volatile String gotoFailure;
+        /** Every {@code gotoTargets} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.GotoTargetsArguments> gotoTargetRequests =
+                new CopyOnWriteArrayList<>();
+        /** Every {@code goto} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.GotoArguments> gotoRequests = new CopyOnWriteArrayList<>();
+        /** When set, every {@code threads} request is refused with this message. */
+        public volatile String threadsFailure;
+        /** Every {@code evaluate} request, in arrival order. */
+        public final List<org.eclipse.lsp4j.debug.EvaluateArguments> evaluateRequests = new CopyOnWriteArrayList<>();
+
+        /** The {@code continued} event; {@code allThreads} null leaves the property out. */
+        public void continued(int threadId, Boolean allThreads) {
+            org.eclipse.lsp4j.debug.ContinuedEventArguments event =
+                    new org.eclipse.lsp4j.debug.ContinuedEventArguments();
+            event.setThreadId(threadId);
+            event.setAllThreadsContinued(allThreads);
+            client.continued(event);
+        }
+
+        @Override
+        public CompletableFuture<Void> pause(org.eclipse.lsp4j.debug.PauseArguments args) {
+            pausedThreads.add(args.getThreadId());
+            record("pause");
+            return CompletableFuture.completedFuture(null);
+        }
+
+        @Override
+        public CompletableFuture<org.eclipse.lsp4j.debug.GotoTargetsResponse> gotoTargets(
+                org.eclipse.lsp4j.debug.GotoTargetsArguments args) {
+            gotoTargetRequests.add(args);
+            record("gotoTargets");
+            if (gotoTargetsFailure != null) {
+                return refused(gotoTargetsFailure);
+            }
+            List<org.eclipse.lsp4j.debug.GotoTarget> targets = new java.util.ArrayList<>();
+            for (int id : gotoTargetIds) {
+                org.eclipse.lsp4j.debug.GotoTarget target = new org.eclipse.lsp4j.debug.GotoTarget();
+                target.setId(id);
+                target.setLabel("line " + args.getLine());
+                target.setLine(args.getLine());
+                targets.add(target);
+            }
+            org.eclipse.lsp4j.debug.GotoTargetsResponse response = new org.eclipse.lsp4j.debug.GotoTargetsResponse();
+            response.setTargets(targets.toArray(new org.eclipse.lsp4j.debug.GotoTarget[0]));
+            return CompletableFuture.completedFuture(response);
+        }
+
+        @Override
+        public CompletableFuture<Void> goto_(org.eclipse.lsp4j.debug.GotoArguments args) {
+            gotoRequests.add(args);
+            record("goto");
+            return gotoFailure != null ? refused(gotoFailure) : CompletableFuture.completedFuture(null);
         }
     }
 }

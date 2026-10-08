@@ -147,6 +147,9 @@ final class DiffCoordinator {
     });
     private DiffEngine.DiffOptions lastDiffOptions = DiffEngine.DiffOptions.DEFAULT;
 
+    /** Picks where an exported patch is saved, or {@code null}. Replaced by tests. */
+    java.util.function.Supplier<Path> choosePatchExportFile = this::askPatchExportFile;
+
     /** The editor-side change commands (next/previous, peek, revert, stage); they stage through this class. */
     private final GitHunkCoordinator hunks;
 
@@ -1951,27 +1954,32 @@ final class DiffCoordinator {
                 host.setStatus(tr("status.diff.identical"));
                 return;
             }
-            FileChooser fc = new FileChooser();
-            fc.setTitle(tr("diff.exportPatch"));
-            fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));
-            fc.setInitialFileName("changes.patch");
-            java.io.File f = fc.showSaveDialog(host.window());
-            if (f == null) {
+            Path target = choosePatchExportFile.get();
+            if (target == null) {
                 return;
             }
             try {
                 // Staged: a failed write must not empty a patch the Save dialog agreed to replace.
                 com.editora.io.StagedExport.write(
-                        f.toPath(),
+                        target,
                         patchBytes(
                                 patch,
                                 request.leftFormat().charset(),
                                 request.rightFormat().charset()));
-                host.setStatus(tr("status.diff.patchSaved", f.getName()));
+                host.setStatus(tr("status.diff.patchSaved", target.getFileName()));
             } catch (IOException e) {
                 host.setStatus(tr("status.diff.patchFailed", e.getMessage() == null ? "" : e.getMessage()));
             }
         });
+    }
+
+    private Path askPatchExportFile() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle(tr("diff.exportPatch"));
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("Patch (*.patch)", "*.patch"));
+        fc.setInitialFileName("changes.patch");
+        java.io.File f = fc.showSaveDialog(host.window());
+        return f == null ? null : f.toPath();
     }
 
     /** The two texts a patch is written from: each displayed side with its source's line ending put back. */

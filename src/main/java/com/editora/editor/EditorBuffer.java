@@ -5154,8 +5154,12 @@ public class EditorBuffer implements TabContent {
                 }
                 if (previewSettling(System.nanoTime() - previewLayoutChangedAt, PREVIEW_SETTLE_NANOS)) {
                     // Still settling: the editor is the source of truth, so re-anchor the preview to it
-                    // rather than letting a layout-driven vvalue move the editor.
-                    syncPreviewToEditorScroll();
+                    // rather than letting a layout-driven vvalue move the editor. Only in SPLIT: in PREVIEW
+                    // the editor is off screen, and following its stale scroll position threw away the
+                    // user's paging (and the position kept across a re-render).
+                    if (markdownViewMode == MarkdownViewMode.SPLIT) {
+                        syncPreviewToEditorScroll();
+                    }
                     return;
                 }
                 if (markdownViewMode == MarkdownViewMode.SPLIT && previewPane.isHover()) {
