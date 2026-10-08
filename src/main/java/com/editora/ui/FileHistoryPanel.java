@@ -83,6 +83,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
 
         /** Escape in the panel: hand the keyboard back to the editor. */
         default void focusEditor() {}
+
+        /** Folder view: delete every revision of the file at {@code path} (which may no longer exist), after asking. */
+        default void purgeFile(String path) {}
     }
 
     /**
@@ -860,7 +863,8 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
                 }
                 setGraphic(box);
                 setTooltip(new Tooltip(g.path()));
-                setContextMenu(null);
+                setContextMenu(new ContextMenu(
+                        item(tr("history.menu.purge"), Icons.trash(), () -> actions.purgeFile(g.path()))));
             } else if (value instanceof HistoryRevision r) {
                 String what = r.label().isBlank() ? reasonLabel(r.reason()) : r.label();
                 Label when = new Label(HistoryRowText.dateTimeText(r.timestamp(), ZoneId.systemDefault(), locale()));
@@ -1007,7 +1011,7 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
      * The locale dates and numbers are written in: the interface language — with the system's own region
      * when the two are the same language, so an English interface on a British machine keeps British dates.
      */
-    private static Locale locale() {
+    static Locale locale() {
         String lang = com.editora.i18n.Messages.current();
         Locale system = Locale.getDefault(Locale.Category.FORMAT);
         if (lang == null
@@ -1057,6 +1061,9 @@ public final class FileHistoryPanel extends VBox implements ToolWindowContent {
             case HistoryRevision.REASON_EXTERNAL -> tr("history.reason.external");
             case HistoryRevision.REASON_LABEL -> tr("history.reason.label");
             case HistoryRevision.REASON_DELETE -> tr("history.reason.delete");
+            case HistoryCoordinator.REASON_BASELINE -> tr("history.reason.baseline");
+            // "replace-in-files" is what the same capture was stored as before it had a reason of its own
+            case HistoryCoordinator.REASON_BEFORE_REPLACE, "replace-in-files" -> tr("history.reason.beforeReplace");
             default -> tr("history.reason.save");
         };
     }

@@ -245,6 +245,14 @@ public class SharedConfig {
         return projects;
     }
 
+    /**
+     * Whether a purge's revision bodies can leave the disk now ({@link #mayCollectHistoryBlobs}), for the
+     * purge to say so when they cannot.
+     */
+    public boolean canCollectHistoryBlobs() {
+        return mayCollectHistoryBlobs();
+    }
+
     /** The app-wide local-history worker. Sharing it coordinates blob publication and GC across windows. */
     public HistoryService historyService() {
         return historyService;

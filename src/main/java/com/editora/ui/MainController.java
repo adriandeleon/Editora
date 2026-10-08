@@ -2877,7 +2877,36 @@ public class MainController implements com.editora.mcp.McpBridge {
             public String currentTextOf(java.nio.file.Path file) {
                 return gitWindows.currentTextOf(file);
             }
+
+            @Override
+            public EditorBuffer openBufferFor(java.nio.file.Path file) {
+                return bufferOf(tabForPath(file));
+            }
+
+            @Override
+            public void historyChanged() {
+                if (windowManager != null) {
+                    windowManager.localHistoryChanged(MainController.this);
+                }
+            }
+
+            @Override
+            public java.nio.file.Path projectRoot() {
+                return windowProject != null && projectsEnabled() ? Path.of(windowProject.root()) : null;
+            }
+
+            @Override
+            public boolean canCollectNow() {
+                return config.shared().canCollectHistoryBlobs();
+            }
         };
+    }
+
+    /** Local History's index changed in another window: this window's panel shows it as it is now. */
+    void localHistoryChanged() {
+        if (historyCoordinator != null) {
+            historyCoordinator.refresh();
+        }
     }
 
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
@@ -6574,7 +6603,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             file -> bufferOf(tabForPath(file)),
                             fileWorkflows.loadingBuffers::contains,
                             (file, content, completion) ->
-                                    historyCoordinator.recordDurably(file, content, "replace-in-files", completion),
+                                    historyCoordinator.recordBeforeReplace(file, content, completion),
                             file -> config.shared().documentWrites().begin(file)),
                     new SearchCoordinator.Persistence(
                             query -> config.shared().searchHistory().add(query),

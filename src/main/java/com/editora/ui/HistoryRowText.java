@@ -116,13 +116,10 @@ final class HistoryRowText {
         if (revision == null) {
             return false;
         }
-        if (HistoryQueries.matches(revision, query)) {
+        if (HistoryQueries.matches(revision, query, reasonLabel)) {
             return true;
         }
         String needle = query.toLowerCase(Locale.ROOT).strip();
-        if (contains(reasonLabel, needle)) {
-            return true;
-        }
         for (String text : shownTexts) {
             if (contains(text, needle)) {
                 return true;
