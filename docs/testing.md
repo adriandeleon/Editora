@@ -47,6 +47,12 @@ prototype platform's input/rendering limitations don't apply.
   in Files, and Local File History restore tests use the app-wide document-write sequencer and injected I/O
   boundaries to cover stale completion, concurrent changes, and failed replacement without timing sleeps.
 
+- A question a save puts to the user is answered through its real dialog, every way it can be answered
+  (`SaveDecisionsFxTest.answerDialog` presses a button of the dialog with a given header, or closes it).
+  What cannot run in a test is injected at the boundary instead: `FileWorkflowCoordinator.saveAsTargetChooser`
+  stands in for the native file chooser, and `elevationProcess` for `pkexec`/`osascript` — a test never
+  launches a real elevation helper; `AdminSaveDecisionsFxTest` runs the same script without privileges.
+
 ### The surefire config that makes it work
 
 In `pom.xml`:
