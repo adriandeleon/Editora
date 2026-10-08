@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Buffer: Toggle Pin` on the Welcome tab (or an image, PDF or hex tab) no longer fails with an internal
   error after pinning the tab, which left a Welcome tab that Close All skipped. It now says there is no
   file open.
+- Settings: the Install button for the `typst` program (Typst page) and the one for Typst's language
+  server (Language Servers page) shared one "installed" state. One of them never changed to
+  "Installed", and the other showed whichever of the two checks finished last.
 
 ## [0.20.0] - 2026-10-08
 

@@ -814,8 +814,17 @@ public class SettingsWindow {
                 onInstallServer.accept(serverId);
             }
         });
-        installButtons.put(serverId, b);
+        installButtons.put(serverInstallKey(serverId), b);
         return b;
+    }
+
+    /**
+     * The key a language server's Install button is tracked under. Not the bare server id: the Typst page's
+     * button for the {@code typst} CLI is tracked as {@code typst} too, and sharing the key left one of the two
+     * buttons out of the map — it never showed "Installed", and the other showed whichever probe came last.
+     */
+    private static String serverInstallKey(String serverId) {
+        return "server:" + serverId;
     }
 
     /** Reflects a tool's detected state on its Install button: disabled + "Installed" when present. */
@@ -6583,7 +6592,7 @@ public class SettingsWindow {
                 status.getStyleClass()
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
-                updateInstallButton(langKey != null ? langKey : srv.id(), found);
+                updateInstallButton(langKey != null ? langKey : serverInstallKey(srv.id()), found);
             });
         }
     }
