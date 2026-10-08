@@ -2,14 +2,19 @@ package com.editora.pdf;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.TextMateHighlighter;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CodePdfWriterTest {
@@ -87,7 +92,99 @@ class CodePdfWriterTest {
         Path wide = dir.resolve("wide.pdf");
         CodePdfWriter.write("中".repeat(60) + "\n", null, false, 4, "letter", wide, java.util.List.of());
         assertTrue(PdfProbe.rightmostInk(wide) <= 612f - 40f + 0.5f, "wide characters stay inside the margin");
+        assertEquals(60, PdfProbe.squeezed(wide).length(), "all sixty cells were drawn");
+    }
+
+    private static final PdfDocMeta META = new PdfDocMeta("Demo.java", "en", (p, n) -> "Page " + p + " of " + n);
+
+    @Test
+    void everyPageHasTheNameAndPageOfPagesFooter(@TempDir Path dir) throws Exception {
+        Path out = dir.resolve("footer.pdf");
+        CodePdfWriter.write("line\n".repeat(150), null, true, 4, PdfPageSpec.of("letter"), META, out, List.of());
+        int pages = PdfProbe.pages(out);
+        assertTrue(pages >= 3, "several pages: " + pages);
+        for (int p = 1; p <= pages; p++) {
+            String furniture = PdfProbe.artifactText(out, p);
+            assertTrue(
+                    furniture.strip().replaceAll("\\s+", " ").endsWith("Demo.java Page " + p + " of " + pages),
+                    "the footer of page " + p + ": " + furniture);
+        }
+        try (PDDocument doc = Loader.loadPDF(out.toFile())) {
+            assertEquals("Demo.java", doc.getDocumentInformation().getTitle());
+            assertEquals("Editora", doc.getDocumentInformation().getCreator());
+            assertNotNull(doc.getDocumentInformation().getCreationDate());
+            assertEquals("en", doc.getDocumentCatalog().getLanguage());
+        }
+    }
+
+    @Test
+    void withTheFooterOffThereIsNoPageFurnitureAtAll(@TempDir Path dir) throws Exception {
+        Path on = dir.resolve("on.pdf");
+        Path off = dir.resolve("off.pdf");
+        String code = "line\n".repeat(150);
+        CodePdfWriter.write(code, null, false, 4, PdfPageSpec.of("letter"), META, on, List.of());
+        CodePdfWriter.write(code, null, false, 4, PdfPageSpec.of("letter").withFooter(false), META, off, List.of());
+        assertTrue(PdfProbe.artifactText(on).contains("Page 1 of"));
+        assertEquals("", PdfProbe.artifactText(off).strip(), "no footer, not even a bare page number");
+        assertEquals(PdfProbe.text(on), PdfProbe.text(off), "the code is the same");
+        assertEquals(PdfProbe.rawText(off), PdfProbe.text(off), "nothing but the code is in the PDF");
+        try (PDDocument doc = Loader.loadPDF(off.toFile())) {
+            assertEquals("Demo.java", doc.getDocumentInformation().getTitle(), "the metadata is unaffected");
+        }
+    }
+
+    @Test
+    void lineNumbersArePageFurnitureNotPartOfTheCode(@TempDir Path dir) throws Exception {
+        Path out = dir.resolve("gutter.pdf");
+        String code = "alpha();\n    beta();\ngamma();\n";
+        CodePdfWriter.write(code, null, true, 4, PdfPageSpec.of("letter").withFooter(false), META, out, List.of());
+        // A reader that honours /Artifact gets the code and nothing else…
         assertEquals(
-                60, PdfProbe.squeezed(wide).replace("1", "").length(), "all sixty cells were drawn"); // page no. "1"
+                List.of("alpha();", "    beta();", "gamma();"),
+                PdfProbe.text(out).lines().toList());
+        assertEquals(
+                List.of("1", "2", "3", "4"),
+                PdfProbe.artifactText(out).lines().map(String::strip).toList());
+        // …one that does not still sees the numbers.
+        assertTrue(PdfProbe.rawText(out).contains("1"));
+    }
+
+    @Test
+    void aWrappedLineBreaksAtASpaceAndIsMarkedAsAContinuation(@TempDir Path dir) throws Exception {
+        Path out = dir.resolve("wrap.pdf");
+        String comment = "// " + "several words that run on ".repeat(8).strip();
+        CodePdfWriter.write(
+                "first();\n" + comment + "\nlast();\n", null, true, 4, PdfPageSpec.of("letter"), META, out, List.of());
+        List<String> lines = PdfProbe.text(out).lines().toList();
+        assertEquals("first();", lines.get(0));
+        assertEquals("last();", lines.get(lines.size() - 1));
+        List<String> wrapped = lines.subList(1, lines.size() - 1);
+        assertTrue(wrapped.size() >= 2, "the comment wraps: " + lines);
+        assertEquals(
+                comment,
+                String.join(" ", wrapped).replaceAll("\\s+", " "),
+                "at spaces: every visual line holds whole words");
+        // The gutter shows the number once and the mark on each continuation line, at the same baseline.
+        String gutter = PdfProbe.artifactText(out, 1);
+        assertEquals(wrapped.size() - 1, gutter.chars().filter(c -> c == 0x21AA).count(), gutter);
+        assertFalse(PdfProbe.text(out).contains(PdfText.CONTINUATION_MARK), "the mark is not part of the code");
+        assertTrue(gutter.lines().map(String::strip).toList().containsAll(List.of("1", "2", "3", "4")), gutter);
+    }
+
+    @Test
+    void theSpecSetsMarginOrientationAndFontSize(@TempDir Path dir) throws Exception {
+        Path out = dir.resolve("spec.pdf");
+        PdfPageSpec spec = new PdfPageSpec("a4", true, 72f, 12f, true);
+        CodePdfWriter.write("x".repeat(400) + "\n", null, false, 4, spec, META, out, List.of());
+        try (PDDocument doc = Loader.loadPDF(out.toFile())) {
+            assertEquals(
+                    PDRectangle.A4.getHeight(), doc.getPage(0).getMediaBox().getWidth(), 0.01f);
+            assertEquals(PDRectangle.A4.getWidth(), doc.getPage(0).getMediaBox().getHeight(), 0.01f);
+        }
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        assertEquals(72f, glyphs.get(0).x(), 0.01f, "the left margin");
+        assertEquals(12f * 0.6f, glyphs.get(1).x() - glyphs.get(0).x(), 0.01f, "12 pt JetBrains Mono cells");
+        assertTrue(PdfProbe.rightmostInk(out) <= PDRectangle.A4.getHeight() - 72f + 0.5f, "the right margin");
+        assertEquals(PDRectangle.A4.getWidth() - 72f - 12f, glyphs.get(0).baseline(), 0.01f, "the top margin");
     }
 }

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.Collection;
 import java.util.List;
 
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -15,29 +16,29 @@ import org.fxmisc.richtext.model.StyleSpans;
 
 /**
  * Renders source text to a searchable, light-themed PDF with an embedded monospace font, optional
- * right-aligned line numbers, and (optional) syntax-highlight colors. Pure layout lives in
- * {@link PdfText}; this class drives PDFBox. Blocking — call off the FX thread.
+ * right-aligned line numbers, and (optional) syntax-highlight colors. Unless the {@link PdfPageSpec} turns it
+ * off, every page has a footer — the document name and "Page n of N" ({@link PdfChrome}). Pure layout lives in {@link PdfText}; this class drives PDFBox.
+ * Blocking — call off the FX thread.
  */
 public final class CodePdfWriter {
 
-    private static final float MARGIN = 40f;
-    private static final float FONT_SIZE = 9f;
-    private static final float LINE_HEIGHT = FONT_SIZE * 1.35f;
-    private static final float FOOTER_SIZE = 7.5f;
+    /** The margin used unless the {@link PdfPageSpec} sets one. */
+    static final float MARGIN = 40f;
+
+    private static final float LINE_HEIGHT_RATIO = 1.35f;
     private static final float GUTTER_GAP = 8f; // space between line numbers and code
 
     private CodePdfWriter() {}
 
-    /** "a4" → A4, anything else → US Letter. */
+    /** "a4" → A4, anything else → US Letter (see {@link PdfPageSpec#of}). */
     public static PDRectangle pageRectangle(String pageSizeKey) {
-        return "a4".equalsIgnoreCase(pageSizeKey) ? PDRectangle.A4 : PDRectangle.LETTER;
+        return PdfPageSpec.of(pageSizeKey).rectangle();
     }
 
     /**
-     * Writes {@code text} to {@code out} as a PDF. {@code spans} (highlight) may be null for plain text;
-     * {@code title} is shown in the footer. Tabs expand by {@code tabSize}. Characters JetBrains Mono lacks
-     * (CJK, Arabic, …) are drawn with a system fallback font; returns how many could not be drawn at all and
-     * were replaced by {@code ?}.
+     * Writes {@code text} to {@code out} as a PDF. {@code spans} (highlight) may be null for plain text. Tabs
+     * expand by {@code tabSize}. Characters JetBrains Mono lacks (CJK, Arabic, …) are drawn with a system
+     * fallback font; returns how many could not be drawn at all and were replaced by {@code ?}.
      */
     public static int write(
             String text,
@@ -47,7 +48,23 @@ public final class CodePdfWriter {
             String pageSizeKey,
             Path out)
             throws IOException {
-        return write(text, spans, lineNumbers, tabSize, pageSizeKey, out, SystemFontFiles.get());
+        return write(text, spans, lineNumbers, tabSize, PdfPageSpec.of(pageSizeKey), PdfDocMeta.NONE, out);
+    }
+
+    /**
+     * As {@link #write(String, StyleSpans, boolean, int, String, Path)} on the page {@code spec} describes,
+     * with {@code meta}'s document name in the PDF's Title and in the footer beside the page label.
+     */
+    public static int write(
+            String text,
+            StyleSpans<Collection<String>> spans,
+            boolean lineNumbers,
+            int tabSize,
+            PdfPageSpec spec,
+            PdfDocMeta meta,
+            Path out)
+            throws IOException {
+        return write(text, spans, lineNumbers, tabSize, spec, meta, out, SystemFontFiles.get());
     }
 
     /** As {@link #write(String, StyleSpans, boolean, int, String, Path)} with explicit fallback font files. */
@@ -60,15 +77,29 @@ public final class CodePdfWriter {
             Path out,
             List<Path> fallbackFonts)
             throws IOException {
+        return write(
+                text, spans, lineNumbers, tabSize, PdfPageSpec.of(pageSizeKey), PdfDocMeta.NONE, out, fallbackFonts);
+    }
+
+    static int write(
+            String text,
+            StyleSpans<Collection<String>> spans,
+            boolean lineNumbers,
+            int tabSize,
+            PdfPageSpec spec,
+            PdfDocMeta meta,
+            Path out,
+            List<Path> fallbackFonts)
+            throws IOException {
         try {
-            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, fallbackFonts);
+            return render(text, spans, lineNumbers, tabSize, spec, meta, out, fallbackFonts);
         } catch (IOException | RuntimeException e) {
             if (fallbackFonts.isEmpty()) {
                 throw e;
             }
             // A system font PDFBox turns out unable to embed must not cost the export: retry with the bundled
             // fonts only (a failure unrelated to fonts just happens again and propagates).
-            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, List.of());
+            return render(text, spans, lineNumbers, tabSize, spec, meta, out, List.of());
         }
     }
 
@@ -77,11 +108,15 @@ public final class CodePdfWriter {
             StyleSpans<Collection<String>> spans,
             boolean lineNumbers,
             int tabSize,
-            String pageSizeKey,
+            PdfPageSpec spec,
+            PdfDocMeta meta,
             Path out,
             List<Path> fallbackFonts)
             throws IOException {
-        PDRectangle pageSize = pageRectangle(pageSizeKey);
+        PDRectangle pageSize = spec.rectangle();
+        float margin = spec.marginOr(MARGIN);
+        float fontSize = spec.codeFontSize();
+        float lineHeight = fontSize * LINE_HEIGHT_RATIO;
         List<List<PdfText.Run>> sourceLines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
 
         try (PDDocument doc = new PDDocument();
@@ -91,15 +126,16 @@ public final class CodePdfWriter {
             PDType0Font italic = font(doc, "JetBrainsMono-Italic");
             PDType0Font boldItalic = font(doc, "JetBrainsMono-BoldItalic");
 
-            float charWidth = regular.getStringWidth("M") / 1000f * FONT_SIZE;
+            float charWidth = regular.getStringWidth("M") / 1000f * fontSize;
             int total = sourceLines.size();
             int digits = Math.max(2, Integer.toString(total).length());
             float gutterWidth = lineNumbers ? digits * charWidth + GUTTER_GAP : 0f;
-            float codeX = MARGIN + gutterWidth;
-            float contentWidth = pageSize.getWidth() - MARGIN - codeX;
+            float codeX = margin + gutterWidth;
+            float contentWidth = pageSize.getWidth() - margin - codeX;
             int maxCols = Math.max(1, (int) Math.floor(contentWidth / charWidth));
-            float topY = pageSize.getHeight() - MARGIN;
-            float bottomY = MARGIN + FOOTER_SIZE + 6f;
+            float topY = pageSize.getHeight() - margin - fontSize;
+            // The footer sits just inside the bottom margin; the last code line keeps clear of it.
+            float bottomY = spec.footer() ? margin + PdfChrome.FOOTER_SIZE + 6f : margin;
 
             Page page = new Page(doc, pageSize, topY);
             int lineNo = 0;
@@ -109,33 +145,57 @@ public final class CodePdfWriter {
                 boolean first = true;
                 for (List<PdfText.Run> vline : visual) {
                     if (page.y < bottomY) {
-                        page.finish(regular);
+                        page.cs.close();
                         page = new Page(doc, pageSize, topY);
                     }
-                    if (lineNumbers && first) {
-                        drawLineNumber(page.cs, regular, lineNo, MARGIN + digits * charWidth, page.y);
+                    if (lineNumbers) {
+                        // The number of a source line, or the mark that says "this is still the line above".
+                        String label = first ? Integer.toString(lineNo) : PdfText.CONTINUATION_MARK;
+                        drawGutter(page.cs, regular, fontSize, label, margin + digits * charWidth, page.y);
                     }
-                    drawRuns(page.cs, glyphs, vline, codeX, page.y, charWidth, regular, bold, italic, boldItalic);
-                    page.y -= LINE_HEIGHT;
+                    drawRuns(
+                            page.cs,
+                            glyphs,
+                            vline,
+                            codeX,
+                            page.y,
+                            charWidth,
+                            fontSize,
+                            regular,
+                            bold,
+                            italic,
+                            boldItalic);
+                    page.y -= lineHeight;
                     first = false;
                 }
             }
-            page.finish(regular);
+            page.cs.close();
+            PdfChrome.describe(doc, meta);
+            if (spec.footer()) {
+                PdfChrome.footers(doc, glyphs, regular, meta, margin, pageSize.getWidth() - margin, margin - 4f);
+            }
             doc.save(out.toFile());
             return glyphs.missing();
         }
     }
 
-    private static void drawLineNumber(PDPageContentStream cs, PDType0Font font, int n, float rightX, float y)
+    /**
+     * Draws a gutter label — a line number or the continuation mark — right-aligned at {@code rightX}. It is
+     * {@code /Artifact} marked content: page furniture, not part of the code, so a reader that honours
+     * artifacts does not interleave the numbers with the text it extracts or copies.
+     */
+    private static void drawGutter(
+            PDPageContentStream cs, PDType0Font font, float fontSize, String label, float rightX, float y)
             throws IOException {
-        String s = Integer.toString(n);
-        float w = font.getStringWidth(s) / 1000f * FONT_SIZE;
+        float w = font.getStringWidth(label) / 1000f * fontSize;
+        cs.beginMarkedContent(COSName.ARTIFACT);
         cs.beginText();
-        cs.setFont(font, FONT_SIZE);
+        cs.setFont(font, fontSize);
         cs.setNonStrokingColor(PdfTheme.LINE_NUMBER);
         cs.newLineAtOffset(rightX - w, y);
-        cs.showText(s);
+        cs.showText(label);
         cs.endText();
+        cs.endMarkedContent();
     }
 
     /** Draws one visual line's runs on the monospace grid (see {@link PdfGlyphs#showOnGrid}). */
@@ -146,6 +206,7 @@ public final class CodePdfWriter {
             float x,
             float y,
             float charWidth,
+            float fontSize,
             PDType0Font regular,
             PDType0Font bold,
             PDType0Font italic,
@@ -155,7 +216,7 @@ public final class CodePdfWriter {
         for (PdfText.Run r : runs) {
             PDType0Font f = r.bold() ? (r.italic() ? boldItalic : bold) : (r.italic() ? italic : regular);
             cs.setNonStrokingColor(r.color());
-            col += glyphs.showOnGrid(cs, f, FONT_SIZE, charWidth, r.text(), x + col * charWidth, y);
+            col += glyphs.showOnGrid(cs, f, fontSize, charWidth, r.text(), x + col * charWidth, y);
         }
     }
 
@@ -171,32 +232,14 @@ public final class CodePdfWriter {
 
     /** One PDF page + its content stream and the current baseline {@code y}. */
     private static final class Page {
-        final PDDocument doc;
-        final PDPage page;
         final PDPageContentStream cs;
-        final PDRectangle size;
         float y;
 
         Page(PDDocument doc, PDRectangle size, float topY) throws IOException {
-            this.doc = doc;
-            this.size = size;
-            this.page = new PDPage(size);
+            PDPage page = new PDPage(size);
             doc.addPage(page);
             this.cs = new PDPageContentStream(doc, page);
-            this.y = topY - FONT_SIZE;
-        }
-
-        /** Draws a centered gray page number near the bottom margin and closes the stream. */
-        void finish(PDType0Font font) throws IOException {
-            String label = Integer.toString(doc.getNumberOfPages());
-            float w = font.getStringWidth(label) / 1000f * FOOTER_SIZE;
-            cs.beginText();
-            cs.setFont(font, FOOTER_SIZE);
-            cs.setNonStrokingColor(PdfTheme.LINE_NUMBER);
-            cs.newLineAtOffset((size.getWidth() - w) / 2f, MARGIN - 4f);
-            cs.showText(label);
-            cs.endText();
-            cs.close();
+            this.y = topY;
         }
     }
 }

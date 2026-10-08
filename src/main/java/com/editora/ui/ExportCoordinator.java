@@ -108,7 +108,17 @@ final class ExportCoordinator {
         }
         host.setStatus(tr("status.pdf.exporting"));
         String pageSize = host.settings().getPdfPageSize();
-        stagedPdf(f, (out, report) -> pdfService.exportDocument(table, pageSize, out, report));
+        stagedPdf(
+                f,
+                (out, report) -> pdfService.exportDocument(
+                        table,
+                        com.editora.pdf.PdfPageSpec.of(pageSize),
+                        new com.editora.pdf.PdfDocMeta(
+                                baseName,
+                                com.editora.i18n.Messages.current(),
+                                (page, pages) -> tr("pdf.footer.page", page, pages)),
+                        out,
+                        report));
     }
 
     /**
@@ -276,7 +286,11 @@ final class ExportCoordinator {
                         s.isPdfSyntaxHighlighting(),
                         s.isPdfLineNumbers(),
                         s.getTabSize(),
-                        s.getPdfPageSize(),
+                        com.editora.pdf.PdfPageSpec.of(s.getPdfPageSize()),
+                        new com.editora.pdf.PdfDocMeta(
+                                bufferBaseName(b),
+                                com.editora.i18n.Messages.current(),
+                                (page, pages) -> tr("pdf.footer.page", page, pages)),
                         out,
                         report));
     }
@@ -350,7 +364,17 @@ final class ExportCoordinator {
         if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            pdfService.exportMarkdown(b.getContent(), baseDir, pageSize, mermaid.mmdcCommandOrNull(), out, report);
+            pdfService.exportMarkdown(
+                    b.getContent(),
+                    baseDir,
+                    com.editora.pdf.PdfPageSpec.of(pageSize),
+                    new com.editora.pdf.PdfDocMeta(
+                            bufferBaseName(b),
+                            com.editora.i18n.Messages.current(),
+                            (page, pages) -> tr("pdf.footer.page", page, pages)),
+                    mermaid.mmdcCommandOrNull(),
+                    out,
+                    report);
         } else if (b.isDiagram()) { // Mermaid (.mmd) — CLI render to PDF
             mermaid.exportDiagram(
                     b.getContent(),

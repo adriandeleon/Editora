@@ -639,7 +639,7 @@ public final class MarkdownRenderer {
             Map.entry("md", "md"));
 
     /** The bundled grammar for a fence info string (first token, case-insensitive), or {@code null}. */
-    static IGrammar grammarForInfo(String info) {
+    public static IGrammar grammarForInfo(String info) {
         if (info == null || info.isBlank()) {
             return null;
         }
