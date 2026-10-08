@@ -61,7 +61,7 @@ class PreviewSnapshotPdfFxTest {
     private static List<byte[]> chunksFor(String lang, String text) throws Exception {
         // null UA → inherit the harness theme (color isn't asserted)
         PreviewSnapshots.Result r = snapshot(buffer(lang, text), null);
-        return r == null ? null : r.images().stream().map(PageImage::png).toList();
+        return r == null ? null : PageImage.of(r).stream().map(PageImage::png).toList();
     }
 
     private void assertExportsToPdf(String lang, String text, Path out) throws Exception {
@@ -99,7 +99,7 @@ class PreviewSnapshotPdfFxTest {
         assertNotNull(lightUa);
         PreviewSnapshots.Result r = snapshot(buffer("json", "{\"a\":1,\"b\":\"two\"}"), lightUa);
         assertNotNull(r);
-        List<byte[]> chunks = r.images().stream().map(PageImage::png).toList();
+        List<byte[]> chunks = PageImage.of(r).stream().map(PageImage::png).toList();
         assertNotNull(chunks);
         assertTrue(!chunks.isEmpty() && chunks.get(0).length > 0);
     }
@@ -138,11 +138,11 @@ class PreviewSnapshotPdfFxTest {
         assertNotNull(r);
         assertEquals(261, r.totalRows(), "the root and one row per key");
         assertEquals(261, r.shownRows());
-        assertEquals(3, r.images().size(), "100 rows a chunk");
+        assertEquals(3, PageImage.of(r).size(), "100 rows a chunk");
         List<ImagePaging.Source> sources =
-                r.images().stream().map(PageImage::source).toList();
+                PageImage.of(r).stream().map(PageImage::source).toList();
         List<BufferedImage> decoded = new java.util.ArrayList<>();
-        for (PageImage image : r.images()) {
+        for (PageImage image : PageImage.of(r)) {
             decoded.add(ImageIO.read(new ByteArrayInputStream(image.png())));
         }
         for (int i = 0; i < sources.size(); i++) {
@@ -177,7 +177,7 @@ class PreviewSnapshotPdfFxTest {
         assertTrue(slices > pages.size(), "a chunk continues on the page the one before it ended on");
 
         Path out = dir.resolve("tree.pdf");
-        ImagePdfWriter.writePng(r.images(), "letter", out);
+        ImagePdfWriter.writePng(PageImage.of(r), "letter", out);
         try (PDDocument doc = Loader.loadPDF(out.toFile())) {
             assertEquals(pages.size(), doc.getNumberOfPages());
         }
@@ -194,10 +194,10 @@ class PreviewSnapshotPdfFxTest {
         PreviewSnapshots.Result docs = snapshot(b, null);
         assertNotNull(docs);
         assertEquals(0, docs.totalRows(), "the docs are one rendered node, not tree rows");
-        assertEquals(1, docs.images().size());
+        assertEquals(1, PageImage.of(docs).size());
         assertEquals(
                 PreviewSnapshots.DOCS_WIDTH,
-                docs.images().get(0).source().logicalWidth(),
+                PageImage.of(docs).get(0).source().logicalWidth(),
                 1.0,
                 "laid out at the docs width");
 
@@ -205,7 +205,7 @@ class PreviewSnapshotPdfFxTest {
         PreviewSnapshots.Result tree = snapshot(b, null);
         assertNotNull(tree);
         assertTrue(tree.totalRows() > 10, "the tree view was chosen: " + tree.totalRows());
-        assertTrue(tree.images().get(0).source().logicalWidth() < PreviewSnapshots.DOCS_WIDTH);
+        assertTrue(PageImage.of(tree).get(0).source().logicalWidth() < PreviewSnapshots.DOCS_WIDTH);
 
         // A JSON file that is not OpenAPI has no docs view to show.
         assertTrue(snapshot(buffer("json", "{\"a\":1}"), null).totalRows() > 0);
@@ -223,9 +223,9 @@ class PreviewSnapshotPdfFxTest {
         assertTrue(r.truncated());
         assertEquals(4000, r.shownRows());
         assertEquals(4201, r.totalRows());
-        assertEquals(40, r.images().size());
-        int[] last = r.images().get(39).source().safeCuts();
-        int[] before = r.images().get(38).source().safeCuts();
+        assertEquals(40, PageImage.of(r).size());
+        int[] last = PageImage.of(r).get(39).source().safeCuts();
+        int[] before = PageImage.of(r).get(38).source().safeCuts();
         assertEquals(before.length + 1, last.length, "one more row on the last chunk: the truncation line");
         assertFalse(snapshot(buffer("json", "{\"a\":1}"), null).truncated());
     }

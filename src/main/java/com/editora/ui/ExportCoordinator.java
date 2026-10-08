@@ -878,7 +878,7 @@ final class ExportCoordinator {
                     return;
                 }
                 host.setStatus(tr("status.pdf.exporting"));
-                pdfService.exportPageImages(snap.images(), pageSize, out, r -> {
+                pdfService.exportPageImages(com.editora.pdf.PageImage.of(snap), pageSize, out, r -> {
                     report.accept(r);
                     if (r.ok() && snap.truncated()) { // after the plain "exported": the PDF is not the whole tree
                         host.setStatus(tr("status.pdf.exportedTruncated", snap.shownRows(), snap.totalRows()));
@@ -1301,7 +1301,7 @@ final class ExportCoordinator {
                     return;
                 }
                 host.setStatus(tr("status.print.preparing"));
-                printService.preparePageImages(snap.images(), prepared -> {
+                printService.preparePageImages(com.editora.pdf.PageImage.of(snap), prepared -> {
                     open.accept(prepared);
                     if (snap.truncated() && openPreview != null) { // the last page says so too
                         host.setStatus(tr("status.print.truncated", snap.shownRows(), snap.totalRows()));

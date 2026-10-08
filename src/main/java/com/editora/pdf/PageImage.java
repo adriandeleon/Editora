@@ -23,6 +23,13 @@ public record PageImage(byte[] png, ImagePaging.Source source) {
         return new PageImage(png, new ImagePaging.Source(width(png), height(png), pixelScale, safeCuts, continues));
     }
 
+    /** The page images of a preview snapshot, chunk for chunk. */
+    public static java.util.List<PageImage> of(com.editora.editor.PreviewSnapshots.Result snapshot) {
+        return snapshot.images().stream()
+                .map(c -> rows(c.png(), c.scale(), c.cuts(), c.continues()))
+                .toList();
+    }
+
     /** The pixel width from the PNG header ({@code IHDR}); 0 when {@code png} is not a PNG. */
     static int width(byte[] png) {
         return isPng(png) ? intAt(png, 16) : 0;

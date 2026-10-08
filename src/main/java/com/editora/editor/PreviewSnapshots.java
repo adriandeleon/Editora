@@ -23,7 +23,6 @@ import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 import javafx.scene.transform.Transform;
 
-import com.editora.pdf.PageImage;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
 
@@ -32,7 +31,7 @@ import static com.editora.i18n.Messages.tr;
 /**
  * Preview → print/PDF snapshots (Markwhen / JSON-YAML-TOML / XML / the summary previews): the whole
  * tree/timeline — not just the visible viewport — rendered off-screen, always light, as PNG images that
- * know their density and where they may be cut ({@link PageImage}). The code behind
+ * know their density and where they may be cut ({@link Chunk}). The code behind
  * {@link EditorBuffer#snapshotPreviewChunks}; it lives here to keep that file under its size cap.
  *
  * <p>Laying out and snapshotting need the FX thread, so the work is cut up to keep the window alive: a row
@@ -84,7 +83,14 @@ public final class PreviewSnapshots {
      * The images of one preview, top to bottom. For a tree, {@code shownRows} of its {@code totalRows} rows
      * were captured (both 0 for a preview that is not a row list).
      */
-    public record Result(List<PageImage> images, int shownRows, int totalRows) {
+    /**
+     * One snapshot: a PNG at {@code scale} image pixels per logical pixel, the pixel rows it may be cut at
+     * ({@code cuts}, null when it has no rows), and whether it {@code continues} the chunk before it. The
+     * print and PDF side turns it into its own page image — this package does not depend on that one.
+     */
+    public record Chunk(byte[] png, double scale, int[] cuts, boolean continues) {}
+
+    public record Result(List<Chunk> images, int shownRows, int totalRows) {
         /** The tree was longer than the row cap: the output ends with a line saying so. */
         public boolean truncated() {
             return shownRows < totalRows;
@@ -125,7 +131,7 @@ public final class PreviewSnapshots {
                 Shot shot = shoot(sc, node, true);
                 encode(shot, done, png -> {
                     progress.accept(1, 1);
-                    PageImage image = PageImage.rows(png, shot.scale(), shot.cuts(), false);
+                    Chunk image = new Chunk(png, shot.scale(), shot.cuts(), false);
                     done.accept(new Result(List.of(image), 0, 0));
                 });
             });
@@ -334,7 +340,7 @@ public final class PreviewSnapshots {
         private final Scene scene;
         private final BiConsumer<Integer, Integer> progress;
         private final Consumer<Result> done;
-        private final List<PageImage> images = new ArrayList<>();
+        private final List<Chunk> images = new ArrayList<>();
         private final int shown;
         private final int chunks;
         private int at;
@@ -364,7 +370,7 @@ public final class PreviewSnapshots {
                 Shot shot = shoot(scene, chunk, false);
                 chunk.getChildren().clear(); // the rows are done with: let them go chunk by chunk
                 encode(shot, done, png -> {
-                    images.add(PageImage.rows(png, shot.scale(), shot.cuts(), !first));
+                    images.add(new Chunk(png, shot.scale(), shot.cuts(), !first));
                     at = end;
                     progress.accept(images.size(), chunks);
                     if (at < shown) {

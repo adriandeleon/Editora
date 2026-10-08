@@ -96,9 +96,7 @@ final class MenuBarModel {
                                 // The file as text first — these work for every file — then its rendered
                                 // preview, which only some files have.
                                 "editor.print",
-                                "editor.printSelection",
                                 "editor.exportPdf",
-                                "editor.exportSelectionPdf",
                                 "preview.print",
                                 "preview.exportPdf",
                                 "preview.exportDocx",
