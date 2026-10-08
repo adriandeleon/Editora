@@ -804,6 +804,11 @@ class EditorInteractionFxTest {
             ref[0] = buffer;
         });
         EditorFx.drain();
+        // Paging moves the caret by the viewport's height, so it moves nowhere until the area has laid its
+        // lines out. Wait for that instead of assuming one drained pulse was enough.
+        EditorFx.awaitUntil(
+                () -> ref[0].getArea().getVisibleParagraphs(),
+                () -> ref[0].getArea().getVisibleParagraphs().size() > 3);
         EditorFx.onFx(() -> {
             EditorBuffer buffer = ref[0];
             CodeArea area = buffer.getArea();
