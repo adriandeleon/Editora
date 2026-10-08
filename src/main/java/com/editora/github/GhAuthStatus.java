@@ -102,6 +102,45 @@ public final class GhAuthStatus {
                 java.util.Collections.unmodifiableMap(accounts));
     }
 
+    /**
+     * Every login gh has on {@code host}, the active one first; empty when {@code json} is not the document
+     * or names none. A user who works with two accounts ({@code gh auth switch}) has both here.
+     */
+    public static List<String> logins(String json, String host) {
+        if (json == null || json.isBlank() || host == null) {
+            return List.of();
+        }
+        JsonNode hostsNode;
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            hostsNode = root == null ? null : root.get("hosts");
+        } catch (Exception malformed) {
+            return List.of();
+        }
+        if (hostsNode == null || !hostsNode.isObject()) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>();
+        for (var entry : hostsNode.properties()) {
+            if (!entry.getKey().strip().equalsIgnoreCase(host.strip())
+                    || !entry.getValue().isArray()) {
+                continue;
+            }
+            for (JsonNode account : entry.getValue()) {
+                String login = account.path("login").asText("").strip();
+                if (login.isEmpty() || out.contains(login)) {
+                    continue;
+                }
+                if (account.path("active").asBoolean(false)) {
+                    out.add(0, login);
+                } else {
+                    out.add(login);
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
     /** The host's active account (the one gh uses), else its first; {@code null} when it has none. */
     private static JsonNode activeAccount(JsonNode accounts) {
         if (accounts == null || !accounts.isArray() || accounts.isEmpty()) {

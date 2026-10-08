@@ -84,4 +84,19 @@ class GhAuthStatusTest {
         assertNull(GhAuthStatus.parse("[]"));
         assertNull(GhAuthStatus.parse("{\"hosts\":7}"));
     }
+
+    /** {@code gh auth switch}: both accounts are logged in and one is active. */
+    @Test
+    void everyLoginOfAHostIsListedWithTheActiveOneFirst() {
+        String json = "{\"hosts\":{\"github.com\":["
+                + "{\"state\":\"success\",\"active\":false,\"login\":\"me\"},"
+                + "{\"state\":\"success\",\"active\":true,\"login\":\"me-at-work\"}],"
+                + "\"ghe.corp.example\":[{\"state\":\"success\",\"active\":true,\"login\":\"corp\"}]}}";
+
+        assertEquals(List.of("me-at-work", "me"), GhAuthStatus.logins(json, "GitHub.com"));
+        assertEquals(List.of("corp"), GhAuthStatus.logins(json, "ghe.corp.example"));
+        assertEquals(List.of(), GhAuthStatus.logins(json, "gitlab.com"));
+        assertEquals(List.of(), GhAuthStatus.logins("unknown flag: --json", "github.com"));
+        assertEquals(List.of(), GhAuthStatus.logins(null, "github.com"));
+    }
 }

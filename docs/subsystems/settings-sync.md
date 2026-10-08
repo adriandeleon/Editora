@@ -33,6 +33,7 @@ describe one installation's connection and must stay local if settings are synce
   `sync/backups/<timestamp>/` (ten sets are kept).
 - `git/QuietGit` — the git runner: hooks off, no end-of-line conversion, no commit signing, and for
   automatic runs no prompt of any kind (`GitSafety.autoFetchEnv`).
+- `sync/SyncAccount` — which GitHub CLI account a round signs in as (see "Signing in" below).
 - `ui/SettingsSync` — the one service of the process (owned by `WindowManager`): triggers, the worker
   thread, reloading the stores of every window, status reporting.
 
@@ -89,11 +90,31 @@ Automatic rounds report a failure once per kind, as a status line, and show the 
 segment until a round succeeds. They never open a dialog and never prompt for credentials. A round
 the user asked for may use their credential helper.
 
+## Signing in
+
+Sync stores no credential: git signs in the way the user's git does. One case needs help. With two
+accounts in the GitHub CLI (`gh auth switch`), the helper `gh auth setup-git` installs hands git the
+token of whichever account is *active*, so a sync repository of the personal account is refused for as
+long as the work account is the active one.
+
+For an `https://` repository on a host gh has an account for, `SyncAccount.choose` therefore finds out
+which of gh's accounts can read the repository — one `git ls-remote` per account, each able to use
+nothing but that account — and stores its login in the clone's own configuration (`editora.syncAccount`).
+Every round then runs git with the user's credential helpers for that host replaced by a shell helper
+that prints `gh auth token --hostname <host> --user <login>` (`SyncAccount.credentialConfig`, added
+through `QuietGit.with`). Editora never reads the token.
+
+The search runs once per session while no account is stored, and again after a round that could not
+fetch or push (then the stored account is tried first). An account gh no longer has is forgotten;
+finding none changes nothing, and git signs in as it always did. The login leaves with the clone on
+Disconnect and is dropped when the clone is pointed at another repository. An SSH URL, another
+credential helper or a missing gh are not touched. The Settings page names the account under Status.
+
 ## Changing it
 
 - A new category: add it to `SyncCategory`, give `SyncMerge.parse` its entries and `assemble` its
   merge, a reload in `SettingsSync.reload`, a `markDirty` call where the store saves, and a setting.
 - A change to the repository layout that an older build would misread: bump
   `SyncEngine.FORMAT_VERSION`.
-- Tests: `SyncMergeTest` (pure), `SyncEngineTest` (two config directories and a bare repository, real
+- Tests: `SyncMergeTest` (pure), `SyncAccountTest` (real git, a stand-in gh), `SyncEngineTest` (two config directories and a bare repository, real
   git), `SettingsSyncFxTest` (a real window against a second machine).
