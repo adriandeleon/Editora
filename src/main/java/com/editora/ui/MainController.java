@@ -2150,11 +2150,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::isPathModified,
                 this::hasFileOpen,
                 this::projectMapPreviewContent);
-        projectPanel.setRememberedMapFlow(config.getWorkspaceState().getProjectMapFlow(), flow -> {
-            config.getWorkspaceState().setProjectMapFlow(flow);
-            config.save();
-        });
+        projectPanel.setRememberedMapState(config::getWorkspaceState, config::save);
+        projectPanel.setOpenFiles(() -> editorArea.tabs().stream()
+                .map(MainController::tabPath)
+                .filter(java.util.Objects::nonNull)
+                .toList());
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
+        projectPanel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
         projectDeletes = new ProjectDeleteCoordinator(
                 path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
                 buffer -> ownerOf(buffer).revealBufferLocal(buffer),
@@ -2308,6 +2310,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void updatePersonalNote(Path path, com.editora.config.PersonalNote note, String body) {
                 notesCoordinator.updatePersonalNote(path, note, body);
+            }
+
+            @Override
+            public java.util.Collection<Path> markedPaths() {
+                return ProjectPanel.pathsOf(bookmarkCoordinator.storedKeys(), notesCoordinator.storedKeys());
             }
         });
         bookmarkCoordinator.setOnChanged(projectPanel::refreshMarkers);
@@ -9015,7 +9022,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ProjectMapPreview.Content projectMapPreviewContent(Path file) {
         EditorBuffer buffer = bufferOf(tabForPath(file));
         if (buffer == null) {
-            return null;
+            return ProjectMapPreview.Content.closed(editorConfigCharsetFor(file));
         }
         var area = buffer.getArea();
         int length = area.getLength();

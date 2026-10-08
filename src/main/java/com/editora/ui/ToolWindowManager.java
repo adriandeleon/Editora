@@ -1553,7 +1553,7 @@ public class ToolWindowManager {
      * nowhere until the user clicked. Prefers the editor node that last had focus; failing that, the first
      * editor surface.
      */
-    private void focusEditor() {
+    void focusEditor() {
         Node target = lastEditorFocus.get();
         if (target == null || target.getScene() == null || !isDescendant(target, editorNode)) {
             target = editorNode.lookup(".editor-area");

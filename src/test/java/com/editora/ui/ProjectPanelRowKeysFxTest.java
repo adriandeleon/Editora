@@ -92,7 +92,10 @@ class ProjectPanelRowKeysFxTest {
                     java.util.Set.of("f2", "delete"),
                     h.tree().getProperties().get(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
             assertTrue(!h.panel().getProperties().containsKey(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
-            assertTrue(!h.filter().getProperties().containsKey(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
+            // The filter field claims only its own selection chords (C-n / C-p), never the row keys.
+            assertEquals(
+                    java.util.Set.of("C-n", "C-p"),
+                    h.filter().getProperties().get(com.editora.command.KeyDispatcher.CLAIMED_KEYS));
         });
     }
 

@@ -13,9 +13,15 @@ final class ProjectPathOrder {
 
     private ProjectPathOrder() {}
 
+    /**
+     * Folders first, then names without case bias. Names that differ only by case ({@code README} and
+     * {@code readme} on a case-sensitive filesystem) fall back to exact order, so the result never depends on
+     * the order a directory happened to be listed in.
+     */
     static <T> Comparator<T> directoriesFirst(Predicate<T> isDirectory, Function<T, String> name) {
         return Comparator.<T, Boolean>comparing(item -> !isDirectory.test(item))
-                .thenComparing(name, String.CASE_INSENSITIVE_ORDER);
+                .thenComparing(name, String.CASE_INSENSITIVE_ORDER)
+                .thenComparing(name);
     }
 
     /**

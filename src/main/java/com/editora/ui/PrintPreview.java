@@ -74,6 +74,9 @@ final class PrintPreview {
         /** Abandons the job. */
         void cancel();
 
+        /** Asks for a landscape page on the job's paper; a job that cannot offer one keeps its layout. */
+        default void useLandscape() {}
+
         static Job of(PrinterJob job) {
             return new Job() {
                 @Override
@@ -114,6 +117,21 @@ final class PrintPreview {
                 @Override
                 public void cancel() {
                     job.cancelJob();
+                }
+
+                @Override
+                public void useLandscape() {
+                    try {
+                        PageLayout current = job.getJobSettings().getPageLayout();
+                        job.getJobSettings()
+                                .setPageLayout(job.getPrinter()
+                                        .createPageLayout(
+                                                current.getPaper(),
+                                                javafx.print.PageOrientation.LANDSCAPE,
+                                                javafx.print.Printer.MarginType.DEFAULT));
+                    } catch (RuntimeException unsupported) {
+                        // The printer offers no landscape layout for this paper: keep its default.
+                    }
                 }
             };
         }

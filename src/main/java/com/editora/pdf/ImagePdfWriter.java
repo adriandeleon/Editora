@@ -75,4 +75,51 @@ public final class ImagePdfWriter {
             doc.save(out.toFile());
         }
     }
+
+    /** The printable area of a page in points ({@code {width, height}}), turned on its side for landscape. */
+    public static double[] printableSize(String pageSizeKey, boolean landscape) {
+        PDRectangle rect = pageRectangle(pageSizeKey, landscape);
+        return new double[] {rect.getWidth() - 2 * MARGIN, rect.getHeight() - 2 * MARGIN};
+    }
+
+    private static PDRectangle pageRectangle(String pageSizeKey, boolean landscape) {
+        PDRectangle rect = CodePdfWriter.pageRectangle(pageSizeKey);
+        return landscape ? new PDRectangle(rect.getHeight(), rect.getWidth()) : rect;
+    }
+
+    /**
+     * Writes images that are already cut to pages, one per page and all at the same
+     * {@code pointsPerPixel}: the caller chose the scale and the cuts (see the Project Map output plan), so
+     * nothing is refitted or sliced here. Each image is drawn from the top-left margin; one that is larger
+     * than the printable area is shrunk to it rather than clipped.
+     */
+    public static void writePages(
+            List<BufferedImage> pages, double pointsPerPixel, String pageSizeKey, boolean landscape, Path out)
+            throws IOException {
+        PDRectangle rect = pageRectangle(pageSizeKey, landscape);
+        float availW = rect.getWidth() - 2 * MARGIN;
+        float availH = rect.getHeight() - 2 * MARGIN;
+        try (PDDocument doc = new PDDocument()) {
+            for (BufferedImage img : pages) {
+                if (img == null || img.getWidth() < 1 || img.getHeight() < 1) {
+                    continue;
+                }
+                double scale = Math.min(
+                        pointsPerPixel > 0 ? pointsPerPixel : 1.0,
+                        Math.min(availW / (double) img.getWidth(), availH / (double) img.getHeight()));
+                float drawW = (float) (img.getWidth() * scale);
+                float drawH = (float) (img.getHeight() * scale);
+                PDPage page = new PDPage(rect);
+                doc.addPage(page);
+                PDImageXObject xo = LosslessFactory.createFromImage(doc, img);
+                try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
+                    cs.drawImage(xo, MARGIN, rect.getHeight() - MARGIN - drawH, drawW, drawH);
+                }
+            }
+            if (doc.getNumberOfPages() == 0) {
+                doc.addPage(new PDPage(rect));
+            }
+            doc.save(out.toFile());
+        }
+    }
 }

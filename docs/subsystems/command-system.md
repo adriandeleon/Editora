@@ -308,6 +308,10 @@ to a *global* command sets the `editora.claimsKeys` property (`KeyDispatcher.CLA
 `Set` of chord tokens it handles itself: the Project tree claims `f2` and `delete` (rename / delete
 the selected file — `f2` is `lsp.rename` in three keymaps), the Bookmarks and Notes trees claim
 `delete`. Put it on the node that should have the key (the tree, not its panel), and keep it small.
+The Project Map surface claims its own chords the same way (history, fit, sibling moves, row keys),
+and only while it is the focus owner. A claim also lets an *unbound* plain-`Alt` chord through
+(`M-left`), which the Windows menu-mode guard otherwise consumes: the claiming component must consume
+it, and the dispatcher's scene-level handler (`consumeClaimedAlt`) does so if it comes back unconsumed.
 
 A **text field needs no opt-in**. When the event target is (inside) a `TextInputControl` — or an
 editable combo box / spinner — `inTextInput(target)` is true and the dispatcher leaves it the same

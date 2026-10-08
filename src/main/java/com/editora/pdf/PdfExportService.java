@@ -157,13 +157,22 @@ public final class PdfExportService {
         });
     }
 
-    /** Exports already-rendered JavaFX images, such as a complete Project Map snapshot, off the FX thread. */
-    public void exportFxImages(java.util.List<Image> images, String pageSize, Path out, Consumer<Result> onResult) {
+    /**
+     * Exports JavaFX images that are already cut to pages (the Project Map output), one per page at
+     * {@code pointsPerPixel}, off the FX thread. See {@link ImagePdfWriter#writePages}.
+     */
+    public void exportFxPages(
+            java.util.List<Image> pages,
+            double pointsPerPixel,
+            String pageSize,
+            boolean landscape,
+            Path out,
+            Consumer<Result> onResult) {
         exec.submit(() -> {
             Result result;
             try {
                 java.util.List<java.awt.image.BufferedImage> converted = new java.util.ArrayList<>();
-                for (Image image : images == null ? java.util.List.<Image>of() : images) {
+                for (Image image : pages == null ? java.util.List.<Image>of() : pages) {
                     java.awt.image.BufferedImage buffered = toBufferedImage(image);
                     if (buffered != null) {
                         converted.add(buffered);
@@ -172,7 +181,7 @@ public final class PdfExportService {
                 if (converted.isEmpty()) {
                     throw new IllegalStateException("nothing to export (the map produced no image)");
                 }
-                ImagePdfWriter.write(converted, pageSize, out);
+                ImagePdfWriter.writePages(converted, pointsPerPixel, pageSize, landscape, out);
                 result = new Result(true, "");
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "JavaFX image PDF export failed", e);

@@ -202,19 +202,44 @@ final class ExportCoordinator {
         preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
     }
 
-    /** Exports the complete Project Map layout—not merely the visible viewport—to a paginated PDF. */
-    void exportProjectMapPdf(javafx.scene.image.Image image, String baseName) {
+    /**
+     * Exports the complete Project Map layout—not merely the visible viewport—to a PDF. The map is rendered
+     * only after a destination was chosen, on a landscape page when it is wider than tall.
+     */
+    void exportProjectMapPdf(ProjectMapOutput output, String baseName) {
         java.io.File file = choosePdfDestination(baseName, null);
         if (file == null) {
             return;
         }
-        host.setStatus(tr("status.pdf.exporting"));
         String pageSize = host.settings().getPdfPageSize();
-        stagedPdf(file, (out, report) -> pdfService.exportFxImages(java.util.List.of(image), pageSize, out, report));
+        boolean landscape = output.landscape();
+        double[] printable = com.editora.pdf.ImagePdfWriter.printableSize(pageSize, landscape);
+        ProjectMapOutput.Rendered rendered = output.render(printable[0], printable[1]);
+        if (rendered == null) {
+            host.setStatus(tr("status.projectMap.outputEmpty"));
+            return;
+        }
+        host.setStatus(tr("status.pdf.exporting"));
+        String note = projectMapOutputNote(rendered.plan());
+        this.<com.editora.pdf.PdfExportService.Result>staged(
+                file,
+                (out, report) -> pdfService.exportFxPages(
+                        rendered.pages(), rendered.pointsPerPixel(), pageSize, landscape, out, report),
+                com.editora.pdf.PdfExportService.Result::ok,
+                message -> new com.editora.pdf.PdfExportService.Result(false, message),
+                result -> {
+                    reportPdf(result, file);
+                    if (result.ok() && note != null) {
+                        host.setStatus(note); // after "exported": how the map was fitted is the part to act on
+                    }
+                });
     }
 
-    /** Opens the normal Print Preview flow for the complete Project Map layout. */
-    void printProjectMap(javafx.scene.image.Image image) {
+    /**
+     * Opens the normal Print Preview flow for the complete Project Map layout. The map is rendered for the
+     * page layout in use, and again if the print dialog changes it.
+     */
+    void printProjectMap(ProjectMapOutput output) {
         if (printBusy()) {
             return;
         }
@@ -223,8 +248,49 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
-        preparePrint(() ->
-                printService.prepareFxImages(java.util.List.of(image), prepared -> openPrintPreview(job, prepared)));
+        if (output.landscape()) {
+            job.useLandscape();
+        }
+        javafx.print.PageLayout first = job.layout();
+        ProjectMapOutput.Rendered preview = output.render(first.getPrintableWidth(), first.getPrintableHeight());
+        if (preview == null) {
+            job.cancel();
+            host.setStatus(tr("status.projectMap.outputEmpty"));
+            return;
+        }
+        String note = projectMapOutputNote(preview.plan());
+        host.setStatus(note == null ? tr("status.print.preparing") : note);
+        openPrintPreview(
+                job, new com.editora.print.PrintService.Prepared(projectMapPaginator(output, first, preview), null));
+    }
+
+    /** Reuses the render made for {@code first}; any other layout (chosen in the print dialog) renders again. */
+    private static com.editora.print.PrintService.Paginator projectMapPaginator(
+            ProjectMapOutput output, javafx.print.PageLayout first, ProjectMapOutput.Rendered preview) {
+        return layout -> {
+            ProjectMapOutput.Rendered rendered = layout.getPrintableWidth() == first.getPrintableWidth()
+                            && layout.getPrintableHeight() == first.getPrintableHeight()
+                    ? preview
+                    : output.render(layout.getPrintableWidth(), layout.getPrintableHeight());
+            if (rendered == null) {
+                rendered = preview;
+            }
+            return com.editora.print.PrintService.pagedImages(rendered.pages(), rendered.pointsPerPixel(), layout);
+        };
+    }
+
+    /** What the user should know about how the map met the page, or null when it simply fitted. Pure. */
+    static String projectMapOutputNote(ProjectMapOutputPlan.Plan plan) {
+        if (plan.detailReduced()) {
+            return tr("status.projectMap.outputCannotKeepDetail", plan.pages().size());
+        }
+        if (plan.tiled()) {
+            return tr("status.projectMap.outputTiled", plan.pages().size(), plan.columns(), plan.rows());
+        }
+        if (plan.scaledDown()) {
+            return tr("status.projectMap.outputScaled", (int) Math.round(plan.paperScale() * 100));
+        }
+        return null;
     }
 
     /** Exports parsed CSV rows to a spreadsheet — {@code xlsx} true → Excel {@code .xlsx}, else ODF {@code .ods}. */
