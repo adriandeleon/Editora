@@ -72,6 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "(agent exited)" into the fresh transcript, and the first prompt after it keeps its "Working…" state
   and Stop button until the reply is complete. The process the editor had just stopped was reported as
   an agent that quit, which could also discard the session that replaced it.
+- Settings: the Install button for the `typst` program (Typst page) and the one for Typst's language
+  server (Language Servers page) shared one "installed" state. One of them never changed to
+  "Installed", and the other showed whichever of the two checks finished last.
+- Settings ▸ Keymaps: the Up arrow on the first shortcut row moved the focus out of the list, to the
+  filter field. It now stays on the row, as the Down arrow does on the last one.
 
 ## [0.20.0] - 2026-10-08
 
