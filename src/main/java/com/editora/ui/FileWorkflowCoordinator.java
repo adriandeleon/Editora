@@ -2408,6 +2408,7 @@ final class FileWorkflowCoordinator {
         if (".editorconfig".equals(String.valueOf(request.target().getFileName()))) {
             host.editorConfigSaved(); // its rules reach the files already open, in every window
         }
+        host.editorSettings().spell().fileSaved(request.target()); // dictionary.txt edited by hand applies now
         ProjectPanel.noteLocalWrite(host.projectPanel(), request.target()); // ours: not an external change
         if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(savedStatus(request, disk, autoSave));

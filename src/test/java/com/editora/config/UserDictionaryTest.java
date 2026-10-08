@@ -94,4 +94,46 @@ class UserDictionaryTest {
                 Files.readAllLines(dir.resolve("dictionary.txt")),
                 "and a terminated file gets no blank line");
     }
+
+    // --- the stored form, and re-reading a hand-edited file -------------------------------------------
+
+    @Test
+    void aTypographicApostropheIsStoredAsTheAsciiOneTheCheckerLooksUp(@TempDir Path dir) throws Exception {
+        ConfigManager c = new ConfigManager(dir);
+        c.addUserWord("zzq’abc");
+        assertTrue(
+                c.getUserDictionary().contains("zzq'abc"), c.getUserDictionary().toString());
+        assertTrue(Files.readString(c.getUserDictionaryFile()).contains("zzq'abc"));
+        c.addUserWord("ZZQ'ABC"); // the same word: not written twice
+        assertEquals(1, Files.readString(c.getUserDictionaryFile()).lines().count());
+        // A file written by an older build (or by hand) with the typographic form is read in the same way.
+        Files.writeString(dir.resolve("dictionary.txt"), "l’été\n");
+        assertTrue(reload(dir).contains("l'été"));
+        c.removeUserWord("zzq‘abc");
+        assertFalse(c.getUserDictionary().contains("zzq'abc"));
+    }
+
+    @Test
+    void reloadPicksUpLinesAddedAndRemovedByHand(@TempDir Path dir) throws Exception {
+        ConfigManager c = new ConfigManager(dir);
+        c.addUserWord("alpha");
+        c.addUserWord("beta");
+        java.util.Set<String> shared = c.getUserDictionary(); // the very set every buffer's checker holds
+        assertFalse(c.reloadUserDictionary(), "nothing changed on disk");
+
+        Files.writeString(c.getUserDictionaryFile(), "alpha\nParagraf\n"); // beta removed, a word added
+        assertTrue(c.reloadUserDictionary());
+        assertEquals(java.util.Set.of("alpha", "paragraf"), shared, "updated in place");
+        assertTrue(shared == c.getUserDictionary());
+
+        // A later add still appends to what is on disk rather than rewriting from a stale base.
+        c.addUserWord("gamma");
+        assertEquals(java.util.Set.of("alpha", "paragraf", "gamma"), reload(dir));
+        c.removeUserWord("alpha");
+        assertEquals(java.util.Set.of("paragraf", "gamma"), reload(dir));
+
+        Files.delete(c.getUserDictionaryFile());
+        assertTrue(c.reloadUserDictionary());
+        assertTrue(shared.isEmpty(), "a deleted file is an empty dictionary");
+    }
 }

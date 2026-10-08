@@ -69,11 +69,8 @@ class DictionaryBroadcastFxTest {
             cache.clear();
             cache.put("kubernetes", true); // a cached "misspelled" verdict window B already computed
             boolean seeded = !cache.isEmpty();
-            FxTestSupport.call(
-                    FxTestSupport.field(fx.controller, "editorSettings"),
-                    "addUserWordAndRefreshAll",
-                    new Class<?>[] {String.class},
-                    "Kubernetes");
+            EditorSettingsCoordinator settings = FxTestSupport.field(fx.controller, "editorSettings");
+            settings.spell().addUserWordAndRefreshAll("Kubernetes");
             return new boolean[] {seeded, cache.isEmpty()};
         });
 

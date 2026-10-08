@@ -777,14 +777,9 @@ public class EditorBuffer implements TabContent {
     private Integer shebangJavaSource;
     /** True once the user explicitly picked a language (status bar), so shebang detection won't fight it. */
     private boolean languageUserOverride;
-    // --- Spell checking (Lucene Hunspell via SpellCheckOverlay); off until enabled by the controller. ---
-    private SpellChecker spellChecker;
-    private boolean spellCheckOn;
-    private String spellLanguage = "en_US";
-    private java.util.Set<String> spellUserWords = new java.util.HashSet<>();
-    private boolean spellUserWordsEnabled = true; // honor the personal dictionary (Settings.personalDictionary)
-    private boolean spellTechnicalEnabled = true; // honor the technical dictionary (Settings.technicalDictionary)
-    private java.util.function.Consumer<String> onAddToDictionary = w -> {};
+    /** Spell checking (Lucene Hunspell, drawn by {@link #spellOverlay}); off until the controller enables it. */
+    private final BufferSpell spell = new BufferSpell(
+            area, spellOverlay, this::getFocusedArea, () -> language, this::isEditable, () -> largeFile);
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     /** Volatile: bumped on the FX thread, read per line by the background tokenize's cancel check. */
     private volatile long highlightGen;
@@ -2078,12 +2073,6 @@ public class EditorBuffer implements TabContent {
         // toggled — see anchorOverText); they are mouse-transparent so clicks reach the editor.
         anchorOverText(whitespace);
         anchorOverText(spellOverlay); // red squiggles
-        spellChecker = new SpellChecker(spellLanguage, spellUserWords);
-        spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
-        spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
-        spellOverlay.setChecker(spellChecker);
-        spellOverlay.setProseMode(isProse());
-        spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
         anchorOverText(mdLintOverlay);
         installImageDrop(area);
         anchorOverText(inlineValues); // inline debugger values (active only while suspended in this file)
@@ -2120,9 +2109,6 @@ public class EditorBuffer implements TabContent {
         area.requestFollowCaret();
         area.requestFocus();
     }
-
-    /** A misspelled word under the cursor: its text and absolute [start, end) offsets. */
-    private record SpellHit(String word, int start, int end) {}
 
     private final ContextMenu contextMenu = new ContextMenu();
     /** The view the context menu was last asked for: its items act where the user clicked, in either pane. */
@@ -2199,11 +2185,7 @@ public class EditorBuffer implements TabContent {
                 items.add(aiActionsMenu());
                 items.add(new SeparatorMenuItem());
             }
-            SpellHit hit = spellHitAt(at.offset());
-            if (hit != null) {
-                items.addAll(spellMenuItems(hit));
-                items.add(new SeparatorMenuItem());
-            }
+            items.addAll(spell.menuItems(at.offset(), contextMenu.getItems()));
             // One submenu per markup language, the way the LSP and build-tool actions are already grouped:
             // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
             // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
@@ -2505,96 +2487,16 @@ public class EditorBuffer implements TabContent {
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
     }
 
-    /** Suggestion items (replace the word) plus "Add to Dictionary"/"Ignore" for a misspelled word. */
-    private List<MenuItem> spellMenuItems(SpellHit hit) {
-        List<MenuItem> items = new java.util.ArrayList<>();
-        List<String> suggestions = spellChecker.suggest(hit.word());
-        if (suggestions.isEmpty()) {
-            MenuItem none = new MenuItem(tr("editmenu.noSuggestions"));
-            none.setGraphic(MenuIcons.spellcheck());
-            none.setDisable(true);
-            items.add(none);
-        } else {
-            for (String s : suggestions) {
-                MenuItem mi = new MenuItem(s);
-                mi.setGraphic(MenuIcons.spellcheck());
-                mi.getStyleClass().add("spell-suggestion");
-                mi.setOnAction(e -> {
-                    if (isEditable()) {
-                        area.replaceText(hit.start(), hit.end(), s);
-                    }
-                });
-                items.add(mi);
-            }
-        }
-        items.add(new SeparatorMenuItem());
-        MenuItem add = new MenuItem(tr("editmenu.addToDictionary"));
-        add.setGraphic(MenuIcons.add());
-        add.setOnAction(e -> addToDictionary(hit.word()));
-        MenuItem ignore = new MenuItem(tr("editmenu.ignore"));
-        ignore.setGraphic(MenuIcons.block());
-        ignore.setOnAction(e -> {
-            spellChecker.ignore(hit.word());
-            spellOverlay.refresh();
-        });
-        items.add(add);
-        items.add(ignore);
-        return items;
-    }
-
-    /** The misspelled word at document {@code offset}, or {@code null}. */
-    private SpellHit spellHitAt(int offset) {
-        if (!spellCheckOn || spellChecker == null || !spellChecker.ready() || largeFile) {
-            return null;
-        }
-        var pos = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
-        int paragraph = pos.getMajor();
-        int col = pos.getMinor();
-        String line = area.getParagraph(paragraph).getText();
-        for (int[] span : SpellChecker.wordSpans(line)) {
-            if (col >= span[0] && col <= span[1]) {
-                int absStart = area.getAbsolutePosition(paragraph, span[0]);
-                if (!spellEligible(absStart) || SpellChecker.partOfStructuredToken(line, span[0], span[1])) {
-                    return null; // not eligible, or part of a URL/path/identifier — not a misspelling
-                }
-                String word = line.substring(span[0], span[1]);
-                return spellChecker.isMisspelled(word)
-                        ? new SpellHit(word, absStart, area.getAbsolutePosition(paragraph, span[1]))
-                        : null;
-            }
-        }
-        return null;
-    }
-
-    /** Mirror of {@link SpellCheckOverlay}'s eligibility: which words are checked in this buffer. */
-    private boolean spellEligible(int abs) {
-        java.util.Collection<String> style = area.getStyleOfChar(abs);
-        return isProse()
-                ? !style.contains("code") && !style.contains("link")
-                : style.contains("comment") || style.contains("string");
-    }
-
-    private void addToDictionary(String word) {
-        if (word == null || word.isBlank()) {
-            return;
-        }
-        String lower = word.toLowerCase(java.util.Locale.ROOT);
-        // Persist FIRST. The callback (ConfigManager.addUserWord) adds the word to the shared dictionary set
-        // and writes dictionary.txt — but it only writes when the word is newly added to that set, and
-        // spellUserWords *is* that shared set. Adding here first would make the callback see the word as
-        // already present and silently skip the file write (the word then works this session but never
-        // persists). Let the callback add + persist; the local add below is a no-op when shared, and only
-        // matters when no persist callback is wired.
-        onAddToDictionary.accept(lower);
-        spellUserWords.add(lower);
-        spellOverlay.refresh();
+    /** This buffer's spell checking: its settings, the word at the caret, and what can be done with it. */
+    public BufferSpell spell() {
+        return spell;
     }
 
     /** Drops this buffer's memoized spell verdicts and repaints. Call after the shared user-word set changes:
      *  the set is shared, but each buffer's overlay memoizes its own per-word results, so without this the
      *  other tabs keep squiggling a word that was just added to the dictionary. */
     public void refreshSpell() {
-        spellOverlay.refresh();
+        spell.refresh();
     }
 
     /** The primary view. Tool windows, overlays, folding and highlighting all bind to this one. */
@@ -6704,6 +6606,7 @@ public class EditorBuffer implements TabContent {
             area2.setStyle(style);
         }
         whitespace.setFont(family, size);
+        spell.geometryChanged();
         inlineValues.setFont(family, size);
         stickyScroll.setFont(family, size);
         if (gitLines.blame() != null) {
@@ -7807,11 +7710,10 @@ public class EditorBuffer implements TabContent {
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
-        spellOverlay.setProseMode(isProse()); // prose checks all words; code only comments/strings
-        // Must be re-pushed here, not just from installOverlays(): that runs in the constructor, before the
-        // language is known, so it always saw plaintext ⇒ markdown stayed false forever and ``` fenced code
-        // blocks WERE spell-checked (sudo/cd/xzf squiggled inside a README's bash block).
-        spellOverlay.setMarkdown(isMarkdown());
+        // Which words are checked, which lines are code, and whether this language is checked at all all
+        // follow the language. Must be pushed here, not only at construction: the constructor runs before
+        // the language is known, which once left every Markdown buffer checking its ``` fenced code blocks.
+        spell.languageChanged();
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
     }
@@ -7849,6 +7751,7 @@ public class EditorBuffer implements TabContent {
         this.tabSize = tabSize;
         TabStops.apply(viewHost, tabSize);
         minimap.setTabSize(tabSize);
+        spell.geometryChanged();
     }
 
     public int getTabSize() {
@@ -7926,73 +7829,21 @@ public class EditorBuffer implements TabContent {
         return LanguageRegistry.plaintext().equals(language) || "markdown".equals(language);
     }
 
-    /** Enables/disables spell checking for this buffer (driven from Settings by the controller). */
+    /** Enables/disables spell checking for this buffer (the master switch; see {@link BufferSpell#apply}). */
     public void setSpellCheckEnabled(boolean on) {
-        this.spellCheckOn = on;
-        if (on) {
-            SpellDictionaries.ensureBuilt(spellLanguage, spellOverlay::refresh);
-        }
-        applySpellActive();
+        spell.setEnabled(on);
     }
 
     public boolean isSpellCheckEnabled() {
-        return spellCheckOn;
+        return spell.isEnabled();
     }
 
-    /** Sets the dictionary language id (e.g. {@code en_US}); rebuilds the checker and redraws when ready. */
     public void setSpellLanguage(String langId) {
-        if (langId == null || langId.equals(spellLanguage)) {
-            return;
-        }
-        this.spellLanguage = langId;
-        if (spellChecker != null) {
-            spellChecker.setLanguage(langId, spellOverlay::refresh);
-        }
-        spellOverlay.refresh();
+        spell.setLanguage(langId);
     }
 
     public String getSpellLanguage() {
-        return spellLanguage;
-    }
-
-    /** Supplies the shared (persisted) user-dictionary word set; words added here are never flagged. */
-    public void setSpellUserWords(java.util.Set<String> words) {
-        if (words == null || words == spellUserWords) {
-            return;
-        }
-        this.spellUserWords = words;
-        spellChecker = new SpellChecker(spellLanguage, spellUserWords);
-        spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
-        spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
-        spellOverlay.setChecker(spellChecker);
-    }
-
-    /** Enables/disables the personal dictionary (user words); off re-flags those words. Repaints squiggles. */
-    public void setUserDictionaryEnabled(boolean enabled) {
-        spellUserWordsEnabled = enabled;
-        if (spellChecker != null) {
-            spellChecker.setUserWordsEnabled(enabled);
-            spellOverlay.refresh();
-        }
-    }
-
-    /** Enables/disables the bundled technical dictionary; off re-flags those terms. Repaints squiggles. */
-    public void setTechnicalDictionaryEnabled(boolean enabled) {
-        spellTechnicalEnabled = enabled;
-        if (spellChecker != null) {
-            spellChecker.setTechnicalWordsEnabled(enabled);
-            spellOverlay.refresh();
-        }
-    }
-
-    /** Called when the user picks "Add to Dictionary"; the controller persists the word. */
-    public void setOnAddToDictionary(java.util.function.Consumer<String> callback) {
-        this.onAddToDictionary = callback == null ? w -> {} : callback;
-    }
-
-    /** The overlay is active only when enabled and not in large-file mode (highlighting is off there). */
-    private void applySpellActive() {
-        spellOverlay.setActive(spellCheckOn && !largeFile);
+        return spell.getLanguage();
     }
 
     /**
@@ -8008,7 +7859,7 @@ public class EditorBuffer implements TabContent {
         highlightGen++; // discard any in-flight highlight result
         folds.setHeuristicEnabled(!large); // never schedule a whole-document fold scan for a large file
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
-        applySpellActive(); // spell checking is off in large-file mode (like highlighting)
+        spell.applyActive(); // spell checking is off in large-file mode (like highlighting)
         whitespace.setSuppressed(large); // so are the whitespace markers, whatever the setting says
         // Large files don't need (and shouldn't pay the memory for) undo history.
         applyUndoMode();

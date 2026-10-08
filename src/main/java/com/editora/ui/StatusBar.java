@@ -99,6 +99,10 @@ public final class StatusBar extends HBox {
     private final Label csvField = segment("csv.copyAsMarkdownTable", tr("statusbar.tip.csvField"));
 
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
+    /** The dictionary the active buffer is spell-checked with ({@code en-US}); clickable → the language
+     *  picker. Hidden when the buffer is not being checked, so its presence also says that it is. */
+    private final Label spell = segment("spell.setLanguage", tr("statusbar.tip.spell"));
+
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
     private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
     /** File size; clicking it toggles the File Information tool window. */
@@ -267,6 +271,7 @@ public final class StatusBar extends HBox {
                         position,
                         csvField,
                         language,
+                        spell,
                         narrowed,
                         editorConfig,
                         formatGroup,
@@ -789,6 +794,12 @@ public final class StatusBar extends HBox {
         language.setManaged(hasBuffer && !simpleMode);
         formatGroup.setVisible(hasBuffer && !simpleMode);
         formatGroup.setManaged(hasBuffer && !simpleMode);
+        boolean spellChecked = hasBuffer && !simpleMode && buffer.spell().isActive();
+        spell.setVisible(spellChecked);
+        spell.setManaged(spellChecked);
+        if (spellChecked) {
+            spell.setText(SpellCoordinator.languageTag(buffer.getSpellLanguage()));
+        }
         // The git segment has its own gate (feature on + active file in a repo + not Simple mode).
         applyGitVisibility();
         // The read-only segment is a toggle: always shown (when there's a buffer), reflecting and

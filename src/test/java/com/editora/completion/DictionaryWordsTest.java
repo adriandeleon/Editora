@@ -63,4 +63,24 @@ class DictionaryWordsTest {
         assertFalse(out.contains("beta"), out.toString());
         DictionaryWords.clearCache();
     }
+
+    /**
+     * Prose autocomplete draws its words from the spell dictionary of the buffer. The two lists of languages
+     * were kept separately and drifted: es_MX could be chosen for spell check and then completed nothing.
+     */
+    @Test
+    void everySpellCheckLanguageHasCompletionWords() throws Exception {
+        for (String id : com.editora.editor.SpellDictionaries.available()) {
+            assertTrue(DictionaryWords.isAvailable(id), id + " has a spell dictionary, so it completes words too");
+        }
+        DictionaryWords.clearCache();
+        DictionaryWords.ensureLoaded("es_MX", null);
+        for (int i = 0; i < 400 && !DictionaryWords.isReady("es_MX"); i++) {
+            Thread.sleep(25);
+        }
+        assertTrue(DictionaryWords.isReady("es_MX"), "the es_MX word list loads");
+        List<String> out = DictionaryWords.startingWith("es_MX", "desar", Set.of(), 10);
+        assertFalse(out.isEmpty(), "es_MX offers words for \"desar\"");
+        DictionaryWords.clearCache();
+    }
 }

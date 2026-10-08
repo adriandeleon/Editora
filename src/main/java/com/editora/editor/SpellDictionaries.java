@@ -12,6 +12,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 import javafx.application.Platform;
 
@@ -28,7 +30,10 @@ import org.apache.lucene.store.ByteBuffersDirectory;
  */
 public final class SpellDictionaries {
 
+    private static final Logger LOG = Logger.getLogger(SpellDictionaries.class.getName());
     private static final String BASE = "/com/editora/dictionaries/";
+    /** The language every install has and the one a missing or unknown id falls back to. */
+    public static final String DEFAULT = "en_US";
     /** Bundled language ids (folder names). Only permissively-licensed dictionaries are shipped
      *  (SCOWL for English; es/fr used under the Mozilla Public License). */
     private static final List<String> AVAILABLE = List.of("en_US", "en_GB", "es", "es_MX", "fr");
@@ -44,7 +49,24 @@ public final class SpellDictionaries {
         return t;
     });
 
+    /**
+     * Languages whose last build failed. A failed build used to be swallowed: spell check simply drew
+     * nothing, with no log line and no message, and looked switched off. Now it is logged, and whoever
+     * asked for the language can find out from {@link #failed} when its callback runs.
+     */
+    private static final Set<String> FAILED = ConcurrentHashMap.newKeySet();
+
     private SpellDictionaries() {}
+
+    /** Whether the last attempt to build {@code langId} failed (cleared by a later one that succeeds). */
+    public static boolean failed(String langId) {
+        return langId != null && FAILED.contains(langId);
+    }
+
+    /** {@code langId} when a dictionary for it is bundled, else {@link #DEFAULT}. */
+    public static String orDefault(String langId) {
+        return isAvailable(langId) ? langId : DEFAULT;
+    }
 
     /** The bundled language ids, e.g. {@code en_US}, {@code en_GB}. */
     public static List<String> available() {
@@ -89,8 +111,12 @@ public final class SpellDictionaries {
             try {
                 Hunspell h = build(langId);
                 CACHE.put(langId, h);
+                FAILED.remove(langId);
             } catch (Exception | LinkageError e) {
-                // Leave uncached; a later ensureBuilt() can retry. Never let a bad dictionary crash the app.
+                // Leave uncached; a later ensureBuilt() can retry. Never let a bad dictionary crash the app —
+                // but say so: nothing is checked in this language until it builds.
+                LOG.log(Level.WARNING, "Could not build the spell-check dictionary for " + langId, e);
+                FAILED.add(langId);
             } finally {
                 // Clear BUILDING first: a caller racing here then starts a fresh build that drains its own
                 // queued callback, rather than having it stranded in PENDING forever.

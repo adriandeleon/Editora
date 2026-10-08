@@ -36,12 +36,11 @@ class SpellDictionaryFxTest {
         // Wire exactly as MainController.addBuffer does: the buffer's user-word set IS the shared dictionary,
         // and "Add to Dictionary" persists through ConfigManager.addUserWord.
         FxTestSupport.runOnFx(() -> {
-            buffer.setSpellUserWords(config.getUserDictionary());
-            buffer.setOnAddToDictionary(config::addUserWord);
+            buffer.spell().setUserWords(config.getUserDictionary());
+            buffer.spell().setOnAddToDictionary(config::addUserWord);
         });
 
-        FxTestSupport.runOnFx(
-                () -> FxTestSupport.call(buffer, "addToDictionary", new Class<?>[] {String.class}, "zzqqx"));
+        FxTestSupport.runOnFx(() -> buffer.spell().addToDictionary("zzqqx"));
 
         Path dictionary = config.getUserDictionaryFile();
         assertTrue(Files.isReadable(dictionary), "dictionary.txt should be created on the first add");

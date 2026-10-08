@@ -231,9 +231,14 @@ Editora is built with the help of AI coding tools.
   always on the clipboard too. On by default (Settings → Editor); a forced *Copy With Syntax Highlighting*
   command ignores both the setting and the size cap.
 - **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
-  Add-to-Dictionary, and Ignore. Source files only check comments and string literals; plaintext and
-  Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file
-  ("Spell Check: Set Language…", ships English en_US/en_GB, Spanish for Spain and Mexico, and French). A bundled
+  Add-to-Dictionary, and Ignore (for the session, in every open file). Plaintext and Markdown are checked
+  in full, HTML and Typst have their text content checked, and source files only their comments and string
+  literals. Toggle everything via "View: Toggle Spell Check", or one file type at a time in Settings →
+  Spell Check → File Types ("Spell Check: Toggle for This File Type"); data and configuration formats
+  (JSON, YAML, TOML, XML, CSV, INI, properties, …) start switched off. Choose a dictionary per file
+  ("Spell Check: Set Language…", or click the language in the status bar; ships English en_US/en_GB,
+  Spanish for Spain and Mexico, and French). From the keyboard: "Spell Check: Next/Previous Misspelling",
+  "Correct Word at Caret…", "Add Word at Caret to Dictionary" and "Ignore Word at Caret". A bundled
   **technical-terms dictionary** (`config`, `async`, `middleware`, `kubernetes`, …) keeps code-adjacent
   prose from being flagged — toggle it in Settings → Spell Check (default on). Pure-Java (Apache Lucene
   Hunspell).

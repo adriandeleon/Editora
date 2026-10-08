@@ -8092,8 +8092,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
-        buffer.setSpellUserWords(config.getUserDictionary());
-        buffer.setOnAddToDictionary(editorSettings::addUserWordAndRefreshAll);
+        editorSettings.spell().wire(buffer);
         editorSettings.applyViewSettings(buffer, resolvePathSettings);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
@@ -9828,6 +9827,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b.refreshSpell();
             }
         }
+        settingsWindow.syncDictionaryList(); // an open Spell Check page lists the words too
     }
 
     /**

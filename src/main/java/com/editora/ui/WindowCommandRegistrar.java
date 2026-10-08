@@ -1232,7 +1232,15 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "template.manage", () -> host.settingsWindow().showTemplates(host.stage())));
-        host.registry().register(Command.of("spell.setLanguage", host.editorSettings()::chooseSpellLanguage));
+        SpellCoordinator spell = host.editorSettings().spell();
+        host.registry().register(Command.of("spell.setLanguage", spell::chooseLanguage));
+        host.registry().register(Command.of("spell.nextMisspelling", spell::nextMisspelling));
+        host.registry().register(Command.of("spell.previousMisspelling", spell::previousMisspelling));
+        host.registry().register(Command.of("spell.correctWord", spell::correctWord));
+        host.registry().register(Command.of("spell.addWord", spell::addWordToDictionary));
+        host.registry().register(Command.of("spell.ignoreWord", spell::ignoreWord));
+        host.registry().register(Command.of("spell.toggleForLanguage", spell::toggleForLanguage));
+        host.registry().register(Command.of("spell.reloadDictionary", spell::reloadDictionary));
         host.registry()
                 .register(Command.of(
                         "spell.manageDictionary", () -> host.settingsWindow().showSpellCheck(host.stage())));
