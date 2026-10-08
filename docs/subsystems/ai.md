@@ -91,7 +91,7 @@ each of them keeps to these rules:
 - **A buffer is written through the buffer.** If any window has the file open, the write is an
   undoable whole-document edit of that buffer and nothing reaches the disk until the user
   saves.
-- **A file with no buffer is recoverable.** Its previous text goes to Local File History first
+- **A file with no buffer is recoverable.** Its previous text goes to Local History first
   (the write is refused if that fails), the replacement keeps the file's charset, byte-order
   mark and line endings (`AgentFileWrites`), and the write is conditional on the bytes that
   were snapshotted.

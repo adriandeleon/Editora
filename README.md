@@ -656,8 +656,8 @@ Editora is built with the help of AI coding tools.
   deleted on the server, so a local branch whose upstream is gone is marked as such. The Emacs keymap adds
   the `vc` chords (`C-x v v` commit, `C-x v P` push, `C-x v +` pull, `C-x v b s` switch branch, `C-x v l` /
   `C-x v L` file / branch log, `C-x v g` blame); the IntelliJ keymap adds Commit (`Ctrl+K`), Push
-  (`Ctrl+Shift+K`), Update (`Ctrl+T`) and Branches (``Ctrl+Shift+` ``). A **Git Log** tool window (`M-g h`,
-  or *Show File History* on a tab) lists the checked-out branch's commits — a commit graph, short hash, the
+  (`Ctrl+Shift+K`), Update (`Ctrl+T`) and Branches (``Ctrl+Shift+` ``). A **Git Log** tool window (*Tool
+  Window: Git Log*; `M-g h` in the Emacs keymap) lists the checked-out branch's commits — a commit graph, short hash, the
   branches and tags pointing at each commit, subject, author and relative date, one line per commit — and
   reloads after every Git command. It loads 200 commits at a time and fetches the next page as you scroll
   (or from *Load More*); a toolbar toggle (*Git Log: Toggle All Branches*) switches to every branch, remote
@@ -667,8 +667,13 @@ Editora is built with the help of AI coding tools.
   `-Stext`: commits that add or remove the text), `since:`/`until:` dates and `path:glob` narrow further —
   the active search is shown in the header with a button to clear it. **Enter** (or a double-click) on a
   commit opens everything it changed as one multi-file review; select two commits and choose **Compare
-  Selected Commits** to review what differs between them. A file history **follows renames**. In a
-  file-filtered history,
+  Selected Commits** to review what differs between them. **Show Git History** (on a tab, on a
+  Project-tree file, under *VCS ▸ History & Blame*, or *Git: Show Git History*) narrows the log to the commits
+  of one file and **follows renames**; the chord depends on the keymap (`C-x v l` in Emacs,
+  `Ctrl+Alt+Shift+H` in the CUA, VS Code, Sublime Text and IntelliJ keymaps, `Ctrl+Cmd+Shift+H` on macOS).
+  There a row is a version of that file: **Enter** (or a double-click) on a commit opens what it changed in
+  the file, and the header chip's ✕ (or Escape) returns to the branch's log. A file that was never
+  committed has no Git history — its saves are in **Local History** (below). In a file's Git history,
   double-click a revision's file to compare it with the editable working copy and apply individual lines,
   hunks, or the whole revision; in the full repository log, double-click keeps the read-only parent-to-commit
   diff and **Compare with Working Tree** is available from the file menu. Right-click a commit to Copy Hash /
@@ -733,12 +738,22 @@ Editora is built with the help of AI coding tools.
   For conflicted Git files, the resolver reads the actual ancestor/ours/theirs
   index stages, auto-merges compatible changes, and presents Base/Ours/Theirs choices plus an editable Result;
   marker-only files retain the same ours/theirs/base/both fallback.
-- **Local file history** — IntelliJ-style snapshots of local files, taken on save, auto-save, and before an
-  external-change reload, independent of any VCS. A **File History** tool window (`M-g l`) lists each revision
-  (date/time, reason, size; the latest tagged *Current*); double-click for a read-only diff against the
-  current file, or restore one (an undoable whole-file replace). Snapshots are deduped by content and stored
-  gzip-compressed under `<configDir>/history/`, pruned by configurable limits (revisions/file, age,
-  size/project). On by default; local-only; off in Simple UI mode.
+- **Local History** — IntelliJ-style revisions of local files, recorded on save, auto-save, before an
+  external-change reload and before a file is deleted, independent of any VCS (Git's side of the story is
+  **Show Git History**, above). The **Local History** tool window (*Tool Window: Local History*, *VCS ▸ Local
+  History*, or **Show Local History** on a tab or a Project-tree file) lists the active file's revisions,
+  newest first. Selecting one shows a side-by-side diff against the file as it is now; the diff is live and
+  editable — apply single hunks with the chevrons, or **Restore** the whole revision (an undoable
+  whole-file replace). **Put Label…** records a named revision and *Edit Label…* renames one; **Recent
+  Changes…** lists the newest revisions across the project. **Show Local History** on a folder lists every
+  file under it that has history, deleted files included, and Restore writes a deleted file back to disk.
+  *Local History: Delete History of Current File…* / *of Project…* remove what was recorded. Revisions are
+  deduped by content and stored gzip-compressed under `<configDir>/history/`, pruned by configurable limits:
+  revisions per file, age in days (0 = no age limit) and size per project (counted as uncompressed text). The
+  size limit is a soft one — a file's newest revision, labelled revisions and copies taken before a delete
+  are kept even when a project is over it. The chord depends on the keymap: `M-g l` in Emacs, `Alt+Shift+H`
+  in the CUA, VS Code, Sublime Text and IntelliJ keymaps (`Ctrl+Cmd+H` on macOS). On by default; local-only;
+  off in Simple UI mode.
 - **HTTP client** — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
   Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
   size) shows in the file's **preview** — the same Editor/Split/Preview view Markdown and CSV use, so the
@@ -825,7 +840,7 @@ Editora is built with the help of AI coding tools.
   **MCP** indicator shows when it's running (click to copy the connection command). Off by default and
   guarded by a security-notice dialog — enable it under *Settings → MCP Server* (or the **Toggle MCP Server**
   command). No external tool or new dependency (the JDK's built-in `HttpServer`).
-- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Git Log, File History, Structure, File
+- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Git Log, Local History, Structure, File
   Information, Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client) — plus any
   contributed by a plugin.
 - **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a

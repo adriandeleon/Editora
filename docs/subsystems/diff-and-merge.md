@@ -132,7 +132,7 @@ Local apply actions reconstruct the full editable document, check that its live 
 displayed baseline, and then use the normal undoable `EditorBuffer` replacement path. The baseline is the
 pane's own displayed text (`DiffViewerPane.editableBaselineText()`), never the coordinator's record of the
 last text it wrote: that record runs ahead of the pane until the re-diff lands, and a second hunk applied in
-that window would be built from the old rows and revert the first. The Local File History panel's per-hunk
+that window would be built from the old rows and revert the first. The Local History panel's per-hunk
 restore goes through the same guarded path. Apply-all confirms; Undo and Save enable only after an accepted
 operation. Line apply is deliberately secondary to hunk apply.
 
