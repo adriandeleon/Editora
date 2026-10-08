@@ -54,6 +54,36 @@ final class FxPrompts {
         });
     }
 
+    /** Types {@code text} into a form's field and presses its button labelled {@code button}. */
+    static void submit(MainController controller, String text, String button) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Node card = card(controller);
+            if (text != null) {
+                ((TextField) card.lookup(".text-field")).setText(text);
+            }
+            button(card, button).fire();
+        });
+    }
+
+    /** The message a form that stays open is showing under its field, or null when it shows none. */
+    static String error(MainController controller) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            Node label = card(controller).lookup(".overlay-form-error");
+            return label instanceof javafx.scene.control.Label l && l.isVisible() ? l.getText() : null;
+        });
+    }
+
+    /** The text of every label on the overlay, in order — what a confirmation asks. */
+    static List<String> labels(MainController controller) throws Exception {
+        return FxTestSupport.callOnFx(() -> card(controller).lookupAll(".label").stream()
+                .filter(n -> n instanceof javafx.scene.control.Label l
+                        && l.getText() != null
+                        && !l.getText().isEmpty()
+                        && !(n.getParent() instanceof Button))
+                .map(n -> ((javafx.scene.control.Label) n).getText())
+                .toList());
+    }
+
     /** Presses the prompt's Cancel. */
     static void cancel(MainController controller) throws Exception {
         FxTestSupport.runOnFx(
