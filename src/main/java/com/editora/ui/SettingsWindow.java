@@ -2248,7 +2248,9 @@ public class SettingsWindow {
                 List<Node> all = shortcutListBox.getChildren();
                 int target =
                         switch (e.getCode()) {
-                            case UP -> all.indexOf(row) - 1;
+                            // On the first row Up stays put, as Down does on the last one: left to the
+                            // toolkit it moved the focus out of the list, to the filter field above it.
+                            case UP -> Math.max(0, all.indexOf(row) - 1);
                             case DOWN -> all.indexOf(row) + 1;
                             case HOME -> 0;
                             case END -> all.size() - 1;
