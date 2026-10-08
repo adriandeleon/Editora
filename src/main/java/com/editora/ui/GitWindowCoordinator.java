@@ -424,7 +424,7 @@ final class GitWindowCoordinator {
             case ISSUES -> host.github().fetchIssues(query, page -> panel.setIssues(page.items(), page.more()), failed);
             case RUNS -> host.github().fetchRuns(query, page -> panel.setRuns(page.items(), page.more()), failed);
         }
-        host.github().resolvedRepository(panel::setRepository); // whose rows these are (cached per repository)
+        host.github().panelContext(panel::setContext); // whose rows these are (the repository is cached)
     }
 
     /** The {@link GitLogPanel.Actions} the Git Log tool window routes user actions through. */

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- GitHub tool window: a row under the toolbar shows the repository's URL (click to open it on GitHub,
+  right-click to copy), the branch checked out, and the GitHub account `gh` is signed in with. It replaces
+  the `owner/name` label in the toolbar. The account needs gh 2.81 or newer.
 - **Crash recovery.** Unsaved edits, including untitled buffers, in every window, are kept in the config
   folder while you work and offered back on the next launch if Editora did not close normally (crash,
   kill, logout, power loss). Restoring opens the text as unsaved tabs and never writes your files; a file

@@ -150,12 +150,29 @@ public final class GitHubService {
     /**
      * Whether {@code gh} is on PATH, its version line, and its sign-in: {@code authenticated} is true only
      * when a host confirmed the token, {@code auth} tells "signed out" from "could not check", {@code hosts}
-     * are the hosts gh has an account on (empty = not known, e.g. gh older than 2.81), and {@code detail} is
-     * gh's own reason for a failed check.
+     * are the hosts gh has an account on (empty = not known, e.g. gh older than 2.81), {@code detail} is
+     * gh's own reason for a failed check, and {@code accounts} is the login gh uses on each host (empty when
+     * gh did not say).
      */
     public record Availability(
-            boolean found, boolean authenticated, String version, AuthState auth, List<String> hosts, String detail) {
+            boolean found,
+            boolean authenticated,
+            String version,
+            AuthState auth,
+            List<String> hosts,
+            String detail,
+            java.util.Map<String, String> accounts) {
         public static final Availability UNKNOWN = new Availability(false, false, "");
+
+        public Availability(
+                boolean found,
+                boolean authenticated,
+                String version,
+                AuthState auth,
+                List<String> hosts,
+                String detail) {
+            this(found, authenticated, version, auth, hosts, detail, java.util.Map.of());
+        }
 
         public Availability(boolean found, boolean authenticated, String version) {
             this(
@@ -168,7 +185,35 @@ public final class GitHubService {
         }
 
         static Availability found(String version, AuthState auth, List<String> hosts, String detail) {
-            return new Availability(true, auth == AuthState.SIGNED_IN, version, auth, List.copyOf(hosts), detail);
+            return found(version, auth, hosts, detail, java.util.Map.of());
+        }
+
+        static Availability found(
+                String version,
+                AuthState auth,
+                List<String> hosts,
+                String detail,
+                java.util.Map<String, String> accounts) {
+            return new Availability(
+                    true,
+                    auth == AuthState.SIGNED_IN,
+                    version,
+                    auth,
+                    List.copyOf(hosts),
+                    detail,
+                    java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(accounts)));
+        }
+
+        /**
+         * The login gh uses on {@code host} ({@code ""} when not known). With the host unknown — the
+         * repository not resolved yet — a single account is still the answer; several are not guessed among.
+         */
+        public String account(String host) {
+            String h = host == null ? "" : host.strip().toLowerCase(java.util.Locale.ROOT);
+            if (h.isEmpty()) {
+                return accounts.size() == 1 ? accounts.values().iterator().next() : "";
+            }
+            return accounts.getOrDefault(h, "");
         }
 
         /**
@@ -326,7 +371,8 @@ public final class GitHubService {
             }
             GhAuthStatus.Parsed parsed = json.ok() ? GhAuthStatus.parse(json.out()) : null;
             if (parsed != null) {
-                return Availability.found(version, authState(parsed.state()), parsed.hosts(), parsed.detail());
+                return Availability.found(
+                        version, authState(parsed.state()), parsed.hosts(), parsed.detail(), parsed.accounts());
             }
             ProcessRunner.Result plain = run(command, null, timeout, null, "auth", "status");
             if (plain.ok()) {

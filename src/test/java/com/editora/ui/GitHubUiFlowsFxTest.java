@@ -327,7 +327,14 @@ class GitHubUiFlowsFxTest {
 
         List<Object> rows = FxTestSupport.callOnFx(panel::rows);
         assertInstanceOf(GitHubPanel.MoreRow.class, rows.get(rows.size() - 1), "the last row says more exist");
-        await("the resolved repository", () -> "upstream-org/r".equals(panel.repositoryText()));
+        await(
+                "the resolved repository",
+                () -> "upstream-org/r"
+                        .equals(FxTestSupport.callOnFx(panel::context).repository()));
+        GitHubPanel.Context context = FxTestSupport.callOnFx(panel::context);
+        assertEquals("https://github.com/upstream-org/r", context.url(), "the row shows where the rows come from");
+        assertEquals(FxTestSupport.callOnFx(git::branchName), context.branch(), "and the branch checked out");
+        assertEquals(context.url(), FxTestSupport.callOnFx(panel::contextTexts).get(0));
 
         ListView<Object> list = FxTestSupport.field(panel, "list");
         FxTestSupport.runOnFx(() -> {
