@@ -24,10 +24,16 @@ final class ExportCoordinator {
     private final DiagramCoordinator diagram;
     private final TypstCoordinator typst;
     private final Consumer<Path> openPath;
-    private final java.util.function.Function<javafx.stage.FileChooser, java.io.File> chooseDestination;
+    /** Shows a Save dialog and returns its answer; a test of a whole window puts its own in place. */
+    java.util.function.Function<javafx.stage.FileChooser, java.io.File> chooseDestination;
+
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.office.OfficeExportService officeService = new com.editora.office.OfficeExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
+    /** Where this window last exported to: the Save dialog starts there for a document that has no folder. */
+    private java.io.File lastExportDirectory;
+    /** Asks before an export replaces {@code file}, when the Save dialog did not ask (tests replace it). */
+    java.util.function.Predicate<java.io.File> confirmReplace = this::confirmReplace;
 
     ExportCoordinator(
             CoordinatorHost host,
@@ -84,7 +90,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
-        java.io.File f = choosePdfDestination(baseName);
+        java.io.File f = choosePdfDestination(baseName, host.activeBuffer());
         if (f == null) {
             return;
         }
@@ -184,7 +190,7 @@ final class ExportCoordinator {
 
     /** Exports the complete Project Map layout—not merely the visible viewport—to a paginated PDF. */
     void exportProjectMapPdf(javafx.scene.image.Image image, String baseName) {
-        java.io.File file = choosePdfDestination(baseName);
+        java.io.File file = choosePdfDestination(baseName, null);
         if (file == null) {
             return;
         }
@@ -213,7 +219,7 @@ final class ExportCoordinator {
         }
         String ext = xlsx ? "xlsx" : "ods";
         String filter = xlsx ? "Excel" : "OpenDocument Spreadsheet";
-        java.io.File f = chooseOfficeDestination(baseName, ext, filter);
+        java.io.File f = chooseOfficeDestination(baseName, ext, filter, host.activeBuffer());
         if (f == null) {
             return;
         }
@@ -237,8 +243,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.noFileOpen"));
             return;
         }
-        String base = bufferBaseName(b);
-        java.io.File f = choosePdfDestination(base);
+        java.io.File f = choosePdfDestination(bufferBaseName(b), b);
         if (f == null) {
             return;
         }
@@ -261,15 +266,25 @@ final class ExportCoordinator {
 
     /**
      * Exports the active buffer's rendered preview to PDF: a Mermaid {@code .mmd} diagram via mmdc's
-     * native vector PDF, or a Markdown document via the native PDF writer. No-op for non-previewable buffers.
+     * native vector PDF, or a Markdown document via the native PDF writer; a CSV grid goes out as the table
+     * {@code csv.exportPdf} writes. A buffer whose preview cannot be put on a page is told so here, before
+     * the Save dialog — not by an error dialog after a destination was chosen.
      */
     void exportPreviewPdf() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.hasPreview()) {
+        if (b != null && b.hasCsvPreview()) {
+            csvExportPdf(b.getContent(), bufferBaseName(b));
+            return;
+        }
+        if (b == null || !b.hasExportablePreview()) {
             host.setStatus(tr("status.pdf.noPreview"));
             return;
         }
-        java.io.File f = choosePdfDestination(bufferBaseName(b));
+        if (previewUnparsable(b)) {
+            host.setStatus(tr("status.pdf.cannotExportUnparsed"));
+            return;
+        }
+        java.io.File f = choosePdfDestination(bufferBaseName(b), b);
         if (f == null) {
             return;
         }
@@ -284,6 +299,29 @@ final class ExportCoordinator {
             return;
         }
         stagedPdf(f, (out, report) -> exportPreviewPdfTo(b, pageSize, out, report));
+    }
+
+    /**
+     * Whether {@code b}'s preview is a JSON/YAML/TOML or XML tree whose source does not parse, so that
+     * {@link EditorBuffer#snapshotPreviewChunks} would have nothing to draw. Follows the order of the export
+     * branches and of that method: only the snapshot previews are asked, and a workflow or a pom summary is
+     * drawn whatever the parse says. Parses the text, so it is asked when a command runs — never to gate a menu.
+     */
+    static boolean previewUnparsable(EditorBuffer b) {
+        if (b.isTypst() || b.isMarkdown() || b.isDiagram() || b.isRenderedDiagram() || b.isSvg()) {
+            return false; // rendered from the source by their own pipeline, not from a snapshot
+        }
+        if (b.hasGithubActionsPreview()) {
+            return false;
+        }
+        String text = b.getArea().getText();
+        if (b.isStructured()) {
+            return !com.editora.structured.StructuredParser.parse(text, b.structuredFormat())
+                    .ok();
+        }
+        return !b.hasPomPreview()
+                && b.isXml()
+                && !com.editora.structured.XmlParser.parse(text).ok();
     }
 
     /** Renders {@code b}'s preview as a PDF at {@code out} (a staging path — see {@link #stagedPdf}). */
@@ -357,7 +395,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.html.notMarkdown"));
             return;
         }
-        java.io.File f = chooseHtmlDestination(bufferBaseName(b));
+        java.io.File f = chooseHtmlDestination(bufferBaseName(b), b);
         if (f == null) {
             return;
         }
@@ -376,13 +414,8 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.html}. */
-    private java.io.File chooseHtmlDestination(String base) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.htmlExport.title"));
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".html");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("HTML", "*.html"));
-        return chooseDestination.apply(chooser);
+    private java.io.File chooseHtmlDestination(String base, EditorBuffer source) {
+        return chooseExportDestination(tr("dialog.htmlExport.title"), base, "document", "html", "HTML", source);
     }
 
     /**
@@ -408,13 +441,78 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.pdf}. */
-    private java.io.File choosePdfDestination(String base) {
+    private java.io.File choosePdfDestination(String base, EditorBuffer source) {
+        return chooseExportDestination(tr("dialog.pdfExport.title"), base, "document", "pdf", "PDF", source);
+    }
+
+    /**
+     * The one Save dialog of every export: named {@code <base-without-ext>.<ext>}, opening beside
+     * {@code source} when that is a saved local file and otherwise where this window last exported to (kept
+     * for the session only). Returns the chosen file with {@code .<ext>} added when the typed name lacks it —
+     * the GTK dialog does not add one, and the export was then written under a name nothing opens — or null
+     * when the dialog, or the question about replacing a file, was cancelled.
+     *
+     * @param title        the dialog title, or null for the platform's
+     * @param fallbackBase the file name when {@code base} is null
+     * @param source       the buffer being exported, or null when the export is not of a file
+     */
+    private java.io.File chooseExportDestination(
+            String title, String base, String fallbackBase, String ext, String filterName, EditorBuffer source) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.pdfExport.title"));
+        if (title != null) {
+            chooser.setTitle(title);
+        }
         int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".pdf");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
-        return chooseDestination.apply(chooser);
+        chooser.setInitialFileName(
+                (dot > 0 ? base.substring(0, dot) : (base == null ? fallbackBase : base)) + "." + ext);
+        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter(filterName, "*." + ext));
+        java.io.File directory = lastExportDirectory;
+        if (source != null
+                && source.getPath() != null
+                && source.getPath().getParent() != null
+                && host.isLocalBuffer(source)) {
+            directory = source.getPath().getParent().toFile();
+        }
+        // A folder that has since been deleted makes the native dialog throw rather than fall back.
+        if (directory != null && directory.isDirectory()) {
+            chooser.setInitialDirectory(directory);
+        }
+        java.io.File chosen = chooseDestination.apply(chooser);
+        if (chosen == null) {
+            return null;
+        }
+        java.io.File target = withExtension(chosen, ext);
+        // The Save dialog asked about replacing the name as typed. The name with the extension added is a
+        // different file, which nobody has agreed to replace yet.
+        if (!target.equals(chosen) && target.exists() && !confirmReplace.test(target)) {
+            return null;
+        }
+        if (target.getAbsoluteFile().getParentFile() != null) {
+            lastExportDirectory = target.getAbsoluteFile().getParentFile();
+        }
+        return target;
+    }
+
+    /** {@code file}, with {@code .<ext>} appended unless its name already ends in it (in either case). */
+    static java.io.File withExtension(java.io.File file, String ext) {
+        String suffix = "." + ext;
+        String name = file.getName();
+        boolean has = name.length() > suffix.length()
+                && name.regionMatches(true, name.length() - suffix.length(), suffix, 0, suffix.length());
+        return has ? file : new java.io.File(file.getParentFile(), name + suffix);
+    }
+
+    /** Asks whether an export may replace {@code file}; the wording is Save As's. */
+    private boolean confirmReplace(java.io.File file) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.saveAs.overwrite.title"));
+        alert.setHeaderText(tr("dialog.saveAs.overwrite.header", file.getName()));
+        alert.setContentText(tr("dialog.saveAs.overwrite.content"));
+        return Dialogs.styled(alert)
+                .showAndWait()
+                .filter(javafx.scene.control.ButtonType.OK::equals)
+                .isPresent();
     }
 
     /** Exports the active Markwhen buffer's parsed timeline to a JSON file (preview menu + palette). */
@@ -424,15 +522,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.markwhen.notMarkwhen"));
             return;
         }
-        String base = bufferBaseName(b);
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "timeline" : base)) + ".json");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("JSON", "*.json"));
-        if (b.getPath() != null && b.getPath().getParent() != null && host.isLocalBuffer(b)) {
-            chooser.setInitialDirectory(b.getPath().getParent().toFile());
-        }
-        java.io.File f = chooseDestination.apply(chooser);
+        java.io.File f = chooseExportDestination(null, bufferBaseName(b), "timeline", "json", "JSON", b);
         if (f == null) {
             return;
         }
@@ -455,15 +545,26 @@ final class ExportCoordinator {
                             ? tr("status.pdf.exportedUnrendered", f.toString(), r.unrendered())
                             : tr("status.pdf.exported", f.toString()));
         } else {
-            String msg = String.valueOf(r.message());
+            String msg = failureDetail(r.message());
             host.setStatus(tr("status.pdf.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(host.window());
-            err.setTitle(tr("dialog.pdfExport.title"));
-            err.setHeaderText(tr("status.pdf.exportFailed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
+            failureAlert(tr("dialog.pdfExport.title"), tr("dialog.pdfExport.failed"), msg)
+                    .showAndWait();
         }
+    }
+
+    /** What a failure dialog and the status bar say went wrong: the message, or a sentence when there is none. */
+    static String failureDetail(String message) {
+        return message == null || message.isBlank() ? tr("dialog.export.noDetails") : message;
+    }
+
+    /** The error dialog of a failed export or print: what failed as the header, why as the content. */
+    Alert failureAlert(String title, String header, String detail) {
+        Alert err = new Alert(Alert.AlertType.ERROR);
+        err.initOwner(host.window());
+        err.setTitle(title);
+        err.setHeaderText(header);
+        err.setContentText(detail);
+        return Dialogs.styled(err);
     }
 
     /** Exports the active Markdown preview to a MS Word {@code .docx} (Apache POI). */
@@ -485,7 +586,7 @@ final class ExportCoordinator {
         }
         String ext = docx ? "docx" : "odt";
         String filter = docx ? "Word" : "OpenDocument";
-        java.io.File f = chooseOfficeDestination(bufferBaseName(b), ext, filter);
+        java.io.File f = chooseOfficeDestination(bufferBaseName(b), ext, filter, b);
         if (f == null) {
             return;
         }
@@ -503,13 +604,8 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.<ext>}. */
-    private java.io.File chooseOfficeDestination(String base, String ext, String filterName) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.officeExport.title"));
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + "." + ext);
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter(filterName, "*." + ext));
-        return chooseDestination.apply(chooser);
+    private java.io.File chooseOfficeDestination(String base, String ext, String filterName, EditorBuffer source) {
+        return chooseExportDestination(tr("dialog.officeExport.title"), base, "document", ext, filterName, source);
     }
 
     /** Reports an office export result: status + (on failure) an error dialog. */
@@ -517,14 +613,10 @@ final class ExportCoordinator {
         if (r.ok()) {
             host.setStatus(tr("status.office.exported", f.toString()));
         } else {
-            String msg = String.valueOf(r.message());
+            String msg = failureDetail(r.message());
             host.setStatus(tr("status.office.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(host.window());
-            err.setTitle(tr("dialog.officeExport.title"));
-            err.setHeaderText(tr("status.office.exportFailed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
+            failureAlert(tr("dialog.officeExport.title"), tr("dialog.officeExport.failed"), msg)
+                    .showAndWait();
         }
     }
 
@@ -556,12 +648,21 @@ final class ExportCoordinator {
 
     /**
      * Prints the active buffer's rendered preview: a Mermaid {@code .mmd} diagram (via mmdc) or a
-     * Markdown document (native nodes, block-aware pagination). No-op for non-previewable buffers.
+     * Markdown document (native nodes, block-aware pagination); a CSV grid prints as the table
+     * {@code csv.print} does. A buffer whose preview cannot be put on a page is told so before a job is made.
      */
     void printPreview() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.hasPreview()) {
+        if (b != null && b.hasCsvPreview()) {
+            csvPrint(b.getContent());
+            return;
+        }
+        if (b == null || !b.hasExportablePreview()) {
             host.setStatus(tr("status.print.noPreview"));
+            return;
+        }
+        if (previewUnparsable(b)) {
+            host.setStatus(tr("status.print.cannotPrintUnparsed"));
             return;
         }
         javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
@@ -653,20 +754,16 @@ final class ExportCoordinator {
         if (r.ok()) {
             host.setStatus(tr("status.print.done"));
         } else {
-            String msg = String.valueOf(r.message());
+            String msg = failureDetail(r.message());
             host.setStatus(tr("status.print.failed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(host.window());
-            err.setTitle(tr("command.editor.print"));
-            err.setHeaderText(tr("status.print.failed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
+            failureAlert(tr("dialog.print.title"), tr("dialog.print.failed"), msg)
+                    .showAndWait();
         }
     }
 
     /** Writes {@code csv} text to a user-chosen {@code .csv} file (the Markdown-table → CSV file export). */
     void exportCsvTextToFile(String csv, String base) {
-        java.io.File f = chooseOfficeDestination(base, "csv", "CSV");
+        java.io.File f = chooseOfficeDestination(base, "csv", "CSV", host.activeBuffer());
         if (f == null) {
             return;
         }

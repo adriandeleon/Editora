@@ -3074,6 +3074,12 @@ public class EditorBuffer implements TabContent {
         return isHttpFile() && httpPreviewNode != null;
     }
 
+    /** A preview that Export to PDF / Print can put on a page: every one but the {@code .http} response panel
+     *  (the CSV grid goes out as a table). Decided by kind alone, so it is cheap enough to gate a menu item. */
+    public boolean hasExportablePreview() {
+        return hasPreview() && !hasHttpPreview();
+    }
+
     /** A standalone SVG file (by {@code .svg} extension — the buffer stays XML text, so it also gets XML
      *  highlighting/LSP, but gains a rendered preview). */
     public boolean isSvg() {

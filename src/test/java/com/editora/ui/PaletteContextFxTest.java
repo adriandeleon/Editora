@@ -141,6 +141,50 @@ class PaletteContextFxTest {
         assertTrue(open == null || open.isBlank(), "an enabled command needs no tooltip, was: " + open);
     }
 
+    /**
+     * Printing and exporting, per kind of file, as the File menu and the palette gate them in a real window.
+     * The file itself can always be printed; its preview only when there is one that can be put on a page —
+     * which an {@code .http} response panel is not, and which the preview commands used to find out only
+     * after the Save dialog. A JSON file that does not parse stays lit (the gate does not parse the file on
+     * every menu refresh); the command refuses it when run.
+     */
+    @Test
+    void printAndExportAreGatedByWhatTheFileCanPutOnAPage(@TempDir Path dir) throws Exception {
+        record Case(String name, String text, boolean preview, boolean exportable) {}
+        for (Case c : List.of(
+                new Case("Main.java", "class Main {}\n", false, false),
+                new Case("note.md", "# Title\n", true, true),
+                new Case("data.csv", "a,b\n1,2\n", true, true),
+                new Case("req.http", "GET https://example.com\n", true, false),
+                new Case("broken.json", "{\"a\": [1,\n", true, true))) {
+            Path config = Files.createDirectories(dir.resolve("config-" + c.name()));
+            Path file = Files.writeString(dir.resolve(c.name()), c.text());
+            FxWindowFixture fx = FxWindowFixture.create(
+                    config, false, false, false, List.of(new MainController.OpenTarget(file, 0, 0)), w -> {});
+            try {
+                Map<String, Boolean> v = verdicts(
+                        fx.controller,
+                        "editor.print",
+                        "editor.exportPdf",
+                        "preview.print",
+                        "preview.exportPdf",
+                        "preview.copy");
+                assertTrue(v.get("editor.print"), c.name() + ": the file itself can always be printed");
+                assertTrue(v.get("editor.exportPdf"), c.name() + ": the file itself can always be exported");
+                assertTrue(c.preview() == v.get("preview.copy"), c.name() + ": preview.copy needs only a preview");
+                assertTrue(c.exportable() == v.get("preview.print"), c.name() + ": preview.print");
+                assertTrue(c.exportable() == v.get("preview.exportPdf"), c.name() + ": preview.exportPdf");
+            } finally {
+                fx.dispose();
+            }
+        }
+        // No buffer: nothing to print (asserted on the Welcome tab).
+        FxWindowFixture fx = FxWindowFixture.create();
+        Map<String, Boolean> v = verdicts(fx.controller, "editor.print", "editor.exportPdf");
+        assertFalse(v.get("editor.print"), "nothing to print without a buffer");
+        assertFalse(v.get("editor.exportPdf"), "nothing to export without a buffer");
+    }
+
     @Test
     void openingACsvFileLightsUpTheCsvFamilyOnly(@TempDir Path dir) throws Exception {
         Path csv = dir.resolve("data.csv");
