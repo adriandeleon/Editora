@@ -27,7 +27,11 @@ class ProcessRunnerCancelTest {
         ProcessRunner.Result r = ProcessRunner.runLiveInUserLocale(
                 null,
                 Duration.ofMinutes(1),
-                List.of("sh", "-c", "echo ready; sleep 60"),
+                // The kill reaches `sleep` before its shell (children first), and a shell whose child died of
+                // a signal says so — "Terminated" — on its own stderr, which is live output too. Whether that
+                // line is written before the shell is itself killed is a race, so the shell's stderr is closed
+                // off after the one line this test reads; the command is still a parent with a live child.
+                List.of("sh", "-c", "echo ready; exec 2>/dev/null; sleep 60"),
                 Map.of(),
                 (line, transientLine) -> {
                     lines.add(line);

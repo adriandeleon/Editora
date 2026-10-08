@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **MCP `open_file` is confined to the window's project.** A client could name any absolute path, have
+  the editor open it, and then read it with `read_buffer` or rewrite it with `edit_buffer` and
+  `save_buffer` — a private key, a shell profile, the editor's own settings. `open_file` now opens a
+  file only when it is inside the project folder of the window that answers (a link that leads out of
+  the project counts as outside) or already open there; a window with no project opens nothing new for
+  a client. `edit_buffer` and `save_buffer` refuse a buffer in the editor's configuration directory or
+  in version-control metadata (`.git/` and the like), as the ACP agent's file channel already did.
+  Files you open yourself stay readable and editable for the client, and `execute_command` still runs
+  any command.
+
+### Fixed
+
+- **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
+  turned out to be incomplete or not the expected tool was unpacked over the installed version before it
+  was checked: the working version was gone, and the half-unpacked folder was then detected as installed,
+  so the editor never offered to install it again. The new version is now unpacked beside the old one and
+  replaces it only once it is complete; a failed install leaves things as they were.
+- Installing the Maven `pom.xml` server reported success, and saved a launch command, when the download
+  was an error page rather than the server.
+- A language-server archive whose binary was a link to a file outside the install is no longer accepted
+  (the file it pointed at was marked executable and saved as the server's command).
+- The "Install this plugin?" question ran the version and the author together ("Greeter 1.0Ada"); the
+  author is now in brackets.
+- The interrupted-save prompt for a file that no longer exists offered "Keep Current File", which
+  deleted the backup — the only copy left. The button now reads "Delete Backup".
+- MCP `todo_scan` reported each marker one line down and one column to the right.
+- MCP `find_in_files` searched the project of the window that was focused last instead of the window
+  the MCP server belongs to.
+- `Buffer: Toggle Pin` on the Welcome tab (or an image, PDF or hex tab) no longer fails with an internal
+  error after pinning the tab, which left a Welcome tab that Close All skipped. It now says there is no
+  file open.
+
 ## [0.20.0] - 2026-10-08
 
 ### Added

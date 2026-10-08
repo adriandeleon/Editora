@@ -51,7 +51,25 @@ public final class PluginRegistry {
         return t;
     });
     /** Built by the first fetch, not with the registry (constructed for every window at startup). */
-    private final com.editora.io.LazyHttpClient client = com.editora.io.LazyHttpClient.following(CONNECT_TIMEOUT);
+    private final com.editora.io.LazyHttpClient client;
+
+    /** The key an index signature must verify against: the bundled registry key in production. */
+    private final java.util.function.Supplier<java.security.PublicKey> registryKey;
+
+    public PluginRegistry() {
+        this(com.editora.io.LazyHttpClient.following(CONNECT_TIMEOUT), PluginSignature::bundledPublicKey);
+    }
+
+    /**
+     * Test seam: the client the index and its signature are fetched through, and the key the signature is
+     * checked against — so a test can serve a registry from a loopback server, signed with a key pair it
+     * generated. The HTTPS rule and the size caps are not part of the seam.
+     */
+    PluginRegistry(
+            com.editora.io.LazyHttpClient client, java.util.function.Supplier<java.security.PublicKey> registryKey) {
+        this.client = client;
+        this.registryKey = registryKey;
+    }
 
     private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
     private final ConcurrentHashMap<String, Result> cache = new ConcurrentHashMap<>();
@@ -114,7 +132,8 @@ public final class PluginRegistry {
         });
     }
 
-    private Result fetchSync(String url) {
+    /** {@link #fetch} without the worker and the FX hand-off. Never throws. */
+    Result fetchSync(String url) {
         if (!isHttps(url)) {
             return new Result(List.of(), "registry url must be https", false);
         }
@@ -150,7 +169,8 @@ public final class PluginRegistry {
      * with the bundled registry key. Returns false (unverified) on any miss/failure — never throws.
      */
     private boolean verifyIndexSignature(String indexUrl, byte[] indexBytes) {
-        if (!PluginSignature.hasBundledKey()) {
+        java.security.PublicKey key = registryKey.get();
+        if (key == null) {
             return false;
         }
         try {
@@ -167,7 +187,7 @@ public final class PluginRegistry {
             try (java.io.InputStream in = resp.body()) {
                 sig = new String(readCapped(in, MAX_SIG_BYTES), java.nio.charset.StandardCharsets.UTF_8).strip();
             }
-            return PluginSignature.verify(indexBytes, sig, PluginSignature.bundledPublicKey());
+            return PluginSignature.verify(indexBytes, sig, key);
         } catch (Exception e) {
             return false;
         }

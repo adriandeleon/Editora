@@ -53,15 +53,21 @@ final class InstallCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final InstallService service = new InstallService();
+    private final InstallService service;
     /** Languages with an install currently running (so a second trigger no-ops). */
     private final Set<Lang> installing = EnumSet.noneOf(Lang.class);
     /** LSP-only server ids (json/bash/go/…) with an install currently running. */
     private final Set<String> installingServers = new java.util.HashSet<>();
 
     InstallCoordinator(CoordinatorHost host, Ops ops) {
+        this(host, ops, new InstallService());
+    }
+
+    /** As above with the service supplied — the seam that lets a test answer the downloads itself. */
+    InstallCoordinator(CoordinatorHost host, Ops ops, InstallService service) {
         this.host = host;
         this.ops = ops;
+        this.service = service;
     }
 
     /** Whether every tool that makes up {@code lang}'s support is already installed/detected. */
@@ -296,6 +302,18 @@ final class InstallCoordinator {
     }
 
     private void alert(Alert.AlertType type, String message) {
+        alert.accept(type, message);
+    }
+
+    /** Shows a prerequisite warning or an install error. Replaceable so a test sees it without a modal dialog. */
+    private java.util.function.BiConsumer<Alert.AlertType, String> alert = this::alertDialog;
+
+    /** Test seam for {@link #alert}. */
+    void setAlertForTest(java.util.function.BiConsumer<Alert.AlertType, String> alert) {
+        this.alert = java.util.Objects.requireNonNull(alert, "alert");
+    }
+
+    private void alertDialog(Alert.AlertType type, String message) {
         Alert a = new Alert(type);
         a.initOwner(host.window());
         a.setTitle(tr("dialog.install.title"));

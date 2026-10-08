@@ -52,12 +52,26 @@ public final class PluginInstaller {
         return t;
     });
     /** Built by the first download, not with the installer (constructed for every window at startup). */
-    private final com.editora.io.LazyHttpClient client = com.editora.io.LazyHttpClient.following(CONNECT_TIMEOUT);
+    private final com.editora.io.LazyHttpClient client;
+
+    /** The cap a downloaded or picked archive is held to ({@link #MAX_DOWNLOAD_BYTES} in production). */
+    private final long maxArchiveBytes;
 
     private final ObjectMapper mapper = new ObjectMapper().disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES);
 
     public PluginInstaller(PluginManager manager) {
+        this(manager, com.editora.io.LazyHttpClient.following(CONNECT_TIMEOUT), MAX_DOWNLOAD_BYTES);
+    }
+
+    /**
+     * Test seam: the client a registry download goes through and the archive size cap, so a test can serve
+     * plugin archives from a loopback server and reach the cap with a small body. The HTTPS and checksum
+     * rules are not part of the seam.
+     */
+    PluginInstaller(PluginManager manager, com.editora.io.LazyHttpClient client, long maxArchiveBytes) {
         this.manager = manager;
+        this.client = client;
+        this.maxArchiveBytes = maxArchiveBytes;
     }
 
     /** Stops the worker and releases the HTTP client (window dispose). */
@@ -82,10 +96,11 @@ public final class PluginInstaller {
         });
     }
 
-    private Result installFromZipSync(Path zip) {
+    /** {@link #installFromZip} without the worker and the FX hand-off. Never throws. */
+    Result installFromZipSync(Path zip) {
         try {
             byte[] bytes = Files.readAllBytes(zip);
-            if (bytes.length > MAX_DOWNLOAD_BYTES) {
+            if (bytes.length > maxArchiveBytes) {
                 return new Result(false, "", "", "archive too large");
             }
             return installBytes(bytes);
@@ -94,7 +109,8 @@ public final class PluginInstaller {
         }
     }
 
-    private Result installFromUrlSync(RegistryEntry e) {
+    /** {@link #installFromUrl} without the worker and the FX hand-off. Never throws. */
+    Result installFromUrlSync(RegistryEntry e) {
         if (e == null || !PluginRegistry.isHttps(e.download)) {
             return new Result(false, "", "", "download url must be https");
         }
@@ -113,7 +129,7 @@ public final class PluginInstaller {
             }
             byte[] body;
             try (java.io.InputStream in = resp.body()) {
-                body = PluginRegistry.readCapped(in, MAX_DOWNLOAD_BYTES); // bounded; aborts an oversized stream
+                body = PluginRegistry.readCapped(in, maxArchiveBytes); // bounded; aborts an oversized stream
             }
             String actual = sha256(body);
             if (!actual.equalsIgnoreCase(e.sha256.strip())) {

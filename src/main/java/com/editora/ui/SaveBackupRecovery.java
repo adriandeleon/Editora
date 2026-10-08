@@ -60,6 +60,15 @@ public final class SaveBackupRecovery {
     }
 
     /**
+     * What the button that deletes the backup is called. Only a file that is still there can be "kept": for
+     * one that is gone the backup is the last copy of its contents, and the button has to say that pressing
+     * it deletes that copy.
+     */
+    static String discardLabelKey(SaveBackups.State state) {
+        return state == SaveBackups.State.DIFFERENT ? "dialog.saveBackup.keep" : "dialog.saveBackup.delete";
+    }
+
+    /**
      * Looks for leftover backups away from the FX thread and asks about each on it. Only the primary
      * instance on a config directory asks: a second process must not offer the backups of the first one's
      * running saves.
@@ -108,8 +117,7 @@ public final class SaveBackupRecovery {
         alert.setTitle(tr("dialog.saveBackup.title"));
         ButtonType later = new ButtonType(tr("dialog.saveBackup.later"), ButtonBar.ButtonData.CANCEL_CLOSE);
         ButtonType restore = new ButtonType(tr("dialog.saveBackup.restore"), ButtonBar.ButtonData.OK_DONE);
-        ButtonType delete = new ButtonType(
-                tr(restorable ? "dialog.saveBackup.keep" : "dialog.saveBackup.delete"), ButtonBar.ButtonData.OTHER);
+        ButtonType delete = new ButtonType(tr(discardLabelKey(offer.state())), ButtonBar.ButtonData.OTHER);
         if (restorable) {
             alert.setHeaderText(tr("dialog.saveBackup.header", leftover.target()));
             alert.setContentText(tr(

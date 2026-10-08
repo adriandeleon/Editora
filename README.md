@@ -820,7 +820,8 @@ Editora is built with the help of AI coding tools.
   tools — reads (`list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`,
   `document_symbols`, `git_status`, `todo_scan`, `find_in_files`, `list_commands`), writes (`edit_buffer` — undoable str-replace edits —
   `save_buffer`), and actions (`open_file`, `execute_command`) — and writes its endpoint to
-  `<configDir>/mcp-endpoint.json` for discovery. A status-bar
+  `<configDir>/mcp-endpoint.json` for discovery. `open_file` opens files of the window's project only, and
+  no tool writes the editor's configuration or a repository's `.git/`. A status-bar
   **MCP** indicator shows when it's running (click to copy the connection command). Off by default and
   guarded by a security-notice dialog — enable it under *Settings → MCP Server* (or the **Toggle MCP Server**
   command). No external tool or new dependency (the JDK's built-in `HttpServer`).

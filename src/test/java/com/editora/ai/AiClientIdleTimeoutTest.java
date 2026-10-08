@@ -176,13 +176,13 @@ class AiClientIdleTimeoutTest {
         };
     }
 
-    /** A loopback server that reads the request headers, writes a 200 SSE header, then runs {@code after}. */
+    /** A loopback server that reads the request, writes a 200 SSE header, then runs {@code after}. */
     private ServerSocket startServer(AfterHeaders after) throws IOException {
         ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
         AtomicInteger ignore = new AtomicInteger();
         Thread t = new Thread(() -> {
             try (Socket s = server.accept()) {
-                drainRequestHeaders(s.getInputStream());
+                drainRequest(s.getInputStream());
                 OutputStream out = s.getOutputStream();
                 out.write(("HTTP/1.1 200 OK\r\n" + "Content-Type: text/event-stream\r\n" + "Connection: close\r\n\r\n")
                         .getBytes(StandardCharsets.UTF_8));
@@ -202,7 +202,7 @@ class AiClientIdleTimeoutTest {
         ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
         Thread t = new Thread(() -> {
             try (Socket s = server.accept()) {
-                drainRequestHeaders(s.getInputStream());
+                drainRequest(s.getInputStream());
                 Thread.sleep(30_000);
             } catch (IOException | InterruptedException ignored) {
                 // The client cancels the exchange after the header deadline.
@@ -213,14 +213,24 @@ class AiClientIdleTimeoutTest {
         return server;
     }
 
-    private void drainRequestHeaders(InputStream in) throws IOException {
+    /**
+     * Reads the whole request — the headers and the {@code Content-Length} body after them. A socket closed
+     * with request bytes still unread is reset rather than finished (RFC 1122, 4.2.2.13), and the JDK's
+     * response stream reports a connection error as an {@code IOException} ("closed") even when the lines
+     * before it have arrived and not been read yet. On the macOS lane a slow-but-alive stream was reported
+     * as cut off that way, at the moment the server closed; this server stopped reading at the headers.
+     */
+    private void drainRequest(InputStream in) throws IOException {
+        StringBuilder headers = new StringBuilder();
         int state = 0; // counts the \r\n\r\n terminator
         int b;
         while ((b = in.read()) != -1) {
+            headers.append((char) b);
             if ((state == 0 || state == 2) && b == '\r') {
                 state++;
             } else if ((state == 1 || state == 3) && b == '\n') {
                 if (state == 3) {
+                    in.readNBytes(contentLength(headers.toString()));
                     return;
                 }
                 state++;
@@ -228,5 +238,15 @@ class AiClientIdleTimeoutTest {
                 state = 0;
             }
         }
+    }
+
+    private static int contentLength(String headers) {
+        for (String line : headers.split("\r\n")) {
+            int colon = line.indexOf(':');
+            if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("content-length")) {
+                return Integer.parseInt(line.substring(colon + 1).trim());
+            }
+        }
+        throw new AssertionError("the request names no Content-Length:\n" + headers);
     }
 }
