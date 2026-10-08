@@ -17,6 +17,16 @@ final class TabContextMenu {
     static void build(MainController c, Tab tab, EditorBuffer buffer, ContextMenu menu) {
         MenuItem save = LazyContextMenu.item(tr("menu.save"), Icons.save(), () -> c.fileWorkflows.save(buffer));
         MenuItem saveAs = LazyContextMenu.item(tr("menu.saveAs"), Icons.saveAs(), () -> c.fileWorkflows.saveAs(buffer));
+        // Print / Export to PDF act on the active buffer, so a right-clicked background tab comes forward first
+        // — which is also what the print preview and the Save dialog are then seen to be about.
+        MenuItem print = LazyContextMenu.item(tr("menu.print"), Icons.print(), () -> {
+            c.activateAndFocusTab(tab);
+            c.exports.printCode();
+        });
+        MenuItem exportPdf = LazyContextMenu.item(tr("menu.exportPdf"), Icons.saveAs(), () -> {
+            c.activateAndFocusTab(tab);
+            c.exports.exportCodePdf();
+        });
         MenuItem close = LazyContextMenu.item(tr("menu.close"), Icons.closeTab(), () -> c.closeTab(tab));
         MenuItem closeOthers =
                 LazyContextMenu.item(tr("menu.closeOthers"), Icons.closeOtherTabs(), () -> c.closeOtherTabs(tab));
@@ -111,6 +121,9 @@ final class TabContextMenu {
                 .setAll(
                         save,
                         saveAs,
+                        new SeparatorMenuItem(),
+                        print,
+                        exportPdf,
                         new SeparatorMenuItem(),
                         close,
                         closeOthers,

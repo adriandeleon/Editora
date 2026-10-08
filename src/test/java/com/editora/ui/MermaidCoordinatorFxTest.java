@@ -1,7 +1,11 @@
 package com.editora.ui;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import javafx.stage.Window;
@@ -12,6 +16,9 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.condition.DisabledOnOs;
+import org.junit.jupiter.api.condition.OS;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -38,6 +45,7 @@ class MermaidCoordinatorFxTest {
         final List<EditorBuffer> buffers = new ArrayList<>();
         EditorBuffer active;
         String lastStatus;
+        boolean dark;
         int ensurePreviewCount;
         int applyAutocompleteCount;
 
@@ -48,7 +56,7 @@ class MermaidCoordinatorFxTest {
 
         @Override
         public boolean appThemeDark() {
-            return false;
+            return dark;
         }
 
         @Override
@@ -155,6 +163,30 @@ class MermaidCoordinatorFxTest {
         host.active = FxTestSupport.callOnFx(() -> new EditorBuffer()); // a plain (non-diagram) buffer
         FxTestSupport.runOnFx(c::export);
         assertEquals(tr("status.mermaid.notDiagram"), host.lastStatus, "non-diagram → reports it, no file chooser");
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in mmdc is a shell script
+    void pdfExportIsLightEvenWhenTheAppThemeIsDark(@TempDir Path dir) throws Exception {
+        // A stand-in mmdc that records the arguments it was given.
+        Path args = dir.resolve("args.txt");
+        Path mmdc = dir.resolve("fake-mmdc");
+        Files.writeString(mmdc, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + args + "'\n");
+        assertTrue(mmdc.toFile().setExecutable(true));
+
+        FakeHost host = new FakeHost();
+        host.dark = true;
+        host.settings.setMermaidSupport(true);
+        MermaidCoordinator c = new MermaidCoordinator(host);
+        c.service().setPaths(mmdc.toString(), "");
+
+        CountDownLatch done = new CountDownLatch(1);
+        c.exportDiagram("graph TD; A-->B;", dir.resolve("out.pdf"), r -> done.countDown());
+        assertTrue(done.await(20, TimeUnit.SECONDS), "the export reported back");
+        List<String> given = Files.readAllLines(args);
+        int theme = given.indexOf("-t");
+        assertTrue(theme >= 0, given.toString());
+        assertEquals("default", given.get(theme + 1), "a PDF page is white: never the dark Mermaid theme");
     }
 
     private static String tr(String key) {

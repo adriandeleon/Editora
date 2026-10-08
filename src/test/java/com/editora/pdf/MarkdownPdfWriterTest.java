@@ -289,4 +289,250 @@ class MarkdownPdfWriterTest {
                 SystemFontFiles.roots("Linux", "/home/me", java.util.Map.of()).contains(Path.of("/usr/share/fonts")));
         SystemFontFiles.get(); // discovery on the real machine never throws
     }
+
+    // --- layout: tables, lists, spacing, pagination (the page geometry is Letter, 50 pt margins) ---------
+
+    private static final float PAGE_MARGIN = 50f;
+
+    private static Path layout(Path dir, String md) throws Exception {
+        Path out = dir.resolve("layout.pdf");
+        MarkdownPdfWriter.write(MarkdownRenderer.parseToDocument(md), dir, "letter", null, out, List.of());
+        return out;
+    }
+
+    @Test
+    void aTableRowTallerThanAPageSplitsAcrossPagesWithoutLosingText(@TempDir Path dir) throws Exception {
+        StringBuilder cell = new StringBuilder();
+        for (int i = 1; i <= 40; i++) {
+            cell.append("Sentence number ")
+                    .append(i)
+                    .append(" of forty has enough words to wrap in its column, ")
+                    .append("so that the whole cell is far taller than one page end")
+                    .append(i)
+                    .append(". ");
+        }
+        Path out = layout(
+                dir,
+                "Intro.\n\n| Key | Value |\n|---|---|\n| small | x |\n| big | " + cell
+                        + "|\n| after | y |\n\nTail paragraph.\n");
+
+        String text = PdfProbe.squeezed(out);
+        for (int i = 1; i <= 40; i++) {
+            assertTrue(text.contains("Sentencenumber" + i + "offorty"), "sentence " + i + " start is lost");
+            assertTrue(text.contains("pageend" + i + "."), "sentence " + i + " end is lost");
+        }
+        assertTrue(text.contains("aftery") && text.contains("Tailparagraph."), "what follows the row survives");
+        assertTrue(PdfProbe.pages(out) >= 3, "the row spans pages: " + PdfProbe.pages(out));
+        for (PdfProbe.Glyph g : PdfProbe.glyphs(out)) {
+            assertTrue(g.baseline() >= PAGE_MARGIN, "drawn below the bottom margin: " + g);
+        }
+        for (PdfProbe.Box b : PdfProbe.boxes(out)) {
+            assertTrue(b.y() >= PAGE_MARGIN - 0.01f, "a row border runs below the bottom margin: " + b);
+        }
+    }
+
+    @Test
+    void aTableRowThatFitsAPageIsNotSplit(@TempDir Path dir) throws Exception {
+        // Enough filler that the three-line row cannot finish on page 1: it moves to page 2 whole.
+        StringBuilder md = new StringBuilder();
+        for (int i = 0; i < 29; i++) {
+            md.append("filler ").append(i).append("\n\n");
+        }
+        md.append("| A |\n|---|\n| rowstart ").append("word ".repeat(40)).append("rowend |\n");
+        Path out = layout(dir, md.toString());
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        int startPage = PdfProbe.glyphsOf(glyphs, "rowstart").get(0).page();
+        assertEquals(startPage, PdfProbe.glyphsOf(glyphs, "rowend").get(0).page(), "the row stays on one page");
+    }
+
+    @Test
+    void taskListItemsKeepTheirCheckboxAndState(@TempDir Path dir) throws Exception {
+        Path out = layout(dir, "- [ ] task open\n- [x] task done\n- plain bullet\n");
+        String text = PdfProbe.text(out);
+        // The state is extractable in its Markdown form (drawn invisibly over the vector box) …
+        assertTrue(text.contains("[ ] task open"), text);
+        assertTrue(text.contains("[x] task done"), text);
+        assertTrue(text.contains("• plain bullet"), text);
+        assertFalse(text.contains("• task"), "a task item has a box, not a bullet: " + text);
+        // … and visible as a square per task item, with a tick (two strokes) in the done one only.
+        List<PdfProbe.Box> squares = PdfProbe.boxes(out).stream()
+                .filter(b -> Math.abs(b.width() - b.height()) < 0.01f && b.width() < 12f)
+                .toList();
+        assertEquals(2, squares.size(), "one checkbox per task item: " + squares);
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        float openLine = PdfProbe.glyphsOf(glyphs, "open").get(0).baseline();
+        float doneLine = PdfProbe.glyphsOf(glyphs, "done").get(0).baseline();
+        List<PdfProbe.Segment> strokes = PdfProbe.segments(out);
+        assertEquals(2, strokes.stream().filter(s -> onLine(s, doneLine)).count(), "the done box is ticked");
+        assertEquals(0, strokes.stream().filter(s -> onLine(s, openLine)).count(), "the open box is empty");
+    }
+
+    private static boolean onLine(PdfProbe.Segment s, float baseline) {
+        return s.y1() > baseline - 3f && s.y1() < baseline + 12f;
+    }
+
+    @Test
+    void orderedListMarkersAreRightAlignedAndClearOfTheText(@TempDir Path dir) throws Exception {
+        Path out = layout(dir, "98. ninetyeight\n99. ninetynine\n100. onehundred\n101. onehundredone\n");
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        float dotRight = -1f;
+        float textLeft = -1f;
+        for (String[] item : new String[][] {
+            {"98.", "ninetyeight"}, {"99.", "ninetynine"}, {"100.", "onehundred"}, {"101.", "onehundredone"}
+        }) {
+            List<PdfProbe.Glyph> marker = PdfProbe.glyphsOf(glyphs, item[0]);
+            PdfProbe.Glyph first = PdfProbe.glyphsOf(glyphs, item[1]).get(0);
+            float right = marker.get(marker.size() - 1).right();
+            assertTrue(first.x() >= right + 3f, item[0] + " overprints its text: " + right + " vs " + first.x());
+            if (dotRight < 0) {
+                dotRight = right;
+                textLeft = first.x();
+            }
+            assertEquals(dotRight, right, 0.05f, "markers are right-aligned (" + item[0] + ")");
+            assertEquals(textLeft, first.x(), 0.05f, "item text shares one indent (" + item[0] + ")");
+        }
+    }
+
+    @Test
+    void aShortOrderedListKeepsTheUsualIndent(@TempDir Path dir) throws Exception {
+        List<PdfProbe.Glyph> ordered = PdfProbe.glyphs(layout(dir, "1. first\n2. second\n"));
+        List<PdfProbe.Glyph> bullets = PdfProbe.glyphs(layout(dir, "- first\n- second\n"));
+        assertEquals(
+                PdfProbe.glyphsOf(bullets, "first").get(0).x(),
+                PdfProbe.glyphsOf(ordered, "first").get(0).x(),
+                0.05f,
+                "single-digit numbers do not widen the indent");
+    }
+
+    @Test
+    void blocksAfterATableKeepClearOfIt(@TempDir Path dir) throws Exception {
+        Path out = layout(dir, "| A |\n|---|\n| lastrow |\n\nfollowing paragraph\n");
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        float tableBottom = PdfProbe.boxes(out).stream()
+                .map(PdfProbe.Box::y)
+                .min(Float::compare)
+                .orElseThrow();
+        float next = PdfProbe.glyphsOf(glyphs, "following").get(0).baseline();
+        // An 11 pt line needs ~12 pt above its baseline; anything less and it touches the border.
+        assertTrue(tableBottom - next >= 18f, "paragraph touches the table: " + tableBottom + " vs " + next);
+
+        // A code block's grey strip starts under the table, not over its last row.
+        out = layout(dir, "| A |\n|---|\n| lastrow |\n\n```\ncode\n```\n");
+        List<PdfProbe.Box> boxes = PdfProbe.boxes(out);
+        PdfProbe.Box strip = boxes.get(boxes.size() - 1); // drawn last
+        float rowBottom = boxes.subList(0, boxes.size() - 1).stream()
+                .map(PdfProbe.Box::y)
+                .min(Float::compare)
+                .orElseThrow();
+        assertTrue(strip.y() + strip.height() <= rowBottom - 4f, "the code strip overlaps the table: " + strip);
+    }
+
+    @Test
+    void aRuleSitsBetweenItsNeighboursNotThroughTheNextLine(@TempDir Path dir) throws Exception {
+        Path out = layout(dir, "before\n\n---\n\n[^1]: footnote text\n\nSee[^1].\n");
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        List<PdfProbe.Segment> rules = PdfProbe.segments(out).stream()
+                .filter(PdfProbe.Segment::horizontal)
+                .toList();
+        assertEquals(1, rules.size(), rules.toString());
+        float ruleY = rules.get(0).y1();
+        float above = PdfProbe.glyphsOf(glyphs, "before").get(0).baseline();
+        float below = PdfProbe.glyphsOf(glyphs, "footnote").get(0).baseline();
+        assertTrue(ruleY - below >= 14f, "the rule strikes through the next line: " + ruleY + " vs " + below);
+        assertTrue(above - ruleY >= 8f, "the rule touches the line above: " + above + " vs " + ruleY);
+    }
+
+    @Test
+    void textAfterAnImageKeepsClearOfIt(@TempDir Path dir) throws Exception {
+        java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(40, 30, 1);
+        javax.imageio.ImageIO.write(img, "png", dir.resolve("pic.png").toFile());
+        Path out = layout(dir, "top line\n\n![pic](pic.png)\n\nafter image\n");
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        float top = PdfProbe.glyphsOf(glyphs, "top").get(0).baseline();
+        float after = PdfProbe.glyphsOf(glyphs, "after").get(0).baseline();
+        List<PdfProbe.Box> images = PdfProbe.images(out);
+        assertEquals(1, images.size(), images.toString());
+        PdfProbe.Box image = images.get(0);
+        assertEquals(30f, image.height(), 0.01f);
+        // The same 8 pt gap on both sides: under the line above (whose box ends 3 pt below its baseline)
+        // and over the line below (whose box starts 12 pt above its baseline).
+        assertEquals(3f + 8f, top - (image.y() + image.height()), 0.1f, "gap above the image");
+        assertEquals(8f + 12f, image.y() - after, 0.1f, "gap below the image");
+    }
+
+    @Test
+    void aHeadingIsNeverLeftAloneAtTheFootOfAPage(@TempDir Path dir) throws Exception {
+        // Slide the heading down the page one line at a time: wherever it lands, its section's first two
+        // lines are on the same page.
+        boolean brokeBefore = false;
+        for (int filler = 36; filler <= 50; filler++) {
+            String md = "x  \n".repeat(filler) + "\n## Zzheading\n\n" + "Zzbody " + "word ".repeat(40) + "\n";
+            List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(layout(dir, md));
+            PdfProbe.Glyph heading = PdfProbe.glyphsOf(glyphs, "Zzheading").get(0);
+            PdfProbe.Glyph body = PdfProbe.glyphsOf(glyphs, "Zzbody").get(0);
+            assertEquals(heading.page(), body.page(), "orphaned heading with " + filler + " filler lines");
+            long bodyLinesWithHeading = glyphs.stream()
+                    .filter(g -> g.page() == heading.page() && g.baseline() < heading.baseline())
+                    .map(PdfProbe.Glyph::baseline)
+                    .distinct()
+                    .count();
+            assertTrue(bodyLinesWithHeading >= 2, "one body line under the heading with " + filler + " lines");
+            brokeBefore |= heading.page() == 2 && heading.baseline() > 700f;
+        }
+        assertTrue(brokeBefore, "the probe must cover a heading pushed to the top of page 2");
+    }
+
+    @Test
+    void aBlockQuoteHasItsBarOnEveryPageItSpans(@TempDir Path dir) throws Exception {
+        StringBuilder md = new StringBuilder("intro\n\n");
+        for (int i = 0; i < 60; i++) {
+            md.append("> quoted paragraph ").append(i).append("\n>\n");
+        }
+        Path out = layout(dir, md.toString());
+        int pages = PdfProbe.pages(out);
+        assertTrue(pages >= 2, "the quote spans pages: " + pages);
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        for (int page = 1; page <= pages; page++) {
+            int p = page;
+            List<PdfProbe.Segment> bars = PdfProbe.segments(out).stream()
+                    .filter(s -> s.page() == p && s.vertical())
+                    .toList();
+            assertEquals(1, bars.size(), "one bar segment on page " + page + ": " + bars);
+            List<Float> lines = glyphs.stream()
+                    .filter(g -> g.page() == p && g.text().equals("q"))
+                    .map(PdfProbe.Glyph::baseline)
+                    .toList();
+            float firstLine = lines.stream().max(Float::compare).orElseThrow();
+            float lastLine = lines.stream().min(Float::compare).orElseThrow();
+            PdfProbe.Segment bar = bars.get(0);
+            assertTrue(Math.max(bar.y1(), bar.y2()) >= firstLine + 8f, "bar starts at the first line's top");
+            assertTrue(Math.min(bar.y1(), bar.y2()) <= lastLine, "bar reaches the last line on page " + page);
+            assertTrue(Math.min(bar.y1(), bar.y2()) >= PAGE_MARGIN - 12f, "bar stays on the page: " + bar);
+        }
+    }
+
+    @Test
+    void strikethroughIsDrawnStruck(@TempDir Path dir) throws Exception {
+        Path out = layout(dir, "keep ~~gone away~~ stay\n");
+        assertTrue(PdfProbe.text(out).contains("keep gone away stay"), PdfProbe.text(out));
+        List<PdfProbe.Glyph> glyphs = PdfProbe.glyphs(out);
+        List<PdfProbe.Glyph> gone = PdfProbe.glyphsOf(glyphs, "gone");
+        List<PdfProbe.Glyph> away = PdfProbe.glyphsOf(glyphs, "away");
+        float from = gone.get(0).x();
+        float to = away.get(away.size() - 1).right();
+        float baseline = gone.get(0).baseline();
+        List<PdfProbe.Segment> lines = PdfProbe.segments(out).stream()
+                .filter(PdfProbe.Segment::horizontal)
+                .toList();
+        assertFalse(lines.isEmpty(), "no strike line drawn");
+        float min = Float.MAX_VALUE;
+        float max = 0f;
+        for (PdfProbe.Segment s : lines) {
+            assertTrue(s.y1() > baseline + 1.5f && s.y1() < baseline + 6f, "through the x-height, not under: " + s);
+            min = Math.min(min, Math.min(s.x1(), s.x2()));
+            max = Math.max(max, Math.max(s.x1(), s.x2()));
+        }
+        assertEquals(from, min, 0.1f, "the line starts at the struck text");
+        assertEquals(to, max, 0.1f, "and ends with it — neighbours are not struck");
+    }
 }

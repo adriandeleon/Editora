@@ -93,10 +93,14 @@ final class MenuBarModel {
                                 "buffer.closeOthers",
                                 "buffer.closeAll",
                                 SEPARATOR,
+                                // The file as text first — these work for every file — then its rendered
+                                // preview, which only some files have.
+                                "editor.print",
+                                "editor.exportPdf",
+                                "preview.print",
                                 "preview.exportPdf",
                                 "preview.exportDocx",
                                 "preview.exportHtml",
-                                "preview.print",
                                 SEPARATOR,
                                 "file.clearRecent",
                                 "config.export",
@@ -421,6 +425,9 @@ final class MenuBarModel {
                                 "file.saveAs",
                                 SEPARATOR,
                                 "buffer.close",
+                                SEPARATOR,
+                                "editor.print",
+                                "editor.exportPdf",
                                 SEPARATOR,
                                 "app.quit")),
                 new MenuSpec(

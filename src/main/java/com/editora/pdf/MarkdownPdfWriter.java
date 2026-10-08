@@ -18,11 +18,14 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.pdmodel.graphics.state.RenderingMode;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.footnotes.FootnoteReference;
+import org.commonmark.ext.gfm.strikethrough.Strikethrough;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
 import org.commonmark.ext.gfm.tables.TableRow;
+import org.commonmark.ext.task.list.items.TaskListItemMarker;
 import org.commonmark.node.BlockQuote;
 import org.commonmark.node.BulletList;
 import org.commonmark.node.Code;
@@ -44,7 +47,7 @@ import org.commonmark.node.ThematicBreak;
 
 /**
  * Renders Markdown to a <b>native vector</b> (searchable) PDF, mirroring the editor's preview coverage:
- * headings, inline bold/italic/code/links, lists (incl. task items), block quotes, code blocks, rules,
+ * headings, inline bold/italic/code/links/strikethrough, lists (incl. task items), block quotes, code blocks, rules,
  * tables, images, and embedded Mermaid diagrams. Reuses {@link MarkdownRenderer#parseToDocument} for the
  * CommonMark AST. Body text uses the bundled Inter family (embedded + subset, matching the on-screen
  * preview on every platform); code uses the bundled JetBrains Mono; Mermaid blocks and images embed as
@@ -58,6 +61,19 @@ public final class MarkdownPdfWriter {
     private static final float BODY = 11f;
     private static final float LEADING = 15f;
     private static final float PARA_GAP = 8f;
+    /**
+     * How far a text line's box rises above its baseline (it reaches {@code LEADING - ASCENT} below). The
+     * cursor {@code y} is always the <em>baseline</em> of the next text line, so the next block's top edge is
+     * {@code y + ASCENT}: a boxed block (table, image, rule) starts there, and leaves {@code y} one
+     * {@link #PARA_GAP} plus this ascent under its bottom edge — the same gap two paragraphs get.
+     */
+    private static final float ASCENT = LEADING - 3f;
+    /** Space between a list marker (number, bullet, checkbox) and the item text. */
+    private static final float MARKER_GAP = 4f;
+    /** Side of a task-list checkbox. */
+    private static final float CHECKBOX = 8f;
+    /** A table row taller than a page starts on the current page only if this many of its lines fit there. */
+    private static final int MIN_SPLIT_LINES = 3;
     /** Tab stops inside a code block (CommonMark's own tab width). */
     private static final int CODE_TAB = 4;
 
@@ -131,6 +147,7 @@ public final class MarkdownPdfWriter {
             float size,
             Color color,
             boolean underline,
+            boolean strike,
             boolean brk,
             boolean space,
             PDImageXObject img,
@@ -138,11 +155,27 @@ public final class MarkdownPdfWriter {
             float imgH) {
         static Word of(
                 String text, PDFont font, float size, Color color, boolean underline, boolean brk, boolean space) {
-            return new Word(text, font, size, color, underline, brk, space, null, 0, 0);
+            return new Word(text, font, size, color, underline, false, brk, space, null, 0, 0);
         }
 
         static Word math(PDImageXObject img, float w, float h, PDFont font, float size, boolean space) {
-            return new Word("", font, size, null, false, false, space, img, w, h);
+            return new Word("", font, size, null, false, false, false, space, img, w, h);
+        }
+
+        /** This word struck through ({@code ~~text~~}). */
+        Word struck() {
+            return new Word(text, font, size, color, underline, true, brk, space, img, imgW, imgH);
+        }
+    }
+
+    /** A block quote's left bar: its x, and where it starts on the current page (it restarts on every page). */
+    private static final class Bar {
+        final float x;
+        float top;
+
+        Bar(float x, float top) {
+            this.x = x;
+            this.top = top;
         }
     }
 
@@ -163,6 +196,8 @@ public final class MarkdownPdfWriter {
         float y;
         /** Inline-collection state: whitespace was seen since the last word (see {@link Word#space()}). */
         boolean pendingSpace;
+        /** The block quotes being laid out, outermost first — each owes a bar segment to every page it touches. */
+        final List<Bar> bars = new ArrayList<>();
 
         Cur(PDDocument doc, PDRectangle size, Path baseDir, List<String> mmdc, PdfGlyphs glyphs) throws IOException {
             this.doc = doc;
@@ -184,12 +219,24 @@ public final class MarkdownPdfWriter {
 
         void newPage() throws IOException {
             if (cs != null) {
+                // y is the baseline the next line would have had: the last line drawn ends at y + ASCENT.
+                for (Bar bar : bars) {
+                    strokeBar(bar, y + ASCENT);
+                }
                 cs.close();
             }
             page = new PDPage(size);
             doc.addPage(page);
             cs = new PDPageContentStream(doc, page);
             y = size.getHeight() - MARGIN;
+            for (Bar bar : bars) {
+                bar.top = boxTop();
+            }
+        }
+
+        /** Whether nothing has been laid out on the current page yet. */
+        boolean atPageTop() {
+            return y >= size.getHeight() - MARGIN;
         }
 
         void close() throws IOException {
@@ -217,6 +264,23 @@ public final class MarkdownPdfWriter {
             if (y - h < MARGIN) {
                 newPage();
             }
+        }
+
+        /** The top edge of the next block (see {@link #ASCENT}). */
+        float boxTop() {
+            return y + ASCENT;
+        }
+
+        /** Starts a new page unless a box {@code h} tall fits between {@link #boxTop} and the bottom margin. */
+        void needBox(float h) throws IOException {
+            if (boxTop() - h < MARGIN) {
+                newPage();
+            }
+        }
+
+        /** Leaves the cursor for the block that follows a box whose bottom edge is at {@code bottom}. */
+        void afterBox(float bottom) {
+            y = bottom - PARA_GAP - ASCENT;
         }
 
         // --- blocks -------------------------------------------------------------------------------
@@ -278,8 +342,13 @@ public final class MarkdownPdfWriter {
                         case 3 -> 14f;
                         default -> 12f;
                     };
-            y -= 6f;
             float leading = size * 1.3f;
+            if (h.getNext() != null) {
+                // Keep with next: a heading goes to the next page unless it and two body lines still fit,
+                // so it is never the last thing on a page with its section starting overleaf.
+                need(6f + leading + PARA_GAP + 2 * LEADING);
+            }
+            y -= 6f;
             List<Word> words = new ArrayList<>();
             pendingSpace = false;
             inline(h, words, bodyBold, bodyBold, bodyBold, size, PdfTheme.DEFAULT_FG, false);
@@ -315,20 +384,47 @@ public final class MarkdownPdfWriter {
 
         void list(Node listNode, float left, boolean ordered, int start) throws IOException {
             float indent = left + 18f;
+            if (ordered) {
+                // The indent fits the widest number in this list ("100." is far wider than "1."); the
+                // numbers are right-aligned against it so their dots line up.
+                int n = start;
+                for (Node item = listNode.getFirstChild(); item != null; item = item.getNext()) {
+                    if (item instanceof ListItem) {
+                        indent = Math.max(indent, left + 4f + glyphs.width(body, n++ + ".", BODY) + MARKER_GAP);
+                    }
+                }
+            }
             int idx = start;
             for (Node item = listNode.getFirstChild(); item != null; item = item.getNext()) {
                 if (!(item instanceof ListItem)) {
                     continue;
                 }
-                String marker = ordered ? (idx++ + ".") : "•";
+                // commonmark-java inserts a task item's marker as the item's first child.
+                TaskListItemMarker task = item.getFirstChild() instanceof TaskListItemMarker m ? m : null;
                 need(LEADING);
-                drawText(marker, body, BODY, PdfTheme.DEFAULT_FG, left + 4f, y);
+                float textLeft = indent;
+                if (ordered) {
+                    String marker = idx++ + ".";
+                    float markerX = indent - MARKER_GAP - glyphs.width(body, marker, BODY);
+                    drawText(marker, body, BODY, PdfTheme.DEFAULT_FG, markerX, y);
+                    if (task != null) { // a numbered task keeps its number; the box leads the first line
+                        checkbox(task.isChecked(), indent);
+                        textLeft = indent + CHECKBOX + MARKER_GAP;
+                    }
+                } else if (task != null) {
+                    checkbox(task.isChecked(), left + 4f); // the box stands in for the bullet
+                } else {
+                    drawText("•", body, BODY, PdfTheme.DEFAULT_FG, left + 4f, y);
+                }
                 // Item content: render child blocks at the indented margin; first paragraph shares the row.
                 float savedY = y;
                 boolean firstChild = true;
                 for (Node child = item.getFirstChild(); child != null; child = child.getNext()) {
+                    if (child == task) {
+                        continue;
+                    }
                     if (firstChild && child instanceof Paragraph p) {
-                        paragraph(p, indent, BODY);
+                        paragraph(p, textLeft, BODY);
                     } else {
                         block(child, indent);
                     }
@@ -340,6 +436,34 @@ public final class MarkdownPdfWriter {
                 y -= 2f;
             }
             y -= PARA_GAP - 2f;
+        }
+
+        /**
+         * A task-list checkbox on the current line with its left edge at {@code x}: a stroked square, plus a
+         * tick when {@code checked}. Drawn as vector paths, so it never depends on a font having ☐/☑. The
+         * state is also written as invisible text ({@code [x]} / {@code [ ]}, the Markdown source form) over
+         * the box, so text extraction, search and copy/paste keep it.
+         */
+        void checkbox(boolean checked, float x) throws IOException {
+            float bottom = y - 0.5f;
+            cs.setStrokingColor(PdfTheme.DEFAULT_FG);
+            cs.setLineWidth(0.8f);
+            cs.addRect(x, bottom, CHECKBOX, CHECKBOX);
+            cs.stroke();
+            if (checked) {
+                cs.setLineWidth(1.2f);
+                cs.moveTo(x + 1.8f, bottom + 4.2f);
+                cs.lineTo(x + 3.4f, bottom + 2.2f);
+                cs.lineTo(x + 6.3f, bottom + 6.2f);
+                cs.stroke();
+            }
+            cs.saveGraphicsState();
+            cs.setRenderingMode(RenderingMode.NEITHER);
+            // Body size, so extractors read it as part of the item's line; condensed to the box's width.
+            String state = checked ? "[x]" : "[ ]";
+            cs.setHorizontalScaling(100f * CHECKBOX / glyphs.width(body, state, BODY));
+            glyphs.show(cs, body, BODY, state, x, y);
+            cs.restoreGraphicsState();
         }
 
         /** A footnote definition: its {@code [label]} marker, then the definition's blocks beside it. */
@@ -365,20 +489,28 @@ public final class MarkdownPdfWriter {
         }
 
         void quote(BlockQuote bq, float left) throws IOException {
-            float top = y;
+            // The left bar runs from the top of the quote's first line to the bottom of its last, one
+            // segment per page: newPage() strokes the segment for the page being left and restarts the bar.
+            Bar bar = new Bar(left + 2f, boxTop());
+            bars.add(bar);
             float inset = left + 12f;
             for (Node child = bq.getFirstChild(); child != null; child = child.getNext()) {
                 block(child, inset);
             }
-            // Left bar spanning the quote (single-page approximation).
-            float barTop = Math.min(top, size.getHeight() - MARGIN);
-            if (y < barTop) {
-                cs.setStrokingColor(PdfTheme.RULE);
-                cs.setLineWidth(2.5f);
-                cs.moveTo(left + 2f, barTop);
-                cs.lineTo(left + 2f, y + LEADING - 3f);
-                cs.stroke();
+            bars.remove(bar);
+            strokeBar(bar, boxTop() + PARA_GAP); // the last child left its paragraph gap below it
+        }
+
+        /** Strokes {@code bar} on the current page down to {@code bottom}, if the quote has content there. */
+        void strokeBar(Bar bar, float bottom) throws IOException {
+            if (bar.top - bottom < LEADING / 2f) {
+                return; // nothing of the quote on this page (it starts on the next one)
             }
+            cs.setStrokingColor(PdfTheme.RULE);
+            cs.setLineWidth(2.5f);
+            cs.moveTo(bar.x, bar.top);
+            cs.lineTo(bar.x, bottom);
+            cs.stroke();
         }
 
         /**
@@ -480,21 +612,23 @@ public final class MarkdownPdfWriter {
                 h = maxH;
                 w = h / img.getHeight() * img.getWidth();
             }
-            need(h);
-            y -= h;
-            cs.drawImage(img, left, y, w, h);
-            y -= PARA_GAP;
+            needBox(h);
+            float bottom = boxTop() - h;
+            cs.drawImage(img, left, bottom, w, h);
+            afterBox(bottom);
         }
 
         void rule(float left) throws IOException {
-            y -= PARA_GAP;
-            need(2f);
+            // A rule is a box PARA_GAP tall with the line through its middle, so it sits evenly between the
+            // blocks around it instead of on the next block's baseline.
+            needBox(PARA_GAP);
+            float ruleY = boxTop() - PARA_GAP / 2f;
             cs.setStrokingColor(PdfTheme.RULE);
             cs.setLineWidth(0.8f);
-            cs.moveTo(left, y);
-            cs.lineTo(contentRight(), y);
+            cs.moveTo(left, ruleY);
+            cs.lineTo(contentRight(), ruleY);
             cs.stroke();
-            y -= PARA_GAP;
+            afterBox(boxTop() - PARA_GAP);
         }
 
         void table(TableBlock t, float left) throws IOException {
@@ -523,6 +657,8 @@ public final class MarkdownPdfWriter {
             float tableW = contentRight() - left;
             float colW = tableW / cols;
             float pad = 4f;
+            // The tallest box a fresh page holds: a row that fits in it is kept whole, a taller one is split.
+            float pageBox = size.getHeight() - 2 * MARGIN + ASCENT;
             for (int ri = 0; ri < rows.size(); ri++) {
                 List<String> cells = rows.get(ri);
                 boolean head = header.get(ri);
@@ -535,35 +671,71 @@ public final class MarkdownPdfWriter {
                     wrapped.add(wl);
                     maxLines = Math.max(maxLines, wl.size());
                 }
-                float rowH = maxLines * LEADING + 4f;
-                need(rowH);
-                float rowTop = y;
-                if (head) {
-                    cs.setNonStrokingColor(PdfTheme.CODE_BG);
-                    cs.addRect(left, rowTop - rowH, tableW, rowH);
-                    cs.fill();
-                }
-                for (int ci = 0; ci < cols; ci++) {
-                    float cx = left + ci * colW;
-                    float ty = rowTop - LEADING;
-                    for (String wl : wrapped.get(ci)) {
-                        drawText(wl, head ? bodyBold : body, BODY, PdfTheme.DEFAULT_FG, cx + pad, ty);
-                        ty -= LEADING;
+                // Rows stack edge to edge: throughout this loop boxTop() is the top edge of the next band.
+                int from = 0;
+                while (from < maxLines) {
+                    int remaining = maxLines - from;
+                    int fit = (int) Math.floor((boxTop() - MARGIN - 4f) / LEADING);
+                    if (fit < remaining && !atPageTop()) {
+                        // Not all of it fits here. A row a page can hold moves there whole; a taller one
+                        // starts here only if a few lines fit, then continues in page-sized bands.
+                        if (remaining * LEADING + 4f <= pageBox || fit < MIN_SPLIT_LINES) {
+                            newPage();
+                            continue;
+                        }
+                    }
+                    int n = Math.max(1, Math.min(remaining, fit));
+                    y -= rowBand(wrapped, from, n, head, left, colW, pad);
+                    from += n;
+                    if (from < maxLines) {
+                        newPage();
                     }
                 }
-                // borders
-                cs.setStrokingColor(PdfTheme.RULE);
-                cs.setLineWidth(0.5f);
-                cs.addRect(left, rowTop - rowH, tableW, rowH);
-                cs.stroke();
-                for (int ci = 1; ci < cols; ci++) {
-                    cs.moveTo(left + ci * colW, rowTop);
-                    cs.lineTo(left + ci * colW, rowTop - rowH);
-                    cs.stroke();
-                }
-                y = rowTop - rowH;
             }
             y -= PARA_GAP;
+        }
+
+        /**
+         * Draws lines {@code [from, from + n)} of a table row's wrapped cells as one bordered band whose top
+         * edge is {@link #boxTop}, and returns the band's height. A row is normally a single band; one taller
+         * than a page is drawn as several, each closed by its own border.
+         */
+        float rowBand(List<List<String>> wrapped, int from, int n, boolean head, float left, float colW, float pad)
+                throws IOException {
+            int cols = wrapped.size();
+            float tableW = colW * cols;
+            float rowTop = boxTop();
+            float rowH = n * LEADING + 4f;
+            if (head) {
+                cs.setNonStrokingColor(PdfTheme.CODE_BG);
+                cs.addRect(left, rowTop - rowH, tableW, rowH);
+                cs.fill();
+            }
+            for (int ci = 0; ci < cols; ci++) {
+                List<String> lines = wrapped.get(ci);
+                float ty = rowTop - LEADING;
+                for (int li = from; li < Math.min(from + n, lines.size()); li++) {
+                    drawText(
+                            lines.get(li),
+                            head ? bodyBold : body,
+                            BODY,
+                            PdfTheme.DEFAULT_FG,
+                            left + ci * colW + pad,
+                            ty);
+                    ty -= LEADING;
+                }
+            }
+            // borders
+            cs.setStrokingColor(PdfTheme.RULE);
+            cs.setLineWidth(0.5f);
+            cs.addRect(left, rowTop - rowH, tableW, rowH);
+            cs.stroke();
+            for (int ci = 1; ci < cols; ci++) {
+                cs.moveTo(left + ci * colW, rowTop);
+                cs.lineTo(left + ci * colW, rowTop - rowH);
+                cs.stroke();
+            }
+            return rowH;
         }
 
         // --- inline flow --------------------------------------------------------------------------
@@ -603,8 +775,14 @@ public final class MarkdownPdfWriter {
                     if (!MarkdownRenderer.isHtmlComment(html.getLiteral())) { // shown as source, like the preview
                         addWords(html.getLiteral(), out, mono, size - 0.5f, PdfTheme.hex("#0a3069"), underline);
                     }
+                } else if (n instanceof Strikethrough) {
+                    int first = out.size();
+                    inline(n, out, reg, bold, italic, size, color, underline);
+                    for (int k = first; k < out.size(); k++) {
+                        out.set(k, out.get(k).struck());
+                    }
                 } else {
-                    // Strikethrough, html inline, etc.: render their text plainly.
+                    // Inserted text (++ins++) and anything unknown: render the text plainly.
                     inline(n, out, reg, bold, italic, size, color, underline);
                 }
             }
@@ -683,6 +861,7 @@ public final class MarkdownPdfWriter {
             float x = left;
             boolean started = false;
             boolean prevUnderline = false;
+            boolean prevStrike = false;
             int i = 0;
             while (i < words.size()) {
                 Word w = words.get(i);
@@ -692,6 +871,7 @@ public final class MarkdownPdfWriter {
                     x = left;
                     started = false;
                     prevUnderline = false;
+                    prevStrike = false;
                     i++;
                     continue;
                 }
@@ -712,6 +892,7 @@ public final class MarkdownPdfWriter {
                     x = left;
                     sp = 0f;
                     prevUnderline = false;
+                    prevStrike = false;
                 }
                 if (sp > 0f) {
                     // A real space glyph, not just a gap: text extraction, search and copy/paste then see the
@@ -720,12 +901,16 @@ public final class MarkdownPdfWriter {
                     if (prevUnderline && w.underline()) {
                         underline(w.color(), x, x + sp); // keep a multi-word link's underline continuous
                     }
+                    if (prevStrike && w.strike()) {
+                        strike(w, x, x + sp); // and a struck phrase's line
+                    }
                 }
                 x += sp;
                 for (int k = i; k < end; k++) {
                     Word part = words.get(k);
                     x = part.img() != null ? drawMath(part, x) : drawWord(part, x, left, right, leading);
                     prevUnderline = part.underline();
+                    prevStrike = part.strike();
                 }
                 started = true;
                 i = end;
@@ -788,7 +973,20 @@ public final class MarkdownPdfWriter {
             if (w.underline()) {
                 underline(w.color(), x, end);
             }
+            if (w.strike()) {
+                strike(w, x, end);
+            }
             return end;
+        }
+
+        /** The strikethrough line for {@code w}'s text between {@code from} and {@code to}, at mid x-height. */
+        void strike(Word w, float from, float to) throws IOException {
+            float sy = y + w.size() * 0.28f;
+            cs.setStrokingColor(w.color() == null ? PdfTheme.DEFAULT_FG : w.color()); // a math word has no color
+            cs.setLineWidth(Math.max(0.6f, w.size() * 0.06f));
+            cs.moveTo(from, sy);
+            cs.lineTo(to, sy);
+            cs.stroke();
         }
 
         void underline(Color color, float from, float to) throws IOException {

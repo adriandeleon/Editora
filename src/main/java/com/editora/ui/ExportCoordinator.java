@@ -24,10 +24,28 @@ final class ExportCoordinator {
     private final DiagramCoordinator diagram;
     private final TypstCoordinator typst;
     private final Consumer<Path> openPath;
-    private final java.util.function.Function<javafx.stage.FileChooser, java.io.File> chooseDestination;
+    /** Shows a Save dialog and returns its answer; a test of a whole window puts its own in place. */
+    java.util.function.Function<javafx.stage.FileChooser, java.io.File> chooseDestination;
+
     private final com.editora.pdf.PdfExportService pdfService = new com.editora.pdf.PdfExportService();
     private final com.editora.office.OfficeExportService officeService = new com.editora.office.OfficeExportService();
     private final com.editora.print.PrintService printService = new com.editora.print.PrintService();
+    /** Where this window last exported to: the Save dialog starts there for a document that has no folder. */
+    private java.io.File lastExportDirectory;
+    /** Asks before an export replaces {@code file}, when the Save dialog did not ask (tests replace it). */
+    java.util.function.Predicate<java.io.File> confirmReplace = this::confirmReplace;
+
+    /** A print preparation started by this window has not reached {@link #openPrintPreview} yet. */
+    private boolean printPreparing;
+    /** The Print Preview open for this window, or {@code null}. */
+    private PrintPreview openPreview;
+    /** Creates the printer job behind a preview ({@code null}: no printer). Tests supply a fake — never a real job. */
+    java.util.function.Supplier<PrintPreview.Job> printJobs = () -> {
+        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        return job == null ? null : PrintPreview.Job.of(job);
+    };
+    /** Where a print result goes; tests replace it so a failure does not open a modal alert. */
+    Consumer<com.editora.print.PrintService.Result> printReporter = r -> reportPrint(r);
 
     ExportCoordinator(
             CoordinatorHost host,
@@ -84,7 +102,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
-        java.io.File f = choosePdfDestination(baseName);
+        java.io.File f = choosePdfDestination(baseName, host.activeBuffer());
         if (f == null) {
             return;
         }
@@ -168,18 +186,20 @@ final class ExportCoordinator {
 
     /** Opens the print preview for a CSV through the same directly-built table (see {@link #csvExportPdf}). */
     void csvPrint(String csvText) {
+        if (printBusy()) {
+            return;
+        }
         org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
         if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
-        host.setStatus(tr("status.print.preparing"));
-        printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared));
+        preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
     }
 
     /**
@@ -187,7 +207,7 @@ final class ExportCoordinator {
      * only after a destination was chosen, on a landscape page when it is wider than tall.
      */
     void exportProjectMapPdf(ProjectMapOutput output, String baseName) {
-        java.io.File file = choosePdfDestination(baseName);
+        java.io.File file = choosePdfDestination(baseName, null);
         if (file == null) {
             return;
         }
@@ -220,28 +240,21 @@ final class ExportCoordinator {
      * page layout in use, and again if the print dialog changes it.
      */
     void printProjectMap(ProjectMapOutput output) {
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        if (printBusy()) {
+            return;
+        }
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
         if (output.landscape()) {
-            try {
-                javafx.print.PageLayout current = job.getJobSettings().getPageLayout();
-                job.getJobSettings()
-                        .setPageLayout(job.getPrinter()
-                                .createPageLayout(
-                                        current.getPaper(),
-                                        javafx.print.PageOrientation.LANDSCAPE,
-                                        javafx.print.Printer.MarginType.DEFAULT));
-            } catch (RuntimeException unsupported) {
-                // The printer offers no landscape layout for this paper: keep its default.
-            }
+            job.useLandscape();
         }
-        javafx.print.PageLayout first = job.getJobSettings().getPageLayout();
+        javafx.print.PageLayout first = job.layout();
         ProjectMapOutput.Rendered preview = output.render(first.getPrintableWidth(), first.getPrintableHeight());
         if (preview == null) {
-            job.cancelJob();
+            job.cancel();
             host.setStatus(tr("status.projectMap.outputEmpty"));
             return;
         }
@@ -289,7 +302,7 @@ final class ExportCoordinator {
         }
         String ext = xlsx ? "xlsx" : "ods";
         String filter = xlsx ? "Excel" : "OpenDocument Spreadsheet";
-        java.io.File f = chooseOfficeDestination(baseName, ext, filter);
+        java.io.File f = chooseOfficeDestination(baseName, ext, filter, host.activeBuffer());
         if (f == null) {
             return;
         }
@@ -313,8 +326,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.noFileOpen"));
             return;
         }
-        String base = bufferBaseName(b);
-        java.io.File f = choosePdfDestination(base);
+        java.io.File f = choosePdfDestination(bufferBaseName(b), b);
         if (f == null) {
             return;
         }
@@ -337,15 +349,25 @@ final class ExportCoordinator {
 
     /**
      * Exports the active buffer's rendered preview to PDF: a Mermaid {@code .mmd} diagram via mmdc's
-     * native vector PDF, or a Markdown document via the native PDF writer. No-op for non-previewable buffers.
+     * native vector PDF, or a Markdown document via the native PDF writer; a CSV grid goes out as the table
+     * {@code csv.exportPdf} writes. A buffer whose preview cannot be put on a page is told so here, before
+     * the Save dialog — not by an error dialog after a destination was chosen.
      */
     void exportPreviewPdf() {
         EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.hasPreview()) {
+        if (b != null && b.hasCsvPreview()) {
+            csvExportPdf(b.getContent(), bufferBaseName(b));
+            return;
+        }
+        if (b == null || !b.hasExportablePreview()) {
             host.setStatus(tr("status.pdf.noPreview"));
             return;
         }
-        java.io.File f = choosePdfDestination(bufferBaseName(b));
+        if (previewUnparsable(b)) {
+            host.setStatus(tr("status.pdf.cannotExportUnparsed"));
+            return;
+        }
+        java.io.File f = choosePdfDestination(bufferBaseName(b), b);
         if (f == null) {
             return;
         }
@@ -360,6 +382,29 @@ final class ExportCoordinator {
             return;
         }
         stagedPdf(f, (out, report) -> exportPreviewPdfTo(b, pageSize, out, report));
+    }
+
+    /**
+     * Whether {@code b}'s preview is a JSON/YAML/TOML or XML tree whose source does not parse, so that
+     * {@link EditorBuffer#snapshotPreviewChunks} would have nothing to draw. Follows the order of the export
+     * branches and of that method: only the snapshot previews are asked, and a workflow or a pom summary is
+     * drawn whatever the parse says. Parses the text, so it is asked when a command runs — never to gate a menu.
+     */
+    static boolean previewUnparsable(EditorBuffer b) {
+        if (b.isTypst() || b.isMarkdown() || b.isDiagram() || b.isRenderedDiagram() || b.isSvg()) {
+            return false; // rendered from the source by their own pipeline, not from a snapshot
+        }
+        if (b.hasGithubActionsPreview()) {
+            return false;
+        }
+        String text = b.getArea().getText();
+        if (b.isStructured()) {
+            return !com.editora.structured.StructuredParser.parse(text, b.structuredFormat())
+                    .ok();
+        }
+        return !b.hasPomPreview()
+                && b.isXml()
+                && !com.editora.structured.XmlParser.parse(text).ok();
     }
 
     /** Renders {@code b}'s preview as a PDF at {@code out} (a staging path — see {@link #stagedPdf}). */
@@ -433,7 +478,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.html.notMarkdown"));
             return;
         }
-        java.io.File f = chooseHtmlDestination(bufferBaseName(b));
+        java.io.File f = chooseHtmlDestination(bufferBaseName(b), b);
         if (f == null) {
             return;
         }
@@ -452,13 +497,8 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.html}. */
-    private java.io.File chooseHtmlDestination(String base) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.htmlExport.title"));
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".html");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("HTML", "*.html"));
-        return chooseDestination.apply(chooser);
+    private java.io.File chooseHtmlDestination(String base, EditorBuffer source) {
+        return chooseExportDestination(tr("dialog.htmlExport.title"), base, "document", "html", "HTML", source);
     }
 
     /**
@@ -484,13 +524,78 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.pdf}. */
-    private java.io.File choosePdfDestination(String base) {
+    private java.io.File choosePdfDestination(String base, EditorBuffer source) {
+        return chooseExportDestination(tr("dialog.pdfExport.title"), base, "document", "pdf", "PDF", source);
+    }
+
+    /**
+     * The one Save dialog of every export: named {@code <base-without-ext>.<ext>}, opening beside
+     * {@code source} when that is a saved local file and otherwise where this window last exported to (kept
+     * for the session only). Returns the chosen file with {@code .<ext>} added when the typed name lacks it —
+     * the GTK dialog does not add one, and the export was then written under a name nothing opens — or null
+     * when the dialog, or the question about replacing a file, was cancelled.
+     *
+     * @param title        the dialog title, or null for the platform's
+     * @param fallbackBase the file name when {@code base} is null
+     * @param source       the buffer being exported, or null when the export is not of a file
+     */
+    private java.io.File chooseExportDestination(
+            String title, String base, String fallbackBase, String ext, String filterName, EditorBuffer source) {
         javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.pdfExport.title"));
+        if (title != null) {
+            chooser.setTitle(title);
+        }
         int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + ".pdf");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("PDF", "*.pdf"));
-        return chooseDestination.apply(chooser);
+        chooser.setInitialFileName(
+                (dot > 0 ? base.substring(0, dot) : (base == null ? fallbackBase : base)) + "." + ext);
+        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter(filterName, "*." + ext));
+        java.io.File directory = lastExportDirectory;
+        if (source != null
+                && source.getPath() != null
+                && source.getPath().getParent() != null
+                && host.isLocalBuffer(source)) {
+            directory = source.getPath().getParent().toFile();
+        }
+        // A folder that has since been deleted makes the native dialog throw rather than fall back.
+        if (directory != null && directory.isDirectory()) {
+            chooser.setInitialDirectory(directory);
+        }
+        java.io.File chosen = chooseDestination.apply(chooser);
+        if (chosen == null) {
+            return null;
+        }
+        java.io.File target = withExtension(chosen, ext);
+        // The Save dialog asked about replacing the name as typed. The name with the extension added is a
+        // different file, which nobody has agreed to replace yet.
+        if (!target.equals(chosen) && target.exists() && !confirmReplace.test(target)) {
+            return null;
+        }
+        if (target.getAbsoluteFile().getParentFile() != null) {
+            lastExportDirectory = target.getAbsoluteFile().getParentFile();
+        }
+        return target;
+    }
+
+    /** {@code file}, with {@code .<ext>} appended unless its name already ends in it (in either case). */
+    static java.io.File withExtension(java.io.File file, String ext) {
+        String suffix = "." + ext;
+        String name = file.getName();
+        boolean has = name.length() > suffix.length()
+                && name.regionMatches(true, name.length() - suffix.length(), suffix, 0, suffix.length());
+        return has ? file : new java.io.File(file.getParentFile(), name + suffix);
+    }
+
+    /** Asks whether an export may replace {@code file}; the wording is Save As's. */
+    private boolean confirmReplace(java.io.File file) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.saveAs.overwrite.title"));
+        alert.setHeaderText(tr("dialog.saveAs.overwrite.header", file.getName()));
+        alert.setContentText(tr("dialog.saveAs.overwrite.content"));
+        return Dialogs.styled(alert)
+                .showAndWait()
+                .filter(javafx.scene.control.ButtonType.OK::equals)
+                .isPresent();
     }
 
     /** Exports the active Markwhen buffer's parsed timeline to a JSON file (preview menu + palette). */
@@ -500,15 +605,7 @@ final class ExportCoordinator {
             host.setStatus(tr("status.markwhen.notMarkwhen"));
             return;
         }
-        String base = bufferBaseName(b);
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "timeline" : base)) + ".json");
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter("JSON", "*.json"));
-        if (b.getPath() != null && b.getPath().getParent() != null && host.isLocalBuffer(b)) {
-            chooser.setInitialDirectory(b.getPath().getParent().toFile());
-        }
-        java.io.File f = chooseDestination.apply(chooser);
+        java.io.File f = chooseExportDestination(null, bufferBaseName(b), "timeline", "json", "JSON", b);
         if (f == null) {
             return;
         }
@@ -531,15 +628,26 @@ final class ExportCoordinator {
                             ? tr("status.pdf.exportedUnrendered", f.toString(), r.unrendered())
                             : tr("status.pdf.exported", f.toString()));
         } else {
-            String msg = String.valueOf(r.message());
+            String msg = failureDetail(r.message());
             host.setStatus(tr("status.pdf.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(host.window());
-            err.setTitle(tr("dialog.pdfExport.title"));
-            err.setHeaderText(tr("status.pdf.exportFailed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
+            failureAlert(tr("dialog.pdfExport.title"), tr("dialog.pdfExport.failed"), msg)
+                    .showAndWait();
         }
+    }
+
+    /** What a failure dialog and the status bar say went wrong: the message, or a sentence when there is none. */
+    static String failureDetail(String message) {
+        return message == null || message.isBlank() ? tr("dialog.export.noDetails") : message;
+    }
+
+    /** The error dialog of a failed export or print: what failed as the header, why as the content. */
+    Alert failureAlert(String title, String header, String detail) {
+        Alert err = new Alert(Alert.AlertType.ERROR);
+        err.initOwner(host.window());
+        err.setTitle(title);
+        err.setHeaderText(header);
+        err.setContentText(detail);
+        return Dialogs.styled(err);
     }
 
     /** Exports the active Markdown preview to a MS Word {@code .docx} (Apache POI). */
@@ -561,7 +669,7 @@ final class ExportCoordinator {
         }
         String ext = docx ? "docx" : "odt";
         String filter = docx ? "Word" : "OpenDocument";
-        java.io.File f = chooseOfficeDestination(bufferBaseName(b), ext, filter);
+        java.io.File f = chooseOfficeDestination(bufferBaseName(b), ext, filter, b);
         if (f == null) {
             return;
         }
@@ -579,13 +687,8 @@ final class ExportCoordinator {
     }
 
     /** A Save dialog defaulting to {@code <base-without-ext>.<ext>}. */
-    private java.io.File chooseOfficeDestination(String base, String ext, String filterName) {
-        javafx.stage.FileChooser chooser = new javafx.stage.FileChooser();
-        chooser.setTitle(tr("dialog.officeExport.title"));
-        int dot = base == null ? -1 : base.lastIndexOf('.');
-        chooser.setInitialFileName((dot > 0 ? base.substring(0, dot) : (base == null ? "document" : base)) + "." + ext);
-        chooser.getExtensionFilters().add(new javafx.stage.FileChooser.ExtensionFilter(filterName, "*." + ext));
-        return chooseDestination.apply(chooser);
+    private java.io.File chooseOfficeDestination(String base, String ext, String filterName, EditorBuffer source) {
+        return chooseExportDestination(tr("dialog.officeExport.title"), base, "document", ext, filterName, source);
     }
 
     /** Reports an office export result: status + (on failure) an error dialog. */
@@ -593,14 +696,10 @@ final class ExportCoordinator {
         if (r.ok()) {
             host.setStatus(tr("status.office.exported", f.toString()));
         } else {
-            String msg = String.valueOf(r.message());
+            String msg = failureDetail(r.message());
             host.setStatus(tr("status.office.exportFailed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(host.window());
-            err.setTitle(tr("dialog.officeExport.title"));
-            err.setHeaderText(tr("status.office.exportFailed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
+            failureAlert(tr("dialog.officeExport.title"), tr("dialog.officeExport.failed"), msg)
+                    .showAndWait();
         }
     }
 
@@ -609,35 +708,77 @@ final class ExportCoordinator {
      * "include line numbers" + "syntax highlighting" settings; always light. Off the FX thread.
      */
     void printCode() {
+        if (printBusy()) {
+            return;
+        }
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
             host.setStatus(tr("status.noFileOpen"));
             return;
         }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
         Settings s = host.settings();
-        host.setStatus(tr("status.print.preparing"));
-        printService.prepareCode(
+        preparePrint(() -> printService.prepareCode(
                 b.getContent(),
                 grammarKey(b),
                 s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(),
                 s.getTabSize(),
-                prepared -> openPrintPreview(job, prepared));
+                prepared -> openPrintPreview(job, prepared)));
+    }
+
+    /**
+     * Whether this window is already printing — a preparation is in flight, or its Print Preview is open
+     * (which is then brought forward). A print request that finds it busy is dropped: running the command
+     * twice used to stack two modal previews, each with its own printer job.
+     */
+    private boolean printBusy() {
+        if (openPreview != null) {
+            openPreview.toFront();
+            return true;
+        }
+        return printPreparing;
+    }
+
+    /**
+     * Starts an off-thread preparation that ends in {@link #openPrintPreview}, which is where the in-flight
+     * mark is cleared — on success, on a preparation error and on a failure to open alike.
+     */
+    private void preparePrint(Runnable start) {
+        printPreparing = true;
+        host.setStatus(tr("status.print.preparing"));
+        try {
+            start.run();
+        } catch (RuntimeException | Error e) {
+            printPreparing = false; // never submitted: nothing will call back to clear it
+            throw e;
+        }
     }
 
     /**
      * Prints the active buffer's rendered preview: a Mermaid {@code .mmd} diagram (via mmdc) or a
-     * Markdown document (native nodes, block-aware pagination). No-op for non-previewable buffers.
+     * Markdown document (native nodes, block-aware pagination); a CSV grid prints as the table
+     * {@code csv.print} does. A buffer whose preview cannot be put on a page is told so before a job is made.
      */
     void printPreview() {
+        if (printBusy()) {
+            return;
+        }
         EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.hasPreview()) {
+        if (b != null && b.hasCsvPreview()) {
+            csvPrint(b.getContent());
+            return;
+        }
+        if (b == null || !b.hasExportablePreview()) {
             host.setStatus(tr("status.print.noPreview"));
+            return;
+        }
+        if (previewUnparsable(b)) {
+            host.setStatus(tr("status.print.cannotPrintUnparsed"));
             return;
         }
         javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
@@ -645,7 +786,11 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
-        host.setStatus(tr("status.print.preparing"));
+        preparePrint(() -> preparePreviewPrint(b, job));
+    }
+
+    /** Starts the preparation for {@code b}'s kind of preview; every branch ends in {@link #openPrintPreview}. */
+    private void preparePreviewPrint(EditorBuffer b, javafx.print.PrinterJob job) {
         java.util.function.Consumer<com.editora.print.PrintService.Prepared> open =
                 prepared -> openPrintPreview(job, prepared);
         if (b.isMarkdown()) {
@@ -653,7 +798,8 @@ final class ExportCoordinator {
                     b.getPath() == null ? null : b.getPath().getParent();
             printService.prepareMarkdown(b.getContent(), baseDir, open);
         } else if (b.isDiagram()) { // Mermaid — CLI render
-            printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), host.appThemeDark(), open);
+            // Light, like every other printed kind: the app theme must not reach white paper.
+            printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), false, open);
         } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to a temp PNG, then paginate
             printDiagramViaImage(b, job);
         } else if (b.isSvg()) { // rasterize the SVG source, paginate as image pages
@@ -693,35 +839,69 @@ final class ExportCoordinator {
             openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
             return;
         }
-        diagram.exportToPath(b.diagramKind(), b.getContent(), tmp, r -> {
-            if (!r.ok()) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
-                return;
-            }
-            try {
-                byte[] png = java.nio.file.Files.readAllBytes(tmp);
-                java.nio.file.Files.deleteIfExists(tmp);
-                printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
-            } catch (java.io.IOException e) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-            }
-        });
+        diagram.exportToPath(
+                b.diagramKind(),
+                b.getContent(),
+                tmp,
+                false,
+                r -> { // light: this is for paper
+                    if (!r.ok()) {
+                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
+                        return;
+                    }
+                    try {
+                        byte[] png = java.nio.file.Files.readAllBytes(tmp);
+                        java.nio.file.Files.deleteIfExists(tmp);
+                        printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
+                    } catch (java.io.IOException e) {
+                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
+                    }
+                });
     }
 
     /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
     private void openPrintPreview(javafx.print.PrinterJob job, com.editora.print.PrintService.Prepared prepared) {
-        if (!prepared.ok()) {
-            reportPrint(new com.editora.print.PrintService.Result(false, prepared.error()));
+        openPrintPreview(PrintPreview.Job.of(job), prepared);
+    }
+
+    /**
+     * {@link #openPrintPreview(javafx.print.PrinterJob, com.editora.print.PrintService.Prepared)} on the
+     * preview's own job type. Every way out clears the busy state: a preparation error, a failure to
+     * paginate or open (any {@code Throwable} — the pagination runs the whole layout engine here, and an
+     * escaped error used to leave "Preparing print preview…" in the status bar with no dialog), and the
+     * preview's result and cancel callbacks.
+     */
+    void openPrintPreview(PrintPreview.Job job, com.editora.print.PrintService.Prepared prepared) {
+        printPreparing = false;
+        if (openPreview != null) { // a request that was already on its way when the first preview opened
+            openPreview.toFront();
             return;
         }
-        new PrintPreview(
-                        host.window(),
-                        job,
-                        prepared.paginator(),
-                        this::reportPrint,
-                        () -> host.setStatus(tr("status.print.printing")),
-                        () -> host.setStatus(tr("status.print.cancelled")))
-                .show();
+        if (!prepared.ok()) {
+            printReporter.accept(new com.editora.print.PrintService.Result(false, prepared.error()));
+            return;
+        }
+        try {
+            PrintPreview preview = new PrintPreview(
+                    host.window(),
+                    job,
+                    prepared.paginator(),
+                    result -> {
+                        openPreview = null;
+                        printReporter.accept(result);
+                    },
+                    () -> host.setStatus(tr("status.print.printing")),
+                    () -> {
+                        openPreview = null;
+                        host.setStatus(tr("status.print.cancelled"));
+                    });
+            openPreview = preview;
+            preview.show();
+        } catch (Throwable t) {
+            openPreview = null;
+            printReporter.accept(new com.editora.print.PrintService.Result(
+                    false, t.getMessage() == null ? t.toString() : t.getMessage()));
+        }
     }
 
     /** Reports a print result: status + (on failure) an error dialog. */
@@ -729,20 +909,16 @@ final class ExportCoordinator {
         if (r.ok()) {
             host.setStatus(tr("status.print.done"));
         } else {
-            String msg = String.valueOf(r.message());
+            String msg = failureDetail(r.message());
             host.setStatus(tr("status.print.failed", msg));
-            Alert err = new Alert(Alert.AlertType.ERROR);
-            err.initOwner(host.window());
-            err.setTitle(tr("command.editor.print"));
-            err.setHeaderText(tr("status.print.failed", ""));
-            err.setContentText(msg);
-            err.showAndWait();
+            failureAlert(tr("dialog.print.title"), tr("dialog.print.failed"), msg)
+                    .showAndWait();
         }
     }
 
     /** Writes {@code csv} text to a user-chosen {@code .csv} file (the Markdown-table → CSV file export). */
     void exportCsvTextToFile(String csv, String base) {
-        java.io.File f = chooseOfficeDestination(base, "csv", "CSV");
+        java.io.File f = chooseOfficeDestination(base, "csv", "CSV", host.activeBuffer());
         if (f == null) {
             return;
         }

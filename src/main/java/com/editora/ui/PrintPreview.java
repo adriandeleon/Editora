@@ -3,22 +3,31 @@ package com.editora.ui;
 import java.util.List;
 import java.util.function.Consumer;
 
-import javafx.beans.binding.Bindings;
+import javafx.application.Platform;
+import javafx.geometry.Dimension2D;
 import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.print.PageLayout;
+import javafx.print.PageOrientation;
+import javafx.print.PageRange;
 import javafx.print.PrinterJob;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.ScrollPane;
+import javafx.scene.control.TextInputControl;
+import javafx.scene.control.Tooltip;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.transform.Scale;
 import javafx.stage.Modality;
 import javafx.stage.Stage;
@@ -29,33 +38,156 @@ import com.editora.print.PrintService;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * A modal "Print Preview" window: shows the paginated output (scaled to fit, with page navigation)
- * before anything is sent to the printer. <b>Print…</b> then opens the native OS print dialog and,
- * on confirm, prints exactly these pages (re-paginated for the chosen page layout); <b>Close</b>
- * cancels. The pages come from a {@link PrintService.Paginator}, so the preview and the final print
- * use the same layout recipe.
+ * A window-modal "Print Preview": shows the paginated output on a sheet of the chosen paper (margins
+ * included, scaled to fit, with page navigation) before anything is sent to the printer. <b>Page
+ * Setup…</b> opens the native page dialog and re-paginates for the new paper, orientation and margins.
+ * <b>Print…</b> opens the native print dialog and, on confirm, prints <em>the pages that were
+ * previewed</em> — the ones inside the dialog's page range. If the dialog changed the layout (another
+ * paper, orientation or printer), nothing is printed: the preview is rebuilt for the new layout and the
+ * user presses Print… again once they have seen it. <b>Close</b> cancels.
+ *
+ * <p>The pages come from a {@link PrintService.Paginator} and are paginated once per layout; the print
+ * reuses the previewed {@link PrintService.Pages}.
  */
 final class PrintPreview {
 
+    /**
+     * The printer-job operations the preview needs — a {@link PrinterJob} in the app ({@link #of}), a fake
+     * in tests, which must never drive a real job.
+     */
+    interface Job extends PrintService.PageSink {
+        /** The layout currently set on the job (the printer's default until a dialog changes it). */
+        PageLayout layout();
+
+        /** The job's printer, or an empty string when it has none. */
+        String printerName();
+
+        /** Shows the native page-setup dialog; {@code true} when confirmed (the layout may have changed). */
+        boolean showPageSetup(Window owner);
+
+        /** Shows the native print dialog; {@code true} when the user chose to print. */
+        boolean showPrintDialog(Window owner);
+
+        /** The page ranges chosen in the print dialog (1-based, inclusive); null or empty for all pages. */
+        PageRange[] pageRanges();
+
+        /** Abandons the job. */
+        void cancel();
+
+        /** Asks for a landscape page on the job's paper; a job that cannot offer one keeps its layout. */
+        default void useLandscape() {}
+
+        static Job of(PrinterJob job) {
+            return new Job() {
+                @Override
+                public PageLayout layout() {
+                    return job.getJobSettings().getPageLayout();
+                }
+
+                @Override
+                public String printerName() {
+                    return job.getPrinter() == null ? "" : job.getPrinter().getName();
+                }
+
+                @Override
+                public boolean showPageSetup(Window owner) {
+                    return job.showPageSetupDialog(owner);
+                }
+
+                @Override
+                public boolean showPrintDialog(Window owner) {
+                    return job.showPrintDialog(owner);
+                }
+
+                @Override
+                public PageRange[] pageRanges() {
+                    return job.getJobSettings().getPageRanges();
+                }
+
+                @Override
+                public boolean printPage(PageLayout layout, Node page) {
+                    return job.printPage(layout, page);
+                }
+
+                @Override
+                public boolean endJob() {
+                    return job.endJob();
+                }
+
+                @Override
+                public void cancel() {
+                    job.cancelJob();
+                }
+
+                @Override
+                public void useLandscape() {
+                    try {
+                        PageLayout current = job.getJobSettings().getPageLayout();
+                        job.getJobSettings()
+                                .setPageLayout(job.getPrinter()
+                                        .createPageLayout(
+                                                current.getPaper(),
+                                                javafx.print.PageOrientation.LANDSCAPE,
+                                                javafx.print.Printer.MarginType.DEFAULT));
+                    } catch (RuntimeException unsupported) {
+                        // The printer offers no landscape layout for this paper: keep its default.
+                    }
+                }
+            };
+        }
+    }
+
+    private static final double WIDTH = 760;
+    private static final double HEIGHT = 860;
+    private static final double MIN_WIDTH = 520;
+    private static final double MIN_HEIGHT = 400;
+    /** Grey margin around the sheet, in px. */
+    private static final double SHEET_GAP = 16;
+    /** Room the sheet's drop shadow takes on each side, in px. */
+    private static final double SHEET_SHADOW = 16;
+    /** Distance one Up/Down press scrolls the sheet, in px. */
+    private static final double KEY_SCROLL = 60;
+
     private final Stage stage = new Stage();
-    private final PrinterJob job;
+    private final Job job;
     private final PrintService.Paginator paginator;
-    private final PageLayout previewLayout;
-    private final List<Node> pages;
     private final Consumer<PrintService.Result> onResult;
     private final Runnable onCancel;
     private final Runnable onPrinting;
 
-    private final StackPane paperHolder = new StackPane();
+    /** The layout the pages on screen were paginated for. */
+    private PageLayout layout;
+
+    private PrintService.Pages pages;
+    private int index;
+    /** A print is running: navigation and the dialogs are off and Close asks to cancel it. */
+    private boolean printing;
+
+    private boolean cancelRequested;
+    /** The window has reported its outcome (result or cancel); nothing may be reported twice. */
+    private boolean done;
+
+    private final StackPane sheet = new StackPane();
+    private final Scale zoom = new Scale(1, 1, 0, 0);
+    private final StackPane paperHolder = new StackPane(new Group(sheet));
     private final ScrollPane scroll = new ScrollPane(paperHolder);
     private final Label pageLabel = new Label();
+    private final Label infoLabel = new Label();
+    private final Label notice = new Label();
     private final Button prev = new Button("◀");
     private final Button next = new Button("▶");
-    private int index;
+    private final Button setup = new Button(tr("print.preview.pageSetup"));
+    private final Button print = new Button(tr("print.preview.print"));
+    private final Button close = new Button(tr("print.preview.close"));
 
+    /**
+     * Paginates for the job's current layout and builds the window. A pagination failure is thrown to the
+     * caller (nothing is on screen yet); a later one closes the window and is reported through
+     * {@code onResult}.
+     */
     PrintPreview(
             Window owner,
-            PrinterJob job,
+            Job job,
             PrintService.Paginator paginator,
             Consumer<PrintService.Result> onResult,
             Runnable onPrinting,
@@ -65,8 +197,8 @@ final class PrintPreview {
         this.onResult = onResult;
         this.onPrinting = onPrinting;
         this.onCancel = onCancel;
-        this.previewLayout = job.getJobSettings().getPageLayout();
-        this.pages = paginator.paginate(previewLayout);
+        this.layout = job.layout();
+        this.pages = paginator.pages(layout);
         build(owner);
     }
 
@@ -74,104 +206,386 @@ final class PrintPreview {
         stage.show();
     }
 
+    /** Brings the open preview forward (a second print request while it is open lands here). */
+    void toFront() {
+        stage.toFront();
+        stage.requestFocus();
+    }
+
     private void build(Window owner) {
-        prev.setOnAction(e -> goTo(index - 1));
-        next.setOnAction(e -> goTo(index + 1));
-        Button print = new Button(tr("print.preview.print"));
+        prev.setOnAction(e -> navigate(index - 1));
+        next.setOnAction(e -> navigate(index + 1));
+        describe(prev, tr("print.preview.previous"));
+        describe(next, tr("print.preview.next"));
+        setup.setOnAction(e -> pageSetup());
+        // Print… stays the default button: Enter opens the system print dialog, which is itself the
+        // confirmation — nothing is printed by Enter alone. Initial focus goes to the page (see below),
+        // not to a button, so the keys that turn pages work at once.
         print.setDefaultButton(true);
         print.setOnAction(e -> doPrint());
-        Button close = new Button(tr("print.preview.close"));
         close.setCancelButton(true);
         close.setOnAction(e -> cancel());
+        for (Button b : List.of(prev, next, setup, print, close)) {
+            b.setMinWidth(Region.USE_PREF_SIZE);
+        }
+        pageLabel.setMinWidth(Region.USE_PREF_SIZE);
 
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        HBox bar = new HBox(8, prev, pageLabel, next, spacer, print, close);
+        infoLabel.setMinWidth(0);
+        infoLabel.setMaxWidth(Double.MAX_VALUE);
+        infoLabel.setTextOverrun(OverrunStyle.ELLIPSIS);
+        infoLabel.setStyle("-fx-text-fill: -color-fg-muted;");
+        HBox.setHgrow(infoLabel, Priority.ALWAYS);
+        HBox.setMargin(infoLabel, new Insets(0, 8, 0, 8));
+        HBox bar = new HBox(8, prev, pageLabel, next, infoLabel, setup, print, close);
         bar.setAlignment(Pos.CENTER_LEFT);
         bar.setPadding(new Insets(8));
         bar.getStyleClass().add("print-preview-bar");
 
+        notice.setWrapText(true);
+        notice.setMaxWidth(Double.MAX_VALUE);
+        notice.setPadding(new Insets(8, 12, 8, 12));
+        notice.setStyle("-fx-background-color: -color-accent-subtle;");
+        notice.managedProperty().bind(notice.visibleProperty());
+        notice.visibleProperty().bind(notice.textProperty().isNotEmpty());
+
+        sheet.setAlignment(Pos.TOP_LEFT);
+        sheet.setStyle("-fx-background-color: white; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 3);");
+        // Scale the sheet to fit the viewport width (capped at 100%), anchored top-left.
+        sheet.getTransforms().add(zoom);
+        scroll.viewportBoundsProperty().addListener((obs, old, bounds) -> fitSheet());
         scroll.setFitToWidth(true);
         scroll.setFitToHeight(true);
-        paperHolder.setPadding(new Insets(16));
+        scroll.setFocusTraversable(true);
+        paperHolder.setPadding(new Insets(SHEET_GAP));
         paperHolder.setStyle("-fx-background-color: derive(-color-bg-default, -6%);");
 
         BorderPane root = new BorderPane();
         root.setCenter(scroll);
-        root.setBottom(bar);
+        root.setBottom(new VBox(notice, bar));
 
-        Scene scene = new Scene(root, 760, 860);
+        Scene scene = new Scene(root);
         addStylesheet(scene, "/com/editora/styles/app.css");
         addStylesheet(scene, "/com/editora/styles/syntax.css");
+        scene.addEventFilter(KeyEvent.KEY_PRESSED, this::onKey);
         stage.setScene(scene);
         stage.setTitle(tr("print.preview.title"));
         stage.initOwner(owner);
-        stage.initModality(Modality.APPLICATION_MODAL);
+        // Blocks only the window that is printing; other Editora windows stay usable.
+        stage.initModality(Modality.WINDOW_MODAL);
+        Dimension2D size = WindowPlacement.clampSize(WIDTH, HEIGHT, WindowPlacement.screenOf(owner), 0.9);
+        stage.setMinWidth(MIN_WIDTH);
+        stage.setMinHeight(MIN_HEIGHT);
+        stage.setWidth(Math.max(MIN_WIDTH, size.getWidth()));
+        stage.setHeight(Math.max(MIN_HEIGHT, size.getHeight()));
+        WindowPlacement.centerOnOwner(stage, owner, stage.getWidth(), stage.getHeight());
         stage.setOnCloseRequest(e -> {
             e.consume();
             cancel();
         });
+        // Focus starts on the page, not on a button: Page Up/Down work at once and Space does nothing.
+        stage.setOnShown(e -> scroll.requestFocus());
 
+        applyLayout();
         goTo(0);
+        scroll.requestFocus();
     }
 
-    /** Shows the page at {@code i} on a white "paper" sheet scaled to fit the viewport width. */
+    private static void describe(Button button, String text) {
+        button.setAccessibleText(text);
+        button.setTooltip(new Tooltip(text));
+    }
+
+    /** The paper size of {@code layout} as it is read — width and height swapped for landscape. */
+    static Dimension2D sheetSize(PageLayout layout) {
+        double w = layout.getPaper().getWidth();
+        double h = layout.getPaper().getHeight();
+        return landscape(layout) ? new Dimension2D(h, w) : new Dimension2D(w, h);
+    }
+
+    private static boolean landscape(PageLayout layout) {
+        PageOrientation o = layout.getPageOrientation();
+        return o == PageOrientation.LANDSCAPE || o == PageOrientation.REVERSE_LANDSCAPE;
+    }
+
+    /**
+     * Whether two layouts paginate the same: same paper size, orientation and margins. Compared by value
+     * and with a tolerance — a job hands out a fresh {@code PageLayout} after each dialog, and the
+     * platform rounds margins.
+     */
+    static boolean sameLayout(PageLayout a, PageLayout b) {
+        if (a == null || b == null) {
+            return a == b;
+        }
+        return a.getPageOrientation() == b.getPageOrientation()
+                && near(a.getPaper().getWidth(), b.getPaper().getWidth())
+                && near(a.getPaper().getHeight(), b.getPaper().getHeight())
+                && near(a.getLeftMargin(), b.getLeftMargin())
+                && near(a.getRightMargin(), b.getRightMargin())
+                && near(a.getTopMargin(), b.getTopMargin())
+                && near(a.getBottomMargin(), b.getBottomMargin());
+    }
+
+    private static boolean near(double a, double b) {
+        return Math.abs(a - b) < 0.5; // half a point
+    }
+
+    /**
+     * Sizes the sheet to the paper of the current layout, with the layout's margins as padding so the
+     * page node sits where it will on paper, and names the printer, paper and orientation in the bar.
+     */
+    private void applyLayout() {
+        Dimension2D size = sheetSize(layout);
+        sheet.setPadding(new Insets(
+                layout.getTopMargin(), layout.getRightMargin(), layout.getBottomMargin(), layout.getLeftMargin()));
+        sheet.setMinSize(size.getWidth(), size.getHeight());
+        sheet.setPrefSize(size.getWidth(), size.getHeight());
+        sheet.setMaxSize(size.getWidth(), size.getHeight());
+        fitSheet();
+        String orientation = tr(landscape(layout) ? "print.preview.landscape" : "print.preview.portrait");
+        String printer = job.printerName();
+        String paper = layout.getPaper().getName();
+        infoLabel.setText((printer == null || printer.isBlank() ? "" : printer + " · ") + paper + " · " + orientation);
+        infoLabel.setTooltip(new Tooltip(infoLabel.getText()));
+    }
+
+    private void fitSheet() {
+        // The sheet's drop shadow counts towards its bounds: leave room for it, or a sheet scaled to fit
+        // still overflows the viewport by the shadow and gets a horizontal scroll bar.
+        double avail = scroll.getViewportBounds().getWidth() - 2 * (SHEET_GAP + SHEET_SHADOW);
+        double width = sheet.getPrefWidth();
+        double factor = avail <= 0 || width <= 0 ? 1 : Math.min(1.0, avail / width);
+        zoom.setX(factor);
+        zoom.setY(factor);
+    }
+
+    /** {@link #goTo} for a user action: a page that fails to build ends the preview with a reported error. */
+    private void navigate(int i) {
+        try {
+            goTo(i);
+        } catch (Throwable t) {
+            fail(t);
+        }
+    }
+
+    /** Shows the page at {@code i} (clamped) on the sheet, scrolled to its top. */
     private void goTo(int i) {
-        if (pages.isEmpty()) {
+        int count = pages.count();
+        if (count == 0) {
+            sheet.getChildren().clear();
             pageLabel.setText(tr("print.preview.page", 0, 0));
             prev.setDisable(true);
             next.setDisable(true);
             return;
         }
-        index = Math.max(0, Math.min(i, pages.size() - 1));
-        double pw = previewLayout.getPrintableWidth();
-        double ph = previewLayout.getPrintableHeight();
-
-        StackPane paper = new StackPane(pages.get(index));
-        StackPane.setAlignment(pages.get(index), Pos.TOP_LEFT);
-        paper.setMinSize(pw, ph);
-        paper.setPrefSize(pw, ph);
-        paper.setMaxSize(pw, ph);
-        paper.setStyle("-fx-background-color: white; -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0, 0, 3);");
-
-        // Scale the page to fit the viewport width (capped at 100%), anchored top-left.
-        Scale scale = new Scale(1, 1, 0, 0);
-        scale.xProperty()
-                .bind(Bindings.createDoubleBinding(
-                        () -> {
-                            double avail = scroll.getViewportBounds().getWidth() - 32;
-                            return avail <= 0 || pw <= 0 ? 1 : Math.min(1.0, avail / pw);
-                        },
-                        scroll.viewportBoundsProperty()));
-        scale.yProperty().bind(scale.xProperty());
-        paper.getTransforms().add(scale);
-
-        paperHolder.getChildren().setAll(new Group(paper));
-        pageLabel.setText(tr("print.preview.page", index + 1, pages.size()));
+        index = Math.max(0, Math.min(i, count - 1));
+        Node page = pages.get(index);
+        StackPane.setAlignment(page, Pos.TOP_LEFT);
+        sheet.getChildren().setAll(page);
+        pageLabel.setText(tr("print.preview.page", index + 1, count));
         prev.setDisable(index == 0);
-        next.setDisable(index == pages.size() - 1);
+        next.setDisable(index == count - 1);
+        // A new page starts at its top, not wherever the last one was scrolled to.
+        scroll.setVvalue(scroll.getVmin());
+        scroll.setHvalue(scroll.getHmin());
     }
 
-    /** Opens the native print dialog; on confirm, prints freshly-paginated pages for the chosen layout. */
-    private void doPrint() {
-        if (!job.showPrintDialog(stage)) {
-            return; // dialog cancelled — stay in the preview
+    /**
+     * Page keys, wherever the focus is: Page Up/Down and Left/Right turn the page, Home/End go to the
+     * first/last, Up/Down scroll the sheet and turn the page at its edge. A text field keeps its keys.
+     */
+    private void onKey(KeyEvent e) {
+        if (printing
+                || e.isShortcutDown()
+                || e.isControlDown()
+                || e.isAltDown()
+                || e.isMetaDown()
+                || e.getTarget() instanceof TextInputControl) {
+            return;
         }
-        onPrinting.run();
-        PageLayout layout = job.getJobSettings().getPageLayout();
-        PrintService.Result result;
+        switch (e.getCode()) {
+            case PAGE_DOWN, RIGHT -> navigate(index + 1);
+            case PAGE_UP, LEFT -> navigate(index - 1);
+            case HOME -> navigate(0);
+            case END -> navigate(pages.count() - 1);
+            case DOWN -> scrollOrTurn(1);
+            case UP -> scrollOrTurn(-1);
+            default -> {
+                return;
+            }
+        }
+        e.consume();
+    }
+
+    private void scrollOrTurn(int direction) {
+        double hidden = paperHolder.getHeight() - scroll.getViewportBounds().getHeight();
+        double v = scroll.getVvalue();
+        boolean atEdge = hidden <= 0.5 || (direction > 0 ? v >= scroll.getVmax() - 1e-6 : v <= scroll.getVmin() + 1e-6);
+        if (atEdge) {
+            navigate(index + direction);
+            return;
+        }
+        double step = KEY_SCROLL / hidden * (scroll.getVmax() - scroll.getVmin());
+        scroll.setVvalue(Math.max(scroll.getVmin(), Math.min(scroll.getVmax(), v + direction * step)));
+    }
+
+    /** Opens the native page-setup dialog and re-paginates the preview for the layout it leaves. */
+    private void pageSetup() {
+        if (printing || done) {
+            return;
+        }
         try {
-            result = PrintService.printPages(paginator.paginate(layout), layout, job);
-        } catch (RuntimeException ex) {
-            result = new PrintService.Result(false, ex.getMessage() == null ? ex.toString() : ex.getMessage());
+            if (job.showPageSetup(stage)) {
+                notice.setText("");
+                adopt(job.layout());
+            }
+        } catch (Throwable t) {
+            fail(t);
         }
-        stage.close();
-        onResult.accept(result);
     }
 
-    private void cancel() {
+    /**
+     * Makes {@code chosen} the previewed layout. Pages are rebuilt only when it differs from the one on
+     * screen — the same layout never paginates twice. Returns whether it differed.
+     */
+    private boolean adopt(PageLayout chosen) {
+        if (sameLayout(chosen, layout)) {
+            applyLayout(); // the printer may have changed even though the layout did not
+            return false;
+        }
+        pages = PrintService.Pages.of(List.of()); // let go of the old pages before building the new ones
+        sheet.getChildren().clear();
+        layout = chosen;
+        pages = paginator.pages(chosen);
+        applyLayout();
+        goTo(index);
+        return true;
+    }
+
+    /**
+     * Opens the native print dialog. On confirm: when the dialog left the layout as previewed, prints the
+     * previewed pages inside the chosen page range; when it changed the layout, shows the new pagination
+     * and waits for another Print… — the user must not get pages they never saw.
+     */
+    private void doPrint() {
+        if (printing || done) {
+            return;
+        }
+        try {
+            if (!job.showPrintDialog(stage)) {
+                return; // dialog cancelled — stay in the preview
+            }
+            if (adopt(job.layout())) {
+                notice.setText(tr("print.preview.layoutChanged"));
+                return;
+            }
+            int[] indices = PrintService.pageIndices(job.pageRanges(), pages.count());
+            if (indices.length == 0) {
+                notice.setText(tr("print.preview.rangeEmpty", pages.count()));
+                return;
+            }
+            startPrinting(indices);
+        } catch (Throwable t) {
+            fail(t);
+        }
+    }
+
+    /**
+     * Prints one page per {@code Platform.runLater} turn, so the window repaints and Cancel is heard
+     * between pages. ({@code printPage} must run on the FX thread and not inside a pulse or an animation,
+     * which rules out a timer; it runs a nested event loop while the page renders, so the buttons are
+     * live during it too — hence everything but Cancel is disabled.)
+     */
+    private void startPrinting(int[] indices) {
+        printing = true;
+        cancelRequested = false;
+        for (Button b : List.of(prev, next, setup, print)) {
+            b.setDisable(true);
+        }
+        close.setText(tr("dialog.cancel"));
+        onPrinting.run();
+        printStep(indices, 0);
+    }
+
+    private void printStep(int[] indices, int at) {
+        if (done) {
+            return;
+        }
+        try {
+            if (cancelRequested) {
+                job.cancel();
+                closeWith(onCancel);
+                return;
+            }
+            if (at == indices.length) {
+                boolean ended = job.endJob();
+                finish(ended ? new PrintService.Result(true, "") : failed());
+                return;
+            }
+            notice.setText(tr("print.preview.printingPage", at + 1, indices.length));
+            if (!job.printPage(layout, detached(pages.get(indices[at])))) {
+                job.endJob();
+                finish(failed());
+                return;
+            }
+            Platform.runLater(() -> printStep(indices, at + 1));
+        } catch (Throwable t) {
+            fail(t);
+        }
+    }
+
+    private static PrintService.Result failed() {
+        return new PrintService.Result(false, "print job failed");
+    }
+
+    /**
+     * {@code page} as a free-standing node at the origin. The page on screen sits inside the scaled sheet;
+     * a printed node is drawn with its own position but not its parent's, so it is taken off the sheet.
+     */
+    private static Node detached(Node page) {
+        if (page.getParent() instanceof Pane parent) {
+            parent.getChildren().remove(page);
+        }
+        page.relocate(0, 0);
+        return page;
+    }
+
+    /** Ends the preview with an error: closes the window and reports it, so no status is left hanging. */
+    private void fail(Throwable t) {
+        pages = PrintService.Pages.of(List.of()); // an OutOfMemoryError needs the pages gone to report at all
+        sheet.getChildren().clear();
+        if (printing) {
+            try {
+                job.cancel();
+            } catch (Throwable ignored) {
+                // the failure being reported is the one that matters
+            }
+        }
+        finish(new PrintService.Result(false, t.getMessage() == null ? t.toString() : t.getMessage()));
+    }
+
+    private void finish(PrintService.Result result) {
+        closeWith(() -> onResult.accept(result));
+    }
+
+    /** Closes the window and reports its one outcome. */
+    private void closeWith(Runnable report) {
+        if (done) {
+            return;
+        }
+        done = true;
+        printing = false;
         stage.close();
-        onCancel.run();
+        report.run();
+    }
+
+    /** Close / Escape / the window's close button: leaves the preview, or asks a running print to stop. */
+    private void cancel() {
+        if (printing) {
+            cancelRequested = true;
+            close.setDisable(true);
+            return;
+        }
+        closeWith(onCancel);
     }
 
     private static void addStylesheet(Scene scene, String resource) {

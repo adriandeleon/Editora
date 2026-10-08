@@ -246,6 +246,11 @@ final class Icons {
         return line("M3.5 10.6v2.4h9v-2.4M8 3v6.3M5.8 7.1l2.2 2.2 2.2-2.2");
     }
 
+    /** Print: a printer — the sheet going in at the top, the body, the printed page coming out below. */
+    static Node print() {
+        return line("M4.5 5.5v-3h7v3M4.5 11.5h-2v-6h11v6h-2M4.5 9.5h7v4h-7z");
+    }
+
     static Node undo() {
         return line("M6 3.2L3.2 6 6 8.8M3.2 6h6.3a3.7 3.7 0 0 1 0 7.4H7");
     }

@@ -8,6 +8,10 @@ import javafx.print.PageLayout;
 import javafx.scene.Group;
 import javafx.scene.Node;
 import javafx.scene.Scene;
+import javafx.scene.control.Label;
+import javafx.scene.image.ImageView;
+import javafx.scene.layout.ColumnConstraints;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Pane;
 import javafx.scene.layout.Priority;
@@ -17,6 +21,7 @@ import javafx.scene.layout.VBox;
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
 
+import com.editora.editor.MarkdownPrintAssets;
 import com.editora.editor.MarkdownRenderer;
 
 /**
@@ -42,6 +47,15 @@ import com.editora.editor.MarkdownRenderer;
  * inline runs, which is what keeps the text vectors rather than slicing a rendered bitmap: crisp on
  * paper, at the cost of a seam that does not hang-indent. Uniform scaling survives only as the last
  * resort for a genuinely atomic over-tall block (one enormous image), where it is the right answer.
+ *
+ * <p><b>A table is split between its rows</b> ({@link #splitTable}), each piece a table again with the same
+ * columns and the header row repeated, and a code block between its lines (the print renderer builds it as
+ * one node per line). Both are cut by arithmetic on measured row heights, so a 5,000-row CSV paginates in
+ * time proportional to its length.
+ *
+ * <p><b>Always light.</b> Paper is white whatever the app theme is, so the page root carries the preview's
+ * fixed light palette ({@code .markdown-preview-pane.md-light}) and the renderer is asked for light math
+ * and diagrams.
  *
  * <p>Everything except {@link #packBlocks} needs the JavaFX toolkit and runs on the FX thread.
  */
@@ -108,13 +122,30 @@ public final class MarkdownPrintLayout {
      * returns one printable page {@link Node} (a {@code pw×ph} root, CSS attached) per page.
      */
     public static List<Node> paginate(org.commonmark.node.Node ast, Path baseDir, PageLayout layout) {
-        double pw = layout.getPrintableWidth();
-        double ph = layout.getPrintableHeight();
+        return paginate(ast, baseDir, null, layout.getPrintableWidth(), layout.getPrintableHeight());
+    }
 
+    /** As {@link #paginate(org.commonmark.node.Node, Path, PageLayout)} for a printable area given in points. */
+    public static List<Node> paginate(org.commonmark.node.Node ast, Path baseDir, double pw, double ph) {
+        return paginate(ast, baseDir, null, pw, ph);
+    }
+
+    /**
+     * Paginates {@code ast} onto {@code pw×ph} pages. Takes the printable area as numbers rather than a
+     * {@link PageLayout} because a layout can only come from a printer, and nothing here needs one.
+     *
+     * <p>{@code assets} are the document's images, diagrams and code colours, resolved beforehand off the FX
+     * thread ({@link MarkdownPrintAssets#resolve}) so that every block has its final size when it is
+     * measured. Null means "not resolved": images and diagrams then arrive after pagination and can
+     * overflow their page, and code prints uncoloured — acceptable only where there are none.
+     */
+    public static List<Node> paginate(
+            org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets, double pw, double ph) {
         // Render to native nodes, then pull out the inner ".markdown-preview" VBox of blocks.
-        Node wrap = MarkdownRenderer.renderDocument(ast, baseDir);
+        Node wrap = MarkdownRenderer.renderForPrint(ast, baseDir, assets);
         VBox content = (VBox) ((StackPane) wrap).getChildren().get(0);
 
+        prepareTables(content, pw, ph);
         List<Double> heights = measureBlockHeights(content, pw, ph);
         List<Node> blocks = new ArrayList<>(content.getChildrenUnmodifiable());
 
@@ -164,7 +195,7 @@ public final class MarkdownPrintLayout {
                 }
             }
             StackPane pageRoot = new StackPane(body);
-            pageRoot.getStyleClass().add("md-light");
+            pageRoot.getStyleClass().addAll(LIGHT_PAGE_CLASSES);
             pageRoot.setStyle("-fx-background-color: white;");
             StackPane.setAlignment(body, javafx.geometry.Pos.TOP_LEFT);
             pageRoot.setPrefSize(pw, ph);
@@ -178,6 +209,16 @@ public final class MarkdownPrintLayout {
         }
         return pages;
     }
+
+    /**
+     * The classes that pin a page to the preview's light palette.
+     *
+     * <p>Both are needed: the rule that redefines the looked-up colours is the compound
+     * {@code .markdown-preview-pane.md-light}. With {@code md-light} alone nothing matched, the colours stayed
+     * the app theme's, and under a dark theme the inner {@code .markdown-preview} box painted a dark sheet
+     * with light text over the page's white background.
+     */
+    private static final List<String> LIGHT_PAGE_CLASSES = List.of("markdown-preview-pane", "md-light");
 
     /**
      * How deep the splitter may recurse before accepting whatever is left.
@@ -210,6 +251,9 @@ public final class MarkdownPrintLayout {
     }
 
     private static List<Node> split(Node block, double height, List<Wrapper> chain, double pw, double ph, int depth) {
+        if (block instanceof GridPane grid && grid.getProperties().containsKey(TABLE_ROWS_KEY)) {
+            return splitTable(grid, chain, pw, ph, depth); // its rows are detached: it has no height to go by
+        }
         if (!(ph > 0) || height <= ph || depth >= MAX_SPLIT_DEPTH) {
             return List.of(block);
         }
@@ -222,6 +266,9 @@ public final class MarkdownPrintLayout {
         // splitting cannot help it and it would be scaled. Split the string instead.
         if (block instanceof Text text) {
             return splitText(text, chain, pw, ph);
+        }
+        if (block instanceof GridPane grid) {
+            return splitTable(grid, chain, pw, ph, depth);
         }
         if (!(block instanceof Pane pane) || pane.getChildren().isEmpty()) {
             return List.of(block); // atomic: the last-resort scale in paginate() handles it
@@ -332,11 +379,17 @@ public final class MarkdownPrintLayout {
         return p > from ? p - from : len;
     }
 
-    /** A {@code Text} carrying {@code s} with the template's styling, so the split is invisible. */
+    /**
+     * A {@code Text} carrying {@code s} with the template's styling, so the split is invisible.
+     *
+     * <p>The font is deliberately <b>not</b> copied. It comes from CSS through the style classes, and a font
+     * set from code as well does not survive the move from the measuring scene to the page: the copy fell
+     * back to the toolkit default (13px against the page's 14px), so a split paragraph was measured at one
+     * size and printed, visibly smaller, at another.
+     */
     private static Text textLike(Text template, String s) {
         Text t = new Text(s);
         t.getStyleClass().setAll(template.getStyleClass());
-        t.setFont(template.getFont());
         t.setFill(template.getFill());
         t.setStrikethrough(template.isStrikethrough());
         t.setUnderline(template.isUnderline());
@@ -356,7 +409,7 @@ public final class MarkdownPrintLayout {
 
     private static List<Wrapper> append(List<Wrapper> chain, Pane pane, double leadWidth) {
         List<Wrapper> out = new ArrayList<>(chain);
-        out.add(new Wrapper(pane, leadWidth));
+        out.add(new Wrapper(pane, leadWidth, -1));
         return out;
     }
 
@@ -367,8 +420,11 @@ public final class MarkdownPrintLayout {
      * candidate measured in an empty row clone gets the full page width, comes out short, and the assembled
      * row then overflows. Measured on this repo's CLAUDE.md, ignoring it left 244 of a 296-page list's
      * pieces over the page — each by only ~20%, which is exactly what a missing bullet column costs.
+     *
+     * <p>{@code column} is the same idea for a table cell: a cell is only as wide as its column, so a piece
+     * of one is measured in that column of a clone of its table ({@code -1} for every other wrapper).
      */
-    private record Wrapper(Pane template, double leadWidth) {}
+    private record Wrapper(Pane template, double leadWidth, int column) {}
 
     /**
      * Each child's own height inside {@code pane}, or null when the container's height is not the sum of
@@ -473,7 +529,14 @@ public final class MarkdownPrintLayout {
                 shell.getChildren().add(lead);
                 HBox.setHgrow(outer, Priority.ALWAYS);
             }
-            shell.getChildren().add(outer);
+            if (shell instanceof GridPane table && w.column() >= 0) {
+                if (outer instanceof Region cell) {
+                    asCell(cell);
+                }
+                table.add(outer, w.column(), 0);
+            } else {
+                shell.getChildren().add(outer);
+            }
             shells.add(shell);
             outer = shell;
         }
@@ -520,6 +583,464 @@ public final class MarkdownPrintLayout {
         return out;
     }
 
+    // --- tables --------------------------------------------------------------------------------------
+
+    /** The smallest text a wide table is shrunk to. Below this it is not worth printing; the cells wrap. */
+    private static final double MIN_TABLE_FONT = 7;
+
+    /** A dense cell's left + right padding and border, matching {@code .md-table-dense} in app.css. */
+    private static final double DENSE_CELL_INSETS = 3 + 3 + 1 + 1;
+
+    /**
+     * A table at or above this many rows is taken apart before anything is laid out ({@link #prepareTables}).
+     * Comfortably more than a page holds, so a table that fits a page is never touched.
+     */
+    private static final int LONG_TABLE_ROWS = 64;
+
+    /** How many rows of a long table are laid out together to measure them. */
+    private static final int MEASURE_CHUNK_ROWS = 32;
+
+    /** Node-property key under which a long table's detached rows travel to {@link #splitTable}. */
+    private static final Object TABLE_ROWS_KEY = new Object();
+
+    /**
+     * The rows of a table (the header row first, when it has one), each row's laid-out height, and what the
+     * table costs beyond its rows — its own insets plus whatever it is nested in.
+     */
+    private record TableRows(List<List<Node>> rows, double[] heights, double overhead) {}
+
+    /** What a table's cells need across: per column, the widest unbreakable piece and the widest whole line. */
+    private static final class ColumnNeeds {
+        final double[] word;
+        final double[] line;
+        double cellInsets;
+        double fontSize;
+
+        ColumnNeeds(int cols) {
+            word = new double[cols];
+            line = new double[cols];
+        }
+
+        /** Counts one laid-out cell (CSS applied, so its font and insets are the real ones). */
+        void add(Node cell) {
+            int col = columnOf(cell);
+            if (col >= word.length || !(cell instanceof TextFlow flow)) {
+                return;
+            }
+            cellInsets = flow.getInsets().getLeft() + flow.getInsets().getRight();
+            double text = Math.max(0, flow.prefWidth(-1) - cellInsets);
+            line[col] = Math.max(line[col], text);
+            word[col] = Math.max(word[col], text * longestWordShare(flow));
+            if (fontSize == 0
+                    && !flow.getChildren().isEmpty()
+                    && flow.getChildren().get(0) instanceof Text t) {
+                fontSize = t.getFont().getSize();
+            }
+        }
+    }
+
+    /**
+     * Gets every table ready to be measured: a very long one is taken apart so it is never laid out whole,
+     * and one with more columns than the page has width for is given room.
+     *
+     * <p><b>Long tables.</b> A {@code GridPane} works out its row metrics by scanning all of its children
+     * for each row, so one layout of a table costs rows × cells. That is nothing for the tables people write
+     * and ruinous for a CSV: a 5,000-row, 5-column table takes seconds per layout, and pagination lays a
+     * document out several times. So a top-level table of {@link #LONG_TABLE_ROWS} rows or more has its rows
+     * detached here and measured {@link #MEASURE_CHUNK_ROWS} at a time in a scratch copy of the table — the
+     * columns are percentages of the same width, so a row is the same height there as in the whole. The
+     * rows and their heights ride along on the (now empty) table for {@link #splitTable} to deal out.
+     * Only top-level tables, because that is where a scratch copy has the table's real width; a long table
+     * nested in a list or a quote is still split correctly, just laid out whole first.
+     *
+     * <p><b>Wide tables.</b> A table's columns share the page width, so a 20-column CSV on portrait Letter
+     * gets about 23pt a column — less than the cells' own padding — and every cell wrapped to one character
+     * a line: ten rows measured several pages tall. Such a table gets tighter cells, columns sized by what
+     * each actually holds, and text reduced just far enough that no word has to break (never below
+     * {@link #MIN_TABLE_FONT}; past that long words do break, but a few letters at a time, not one).
+     * "Too wide" is judged by each column's longest <em>word</em>, not its longest line: a cell holding a
+     * paragraph is meant to wrap, and must not shrink the whole table. A table whose words all fit is left
+     * exactly as the preview shows it.
+     */
+    private static void prepareTables(VBox content, double pw, double ph) {
+        List<GridPane> tables = new ArrayList<>();
+        collectTables(content, tables);
+        if (tables.isEmpty()) {
+            return;
+        }
+        java.util.Map<GridPane, List<List<Node>>> detached = new java.util.IdentityHashMap<>();
+        for (GridPane table : tables) {
+            if (table.getParent() == content) {
+                List<List<Node>> rows = rowsOf(table);
+                if (rows.size() >= LONG_TABLE_ROWS) {
+                    table.getChildren().clear();
+                    detached.put(table, rows);
+                }
+            }
+        }
+        measureBlockHeights(content, pw, ph); // applies CSS and gives every table its width on the page
+        for (GridPane table : tables) {
+            int cols = table.getColumnConstraints().size();
+            ColumnNeeds needs = new ColumnNeeds(cols);
+            List<List<Node>> rows = detached.get(table);
+            TableRows measured = null;
+            if (rows == null) {
+                table.getChildren().forEach(needs::add);
+            } else {
+                measured = measureRows(table, rows, needs, pw, ph);
+            }
+            if (fitColumns(table, needs, table.getWidth()) && rows != null) {
+                measured = measureRows(table, rows, null, pw, ph); // the rows are a different height now
+            }
+            if (measured != null) {
+                table.getProperties().put(TABLE_ROWS_KEY, measured);
+            }
+        }
+    }
+
+    /**
+     * Measures detached {@code rows} a chunk at a time in a scratch copy of {@code table}, feeding every
+     * cell to {@code needs} (when given) while it is laid out.
+     */
+    private static TableRows measureRows(
+            GridPane table, List<List<Node>> rows, ColumnNeeds needs, double pw, double ph) {
+        double[] heights = new double[rows.size()];
+        double overhead = 0;
+        for (int from = 0; from < rows.size(); from += MEASURE_CHUNK_ROWS) {
+            int to = Math.min(rows.size(), from + MEASURE_CHUNK_ROWS);
+            GridPane probe = (GridPane) cloneShell(table, pw);
+            for (int r = from; r < to; r++) {
+                addRow(probe, rows.get(r), r - from);
+            }
+            double stacked = probe.getVgap() * (to - from - 1);
+            double whole = measureOne(probe, pw, ph);
+            for (int r = from; r < to; r++) {
+                heights[r] = rowHeight(rows.get(r));
+                stacked += heights[r];
+                if (needs != null) {
+                    rows.get(r).forEach(needs::add);
+                }
+            }
+            overhead = Math.max(0, whole - stacked);
+            probe.getChildren().clear();
+        }
+        return new TableRows(rows, heights, overhead);
+    }
+
+    /**
+     * Gives {@code table} tighter cells, need-sized columns and, if it must, smaller text — when its columns'
+     * longest words do not fit {@code available}. Returns whether it changed anything.
+     */
+    private static boolean fitColumns(GridPane table, ColumnNeeds needs, double available) {
+        int cols = needs.word.length;
+        double needed = cols * needs.cellInsets;
+        for (double w : needs.word) {
+            needed += w;
+        }
+        if (cols == 0 || needed <= available + 0.5 || !(available > 0) || !(needs.fontSize > 0)) {
+            return false;
+        }
+        table.getStyleClass().add("md-table-dense");
+        double room = Math.max(1, available - cols * DENSE_CELL_INSETS);
+        // 3% under the exact ratio: glyph widths do not scale perfectly linearly with the font size.
+        double scale = Math.min(1, room / Math.max(1, needed - cols * needs.cellInsets) * 0.97);
+        double size = Math.max(MIN_TABLE_FONT, needs.fontSize * scale);
+        if (size < needs.fontSize) {
+            table.setStyle("-fx-font-size: " + size + "px;");
+        }
+        // Each column gets its longest word; whatever is left goes to the columns that would otherwise wrap.
+        double shrink = size / needs.fontSize;
+        double used = 0;
+        double wanted = 0;
+        for (int c = 0; c < cols; c++) {
+            used += DENSE_CELL_INSETS + needs.word[c] * shrink;
+            wanted += (needs.line[c] - needs.word[c]) * shrink;
+        }
+        double spare = Math.max(0, available - used);
+        double total = used + (wanted > 0 ? spare : 0);
+        for (int c = 0; c < cols; c++) {
+            double width = DENSE_CELL_INSETS + needs.word[c] * shrink;
+            if (wanted > 0) {
+                width += spare * (needs.line[c] - needs.word[c]) * shrink / wanted;
+            }
+            table.getColumnConstraints().get(c).setPercentWidth(width / total * 100.0);
+        }
+        return true;
+    }
+
+    /**
+     * How much of a cell's unwrapped width its longest unbreakable piece takes, 0–1, judged by character
+     * count: text breaks at spaces, and inline code (a {@code Label}) or an image does not break at all.
+     */
+    private static double longestWordShare(TextFlow cell) {
+        int total = 0;
+        int longest = 0;
+        for (Node run : cell.getChildren()) {
+            if (run instanceof Text text && text.getText() != null) {
+                String s = text.getText();
+                total += s.length();
+                int start = 0;
+                for (int i = 0; i <= s.length(); i++) {
+                    if (i == s.length() || Character.isWhitespace(s.charAt(i))) {
+                        longest = Math.max(longest, i - start);
+                        start = i + 1;
+                    }
+                }
+            } else if (run instanceof Label label && label.getText() != null) {
+                total += label.getText().length();
+                longest = Math.max(longest, label.getText().length());
+            } else {
+                return 1; // an image or a formula: no characters to go by, so take the cell as one piece
+            }
+        }
+        return total == 0 ? 1 : (double) longest / total;
+    }
+
+    /** {@code table}'s cells grouped by row, in row order. */
+    private static List<List<Node>> rowsOf(GridPane table) {
+        List<List<Node>> rows = new ArrayList<>();
+        for (Node cell : table.getChildren()) {
+            int r = rowOf(cell);
+            while (rows.size() <= r) {
+                rows.add(new ArrayList<>());
+            }
+            rows.get(r).add(cell);
+        }
+        return rows;
+    }
+
+    private static void collectTables(Node node, List<GridPane> out) {
+        if (node instanceof GridPane grid && grid.getStyleClass().contains("md-table")) {
+            out.add(grid);
+        } else if (node instanceof Pane pane) {
+            for (Node child : pane.getChildren()) {
+                collectTables(child, out);
+            }
+        }
+    }
+
+    private static int rowOf(Node cell) {
+        Integer r = GridPane.getRowIndex(cell);
+        return r == null ? 0 : r;
+    }
+
+    private static int columnOf(Node cell) {
+        Integer c = GridPane.getColumnIndex(cell);
+        return c == null ? 0 : c;
+    }
+
+    /**
+     * Splits an over-tall table between its rows: each piece is a table again — same columns, same styling —
+     * with the header row repeated at its top.
+     *
+     * <p>A table is a {@code GridPane}, and the generic splitter knows nothing about rows: it regrouped the
+     * grid's children, the cells, into plain boxes, so every cell became a full-width row of its own. A
+     * 120-row, 3-column table printed as 17 pages of "#, Name, Value, 1, name 1, value 1, …" one under the
+     * other. It was slow as well: with no arithmetic for a grid it fell back to a binary search with a full
+     * layout per step, per piece — 156s on the FX thread for a 5,000-row CSV.
+     *
+     * <p>Here the table is laid out <b>once</b> (or, for a long one, not at all: {@link #prepareTables} has
+     * already measured its rows in chunks), each row's height read off its cells, and rows are dealt onto
+     * pieces by addition. Every piece is then measured for real and a row handed back while it
+     * overflows — the same "arithmetic is a hint, not an oracle" rule as {@link #largestPrefixThatFits} — but
+     * that is one layout of one page's worth of rows, so the whole thing stays linear in the row count.
+     *
+     * <p>A single row taller than the page (one cell holding paragraphs of text) is cut across several rows
+     * first ({@link #splitTallRow}), so no text is lost and nothing is scaled.
+     */
+    private static List<Node> splitTable(GridPane grid, List<Wrapper> chain, double pw, double ph, int depth) {
+        TableRows table = (TableRows) grid.getProperties().remove(TABLE_ROWS_KEY);
+        if (table == null) {
+            double full = measureWrapped(grid, chain, pw, ph); // the one layout of the whole table
+            List<List<Node>> all = rowsOf(grid);
+            double[] measured = new double[all.size()];
+            double stacked = grid.getVgap() * Math.max(0, all.size() - 1);
+            for (int r = 0; r < all.size(); r++) {
+                measured[r] = rowHeight(all.get(r));
+                stacked += measured[r];
+            }
+            table = new TableRows(all, measured, Math.max(0, full - stacked));
+        }
+        List<List<Node>> rows = table.rows();
+        double[] heights = table.heights();
+        double overhead = table.overhead();
+        int headerRows = !rows.isEmpty() && isHeaderRow(rows.get(0)) ? 1 : 0;
+        if (rows.size() - headerRows < 1) {
+            return List.of(grid); // nothing but a header: no row boundary to cut at
+        }
+        double vgap = grid.getVgap();
+        double headerHeight = headerRows == 0 ? 0 : heights[0] + vgap;
+        double budget = ph - overhead - headerHeight;
+        grid.getChildren().clear();
+
+        // Cut any row that cannot fit a page by itself into several that can.
+        List<List<Node>> body = new ArrayList<>();
+        List<Double> bodyHeights = new ArrayList<>();
+        for (int r = headerRows; r < rows.size(); r++) {
+            if (heights[r] <= budget || !(budget > 0)) {
+                body.add(rows.get(r));
+                bodyHeights.add(heights[r]);
+                continue;
+            }
+            for (List<Node> part : splitTallRow(grid, rows.get(r), chain, pw, ph - headerHeight, depth)) {
+                GridPane probe = (GridPane) cloneShell(grid, pw);
+                addRow(probe, part, 0);
+                bodyHeights.add(measureWrapped(probe, chain, pw, ph) - overhead);
+                probe.getChildren().clear();
+                body.add(part);
+            }
+        }
+
+        List<Node> header = headerRows == 0 ? List.of() : rows.get(0);
+        List<Node> out = new ArrayList<>();
+        int from = 0;
+        while (from < body.size()) {
+            int take = 0;
+            double used = 0;
+            while (from + take < body.size() && used + bodyHeights.get(from + take) <= budget) {
+                used += bodyHeights.get(from + take) + vgap;
+                take++;
+            }
+            take = Math.max(1, take); // a row that still cannot fit goes alone, for the last-resort scale
+            GridPane piece = (GridPane) cloneShell(grid, pw);
+            int at = 0;
+            if (!header.isEmpty()) {
+                addRow(piece, out.isEmpty() ? header : copyRow(header), at++);
+            }
+            for (int i = 0; i < take; i++) {
+                addRow(piece, body.get(from + i), at++);
+            }
+            while (take > 1 && measureWrapped(piece, chain, pw, ph) > ph) {
+                piece.getChildren().removeAll(body.get(from + --take)); // the estimate was optimistic
+            }
+            out.add(piece);
+            from += take;
+        }
+        return out;
+    }
+
+    private static boolean isHeaderRow(List<Node> row) {
+        return !row.isEmpty() && row.get(0).getStyleClass().contains("md-table-header");
+    }
+
+    /** A row is as tall as its tallest cell; valid once the table has been laid out. */
+    private static double rowHeight(List<Node> row) {
+        double h = 0;
+        for (Node cell : row) {
+            h = Math.max(h, cell.getLayoutBounds().getHeight());
+        }
+        return h;
+    }
+
+    private static void addRow(GridPane table, List<Node> cells, int row) {
+        for (Node cell : cells) {
+            table.add(cell, columnOf(cell), row);
+        }
+    }
+
+    /**
+     * Cuts one over-tall table row into several rows that each fit {@code ph}: every cell is split as the
+     * block it is (a paragraph of runs), in its own column, and part <i>n</i> of each cell makes up row
+     * <i>n</i>. A cell that runs out before its neighbours is continued with empty cells, so the column
+     * borders carry on down the page.
+     */
+    private static List<List<Node>> splitTallRow(
+            GridPane grid, List<Node> row, List<Wrapper> chain, double pw, double ph, int depth) {
+        List<List<Node>> parts = new ArrayList<>();
+        int count = 1;
+        for (Node cell : row) {
+            List<Wrapper> inColumn = new ArrayList<>(chain);
+            inColumn.add(new Wrapper(grid, 0, columnOf(cell)));
+            List<Node> pieces = split(cell, measureWrapped(cell, inColumn, pw, ph), inColumn, pw, ph, depth + 1);
+            for (Node piece : pieces) {
+                GridPane.setColumnIndex(piece, columnOf(cell));
+                if (piece instanceof Region region) {
+                    asCell(region);
+                }
+            }
+            parts.add(pieces);
+            count = Math.max(count, pieces.size());
+        }
+        List<List<Node>> out = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            List<Node> cells = new ArrayList<>();
+            for (int c = 0; c < row.size(); c++) {
+                List<Node> pieces = parts.get(c);
+                Node cell = i < pieces.size() ? pieces.get(i) : emptyCellLike(row.get(c), columnOf(pieces.get(0)));
+                cells.add(cell);
+            }
+            out.add(cells);
+        }
+        return out;
+    }
+
+    /**
+     * Undoes the page-width pin {@link #cloneShell} puts on every piece: a table cell is as wide as its
+     * column, and a preferred width of the whole page would be read by the grid as the cell's own.
+     */
+    private static void asCell(Region cell) {
+        cell.setPrefWidth(Region.USE_COMPUTED_SIZE);
+        cell.setMaxWidth(Double.MAX_VALUE);
+    }
+
+    private static Node emptyCellLike(Node cell, int column) {
+        TextFlow empty = new TextFlow();
+        empty.getStyleClass().setAll(cell.getStyleClass());
+        empty.setMaxWidth(Double.MAX_VALUE);
+        GridPane.setColumnIndex(empty, column);
+        return empty;
+    }
+
+    /** A copy of a header row, for the top of each continuation piece. */
+    private static List<Node> copyRow(List<Node> row) {
+        List<Node> out = new ArrayList<>();
+        for (Node cell : row) {
+            Node copy = copyInline(cell);
+            GridPane.setColumnIndex(copy, columnOf(cell));
+            out.add(copy);
+        }
+        return out;
+    }
+
+    /**
+     * A copy of a table cell or of one inline node inside it — text, inline code, an image or a formula,
+     * which is everything the renderer puts in a cell. Anything else is copied as an empty node rather than
+     * moved, because a JavaFX node can only be in one place.
+     */
+    private static Node copyInline(Node node) {
+        if (node instanceof Text text) {
+            return textLike(text, text.getText());
+        }
+        if (node instanceof Label label) {
+            Label copy = new Label(label.getText());
+            copy.getStyleClass().setAll(label.getStyleClass());
+            return copy;
+        }
+        if (node instanceof ImageView view) {
+            ImageView copy = new ImageView(view.getImage());
+            copy.getStyleClass().setAll(view.getStyleClass());
+            copy.setPreserveRatio(view.isPreserveRatio());
+            copy.setSmooth(view.isSmooth());
+            copy.setFitWidth(view.getFitWidth());
+            copy.setFitHeight(view.getFitHeight());
+            return copy;
+        }
+        if (node instanceof TextFlow flow) {
+            TextFlow copy = new TextFlow();
+            copy.getStyleClass().setAll(flow.getStyleClass());
+            copy.setTextAlignment(flow.getTextAlignment());
+            copy.setLineSpacing(flow.getLineSpacing());
+            copy.setMaxWidth(flow.getMaxWidth());
+            for (Node child : flow.getChildren()) {
+                copy.getChildren().add(copyInline(child));
+            }
+            return copy;
+        }
+        Region blank = new Region();
+        blank.getStyleClass().setAll(node.getStyleClass());
+        return blank;
+    }
+
     /** An empty container of the same kind and styling as {@code template}, ready to take a subset. */
     private static Pane cloneShell(Pane template, double pw) {
         Pane copy;
@@ -536,6 +1057,18 @@ public final class MarkdownPrintLayout {
             VBox v = new VBox(vb.getSpacing());
             v.setAlignment(vb.getAlignment());
             copy = v;
+        } else if (template instanceof GridPane grid) {
+            GridPane g = new GridPane();
+            g.setHgap(grid.getHgap());
+            g.setVgap(grid.getVgap());
+            for (ColumnConstraints cc : grid.getColumnConstraints()) {
+                ColumnConstraints c = new ColumnConstraints();
+                c.setPercentWidth(cc.getPercentWidth());
+                c.setHgrow(cc.getHgrow());
+                g.getColumnConstraints().add(c);
+            }
+            g.setStyle(grid.getStyle()); // a wide table's reduced font size (fitColumns) is set inline
+            copy = g;
         } else {
             copy = new VBox();
         }
@@ -598,7 +1131,7 @@ public final class MarkdownPrintLayout {
     private static StackPane measureRoot(double pw, double ph) {
         if (cachedMeasureRoot == null || cachedMeasureWidth != pw) {
             StackPane root = new StackPane();
-            root.getStyleClass().add("md-light");
+            root.getStyleClass().addAll(LIGHT_PAGE_CLASSES);
             root.setPrefWidth(pw);
             root.setMaxWidth(pw);
             Scene scene = new Scene(root, pw, Math.max(ph, 1));

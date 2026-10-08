@@ -352,6 +352,44 @@ class ChromeTest {
         assertFalse(Chrome.contextEnabled("http.runRequest", markdown));
     }
 
+    /**
+     * An {@code .http} buffer has a preview — its response panel — but nothing that can be put on a page:
+     * the two commands that export or print the preview are grayed, with a reason that does not claim the
+     * file has no preview, while the rest of the family (which only needs a preview) stays lit.
+     */
+    @Test
+    void exportingAndPrintingThePreviewNeedAPreviewThatCanBePutOnAPage() {
+        Chrome.PaletteContext http = new Chrome.PaletteContext(
+                true, false, false, false, true, false, true, false, false, true, false, false);
+        assertFalse(Chrome.contextEnabled("preview.exportPdf", http));
+        assertFalse(Chrome.contextEnabled("preview.print", http));
+        assertTrue(Chrome.contextEnabled("preview.copy", http), "copying only needs a preview");
+        assertEquals(
+                "palette.disabled.needsExportablePreview",
+                Chrome.disabledReason("preview.print", allOn(), http).messageKey());
+        // A CSV grid is exportable: the two commands write and print it as a table.
+        Chrome.PaletteContext csv = new Chrome.PaletteContext(
+                true, false, false, true, false, false, true, false, false, true, false, true);
+        assertTrue(Chrome.contextEnabled("preview.exportPdf", csv));
+        assertTrue(Chrome.contextEnabled("preview.print", csv));
+        // With no preview at all, that stays the reason given.
+        assertEquals(
+                "palette.disabled.needsPreview",
+                Chrome.disabledReason("preview.print", allOn(), noBuffer()).messageKey());
+    }
+
+    /** Print and Export to PDF are File-menu entries now: grayed where there is no text to print. */
+    @Test
+    void printingTheFileNeedsABuffer() {
+        for (String id : new String[] {"editor.print", "editor.exportPdf"}) {
+            assertFalse(Chrome.contextEnabled(id, noBuffer()), id + " has nothing to print on the Welcome tab");
+            assertEquals(
+                    "palette.disabled.needsBuffer",
+                    Chrome.disabledReason(id, allOn(), noBuffer()).messageKey());
+            assertTrue(Chrome.contextEnabled(id, ctx()), id);
+        }
+    }
+
     @Test
     void markdownEditingCommandsAlsoServeTypstBuffers() {
         // The Markdown editing commands dispatch on isTypst() too, so a Typst buffer must not gray them.

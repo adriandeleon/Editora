@@ -165,15 +165,37 @@ public final class MarkdownRenderer {
             Path baseDir,
             java.util.function.Consumer<String> onLinkClick,
             ImagePolicy images) {
+        return renderDocument(
+                ast,
+                new RenderContext(baseDir, onLinkClick, images == null ? ImagePolicy.DATA_ONLY : images, false, null));
+    }
+
+    /**
+     * Builds the node tree for <b>print</b>: the same blocks as the preview, but final the moment this returns.
+     *
+     * <p>The preview fills images, Mermaid diagrams and syntax colours in later, from background loads. A
+     * printed page is measured, packed and sent in one pulse, so "later" is after the paper: fences printed
+     * uncoloured, and an image that measured 0px while loading grew afterwards and pushed the rest of its
+     * page off the sheet. Here they come from {@code assets}, resolved beforehand off the FX thread
+     * ({@link MarkdownPrintAssets#resolve}); an image that did not load prints as its alt text.
+     *
+     * <p>Print is also always light, so math is rasterised dark-on-white whatever the app theme is, and a
+     * code block is one node per line so the paginator can cut it between lines (see {@link #printCodeBlock}).
+     *
+     * <p>With {@code assets} null the document was not resolved: images and diagrams then load in the
+     * background as the preview's do and code prints uncoloured. Only for callers that cannot block first.
+     */
+    public static Node renderForPrint(org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets) {
+        return renderDocument(ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets));
+    }
+
+    private static Node renderDocument(org.commonmark.node.Node ast, RenderContext ctx) {
         VBox content = new VBox();
         content.getStyleClass().add("markdown-preview");
         // Cap the readable column width so long lines don't stretch across a wide window (GitHub-style).
         content.setMaxWidth(MAX_CONTENT_WIDTH);
         if (ast != null) {
-            appendBlocks(
-                    ast,
-                    content,
-                    new RenderContext(baseDir, onLinkClick, images == null ? ImagePolicy.DATA_ONLY : images));
+            appendBlocks(ast, content, ctx);
         }
         // Center the capped-width column within the (fit-to-width) preview pane. A StackPane clamps the
         // content to the available width when the viewport is narrower than the cap, so it never overflows.
@@ -186,7 +208,26 @@ public final class MarkdownRenderer {
     /** Threaded through every block/inline renderer alongside {@code baseDir} (for image resolution) so a
      *  link's click handler reaches the {@code Link} node without a parameter per call — the pure-{@code
      *  baseDir} idiom this file already used, extended to carry one more per-render input. */
-    private record RenderContext(Path baseDir, java.util.function.Consumer<String> onLinkClick, ImagePolicy images) {}
+    private record RenderContext(
+            Path baseDir,
+            java.util.function.Consumer<String> onLinkClick,
+            ImagePolicy images,
+            boolean print,
+            MarkdownPrintAssets assets) {
+
+        /** Whether math is drawn light-on-dark: never on paper, otherwise as the app theme says. */
+        Node blockMath(String latex) {
+            return print
+                    ? MathImages.blockNode(latex, DISPLAY_MATH_SIZE, false)
+                    : MathImages.blockNode(latex, DISPLAY_MATH_SIZE);
+        }
+
+        Node inlineMath(String latex) {
+            return print
+                    ? MathImages.inlineNode(latex, INLINE_MATH_SIZE, false)
+                    : MathImages.inlineNode(latex, INLINE_MATH_SIZE);
+        }
+    }
 
     // --- block level ---------------------------------------------------------------------------
 
@@ -210,7 +251,7 @@ public final class MarkdownRenderer {
             if (MathImages.isEnabled()) {
                 String disp = soleDisplayMath(paragraphText(p));
                 if (disp != null) {
-                    StackPane wrap = new StackPane(MathImages.blockNode(disp, DISPLAY_MATH_SIZE));
+                    StackPane wrap = new StackPane(ctx.blockMath(disp));
                     wrap.getStyleClass().add("md-math-block-wrap");
                     return new ShrinkToFit(wrap); // a long formula shrinks; it must not widen the column
                 }
@@ -239,15 +280,25 @@ public final class MarkdownRenderer {
         }
         if (node instanceof FencedCodeBlock f) {
             if (isMermaidInfo(f.getInfo()) && MermaidImages.isEnabled()) {
+                if (ctx.assets() != null) { // print: already rendered (light), so its size is final now
+                    return new ShrinkToFit(MermaidImages.printNode(
+                            ctx.assets().diagram(stripTrailingNewline(f.getLiteral())),
+                            lw -> Math.min(lw, MAX_CONTENT_WIDTH)));
+                }
                 // Show at natural size, but never wider than the reading column — and scaled down further
                 // when the pane itself is narrower (Split view), so the diagram never widens the column.
                 return new ShrinkToFit(MermaidImages.node(
                         stripTrailingNewline(f.getLiteral()), lw -> Math.min(lw, MAX_CONTENT_WIDTH)));
             }
+            if (ctx.print()) {
+                String code = stripTrailingNewline(f.getLiteral());
+                return printCodeBlock(
+                        code, ctx.assets() == null ? null : ctx.assets().runs(f.getInfo(), code));
+            }
             return highlightedCodeBlock(f.getLiteral(), f.getInfo());
         }
         if (node instanceof IndentedCodeBlock i) {
-            return codeBlock(i.getLiteral()); // indented blocks carry no language → plain
+            return codeBlock(i.getLiteral(), ctx); // indented blocks carry no language → plain
         }
         if (node instanceof ThematicBreak) {
             Separator s = new Separator();
@@ -258,7 +309,7 @@ public final class MarkdownRenderer {
             if (isHtmlComment(hb.getLiteral())) {
                 return null; // HTML comments are invisible (as in GitHub / every Markdown renderer)
             }
-            return codeBlock(hb.getLiteral()); // other raw HTML shown as text (no interpretation)
+            return codeBlock(hb.getLiteral(), ctx); // other raw HTML shown as text (no interpretation)
         }
         if (node instanceof TableBlock tb) {
             return renderTable(tb, ctx);
@@ -404,6 +455,73 @@ public final class MarkdownRenderer {
         return len;
     }
 
+    private static Node codeBlock(String literal, RenderContext ctx) {
+        return ctx.print() ? printCodeBlock(stripTrailingNewline(literal), null) : codeBlock(literal);
+    }
+
+    /**
+     * A code block for print: a box of lines, each its own {@code TextFlow} of token runs.
+     *
+     * <p>The preview's block is a single node — a wrapping {@code Label}, or one {@code TextFlow} holding
+     * the whole listing — and neither survives a page boundary. The label is measured inside a page-high
+     * scene, so a 150-line block reported one page of height, was never recognised as over-tall and printed
+     * its first 30 lines followed by "...". The flow was recognised, but the paginator could only cut it at
+     * its runs or at a space: mid-line, and the rebuilt pieces lost the block's font and colours.
+     *
+     * <p>One node per line gives the paginator the only cut that is right for code — between lines — and
+     * makes the block's height the sum of its lines, so a long listing is split by arithmetic rather than by
+     * repeated layout. {@code runs} are the fence's tokens ({@link #tokenizeRuns}), or null to print plain.
+     */
+    static Node printCodeBlock(String code, List<Run> runs) {
+        VBox box = new VBox();
+        box.getStyleClass().addAll("md-code-block", "md-code-lines");
+        box.setMaxWidth(Double.MAX_VALUE);
+        for (List<Run> line : codeLines(runs == null ? List.of(new Run(code, List.of())) : runs)) {
+            TextFlow flow = new TextFlow();
+            for (Run run : line) {
+                Text t = new Text(run.text());
+                t.getStyleClass().add("text"); // token rules are `.text.<class>`; plain runs get the fallback
+                t.getStyleClass().addAll(run.classes());
+                flow.getChildren().add(t);
+            }
+            box.getChildren().add(flow);
+        }
+        return box;
+    }
+
+    /**
+     * Regroups tokenised {@code runs} by source line, splitting any run that spans a line break. An empty
+     * line keeps a single space so it still has a line's height when laid out. Pure; unit-tested.
+     */
+    static List<List<Run>> codeLines(List<Run> runs) {
+        List<List<Run>> lines = new ArrayList<>();
+        List<Run> cur = new ArrayList<>();
+        for (Run run : runs) {
+            String text = run.text();
+            int from = 0;
+            for (int nl = text.indexOf('\n'); nl >= 0; nl = text.indexOf('\n', from)) {
+                addRun(cur, text, from, nl, run.classes());
+                lines.add(closeLine(cur));
+                cur = new ArrayList<>();
+                from = nl + 1;
+            }
+            addRun(cur, text, from, text.length(), run.classes());
+        }
+        lines.add(closeLine(cur));
+        return lines;
+    }
+
+    private static void addRun(List<Run> line, String text, int from, int to, List<String> classes) {
+        int end = to > from && text.charAt(to - 1) == '\r' ? to - 1 : to; // CRLF: the CR is not content
+        if (end > from) {
+            line.add(new Run(text.substring(from, end), classes));
+        }
+    }
+
+    private static List<Run> closeLine(List<Run> line) {
+        return line.isEmpty() ? List.of(new Run(" ", List.of())) : line;
+    }
+
     private static Node codeBlock(String literal) {
         Label label = new Label(stripTrailingNewline(literal));
         label.getStyleClass().add("md-code-block");
@@ -413,7 +531,7 @@ public final class MarkdownRenderer {
     }
 
     /** Above this many characters a fenced block renders as plain text (avoids tokenizing a huge block). */
-    private static final int MAX_HIGHLIGHT_CHARS = 50_000;
+    static final int MAX_HIGHLIGHT_CHARS = 50_000;
 
     /** One tokenized run: its text + the token style classes ({@code .text.<class>}) to apply. */
     record Run(String text, List<String> classes) {}
@@ -571,7 +689,7 @@ public final class MarkdownRenderer {
     }
 
     /** Whether a fenced block's info string marks it as Mermaid (first token, case-insensitive). */
-    private static boolean isMermaidInfo(String info) {
+    static boolean isMermaidInfo(String info) {
         if (info == null) {
             return false;
         }
@@ -597,7 +715,7 @@ public final class MarkdownRenderer {
     private static void emitInline(org.commonmark.node.Node n, TextFlow flow, List<String> styles, RenderContext ctx) {
         if (n instanceof org.commonmark.node.Text t) {
             if (MathImages.isEnabled()) {
-                appendTextWithMath(t.getLiteral(), flow, styles);
+                appendTextWithMath(t.getLiteral(), flow, styles, ctx);
             } else {
                 flow.getChildren().add(styledText(t.getLiteral(), styles));
             }
@@ -646,14 +764,14 @@ public final class MarkdownRenderer {
     }
 
     /** Splits a text run into literal text + inline math (rendered as small images). */
-    private static void appendTextWithMath(String literal, TextFlow flow, List<String> styles) {
+    private static void appendTextWithMath(String literal, TextFlow flow, List<String> styles, RenderContext ctx) {
         for (MathSpans.Segment seg : MathSpans.segments(literal)) {
             if (seg.span() == null) {
                 if (!seg.text().isEmpty()) {
                     flow.getChildren().add(styledText(seg.text(), styles));
                 }
             } else {
-                flow.getChildren().add(MathImages.inlineNode(seg.span().latex(), INLINE_MATH_SIZE));
+                flow.getChildren().add(ctx.inlineMath(seg.span().latex()));
             }
         }
     }
@@ -733,6 +851,17 @@ public final class MarkdownRenderer {
         ImageView view = new ImageView();
         view.getStyleClass().add("md-image");
         view.setPreserveRatio(true);
+        if (ctx.assets() != null) {
+            // Print: the image was loaded beforehand, so its size is final when the page is measured. One
+            // that did not load prints as its alt text — on paper an empty slot says nothing at all.
+            PreviewImageLoader.Loaded loaded = ctx.assets().image(url);
+            if (loaded == null) {
+                return inlineCode(imagePlaceholder(alt, null));
+            }
+            view.setImage(loaded.image());
+            view.setFitWidth(Math.min(loaded.logicalWidth(), MAX_IMAGE_WIDTH));
+            return view;
+        }
         // Loads off the FX thread and rasterizes SVG (e.g. badges) that JavaFX's own decoder can't read;
         // sizes the view to the image's logical width, capped to the pane.
         PreviewImageLoader.loadInto(view, url, MAX_IMAGE_WIDTH);
@@ -768,7 +897,7 @@ public final class MarkdownRenderer {
         return sb.toString();
     }
 
-    private static String resolveUrl(String dest, Path baseDir) {
+    static String resolveUrl(String dest, Path baseDir) {
         if (dest == null || dest.isBlank()) {
             return null;
         }
@@ -799,7 +928,7 @@ public final class MarkdownRenderer {
         return out;
     }
 
-    private static String stripTrailingNewline(String s) {
+    static String stripTrailingNewline(String s) {
         if (s == null) {
             return "";
         }

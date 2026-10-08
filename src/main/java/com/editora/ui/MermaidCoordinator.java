@@ -117,9 +117,13 @@ final class MermaidCoordinator {
         return isEnabled() ? service.mmdcCommand() : null;
     }
 
-    /** Renders {@code source} to {@code dest} (SVG/PNG/PDF by extension), themed to the app; for PDF export. */
+    /**
+     * Renders {@code source} to the PDF {@code dest} for "Export to PDF". Always light: a PDF page is white
+     * paper whatever the app theme is, and a dark-themed diagram on it has near-white arrows and labels.
+     * (The {@code mermaid.export} command below keeps the app theme — an SVG/PNG is meant to match the screen.)
+     */
     void exportDiagram(String source, Path dest, Consumer<ProcessRunner.Result> onResult) {
-        service.export(source, dest, host.appThemeDark(), onResult);
+        service.export(source, dest, false, onResult);
     }
 
     /** {@code mermaid.export}: save the active diagram as SVG/PNG/PDF (no-op when the feature is off). */

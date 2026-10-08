@@ -56,6 +56,10 @@ final class MenuBarIcons {
         add("file.saveAs", Icons::saveAs);
         add("file.saveAsAdmin", Icons::saveAs);
         add("config.export", Icons::saveAs);
+        add("editor.print", Icons::print);
+        add("preview.print", Icons::print);
+        add("editor.exportPdf", Icons::saveAs);
+        add("preview.exportPdf", Icons::saveAs);
         add("buffer.close", Icons::closeTab);
         add("buffer.closeOthers", Icons::closeOtherTabs);
         add("buffer.closeAll", Icons::closeAllTabs);
