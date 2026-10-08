@@ -4939,8 +4939,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public ProjectManager projects() {
-            return projects;
+        public Path projectRoot() {
+            return windowProjectRoot();
         }
 
         @Override

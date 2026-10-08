@@ -5,8 +5,6 @@ import java.nio.file.Path;
 import javafx.scene.control.Tab;
 
 import com.editora.command.CommandRegistry;
-import com.editora.config.Project;
-import com.editora.config.ProjectManager;
 import com.editora.editor.EditorBuffer;
 import org.fxmisc.richtext.CodeArea;
 
@@ -23,7 +21,8 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
         CommandRegistry registry();
 
-        ProjectManager projects();
+        /** This window's project root, or null when it has no project open. */
+        Path projectRoot();
 
         com.editora.lsp.LspManager lspManager();
 
@@ -165,11 +164,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                     open.put(b.getPath().toAbsolutePath().normalize(), b.getContent());
                 }
             }
-            Path root = null;
-            Project p = host.projects() == null ? null : host.projects().active();
-            if (p != null) {
-                root = Path.of(p.root());
-            }
+            // This window's project, as its todo_scan and its own Find in Files use: the ProjectManager's
+            // "active" project is whichever window was focused last.
+            Path root = host.projectRoot();
             // Detached: an MCP call must neither drop the user's own search nor be dropped by it (or by a
             // second, parallel MCP call) and then wait out the timeout for an answer nobody will send.
             host.searchCoordinator().service().searchDetached(q, root, open, fut::complete, () -> fut.cancel(false));

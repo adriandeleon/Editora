@@ -533,6 +533,32 @@ class WindowMcpBridgeFxTest {
     }
 
     @Test
+    void findInFilesSearchesThisWindowsProjectNotTheOneFocusedLast() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx =
+                    async.own(FxWindowFixture.create(Files.createTempDirectory(work, "config"), shared -> {}));
+            Path rootA = Files.createDirectories(work.resolve("projectA"));
+            Path rootB = Files.createDirectories(work.resolve("projectB"));
+            Path inA = Files.writeString(rootA.resolve("a.txt"), "needle in A\n// TODO in A\n");
+            Files.writeString(rootB.resolve("b.txt"), "needle in B\n// TODO in B\n");
+            Window windowA = projectWindow(async, fx, rootA);
+            projectWindow(async, fx, rootB); // opened, and so focused, last
+
+            List<McpBridge.SearchMatch> hits = windowA.mcp.findInFiles("needle", false, false, false);
+
+            assertEquals(
+                    List.of(inA.toString()),
+                    hits.stream().map(McpBridge.SearchMatch::file).toList(),
+                    "the window that answers searches its own project, as its todo_scan and its Find in Files do");
+            assertEquals(
+                    List.of(inA.toString()),
+                    windowA.mcp.todoScan().stream()
+                            .map(McpBridge.TodoItem::file)
+                            .toList());
+        }
+    }
+
+    @Test
     void todoScanFindsMarkersOnDiskAndInUnsavedTextAndNothingWhenTheFeatureIsOff() throws Exception {
         try (AsyncTestScope async = new AsyncTestScope()) {
             Window window = projectWindow(async, "todos");
