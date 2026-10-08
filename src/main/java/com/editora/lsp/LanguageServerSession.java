@@ -1365,12 +1365,17 @@ final class LanguageServerSession implements LanguageClient {
                             .filter(l -> l != null && l.getCommand() != null)
                             .toList());
         });
-        result.whenComplete((value, error) -> {
-            if (result.isCancelled()) {
+        // The caller holds (and cancels) the stage returned below, not `result`, and cancelling a dependent
+        // stage does not cancel what it was derived from: the check has to be on the returned one, or a
+        // superseded request leaves every resolve it started running on the server.
+        CompletableFuture<List<org.eclipse.lsp4j.CodeLens>> answer =
+                cancelling(request, result.exceptionally(t -> List.of()));
+        answer.whenComplete((value, error) -> {
+            if (answer.isCancelled()) {
                 resolving.forEach(f -> f.cancel(true));
             }
         });
-        return cancelling(request, result.exceptionally(t -> List.of()));
+        return answer;
     }
 
     /** Call-hierarchy anchor at a position ({@code textDocument/prepareCallHierarchy}) → items or empty. */
