@@ -424,7 +424,7 @@ final class ExportCoordinator {
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            noPrinter(() -> exportProjectMapPdf(image, null));
+            noPrinter(() -> exportProjectMapPdf(output, null));
             return;
         }
         if (output.landscape()) {
