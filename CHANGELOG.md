@@ -209,6 +209,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Tabs restored from the last session no longer keep the muted italic read-only title for files that
+  are editable. The title was drawn while the file was still loading and never redrawn afterwards.
 - Abbreviations that contain punctuation now expand: `adl-fn`, `;sig`, `e.g`. Only letters and digits were
   looked up, so such an entry could be saved in Settings and never expanded, with nothing saying why. The
   longest match wins (`adl-fn` over a separate `fn`), and a space typed around the abbreviation in Settings
