@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Paging a full-width Markdown preview (Space, Page Down) just after it rendered jumped to wherever the
+  hidden editor was scrolled instead of moving one page, and a re-render put the preview back there too.
+  The preview follows the editor's scroll position only in Split view now.
 - **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
   turned out to be incomplete or not the expected tool was unpacked over the installed version before it
   was checked: the working version was gone, and the half-unpacked folder was then detected as installed,
