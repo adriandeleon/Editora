@@ -322,7 +322,10 @@ final class GitCoordinator {
         return true;
     }
 
-    /** The path whose repo drives the Git UI: the active file, else the active project root, else null. */
+    /**
+     * The path whose repo drives the Git UI: the active file, else the active project root, else — on a diff
+     * or review tab — the repository already active, else null.
+     */
     Path contextPath() {
         EditorBuffer b = host.activeBuffer();
         Path file = b == null ? null : b.getPath();
@@ -330,7 +333,18 @@ final class GitCoordinator {
             return file;
         }
         Path revisionRoot = blame.revisionRoot(b); // a "file as of a commit" tab stays in its repository
-        return revisionRoot != null ? revisionRoot : ops.projectRoot();
+        if (revisionRoot != null) {
+            return revisionRoot;
+        }
+        Path project = ops.projectRoot();
+        if (project != null) {
+            return project;
+        }
+        // A diff or review tab has no file of its own. In a window without a project that used to mean "no
+        // repository": opening a commit's diff from the Git Log dropped the repository under the log that
+        // had just opened it — the log closed, and a file history was forgotten. Such a tab stays in the
+        // repository it was opened in.
+        return repoRoot != null && GitWindowGate.showsGitView(host.window()) ? repoRoot : null;
     }
 
     /**
