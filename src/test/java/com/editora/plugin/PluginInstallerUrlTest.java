@@ -96,7 +96,7 @@ class PluginInstallerUrlTest {
     private List<String> outsideThePluginsFolder() throws IOException {
         try (Stream<Path> walk = Files.walk(sandbox)) {
             return walk.filter(p -> !p.startsWith(pluginsDir) && !pluginsDir.startsWith(p))
-                    .map(p -> sandbox.relativize(p).toString())
+                    .map(p -> sandbox.relativize(p).toString().replace('\\', '/'))
                     .sorted()
                     .toList();
         }
