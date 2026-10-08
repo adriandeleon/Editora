@@ -150,6 +150,16 @@ public final class DebugLog {
         }
     }
 
+    /** TEST SEAM — stops mirroring and closes the session file, so a test can delete the folder it attached. */
+    static void detachFileForTest() {
+        synchronized (LOCK) {
+            if (file != null) {
+                file.close();
+                file = null;
+            }
+        }
+    }
+
     /** The session log file path under {@code configDir}, for display in the viewer. */
     public static Path sessionFile(Path configDir) {
         return configDir == null ? null : configDir.resolve("editora-session.log");

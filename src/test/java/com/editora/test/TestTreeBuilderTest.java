@@ -96,4 +96,45 @@ class TestTreeBuilderTest {
         TestNode root = TestNode.root();
         assertNull(root.childById("nope"));
     }
+
+    /**
+     * A suite row stood for no class: only its tests carried one. The Test Results row menu needs it, so
+     * "Go to Test Class", "Rerun This Class" and "Debug This Class" never opened on a class row.
+     */
+    @Test
+    void aSuiteRowKnowsTheClassItsTestsBelongTo() {
+        TestNode root = TestNode.root();
+
+        TestTreeBuilder.merge(
+                root,
+                new ParsedSuite(
+                        "com.x.FooTest", List.of(ParsedTest.of("com.x.FooTest", "works", TestStatus.PASSED, 1))));
+        TestTreeBuilder.seed(
+                root,
+                new ParsedSuite(
+                        "com.x.BarTest", List.of(ParsedTest.of("com.x.BarTest", "pending", TestStatus.RUNNING, 0))));
+
+        assertEquals("com.x.FooTest", root.childById("com.x.FooTest").className());
+        assertEquals("com.x.BarTest", root.childById("com.x.BarTest").className(), "a seeded suite too");
+    }
+
+    @Test
+    void aSuiteOfSeveralClassesStandsForItsOwnOrForNone() {
+        ParsedTest own = ParsedTest.of("com.x.Outer", "top", TestStatus.PASSED, 1);
+        ParsedTest nested = ParsedTest.of("com.x.Outer$Inner", "inner", TestStatus.PASSED, 1);
+        ParsedTest other = ParsedTest.of("com.x.Other", "elsewhere", TestStatus.PASSED, 1);
+        ParsedTest unnamed = ParsedTest.of(" ", "tap case", TestStatus.PASSED, 1);
+
+        assertEquals(
+                "com.x.Outer",
+                TestTreeBuilder.suiteClassName(new ParsedSuite("com.x.Outer", List.of(nested, own))),
+                "the suite's own class wins over a nested one reported first");
+        assertEquals(
+                "com.x.Outer$Inner",
+                TestTreeBuilder.suiteClassName(new ParsedSuite("Outer > Inner", List.of(unnamed, nested, nested))),
+                "the one class every test reports");
+        assertNull(TestTreeBuilder.suiteClassName(new ParsedSuite("mixed", List.of(nested, other))));
+        assertNull(TestTreeBuilder.suiteClassName(new ParsedSuite("tap", List.of(unnamed))));
+        assertNull(TestTreeBuilder.suiteClassName(new ParsedSuite("empty", List.of())));
+    }
 }

@@ -15,6 +15,7 @@ public final class TestTreeBuilder {
         if (suiteNode == null) {
             suiteNode = root.addChild(new TestNode(TestNodeKind.SUITE, suite.suiteName(), suite.suiteName()));
         }
+        nameSuiteClass(suiteNode, suite);
         if (suite.suiteStdout() != null) {
             suiteNode.setStdout(suite.suiteStdout());
         }
@@ -36,6 +37,7 @@ public final class TestTreeBuilder {
         if (suiteNode == null) {
             suiteNode = root.addChild(new TestNode(TestNodeKind.SUITE, suite.suiteName(), suite.suiteName()));
         }
+        nameSuiteClass(suiteNode, suite);
         for (ParsedTest test : suite.tests()) {
             if (suiteNode.childById(test.id()) == null) {
                 TestNode node = suiteNode.addChild(new TestNode(TestNodeKind.TEST, test.id(), test.methodName()));
@@ -44,6 +46,38 @@ public final class TestTreeBuilder {
                 node.setMethodName(test.methodName());
             }
         }
+    }
+
+    /** Gives a suite row the class it stands for, once it is known — see {@link #suiteClassName}. */
+    private static void nameSuiteClass(TestNode suiteNode, ParsedSuite suite) {
+        if (suiteNode.className() == null) {
+            suiteNode.setClassName(suiteClassName(suite));
+        }
+    }
+
+    /**
+     * The class (or package) a suite row stands for, or null when its tests do not agree on one: the suite's
+     * own name when a test reports it as its class, else the one class every test reports. Without it a
+     * suite row had no class at all, and the Test Results row menu — Go to Test Class, Rerun This Class,
+     * Debug This Class — never opened on one.
+     */
+    static String suiteClassName(ParsedSuite suite) {
+        String shared = null;
+        for (ParsedTest test : suite.tests()) {
+            String cls = test.className();
+            if (cls == null || cls.isBlank()) {
+                continue;
+            }
+            if (cls.equals(suite.suiteName())) {
+                return cls;
+            }
+            if (shared == null) {
+                shared = cls;
+            } else if (!shared.equals(cls)) {
+                shared = ""; // several classes report into this suite: none of them is "the" class
+            }
+        }
+        return shared == null || shared.isEmpty() ? null : shared;
     }
 
     private static void upsertTest(TestNode suiteNode, ParsedTest test) {
