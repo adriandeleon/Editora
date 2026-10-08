@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -150,6 +152,18 @@ class SpellFxTest {
         return items;
     }
 
+    /**
+     * Returns once the suggestion search the last menu started has finished and its rows are in the menu.
+     * The searches run one at a time on a single worker, so a task queued behind the search ends after it —
+     * and after the search has posted its rows to the FX thread, which the drain then lets through.
+     */
+    private static void awaitSuggestions() throws Exception {
+        java.lang.reflect.Field worker = BufferSpell.class.getDeclaredField("SUGGESTER");
+        worker.setAccessible(true);
+        ((ExecutorService) worker.get(null)).submit(() -> {}).get(30, TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+    }
+
     private static MenuItem item(List<MenuItem> items, String text) {
         return items.stream().filter(i -> text.equals(i.getText())).findFirst().orElse(null);
     }
@@ -287,7 +301,7 @@ class SpellFxTest {
         EditorBuffer txt = open("menu.txt", "we recieve it untill then\n");
         ObservableList<MenuItem> menu = FXCollections.observableArrayList();
         FxTestSupport.runOnFx(() -> menuAt(txt, "recieve", menu));
-        settle(); // a slow search fills the placeholder row after the menu is built
+        awaitSuggestions(); // a slow search fills the placeholder row after the menu is built
         MenuItem receive = FxTestSupport.callOnFx(() -> item(menu, "receive"));
         assertNotNull(receive, "the suggestion is in the menu");
         assertFalse(receive.isDisable());
@@ -298,13 +312,13 @@ class SpellFxTest {
                 "the placeholder is gone once the suggestions are in");
 
         FxTestSupport.runOnFx(() -> menuAt(txt, "untill", menu));
-        settle();
+        awaitSuggestions();
         assertNotNull(FxTestSupport.callOnFx(() -> item(menu, "until")));
         assertNull(FxTestSupport.callOnFx(() -> item(menu, "until l")), "no split-word junk");
 
         FxTestSupport.runOnFx(() -> txt.setViewMode(true));
         FxTestSupport.runOnFx(() -> menuAt(txt, "recieve", menu));
-        settle();
+        awaitSuggestions();
         MenuItem readOnly = FxTestSupport.callOnFx(() -> item(menu, "receive"));
         assertNotNull(readOnly);
         assertTrue(readOnly.isDisable(), "a suggestion cannot be applied to a read-only buffer, and says so");
@@ -313,7 +327,7 @@ class SpellFxTest {
 
         FxTestSupport.runOnFx(() -> txt.setViewMode(false));
         FxTestSupport.runOnFx(() -> menuAt(txt, "recieve", menu));
-        settle();
+        awaitSuggestions();
         MenuItem again = FxTestSupport.callOnFx(() -> item(menu, "receive"));
         FxTestSupport.runOnFx(again::fire);
         assertTrue(FxTestSupport.callOnFx(() -> txt.getArea().getText()).startsWith("we receive it"));
