@@ -1,0 +1,262 @@
+{
+  "Local variable": {
+    "prefix": "local",
+    "body": [
+      "local ${1:name} = ${0:value}"
+    ],
+    "description": "Local variable"
+  },
+  "Local function": {
+    "prefix": "lfunction",
+    "body": [
+      "local function ${1:name}(${2:args})",
+      "\t$0",
+      "end"
+    ],
+    "description": "Local function"
+  },
+  "Function": {
+    "prefix": "function",
+    "body": [
+      "function ${1:name}(${2:args})",
+      "\t$0",
+      "end"
+    ],
+    "description": "Function"
+  },
+  "Anonymous function": {
+    "prefix": "fn",
+    "body": [
+      "function(${1:args})",
+      "\t$0",
+      "end"
+    ],
+    "description": "Anonymous function"
+  },
+  "Method": {
+    "prefix": "method",
+    "body": [
+      "function ${1:Class}:${2:name}(${3:args})",
+      "\t$0",
+      "end"
+    ],
+    "description": "Method (colon syntax)"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} then",
+      "\t$0",
+      "end"
+    ],
+    "description": "If statement"
+  },
+  "If Else": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} then",
+      "\t$2",
+      "else",
+      "\t$0",
+      "end"
+    ],
+    "description": "If-else statement"
+  },
+  "Elseif": {
+    "prefix": "elseif",
+    "body": [
+      "elseif ${1:condition} then",
+      "\t$0"
+    ],
+    "description": "Elseif branch"
+  },
+  "Else": {
+    "prefix": "else",
+    "body": [
+      "else",
+      "\t$0"
+    ],
+    "description": "Else branch"
+  },
+  "Numeric for": {
+    "prefix": "for",
+    "body": [
+      "for ${1:i} = ${2:1}, ${3:10} do",
+      "\t$0",
+      "end"
+    ],
+    "description": "Numeric for loop"
+  },
+  "For ipairs": {
+    "prefix": "fori",
+    "body": [
+      "for ${1:i}, ${2:value} in ipairs(${3:list}) do",
+      "\t$0",
+      "end"
+    ],
+    "description": "Loop over an array with ipairs"
+  },
+  "For pairs": {
+    "prefix": "forp",
+    "body": [
+      "for ${1:key}, ${2:value} in pairs(${3:table}) do",
+      "\t$0",
+      "end"
+    ],
+    "description": "Loop over a table with pairs"
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while ${1:condition} do",
+      "\t$0",
+      "end"
+    ],
+    "description": "While loop"
+  },
+  "Repeat": {
+    "prefix": "repeat",
+    "body": [
+      "repeat",
+      "\t$0",
+      "until ${1:condition}"
+    ],
+    "description": "Repeat-until loop"
+  },
+  "Do block": {
+    "prefix": "do",
+    "body": [
+      "do",
+      "\t$0",
+      "end"
+    ],
+    "description": "Do block"
+  },
+  "Require": {
+    "prefix": "require",
+    "body": [
+      "local ${1:module} = require(\"${2:module}\")$0"
+    ],
+    "description": "Require a module"
+  },
+  "Module": {
+    "prefix": "module",
+    "body": [
+      "local ${1:M} = {}",
+      "",
+      "$0",
+      "",
+      "return ${1:M}"
+    ],
+    "description": "Module table"
+  },
+  "Class": {
+    "prefix": "class",
+    "body": [
+      "local ${1:Class} = {}",
+      "${1:Class}.__index = ${1:Class}",
+      "",
+      "function ${1:Class}.new(${2:args})",
+      "\tlocal self = setmetatable({}, ${1:Class})",
+      "\t$0",
+      "\treturn self",
+      "end",
+      "",
+      "return ${1:Class}"
+    ],
+    "description": "Class with a constructor (metatable)"
+  },
+  "Print": {
+    "prefix": "print",
+    "body": [
+      "print(${1:value})$0"
+    ],
+    "description": "Print a value"
+  },
+  "Formatted print": {
+    "prefix": "printf",
+    "body": [
+      "print(string.format(\"${1:%s}\", ${2:value}))$0"
+    ],
+    "description": "Print a formatted string"
+  },
+  "Protected call": {
+    "prefix": "pcall",
+    "body": [
+      "local ${1:ok}, ${2:result} = pcall(${3:fn})",
+      "if not ${1:ok} then",
+      "\t$0",
+      "end"
+    ],
+    "description": "Protected call with error handling"
+  },
+  "Error": {
+    "prefix": "error",
+    "body": [
+      "error(${1:\"message\"})$0"
+    ],
+    "description": "Raise an error"
+  },
+  "Assert": {
+    "prefix": "assert",
+    "body": [
+      "assert(${1:condition}, ${2:\"message\"})$0"
+    ],
+    "description": "Assertion"
+  },
+  "Table": {
+    "prefix": "table",
+    "body": [
+      "local ${1:name} = {",
+      "\t${2:key} = ${3:value},$0",
+      "}"
+    ],
+    "description": "Table literal"
+  },
+  "Table insert": {
+    "prefix": "tinsert",
+    "body": [
+      "table.insert(${1:list}, ${2:value})$0"
+    ],
+    "description": "Append to an array"
+  },
+  "Table concat": {
+    "prefix": "tconcat",
+    "body": [
+      "table.concat(${1:list}, ${2:\", \"})"
+    ],
+    "description": "Join an array into a string"
+  },
+  "Ternary": {
+    "prefix": "ter",
+    "body": [
+      "${1:condition} and ${2:whenTrue} or ${3:whenFalse}"
+    ],
+    "description": "Conditional expression idiom"
+  },
+  "Return": {
+    "prefix": "return",
+    "body": [
+      "return ${0:value}"
+    ],
+    "description": "Return statement"
+  },
+  "Comment block": {
+    "prefix": "comment",
+    "body": [
+      "--[[",
+      "\t$0",
+      "]]"
+    ],
+    "description": "Block comment"
+  },
+  "LuaDoc": {
+    "prefix": "doc",
+    "body": [
+      "--- ${1:Description.}",
+      "-- @param ${2:name} ${3:what it is}",
+      "-- @return ${4:what comes back}"
+    ],
+    "description": "Documentation comment"
+  }
+}

@@ -62,7 +62,8 @@ class SnippetParserTest {
         assertEquals("Bob!", SnippetParser.parse("$NAME!", vars).text());
         assertEquals("X", SnippetParser.parse("${BAR:def}", name -> "X").text());
         assertEquals("def", SnippetParser.parse("${FOO:def}", NONE).text());
-        assertEquals("", SnippetParser.parse("$UNKNOWN", NONE).text());
+        // An unknown name is ordinary text, kept as written (N11) — it used to vanish.
+        assertEquals("$UNKNOWN", SnippetParser.parse("$UNKNOWN", NONE).text());
     }
 
     @Test
@@ -212,5 +213,59 @@ class SnippetParserTest {
         int[] first = stop(adjacent, 1).spans().get(0);
         int[] second = stop(adjacent, 2).spans().get(0);
         assertTrue(first[1] < second[0], "$1 closes before $2 opens");
+    }
+
+    // --- N11: a name the resolver does not know is text, not a variable ---
+
+    @Test
+    void anUnknownVariableStaysInTheTextAsWritten() {
+        assertEquals(
+                "echo \"$PATH\"", SnippetParser.parse("echo \"$PATH\"", NONE).text());
+        assertEquals(
+                "cd ${HOME}/src", SnippetParser.parse("cd ${HOME}/src", NONE).text());
+        assertEquals(
+                "$this.Name = $_", SnippetParser.parse("$this.Name = $_", NONE).text());
+        assertTrue(SnippetParser.parse("$this $1", NONE).stops().size() == 1, "and it is no tab stop");
+    }
+
+    @Test
+    void aKnownVariableIsStillResolvedAndAnUnknownOneStillTakesItsDefault() {
+        SnippetParser.Variables vars = name -> name.equals("TM_FILENAME") ? "A.java" : null;
+        assertEquals(
+                "A.java $HOME", SnippetParser.parse("$TM_FILENAME $HOME", vars).text());
+        assertEquals("fallback", SnippetParser.parse("${NOPE:fallback}", vars).text());
+        assertEquals("", SnippetParser.parse("${TM_SELECTED_TEXT}", name -> "").text(), "known but empty is empty");
+    }
+
+    @Test
+    void theVsCodeDoubleDollarIdiomYieldsOneDollar() {
+        // In VS Code an unknown variable inserts its bare name, so snippets spell "$this" as "$$this".
+        assertEquals(
+                "use $this here", SnippetParser.parse("use $$this here", NONE).text());
+    }
+
+    // --- N21: parser edge cases ---
+
+    @Test
+    void aStopNamedInsideItsOwnDefaultKeepsThatDefault() {
+        ParsedSnippet p = SnippetParser.parse("${1:${1:rec}}", NONE);
+        assertEquals("rec", p.text());
+        assertEquals(1, stop(p, 1).ranges().size(), "one field, not a field mirroring itself");
+        assertEquals("ab", SnippetParser.parse("${1:a$1b}", NONE).text());
+    }
+
+    @Test
+    void anUnterminatedChoiceIsLiteralText() {
+        ParsedSnippet p = SnippetParser.parse("x ${1|a,b| y", NONE);
+        assertEquals("x ${1|a,b| y", p.text(), "it used to make an option called \"b| y\"");
+        assertTrue(p.stops().isEmpty());
+    }
+
+    @Test
+    void aChoiceListOnAnAlreadyDefinedStopStillGivesItsDropdown() {
+        ParsedSnippet p = SnippetParser.parse("${1:a} ${1|x,y|}", NONE);
+        assertEquals("a a", p.text(), "the first definer keeps the value");
+        assertEquals(List.of("x", "y"), stop(p, 1).choices(), "and the choices are no longer dropped");
+        assertEquals(0, stop(p, 1).primaryIndex());
     }
 }

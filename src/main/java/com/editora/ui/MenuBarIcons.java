@@ -104,6 +104,8 @@ final class MenuBarIcons {
         add("lsp.typeHierarchy", Icons::outline);
         add("snippets.insert", Icons::fileSheet);
         add("snippets.manage", Icons::settings);
+        add("snippets.editUser", Icons::edit);
+        add("snippets.reload", Icons::refresh);
         add("file.run", Icons::run);
         add("file.runWithArgs", Icons::run);
         add("debug.continue", Icons::run);

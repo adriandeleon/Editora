@@ -358,19 +358,10 @@ public class SettingsWindow {
 
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
     private com.editora.snippet.SnippetManager snippetManager;
-    /** Working copy of the snippets (bundled + user) for the language selected on the Snippets page. */
-    private final javafx.collections.ObservableList<com.editora.snippet.Snippet> snippetItems =
-            javafx.collections.FXCollections.observableArrayList();
-    /** Names of the shown snippets that are user-owned (a user file entry or an override of a bundled one);
-     *  the rest are read-only bundled snippets. Only these are written back to {@code <lang>.json}. */
-    private final java.util.Set<String> snippetUserNames = new java.util.HashSet<>();
+    /** The Snippets page's list-and-form editor (built with the page). */
+    private SnippetsEditor snippetsEditor;
 
-    private boolean loadingSnippet = false;
-    private String currentSnippetLang = "global";
-
-    /** Why the current language's user snippet file cannot be parsed, or null. While set the page is
-     *  read-only for that language: saving would replace the file with what little the page could load. */
-    private String snippetFileProblem;
+    private CheckBox snippetTabExpansionCheck;
     /** Shared template registry (injected after construction); backs the Templates management page. */
     private com.editora.template.TemplateRegistry templateRegistry;
     /** Working copy of the templates (bundled + user) shown on the Templates page. */
@@ -1197,6 +1188,7 @@ public class SettingsWindow {
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
         autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
         autocompleteSnippetsCheck = viewCheck(tr("settings.autocomplete.snippets"), Settings::setAutocompleteSnippets);
+        snippetTabExpansionCheck = viewCheck(tr("settings.snippet.tabExpansion"), Settings::setSnippetTabExpansion);
         autocompleteMermaidCheck = viewCheck(tr("settings.autocomplete.mermaid"), Settings::setAutocompleteMermaid);
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
@@ -3888,44 +3880,29 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Languages offered in the Snippets-page picker (this curated list plus any language that already
-     *  has a user snippet file). */
-    private static final java.util.List<String> SNIPPET_LANGUAGES = java.util.List.of(
-            "global",
-            "java",
-            "javascript",
-            "typescript",
-            "python",
-            "go",
-            "rust",
-            "c",
-            "cpp",
-            "csharp",
-            "kotlin",
-            "php",
-            "ruby",
-            "lua",
-            "html",
-            "css",
-            "json",
-            "yaml",
-            "xml",
-            "toml",
-            "sql",
-            "shell",
-            "powershell",
-            "batchfile",
-            "groovy",
-            "ini",
-            "markdown",
-            "mermaid",
-            "dockerfile",
-            "terraform");
-
     private VBox snippetsPage() {
         VBox p = page(tr("settings.cat.snippets"));
+        Card expansion = card(p, null);
+        checkRow(
+                expansion,
+                Category.SNIPPETS,
+                snippetTabExpansionCheck,
+                tr("settings.snippet.tabExpansion.desc"),
+                "snippets tab expansion expand trigger prefix key");
         Card mainCard = card(p, null);
-        cardRow(mainCard, Category.SNIPPETS, snippetsEditor(), "snippets user prefix trigger expansion tab stops body");
+        snippetsEditor = new SnippetsEditor(
+                snippetManager,
+                new SnippetsEditor.Hooks(
+                        this::macroWarn,
+                        this::confirmSnippetSave,
+                        SettingsWindow::highlightSnippetBody,
+                        SettingsWindow::installEmacsKeys));
+        reloadSnippets = snippetsEditor::reload;
+        cardRow(
+                mainCard,
+                Category.SNIPPETS,
+                snippetsEditor.node(),
+                "snippets user prefix trigger expansion tab stops body disable bundled filter");
         Label help = note(tr("settings.snippet.help"));
         help.setWrapText(true);
         help.setMaxWidth(460);
@@ -3933,333 +3910,17 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Master-detail editor: a language picker + the user's snippets for it on the left, a form on the right. */
-    private javafx.scene.Node snippetsEditor() {
-        // Language picker: the curated list, plus any languages that already have a user file.
-        java.util.LinkedHashSet<String> langs = new java.util.LinkedHashSet<>(SNIPPET_LANGUAGES);
-        if (snippetManager != null) {
-            langs.addAll(snippetManager.userSnippetLanguages());
-        }
-        ComboBox<String> language = new ComboBox<>(javafx.collections.FXCollections.observableArrayList(langs));
-        language.setValue(currentSnippetLang);
-
-        ListView<com.editora.snippet.Snippet> list = new ListView<>(snippetItems);
-        list.setPrefSize(220, 420);
-        VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
-        list.setCellFactory(lv -> new ListCell<>() {
-            {
-                // A ListCell reports its graphic's intrinsic width as its preferred width, so a name
-                // plus the "bundled" tag made the list demand more than its viewport and grow a
-                // horizontal scrollbar — which then stole the height the last row needed, producing a
-                // vertical one too. Asking for nothing lets the row fit the viewport and the name
-                // ellipsize instead.
-                setPrefWidth(0);
-            }
-
-            @Override
-            protected void updateItem(com.editora.snippet.Snippet s, boolean empty) {
-                super.updateItem(s, empty);
-                if (empty || s == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                Label nm =
-                        new Label(s.name() == null || s.name().isBlank() ? tr("settings.snippet.unnamed") : s.name());
-                HBox.setHgrow(nm, Priority.ALWAYS);
-                nm.setMaxWidth(Double.MAX_VALUE);
-                HBox cell = new HBox(6, nm);
-                cell.setAlignment(Pos.CENTER_LEFT);
-                if (!snippetUserNames.contains(s.name())) { // a read-only bundled snippet (until edited)
-                    Label tag = new Label(tr("settings.snippet.bundledTag"));
-                    tag.getStyleClass().add("snippet-bundled-tag");
-                    tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
-                    cell.getChildren().add(tag);
-                }
-                setText(null);
-                setGraphic(cell);
-            }
-        });
-
-        TextField name = new TextField();
-        TextField prefix = new TextField();
-        prefix.setPromptText(tr("settings.snippet.prefixPrompt"));
-        TextField description = new TextField();
-        CodeArea body = AreaUndo.bounded(new CodeArea());
-        body.getStyleClass().addAll("editor-area", "snippet-body");
-        body.setWrapText(true);
-        // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
-        body.setPrefHeight(180);
-        installEmacsKeys(body); // basic C-a/C-e/C-f/C-b/C-n/C-p/M-f/M-b/C-d/C-k in the settings scene
-        body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, currentSnippetLang));
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.snippet.name"), name);
-        formRow(form, 1, tr("settings.snippet.prefix"), prefix);
-        formRow(form, 2, tr("settings.snippet.description"), description);
-        formRow(form, 3, tr("settings.snippet.body"), body);
-        javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
-        javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-        Label problem = note("");
-        problem.setWrapText(true);
-        problem.setVisible(false);
-        problem.setManaged(false);
-
-        // The form's texts now, and as they were when the selected row was loaded (or last committed).
-        java.util.function.Supplier<java.util.List<String>> snippetFormText =
-                () -> java.util.Arrays.asList(name.getText(), prefix.getText(), description.getText(), body.getText());
-        java.util.concurrent.atomic.AtomicReference<java.util.List<String>> snippetFormLoaded =
-                new java.util.concurrent.atomic.AtomicReference<>(snippetFormText.get());
-        Runnable commit = () -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i < 0 || loadingSnippet || snippetFileProblem != null) {
-                return;
-            }
-            // "Nothing was edited" is judged against what the form was loaded with, not against the model:
-            // a single-line field drops the line breaks of a bundled multi-line description, so a rebuilt
-            // snippet never equalled the original and a mere focus loss wrote a user override.
-            if (snippetFormText.get().equals(snippetFormLoaded.get())) {
-                return; // a field merely lost focus — never rewrite the file for that
-            }
-            com.editora.snippet.Snippet cur = snippetItems.get(i);
-            String newName = name.getText().trim();
-            if (newName.isEmpty()) {
-                // The file is keyed by name and the save skips a blank one: committing it deleted the
-                // snippet. Keep the name it has; the other fields still save.
-                newName = cur.name();
-                name.setText(newName);
-                if (newName == null || newName.isBlank()) {
-                    return;
-                }
-            }
-            if (!newName.equals(cur.name())) {
-                for (com.editora.snippet.Snippet other : snippetItems) {
-                    if (other != cur && newName.equals(other.name())) {
-                        // Two rows with one name collapse to a single entry on disk — refuse, as the
-                        // External Tools page does for a colliding command id.
-                        name.setText(cur.name());
-                        macroWarn(tr("settings.snippet.nameExists", newName));
-                        return;
-                    }
-                }
-            }
-            boolean descriptionEdited =
-                    !description.getText().equals(snippetFormLoaded.get().get(2));
-            com.editora.snippet.Snippet updated = new com.editora.snippet.Snippet(
-                    newName,
-                    prefix.getText().trim(),
-                    body.getText(),
-                    descriptionEdited ? description.getText().trim() : cur.description(),
-                    currentSnippetLang);
-            snippetFormLoaded.set(snippetFormText.get());
-            if (updated.equals(cur)) {
-                return; // only whitespace the commit trims away
-            }
-            snippetUserNames.add(updated.name()); // editing a bundled snippet makes it a user override
-            loadingSnippet = true; // replacing at the same index keeps selection; don't reload the fields
-            try {
-                snippetItems.set(i, updated);
-            } finally {
-                loadingSnippet = false;
-            }
-            list.refresh(); // re-render so the "(bundled)" tag drops off the now-overridden row
-            saveSnippets();
-        };
-        // Single-line fields commit on Enter / focus-loss; the body commits on focus-loss (Enter = newline).
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(name);
-        wire.accept(prefix);
-        wire.accept(description);
-        body.focusedProperty().addListener((o, was, now) -> {
-            if (!now) {
-                commit.run();
-            }
-        });
-
-        // Load the form when a *different* row is selected (selectedIndex, so an in-place commit set() is silent).
-        list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
-            int i = now == null ? -1 : now.intValue();
-            com.editora.snippet.Snippet s = i >= 0 && i < snippetItems.size() ? snippetItems.get(i) : null;
-            loadingSnippet = true;
-            try {
-                form.setDisable(s == null || snippetFileProblem != null);
-                name.setText(s == null ? "" : s.name());
-                prefix.setText(s == null ? "" : s.prefix());
-                description.setText(s == null ? "" : s.description());
-                body.replaceText(s == null ? "" : s.body()); // CodeArea has no setText
-                snippetFormLoaded.set(snippetFormText.get());
-            } finally {
-                loadingSnippet = false;
-            }
-        });
-
-        Runnable loadLang = () -> {
-            String v = language.getValue();
-            currentSnippetLang = v == null || v.isBlank() ? "global" : v.trim();
-            snippetFileProblem = snippetManager == null ? null : snippetManager.userFileProblem(currentSnippetLang);
-            problem.setText(
-                    snippetFileProblem == null
-                            ? ""
-                            : tr(
-                                    "settings.snippet.unreadable",
-                                    snippetManager.userFile(currentSnippetLang).getFileName(),
-                                    snippetFileProblem));
-            problem.setVisible(snippetFileProblem != null);
-            problem.setManaged(snippetFileProblem != null);
-            loadingSnippet = true;
-            try {
-                snippetItems.setAll(mergedSnippetsForCurrentLang());
-            } finally {
-                loadingSnippet = false;
-            }
-            list.getSelectionModel().clearSelection();
-            if (!snippetItems.isEmpty()) {
-                list.getSelectionModel().select(0);
-            } else {
-                form.setDisable(true);
-            }
-        };
-        language.valueProperty().addListener((o, a, b) -> loadLang.run());
-        reloadSnippets = () -> { // another window's Settings may have rewritten this language's file
-            com.editora.snippet.Snippet sel = list.getSelectionModel().getSelectedItem();
-            loadLang.run();
-            for (int k = 0; sel != null && k < snippetItems.size(); k++) {
-                if (java.util.Objects.equals(sel.name(), snippetItems.get(k).name())) {
-                    list.getSelectionModel().select(k);
-                    break;
-                }
-            }
-        };
-
-        Button add = new Button(tr("settings.snippet.add"));
-        add.setOnAction(e -> {
-            if (snippetFileProblem != null) {
-                return;
-            }
-            // The file is keyed by name: a second "New Snippet" would replace the first on disk.
-            java.util.Set<String> taken = new java.util.HashSet<>();
-            for (com.editora.snippet.Snippet other : snippetItems) {
-                taken.add(other.name());
-            }
-            String newName = tr("settings.snippet.newName");
-            for (int n = 2; taken.contains(newName); n++) {
-                newName = tr("settings.snippet.newName") + " " + n;
-            }
-            com.editora.snippet.Snippet s = new com.editora.snippet.Snippet(newName, "", "", "", currentSnippetLang);
-            snippetUserNames.add(s.name());
-            snippetItems.add(s);
-            saveSnippets();
-            list.getSelectionModel().select(snippetItems.size() - 1);
-            name.requestFocus();
-            name.selectAll();
-        });
-        Button remove = new Button(tr("settings.snippet.remove"));
-        // Remove only affects user snippets/overrides; a pristine bundled row can't be deleted (it's shipped).
-        remove.disableProperty()
-                .bind(javafx.beans.binding.Bindings.createBooleanBinding(
-                        () -> {
-                            com.editora.snippet.Snippet s =
-                                    list.getSelectionModel().getSelectedItem();
-                            return s == null || !snippetUserNames.contains(s.name());
-                        },
-                        list.getSelectionModel().selectedItemProperty()));
-        remove.setOnAction(e -> {
-            com.editora.snippet.Snippet s = list.getSelectionModel().getSelectedItem();
-            if (s == null || !snippetUserNames.contains(s.name())) {
-                return;
-            }
-            snippetUserNames.remove(s.name());
-            snippetItems.remove(s);
-            saveSnippets();
-            loadLang.run(); // re-derive: a removed override reverts to its bundled snippet
-        });
-        HBox buttons = new HBox(6, add, remove);
-        // The picker shares the list's width: boxed with a 130px label column it was squeezed to an arrow.
-        Label languageLabel = new Label(tr("settings.snippet.language"));
-        languageLabel.setLabelFor(language);
-        language.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(language, Priority.ALWAYS);
-        HBox languageRow = new HBox(10, languageLabel, language);
-        languageRow.setAlignment(Pos.CENTER_LEFT);
-        VBox left = new VBox(6, languageRow, list, buttons);
-        keepWidth(languageLabel, add, remove, left);
-        VBox.setVgrow(left, Priority.ALWAYS);
-
-        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.setDefaultButton(false);
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, problem, form, saveRow);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-
-        loadLang.run();
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
+    private boolean confirmSnippetSave(String message) {
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL));
+        a.initOwner(stage);
+        a.setHeaderText(null);
+        return a.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
     }
 
-    /**
-     * The snippets shown for the current language: the bundled (shipped) ones, with any user file entries
-     * overriding the bundled one of the same name and net-new user snippets appended. Rebuilds
-     * {@link #snippetUserNames} (the names that are user-owned and therefore writable / removable).
-     */
-    private java.util.List<com.editora.snippet.Snippet> mergedSnippetsForCurrentLang() {
-        snippetUserNames.clear();
-        if (snippetManager == null) {
-            return java.util.List.of();
-        }
-        java.util.LinkedHashMap<String, com.editora.snippet.Snippet> userByName = new java.util.LinkedHashMap<>();
-        for (com.editora.snippet.Snippet u : snippetManager.userSnippets(currentSnippetLang)) {
-            userByName.put(u.name(), u);
-            snippetUserNames.add(u.name());
-        }
-        java.util.List<com.editora.snippet.Snippet> merged = new java.util.ArrayList<>();
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        for (com.editora.snippet.Snippet b : snippetManager.bundledSnippets(currentSnippetLang)) {
-            merged.add(userByName.getOrDefault(b.name(), b)); // user override wins; else the read-only bundled
-            seen.add(b.name());
-        }
-        for (com.editora.snippet.Snippet u : userByName.values()) {
-            if (seen.add(u.name())) {
-                merged.add(u); // a user snippet with no bundled counterpart
-            }
-        }
-        return merged;
-    }
-
-    private void saveSnippets() {
-        if (snippetManager == null || snippetFileProblem != null) {
-            return; // never write back over a file that could not be parsed
-        }
-        // Persist only user-owned snippets (overrides + net-new) — never copy the shipped bundled ones.
-        java.util.List<com.editora.snippet.Snippet> userOnly = new java.util.ArrayList<>();
-        for (com.editora.snippet.Snippet s : snippetItems) {
-            if (snippetUserNames.contains(s.name())) {
-                userOnly.add(s);
-            }
-        }
-        try {
-            snippetManager.saveUserSnippets(currentSnippetLang, userOnly);
-        } catch (java.io.IOException e) {
-            Dialogs.styled(new Alert(
-                            Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK))
-                    .showAndWait();
+    /** Another window (or a save in the editor) changed a user snippet file: the open Snippets page re-reads it. */
+    public void reloadSnippetsPage() {
+        if (reloadSnippets != null) {
+            reloadSnippets.run();
         }
     }
 
@@ -5292,7 +4953,7 @@ public class SettingsWindow {
     }
 
     /** Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown). */
-    private static void highlightSnippetBody(CodeArea area, String languageName) {
+    static void highlightSnippetBody(CodeArea area, String languageName) {
         String text = area.getText();
         IGrammar g = null;
         if (languageName != null && !languageName.isBlank() && !"global".equals(languageName)) {
@@ -5318,7 +4979,7 @@ public class SettingsWindow {
     /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there).
      *  Uses absolute-offset {@code moveTo}/{@code deleteText} (robust across RichTextFX versions); each action is
      *  guarded so the key is always consumed (no fall-through to the default behaviour) even at a boundary. */
-    private static void installEmacsKeys(CodeArea area) {
+    static void installEmacsKeys(CodeArea area) {
         installFocusEscape(area);
         area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
@@ -7849,6 +7510,7 @@ public class SettingsWindow {
             autocompleteCheck.setSelected(settings.isAutocomplete());
             autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
+            snippetTabExpansionCheck.setSelected(settings.isSnippetTabExpansion());
             autocompleteMermaidCheck.setSelected(settings.isAutocompleteMermaid());
             autocompleteProseCheck.setDisable(!settings.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());

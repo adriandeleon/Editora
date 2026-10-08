@@ -108,7 +108,7 @@ Editora is built with the help of AI coding tools.
   tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
   bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred per file, or forced
   globally via Settings → Editor → "Indent style" (Detect / Spaces / Tabs).
-- **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage your own per-language snippets in **Settings → Snippets** (or `Snippets: Manage Snippets…`), saved under `<configDir>/snippets/`.
+- **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage them per language in **Settings → Snippets** (or "Snippet: Manage…" in the palette), saved under `<configDir>/snippets/`.
 - **File templates** — "New File From Template" scaffolds; manage them in **Settings → Templates** (or `Templates: Manage File Templates…`) — the shipped templates are shown read-only and editing one saves a personal override under `<configDir>/templates/`.
 - **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
   indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
@@ -492,13 +492,26 @@ Editora is built with the help of AI coding tools.
 - **Print** — native printing of code or the rendered Markdown preview, with a print-preview window
   first (always light, what-you-preview-is-what-prints), reusing the PDF layout core. Run "File: Print"
   / "File: Print Preview" from the palette.
-- **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a prefix + Tab to
-  expand, or pick via `C-c i` / "Snippet: Insert…". Prefixes needn't be plain words: `#inc` (C/C++
-  `#include`), `!` (the HTML skeleton), `?xml` and yaml's `---` all expand. Tab/Shift-Tab cycle fields, placeholders are
-  pre-selected, mirrors update live, `$0` is the final caret. Standard body syntax (`$1`,
-  `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
-  (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);
-  add your own in `~/.editora/snippets/<language>.json` (user snippets override bundled).
+- **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a trigger + Tab to
+  expand, or pick one with "Snippet: Insert…" (palette, Code menu; `C-c i` in the Emacs keymap) or from
+  the completion popup. Triggers needn't be plain words: `#inc` (C/C++ `#include`), `!` (the HTML
+  skeleton), `?xml`, yaml's `---` and two-word ones like `else if` all expand. While a snippet is being
+  filled in, its fields are outlined (the active one tinted, mirrors underlined, a mark where `$0` ends
+  up) and the status bar shows "Snippet 2/3": Tab/Shift-Tab move between fields, Esc leaves, and so does
+  moving the caret out of the fields — Tab then indents again. Auto-pairs, Enter auto-indent and smart
+  Backspace work inside a field. Standard body syntax (`$1`, `${1:default}`, mirrors, choices,
+  transforms, escapes) and the VS Code variables (`TM_*`, `CURRENT_*`, `UUID`, `RANDOM`, `LINE_COMMENT`,
+  `WORKSPACE_NAME`, `RELATIVE_FILEPATH`, …); a `$name` that is not a variable stays as written. Snippets
+  ship for 30 languages — C, C++, C#, CSS, Dockerfile, Go, Groovy, HTML, Java, JavaScript and TypeScript
+  (also used for JSX/TSX), JSON, Kotlin, Lua, Markdown, Mermaid, PHP, PowerShell, Python, Ruby, Rust,
+  shell, SQL, Terraform, TOML, Typst, XML, YAML, batch and INI files — most from the MIT
+  [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection. Add your own in
+  `<configDir>/snippets/<language>.json` ("Snippet: Edit User Snippets…"; saving the file reloads it in
+  every window) or in Settings → Snippets, where a bundled snippet can also be edited or switched off.
+  Your snippets win over a plugin's, and a plugin's over the bundled ones. Tab expansion has its own
+  switch (Settings → Snippets, or "View: Toggle Snippet Expansion on Tab"); Tab never expands inside a
+  comment or string, nor in a CSV/TSV file, and the global `date` / `time` snippets are offered in the
+  popup and picker only.
 - **New ▸ &lt;file type&gt;** — right-click a folder in the Project tool window: **New ▸** offers a generic
   `File…` and `Folder…`, Text and Markdown, then a submenu per family — **Java** (Class, Interface, Record,
   Enum, Annotation, `package-info.java`), Web, Scripts, Languages, Data &amp; Config, Docs &amp; Diagrams, Build

@@ -76,8 +76,9 @@ module com.editora {
             com.fasterxml.jackson.databind; // ExternalTool POJO in settings.json (externalTools array)
     opens com.editora.macro to
             com.fasterxml.jackson.databind; // Macro/MacroStep records in macros.json
-    // Jackson reflects on the snippet JSON DTO (SnippetManager.Dto). The bundled snippet *resources*
-    // need no opens — our own SnippetManager reads them via Class.getResourceAsStream.
+    // Kept for Jackson, though SnippetManager now reads snippet files as a JSON tree and binds no class
+    // of this package. The bundled snippet *resources* need no opens — they are read via
+    // Class.getResourceAsStream.
     opens com.editora.snippet to
             com.fasterxml.jackson.databind;
     // Jackson reflects on the plugin manifest DTO (PluginManifest); the public plugin API also lives here.

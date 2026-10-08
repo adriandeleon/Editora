@@ -387,7 +387,9 @@ class MessagesTest {
             Map.entry("lsp.peek.title", new int[] {1}),
             Map.entry("markdownLint.row", new int[] {0, 1}),
             Map.entry("mermaid.diagnosticLine", new int[] {0, 1}),
-            Map.entry("notes.line", new int[] {0}));
+            Map.entry("notes.line", new int[] {0}),
+            Map.entry("status.snippetFileSyntaxError", new int[] {2}),
+            Map.entry("status.snippetEntryError", new int[] {2}));
 
     @Test
     void identifierArgumentsAreNeverDigitGrouped() {

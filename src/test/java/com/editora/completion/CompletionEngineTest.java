@@ -20,12 +20,38 @@ class CompletionEngineTest {
     }
 
     @Test
-    void snippetCompletionsPrefixMatchExcludesExactAndRanksShorterFirst() {
+    void snippetCompletionsPrefixMatchListsTheExactTriggerFirstThenShorterFirst() {
         List<Snippet> all = List.of(snip("for"), snip("fori"), snip("sout"), snip("fo"));
         List<Completion> out = CompletionEngine.snippetCompletions(all, "fo");
         List<String> inserts = out.stream().map(Completion::insert).toList();
-        assertEquals(List.of("for", "fori"), inserts, "matched, exact 'fo' excluded, shorter first");
+        // N18: the fully typed trigger stays in a popup that longer triggers keep open, at the top.
+        assertEquals(List.of("fo", "for", "fori"), inserts, "exact first, then shorter first");
         assertTrue(out.stream().allMatch(c -> c.kind() == Kind.SNIPPET));
+    }
+
+    @Test
+    void aFullyTypedTriggerAloneDoesNotOpenThePopup() {
+        // Enter after a complete word must stay a line break: no other candidate, no list.
+        assertTrue(CompletionEngine.snippetCompletions(List.of(snip("else"), snip("sout")), "else")
+                .isEmpty());
+    }
+
+    @Test
+    void twoSnippetsOnOneTriggerAreBothOffered() {
+        Snippet a = new Snippet("Log line", "lg", "A", "", "go");
+        Snippet b = new Snippet("Log fatal", "lg", "B", "", "go");
+        List<Completion> merged = CompletionEngine.merge(
+                List.of(Completion.ofSnippet(a), Completion.ofSnippet(b)),
+                List.of(Completion.word("lg", null), Completion.word("lgx", null)),
+                "l",
+                12);
+        assertEquals(2, merged.stream().filter(c -> c.kind() == Kind.SNIPPET).count(), "N14: neither is dropped");
+        assertEquals(
+                List.of("lgx"),
+                merged.stream()
+                        .filter(c -> c.kind() == Kind.WORD)
+                        .map(Completion::insert)
+                        .toList());
     }
 
     @Test

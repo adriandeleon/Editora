@@ -79,7 +79,7 @@ class NestedSnippetFxTest {
     }
 
     @Test
-    void undoInsideChildCancelsEveryLevelWithoutMirroring() throws Exception {
+    void undoInsideChildKeepsEveryLevelWithoutMirroring() throws Exception {
         FxTestSupport.runOnFx(() -> {
             CodeArea area = new CodeArea();
             SnippetSessions sessions = new SnippetSessions();
@@ -89,8 +89,12 @@ class NestedSnippetFxTest {
             area.getUndoManager().preventMerge();
             area.replaceSelection("x");
             area.undo();
-            assertFalse(sessions.isActive());
+            // An undo of an edit made in a field is followed, not treated as the end of the session (N4);
+            // the suspended parent still does not mirror until the child is done.
+            assertTrue(sessions.isActive());
             assertEquals("get(value) = arg;", area.getText());
+            sessions.next(); // past the child's only stop: the parent resumes and mirrors once
+            assertEquals("get(value) = get(value);", area.getText());
             area.dispose();
         });
     }

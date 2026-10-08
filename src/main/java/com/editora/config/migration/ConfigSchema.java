@@ -199,7 +199,10 @@ public enum ConfigSchema {
                     // v112→113: + spellDisabledLanguages (additive). The master switch (spellCheck) is left as
                     // the user set it; a file without the new key gets the default list, which turns checking
                     // off for data and configuration formats only — nobody had a per-language choice to keep.
-                    Map.entry(112, (Migration) ConfigMigrations::identity)),
+                    Map.entry(112, (Migration) ConfigMigrations::identity),
+                    // v113→114: + snippetTabExpansion (additive; absent means on — Tab expanded a trigger
+                    // for everyone before the switch existed, and goes on doing so).
+                    Map.entry(113, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

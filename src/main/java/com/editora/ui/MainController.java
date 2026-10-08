@@ -204,6 +204,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final OverlayHost overlayHost = new OverlayHost();
 
     private com.editora.snippet.SnippetManager snippets;
+    private SnippetCoordinator snippetCoordinator;
 
     /** Shared across windows (owned by WindowManager); plugin classes load once, instances are per-window. */
     private com.editora.plugin.PluginManager pluginManager;
@@ -640,7 +641,39 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
         registry.setExecutionListener(macroCoordinator::onCommand);
         registry.setBoundaryHook(editing::undoBoundary); // a command's edit is its own undo step
-        this.snippets = new com.editora.snippet.SnippetManager(config);
+        this.snippetCoordinator = new SnippetCoordinator(config, coordinatorHost, new SnippetCoordinator.Ops() {
+            @Override
+            public void openPath(Path file) {
+                fileWorkflows.openPath(file);
+            }
+
+            @Override
+            public void showPicker() {
+                navigation.snippetPalette.show(stage);
+            }
+
+            @Override
+            public Path projectRoot() {
+                Project active = projects == null ? null : projects.active();
+                return active == null ? null : Path.of(active.root());
+            }
+
+            @Override
+            public void broadcast() {
+                if (windowManager != null) windowManager.broadcastSnippetsChanged(MainController.this);
+            }
+
+            @Override
+            public StatusBar statusBar() {
+                return statusBar;
+            }
+
+            @Override
+            public SettingsWindow settingsWindow() {
+                return settingsWindow;
+            }
+        });
+        this.snippets = snippetCoordinator.manager();
         templateActions.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
@@ -820,6 +853,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupProjects();
         pluginCoordinator
                 .applyPlugins(); // register plugin commands/tool windows/hooks (before restore, so visibility restores)
+        snippetCoordinator.checkUserFilesAtStartup(); // a broken user snippet file is reported now, not on first use
         toolWindows.restore();
         // Honor a persisted Zen/Expert state on launch: the view options + chrome already read the flags via
         // the apply paths; this hides the side stripes (restore() opened nothing — windows were
@@ -4246,13 +4280,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void insertSnippetPicker() {
-            MainController.this.insertSnippetPicker();
-        }
-
-        @Override
-        public void editUserSnippets() {
-            MainController.this.editUserSnippets();
+        public SnippetCoordinator snippetCoordinator() {
+            return snippetCoordinator;
         }
 
         @Override
@@ -5123,6 +5152,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean openInAnotherWindow(Path file) {
             return windowManager != null && windowManager.openInAnotherWindow(MainController.this, file);
+        }
+
+        @Override
+        public void fileSaved(Path file) {
+            snippetCoordinator.fileSaved(file);
         }
 
         @Override
@@ -8149,7 +8183,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setTypstRootResolver(this::resolveTypstRoot); // typst --root: nearest typst.toml / project root
         buffer.setOnMarkwhenViewChanged(() -> previews.persistMarkwhenView(buffer)); // persist timeline/calendar choice
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
-        buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
+        snippetCoordinator.wireBuffer(buffer);
         buffer.setCompletionProvider(completion::complete);
         buffer.setAiCompletionProvider(aiCoordinator::inlineComplete);
         buffer.setAiCompletionEnabled(aiCoordinator.isInlineCompletionEnabled());
@@ -9682,45 +9716,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
 
-    /** Opens the snippet picker for the active buffer's language (plus global snippets). */
-    private void insertSnippetPicker() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            return;
-        }
-        if (snippets.forLanguage(b.getLanguage()).isEmpty()) {
-            setStatus(tr("status.noSnippets"));
-            return;
-        }
-        navigation.snippetPalette.show(stage);
+    /** This window's snippets, for {@link WindowManager} to tell about a change made in another window. */
+    SnippetCoordinator snippetCoordinator() {
+        return snippetCoordinator;
     }
-
-    /** Opens (creating from a template if needed) the user snippet file for the active language. */
-    private void editUserSnippets() {
-        EditorBuffer b = activeBuffer();
-        String lang = b == null ? "global" : b.getLanguage();
-        Path file = snippets.userFile(lang);
-        try {
-            if (!Files.exists(file)) {
-                Files.createDirectories(file.getParent());
-                Files.writeString(file, USER_SNIPPET_TEMPLATE);
-            }
-            fileWorkflows.openPath(file);
-            setStatus(tr("status.editingSnippets", lang));
-        } catch (IOException e) {
-            setStatus(tr("status.snippetOpenFailed", e.getMessage()));
-        }
-    }
-
-    private static final String USER_SNIPPET_TEMPLATE = """
-            {
-              "Example": {
-                "prefix": "ex",
-                "body": ["// ${1:summary}", "$0"],
-                "description": "Example snippet — edit or add your own, then reload"
-              }
-            }
-            """;
 
     // --- New file of a known type ("New ▸ …") -----------------------------------------------------
 

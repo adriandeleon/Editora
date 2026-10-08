@@ -8,7 +8,7 @@ import java.util.Map;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * The parsed {@code plugin.json} manifest (a lenient Jackson POJO, like {@code SnippetManager.Dto} —
+ * The parsed {@code plugin.json} manifest (a lenient Jackson POJO, like the template DTOs —
  * unknown fields ignored). A plugin can be a Java plugin ({@code main} set), declarative-only (commands /
  * keymap / contributed asset dirs), or both. The {@code com.editora.plugin} package is opened to
  * jackson.databind in {@code module-info}.

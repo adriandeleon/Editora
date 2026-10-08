@@ -1103,6 +1103,7 @@ final class EditorSettingsCoordinator {
             if (buffer != null) {
                 buffer.setAutocomplete(
                         s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets(), mermaidAc);
+                buffer.setSnippetTabExpansion(s.isSnippetTabExpansion());
                 buffer.setCompletionDocEnabled(s.isCompletionDoc());
                 buffer.setAiCompletionEnabled(aiInline);
             }

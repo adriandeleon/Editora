@@ -410,6 +410,24 @@ class ConfigMigrationsTest {
         assertEquals(java.util.List.of("yaml", "java"), kept.getSpellDisabledLanguages());
     }
 
+    /** v113→114: snippetTabExpansion is new — Tab expanded triggers for everyone before, and still does. */
+    @Test
+    void theSnippetTabExpansionSettingArrivesOnWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v112 = mapper.readTree("{\"schemaVersion\":112,\"autocompleteSnippets\":false}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v112.deepCopy(), mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
+        assertFalse(out.get("autocompleteSnippets").asBoolean(), "the popup switch is a different setting");
+        assertFalse(out.has("snippetTabExpansion"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertTrue(loaded.isSnippetTabExpansion(), "on for everyone who never chose");
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":114,\"snippetTabExpansion\":false}");
+        assertFalse(
+                mapper.treeToValue(chosen, com.editora.config.Settings.class).isSnippetTabExpansion());
+    }
+
     /** v111→112: crashRecovery is new — nothing else in the file changes, and it starts on. */
     @Test
     void theCrashRecoverySettingArrivesOnWithoutTouchingAnythingElse() throws Exception {

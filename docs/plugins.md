@@ -65,7 +65,11 @@ Unknown fields are ignored (the parser is lenient), so a manifest can carry extr
 ## Declarative contributions (no code)
 
 - **Snippets** — drop `snippets/<lang>.json` (VS Code / TextMate snippet format). They merge into the
-  built-in snippets for that language.
+  built-in snippets for that language, in the order **bundled < plugin < user**: a plugin entry with the
+  name of a bundled snippet replaces it, and a plugin trigger shadows a bundled snippet's — but the
+  user's own `<configDir>/snippets/<lang>.json` wins over both, by name and by trigger, and can switch a
+  plugin's snippet off with `"<name>": { "disabled": true }`. An optional `"scope"` (comma-separated
+  language ids) limits an entry, which is how a `snippets/global.json` entry targets a few languages.
 - **Templates** — drop `templates/<id>.json` (the same format as Editora's bundled file templates; see
   [templates](subsystems/templates.md)). A plugin template overrides a bundled one with the same id; the
   user's own `~/.editora/templates/<id>.json` overrides both. Plugin templates are listed in Settings →

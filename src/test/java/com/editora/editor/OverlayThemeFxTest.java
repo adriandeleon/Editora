@@ -52,7 +52,8 @@ class OverlayThemeFxTest {
                     new LspDiagnosticOverlay(area),
                     new MarkdownLintOverlay(area),
                     new SearchHighlightOverlay(area),
-                    new InlineValuesOverlay(area)
+                    new InlineValuesOverlay(area),
+                    new SnippetFieldOverlay(area, new com.editora.snippet.SnippetSessions())
                 };
                 OverlayPalette.Colors light = OverlayPalette.of(Color.WHITE);
                 OverlayPalette.Colors dark = OverlayPalette.of(Color.web("#171a24"));

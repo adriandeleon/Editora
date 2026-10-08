@@ -358,6 +358,8 @@ final class MenuBarModel {
                                 SEPARATOR,
                                 "template.manage",
                                 "snippets.manage",
+                                "snippets.editUser",
+                                "snippets.reload",
                                 "plugins.browse",
                                 SEPARATOR,
                                 "install.languageServer",

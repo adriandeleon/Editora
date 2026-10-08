@@ -1,0 +1,124 @@
+{
+  "Table": {
+    "prefix": "table",
+    "body": [
+      "[${1:name}]",
+      "$0"
+    ],
+    "description": "Table header"
+  },
+  "Array of tables": {
+    "prefix": "tables",
+    "body": [
+      "[[${1:name}]]",
+      "$0"
+    ],
+    "description": "Array-of-tables header"
+  },
+  "Key value": {
+    "prefix": "kv",
+    "body": [
+      "${1:key} = \"${2:value}\"$0"
+    ],
+    "description": "String key/value pair"
+  },
+  "Boolean": {
+    "prefix": "bool",
+    "body": [
+      "${1:key} = ${2|true,false|}$0"
+    ],
+    "description": "Boolean key"
+  },
+  "Array": {
+    "prefix": "array",
+    "body": [
+      "${1:key} = [${2:\"value\"}]$0"
+    ],
+    "description": "Array value"
+  },
+  "Multi-line array": {
+    "prefix": "marray",
+    "body": [
+      "${1:key} = [",
+      "\t${2:\"value\"},$0",
+      "]"
+    ],
+    "description": "Array value over several lines"
+  },
+  "Inline table": {
+    "prefix": "inline",
+    "body": [
+      "${1:key} = { ${2:name} = \"${3:value}\" }$0"
+    ],
+    "description": "Inline table"
+  },
+  "Multi-line string": {
+    "prefix": "mstring",
+    "body": [
+      "${1:key} = \"\"\"",
+      "$0",
+      "\"\"\""
+    ],
+    "description": "Multi-line basic string"
+  },
+  "Date-time": {
+    "prefix": "datetime",
+    "body": [
+      "${1:key} = ${CURRENT_YEAR}-${CURRENT_MONTH}-${CURRENT_DATE}T${CURRENT_HOUR}:${CURRENT_MINUTE}:${CURRENT_SECOND}Z$0"
+    ],
+    "description": "Key holding the current date-time"
+  },
+  "Cargo package": {
+    "prefix": "cargo",
+    "body": [
+      "[package]",
+      "name = \"${1:${WORKSPACE_NAME:name}}\"",
+      "version = \"${2:0.1.0}\"",
+      "edition = \"${3:2021}\"",
+      "",
+      "[dependencies]",
+      "$0"
+    ],
+    "description": "Cargo.toml package skeleton"
+  },
+  "Cargo dependency": {
+    "prefix": "dep",
+    "body": [
+      "${1:crate} = \"${2:1.0}\"$0"
+    ],
+    "description": "Cargo dependency"
+  },
+  "Cargo dependency with features": {
+    "prefix": "depf",
+    "body": [
+      "${1:crate} = { version = \"${2:1.0}\", features = [\"${3:feature}\"] }$0"
+    ],
+    "description": "Cargo dependency with features"
+  },
+  "Python project": {
+    "prefix": "pyproject",
+    "body": [
+      "[project]",
+      "name = \"${1:${WORKSPACE_NAME:name}}\"",
+      "version = \"${2:0.1.0}\"",
+      "description = \"${3:}\"",
+      "requires-python = \">=${4:3.11}\"",
+      "dependencies = [",
+      "\t$0",
+      "]",
+      "",
+      "[build-system]",
+      "requires = [\"${5:hatchling}\"]",
+      "build-backend = \"${6:hatchling.build}\""
+    ],
+    "description": "pyproject.toml skeleton"
+  },
+  "Tool table": {
+    "prefix": "tool",
+    "body": [
+      "[tool.${1:name}]",
+      "$0"
+    ],
+    "description": "pyproject [tool.*] table"
+  }
+}

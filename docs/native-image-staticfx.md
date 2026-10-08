@@ -118,8 +118,8 @@ Under `src/native/resources/META-INF/native-image/com.editora/`:
   Named JDK scalar/collection supertypes, including `Iterable` on the Intel macOS JDK 25 build,
   need query metadata during Jackson introspection.
   `HistoryStore`/`HistoryRevision` cover the real save workflow's local history persistence.
-  `SnippetManager$Dto` covers the Jackson load triggered by ordinary Java completion after an
-  edit; the release smoke test caught this background path with strict missing-registration exit.
+  Snippet files need no entry: `SnippetManager` reads them as a JSON tree and writes plain maps, with
+  no data-bound class (it had a `Dto` until the load became per-entry).
 - `lucene/reachability-metadata.json`: conditional, query-only entries for the concrete structures
   inspected by `RamUsageEstimator` while Hunspell loads. The agent and strict startup both exposed
   these. Lucene still warns that size estimation/optimizations are unavailable on non-HotSpot VMs;

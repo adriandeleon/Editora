@@ -9,6 +9,7 @@ import org.fxmisc.richtext.CodeArea;
 public final class SnippetSessions {
     private final List<SnippetSession> stack = new ArrayList<>();
     private final java.util.function.Function<CodeArea, Runnable> undoJoin;
+    private Runnable onChanged = () -> {};
 
     public SnippetSessions() {
         this(null);
@@ -29,6 +30,49 @@ public final class SnippetSessions {
 
     public boolean isActive() {
         return active() != null && active().isActive();
+    }
+
+    /**
+     * Whether a session should take a Tab, Shift+Tab or Escape pressed in {@code area}: one is running in
+     * that view <em>and the caret is still in one of its fields</em>. The caret rule is applied here, now,
+     * rather than waiting for the deferred check, so a session the caret has just left never takes the key.
+     */
+    public boolean ownsKeys(CodeArea area) {
+        SnippetSession s = active();
+        if (s == null || s.area() != area) {
+            return false;
+        }
+        s.settle();
+        return isActive();
+    }
+
+    /** The view the running session is in, or null. */
+    public CodeArea area() {
+        return active() == null ? null : active().area();
+    }
+
+    /** Ends the chain when the user is now working in another view of the document than the session's. */
+    public void focusMovedTo(CodeArea area) {
+        if (active() != null && active().area() != area) {
+            cancel();
+        }
+    }
+
+    /** Run whenever the fields to draw or the progress to report may have changed, and when a chain ends. */
+    public void setOnChanged(Runnable onChanged) {
+        this.onChanged = onChanged == null ? () -> {} : onChanged;
+    }
+
+    /** Every tracked range of every stacked session (see {@link SnippetSession#marks}). */
+    public void marks(SnippetSession.MarkSink sink) {
+        for (SnippetSession s : stack) {
+            s.marks(sink);
+        }
+    }
+
+    /** {@code {position, count}} of the active field in the innermost session, or null when idle. */
+    public int[] progress() {
+        return isActive() ? active().progress() : null;
     }
 
     /** How many expansions are stacked: 0 when idle, more than 1 while one runs inside another's field. */
@@ -52,7 +96,9 @@ public final class SnippetSessions {
         if (child.isActive()) {
             stack.add(child);
             child.setOnEnd(() -> ended(child));
+            child.setOnChanged(() -> onChanged.run());
         } else if (parent != null) parent.resume();
+        onChanged.run();
     }
 
     private void ended(SnippetSession session) {
@@ -66,6 +112,7 @@ public final class SnippetSessions {
         stack.subList(index, stack.size()).clear();
         removed.forEach(SnippetSession::cancel);
         if (active() != null) active().resume();
+        onChanged.run();
     }
 
     public void next() {
@@ -82,9 +129,11 @@ public final class SnippetSessions {
 
     /** Escape/Undo/disposal abandons the entire chain, without moving the caret. */
     public void cancel() {
+        if (stack.isEmpty()) return;
         var sessions = new ArrayList<>(stack);
         stack.clear();
         sessions.forEach(SnippetSession::cancel);
+        onChanged.run();
     }
 
     public boolean replaceInActiveField(int from, int to, String text) {
