@@ -24,8 +24,8 @@ public class KeyDispatcher {
     private final CommandRegistry registry;
     private final KeymapManager keymap;
     private final Consumer<String> statusListener;
-    /** Optional hook fed each literally-typed character that reaches the editor (for the macro recorder). */
-    private Consumer<Character> typedListener;
+    /** The keyboard-macro machinery, if any: told what to record, asked when to stand aside. */
+    private MacroCapture capture;
 
     private String pending = "";
     /** True when the last KEY_PRESSED was consumed, so its paired KEY_TYPED is swallowed too. */
@@ -52,11 +52,6 @@ public class KeyDispatcher {
      *  key (then the event is consumed and dispatch stops). Used e.g. to let {@code M-g} close a
      *  focused tool window. Only consulted when no multi-key prefix is pending. */
     private java.util.function.BiPredicate<String, EventTarget> preDispatch;
-
-    /** Macro capture: the bare-key hook, and the gate deciding whose key events are recordable. */
-    private Consumer<String> keyListener;
-
-    private java.util.function.Predicate<EventTarget> recordTarget = t -> false;
 
     public KeyDispatcher(CommandRegistry registry, KeymapManager keymap, Consumer<String> statusListener) {
         this(registry, keymap, statusListener, KeymapManager.isMac());
@@ -92,42 +87,37 @@ public class KeyDispatcher {
     }
 
     /**
-     * Gate for the macro-recording hooks: only key events whose target passes are recorded. These hooks live
-     * on a <b>scene</b> filter — which, running in the capture phase, sees every key in the window before it
-     * reaches whatever is focused. Without this gate the text typed into the command palette, the find bar,
-     * a picker or a tool-window filter field was recorded as macro text and replayed into the document.
-     * Defaults to recording nothing, so a caller that never sets it can't capture stray keys.
+     * Installs the keyboard-macro hooks (see {@link MacroCapture}); may be null to clear. While recording,
+     * the dispatcher reports typed text and every key press it leaves to the focused control — with the
+     * event's target, so the recorder can tell the document from a prompt. While a replay delivers its own
+     * key events, the dispatcher ignores them entirely.
      */
-    public void setRecordTarget(java.util.function.Predicate<EventTarget> gate) {
-        this.recordTarget = gate != null ? gate : t -> false;
-    }
-
-    /**
-     * Installs a hook fed each bare editing/navigation key ({@code BACK_SPACE}, {@code DELETE}, the arrows,
-     * {@code HOME}/{@code END}, {@code PAGE_UP}/{@code PAGE_DOWN}) that reaches the editor <b>unbound</b> —
-     * the area handles those natively, so they produce neither a command nor a recordable character. Used by
-     * the macro recorder; without it a recorded macro simply omitted them. The value is a
-     * {@link com.editora.macro.MacroKey} token, so a modified-but-unbound variant the area still acts on
-     * (<b>Shift</b>-Down extends the selection, <b>Ctrl</b>-Left goes a word left) replays with its
-     * modifiers rather than as a bare arrow. May be null to clear.
-     */
-    public void setKeyListener(Consumer<String> listener) {
-        this.keyListener = listener;
-    }
-
-    /**
-     * Installs a hook fed each literally-typed character that reaches the editor (i.e. a {@code KEY_TYPED}
-     * not swallowed as part of a command chord). Used by the macro recorder to capture typed text
-     * interleaved with command invocations. May be null to clear.
-     */
-    public void setTypedListener(Consumer<Character> listener) {
-        this.typedListener = listener;
+    public void setMacroCapture(MacroCapture capture) {
+        this.capture = capture;
     }
 
     public void install(Scene scene) {
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handle);
         scene.addEventFilter(KeyEvent.KEY_TYPED, this::handleTyped);
         scene.addEventFilter(KeyEvent.KEY_RELEASED, this::handleReleased);
+        scene.addEventFilter(javafx.scene.input.InputMethodEvent.INPUT_METHOD_TEXT_CHANGED, this::handleInputMethod);
+    }
+
+    /** Text committed by an input method never arrives as KEY_TYPED, so a macro has to be told separately. */
+    void handleInputMethod(javafx.scene.input.InputMethodEvent event) {
+        MacroCapture cap = capture;
+        if (cap != null && cap.mode() == MacroCapture.RECORDING) {
+            String committed = event.getCommitted();
+            if (committed != null && !committed.isEmpty()) {
+                cap.text(committed, event.getTarget());
+            }
+        }
+    }
+
+    /** The macro mode for this event; {@link MacroCapture#IDLE} without a capture. */
+    private int macroMode() {
+        MacroCapture cap = capture;
+        return cap == null ? MacroCapture.IDLE : cap.mode();
     }
 
     /**
@@ -138,6 +128,14 @@ public class KeyDispatcher {
      * so it is still swallowed by {@link #handleTyped} as intended.
      */
     void handleReleased(KeyEvent event) {
+        int macro = macroMode();
+        if (macro == MacroCapture.SYNTHETIC) {
+            return; // a replayed key: none of the dispatcher's state is about it
+        }
+        if (macro == MacroCapture.REPLAYING) {
+            event.consume();
+            return;
+        }
         consumedPress = false;
         if (event.getCode() == KeyCode.ALT_GRAPH) {
             altGrHeld = false;
@@ -190,6 +188,14 @@ public class KeyDispatcher {
      * character, though — that would break macOS Option-based accented/symbol input (é, ç, ∞, dead keys).
      */
     void handleTyped(KeyEvent event) {
+        int macro = macroMode();
+        if (macro == MacroCapture.SYNTHETIC) {
+            return; // a replayed character: leave consumedPress for the replay chord's own KEY_TYPED
+        }
+        if (macro == MacroCapture.REPLAYING) {
+            event.consume(); // typing must not interleave with a replay that is still running
+            return;
+        }
         if (consumedPress) {
             consumedPress = false;
             event.consume();
@@ -204,30 +210,62 @@ public class KeyDispatcher {
             String s = event.getCharacter();
             if (selfInsert != null && s != null && !s.isEmpty()) {
                 selfInsert.accept(s.charAt(0), count);
+                if (macro == MacroCapture.RECORDING && isRecordableText(s)) {
+                    // The repeat is typing like any other: without this, C-u 3 x vanished from the macro.
+                    capture.text(s.substring(0, 1).repeat(count), event.getTarget());
+                }
             }
             return;
         }
-        // A genuine character reaching the editor — feed it to the macro recorder (if any). Gated on the
-        // target: this is a scene filter, so it also sees keys typed into the palette/find bar/pickers.
-        if (typedListener != null && recordTarget.test(event.getTarget())) {
+        // A genuine character on its way to the focused control — feed it to the macro recorder (if any),
+        // which decides from the target whether it is the document's, a prompt's, or nobody's business.
+        // A character that arrives with Control or Command held (and is not AltGr, which sets Alt too) is a
+        // shortcut's by-product, not typing: the focused control ignores it, so the macro must as well.
+        if (macro == MacroCapture.RECORDING && !event.isMetaDown() && (!event.isControlDown() || event.isAltDown())) {
             String s = event.getCharacter();
-            if (s != null) {
-                for (int i = 0; i < s.length(); i++) {
-                    char c = s.charAt(i);
-                    if (isRecordableChar(c)) {
-                        typedListener.accept(c);
-                    }
-                }
+            if (isRecordableText(s)) {
+                capture.text(s, event.getTarget());
             }
         }
     }
 
-    /** A typed char worth recording in a macro: printable, or one of tab / newline / carriage-return. */
-    private static boolean isRecordableChar(char c) {
-        return (c >= 0x20 && c != 0x7F) || c == '\t' || c == '\n' || c == '\r';
+    /**
+     * Typed text worth recording in a macro: printable characters. Enter, Tab, Backspace and Escape also
+     * deliver a control character here, but those are recorded as the <em>key</em> (see
+     * {@link #isActionKey}) — a tab character cannot say whether it was Tab or Shift+Tab, nor replay a
+     * snippet expansion.
+     */
+    static boolean isRecordableText(String s) {
+        if (s == null || s.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                return false;
+            }
+        }
+        return true;
     }
 
     void handle(KeyEvent event) {
+        int macro = macroMode();
+        if (macro == MacroCapture.SYNTHETIC) {
+            return; // a replayed key goes straight to its target; see MacroCapture.SYNTHETIC
+        }
+        if (macro == MacroCapture.REPLAYING) {
+            // A replay is running in slices: keep real keys out of it, except the one that stops it.
+            event.consume();
+            consumedPress = true;
+            String cancel = chord(event);
+            if (event.getCode() == KeyCode.ESCAPE || (cancel != null && CANCEL.equals(keymap.commandFor(cancel)))) {
+                capture.cancelReplay();
+            }
+            return;
+        }
+        if (macro == MacroCapture.RECORDING) {
+            capture.keySeen();
+        }
         consumedPress = false;
         // Bare Alt: consume so Windows can't enter menu mode (which freezes the keyboard). Plain Alt
         // only — AltGr (Ctrl+Alt) is left alone (see plainAltActive).
@@ -297,11 +335,17 @@ public class KeyDispatcher {
                 && isEditorContext(commandId) // checked first: plain typing must not walk the ancestor chain
                 && (leftToFocusOwner(commandId, ownsKeys(event.getTarget()), inTextInput(event.getTarget()))
                         || ownsChord(event.getTarget(), token, commandId))) {
+            if (macro == MacroCapture.RECORDING) {
+                capture.key(event, event.getTarget()); // the focus owner acts on it, so only the key replays it
+            }
             return; // let the focused window or field handle this editor-context key
         }
         // A key the focused component declared its own (the Project tree's F2 = rename file) wins over a
         // global binding of the same key (F2 = rename symbol in the VS Code/Sublime/IntelliJ keymaps).
         if (pending.isEmpty() && (commandId != null || prefix) && claimsKey(event.getTarget(), token)) {
+            if (macro == MacroCapture.RECORDING) {
+                capture.key(event, event.getTarget());
+            }
             return;
         }
 
@@ -363,16 +407,11 @@ public class KeyDispatcher {
             prefixArg.reset();
             statusListener.accept("");
         }
-        // A lone, unbound key: let it fall through so normal text input works. If it's an editing or
-        // navigation key aimed at the editor, hand it to the macro recorder first — the area handles these
-        // itself, so this is the only place they can be captured.
-        if (keyListener != null && RECORDABLE_KEYS.contains(event.getCode()) && recordTarget.test(event.getTarget())) {
-            keyListener.accept(com.editora.macro.MacroKey.encode(
-                    event.isControlDown(),
-                    event.isAltDown(),
-                    event.isMetaDown(),
-                    event.isShiftDown(),
-                    event.getCode().name()));
+        // A lone, unbound key: let it fall through so normal text input works. If it's a key that acts
+        // rather than types, hand it to the macro recorder first — the focused control handles these itself,
+        // so this is the only place they can be captured.
+        if (macro == MacroCapture.RECORDING && isActionKey(event)) {
+            capture.key(event, event.getTarget());
         }
     }
 
@@ -455,18 +494,37 @@ public class KeyDispatcher {
             KeyCode.BACK_QUOTE);
 
     /**
-     * The bare keys a macro must capture: they change the document or the caret, are handled natively by the
-     * editor area, and are bound to no command in any bundled keymap — so neither the command hook nor the
-     * typed-char hook (Backspace is 0x08, below the printable range; the arrows emit no KEY_TYPED at all)
-     * ever sees them. Recording only the unbound ones keeps a chord that IS bound on the command path.
+     * Whether an unbound key press is one a macro must record as a <em>key</em>: it acts on the focused
+     * control instead of typing a character there, and no bundled keymap binds it — so neither the command
+     * hook nor the typed-text hook ever sees it. Backspace, Delete, the arrows and Home/End edit and move;
+     * Enter, Tab and Escape accept, indent, traverse and dismiss (and expand a snippet, pick a completion,
+     * move between table cells — which is why they are keys and not the characters they also deliver);
+     * Insert is Shift+Insert paste and Ctrl+Insert copy. With Control or Command held, any key counts: the
+     * control's own shortcut (Ctrl+A in a text field) is not a command either. Pure.
      */
-    private static final java.util.Set<KeyCode> RECORDABLE_KEYS = java.util.Set.of(
+    static boolean isActionKey(KeyEvent event) {
+        KeyCode code = event.getCode();
+        if (code == null || code.isModifierKey()) {
+            return false;
+        }
+        return ACTION_KEYS.contains(code) || event.isControlDown() || event.isMetaDown();
+    }
+
+    private static final java.util.Set<KeyCode> ACTION_KEYS = java.util.EnumSet.of(
             KeyCode.BACK_SPACE,
             KeyCode.DELETE,
+            KeyCode.INSERT,
+            KeyCode.ENTER,
+            KeyCode.TAB,
+            KeyCode.ESCAPE,
             KeyCode.LEFT,
             KeyCode.RIGHT,
             KeyCode.UP,
             KeyCode.DOWN,
+            KeyCode.KP_LEFT,
+            KeyCode.KP_RIGHT,
+            KeyCode.KP_UP,
+            KeyCode.KP_DOWN,
             KeyCode.HOME,
             KeyCode.END,
             KeyCode.PAGE_UP,

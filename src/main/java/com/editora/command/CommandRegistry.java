@@ -15,6 +15,9 @@ public class CommandRegistry {
     /** Notified with each command id that actually ran (after the command executes). Null = no listener. */
     private Consumer<String> executionListener;
 
+    /** Notified with each outermost command id just before it runs; see {@link #setStartListener}. */
+    private Consumer<String> startListener;
+
     /** Run before and after each outermost command; see {@link #setBoundaryHook}. Null = none. */
     private Runnable boundaryHook;
 
@@ -49,6 +52,21 @@ public class CommandRegistry {
     }
 
     /**
+     * Installs a listener notified with the id of every <em>outermost</em> command just before it runs — the
+     * counterpart of {@link #setExecutionListener}, which only hears about a command once it has returned.
+     * The macro recorder uses the pair to notice a command that does not return promptly because it opened
+     * a blocking dialog, which a replay cannot drive.
+     */
+    public void setStartListener(Consumer<String> listener) {
+        this.startListener = listener;
+    }
+
+    /** Whether a command is running right now (a blocking dialog keeps its command running). */
+    public boolean isRunning() {
+        return runDepth > 0;
+    }
+
+    /**
      * Installs a bracket around every <em>outermost</em> run: it is called with the command id before the
      * command executes and returns what to do once it has (or null for nothing). This is the one point every
      * invocation path shares — a key chord, the palette, a menu item, a toolbar button, a macro replay — so
@@ -76,6 +94,9 @@ public class CommandRegistry {
         }
         boolean outermost = runDepth == 0;
         Runnable after = outermost && runScope != null ? runScope.apply(id) : null;
+        if (outermost && startListener != null) {
+            startListener.accept(id);
+        }
         if (outermost && boundaryHook != null) {
             boundaryHook.run();
         }

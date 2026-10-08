@@ -3977,6 +3977,11 @@
     -fx-font-style: italic;
 }
 
+/* Settings → Macros: a command step whose id names no command (it would be skipped at replay). */
+.macro-step-unknown {
+    -fx-text-fill: -color-danger-fg;
+}
+
 /* ---- UI Kit line icons -------------------------------------------------------------------------
    The kit's glyphs are 16-unit outlines: stroked, never filled, with round caps and joins. Editora's
    older Material glyphs are single filled paths coloured through `-fx-fill` on `.toolbar-icon`, so a

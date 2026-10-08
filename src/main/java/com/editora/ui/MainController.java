@@ -504,6 +504,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void setRecordingIndicator(boolean recording) {
                 statusBar.setMacroRecording(recording);
             }
+
+            @Override
+            public Integer prefixArgument() {
+                return editing.currentPrefixArg;
+            }
+
+            @Override
+            public void resetShortcut(String commandId) {
+                editorSettings.resetShortcut(commandId);
+            }
         });
         // Built here (not as a field initializer) because NotesPanel's constructor reads config.getNotes().
         this.notesCoordinator = new NotesCoordinator(coordinatorHost, new NotesCoordinator.Ops() {
@@ -638,6 +648,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
+        registry.setStartListener(macroCoordinator::onCommandStart);
         registry.setExecutionListener(macroCoordinator::onCommand);
         registry.setBoundaryHook(editing::undoBoundary); // a command's edit is its own undo step
         this.snippets = new com.editora.snippet.SnippetManager(config);
@@ -1343,16 +1354,15 @@ public class MainController implements com.editora.mcp.McpBridge {
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
-        // Record literally-typed characters + the bare editing/navigation keys the area handles itself into
-        // an in-progress macro (all no-ops unless recording), gated to keys aimed at the active editor — the
-        // hooks are scene filters, so they'd otherwise capture the palette's / find bar's own input.
+        // Keyboard macros: the coordinator is told what was typed and which keys were left to the focused
+        // control while recording, and the dispatcher stands aside for the keys a replay sends.
         if (macroCoordinator != null) {
-            dispatcher.setTypedListener(macroCoordinator::onTypedChar);
-            dispatcher.setKeyListener(macroCoordinator::onKey);
-            dispatcher.setRecordTarget(macroCoordinator::isRecordableTarget);
+            dispatcher.setMacroCapture(macroCoordinator);
         }
         dispatcher.setPrefixArgumentSupport(
-                id -> "edit.setMark".equals(id) || toolWindows.isKeyboardCountAware(id),
+                id -> "edit.setMark".equals(id)
+                        || toolWindows.isKeyboardCountAware(id)
+                        || (macroCoordinator != null && macroCoordinator.isCountAware(id)),
                 arg -> toolWindows.setKeyboardPrefixArgument(editing.currentPrefixArg = arg),
                 editing::selfInsertRepeat);
         dispatcher.setPreDispatch((token, target) -> {
@@ -9878,6 +9888,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             palette.hide();
         } else if (findBar.isShown()) {
             findBar.hideBar();
+        } else if (macroCoordinator.cancelRecording()) {
+            return; // nothing else to dismiss: C-g abandons the macro being recorded (it says so itself)
         } else {
             editing.deactivateMark();
             editing.collapseCarets(); // C-g leaves one caret, as Escape does

@@ -467,16 +467,46 @@ class SettingsFollowUpsFxTest {
 
     /** The chord label of the Macros page's key-binding row (its first child; the buttons follow). */
     private static Label macroChordLabel(SettingsWindow w) {
-        Map<HBox, ?> rebuilders = FxTestSupport.field(w, "macroKeybindingRebuilders");
-        HBox row = rebuilders.keySet().iterator().next();
-        return (Label) row.getChildren().get(0);
+        return (Label) macroKeybindingRow(w).getChildren().get(0);
+    }
+
+    private static javafx.scene.layout.Pane macroKeybindingRow(SettingsWindow w) {
+        MacroSettingsPane pane = FxTestSupport.field(w, "macroPane");
+        return pane.keybindingRow();
+    }
+
+    /**
+     * M15: the Macros note names the chords of the keymap in use. It used to say "F3 (start) and F4 (stop)"
+     * under every keymap, though only the Emacs one binds them — in CUA and Sublime F3 is Find Next.
+     */
+    @Test
+    void theMacrosNoteNamesTheChordsOfTheActiveKeymap() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx.controller);
+                try {
+                    Label note = FxTestSupport.field(w, "macroNote");
+                    ComboBox<String> keymap = FxTestSupport.field(w, "keymapCombo");
+                    keymap.setValue("emacs");
+                    String start = tr("command.macro.startRecording");
+                    assertTrue(note.getText().contains(chordOf(w, "macro.startRecording")), note.getText());
+                    assertFalse(note.getText().contains(tr("settings.macro.note.unbound", start)));
+
+                    keymap.setValue("vscode"); // binds no macro command
+                    assertTrue(note.getText().contains(tr("settings.macro.note.unbound", start)), note.getText());
+                    assertFalse(note.getText().toLowerCase().contains("f3"), note.getText());
+                } finally {
+                    hide(w);
+                }
+            });
+        }
     }
 
     @Test
     void theMacrosKeyBindingRowFollowsTheLiveKeymap() throws Exception {
         try (var fx = FxWindowFixture.create()) {
             FxTestSupport.runOnFx(() -> {
-                fx.shared.getMacroStore().macros.add(new Macro("Greet", List.of(MacroStep.text("hello"))));
+                fx.shared.getMacroStore().put(new Macro("Greet", List.of(MacroStep.text("hello"))));
                 FxTestSupport.invoke(fx.controller, "refreshSavedMacroCommandsAllWindows");
                 SettingsWindow w = shown(fx.controller);
                 try {
@@ -485,7 +515,8 @@ class SettingsFollowUpsFxTest {
                     ListView<Macro> list = (ListView<Macro>) all(page(w, "MACROS"), ListView.class, new ArrayList<>())
                             .get(0);
                     list.getSelectionModel().select(0);
-                    String id = MacroService.commandIdFor("Greet");
+                    String id =
+                            MacroService.commandIdFor(fx.shared.getMacroStore().findByName("Greet"));
                     assertEquals(
                             tr("settings.shortcuts.unbound"), macroChordLabel(w).getText());
 
@@ -507,8 +538,7 @@ class SettingsFollowUpsFxTest {
                             .findFirst()
                             .orElseThrow()
                             .fire();
-                    Map<HBox, ?> rebuilders = FxTestSupport.field(w, "macroKeybindingRebuilders");
-                    HBox row = rebuilders.keySet().iterator().next();
+                    javafx.scene.layout.Pane row = macroKeybindingRow(w);
                     Node capture = row.getChildren().get(0);
                     assertTrue(capture instanceof TextField);
                     ComboBox<String> keymap = FxTestSupport.field(w, "keymapCombo");

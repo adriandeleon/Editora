@@ -63,7 +63,7 @@ final class StoreMerge {
             case NOTES -> path -> bucketed(path) ? List.of("id") : null;
             case HISTORY -> path -> bucketed(path) ? List.of("timestamp", "sha256", "reason") : null;
             case CONNECTIONS -> path -> path.equals(List.of("connections")) ? List.of("host", "port", "user") : null;
-            case MACROS -> path -> path.equals(List.of("macros")) ? List.of("name") : null;
+            case MACROS -> path -> path.equals(List.of("macros")) ? List.of("id") : null;
             case ABBREVIATIONS -> path -> path.equals(List.of("abbreviations")) ? List.of("abbreviation") : null;
             case RECENT -> path -> path.equals(List.of("files")) ? List.of() : null;
             case SEARCH_HISTORY -> path -> path.equals(List.of("queries")) ? List.of() : null;

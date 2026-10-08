@@ -1,28 +1,43 @@
 package com.editora.macro;
 
 import java.util.List;
-import java.util.Locale;
-import java.util.function.Consumer;
 
 import com.editora.config.ConfigManager;
+import com.editora.config.MacroStore;
 
 /**
- * Per-window coordinator for keyboard macros: owns the {@link MacroRecorder} and {@link MacroPlayer},
- * tracks the just-recorded ("last") macro, and reads/writes the app-global saved macros through the
- * window's {@link ConfigManager} (which delegates the store to the shared config). UI-agnostic — the editor
- * effects of replay (running a command, typing text) are supplied as callbacks by the caller, so this class
- * depends only on lower layers (config + the pure macro model).
+ * Per-window model of keyboard macros: owns the {@link MacroRecorder} and the {@link MacroPlayer} cursor,
+ * tracks the just-recorded ("last") macro, and reads/writes the app-global saved macros through the window's
+ * {@link ConfigManager} (which delegates the store to the shared config). UI-agnostic — delivering a step
+ * (running a command, firing a key) is the caller's job, so this class depends only on lower layers (config
+ * + the pure macro model).
  */
 public final class MacroService {
+
+    /** Command-id prefix for a saved macro's synthetic run command. */
+    public static final String RUN_PREFIX = "macro.run.";
+
+    /** The cycle-check key of the unsaved last recording (it has no id). */
+    public static final String LAST_KEY = "\u0000last";
 
     private final ConfigManager config;
     private final MacroRecorder recorder = new MacroRecorder();
     private final MacroPlayer player = new MacroPlayer();
-    /** The macro just recorded (unnamed) — the target of "replay last" until saved under a name. */
+    /** The macro just recorded in this window — the target of "replay last" until another is recorded. */
     private Macro lastMacro;
+    /**
+     * True from a recorded key or text step until the next real key press: commands that run in between are
+     * consequences of that step (Enter in a picker running the picked command) and replaying the step runs
+     * them again, so recording them too would run them twice.
+     */
+    private boolean consequence;
 
     public MacroService(ConfigManager config) {
         this.config = config;
+    }
+
+    public MacroPlayer player() {
+        return player;
     }
 
     public boolean isRecording() {
@@ -34,149 +49,172 @@ public final class MacroService {
     }
 
     public void startRecording() {
+        consequence = false;
         recorder.start();
     }
 
-    /** Stops recording, retains the result as the "last macro", and returns its step count. */
+    /**
+     * Stops recording and returns how many steps were captured. A non-empty recording becomes the last
+     * macro; an empty one changes nothing, so starting and stopping by accident does not cost the macro
+     * recorded before (as in Emacs).
+     */
     public int stopRecording() {
         List<MacroStep> steps = recorder.stop();
-        lastMacro = new Macro("", steps);
+        if (!steps.isEmpty()) {
+            lastMacro = new Macro("", steps);
+        }
         return steps.size();
     }
 
+    /** Abandons the recording in progress; the previous last macro stays. */
+    public void cancelRecording() {
+        recorder.cancel();
+    }
+
+    /** A real key press arrived: whatever runs next is the user's doing, not the previous step's. */
+    public void keySeen() {
+        consequence = false;
+    }
+
     /**
-     * Records an executed command. Ignored while replaying (replay is never recorded) and for the
+     * Records an executed command. Ignored while replaying (replay is never recorded), for the
      * {@code macro.*} control commands and {@code palette.show} (so recording via the palette captures the
-     * chosen command, not the act of opening the palette).
+     * chosen command, not the act of opening the palette), and for a command that ran as the consequence of
+     * a recorded key (see {@link #consequence}).
      *
-     * <p>A saved macro's own {@code macro.run.<slug>} command is <b>not</b> a control command and IS
-     * recorded — composing macros is the point. The prefix test used to swallow those too, so invoking a
-     * macro while recording silently vanished from the recording. Recursion is stopped by
-     * {@link MacroPlayer}'s re-entrancy guard, not by refusing to record.
+     * <p>A saved macro's own {@code macro.run.<id>} command is a legitimate step, but it is recorded by
+     * {@link #recordMacroRun} when the run starts rather than here: this hook fires when the command
+     * returns, which for a long replay is before it has finished.
      */
     public void onCommand(String id) {
         if (!recorder.isRecording()
                 || player.isPlaying()
                 || id == null
-                || isControlCommand(id)
-                || id.equals("palette.show")) {
+                || id.startsWith("macro.")
+                || id.equals("palette.show")
+                || consequence) {
             return;
         }
         recorder.recordCommand(id);
     }
 
-    /** True for the {@code macro.*} control commands (record/replay/save/delete) — but not {@code macro.run.*}. */
-    private static boolean isControlCommand(String id) {
-        return id.startsWith("macro.") && !id.startsWith(RUN_PREFIX);
+    /** Records that the saved macro {@code macro} was invoked {@code times} times while recording. */
+    public void recordMacroRun(Macro macro, int times) {
+        if (!recorder.isRecording() || player.isPlaying() || macro == null) {
+            return;
+        }
+        for (int i = 0; i < times; i++) {
+            recorder.recordCommand(commandIdFor(macro));
+        }
     }
 
-    /** Records a literally-typed character. Ignored while replaying or not recording (the idle hot path). */
-    public void onTypedChar(char c) {
+    /** Records typed text. Ignored while replaying or not recording (the idle hot path). */
+    public void onText(String chars, boolean prompt) {
         if (!recorder.isRecording() || player.isPlaying()) {
             return;
         }
-        recorder.recordChar(c);
+        recorder.recordText(chars, prompt);
+        consequence = true;
+    }
+
+    /** Records a key press as a {@link MacroKey} token. Ignored while replaying or not recording. */
+    public void onKey(String keyToken, boolean prompt) {
+        if (!recorder.isRecording() || player.isPlaying()) {
+            return;
+        }
+        recorder.recordKey(keyToken, prompt);
+        consequence = true;
     }
 
     /**
-     * Records a bare editing/navigation key (Backspace, Delete, an arrow, Home/End, …) by {@code KeyCode}
-     * name. Ignored while replaying or not recording (the idle hot path).
+     * The macro "replay last" plays: the one recorded in this window, else the one the store kept from the
+     * last recording anywhere — so it survives a restart and is there in a second window.
      */
-    public void onKey(String keyCodeName) {
-        if (!recorder.isRecording() || player.isPlaying()) {
-            return;
+    public Macro last() {
+        if (lastMacro != null && !lastMacro.isEmpty()) {
+            return lastMacro;
         }
-        recorder.recordKey(keyCodeName);
+        Macro stored = store().placeholder();
+        return stored != null && !stored.isEmpty() ? stored : null;
     }
 
     public boolean hasLast() {
-        return lastMacro != null && !lastMacro.isEmpty();
+        return last() != null;
     }
 
-    public void replayLast(
-            int times, Consumer<String> runCommand, Consumer<String> typeText, Consumer<String> pressKey) {
-        if (hasLast()) {
-            player.play(lastMacro, times, runCommand, typeText, pressKey);
-        }
+    private MacroStore store() {
+        return config.getMacroStore();
+    }
+
+    public List<Macro> saved() {
+        return store().macros;
+    }
+
+    public Macro findById(String id) {
+        return store().findById(id);
+    }
+
+    public Macro findByName(String name) {
+        return store().findByName(name == null ? null : name.strip());
+    }
+
+    public boolean isPlaceholder(Macro macro) {
+        return store().isPlaceholder(macro);
     }
 
     /**
-     * Replays a saved macro by name. Returns false when there is no such macro <b>or</b> the replay was
-     * dropped by the re-entrancy guard (a macro reached from inside another replay) — reporting success for
-     * a replay that did nothing left the caller echoing a lie.
+     * Stores the last recording in the unnamed slot (replacing the previous unnamed one), so it is visible
+     * in Settings and bindable at once. Returns the stored entry, or null when there is nothing recorded.
      */
-    public boolean run(
-            String name, int times, Consumer<String> runCommand, Consumer<String> typeText, Consumer<String> pressKey) {
-        Macro m = config.getMacroStore().find(name);
-        if (m == null) {
-            return false;
-        }
-        return player.play(m, times, runCommand, typeText, pressKey);
-    }
-
-    /**
-     * Saves the last-recorded macro under a name (replacing any same-named one); returns it, or null when
-     * there's nothing to save, the name is blank, or it would {@linkplain #slugClash collide} with another
-     * macro's command id.
-     */
-    public Macro saveLast(String name) {
-        if (!hasLast() || name == null || name.isBlank()) {
+    public Macro saveLastAsPlaceholder() {
+        if (lastMacro == null || lastMacro.isEmpty()) {
             return null;
         }
-        String clean = name.strip();
-        if (slugClash(clean)) {
-            return null;
-        }
-        Macro m = new Macro(clean, lastMacro.steps());
-        config.getMacroStore().put(m);
+        MacroStore store = store();
+        Macro existing = store.placeholder();
+        String id = existing != null ? existing.id() : MacroIds.unique(MacroStore.DEFAULT_LAST_ID, store.ids());
+        Macro m = new Macro(id, "", lastMacro.steps());
+        store.put(m);
+        store.lastId = id;
         config.saveMacros();
         return m;
     }
 
     /**
-     * True when {@code name} would produce the same {@code macro.run.<slug>} command id as a <b>different</b>
-     * saved macro. The store keys by name but commands key by slug, so {@code my macro} and {@code my-macro}
-     * (or any two symbol-only names, which both fall back to {@code macro}) registered one id twice — last
-     * write won, and the shadowed macro became unreachable by command or keybinding.
+     * Saves the last macro under {@code name}: over {@code replace} when given (keeping its id and so its key
+     * binding), else as a new macro with a fresh id. The unnamed slot is dropped when it holds this same
+     * recording — it has a real name now — but not when another window has since recorded over it. Returns
+     * the saved macro, or null when there is nothing to save or the name is blank.
      */
-    public boolean slugClash(String name) {
-        String id = commandIdFor(name);
-        for (Macro m : saved()) {
-            if (!m.name().equalsIgnoreCase(name == null ? "" : name.strip())
-                    && commandIdFor(m.name()).equals(id)) {
-                return true;
-            }
+    public Macro saveLastAs(String name, Macro replace) {
+        Macro source = last();
+        if (source == null || name == null || name.isBlank()) {
+            return null;
         }
-        return false;
+        MacroStore store = store();
+        String id = replace != null && store.findById(replace.id()) != null
+                ? replace.id()
+                : MacroIds.forName(name, store.ids());
+        Macro m = new Macro(id, name.strip(), source.steps());
+        store.put(m);
+        Macro unnamed = store.placeholder();
+        if (unnamed != null && !unnamed.id().equals(id) && unnamed.steps().equals(source.steps())) {
+            store.removeById(unnamed.id());
+        }
+        config.saveMacros();
+        return m;
     }
 
-    public List<Macro> saved() {
-        return config.getMacroStore().macros;
-    }
-
-    public boolean delete(String name) {
-        boolean removed = config.getMacroStore().remove(name);
+    public boolean delete(String id) {
+        boolean removed = store().removeById(id);
         if (removed) {
             config.saveMacros();
         }
         return removed;
     }
 
-    /** Command-id prefix for a saved macro's synthetic run command. */
-    public static final String RUN_PREFIX = "macro.run.";
-
     /** The synthetic command id under which a saved macro is registered (so it is palette- and key-bindable). */
-    public static String commandIdFor(String name) {
-        return RUN_PREFIX + slug(name);
-    }
-
-    /** A filesystem/command-id-safe slug of a macro name. */
-    public static String slug(String name) {
-        String s = (name == null ? "" : name)
-                .trim()
-                .toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]+", "-")
-                .replaceAll("(^-|-$)", "");
-        return s.isEmpty() ? "macro" : s;
+    public static String commandIdFor(Macro macro) {
+        return RUN_PREFIX + macro.id();
     }
 }

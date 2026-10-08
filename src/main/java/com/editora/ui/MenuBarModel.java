@@ -361,7 +361,17 @@ final class MenuBarModel {
                                 "plugins.browse",
                                 SEPARATOR,
                                 "install.languageServer",
-                                "view.doctor")),
+                                "view.doctor"),
+                        // The rest of the macro commands: reachable without knowing the palette has them.
+                        List.of(new MenuSpec(
+                                "menubar.tools.macros",
+                                List.of(
+                                        "macro.cancelRecording",
+                                        "macro.replayLastN",
+                                        SEPARATOR,
+                                        "macro.nameAndSave",
+                                        "macro.runSaved",
+                                        "macro.deleteSaved")))),
                 new MenuSpec(
                         "menubar.window",
                         List.of(

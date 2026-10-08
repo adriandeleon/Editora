@@ -24,6 +24,7 @@
   "C-S-f": "search.inFiles",
   "C-p": "file.find",
   "C-S-p": "palette.show",
+  "C-S-q": "macro.replayLast",
   "C-S-e": "search.everywhere",
   "C-r": "structure.jump",
   "C-g": "nav.goToLine",
