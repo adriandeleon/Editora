@@ -79,6 +79,37 @@ final class GitFeatureFx {
         return seen;
     }
 
+    /** The window's scene. Call on the FX thread. */
+    javafx.scene.Scene scene() {
+        StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+        return FxTestSupport.<Label>field(statusBar, "echo").getScene();
+    }
+
+    /** What the status bar's echo area shows now. */
+    String status() throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+            return FxTestSupport.<Label>field(statusBar, "echo").getText();
+        });
+    }
+
+    /** Empties the echo area, so the next message is seen even when it repeats the last one. */
+    void clearStatus() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+            FxTestSupport.<Label>field(statusBar, "echo").setText("");
+        });
+    }
+
+    /** Every message the status bar has shown in this window, oldest first. */
+    java.util.List<String> messages() throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            StatusBar statusBar = FxTestSupport.field(fx.controller, "statusBar");
+            MessageLog log = FxTestSupport.field(statusBar, "messageLog");
+            return log.entries().stream().map(MessageLog.Entry::text).toList();
+        });
+    }
+
     static void await(String what, Callable<Boolean> condition) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         while (!FxTestSupport.callOnFx(condition)) {
