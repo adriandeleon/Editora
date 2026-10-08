@@ -29,6 +29,7 @@ import javafx.util.StringConverter;
 import com.editora.config.ConfigManager;
 import com.editora.config.RunConfiguration;
 import com.editora.run.RunConfigDefaults;
+import com.editora.run.RunConfigFields;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -134,7 +135,20 @@ public final class RunConfigurationsWindow {
         formRow(form, 10, "settings.runConfig.jdk", jdk);
         form.setDisable(true);
 
+        type.setId("run-config-type");
+        target.setId("run-config-target");
+        mainClass.setId("run-config-main-class");
+        projectName.setId("run-config-module");
+        vmArgs.setId("run-config-vm-args");
         args.setId("run-config-args");
+        // Only the fields the selected type launches with are editable: a script has no main class, module,
+        // VM arguments or JDK, and a Java main class has no script/target. A disabled field keeps its text, so
+        // switching the type back and forth loses nothing.
+        Runnable applyType = () -> {
+            String value = type.getValue();
+            setRowDisabled(form, !RunConfigFields.usesTarget(value), target);
+            setRowDisabled(form, !RunConfigFields.usesJavaFields(value), mainClass, projectName, vmArgs, jdk);
+        };
         java.util.function.Supplier<RunConfiguration> fromForm = () -> new RunConfiguration(
                 name.getText(),
                 type.getValue() == null ? "java" : type.getValue(),
@@ -156,7 +170,10 @@ public final class RunConfigurationsWindow {
             list.refresh();
             persist();
         };
-        type.valueProperty().addListener((o, was, now) -> commit.run());
+        type.valueProperty().addListener((o, was, now) -> {
+            applyType.run();
+            commit.run();
+        });
         jdk.valueProperty().addListener((o, was, now) -> commit.run());
         for (TextField value :
                 List.of(name, target, mainClass, projectName, args, vmArgs, workingDir, env, beforeLaunch)) {
@@ -187,7 +204,6 @@ public final class RunConfigurationsWindow {
             loading = true;
             try {
                 form.setDisable(now == null);
-                jdk.setDisable(now == null || !now.isJava());
                 name.setText(now == null ? "" : now.name());
                 type.setValue(now == null ? "java" : now.type());
                 target.setText(now == null ? "" : now.target());
@@ -199,6 +215,7 @@ public final class RunConfigurationsWindow {
                 env.setText(now == null ? "" : now.env());
                 beforeLaunch.setText(now == null ? "" : now.beforeLaunch());
                 JdkChoice.select(jdk, now == null ? "" : now.jdkHome());
+                applyType.run(); // the type listener is silent when two rows share a type
             } finally {
                 loading = false;
             }
@@ -268,6 +285,19 @@ public final class RunConfigurationsWindow {
         GridPane.setHgrow(control, Priority.ALWAYS);
         if (control instanceof Region region) {
             region.setMaxWidth(Double.MAX_VALUE);
+        }
+    }
+
+    /** Disables (or re-enables) each control together with the label on its row. */
+    private static void setRowDisabled(GridPane form, boolean disabled, javafx.scene.Node... controls) {
+        for (javafx.scene.Node control : controls) {
+            control.setDisable(disabled);
+            Integer row = GridPane.getRowIndex(control);
+            for (javafx.scene.Node node : form.getChildren()) {
+                if (node instanceof Label && java.util.Objects.equals(GridPane.getRowIndex(node), row)) {
+                    node.setDisable(disabled);
+                }
+            }
         }
     }
 

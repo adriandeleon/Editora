@@ -68,6 +68,9 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   call lanes and cancellation, tool-window gating, and how oversized logs and diffs are reported.
 - [subsystems/templates.md](subsystems/templates.md) — file templates and New ▸ <type>: the template
   JSON format and syntax, where templates come from, the plan-then-write apply, and the name rules.
+- [subsystems/settings-sync.md](subsystems/settings-sync.md) — syncing snippets, abbreviations,
+  templates and the dictionary through a Git repository: the round, the base ref, the guards, the
+  triggers and which thread writes what.
 - [subsystems/java-editing-review.md](subsystems/java-editing-review.md) — Java typing/completion
   pipeline, IntelliJ comparison, regression coverage, performance evidence and remaining server gaps.
 

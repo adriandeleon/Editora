@@ -262,6 +262,11 @@ public final class GitService {
      */
     private static volatile List<String> GIT_CMD = List.of("git");
 
+    /** The git command every service runs, for the package's other runners ({@link QuietGit}). */
+    static List<String> command() {
+        return GIT_CMD;
+    }
+
     /** Sets the git command/path (see {@link #commandTokens}); blank ⇒ resolve {@code git} on PATH. */
     public void setCommand(String command) {
         List<String> next = commandTokens(command);

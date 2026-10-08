@@ -50,6 +50,7 @@ class ChildLocalePolicyTest {
             "diagram/DiagramRenderer.java", // detect(): --version / --help
             "doctor/DoctorProbes.java", // version probes
             "git/GitService.java", // background reads: porcelain output
+            "git/QuietGit.java", // settings sync: hooks are off, and push rejections are read from the output
             "github/GitHubService.java", // gh JSON
             "install/InstallService.java", // `npm root -g`: a path
             "mermaid/Mermaid.java", // detect() + maid's JSON report

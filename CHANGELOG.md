@@ -13,6 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mouse and keyboard controls, and an options (⋯) menu holding Keep current zoom, Focus new column, Hide
   all open Personal Notes, Print… and PDF…. Tree/Map and the two navigation options are remembered per
   workspace (workspace-state schema 13).
+- **Settings sync** _(Beta)_. Keeps your snippets, abbreviations, templates and personal dictionary the
+  same on every computer, through a private Git repository you own (Settings → Sync). Paste the
+  repository URL, or use **Create on GitHub…** when `gh` is signed in, and Connect: it first shows what
+  the repository would bring. After that Editora syncs after startup, shortly after you change
+  something, and every 15 minutes; `Settings Sync: Sync Now` does it on demand. Changes merge entry by
+  entry, so two computers that each added a snippet both keep both. If the same entry was changed on
+  two computers, the one that syncs keeps its version and the other version stays in the repository
+  history. Files a sync replaces are first copied to `<configDir>/sync/backups/`. Editora uses your own
+  Git credentials and stores none; automatic syncs never prompt, and a failing sync shows as "Sync ⚠" in
+  the status bar. Preferences (`settings.json`), keymaps, macros and themes are not synced. Off by
+  default. New commands `Settings Sync: Set Up…`, `Settings Sync: Sync Now` and
+  `Settings Sync: Toggle Sync Automatically`. Settings schema 115.
 - GitHub tool window: a row under the toolbar shows the repository's URL (click to open it on GitHub,
   right-click to copy), the branch checked out, and the GitHub account `gh` is signed in with. It replaces
   the `owner/name` label in the toolbar. The account needs gh 2.81 or newer.
@@ -124,6 +136,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for workspaces with no stored flow; columns follow the Project "show hidden files" setting and the
   per-column checkbox is now "Show hidden"; at most eight cards are open in total, previews and notes
   together.
+- Run Configurations: the form only enables the fields the selected type uses. A Java main class has no
+  Script / target; a Python, shell, Make or NPM configuration has no Main class, Module, VM arguments or
+  JDK. A disabled field keeps its value, and the JDK field now follows the type as soon as it is changed.
 - GitHub: the tool window names the repository `gh` resolved, filters pull requests and issues by state
   (open, closed, merged, all) and "Mine", offers "load more" instead of stopping at 50 (30 for runs),
   and shows a spinner while `gh` is working. Row menus open with the Menu key, and the segment buttons
