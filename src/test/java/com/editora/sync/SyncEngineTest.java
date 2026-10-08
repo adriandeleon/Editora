@@ -357,6 +357,22 @@ class SyncEngineTest {
     }
 
     @Test
+    void aPreviewSaysWhatWouldHappenAndChangesNothing() throws Exception {
+        a.write("dictionary.txt", "one\n");
+        assertOk(a.sync());
+        b.write("dictionary.txt", "two\n");
+        SyncReport preview =
+                b.engine(remote.toString(), new FileSyncTarget(b.config)).preview(ALL);
+        assertOk(preview);
+        assertEquals(1, preview.received().size());
+        assertEquals(1, preview.sent().size());
+        assertEquals("two\n", b.read("dictionary.txt"));
+        assertEquals("one\n", git(remote, "show", "main:dictionary.txt"));
+        assertOk(b.sync());
+        assertEquals("one\ntwo\n", b.read("dictionary.txt"));
+    }
+
+    @Test
     void optionLikeUrlsAndBranchesAreRefused() {
         assertFalse(SyncEngine.isUsableUrl("--upload-pack=touch /tmp/x"));
         assertFalse(SyncEngine.isUsableUrl(" "));

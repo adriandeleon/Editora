@@ -51,6 +51,8 @@ public class WindowManager {
     private final HostServices hostServices;
     /** Shared plugin manager: classes load once here; each window builds its own plugin instances/nodes. */
     private final com.editora.plugin.PluginManager pluginManager;
+    /** Settings sync for the whole process; see {@link SettingsSync}. */
+    private final SettingsSync settingsSync;
 
     private final List<Holder> windows = new ArrayList<>();
     /** The JavaFX primary stage, reused for the first window built (then null — others get a new Stage). */
@@ -156,6 +158,55 @@ public class WindowManager {
                 c -> scheduleSharedHistoryBroadcast());
         shared.searchHistory().getList().addListener((javafx.collections.ListChangeListener<String>)
                 c -> scheduleSharedHistoryBroadcast());
+        this.settingsSync = new SettingsSync(shared, this);
+    }
+
+    SettingsSync settingsSync() {
+        return settingsSync;
+    }
+
+    // --- what settings sync needs of the windows ---
+
+    boolean anyWindowFocused() {
+        for (Holder h : windows) {
+            if (h.stage() != null && h.stage().isFocused()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Shows or hides the failing-sync marker in every window's status bar. */
+    void showSyncProblem(boolean problem) {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().statusBar().setSyncProblem(problem);
+        }
+    }
+
+    /** A line about a sync in the window the user is in. */
+    void syncStatus(String message, boolean error) {
+        Holder h = focusedHolder();
+        if (h == null) {
+            return;
+        }
+        if (error) {
+            h.controller().setError(message);
+        } else {
+            h.controller().setStatus(message);
+        }
+    }
+
+    /** The background-activity indicator of the window the user is in; null when no window is open. */
+    BackgroundTasks.Handle startSyncTask(String label) {
+        Holder h = focusedHolder();
+        return h == null ? null : h.controller().backgroundTasks().start(label);
+    }
+
+    /** A sync wrote snippet or template files: an open Settings window re-reads those pages. */
+    void refreshFileBackedSettings() {
+        for (Holder h : new ArrayList<>(windows)) {
+            h.controller().settingsWindow().syncFileBackedEditors();
+        }
     }
 
     /** One-time notice, in the focused window, that another Editora process shares this configuration. Shown
@@ -226,6 +277,7 @@ public class WindowManager {
         for (Holder h : new ArrayList<>(windows)) {
             h.controller().settingsWindow().syncStoreBackedEditors();
         }
+        settingsSync.markDirty();
     }
 
     /** The shared plugin manager (also read by the Settings → Plugins page to list installed plugins). */
@@ -1132,6 +1184,9 @@ public class WindowManager {
 
     /** A user snippet file changed in {@code origin}'s window: every other window drops its snippet cache. */
     public void broadcastSnippetsChanged(MainController origin) {
+        if (origin != null) {
+            settingsSync.markDirty(); // a window changed a snippet (null: a sync brought it)
+        }
         for (Holder h : new ArrayList<>(windows)) {
             if (h.controller != origin) {
                 h.controller.snippetCoordinator().changedElsewhere();
@@ -1142,6 +1197,7 @@ public class WindowManager {
     /** Re-runs the spell pass over every window's tabs after the shared user dictionary changed (a word added
      *  via "Add to Dictionary"), so another window's stale squiggles on that word clear immediately (#443). */
     public void broadcastUserDictionaryChanged() {
+        settingsSync.markDirty();
         for (Holder h : new ArrayList<>(windows)) {
             h.controller.refreshSpellAllTabs();
         }
@@ -1366,6 +1422,7 @@ public class WindowManager {
             focus(stage);
 
             windows.add(new Holder(key, stage, controller, config));
+            controller.statusBar().setSyncProblem(settingsSync.state().phase() == SettingsSync.Phase.PROBLEM);
             if (windows.size() == 2) {
                 // From here a preference changed in one window has another window to reach. Both reflect the
                 // current preferences right now (this one was just built from them), so this is the baseline

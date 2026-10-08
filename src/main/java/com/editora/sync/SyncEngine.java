@@ -92,6 +92,19 @@ public final class SyncEngine {
      *     ({@link SyncReport.Status#NEEDS_CONFIRMATION} otherwise)
      */
     public SyncReport run(Set<SyncCategory> categories, boolean allowLargeRemoval) {
+        return run(categories, allowLargeRemoval, false);
+    }
+
+    /**
+     * What a sync of {@code categories} would do, without writing a file here or pushing anything: the
+     * repository is fetched and merged in memory only. For showing the user what connecting a computer that
+     * already has data to a repository that already has data will bring.
+     */
+    public SyncReport preview(Set<SyncCategory> categories) {
+        return run(categories, true, true);
+    }
+
+    private SyncReport run(Set<SyncCategory> categories, boolean allowLargeRemoval, boolean previewOnly) {
         if (!isUsableUrl(url) || !isUsableBranch(branch)) {
             return SyncReport.failure(SyncReport.Status.FAILED, "invalid repository URL or branch");
         }
@@ -104,7 +117,7 @@ public final class SyncEngine {
         try {
             prepareClone();
             for (int attempt = 1; ; attempt++) {
-                SyncReport report = cycle(enabled, allowLargeRemoval, received);
+                SyncReport report = cycle(enabled, allowLargeRemoval, previewOnly, received);
                 if (report != null) {
                     return report;
                 }
@@ -120,7 +133,8 @@ public final class SyncEngine {
     }
 
     /** One fetch-merge-push round; null when the push lost a race and the round must be repeated. */
-    private SyncReport cycle(Set<SyncCategory> enabled, boolean allowLargeRemoval, List<SyncReport.Change> received)
+    private SyncReport cycle(
+            Set<SyncCategory> enabled, boolean allowLargeRemoval, boolean previewOnly, List<SyncReport.Change> received)
             throws IOException, GitFailure {
         ProcessRunner.Result fetch = git.network("fetch", "--prune", "--quiet", "origin");
         if (!fetch.ok()) {
@@ -184,6 +198,9 @@ public final class SyncEngine {
             if (!Objects.equals(r.text(), SyncMerge.normalize(category, mine.get(r.path())))) {
                 liveChanges.put(r.path(), r.text());
             }
+        }
+        if (previewOnly) {
+            return new SyncReport(SyncReport.Status.OK, List.copyOf(received), sent, conflicts, skipped, "");
         }
         if (!liveChanges.isEmpty() && !target.apply(mine, liveChanges)) {
             return SyncReport.failure(SyncReport.Status.LOCAL_BUSY, "");

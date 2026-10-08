@@ -1202,6 +1202,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     public void setWindowContext(WindowManager windowManager, Project project) {
         indexCoordinator.onProjectChanged(); // the previous project's symbols mean nothing here
         this.windowManager = windowManager;
+        settingsWindow.setSettingsSync(windowManager == null ? null : windowManager.settingsSync());
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
         recovery.attach(windowManager == null ? null : windowManager.recovery());
@@ -1870,6 +1871,14 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** This window's Settings window, for {@link WindowManager} to bring in line with a change made elsewhere. */
     SettingsWindow settingsWindow() {
         return settingsWindow;
+    }
+
+    StatusBar statusBar() {
+        return statusBar;
+    }
+
+    BackgroundTasks backgroundTasks() {
+        return backgroundTasks;
     }
 
     private void rebuildRecentMenu() {

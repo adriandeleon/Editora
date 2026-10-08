@@ -80,6 +80,8 @@ public final class ConfigExporter {
      *   <li>{@code plugins/lsp/} and {@code plugins/dap/} — downloaded language servers and debug adapters,
      *       hundreds of megabytes of binaries (a plugin the user installed, {@code plugins/<id>/}, is kept);
      *   <li>{@code jdtls-workspaces/} — the Java language server's index cache;
+     *   <li>{@code sync/} — settings sync's clone of the user's repository and its backup copies of files
+     *       that are in the export anyway;
      *   <li>the instance lock, the single-instance and MCP endpoint files (the latter holds a live access
      *       token), the spawned-process ledger and the session log;
      *   <li>a staging file of an atomic write that is in flight ({@code .<name>-<random>.tmp}).
@@ -90,7 +92,8 @@ public final class ConfigExporter {
     static boolean included(String relative) {
         if (relative.startsWith("plugins/lsp/")
                 || relative.startsWith("plugins/dap/")
-                || relative.startsWith("jdtls-workspaces/")) {
+                || relative.startsWith("jdtls-workspaces/")
+                || relative.startsWith("sync/")) {
             return false;
         }
         String name = relative.substring(relative.lastIndexOf('/') + 1);

@@ -142,7 +142,7 @@ public class FileSyncTarget implements SyncTarget {
         }
     }
 
-    static void deleteTree(Path root) throws IOException {
+    public static void deleteTree(Path root) throws IOException {
         if (!Files.exists(root)) {
             return;
         }

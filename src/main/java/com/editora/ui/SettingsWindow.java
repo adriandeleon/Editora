@@ -146,6 +146,7 @@ public class SettingsWindow {
         MACROS(tr("settings.cat.macros"), Group.SYSTEM),
         REMOTE(tr("settings.cat.remote"), Group.SYSTEM, true),
         PLUGINS(tr("settings.cat.plugins"), Group.SYSTEM),
+        SYNC(tr("settings.cat.sync"), Group.SYSTEM, true),
         MCP(tr("settings.cat.mcp"), Group.SYSTEM, true),
         ADVANCED(tr("settings.cat.advanced"), Group.SYSTEM);
 
@@ -627,6 +628,12 @@ public class SettingsWindow {
     public void showSnippets(Window owner) {
         show(owner);
         sidebar.getSelectionModel().select(Category.SNIPPETS);
+    }
+
+    /** Opens Settings on the Sync page (the {@code sync.setup} command and the status-bar marker). */
+    public void showSync(Window owner) {
+        show(owner);
+        sidebar.getSelectionModel().select(Category.SYNC);
     }
 
     public void showAbbreviations(Window owner) {
@@ -1962,6 +1969,7 @@ public class SettingsWindow {
         pages.put(Category.MACROS, macrosPage());
         pages.put(Category.REMOTE, remotePage());
         pages.put(Category.PLUGINS, pluginsPage());
+        pages.put(Category.SYNC, syncPage());
         pages.put(Category.MCP, mcpPage());
         pages.put(Category.AI_GENERAL, aiGeneralPage());
         pages.put(Category.AGENT, agentPage());
@@ -2875,6 +2883,7 @@ public class SettingsWindow {
                 }
             }
             if (last != null) {
+                markSyncDirty();
                 input.clear();
                 refreshDictionaryList();
                 dictionaryList.getSelectionModel().select(last);
@@ -2892,6 +2901,7 @@ public class SettingsWindow {
             String sel = dictionaryList.getSelectionModel().getSelectedItem();
             if (sel != null) {
                 config.removeUserWord(sel);
+                markSyncDirty();
                 refreshDictionaryList();
                 apply(); // live-apply: the removed word must start being flagged again right away
             }
@@ -3287,6 +3297,293 @@ public class SettingsWindow {
                 tr("settings.httpClient.hint"),
                 "http client rest request enable run send response built-in");
         return p;
+    }
+
+    // --- Sync page -----------------------------------------------------------------------------------------
+
+    private SettingsSync settingsSync;
+    private final Runnable syncStateListener = this::refreshSyncControls;
+    private TextField syncUrlField;
+    private TextField syncBranchField;
+    private Button syncConnectButton;
+    private Button syncDisconnectButton;
+    private Button syncNowButton;
+    private Button syncAnywayButton;
+    private Label syncStateLabel;
+    private CheckBox syncSnippetsCheck;
+    private CheckBox syncAbbreviationsCheck;
+    private CheckBox syncTemplatesCheck;
+    private CheckBox syncDictionaryCheck;
+    private CheckBox syncAutoCheck;
+    private Spinner<Integer> syncIntervalSpinner;
+    /** A message about the connect attempt in progress; shown instead of the service's state until it ends. */
+    private String syncConnectMessage;
+
+    /** Injects the application's settings sync (null in a window that has none, e.g. a test double). */
+    void setSettingsSync(SettingsSync sync) {
+        if (settingsSync != null) {
+            settingsSync.removeListener(syncStateListener);
+        }
+        settingsSync = sync;
+        if (sync != null) {
+            sync.addListener(syncStateListener);
+        }
+        refreshSyncControls();
+    }
+
+    SettingsSync settingsSync() {
+        return settingsSync;
+    }
+
+    /** The user changed synced data on a page of this window. */
+    private void markSyncDirty() {
+        if (settingsSync != null) {
+            settingsSync.markDirty();
+        }
+    }
+
+    /** SYSTEM ▸ Sync: the repository, what is synced, when, and how the last run went. */
+    private VBox syncPage() {
+        VBox p = page(tr("settings.cat.sync"), tr("settings.sync.subtitle"));
+        Settings settings = config.getSettings();
+
+        Card repo = card(p, null);
+        syncUrlField = new TextField();
+        syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
+        syncUrlField.setPrefWidth(PATH_FIELD_WIDTH);
+        commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
+            config.getSettings().setSyncRepoUrl(text);
+            config.save();
+            refreshSyncControls();
+        });
+        cardRow(
+                repo,
+                Category.SYNC,
+                settingRow(tr("settings.sync.repo"), tr("settings.sync.repo.desc"), syncUrlField),
+                "sync repository url git remote github gitlab clone ssh https");
+        syncBranchField = new TextField();
+        syncBranchField.setPrefWidth(140);
+        commitOnEnterOrBlur(syncBranchField, settings::getSyncBranch, text -> {
+            config.getSettings().setSyncBranch(text);
+            config.save();
+            refreshSyncControls();
+        });
+        syncConnectButton = new Button(tr("settings.sync.connect"));
+        syncConnectButton.setOnAction(e -> connectSync());
+        syncDisconnectButton = new Button(tr("settings.sync.disconnect"));
+        syncDisconnectButton.setOnAction(e -> {
+            config.getSettings().setSyncEnabled(false);
+            config.save();
+            if (settingsSync != null) {
+                settingsSync.disconnected();
+            }
+            refreshSyncControls();
+        });
+        cardRow(
+                repo,
+                Category.SYNC,
+                settingRow(
+                        tr("settings.sync.branch"),
+                        tr("settings.sync.branch.desc"),
+                        new HBox(8, syncBranchField, syncConnectButton, syncDisconnectButton)),
+                "sync branch connect disconnect enable turn on off");
+        syncStateLabel = new Label();
+        syncStateLabel.setWrapText(true);
+        syncStateLabel.setMaxWidth(420);
+        syncNowButton = new Button(tr("settings.sync.now"));
+        syncNowButton.setOnAction(e -> {
+            if (settingsSync != null) {
+                settingsSync.syncNow();
+            }
+        });
+        syncAnywayButton = new Button(tr("settings.sync.anyway"));
+        syncAnywayButton.setOnAction(e -> {
+            if (settingsSync != null) {
+                settingsSync.syncAllowingLargeRemoval();
+            }
+        });
+        Button openFolder = new Button(tr("settings.sync.openFolder"));
+        openFolder.setOnAction(e -> openSyncFolder());
+        cardRow(
+                repo,
+                Category.SYNC,
+                settingRow(
+                        tr("settings.sync.status"),
+                        null,
+                        new VBox(6, syncStateLabel, new HBox(8, syncNowButton, syncAnywayButton, openFolder))),
+                "sync now status last synced received sent conflict backups folder");
+
+        Card what = card(p, tr("settings.sync.what"));
+        syncSnippetsCheck = syncCategoryCheck("settings.sync.snippets", Settings::setSyncSnippets);
+        syncAbbreviationsCheck = syncCategoryCheck("settings.sync.abbreviations", Settings::setSyncAbbreviations);
+        syncTemplatesCheck = syncCategoryCheck("settings.sync.templates", Settings::setSyncTemplates);
+        syncDictionaryCheck = syncCategoryCheck("settings.sync.dictionary", Settings::setSyncDictionary);
+        checkRow(what, Category.SYNC, syncSnippetsCheck, null, "sync snippets");
+        checkRow(what, Category.SYNC, syncAbbreviationsCheck, null, "sync abbreviations abbrev");
+        checkRow(what, Category.SYNC, syncTemplatesCheck, null, "sync templates file project");
+        checkRow(what, Category.SYNC, syncDictionaryCheck, null, "sync spell check personal dictionary words");
+
+        Card when = card(p, null);
+        syncAutoCheck = new CheckBox(tr("settings.sync.auto"));
+        syncAutoCheck.selectedProperty().addListener((obs, was, now) -> {
+            syncIntervalSpinner.setDisable(!now);
+            if (loading) {
+                return;
+            }
+            config.getSettings().setSyncAuto(now);
+            syncSettingsChanged();
+        });
+        syncIntervalSpinner =
+                IntSpinners.editable(1, Settings.MAX_GIT_AUTO_FETCH_MINUTES, settings.getSyncIntervalMinutes(), 1);
+        syncIntervalSpinner.setPrefWidth(90);
+        syncIntervalSpinner.setAccessibleText(tr("settings.git.autoFetchMinutes"));
+        syncIntervalSpinner.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setSyncIntervalMinutes(now);
+            syncSettingsChanged();
+        });
+        Label unit = new Label(tr("settings.git.autoFetchMinutes"));
+        unit.setLabelFor(syncIntervalSpinner);
+        cardRow(
+                when,
+                Category.SYNC,
+                settingRow(
+                        tr("settings.sync.auto"),
+                        tr("settings.sync.auto.desc"),
+                        new HBox(8, syncIntervalSpinner, unit, switchFor(syncAutoCheck))),
+                "sync automatically auto background interval minutes startup");
+
+        row(p, Category.SYNC, null, noteBox(tr("settings.sync.privacy")), "private repository privacy secret");
+        return p;
+    }
+
+    private CheckBox syncCategoryCheck(String key, java.util.function.BiConsumer<Settings, Boolean> set) {
+        CheckBox check = new CheckBox(tr(key));
+        check.selectedProperty().addListener((obs, was, now) -> {
+            if (loading) {
+                return;
+            }
+            set.accept(config.getSettings(), now);
+            syncSettingsChanged();
+        });
+        return check;
+    }
+
+    /** Saves a changed {@code sync*} setting and lets the service re-read it. */
+    private void syncSettingsChanged() {
+        config.save();
+        if (settingsSync != null) {
+            settingsSync.settingsChanged();
+        }
+    }
+
+    private void loadSyncControls(Settings settings) {
+        syncUrlField.setText(settings.getSyncRepoUrl());
+        syncBranchField.setText(settings.getSyncBranch());
+        syncSnippetsCheck.setSelected(settings.isSyncSnippets());
+        syncAbbreviationsCheck.setSelected(settings.isSyncAbbreviations());
+        syncTemplatesCheck.setSelected(settings.isSyncTemplates());
+        syncDictionaryCheck.setSelected(settings.isSyncDictionary());
+        syncAutoCheck.setSelected(settings.isSyncAuto());
+        syncIntervalSpinner.getValueFactory().setValue(settings.getSyncIntervalMinutes());
+        syncIntervalSpinner.setDisable(!settings.isSyncAuto());
+        refreshSyncControls();
+    }
+
+    /** Shows the service's state: which buttons apply, and the status line. */
+    private void refreshSyncControls() {
+        if (syncStateLabel == null) {
+            return; // not built yet
+        }
+        Settings settings = config.getSettings();
+        boolean available = settingsSync != null && settingsSync.primaryInstance();
+        boolean connected = settings.isSyncEnabled();
+        SettingsSync.State state = settingsSync == null ? null : settingsSync.state();
+        boolean syncing = state != null && state.phase() == SettingsSync.Phase.SYNCING;
+        syncUrlField.setDisable(connected);
+        syncBranchField.setDisable(connected);
+        syncConnectButton.setVisible(!connected);
+        syncConnectButton.setManaged(!connected);
+        syncConnectButton.setDisable(!available || syncConnectMessage != null);
+        syncDisconnectButton.setVisible(connected);
+        syncDisconnectButton.setManaged(connected);
+        syncNowButton.setDisable(!available || !connected || syncing);
+        boolean needsConfirmation = state != null
+                && state.phase() == SettingsSync.Phase.PROBLEM
+                && state.report() != null
+                && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
+        syncAnywayButton.setVisible(needsConfirmation);
+        syncAnywayButton.setManaged(needsConfirmation);
+        syncStateLabel.setText(
+                syncConnectMessage != null
+                        ? syncConnectMessage
+                        : settingsSync == null ? tr("sync.state.off") : settingsSync.stateText());
+    }
+
+    /**
+     * "Connect": looks at the repository first. When it already holds data that this computer would receive,
+     * says how much and asks; then switches sync on and runs the first sync.
+     */
+    private void connectSync() {
+        if (settingsSync == null) {
+            return;
+        }
+        commitPendingFields();
+        Settings settings = config.getSettings();
+        String url = settings.getSyncRepoUrl();
+        String branch = settings.getSyncBranch();
+        if (!com.editora.sync.SyncEngine.isUsableUrl(url) || !com.editora.sync.SyncEngine.isUsableBranch(branch)) {
+            syncStateLabel.setText(tr("status.sync.invalidRepository"));
+            return;
+        }
+        syncConnectMessage = tr("sync.state.checking");
+        refreshSyncControls();
+        settingsSync.preview(url, branch, report -> {
+            syncConnectMessage = null;
+            if (!report.ok()) {
+                refreshSyncControls();
+                syncStateLabel.setText(SettingsSync.problemText(report));
+                return;
+            }
+            if (!report.received().isEmpty()) {
+                Alert confirm = Dialogs.styled(new Alert(
+                        Alert.AlertType.CONFIRMATION,
+                        tr(
+                                "dialog.sync.connect.content",
+                                report.received().size(),
+                                report.sent().size(),
+                                report.conflicts().size()),
+                        ButtonType.OK,
+                        ButtonType.CANCEL));
+                confirm.initOwner(stage);
+                confirm.setTitle(tr("settings.cat.sync"));
+                confirm.setHeaderText(tr("dialog.sync.connect.header"));
+                if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                    refreshSyncControls();
+                    return;
+                }
+            }
+            config.getSettings().setSyncEnabled(true);
+            config.save();
+            settingsSync.connected();
+            refreshSyncControls();
+        });
+    }
+
+    private void openSyncFolder() {
+        if (settingsSync == null) {
+            return;
+        }
+        Path dir = settingsSync.syncDir();
+        try {
+            java.nio.file.Files.createDirectories(dir);
+        } catch (java.io.IOException e) {
+            syncStateLabel.setText(String.valueOf(e.getMessage()));
+            return;
+        }
+        com.editora.process.DesktopActions.reveal(dir, true, syncStateLabel::setText);
     }
 
     /** Reference implementation of the UI Kit card page — see {@link #card}/{@link #settingRow}. The
@@ -3831,6 +4128,7 @@ public class SettingsWindow {
             if (!oldId.equals(newId) && templateUserIds.contains(oldId)) {
                 try {
                     templateRegistry.deleteUserTemplate(oldId); // renamed: drop the old override file
+                    markSyncDirty();
                 } catch (java.io.IOException ignored) {
                     // best-effort: the template is safe under its new id either way
                 }
@@ -3952,6 +4250,7 @@ public class SettingsWindow {
             }
             try {
                 templateRegistry.deleteUserTemplate(t.id());
+                markSyncDirty();
             } catch (java.io.IOException ex) {
                 Dialogs.styled(new Alert(
                                 Alert.AlertType.ERROR,
@@ -4019,6 +4318,7 @@ public class SettingsWindow {
         }
         try {
             templateRegistry.saveUserTemplate(t);
+            markSyncDirty();
             return true;
         } catch (java.io.IOException e) {
             Dialogs.styled(new Alert(
@@ -7138,6 +7438,13 @@ public class SettingsWindow {
         reloadRemote();
     }
 
+    /** Re-reads the Snippets and Templates pages after a settings sync wrote those files. */
+    void syncFileBackedEditors() {
+        if (built && stage.isShowing() && !loading) {
+            reloadFileBackedEditors();
+        }
+    }
+
     /** The Snippets and Templates pages read files; refreshed when Settings is opened, not on every load. */
     private void reloadFileBackedEditors() {
         if (reloadSnippets != null) {
@@ -7313,6 +7620,7 @@ public class SettingsWindow {
             gitAutoFetchCheck.setSelected(settings.isGitAutoFetch());
             gitAutoFetchSpinner.getValueFactory().setValue(settings.getGitAutoFetchMinutes());
             gitAutoFetchSpinner.setDisable(!settings.isGitAutoFetch());
+            loadSyncControls(settings);
             githubCheck.setSelected(settings.isGithubSupport());
             ghPathField.setText(settings.getGhPath());
             ghPathField.setDisable(!settings.isGithubSupport());

@@ -801,6 +801,30 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("workspace.manageTrust", host::showTrustedFolders));
         host.registry().register(Command.of("workspace.revokeTrust", host::revokeTrustForActiveRoot));
         host.registry().register(Command.of("config.export", host::exportConfig));
+        // Settings sync is one service for the whole process; each window's Settings window holds it.
+        host.registry()
+                .register(Command.of("sync.setup", () -> host.settingsWindow().showSync(host.stage())));
+        host.registry().register(Command.of("sync.now", () -> {
+            SettingsSync sync = host.settingsWindow().settingsSync();
+            if (sync != null) {
+                sync.syncNow();
+            }
+        }));
+        host.registry()
+                .register(Command.of(
+                        "sync.toggleAuto",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "sync.toggleAuto",
+                                        () -> host.config().getSettings().isSyncAuto(),
+                                        v -> host.config().getSettings().setSyncAuto(v),
+                                        () -> {
+                                            SettingsSync sync =
+                                                    host.settingsWindow().settingsSync();
+                                            if (sync != null) {
+                                                sync.settingsChanged();
+                                            }
+                                        })));
         host.registry().register(Command.of("editor.setIndentStyle", host.editorSettings()::chooseIndentStyle));
         host.exports().registerCommands(host.registry());
         host.registry().register(Command.of("markwhen.toggleView", host.previews()::toggleMarkwhenView));

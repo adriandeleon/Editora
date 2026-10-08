@@ -86,6 +86,8 @@ public final class StatusBar extends HBox {
     /** "Update available" indicator; clickable → open the release page (and dismiss the notice). Hidden unless a
      *  newer, non-dismissed release is known. */
     private final Label update = segment("update.openDownloadPage", tr("statusbar.tip.update"));
+    /** "Sync" problem marker; clickable → Settings ▸ Sync. Hidden unless the last settings sync failed. */
+    private final Label syncProblem = segment("sync.setup", tr("statusbar.tip.syncProblem"));
     /** MCP server running indicator; clickable → copy the connection command. Hidden when the server is off. */
     private final Label mcp = segment("mcp.copyEndpoint", tr("statusbar.tip.mcp"));
     /** "● REC" indicator shown only while a keyboard macro is being recorded; clickable → stop recording. */
@@ -223,6 +225,10 @@ public final class StatusBar extends HBox {
         update.getStyleClass().add("status-update");
         update.setVisible(false); // shown only when a newer, non-dismissed release is available
         update.setManaged(false);
+        syncProblem.setText(tr("statusbar.syncProblem"));
+        syncProblem.getStyleClass().add("status-update");
+        syncProblem.setVisible(false);
+        syncProblem.setManaged(false);
 
         mcp.setText(tr("statusbar.mcp"));
         mcp.setVisible(false); // shown only while the MCP server is running
@@ -263,6 +269,7 @@ public final class StatusBar extends HBox {
                         backgroundProgress,
                         backgroundTasks,
                         update,
+                        syncProblem,
                         macroRec,
                         remote,
                         debugProgress,
@@ -696,6 +703,12 @@ public final class StatusBar extends HBox {
         }
         update.setVisible(available);
         update.setManaged(available);
+    }
+
+    /** Shows/hides the marker for a settings sync that is failing (shown in every UI mode, like the update one). */
+    public void setSyncProblem(boolean problem) {
+        syncProblem.setVisible(problem);
+        syncProblem.setManaged(problem);
     }
 
     /** Shows/hides the MCP-server-running indicator (suppressed in Simple UI mode). */
