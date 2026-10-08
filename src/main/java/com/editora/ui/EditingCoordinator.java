@@ -593,7 +593,7 @@ final class EditingCoordinator {
                             }
                             if (bytes == null) {
                                 javafx.application.Platform.runLater(() -> {
-                                    if (url != null) {
+                                    if (url != null && !url.isBlank()) { // a blank address names nothing
                                         b.insertAtCaret(markupImageSnippet(b, url, ""));
                                         host.setStatus(tr("status.markdown.imageDropped", 1));
                                     } else {
