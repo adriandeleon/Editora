@@ -147,6 +147,71 @@ public final class PrintService {
         });
     }
 
+    /**
+     * Prepares the lines {@code [start, end)} of {@code text} as code, numbered from {@code firstLineNumber}
+     * — the excerpt's own line numbers in its file. The whole of {@code text} is highlighted and the
+     * excerpt cut out of the result, so a selection that starts inside a block comment or a multi-line
+     * string is coloured as it is in the editor.
+     */
+    public void prepareCodeLines(
+            String text,
+            int start,
+            int end,
+            int firstLineNumber,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            Consumer<Prepared> onReady) {
+        exec.submit(() -> {
+            try {
+                StyleSpans<Collection<String>> spans = excerptSpans(text, start, end, highlight ? fileName : null);
+                List<List<PdfText.Run>> lines =
+                        PdfText.splitIntoLineRuns(text.substring(start, end), spans, Math.max(1, tabSize));
+                deliver(
+                        onReady,
+                        new Prepared(
+                                new Paginator() {
+                                    @Override
+                                    public List<Node> paginate(PageLayout layout) {
+                                        Pages pages = pages(layout);
+                                        List<Node> all = new java.util.ArrayList<>(pages.count());
+                                        for (int i = 0; i < pages.count(); i++) {
+                                            all.add(pages.get(i));
+                                        }
+                                        return all;
+                                    }
+
+                                    @Override
+                                    public Pages pages(PageLayout layout) {
+                                        return CodePrintLayout.pages(
+                                                lines,
+                                                layout,
+                                                lineNumbers,
+                                                Font.font(MONO_FAMILY, CodePrintLayout.FONT_SIZE),
+                                                firstLineNumber);
+                                    }
+                                },
+                                null));
+            } catch (Throwable e) {
+                deliver(onReady, new Prepared(null, message(e)));
+            }
+        });
+    }
+
+    /**
+     * The highlight spans of {@code text[start, end)}, cut from the spans of the whole text; null when
+     * {@code fileName} is null (no highlighting asked for) or has no grammar.
+     */
+    public static StyleSpans<Collection<String>> excerptSpans(String text, int start, int end, String fileName) {
+        IGrammar grammar = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
+        if (grammar == null || end <= start) {
+            return null;
+        }
+        StyleSpans<Collection<String>> all = TextMateHighlighter.compute(text, grammar);
+        return all == null || all.length() < end ? null : all.subView(start, end);
+    }
+
     /** Prepares {@code markdown} as the rendered preview (block-aware pagination), always in the light theme. */
     public void prepareMarkdown(String markdown, Path baseDir, Consumer<Prepared> onReady) {
         exec.submit(() -> {

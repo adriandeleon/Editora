@@ -82,9 +82,19 @@ public final class CodePrintLayout {
      */
     public static PrintService.Pages pages(
             List<List<PdfText.Run>> lines, PageLayout layout, boolean lineNumbers, Font mono) {
+        return pages(lines, layout, lineNumbers, mono, 1);
+    }
+
+    /**
+     * {@link #pages(List, PageLayout, boolean, Font)} for an excerpt of a file: the gutter counts from
+     * {@code firstLineNumber} (1-based), the line the excerpt starts on in its file.
+     */
+    public static PrintService.Pages pages(
+            List<List<PdfText.Run>> lines, PageLayout layout, boolean lineNumbers, Font mono, int firstLineNumber) {
         double charW = charWidth(mono);
         double lineH = Math.ceil(mono.getSize() * LINE_SPACING);
-        int digits = Integer.toString(Math.max(1, lines.size())).length();
+        int digits = Integer.toString(firstLineNumber - 1 + Math.max(1, lines.size()))
+                .length();
         double gutterW = lineNumbers ? digits * charW + GUTTER_GAP : 0;
         int cols = columns(layout.getPrintableWidth() - gutterW, charW);
         int perPage = linesPerPage(layout.getPrintableHeight(), lineH);
@@ -103,7 +113,7 @@ public final class CodePrintLayout {
                 for (int i = starts[index][0]; i < lines.size() && rows < perPage; i++) {
                     List<List<PdfText.Run>> visual = PdfText.wrap(lines.get(i), cols);
                     for (int v = firstVisual; v < visual.size() && rows < perPage; v++, rows++) {
-                        int lineNo = v == 0 ? i + 1 : 0; // 0 → blank gutter on a wrap continuation
+                        int lineNo = v == 0 ? firstLineNumber + i : 0; // 0 → blank gutter on a wrap continuation
                         page.getChildren().add(row(visual.get(v), lineNo, lineNumbers, gutterW, mono, lineH));
                     }
                     firstVisual = 0;
