@@ -22,7 +22,7 @@ import org.apache.pdfbox.text.TextPosition;
  * Test helper: reads a produced PDF back. Export tests used to assert only {@code %PDF} + a size, which a
  * file full of {@code ?} or clipped lines passes; these read what a reader of the PDF would actually get.
  */
-final class PdfProbe {
+public final class PdfProbe {
 
     private PdfProbe() {}
 
@@ -74,14 +74,14 @@ final class PdfProbe {
      * The content text of {@code pdf} in reading order (lines separated by {@code \n}) — what a reader that
      * honours {@code /Artifact} extracts: no footers, no gutter line numbers.
      */
-    static String text(Path pdf) throws IOException {
+    public static String text(Path pdf) throws IOException {
         try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
             return new Stripper(true, false).getText(doc);
         }
     }
 
     /** Only the page furniture of {@code pdf}: the text inside {@code /Artifact} marked content. */
-    static String artifactText(Path pdf) throws IOException {
+    public static String artifactText(Path pdf) throws IOException {
         try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
             return new Stripper(false, true).getText(doc);
         }
@@ -136,10 +136,10 @@ final class PdfProbe {
      * coordinates (y grows upward from the bottom of the page). Invisible text is included; page furniture
      * ({@code /Artifact}: footers, gutter numbers) is not.
      */
-    record Glyph(int page, String text, float x, float right, float baseline) {}
+    public record Glyph(int page, String text, float x, float right, float baseline) {}
 
     /** Every non-blank glyph of {@code pdf}, in drawing order. */
-    static List<Glyph> glyphs(Path pdf) throws IOException {
+    public static List<Glyph> glyphs(Path pdf) throws IOException {
         List<Glyph> out = new ArrayList<>();
         try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
             PDFTextStripper stripper = new Stripper(true, false) {

@@ -26,6 +26,14 @@ public record PdfPageSpec(String pageSize, boolean landscape, float margin, floa
 
     public static final float DEFAULT_CODE_FONT_SIZE = 9f;
 
+    /**
+     * The "narrow" margin preset, half an inch. The footer still fits under it in both writers without
+     * taking a line from the Markdown body (that starts below 27.5 pt).
+     */
+    public static final float NARROW_MARGIN = 36f;
+    /** The "wide" margin preset, one inch. */
+    public static final float WIDE_MARGIN = 72f;
+
     private static final Logger LOG = Logger.getLogger(PdfPageSpec.class.getName());
     /** Unknown size keys already reported, so a bad setting is logged once and not on every export. */
     private static final Set<String> REPORTED = ConcurrentHashMap.newKeySet();
@@ -43,6 +51,19 @@ public record PdfPageSpec(String pageSize, boolean landscape, float margin, floa
     /** Portrait {@code pageSize} with each writer's default margin, the 9 pt code font and the footer. */
     public static PdfPageSpec of(String pageSize) {
         return new PdfPageSpec(pageSize, false, WRITER_MARGIN, DEFAULT_CODE_FONT_SIZE, true);
+    }
+
+    /**
+     * The margin of a preset: {@code "narrow"}, {@code "wide"}, or — for {@code "normal"} and anything
+     * else — {@link #WRITER_MARGIN}, each writer's own.
+     */
+    public static float marginOf(String preset) {
+        String p = preset == null ? "" : preset.strip().toLowerCase(Locale.ROOT);
+        return switch (p) {
+            case "narrow" -> NARROW_MARGIN;
+            case "wide" -> WIDE_MARGIN;
+            default -> WRITER_MARGIN;
+        };
     }
 
     /** This spec with the page footer switched on or off. */
