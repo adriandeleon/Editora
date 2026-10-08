@@ -6,6 +6,8 @@ import java.nio.file.Path;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import com.editora.history.HistoryBlobStore;
+
 /**
  * Decides whether the Local History index on disk can be trusted as the complete list of live revisions.
  *
@@ -68,9 +70,11 @@ final class HistoryIndexGuard {
         }
     }
 
+    /** A body, not a staging file a killed write left behind: that one is no evidence of lost history. */
     private static boolean hasFile(Path shard) {
         try (Stream<Path> files = Files.list(shard)) {
-            return files.anyMatch(Files::isRegularFile);
+            return files.anyMatch(f -> Files.isRegularFile(f)
+                    && HistoryBlobStore.isBodyFileName(f.getFileName().toString()));
         } catch (IOException e) {
             return true;
         }

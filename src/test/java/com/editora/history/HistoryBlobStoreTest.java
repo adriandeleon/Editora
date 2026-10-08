@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -73,6 +74,52 @@ class HistoryBlobStoreTest {
         store.deleteUnreferenced(Set.of(keep));
         assertEquals("keep me", store.get(keep));
         assertNull(store.get(drop));
+    }
+
+    /** A10: the body is synced before it gets its final name, like the index that will reference it. */
+    @Test
+    void aBodyIsForcedToDiskBeforeItIsMovedIntoPlace(@TempDir Path dir) throws Exception {
+        String sha = HistoryBlobStore.sha256("durable");
+        Path body = dir.resolve(sha.substring(0, 2)).resolve(sha + ".txt.gz");
+        java.util.List<String> seen = new java.util.ArrayList<>();
+        HistoryBlobStore store = new HistoryBlobStore(dir, (channel, staging) -> {
+            channel.force(true);
+            seen.add("forced " + (channel.size() > 0) + " " + Files.exists(staging) + " " + Files.exists(body));
+        });
+        store.put("durable", sha);
+        assertEquals(java.util.List.of("forced true true false"), seen, "written, synced, then renamed");
+        assertEquals("durable", store.get(sha));
+        store.put("durable", sha);
+        assertEquals(1, seen.size(), "a body that is already readable is not written again");
+    }
+
+    /** A14: what a killed write left, and shard folders that emptied, are cleared by a collection. */
+    @Test
+    void aCollectionClearsStaleStagingFilesAndEmptyShards(@TempDir Path dir) throws Exception {
+        HistoryBlobStore store = new HistoryBlobStore(dir);
+        String keep = store.put("keep me");
+        String drop = store.put("drop me");
+        Path keepShard = dir.resolve(keep.substring(0, 2));
+        Path dropShard = dir.resolve(drop.substring(0, 2));
+        Path stale = Files.writeString(keepShard.resolve("." + keep + ".txt.gz-1.tmp"), "half a body");
+        Path inFlight = Files.writeString(keepShard.resolve("." + keep + ".txt.gz-2.tmp"), "being written");
+        Path foreign = Files.writeString(keepShard.resolve("notes.txt"), "not ours");
+        long now = System.currentTimeMillis();
+        Files.setLastModifiedTime(
+                stale, java.nio.file.attribute.FileTime.fromMillis(now - HistoryBlobStore.STALE_STAGING_MILLIS - 1000));
+
+        store.deleteUnreferenced(Set.of(keep), now);
+
+        assertFalse(Files.exists(stale), "left by a write that died");
+        assertTrue(Files.exists(inFlight), "young enough to belong to a write in flight");
+        assertTrue(Files.exists(foreign), "a file this store did not make is left alone");
+        assertEquals("keep me", store.get(keep));
+        assertFalse(Files.exists(dropShard), "its only body was collected");
+        assertTrue(Files.isDirectory(keepShard));
+        assertTrue(HistoryBlobStore.isBodyFileName(keep + ".txt.gz"));
+        assertFalse(HistoryBlobStore.isBodyFileName("." + keep + ".txt.gz-1.tmp"));
+        assertFalse(HistoryBlobStore.isBodyFileName("." + keep + ".txt.gz"));
+        assertFalse(HistoryBlobStore.isBodyFileName(null));
     }
 
     @Test
