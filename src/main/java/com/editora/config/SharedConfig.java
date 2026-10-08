@@ -1024,7 +1024,7 @@ public class SharedConfig {
      * as the ASCII one the spell checker looks words up by. A word stored as typed ({@code zzq’abc}) was
      * written to the file and never matched.
      */
-    static String dictionaryForm(String word) {
+    public static String dictionaryForm(String word) {
         return word.strip().replace('’', '\'').replace('‘', '\'').toLowerCase(java.util.Locale.ROOT);
     }
 
