@@ -200,6 +200,25 @@ class SettingsListEditorsFxTest {
     }
 
     @Test
+    void closingSettingsKeepsWhatWasTypedInTheFieldThatStillHasTheFocus() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = shown(fx);
+                w.showAbbreviations(FxTestSupport.<Stage>field(w, "stage").getOwner()); // the page is on screen
+                Region pg = page(w, "ABBREVIATIONS");
+                button(pg, tr("settings.abbrev.add")).fire();
+                List<TextField> tfs = fields(pg);
+                tfs.get(0).setText("omw");
+                tfs.get(1).requestFocus();
+                assertTrue(tfs.get(1).isFocused());
+                tfs.get(1).setText("on my way"); // no Enter, no Save, no click elsewhere
+                FxTestSupport.<Stage>field(w, "stage").close();
+                assertEquals(Map.of("omw", "on my way"), fx.shared.abbreviationMap());
+            });
+        }
+    }
+
+    @Test
     void aTemplateIsNotOverriddenByAFocusLossNorOverwrittenByARename() throws Exception {
         try (var fx = FxWindowFixture.create()) {
             Path dir = fx.configDir.resolve("templates");
