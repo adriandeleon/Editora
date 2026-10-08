@@ -406,6 +406,7 @@ public final class InstallService {
     static Path findBinary(Path dest, String name, boolean prefix) throws IOException {
         try (Stream<Path> s = Files.walk(dest)) {
             return s.filter(Files::isRegularFile)
+                    .filter(p -> linkStaysInside(dest, p))
                     .filter(p -> {
                         String f = p.getFileName().toString();
                         String base = f.endsWith(".exe") || f.endsWith(".bat") || f.endsWith(".cmd")
@@ -415,6 +416,23 @@ public final class InstallService {
                     })
                     .min(Comparator.comparingInt(p -> p.toString().length()))
                     .orElse(null);
+        }
+    }
+
+    /**
+     * False for a symbolic link that leads out of {@code root}. A tarball may carry links, and
+     * {@code Files.isRegularFile} follows them: an entry named like the binary but linked to a file elsewhere
+     * was taken for the binary, so that file was marked executable and the link became the server's command.
+     * A link to another file of the same install (a stable name for a versioned binary) is fine.
+     */
+    private static boolean linkStaysInside(Path root, Path p) {
+        if (!Files.isSymbolicLink(p)) {
+            return true;
+        }
+        try {
+            return p.toRealPath().startsWith(root.toRealPath());
+        } catch (IOException e) {
+            return false;
         }
     }
 

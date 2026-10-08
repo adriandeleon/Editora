@@ -247,6 +247,52 @@ class InstallServiceTarTest {
         assertEquals("lua: 'lua-language-server' not found after extraction", result.message());
     }
 
+    private InstallService.Result installLua(byte[] archive) {
+        var spec = InstallCatalog.archiveSpec("lua").orElseThrow();
+        String mine = spec.assetByPlatform().get(InstallCatalog.currentPlatform());
+        String asset = "https://github.com/LuaLS/lua-language-server/releases/download/3.15.0/lls-" + mine + ".tar.gz";
+        web.serve(spec.apiUrl(), "\"" + asset + "\"");
+        web.serve(asset, archive);
+        return service.installSync(InstallCatalog.serverInstall("lua").orElseThrow(), config, id -> {});
+    }
+
+    /**
+     * {@code tar} will not write through a link, but it does create the link. An archive whose "binary" is a
+     * link to a file elsewhere had that file marked executable, and the link saved as the server's command.
+     */
+    @Test
+    void aBinaryThatIsALinkOutOfTheInstallIsNotTheBinary() throws IOException {
+        Path victim = outside.resolve("victim.txt");
+        assertFalse(Files.isExecutable(victim));
+
+        for (String target : List.of(victim.toString(), "../../../../../outside/victim.txt")) {
+            InstallService.Result result = installLua(TestArchives.tar()
+                    .file("main.lua", "-- entry")
+                    .symlink("bin/lua-language-server", target)
+                    .gz());
+
+            assertFalse(result.ok(), target);
+            assertEquals("lua: 'lua-language-server' not found after extraction", result.message());
+            assertFalse(Files.isExecutable(victim), "a file outside the install had its mode changed");
+            assertEquals("original", Files.readString(victim));
+            assertFalse(Files.exists(config.resolve("plugins/lsp/lua")));
+        }
+    }
+
+    /** The ordinary case of a linked binary: a stable name for a versioned file in the same archive. */
+    @Test
+    void aBinaryThatIsALinkWithinTheInstallIsAccepted() throws IOException {
+        InstallService.Result result = installLua(TestArchives.tar()
+                .executable("bin/lua-language-server-3.15", "ELF")
+                .symlink("bin/lua-language-server", "lua-language-server-3.15")
+                .gz());
+
+        assertTrue(result.ok(), result.message());
+        Path binary = config.resolve("plugins/lsp/lua/bin/lua-language-server");
+        assertEquals(binary.toString(), result.installedCommand());
+        assertEquals("ELF", Files.readString(binary), "the link still resolves after the install is moved into place");
+    }
+
     /**
      * Links are ordinary in a tarball (a versioned binary behind a stable name). This also shows the link
      * entries the hostile-archive tests below are built from are ones {@code tar} really acts on.
