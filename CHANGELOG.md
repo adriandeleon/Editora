@@ -83,6 +83,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Tests in nested classes run from the gutter.** A method inside a JUnit `@Nested` class (or a static
   nested test class) gets its own ▶, as does the nested class; Run and Debug target it as `Outer$Inner`.
   A class whose tests are all in nested classes used to get no test markers at all.
+- **Spell check per file type.** Settings → Spell Check → File Types and `Spell Check: Toggle for This
+  File Type`. Data and configuration formats (JSON, YAML, TOML, XML, CSV, INI, properties and similar) are
+  off by default; HTML and Typst documents have their text checked, not only comments. Settings schema 113.
+- Spell check commands: Next / Previous Misspelling, Correct Word at Caret, Add Word at Caret to
+  Dictionary, Ignore Word at Caret, Reload Personal Dictionary. Bound in the Emacs (`M-$`), Sublime (`F6`,
+  `Ctrl+F6`) and CUA (`F7`) keymaps. The status bar shows the dictionary in use; the language picker shows
+  names, marks the current one and can return a file to the default.
+- Snippets: the fields of a running snippet are outlined, mirrors underlined and the final caret marked;
+  the status bar shows "Snippet 2/3".
+- Snippets: new setting **Expand snippets with Tab** (Settings → Snippets, on by default) and
+  `View: Toggle Snippet Expansion on Tab`. Settings schema 114.
+- Snippets: bundled snippets for JavaScript, TypeScript (also used in JSX/TSX), PHP, Lua, TOML, Dockerfile
+  and Terraform. Added the variables `UUID`, `RANDOM`, `RANDOM_HEX`, `CURRENT_*`, `LINE_COMMENT`,
+  `BLOCK_COMMENT_*`, `WORKSPACE_*`, `RELATIVE_FILEPATH` and `TM_CURRENT_WORD`. Bundled snippets can be
+  disabled; a snippet can have several triggers; the Settings list has a filter and a trigger column.
+- Macros can drive prompts: text and keys typed into the find bar, an overlay prompt or a picker are
+  recorded and replayed into that prompt (`C-s foo Enter Esc` replays as a search). A command that opens a
+  blocking dialog, and a mouse click, show a status hint while recording.
+- Macros: Esc (or `C-g`) cancels a recording. New commands `Macro: Cancel Recording` and
+  `Macro: Start or Stop Recording`, a Tools → Macros submenu, and default keys in the CUA
+  (`Ctrl+Shift+R`, record) and Sublime (`Ctrl+Shift+Q`, replay) keymaps. Long replays run in slices with
+  progress in the status bar and stop on Esc.
+- **New Project From Template** asks for a project name and a location, creates that folder, and opens it
+  as a project on the template's main file.
+- Templates: the wizard asks for a template's main name (package, file base name) with readable,
+  translated labels, and template JSON can supply its own `labels`. "Edit User Templates" lets you pick a
+  template to open, start a new one, or copy a bundled template (multi-file included) to customize. The
+  picker shows where each template comes from, and plugin templates appear in Settings → Templates.
 
 ### Changed
 
@@ -162,6 +190,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   key anywhere in the line. `Log: Next Error` is renamed `Log: Next Warning or Error`, which is what it does.
 - Following a log no longer drops the top of a large one: the 12 MB limit now applies to what the follow
   adds, not to what was already open.
+- Spell check: "Ignore" now holds in every open file for the session. The technical dictionary has 264
+  more terms.
+- Snippets and templates: your own entry overrides a plugin's with the same name or id (the order is
+  bundled, plugin, user). Editing a bundled snippet in Settings replaces it under all its triggers.
+- Snippets: Tab no longer expands inside comments or strings, or in CSV/TSV files, and the bundled `date`
+  and `time` snippets are offered in the popup and picker only. Markdown's one-letter triggers (`b`, `i`,
+  `l`, `u`, `n`, `t`, `w`, `c`) are removed. An unknown `$name` in a snippet body stays in the text.
+- Template bodies treat only `${variable}`, `${variable:default}` and `${cursor}` as special; `$1`,
+  `$HOME`, `${arr[0]}` and backslashes are written as they are, and `$${name}` writes a literal `${name}`.
+  A user template that relied on snippet-style `$1` tab stops now gets that text literally. A template
+  file with no `name` is skipped and reported.
+- Multi-file templates always require a folder; a blank one is refused in the wizard. Before a template
+  writes anything it lists the files that already exist and lets you create only the missing ones.
+- Macros: `macros.json` is version 2 with stored ids, migrated automatically; existing key bindings are
+  kept. Saved macros appear in the palette as "Macro: ‹name›". One replay is one undo step, also with a
+  count; `C-u N` on a replay is capped at 10,000.
 
 ### Fixed
 
@@ -335,6 +379,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   button sat on top of an HTML file's open-in-browser button, a Markdown file's Editor/Split/Preview
   toggle or a log file's controls; they now share one row. In Zen mode the "Z" also clears the HTML and
   log controls, not only the preview toggle.
+- Spell check: typing in a very long line with no whitespace took about 0.7 s per key; scrolling a
+  viewport full of squiggles is about ten times cheaper.
+- Spell check: Add to Dictionary and Ignore did nothing for words with a typographic apostrophe;
+  possessives and plurals of dictionary words were flagged; the first word of a Spanish question or
+  exclamation, `_emphasis_` / `~~strike~~` text and words after a comma with no space were never checked;
+  non-Latin text was underlined wholesale and `café`-style loan words were flagged in English.
+- Spell check: a hand-edited `dictionary.txt` was not re-read until restart; prose autocomplete offered
+  nothing with Spanish (Mexico) selected; an unknown spell language in settings.json silently disabled
+  checking; suggestions stalled the right-click, included split-word junk and were enabled in read-only
+  files; corrections were offered inside Markdown code fences.
+- Snippets: a session now ends when the caret leaves its fields, so Tab indents again after clicking
+  elsewhere, switching tabs or moving to the other split view. Auto-pairs, Enter auto-indent and smart
+  Backspace work inside a field; undoing a typo in a field keeps Tab going to the next stop.
+- Snippets: changes reach every open window and a user snippet file reloads when saved. A broken file is
+  reported at once with its name, reason and line, and only the bad entry is skipped. Saving from Settings
+  keeps the comments in the file. Two-word triggers such as `else if` expand, space-indented bodies follow
+  the file's indent style, blank body lines get no trailing whitespace, and `scope` is honoured.
+- Macros: a replay chord ending in a printable key (`C-x e`) typed that key when the macro contained
+  Backspace or arrows. A macro that runs a saved macro skipped it on replay. Tab, Shift+Tab, Enter and
+  Escape now replay through the same path as the key (snippet expansion, outdent, auto-indent); typing at
+  several carets replays at every caret; `C-u N x`, Shift+Insert and input-method text are recorded.
+- Macros: an empty recording no longer discards the previous macro, and Replay Last works after a restart
+  and in a second window. Name and Save reports an empty name and asks before replacing; names in any
+  script and case variants get their own command id. Delete Saved confirms and removes the key binding.
+  Replay status reports skipped typing on a read-only buffer and missing commands. A hand-edited
+  `macros.json` with a null list no longer stops a window from opening.
+- Settings → Macros: steps are shown and edited by kind (command picker, multi-line text, key capture),
+  edits are not dropped on selection change, buttons are not truncated, and the note shows the active
+  keymap's chords instead of F3/F4.
+- Templates: new files open with the caret at `${cursor}`, in the file that marks it. The Java Class
+  template writes the `package` line of its folder, and a template's `language` sets the created file's
+  grammar. Java package inference stops at the project root and no longer treats `src/main/resources` or
+  an ancestor folder called `src` as a source root.
+- Templates: changes are live in every window; invalid template files are reported with file, reason and
+  line; a template path can no longer leave the target folder through a symlinked directory; failures are
+  shown as errors and the wizard keeps what you typed. Shell and Zsh files are created executable, and
+  template files end with a newline and follow `.editorconfig` line endings.
+- New File: `release-1.2` under Markdown becomes `release-1.2.md`; reserved Windows names, illegal
+  characters, Java keywords, `Foo.txt` as a class name and `~/…` are refused with a specific message.
 
 ## [0.19.0] - 2026-10-06
 
