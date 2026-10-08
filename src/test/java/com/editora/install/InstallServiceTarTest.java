@@ -368,6 +368,88 @@ class InstallServiceTarTest {
                 .gz());
     }
 
+    // --- installs that fail after the download ---------------------------------------------------------
+
+    private byte[] goodJdtls(String version) {
+        return TestArchives.tar()
+                .executable("bin/jdtls", version)
+                .file("plugins/launcher.jar", version)
+                .gz();
+    }
+
+    private List<String> languageServerFolders() throws IOException {
+        try (Stream<Path> list = Files.list(config.resolve("plugins/lsp"))) {
+            return list.map(p -> p.getFileName().toString()).sorted().toList();
+        }
+    }
+
+    /**
+     * A tarball that arrived whole over HTTP but is itself cut short (a mirror that published a partial
+     * upload). {@code tar} unpacks what is there and then fails — and what is there includes the launcher, so
+     * the half-unpacked folder used to be detected as an installed server from then on.
+     */
+    @Test
+    void aTruncatedTarballLeavesNoHalfInstalledServer() throws IOException {
+        byte[] whole = TestArchives.tar()
+                .executable("bin/jdtls", "launcher")
+                .file("plugins/a.jar", "a".repeat(40_000))
+                .file("plugins/b.jar", "b".repeat(40_000))
+                .bytes();
+        // Cut inside the second jar, then compress: a valid gzip stream of an incomplete tar.
+        web.serve(InstallCatalog.JDTLS_TARBALL_URL, TestArchives.gzip(java.util.Arrays.copyOf(whole, 50_000)));
+
+        InstallService.Result result = install(jdtls());
+
+        assertFalse(result.ok());
+        assertTrue(result.message().startsWith("jdtls: tar failed"), result.message());
+        assertFalse(Files.exists(jdtlsDir()), "the launcher of a broken install must not be left to be detected");
+        assertEquals(List.of(), languageServerFolders());
+    }
+
+    @Test
+    void aTruncatedDownloadOfANewVersionLeavesTheInstalledServerWorking() throws IOException {
+        web.serve(InstallCatalog.JDTLS_TARBALL_URL, goodJdtls("v1"));
+        assertTrue(install(jdtls()).ok());
+
+        byte[] gz = goodJdtls("v2");
+        web.serve(InstallCatalog.JDTLS_TARBALL_URL, java.util.Arrays.copyOf(gz, gz.length / 2)); // a cut gzip stream
+        InstallService.Result result = install(jdtls());
+
+        assertFalse(result.ok());
+        assertEquals("v1", Files.readString(jdtlsDir().resolve("bin/jdtls")));
+        assertEquals("v1", Files.readString(jdtlsDir().resolve("plugins/launcher.jar")));
+        assertEquals(List.of("java"), languageServerFolders());
+    }
+
+    @Test
+    void aTarballThatFailsItsCheckLeavesTheInstalledServerWorking() throws IOException {
+        web.serve(InstallCatalog.JDTLS_TARBALL_URL, goodJdtls("v1"));
+        assertTrue(install(jdtls()).ok());
+
+        web.serve(
+                InstallCatalog.JDTLS_TARBALL_URL,
+                TestArchives.tar().file("README.md", "moved").gz());
+        InstallService.Result result = install(jdtls());
+
+        assertFalse(result.ok());
+        assertEquals("jdtls: expected files not found after extraction", result.message());
+        assertEquals("v1", Files.readString(jdtlsDir().resolve("bin/jdtls")));
+        assertFalse(Files.exists(jdtlsDir().resolve("README.md")));
+        assertEquals(List.of("java"), languageServerFolders());
+    }
+
+    @Test
+    void aTarballThatFailsItsCheckOnAFirstInstallLeavesNoFolder() throws IOException {
+        web.serve(
+                InstallCatalog.JDTLS_TARBALL_URL,
+                TestArchives.tar().file("README.md", "not a language server").gz());
+
+        assertFalse(install(jdtls()).ok());
+
+        assertFalse(Files.exists(jdtlsDir()));
+        assertEquals(List.of(), languageServerFolders());
+    }
+
     // --- reinstalling ---------------------------------------------------------------------------------
 
     @Test

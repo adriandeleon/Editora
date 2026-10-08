@@ -195,15 +195,125 @@ public final class InstallService {
     private String installJvmLspZip(Step s, Path configDir) throws Exception {
         byte[] data = download(s.directUrl());
         Path dest = configDir.resolve(s.destSubpath());
-        deleteRecursively(dest);
-        Files.createDirectories(dest);
-        Unzip.extract(
-                new ByteArrayInputStream(data),
-                dest,
-                MAX_ARCHIVE_ENTRY_BYTES,
-                MAX_ARCHIVE_TOTAL_BYTES,
-                MAX_ARCHIVE_ENTRIES);
+        replaceInstall(dest, staged -> {
+            Unzip.extract(
+                    new ByteArrayInputStream(data),
+                    staged,
+                    MAX_ARCHIVE_ENTRY_BYTES,
+                    MAX_ARCHIVE_TOTAL_BYTES,
+                    MAX_ARCHIVE_ENTRIES);
+            // The launch command is a "<dir>/*" classpath, so the jars have to be at the top. A body that is
+            // not a zip at all (an error page served with 200) reads as an archive with no entries — without
+            // this check that was a "successful" install of an empty folder.
+            if (!hasTopLevelJar(staged)) {
+                throw new InstallException(s.id() + ": no jar found in the downloaded bundle");
+            }
+            return null;
+        });
         return InstallCatalog.jvmClasspathCommand(dest, InstallCatalog.LEMMINX_MAIN_CLASS);
+    }
+
+    private static boolean hasTopLevelJar(Path dir) throws IOException {
+        try (Stream<Path> list = Files.list(dir)) {
+            return list.anyMatch(
+                    p -> Files.isRegularFile(p) && p.getFileName().toString().endsWith(".jar"));
+        }
+    }
+
+    /** Prefix of the folder an install is unpacked into, beside its destination, until it has passed its checks. */
+    static final String STAGING_PREFIX = ".installing-";
+
+    /** Unpacks an install into {@code staged} and checks it; throws to reject it. */
+    @FunctionalInterface
+    private interface Unpack<T> {
+        T into(Path staged) throws Exception;
+    }
+
+    /**
+     * Replaces the install at {@code dest} with what {@code unpack} produces — but only once {@code unpack}
+     * has returned, i.e. the archive extracted completely and passed its checks.
+     *
+     * <p>Archives used to be extracted straight into {@code dest} after deleting what was there. An archive
+     * that then turned out to be truncated, hostile or simply not the tool left a half-unpacked folder — one
+     * holding {@code bin/jdtls} is detected as an installed server from then on — and had already destroyed
+     * the working version. Now the work happens in a folder beside {@code dest} (same volume, so the swap is
+     * a rename) and a failure leaves {@code dest} exactly as it was.
+     */
+    private static <T> T replaceInstall(Path dest, Unpack<T> unpack) throws Exception {
+        Path target = dest.toAbsolutePath();
+        Path parent = target.getParent();
+        Files.createDirectories(parent);
+        String prefix = STAGING_PREFIX + target.getFileName() + "-";
+        sweepAbandonedStaging(parent, prefix);
+        // A short tag: the staging name is part of every extracted path, and Windows paths are finite.
+        String tag = prefix
+                + Integer.toHexString(
+                        java.util.concurrent.ThreadLocalRandom.current().nextInt());
+        Path staged = Files.createDirectory(parent.resolve(tag));
+        try {
+            T result = unpack.into(staged);
+            swapIn(staged, target, parent.resolve(tag + ".old"));
+            return result;
+        } finally {
+            deleteRecursively(staged);
+        }
+    }
+
+    /** How long a staging folder may sit before it is taken for the remains of an install that was killed. */
+    private static final Duration STAGING_ABANDONED_AFTER = Duration.ofDays(1);
+
+    /**
+     * Removes staging folders for this destination left by an install the app did not live to finish. Old
+     * ones only: another window may be installing the same tool right now.
+     */
+    private static void sweepAbandonedStaging(Path parent, String prefix) {
+        java.time.Instant cutoff = java.time.Instant.now().minus(STAGING_ABANDONED_AFTER);
+        List<Path> abandoned;
+        try (Stream<Path> list = Files.list(parent)) {
+            abandoned = list.filter(p -> p.getFileName().toString().startsWith(prefix))
+                    .filter(p -> {
+                        try {
+                            return Files.getLastModifiedTime(p, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                                    .toInstant()
+                                    .isBefore(cutoff);
+                        } catch (IOException e) {
+                            return false;
+                        }
+                    })
+                    .toList();
+        } catch (IOException e) {
+            return;
+        }
+        abandoned.forEach(InstallService::deleteRecursively);
+    }
+
+    /** Puts {@code staged} where {@code dest} is; the previous install comes back if that fails. */
+    private static void swapIn(Path staged, Path dest, Path aside) throws IOException {
+        boolean previous = false;
+        if (Files.exists(dest, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            try {
+                Files.move(dest, aside);
+                previous = true;
+            } catch (IOException busy) {
+                // Cannot be renamed (on Windows: a file inside is open). Clear it in place, as before.
+                deleteRecursively(dest);
+            }
+        }
+        try {
+            Files.move(staged, dest);
+        } catch (IOException e) {
+            if (previous) {
+                try {
+                    Files.move(aside, dest);
+                } catch (IOException ignored) {
+                    // left under its staging name rather than deleted
+                }
+            }
+            throw new IOException("could not replace the existing install at " + dest + ": " + e, e);
+        }
+        if (previous) {
+            deleteRecursively(aside);
+        }
     }
 
     /** Downloads + extracts a per-OS binary archive; returns the resolved server command (binary + suffix). */
@@ -223,8 +333,20 @@ public final class InstallService {
         }
         byte[] data = download(url);
         Path dest = configDir.resolve(s.destSubpath());
-        deleteRecursively(dest);
-        Files.createDirectories(dest);
+        Path binaryInInstall = replaceInstall(dest, staged -> {
+            extractArchive(s, url, data, staged);
+            Path binary = findBinary(staged, spec.binaryName(), spec.binaryPrefix());
+            if (binary == null) {
+                throw new InstallException(s.id() + ": '" + spec.binaryName() + "' not found after extraction");
+            }
+            makeExecutable(binary);
+            return staged.relativize(binary);
+        });
+        return InstallCatalog.binaryCommand(dest.resolve(binaryInInstall.toString()), spec.commandSuffix());
+    }
+
+    /** Extracts a downloaded binary archive (by the suffix of the URL it came from) into {@code dest}. */
+    private void extractArchive(Step s, String url, byte[] data, Path dest) throws Exception {
         if (url.endsWith(".tar.gz") || url.endsWith(".tgz")) {
             Path tmp = Files.createTempFile("editora-dl", ".tar.gz");
             try {
@@ -259,12 +381,6 @@ public final class InstallService {
                     MAX_ARCHIVE_TOTAL_BYTES,
                     MAX_ARCHIVE_ENTRIES);
         }
-        Path binary = findBinary(dest, spec.binaryName(), spec.binaryPrefix());
-        if (binary == null) {
-            throw new InstallException(s.id() + ": '" + spec.binaryName() + "' not found after extraction");
-        }
-        makeExecutable(binary);
-        return InstallCatalog.binaryCommand(binary, spec.commandSuffix());
     }
 
     /** Every archive suffix {@link #installArchive} can extract. The {@code .tar.xz}/{@code .txz} pair was
@@ -385,17 +501,19 @@ public final class InstallService {
         Path dest = configDir.resolve(s.destSubpath());
         try {
             Files.write(tmpFile, tgz);
-            // Replace any previous copy so a re-install is clean and the newest version wins.
-            deleteRecursively(dest);
-            Files.createDirectories(dest);
-            ProcessRunner.Result r =
-                    ProcessRunner.runInUserLocale(null, CMD_TIMEOUT, InstallCatalog.tarExtractArgv(tmpFile, dest));
-            if (!r.ok()) {
-                throw new InstallException(s.id() + ": tar failed — " + r.message());
-            }
-            if (!verifyTarball(s, dest)) {
-                throw new InstallException(s.id() + ": expected files not found after extraction");
-            }
+            // Replaces any previous copy, so a re-install is clean and the newest version wins — once the
+            // new one has extracted completely and holds what it should.
+            replaceInstall(dest, staged -> {
+                ProcessRunner.Result r = ProcessRunner.runInUserLocale(
+                        null, CMD_TIMEOUT, InstallCatalog.tarExtractArgv(tmpFile, staged));
+                if (!r.ok()) {
+                    throw new InstallException(s.id() + ": tar failed — " + r.message());
+                }
+                if (!verifyTarball(s, staged)) {
+                    throw new InstallException(s.id() + ": expected files not found after extraction");
+                }
+                return null;
+            });
         } finally {
             deleteQuietly(tmpFile);
         }
