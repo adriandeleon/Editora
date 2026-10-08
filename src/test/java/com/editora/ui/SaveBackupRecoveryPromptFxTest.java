@@ -167,6 +167,13 @@ class SaveBackupRecoveryPromptFxTest {
                     prompt.getContentText().startsWith(opening),
                     "the text is the one for a file that no longer exists: " + prompt.getContentText());
             assertTrue(prompt.getContentText().contains(backup.toString()));
+            assertEquals(
+                    List.of(
+                            tr("dialog.saveBackup.restore"),
+                            tr("dialog.saveBackup.delete"),
+                            tr("dialog.saveBackup.later")),
+                    labels(prompt),
+                    "there is no current file to keep: the other choice deletes the last copy and says so");
             press(prompt, ButtonBar.ButtonData.OK_DONE);
             SaveGuardsFxTest.awaitOnFx(async, "the restore to finish", () -> !Files.exists(backup));
 

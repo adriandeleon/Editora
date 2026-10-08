@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The interrupted-save prompt for a file that no longer exists offered "Keep Current File", which
+  deleted the backup — the only copy left. The button now reads "Delete Backup".
 - MCP `todo_scan` reported each marker one line down and one column to the right.
 - MCP `find_in_files` searched the project of the window that was focused last instead of the window
   the MCP server belongs to.

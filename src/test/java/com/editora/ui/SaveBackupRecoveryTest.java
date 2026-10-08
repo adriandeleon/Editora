@@ -48,6 +48,19 @@ class SaveBackupRecoveryTest {
     }
 
     @Test
+    void onlyAFileThatStillExistsCanBeKeptInsteadOfItsBackup() {
+        assertEquals("dialog.saveBackup.keep", SaveBackupRecovery.discardLabelKey(SaveBackups.State.DIFFERENT));
+        for (SaveBackups.State state : SaveBackups.State.values()) {
+            if (state != SaveBackups.State.DIFFERENT) {
+                assertEquals(
+                        "dialog.saveBackup.delete",
+                        SaveBackupRecovery.discardLabelKey(state),
+                        state + ": there is no file to keep, the button deletes the backup");
+            }
+        }
+    }
+
+    @Test
     void aTornFileIsOfferedAndARedundantOldBackupIsRemoved() throws IOException {
         Instant now = Instant.now();
         Path torn = Files.writeString(dir.resolve("torn.txt"), "");
