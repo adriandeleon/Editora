@@ -78,6 +78,7 @@ class ExportCoordinatorFlowFxTest {
     private final List<java.io.File> destinations = new ArrayList<>();
     private final List<Path> opened = new ArrayList<>();
     private final List<Path> replaced = new ArrayList<>();
+    private final List<EditorBuffer> buffers = new ArrayList<>();
     private ExportCoordinator exports;
 
     /** A coordinator whose Save dialog answers with {@code files}, one per export, in order. */
@@ -98,6 +99,10 @@ class ExportCoordinatorFlowFxTest {
             if (exports != null) {
                 exports.shutdown();
             }
+            // An open buffer's highlight pass runs to the end: three of these long files held the Java
+            // grammar's queue for longer than the next test class waits for its first pass.
+            buffers.forEach(EditorBuffer::dispose);
+            buffers.clear();
         });
     }
 
@@ -106,6 +111,7 @@ class ExportCoordinatorFlowFxTest {
         EditorBuffer b = new EditorBuffer();
         b.setDisplayName("Long.java");
         b.setContent("int value = 1; // a line of code\n".repeat(60_000));
+        buffers.add(b);
         return b;
     }
 
@@ -113,6 +119,7 @@ class ExportCoordinatorFlowFxTest {
         EditorBuffer b = new EditorBuffer();
         b.setDisplayName("Short.java");
         b.setContent("class Short {}\n");
+        buffers.add(b);
         return b;
     }
 
