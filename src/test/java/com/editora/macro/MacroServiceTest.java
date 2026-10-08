@@ -1,8 +1,6 @@
 package com.editora.macro;
 
-import java.io.IOException;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
 import com.editora.config.ConfigManager;
@@ -11,106 +9,200 @@ import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The capture filters, the slug↔command-id mapping, and what a replay reports. */
+/** What is recorded, what "the last macro" is, and how macros are saved. */
 class MacroServiceTest {
 
     private static MacroService service(Path dir) {
         return new MacroService(new ConfigManager(dir));
     }
 
-    /**
-     * A saved macro's own {@code macro.run.<slug>} command is a legitimate step — composing macros is the
-     * point. The recorder's {@code macro.*} filter (meant for the record/replay/save control commands)
-     * swallowed those too, so invoking a macro while recording vanished from the recording with no feedback.
-     */
+    private static MacroService recorded(Path dir, String text) {
+        MacroService s = service(dir);
+        s.startRecording();
+        s.onText(text, false);
+        s.stopRecording();
+        return s;
+    }
+
     @Test
-    void recordingCapturesAnotherMacrosRunCommandButNotTheControlCommands(@TempDir Path dir) {
+    void theControlCommandsAndThePaletteAreNotRecorded(@TempDir Path dir) {
         MacroService s = service(dir);
         s.startRecording();
         s.onCommand("macro.startRecording"); // control — never recorded
         s.onCommand("macro.replayLast"); // control
         s.onCommand("palette.show"); // the act of opening the palette, not an action
-        s.onCommand("macro.run.build"); // another macro — IS an action
+        s.onCommand("macro.run.build"); // recorded by recordMacroRun when the run starts, not here
         s.onCommand("edit.copy");
+        s.stopRecording();
+        assertEquals(List.of(MacroStep.command("edit.copy")), s.last().steps());
+    }
+
+    /** Composing macros is the point: running a saved macro while recording is a step, once per run. */
+    @Test
+    void runningASavedMacroWhileRecordingIsAStep(@TempDir Path dir) {
+        MacroService s = recorded(dir, "A");
+        Macro inner = s.saveLastAs("inner", null);
+        s.startRecording();
+        s.onText("x", false);
+        s.recordMacroRun(inner, 2);
         s.stopRecording();
         assertEquals(
-                List.of(MacroStep.command("macro.run.build"), MacroStep.command("edit.copy")),
-                s.saveLast("composed").steps());
+                List.of(
+                        MacroStep.text("x"),
+                        MacroStep.command("macro.run.inner"),
+                        MacroStep.command("macro.run.inner")),
+                s.last().steps());
     }
 
-    /** Replay is never itself recorded, whatever the hooks are fed. */
+    /**
+     * M2: Enter in a picker is recorded as a key, and replaying that key runs the picked command again — so
+     * the command it ran must not be recorded as well, or the replay would run it twice.
+     */
     @Test
-    void nothingIsRecordedWhileReplaying(@TempDir Path dir) {
+    void aCommandThatAKeyStepCausedIsNotRecordedAsWell(@TempDir Path dir) {
         MacroService s = service(dir);
         s.startRecording();
-        s.onCommand("edit.copy");
+        s.keySeen();
+        s.onCommand("file.quickOpen"); // a chord: the user's own
+        s.keySeen();
+        s.onKey("ENTER", true); // Enter in the picker…
+        s.onCommand("file.openPicked"); // …ran this
+        s.keySeen();
+        s.onCommand("edit.copy"); // the next chord is the user's own again
         s.stopRecording();
-        assertNotNull(s.saveLast("m"));
-
-        s.startRecording(); // recording AND replaying at once
-        s.run("m", 1, id -> s.onCommand(id), t -> s.onTypedChar('z'), k -> s.onKey("DOWN"));
-        s.stopRecording();
-        assertNull(s.saveLast("captured"), "nothing recorded → nothing to save");
+        assertEquals(
+                List.of(
+                        MacroStep.command("file.quickOpen"),
+                        MacroStep.key("ENTER", true),
+                        MacroStep.command("edit.copy")),
+                s.last().steps());
     }
 
-    /** Distinct names can collide on one macro.run.<slug> id; the shadowed macro becomes unreachable. */
+    /** M9: starting and stopping by accident must not cost the macro recorded before. */
     @Test
-    void slugClashIsDetected(@TempDir Path dir) {
-        MacroService s = service(dir);
+    void anEmptyRecordingKeepsThePreviousMacro(@TempDir Path dir) {
+        MacroService s = recorded(dir, "keep");
         s.startRecording();
-        s.onTypedChar('x');
-        s.stopRecording();
-        assertNotNull(s.saveLast("my macro"));
+        assertEquals(0, s.stopRecording());
+        assertTrue(s.hasLast());
+        assertEquals(List.of(MacroStep.text("keep")), s.last().steps());
+    }
 
-        assertEquals(MacroService.commandIdFor("my macro"), MacroService.commandIdFor("my-macro"));
-        assertTrue(s.slugClash("my-macro"), "different name, same command id");
-        assertNull(s.saveLast("my-macro"), "must refuse rather than shadow the existing macro");
+    /** M17: a cancelled recording is discarded and the previous macro is still the last one. */
+    @Test
+    void aCancelledRecordingIsDiscarded(@TempDir Path dir) {
+        MacroService s = recorded(dir, "keep");
+        s.saveLastAsPlaceholder();
+        s.startRecording();
+        s.onText("junk", false);
+        s.cancelRecording();
+        assertFalse(s.isRecording());
+        assertEquals(List.of(MacroStep.text("keep")), s.last().steps());
+        assertEquals(List.of(MacroStep.text("keep")), s.saved().get(0).steps(), "the stored one is untouched too");
+    }
+
+    /** M9: after a restart, or in a second window, "replay last" plays the stored last recording. */
+    @Test
+    void theLastMacroFallsBackToTheStoredOne(@TempDir Path dir) {
+        ConfigManager config = new ConfigManager(dir);
+        MacroService first = new MacroService(config);
+        assertFalse(first.hasLast());
+        first.startRecording();
+        first.onText("hello", false);
+        first.stopRecording();
+        first.saveLastAsPlaceholder();
+
+        MacroService second = new MacroService(config); // another window on the same store
+        assertTrue(second.hasLast());
+        assertEquals(List.of(MacroStep.text("hello")), second.last().steps());
+    }
+
+    /** M16: the unnamed slot is one entry found by id — whatever language its label is shown in. */
+    @Test
+    void theUnnamedSlotIsReusedAndHasNoStoredName(@TempDir Path dir) {
+        MacroService s = recorded(dir, "one");
+        Macro a = s.saveLastAsPlaceholder();
+        assertEquals("", a.name());
+        assertEquals("unnamed-macro", a.id());
+        s.startRecording();
+        s.onText("two", false);
+        s.stopRecording();
+        Macro b = s.saveLastAsPlaceholder();
+        assertEquals(a.id(), b.id());
         assertEquals(1, s.saved().size());
-
-        assertFalse(s.slugClash("my macro"), "re-saving the same macro is not a clash");
-        assertFalse(s.slugClash("other"));
+        assertEquals(List.of(MacroStep.text("two")), s.saved().get(0).steps());
+        assertTrue(s.isPlaceholder(s.saved().get(0)));
     }
 
-    /** Symbol-only names all fall back to the "macro" slug — the same collision, less obviously. */
+    /** M8: no name collapses onto another's id, and case variants are separate macros. */
     @Test
-    void symbolOnlyNamesCollideOnTheFallbackSlug(@TempDir Path dir) throws IOException {
-        MacroService s = service(dir);
-        s.startRecording();
-        s.onTypedChar('x');
-        s.stopRecording();
-        assertEquals("macro.run.macro", MacroService.commandIdFor("!!!"));
-        assertEquals("macro.run.macro", MacroService.commandIdFor("???"));
-        assertNotNull(s.saveLast("!!!"));
-        assertNull(s.saveLast("???"), "would register macro.run.macro twice");
+    void savingGivesEveryNameItsOwnId(@TempDir Path dir) {
+        MacroService s = recorded(dir, "x");
+        Macro build = s.saveLastAs("Build", null);
+        Macro lower = s.saveLastAs("build", null);
+        Macro ja = s.saveLastAs("日本語", null);
+        Macro zh = s.saveLastAs("中文", null);
+        assertEquals(4, s.saved().size());
+        assertEquals(4, s.saved().stream().map(Macro::id).distinct().count());
+        assertEquals("macro.run.build", MacroService.commandIdFor(build));
+        assertEquals("macro.run.build-2", MacroService.commandIdFor(lower));
+        assertNotEquals(ja.id(), zh.id());
+        assertNull(s.saveLastAs("  ", null), "a blank name saves nothing");
     }
 
-    /** A replay dropped by the re-entrancy guard must not report success. */
+    /** Replacing a macro keeps its id, so the key bound to it now runs the new steps. */
     @Test
-    void runReportsFalseWhenTheGuardDropsANestedReplay(@TempDir Path dir) {
-        MacroService s = service(dir);
+    void savingOverAMacroKeepsItsId(@TempDir Path dir) {
+        MacroService s = recorded(dir, "old");
+        Macro first = s.saveLastAs("Build", null);
         s.startRecording();
-        s.onCommand("edit.copy");
+        s.onText("new", false);
         s.stopRecording();
-        assertNotNull(s.saveLast("outer"));
+        Macro second = s.saveLastAs("Build", s.findByName("Build"));
+        assertEquals(first.id(), second.id());
+        assertEquals(1, s.saved().size());
+        assertEquals(List.of(MacroStep.text("new")), s.findById(first.id()).steps());
+    }
 
-        List<String> log = new ArrayList<>();
-        List<Boolean> nestedResult = new ArrayList<>();
-        boolean ok = s.run(
-                "outer",
-                1,
-                id -> {
-                    log.add(id);
-                    nestedResult.add(s.run("outer", 1, log::add, t -> {}, k -> {}));
-                },
-                t -> {},
-                k -> {});
-        assertTrue(ok, "the outer replay ran");
-        assertEquals(List.of("edit.copy"), log, "the nested replay was dropped");
-        assertEquals(List.of(false), nestedResult, "...and reported that it did nothing");
-        assertFalse(s.run("no such macro", 1, log::add, t -> {}, k -> {}));
+    /**
+     * Naming the last recording drops the unnamed slot — it has a real name now — but only when the slot
+     * still holds that recording. Another window may have recorded over it since (M16).
+     */
+    @Test
+    void namingTheLastMacroDropsTheUnnamedSlotOnlyWhenItIsTheSameRecording(@TempDir Path dir) {
+        ConfigManager config = new ConfigManager(dir);
+        MacroService a = new MacroService(config);
+        a.startRecording();
+        a.onText("from A", false);
+        a.stopRecording();
+        a.saveLastAsPlaceholder();
+        assertNotNull(a.saveLastAs("Mine", null));
+        assertEquals(1, a.saved().size(), "the slot held this recording: gone");
+
+        a.saveLastAsPlaceholder();
+        MacroService b = new MacroService(config);
+        b.startRecording();
+        b.onText("from B", false);
+        b.stopRecording();
+        b.saveLastAsPlaceholder(); // B's recording is in the slot now
+        assertNotNull(a.saveLastAs("Mine too", null));
+        assertEquals(3, a.saved().size(), "B's unnamed recording survives A's save");
+        assertEquals(
+                List.of(MacroStep.text("from B")),
+                config.getMacroStore().placeholder().steps());
+    }
+
+    @Test
+    void deleteRemovesById(@TempDir Path dir) {
+        MacroService s = recorded(dir, "x");
+        Macro m = s.saveLastAs("gone", null);
+        assertTrue(s.delete(m.id()));
+        assertFalse(s.delete(m.id()));
+        assertTrue(s.saved().isEmpty());
     }
 }

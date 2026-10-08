@@ -108,7 +108,7 @@ Editora is built with the help of AI coding tools.
   tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
   bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred per file, or forced
   globally via Settings → Editor → "Indent style" (Detect / Spaces / Tabs).
-- **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage your own per-language snippets in **Settings → Snippets** (or `Snippets: Manage Snippets…`), saved under `<configDir>/snippets/`.
+- **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage them per language in **Settings → Snippets** (or "Snippet: Manage…" in the palette), saved under `<configDir>/snippets/`.
 - **File templates** — "New File From Template" scaffolds; manage them in **Settings → Templates** (or `Templates: Manage File Templates…`) — the shipped templates are shown read-only and editing one saves a personal override under `<configDir>/templates/`.
 - **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
   indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
@@ -160,6 +160,26 @@ Editora is built with the help of AI coding tools.
 - **Abbreviations** — a text-replacement dictionary: `C-x a e` expands the abbreviation before the caret,
   *Abbrev Mode* expands automatically as you type a terminator, `C-x a g` defines a new one, and Settings →
   Editor → Abbreviations manages the list. Typed case is carried onto the expansion.
+- **Keyboard macros** — record what you do and play it back. *Macro: Start Recording* / *Stop Recording*
+  / *Replay Last* are in the **Tools** menu and the palette (`F3` / `F4` / `C-x e` in the Emacs keymap;
+  the CUA keymap toggles recording with `Ctrl+Shift+R`, the Sublime keymap replays with `Ctrl+Shift+Q`;
+  bind your own in Settings → Keymaps). A red **● REC** in the status bar shows a recording is running —
+  click it to stop, or press `Esc` (`C-g`) to cancel and keep the previous macro.
+  - **What is recorded:** commands, typed text, and the keys that act rather than type — Enter, Tab,
+    Shift+Tab, Backspace, the arrows, Escape. They replay through the same path as the key, so a snippet
+    expanded with Tab, a completion accepted with Enter, a table-cell Tab and typing at several carets all
+    replay as they happened. Keys typed into the find bar, a prompt or a picker are recorded too and
+    replayed into that prompt (`C-s foo Enter Esc` replays as a search). Mouse clicks are not recorded,
+    and a command that opens a blocking dialog (a native file chooser) makes the replay wait there — the
+    status bar says so while you record.
+  - **Replaying:** one replay is one undo step, also with a count (*Macro: Replay Last N Times*, or
+    `C-u 50 C-x e`; up to 10,000). A long replay runs in slices, shows its progress in the status bar and
+    stops on `Esc`.
+  - **Saving:** the last recording is kept (also across restarts) until the next one replaces it; *Macro:
+    Name and Save Last* keeps it under a name. Every saved macro is a palette command (*Macro: ‹name›*)
+    you can bind to a key, and can be run from inside another macro. **Settings → Macros** renames them
+    and edits their steps: commands are picked from a list, keys are captured by pressing them, text keeps
+    its line breaks. Macros are stored in `macros.json` in the config folder.
 - **Auto-fill mode** — automatically break plain-text and Markdown lines at the fill column as you type
   (Emacs `auto-fill-mode`). Prose-only (never wraps code); wrapped lines keep the indent. Off by default;
   Settings → Editor or `view.toggleAutoFill`. Complements `M-q` (fill paragraph).
@@ -231,9 +251,14 @@ Editora is built with the help of AI coding tools.
   always on the clipboard too. On by default (Settings → Editor); a forced *Copy With Syntax Highlighting*
   command ignores both the setting and the size cap.
 - **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
-  Add-to-Dictionary, and Ignore. Source files only check comments and string literals; plaintext and
-  Markdown are checked in full. Toggle via "View: Toggle Spell Check"; choose a dictionary per file
-  ("Spell Check: Set Language…", ships English en_US/en_GB, Spanish for Spain and Mexico, and French). A bundled
+  Add-to-Dictionary, and Ignore (for the session, in every open file). Plaintext and Markdown are checked
+  in full, HTML and Typst have their text content checked, and source files only their comments and string
+  literals. Toggle everything via "View: Toggle Spell Check", or one file type at a time in Settings →
+  Spell Check → File Types ("Spell Check: Toggle for This File Type"); data and configuration formats
+  (JSON, YAML, TOML, XML, CSV, INI, properties, …) start switched off. Choose a dictionary per file
+  ("Spell Check: Set Language…", or click the language in the status bar; ships English en_US/en_GB,
+  Spanish for Spain and Mexico, and French). From the keyboard: "Spell Check: Next/Previous Misspelling",
+  "Correct Word at Caret…", "Add Word at Caret to Dictionary" and "Ignore Word at Caret". A bundled
   **technical-terms dictionary** (`config`, `async`, `middleware`, `kubernetes`, …) keeps code-adjacent
   prose from being flagged — toggle it in Settings → Spell Check (default on). Pure-Java (Apache Lucene
   Hunspell).
@@ -487,25 +512,50 @@ Editora is built with the help of AI coding tools.
 - **Print** — native printing of code or the rendered Markdown preview, with a print-preview window
   first (always light, what-you-preview-is-what-prints), reusing the PDF layout core. Run "File: Print"
   / "File: Print Preview" from the palette.
-- **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a prefix + Tab to
-  expand, or pick via `C-c i` / "Snippet: Insert…". Prefixes needn't be plain words: `#inc` (C/C++
-  `#include`), `!` (the HTML skeleton), `?xml` and yaml's `---` all expand. Tab/Shift-Tab cycle fields, placeholders are
-  pre-selected, mirrors update live, `$0` is the final caret. Standard body syntax (`$1`,
-  `${1:default}`, mirrors, choices, variables, escapes). Snippets ship for all 21 highlighted languages
-  (most from the MIT [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection);
-  add your own in `~/.editora/snippets/<language>.json` (user snippets override bundled).
+- **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a trigger + Tab to
+  expand, or pick one with "Snippet: Insert…" (palette, Code menu; `C-c i` in the Emacs keymap) or from
+  the completion popup. Triggers needn't be plain words: `#inc` (C/C++ `#include`), `!` (the HTML
+  skeleton), `?xml`, yaml's `---` and two-word ones like `else if` all expand. While a snippet is being
+  filled in, its fields are outlined (the active one tinted, mirrors underlined, a mark where `$0` ends
+  up) and the status bar shows "Snippet 2/3": Tab/Shift-Tab move between fields, Esc leaves, and so does
+  moving the caret out of the fields — Tab then indents again. Auto-pairs, Enter auto-indent and smart
+  Backspace work inside a field. Standard body syntax (`$1`, `${1:default}`, mirrors, choices,
+  transforms, escapes) and the VS Code variables (`TM_*`, `CURRENT_*`, `UUID`, `RANDOM`, `LINE_COMMENT`,
+  `WORKSPACE_NAME`, `RELATIVE_FILEPATH`, …); a `$name` that is not a variable stays as written. Snippets
+  ship for 30 languages — C, C++, C#, CSS, Dockerfile, Go, Groovy, HTML, Java, JavaScript and TypeScript
+  (also used for JSX/TSX), JSON, Kotlin, Lua, Markdown, Mermaid, PHP, PowerShell, Python, Ruby, Rust,
+  shell, SQL, Terraform, TOML, Typst, XML, YAML, batch and INI files — most from the MIT
+  [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection. Add your own in
+  `<configDir>/snippets/<language>.json` ("Snippet: Edit User Snippets…"; saving the file reloads it in
+  every window) or in Settings → Snippets, where a bundled snippet can also be edited or switched off.
+  Your snippets win over a plugin's, and a plugin's over the bundled ones. Tab expansion has its own
+  switch (Settings → Snippets, or "View: Toggle Snippet Expansion on Tab"); Tab never expands inside a
+  comment or string, nor in a CSV/TSV file, and the global `date` / `time` snippets are offered in the
+  popup and picker only.
 - **New ▸ &lt;file type&gt;** — right-click a folder in the Project tool window: **New ▸** offers a generic
   `File…` and `Folder…`, Text and Markdown, then a submenu per family — **Java** (Class, Interface, Record,
   Enum, Annotation, `package-info.java`), Web, Scripts, Languages, Data &amp; Config, Docs &amp; Diagrams, Build
   &amp; Ops — about fifty types in all. Name it and it opens, with the caret already in the body. A new Java
   file gets its **package declaration from the folder it is created in** (`src/main/java/demo` →
-  `package demo;`), and a qualified name (`text.Slug`) creates the sub-package folder. The typed name wins
-  over the type's extension, so `notes.json` under Text File is JSON. Also on the palette as *File: New File
-  of Type…*, which creates in the active file's folder.
-- **File templates** _(Beta)_ — "New File From Template" (`C-c C-n`) creates a file (or a whole set of files) from
-  a reusable template, prompting for any `${variables}` in a wizard and placing the caret at `${cursor}`.
-  Bundled templates (Java class, HTML page / multi-file bundle, Markdown doc, Python script) plus your
-  own in `~/.editora/templates/`.
+  `package demo;`; only source roots inside the project count), and a qualified name (`text.Slug`) creates
+  the sub-package folder. A known extension in the typed name wins over the type's, so `notes.json` under
+  Text File is JSON while `release-1.2` under Markdown is `release-1.2.md`. Names that cannot be a file on
+  every platform (`CON`, `a?b`, a trailing dot) and Java keywords are refused with the reason. Shell
+  scripts are created executable. Also on the palette as *File: New File of Type…*, which creates in the
+  active file's folder.
+- **File templates** _(Beta)_ — *Template: New File From Template…* (`C-c C-n` in the Emacs keymap) creates a
+  file, or a whole set of files, from a reusable template. A wizard asks for the template's variables — the
+  class, file or package name included — and the new file opens with the caret at `${cursor}`. Nine templates
+  ship: Java Class (with the package of the folder it is created in), Java Compact Source, HTML Page,
+  Markdown Document, Python Script, Shell Script, Zsh Script (both created executable), and the multi-file
+  HTML Page + CSS and Python Project. A multi-file template always asks for its folder, lists any files that
+  are already there before writing anything, and never overwrites one. *Project: New Project From Template…*
+  asks for a project name and a location, creates that folder and opens it as a project. Your own templates
+  are JSON files in `~/.editora/templates/` (they override a plugin's or a bundled template with the same
+  id) — manage them in Settings → Templates, or run *Template: Edit User Templates…* to open one, start a
+  new one, or copy a bundled template to customize. In a template only `${variable}`,
+  `${variable:default}` and `${cursor}` are special; everything else (`$1`, `$HOME`, backslashes) is written
+  as is, and `$${name}` gives a literal `${name}`.
 - **Autocomplete** — appears as you type (and on demand via `C-M-i` / `M-/`). In **code**, a popup of
   **snippet** completions (accepting expands the snippet with its tab stops; Enter/Tab accept, arrows
   navigate). In **prose** (plain text / Markdown), inline **"ghost text"** — a single greyed
@@ -993,7 +1043,8 @@ view options, auto-save mode, and keybinding overrides). Session state — colla
 regions and tool-window layout — is stored as JSON in `workspace-state.json`, recent
 files in `recent-files.json`, bookmarks and breakpoints (scoped per project) in `bookmarks.json` /
 `breakpoints.json`, personal notes (also scoped per project) in `notes.json`, and saved SFTP
-connections (metadata only, never a password) in `connections.json`, all alongside it.
+connections (metadata only, never a password) in `connections.json`, and saved keyboard macros in
+`macros.json`, all alongside it.
 
 To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
 line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >

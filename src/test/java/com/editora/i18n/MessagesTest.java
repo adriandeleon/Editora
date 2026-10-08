@@ -357,6 +357,7 @@ class MessagesTest {
             Map.entry("agent.context.header", new int[] {1}),
             Map.entry("agent.exited", new int[] {0}),
             Map.entry("csvgrid.column", new int[] {0}),
+            Map.entry("template.problem.malformedJson", new int[] {0}),
             Map.entry("dialog.removeBookmark.body", new int[] {0}),
             Map.entry("dialog.review.title", new int[] {0}),
             Map.entry("diff.title.prFile", new int[] {1}),
@@ -386,7 +387,9 @@ class MessagesTest {
             Map.entry("lsp.peek.title", new int[] {1}),
             Map.entry("markdownLint.row", new int[] {0, 1}),
             Map.entry("mermaid.diagnosticLine", new int[] {0, 1}),
-            Map.entry("notes.line", new int[] {0}));
+            Map.entry("notes.line", new int[] {0}),
+            Map.entry("status.snippetFileSyntaxError", new int[] {2}),
+            Map.entry("status.snippetEntryError", new int[] {2}));
 
     @Test
     void identifierArgumentsAreNeverDigitGrouped() {

@@ -74,15 +74,6 @@
     },
     {
       "condition": {
-        "typeReached": "com.editora.snippet.SnippetManager"
-      },
-      "type": "com.editora.snippet.SnippetManager$Dto",
-      "allDeclaredConstructors": true,
-      "allPublicMethods": true,
-      "allDeclaredFields": true
-    },
-    {
-      "condition": {
         "typeReached": "com.fasterxml.jackson.databind.ObjectMapper"
       },
       "type": "com.fasterxml.jackson.databind.ext.Java7SupportImpl",

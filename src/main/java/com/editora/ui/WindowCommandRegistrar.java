@@ -337,9 +337,7 @@ final class WindowCommandRegistrar {
 
         void textZoom(int direction);
 
-        void insertSnippetPicker();
-
-        void editUserSnippets();
+        SnippetCoordinator snippetCoordinator();
 
         void editProjectSettings();
 
@@ -1227,15 +1225,20 @@ final class WindowCommandRegistrar {
                                 .newFromTemplate(host.templateActions().defaultNewDir())));
         host.registry().register(Command.of("project.newFromTemplate", host.templateActions()::newProjectFromTemplate));
         host.registry().register(Command.of("project.editSettings", host::editProjectSettings));
-        host.registry().register(Command.of("template.reload", () -> {
-            host.templateActions().templates.reload();
-            host.setStatus(tr("status.templatesReloaded"));
-        }));
+        host.registry().register(Command.of("template.reload", host.templateActions()::reloadTemplates));
         host.registry().register(Command.of("template.editUser", host.templateActions()::editUserTemplates));
         host.registry()
                 .register(Command.of(
                         "template.manage", () -> host.settingsWindow().showTemplates(host.stage())));
-        host.registry().register(Command.of("spell.setLanguage", host.editorSettings()::chooseSpellLanguage));
+        SpellCoordinator spell = host.editorSettings().spell();
+        host.registry().register(Command.of("spell.setLanguage", spell::chooseLanguage));
+        host.registry().register(Command.of("spell.nextMisspelling", spell::nextMisspelling));
+        host.registry().register(Command.of("spell.previousMisspelling", spell::previousMisspelling));
+        host.registry().register(Command.of("spell.correctWord", spell::correctWord));
+        host.registry().register(Command.of("spell.addWord", spell::addWordToDictionary));
+        host.registry().register(Command.of("spell.ignoreWord", spell::ignoreWord));
+        host.registry().register(Command.of("spell.toggleForLanguage", spell::toggleForLanguage));
+        host.registry().register(Command.of("spell.reloadDictionary", spell::reloadDictionary));
         host.registry()
                 .register(Command.of(
                         "spell.manageDictionary", () -> host.settingsWindow().showSpellCheck(host.stage())));
@@ -1328,17 +1331,23 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "notes.export", () -> host.notesCoordinator().ifEnabled(host.notesCoordinator()::exportNotes)));
-        host.registry().register(Command.of("snippets.insert", host::insertSnippetPicker));
-        host.registry().register(Command.of("snippets.reload", () -> {
-            host.snippets().reload();
-            // A user file that does not parse loads as "no snippets"; say so rather than claim success.
-            java.util.List<String> unreadable = host.snippets().unreadableUserFiles();
-            host.setStatus(
-                    unreadable.isEmpty()
-                            ? tr("status.snippetsReloaded")
-                            : tr("settings.snippet.reloadUnreadable", String.join(", ", unreadable)));
-        }));
-        host.registry().register(Command.of("snippets.editUser", host::editUserSnippets));
+        host.registry()
+                .register(Command.of(
+                        "snippets.insert", () -> host.snippetCoordinator().showPicker()));
+        // A user file that does not parse loads as "no snippets"; reload says so rather than claim success.
+        host.registry()
+                .register(Command.of(
+                        "snippets.reload", () -> host.snippetCoordinator().reload()));
+        host.registry()
+                .register(Command.of(
+                        "snippets.endSession", () -> host.snippetCoordinator().endSession()));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleSnippetTabExpansion",
+                        () -> host.snippetCoordinator().toggleTabExpansion()));
+        host.registry()
+                .register(Command.of(
+                        "snippets.editUser", () -> host.snippetCoordinator().editUserSnippets()));
         host.registry()
                 .register(Command.of(
                         "snippets.manage", () -> host.settingsWindow().showSnippets(host.stage())));

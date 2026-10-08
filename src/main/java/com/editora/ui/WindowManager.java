@@ -1130,6 +1130,15 @@ public class WindowManager {
         }
     }
 
+    /** A user snippet file changed in {@code origin}'s window: every other window drops its snippet cache. */
+    public void broadcastSnippetsChanged(MainController origin) {
+        for (Holder h : new ArrayList<>(windows)) {
+            if (h.controller != origin) {
+                h.controller.snippetCoordinator().changedElsewhere();
+            }
+        }
+    }
+
     /** Re-runs the spell pass over every window's tabs after the shared user dictionary changed (a word added
      *  via "Add to Dictionary"), so another window's stale squiggles on that word clear immediately (#443). */
     public void broadcastUserDictionaryChanged() {

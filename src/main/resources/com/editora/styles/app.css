@@ -2518,6 +2518,18 @@
     -fx-background-color: -state-red-hover;
 }
 
+/* "Snippet 2/3": a snippet's tab stops are being filled in, so Tab moves between them. */
+.status-bar .status-snippet {
+    -fx-text-fill: -state-accent;
+    -fx-font-weight: bold;
+    -fx-background-color: -state-accent-bg;
+    -fx-background-radius: 999;
+    -fx-padding: 1 8 1 8;
+}
+.status-bar .status-snippet:hover {
+    -fx-background-color: -state-accent-hover;
+}
+
 /* Remote (SFTP) file indicator — shown only for a remote buffer. */
 .status-bar .status-remote {
     -fx-text-fill: -state-accent;
@@ -3734,6 +3746,12 @@
     -fx-font-size: 0.8em;
     -fx-font-style: italic;
 }
+/* The trigger column of the Settings → Snippets list. */
+.snippet-trigger {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-family: "monospace";
+    -fx-font-size: 0.85em;
+}
 
 /* Remote Sites tool window (saved SFTP connections). */
 .remote-panel { -fx-padding: 0; }
@@ -3975,6 +3993,11 @@
 .shortcut-unbound {
     -fx-text-fill: -color-fg-muted;
     -fx-font-style: italic;
+}
+
+/* Settings → Macros: a command step whose id names no command (it would be skipped at replay). */
+.macro-step-unknown {
+    -fx-text-fill: -color-danger-fg;
 }
 
 /* ---- UI Kit line icons -------------------------------------------------------------------------

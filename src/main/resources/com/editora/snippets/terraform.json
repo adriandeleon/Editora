@@ -1,0 +1,247 @@
+{
+  "Terraform block": {
+    "prefix": "terraform",
+    "body": [
+      "terraform {",
+      "\trequired_version = \">= ${1:1.6}\"",
+      "",
+      "\trequired_providers {",
+      "\t\t${2:aws} = {",
+      "\t\t\tsource  = \"${3:hashicorp/aws}\"",
+      "\t\t\tversion = \"${4:~> 5.0}\"",
+      "\t\t}",
+      "\t}",
+      "}$0"
+    ],
+    "description": "Terraform settings with a required provider"
+  },
+  "Provider": {
+    "prefix": "provider",
+    "body": [
+      "provider \"${1:aws}\" {",
+      "\t${2:region} = \"${3:us-east-1}\"$0",
+      "}"
+    ],
+    "description": "Provider configuration"
+  },
+  "Resource": {
+    "prefix": "resource",
+    "body": [
+      "resource \"${1:type}\" \"${2:name}\" {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Resource block"
+  },
+  "Data source": {
+    "prefix": "data",
+    "body": [
+      "data \"${1:type}\" \"${2:name}\" {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Data source block"
+  },
+  "Variable": {
+    "prefix": "variable",
+    "body": [
+      "variable \"${1:name}\" {",
+      "\ttype        = ${2:string}",
+      "\tdescription = \"${3:What it is for.}\"",
+      "\tdefault     = ${4:\"value\"}$0",
+      "}"
+    ],
+    "description": "Input variable"
+  },
+  "Sensitive variable": {
+    "prefix": "variables",
+    "body": [
+      "variable \"${1:name}\" {",
+      "\ttype        = ${2:string}",
+      "\tdescription = \"${3:What it is for.}\"",
+      "\tsensitive   = true$0",
+      "}"
+    ],
+    "description": "Sensitive input variable"
+  },
+  "Variable validation": {
+    "prefix": "validation",
+    "body": [
+      "validation {",
+      "\tcondition     = ${1:length(var.name) > 0}",
+      "\terror_message = \"${2:Why the value is not accepted.}\"",
+      "}$0"
+    ],
+    "description": "Validation rule inside a variable"
+  },
+  "Output": {
+    "prefix": "output",
+    "body": [
+      "output \"${1:name}\" {",
+      "\tdescription = \"${2:What it is.}\"",
+      "\tvalue       = ${3:value}$0",
+      "}"
+    ],
+    "description": "Output value"
+  },
+  "Locals": {
+    "prefix": "locals",
+    "body": [
+      "locals {",
+      "\t${1:name} = ${2:value}$0",
+      "}"
+    ],
+    "description": "Local values"
+  },
+  "Module": {
+    "prefix": "module",
+    "body": [
+      "module \"${1:name}\" {",
+      "\tsource = \"${2:./modules/name}\"",
+      "",
+      "\t$0",
+      "}"
+    ],
+    "description": "Module call"
+  },
+  "Backend S3": {
+    "prefix": "backends3",
+    "body": [
+      "backend \"s3\" {",
+      "\tbucket = \"${1:bucket}\"",
+      "\tkey    = \"${2:path/terraform.tfstate}\"",
+      "\tregion = \"${3:us-east-1}\"$0",
+      "}"
+    ],
+    "description": "S3 state backend (inside the terraform block)"
+  },
+  "Backend local": {
+    "prefix": "backendlocal",
+    "body": [
+      "backend \"local\" {",
+      "\tpath = \"${1:terraform.tfstate}\"$0",
+      "}"
+    ],
+    "description": "Local state backend (inside the terraform block)"
+  },
+  "Count": {
+    "prefix": "count",
+    "body": [
+      "count = ${1:var.enabled ? 1 : 0}$0"
+    ],
+    "description": "Conditional or repeated resource"
+  },
+  "For each": {
+    "prefix": "foreach",
+    "body": [
+      "for_each = ${1:toset(var.names)}$0"
+    ],
+    "description": "One instance per element"
+  },
+  "Dynamic block": {
+    "prefix": "dynamic",
+    "body": [
+      "dynamic \"${1:block}\" {",
+      "\tfor_each = ${2:var.items}",
+      "\tcontent {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Dynamic nested block"
+  },
+  "Lifecycle": {
+    "prefix": "lifecycle",
+    "body": [
+      "lifecycle {",
+      "\t${1|create_before_destroy,prevent_destroy|} = true$0",
+      "}"
+    ],
+    "description": "Lifecycle rules"
+  },
+  "Depends on": {
+    "prefix": "depends",
+    "body": [
+      "depends_on = [${1:resource.name}]$0"
+    ],
+    "description": "Explicit dependency"
+  },
+  "Tags": {
+    "prefix": "tags",
+    "body": [
+      "tags = {",
+      "\tName = \"${1:name}\"$0",
+      "}"
+    ],
+    "description": "Tags map"
+  },
+  "For expression list": {
+    "prefix": "forl",
+    "body": [
+      "[for ${1:item} in ${2:var.items} : ${0:item}]"
+    ],
+    "description": "For expression building a list"
+  },
+  "For expression map": {
+    "prefix": "form",
+    "body": [
+      "{ for ${1:key}, ${2:value} in ${3:var.items} : ${1:key} => ${0:value} }"
+    ],
+    "description": "For expression building a map"
+  },
+  "Conditional": {
+    "prefix": "ter",
+    "body": [
+      "${1:condition} ? ${2:when_true} : ${3:when_false}"
+    ],
+    "description": "Conditional expression"
+  },
+  "Interpolation": {
+    "prefix": "interp",
+    "body": [
+      "\"\\${${1:var.name}}\"$0"
+    ],
+    "description": "String interpolation"
+  },
+  "Heredoc": {
+    "prefix": "heredoc",
+    "body": [
+      "<<-${1:EOT}",
+      "\t$0",
+      "${1:EOT}"
+    ],
+    "description": "Indented heredoc string"
+  },
+  "Moved": {
+    "prefix": "moved",
+    "body": [
+      "moved {",
+      "\tfrom = ${1:old.address}",
+      "\tto   = ${2:new.address}",
+      "}$0"
+    ],
+    "description": "Record a resource's new address"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": [
+      "import {",
+      "\tto = ${1:resource.name}",
+      "\tid = \"${2:id}\"",
+      "}$0"
+    ],
+    "description": "Import an existing object into state"
+  },
+  "Check": {
+    "prefix": "check",
+    "body": [
+      "check \"${1:name}\" {",
+      "\tassert {",
+      "\t\tcondition     = ${2:condition}",
+      "\t\terror_message = \"${3:What is wrong.}\"",
+      "\t}",
+      "}$0"
+    ],
+    "description": "Check block with an assertion"
+  }
+}

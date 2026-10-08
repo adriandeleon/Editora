@@ -18,7 +18,9 @@ import java.util.Set;
  *   <li>placeholders {@code ${1:default}} (the default may itself contain nested stops/variables);</li>
  *   <li>mirrors — a number repeated reuses the first occurrence's value and tracks it live;</li>
  *   <li>choices {@code ${1|a,b,c|}} — the first option is the value (a dropdown at edit time);</li>
- *   <li>variables {@code $VAR} / {@code ${VAR:default}} resolved by the supplied resolver;</li>
+ *   <li>variables {@code $VAR} / {@code ${VAR:default}} resolved by the supplied resolver; a name the
+ *       resolver does not know is <em>not</em> a variable and stays in the text exactly as written
+ *       ({@code $PATH}, {@code ${HOME}}), unless it carries a default, which is then used;</li>
  *   <li>regex transforms {@code ${1/re/fmt/flags}} — each occurrence's text is derived from the stop's
  *       value by {@link SnippetTransform};</li>
  *   <li>escapes {@code \$ \} \\}.</li>
@@ -96,6 +98,7 @@ public final class SnippetParser {
         final Map<Integer, List<String>> choices = new LinkedHashMap<>();
         final Map<Integer, Integer> primaryIndex = new HashMap<>();
         final Set<Integer> definerSeen = new HashSet<>(); // stops whose value-defining occurrence was handled
+        final Set<Integer> open = new HashSet<>(); // definers whose default is being rendered right now
         int pos;
 
         Ctx(String s, Variables vars, boolean pass1, Map<Integer, String> values) {
@@ -182,7 +185,12 @@ public final class SnippetParser {
                 j++;
             }
             String val = c.vars.resolve(s.substring(n, j));
-            c.out.append(val == null ? "" : val);
+            // An unknown name is not a variable at all: "$PATH", "$this" and "$_" are shell, PowerShell and
+            // Perl text, and dropping them silently corrupted the body. Kept exactly as written — except
+            // after a literal '$': "$$this" is how VS Code snippets spell "$this" (there an unknown variable
+            // inserts its bare name), so the second dollar is not repeated.
+            boolean afterDollar = c.pos > 0 && s.charAt(c.pos - 1) == '$';
+            c.out.append(val != null ? val : afterDollar ? s.substring(n, j) : s.substring(c.pos, j));
             c.pos = j;
             return true;
         }
@@ -227,10 +235,7 @@ public final class SnippetParser {
                     parsePlaceholder(c, num, j);
                     yield true;
                 }
-                case '|' -> { // ${1|a,b,c|}
-                    parseChoice(c, num, j);
-                    yield true;
-                }
+                case '|' -> parseChoice(c, num, j); // ${1|a,b,c|}
                 case '/' -> { // ${1/re/fmt/flags}
                     parseTransform(c, num, j);
                     yield true;
@@ -255,11 +260,23 @@ public final class SnippetParser {
     /** {@code ${n:default}} — the first such occurrence defines the value; a later one mirrors it. */
     private static void parsePlaceholder(Ctx c, int num, int colon) {
         boolean definer = c.definerSeen.add(num);
+        if (!definer && c.open.contains(num)) {
+            // ${1:${1:rec}} — the stop names itself inside its own default. There is no value to mirror yet
+            // (it is being built right now), so the inner default is simply part of the outer one.
+            c.pos = colon + 1;
+            parseSeq(c, true);
+            if (c.pos < c.s.length() && c.s.charAt(c.pos) == '}') {
+                c.pos++;
+            }
+            return;
+        }
         if (definer) {
             c.pos = colon + 1; // past ':'
             int start = c.out.length();
             int open = c.seq++; // before the default, so the stops inside it are numbered within this one
+            c.open.add(num);
             parseSeq(c, true); // render the default (registers nested definers + values)
+            c.open.remove(num);
             c.values.putIfAbsent(num, c.out.substring(start));
             if (!c.pass1) {
                 record(c, num, start, c.out.length(), null, open);
@@ -277,22 +294,44 @@ public final class SnippetParser {
         }
     }
 
-    /** {@code ${n|a,b,c|}} — captures the options; the first is the value. */
-    private static void parseChoice(Ctx c, int num, int bar) {
-        int close = c.s.indexOf("|}", bar + 1);
-        List<String> opts = splitChoices(close < 0 ? c.s.substring(bar + 1) : c.s.substring(bar + 1, close));
+    /**
+     * {@code ${n|a,b,c|}} — captures the options; the first is the value. An unterminated list (no
+     * {@code |}}) is not a choice: it used to swallow the rest of the body into the last option, so it is
+     * left as literal text instead (returns false, consuming nothing). A choice list on a stop that an
+     * earlier {@code ${n:default}} already defined still gives that stop its dropdown; the default stays.
+     */
+    private static boolean parseChoice(Ctx c, int num, int bar) {
+        int close = choiceClose(c.s, bar + 1);
+        if (close < 0) {
+            return false;
+        }
+        List<String> opts = splitChoices(c.s.substring(bar + 1, close));
         boolean definer = c.definerSeen.add(num);
         if (definer) {
             c.values.putIfAbsent(num, opts.isEmpty() ? "" : opts.get(0));
-            if (!c.pass1) {
-                c.choices.put(num, opts);
-            }
+        }
+        if (!c.pass1) {
+            c.choices.putIfAbsent(num, opts);
         }
         emitOccurrence(c, num, null);
         if (!c.pass1 && definer) {
             markPrimary(c, num);
         }
-        c.pos = close < 0 ? c.s.length() : close + 2;
+        c.pos = close + 2;
+        return true;
+    }
+
+    /** Index of the {@code |}} that ends a choice list starting at {@code from}, skipping escapes; -1 if none. */
+    private static int choiceClose(String s, int from) {
+        for (int k = from; k + 1 < s.length(); k++) {
+            char ch = s.charAt(k);
+            if (ch == '\\') {
+                k++;
+            } else if (ch == '|' && s.charAt(k + 1) == '}') {
+                return k;
+            }
+        }
+        return -1;
     }
 
     /** {@code ${n/re/fmt/flags}} — a transform occurrence, derived from the stop's value. */
@@ -352,14 +391,18 @@ public final class SnippetParser {
             }
             return true;
         }
-        c.out.append(value == null ? "" : value);
-        c.pos = (j < s.length() && s.charAt(j) == '}') ? j + 1 : j;
+        int end = (j < s.length() && s.charAt(j) == '}') ? j + 1 : j;
+        c.out.append(value == null ? s.substring(c.pos, end) : value); // unknown: kept as written, see tryDollar
+        c.pos = end;
         return true;
     }
 
     /** Appends one leaf occurrence's text (value, transformed when {@code transform != null}) and records
      *  its range in pass 2. */
     private static void emitOccurrence(Ctx c, int num, SnippetTransform transform) {
+        if (c.open.contains(num)) {
+            return; // ${1:a$1} — a stop cannot mirror the default it is still defining
+        }
         String value = c.value(num);
         String text = transform == null ? value : transform.apply(value);
         int start = c.out.length();

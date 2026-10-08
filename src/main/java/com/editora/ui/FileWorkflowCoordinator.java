@@ -183,6 +183,9 @@ final class FileWorkflowCoordinator {
         /** A {@code .editorconfig} was saved: every window re-resolves the rules of the files it has open. */
         void editorConfigSaved();
 
+        /** {@code file} was just written by a save (a user snippet file's snippets go live at once). */
+        void fileSaved(Path file);
+
         Path tabPath(Tab tab);
 
         void requestSave();
@@ -2408,7 +2411,9 @@ final class FileWorkflowCoordinator {
         if (".editorconfig".equals(String.valueOf(request.target().getFileName()))) {
             host.editorConfigSaved(); // its rules reach the files already open, in every window
         }
+        host.editorSettings().spell().fileSaved(request.target()); // dictionary.txt edited by hand applies now
         ProjectPanel.noteLocalWrite(host.projectPanel(), request.target()); // ours: not an external change
+        host.fileSaved(request.target());
         if (showFeedback && !request.buffer().isDisposed()) {
             host.setStatus(savedStatus(request, disk, autoSave));
             host.git().refresh();

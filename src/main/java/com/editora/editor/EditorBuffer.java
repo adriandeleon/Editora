@@ -58,7 +58,6 @@ import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
 import com.editora.snippet.SnippetSessions;
-import com.editora.snippet.VariableResolver;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
 import com.editora.typst.TypstMarkup;
@@ -517,6 +516,11 @@ public class EditorBuffer implements TabContent {
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
+
+    private boolean snippetTabExpansion = true;
+    private java.util.function.UnaryOperator<Path> snippetWorkspaceRoot = file -> null;
+    private java.util.function.Consumer<int[]> snippetProgress = progress -> {};
+    private SnippetFieldOverlay snippetOverlay; // lazily attached when the first session starts
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */
 
     // Settings: auto-show docs beside the list
@@ -777,14 +781,9 @@ public class EditorBuffer implements TabContent {
     private Integer shebangJavaSource;
     /** True once the user explicitly picked a language (status bar), so shebang detection won't fight it. */
     private boolean languageUserOverride;
-    // --- Spell checking (Lucene Hunspell via SpellCheckOverlay); off until enabled by the controller. ---
-    private SpellChecker spellChecker;
-    private boolean spellCheckOn;
-    private String spellLanguage = "en_US";
-    private java.util.Set<String> spellUserWords = new java.util.HashSet<>();
-    private boolean spellUserWordsEnabled = true; // honor the personal dictionary (Settings.personalDictionary)
-    private boolean spellTechnicalEnabled = true; // honor the technical dictionary (Settings.technicalDictionary)
-    private java.util.function.Consumer<String> onAddToDictionary = w -> {};
+    /** Spell checking (Lucene Hunspell, drawn by {@link #spellOverlay}); off until the controller enables it. */
+    private final BufferSpell spell = new BufferSpell(
+            area, spellOverlay, this::getFocusedArea, () -> language, this::isEditable, () -> largeFile);
     /** Bumped on every highlight request (FX thread only); lets background results discard if stale. */
     /** Volatile: bumped on the FX thread, read per line by the background tokenize's cancel check. */
     private volatile long highlightGen;
@@ -969,6 +968,8 @@ public class EditorBuffer implements TabContent {
         completionActions.addCompletionKeys(area); // popup owns Enter/Tab before snippet and indentation filters
         completionActions.installCommitCharacters(area);
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
+        snippetSession.setOnChanged(this::snippetSessionChanged);
+        focusedView.addListener((o, was, now) -> snippetSession.focusMovedTo(now)); // the other split view
         addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
@@ -2078,12 +2079,6 @@ public class EditorBuffer implements TabContent {
         // toggled — see anchorOverText); they are mouse-transparent so clicks reach the editor.
         anchorOverText(whitespace);
         anchorOverText(spellOverlay); // red squiggles
-        spellChecker = new SpellChecker(spellLanguage, spellUserWords);
-        spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
-        spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
-        spellOverlay.setChecker(spellChecker);
-        spellOverlay.setProseMode(isProse());
-        spellOverlay.setMarkdown(isMarkdown()); // skip fenced ``` code blocks from spell check
         anchorOverText(mdLintOverlay);
         installImageDrop(area);
         anchorOverText(inlineValues); // inline debugger values (active only while suspended in this file)
@@ -2120,9 +2115,6 @@ public class EditorBuffer implements TabContent {
         area.requestFollowCaret();
         area.requestFocus();
     }
-
-    /** A misspelled word under the cursor: its text and absolute [start, end) offsets. */
-    private record SpellHit(String word, int start, int end) {}
 
     private final ContextMenu contextMenu = new ContextMenu();
     /** The view the context menu was last asked for: its items act where the user clicked, in either pane. */
@@ -2199,11 +2191,7 @@ public class EditorBuffer implements TabContent {
                 items.add(aiActionsMenu());
                 items.add(new SeparatorMenuItem());
             }
-            SpellHit hit = spellHitAt(at.offset());
-            if (hit != null) {
-                items.addAll(spellMenuItems(hit));
-                items.add(new SeparatorMenuItem());
-            }
+            items.addAll(spell.menuItems(at.offset(), contextMenu.getItems()));
             // One submenu per markup language, the way the LSP and build-tool actions are already grouped:
             // eight flat "Typst: …" entries pushed cut/copy/paste and the spelling suggestions down the menu
             // and made the file-type actions indistinguishable from the editing ones. Run/Debug stay at the
@@ -2505,96 +2493,16 @@ public class EditorBuffer implements TabContent {
         return List.of(cut, copy, paste, new SeparatorMenuItem(), undo, redo, new SeparatorMenuItem(), selectAll);
     }
 
-    /** Suggestion items (replace the word) plus "Add to Dictionary"/"Ignore" for a misspelled word. */
-    private List<MenuItem> spellMenuItems(SpellHit hit) {
-        List<MenuItem> items = new java.util.ArrayList<>();
-        List<String> suggestions = spellChecker.suggest(hit.word());
-        if (suggestions.isEmpty()) {
-            MenuItem none = new MenuItem(tr("editmenu.noSuggestions"));
-            none.setGraphic(MenuIcons.spellcheck());
-            none.setDisable(true);
-            items.add(none);
-        } else {
-            for (String s : suggestions) {
-                MenuItem mi = new MenuItem(s);
-                mi.setGraphic(MenuIcons.spellcheck());
-                mi.getStyleClass().add("spell-suggestion");
-                mi.setOnAction(e -> {
-                    if (isEditable()) {
-                        area.replaceText(hit.start(), hit.end(), s);
-                    }
-                });
-                items.add(mi);
-            }
-        }
-        items.add(new SeparatorMenuItem());
-        MenuItem add = new MenuItem(tr("editmenu.addToDictionary"));
-        add.setGraphic(MenuIcons.add());
-        add.setOnAction(e -> addToDictionary(hit.word()));
-        MenuItem ignore = new MenuItem(tr("editmenu.ignore"));
-        ignore.setGraphic(MenuIcons.block());
-        ignore.setOnAction(e -> {
-            spellChecker.ignore(hit.word());
-            spellOverlay.refresh();
-        });
-        items.add(add);
-        items.add(ignore);
-        return items;
-    }
-
-    /** The misspelled word at document {@code offset}, or {@code null}. */
-    private SpellHit spellHitAt(int offset) {
-        if (!spellCheckOn || spellChecker == null || !spellChecker.ready() || largeFile) {
-            return null;
-        }
-        var pos = area.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward);
-        int paragraph = pos.getMajor();
-        int col = pos.getMinor();
-        String line = area.getParagraph(paragraph).getText();
-        for (int[] span : SpellChecker.wordSpans(line)) {
-            if (col >= span[0] && col <= span[1]) {
-                int absStart = area.getAbsolutePosition(paragraph, span[0]);
-                if (!spellEligible(absStart) || SpellChecker.partOfStructuredToken(line, span[0], span[1])) {
-                    return null; // not eligible, or part of a URL/path/identifier — not a misspelling
-                }
-                String word = line.substring(span[0], span[1]);
-                return spellChecker.isMisspelled(word)
-                        ? new SpellHit(word, absStart, area.getAbsolutePosition(paragraph, span[1]))
-                        : null;
-            }
-        }
-        return null;
-    }
-
-    /** Mirror of {@link SpellCheckOverlay}'s eligibility: which words are checked in this buffer. */
-    private boolean spellEligible(int abs) {
-        java.util.Collection<String> style = area.getStyleOfChar(abs);
-        return isProse()
-                ? !style.contains("code") && !style.contains("link")
-                : style.contains("comment") || style.contains("string");
-    }
-
-    private void addToDictionary(String word) {
-        if (word == null || word.isBlank()) {
-            return;
-        }
-        String lower = word.toLowerCase(java.util.Locale.ROOT);
-        // Persist FIRST. The callback (ConfigManager.addUserWord) adds the word to the shared dictionary set
-        // and writes dictionary.txt — but it only writes when the word is newly added to that set, and
-        // spellUserWords *is* that shared set. Adding here first would make the callback see the word as
-        // already present and silently skip the file write (the word then works this session but never
-        // persists). Let the callback add + persist; the local add below is a no-op when shared, and only
-        // matters when no persist callback is wired.
-        onAddToDictionary.accept(lower);
-        spellUserWords.add(lower);
-        spellOverlay.refresh();
+    /** This buffer's spell checking: its settings, the word at the caret, and what can be done with it. */
+    public BufferSpell spell() {
+        return spell;
     }
 
     /** Drops this buffer's memoized spell verdicts and repaints. Call after the shared user-word set changes:
      *  the set is shared, but each buffer's overlay memoizes its own per-word results, so without this the
      *  other tabs keep squiggling a word that was just added to the dictionary. */
     public void refreshSpell() {
-        spellOverlay.refresh();
+        spell.refresh();
     }
 
     /** The primary view. Tool windows, overlays, folding and highlighting all bind to this one. */
@@ -4917,7 +4825,7 @@ public class EditorBuffer implements TabContent {
         // Enter-with-indent and an auto-closed pair place their own caret once this returns (after the
         // indent, between the pair), so for those it is read back then rather than predicted now.
         boolean oneChar = c.getInserted().length() == 1;
-        javafx.application.Platform.runLater(
+        caretFixes.defer(
                 () -> a.moveTo(Math.clamp((oneChar ? caret : a.getCaretPosition()) + delta, 0, a.getLength())));
     }
 
@@ -4975,7 +4883,14 @@ public class EditorBuffer implements TabContent {
         // plainTextChanges, and RichTextFX re-applies that insertion's own caret position once our
         // subscriber returns — which would strand the caret inside the inserted prefix (delta > 0) and send
         // the next characters to the wrong place. Deferring makes our position the last one to win.
-        javafx.application.Platform.runLater(() -> a.moveTo(Math.min(restored, a.getLength())));
+        caretFixes.defer(() -> a.moveTo(Math.min(restored, a.getLength())));
+    }
+
+    private final DeferredFixes caretFixes = new DeferredFixes();
+
+    /** Applies pending caret fix-ups now (see {@link DeferredFixes}); a macro replay calls it after each key. */
+    public void flushDeferredCaretFixes() {
+        caretFixes.flush();
     }
 
     /** Per-column "rainbow" coloring for CSV/TSV buffers (replaces the source.csv grammar highlighting). */
@@ -6704,6 +6619,7 @@ public class EditorBuffer implements TabContent {
             area2.setStyle(style);
         }
         whitespace.setFont(family, size);
+        spell.geometryChanged();
         inlineValues.setFont(family, size);
         stickyScroll.setFont(family, size);
         if (gitLines.blame() != null) {
@@ -6819,6 +6735,7 @@ public class EditorBuffer implements TabContent {
     public void setRenderingActive(boolean active) {
         boolean wasInactive = !renderingActive;
         renderingActive = active;
+        if (!active) snippetSession.cancel(); // a background tab: Tab must not come back to its fields
         if (active && wasInactive) {
             scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
         }
@@ -7807,11 +7724,10 @@ public class EditorBuffer implements TabContent {
         this.language = name;
         this.grammar = g;
         folds.setLanguage(language);
-        spellOverlay.setProseMode(isProse()); // prose checks all words; code only comments/strings
-        // Must be re-pushed here, not just from installOverlays(): that runs in the constructor, before the
-        // language is known, so it always saw plaintext ⇒ markdown stayed false forever and ``` fenced code
-        // blocks WERE spell-checked (sudo/cd/xzf squiggled inside a README's bash block).
-        spellOverlay.setMarkdown(isMarkdown());
+        // Which words are checked, which lines are code, and whether this language is checked at all all
+        // follow the language. Must be pushed here, not only at construction: the constructor runs before
+        // the language is known, which once left every Markdown buffer checking its ``` fenced code blocks.
+        spell.languageChanged();
         invalidateHighlighting(); // grammar changed with no text edit — re-tokenize the whole document
         applyHighlighting();
     }
@@ -7849,6 +7765,7 @@ public class EditorBuffer implements TabContent {
         this.tabSize = tabSize;
         TabStops.apply(viewHost, tabSize);
         minimap.setTabSize(tabSize);
+        spell.geometryChanged();
     }
 
     public int getTabSize() {
@@ -7926,73 +7843,21 @@ public class EditorBuffer implements TabContent {
         return LanguageRegistry.plaintext().equals(language) || "markdown".equals(language);
     }
 
-    /** Enables/disables spell checking for this buffer (driven from Settings by the controller). */
+    /** Enables/disables spell checking for this buffer (the master switch; see {@link BufferSpell#apply}). */
     public void setSpellCheckEnabled(boolean on) {
-        this.spellCheckOn = on;
-        if (on) {
-            SpellDictionaries.ensureBuilt(spellLanguage, spellOverlay::refresh);
-        }
-        applySpellActive();
+        spell.setEnabled(on);
     }
 
     public boolean isSpellCheckEnabled() {
-        return spellCheckOn;
+        return spell.isEnabled();
     }
 
-    /** Sets the dictionary language id (e.g. {@code en_US}); rebuilds the checker and redraws when ready. */
     public void setSpellLanguage(String langId) {
-        if (langId == null || langId.equals(spellLanguage)) {
-            return;
-        }
-        this.spellLanguage = langId;
-        if (spellChecker != null) {
-            spellChecker.setLanguage(langId, spellOverlay::refresh);
-        }
-        spellOverlay.refresh();
+        spell.setLanguage(langId);
     }
 
     public String getSpellLanguage() {
-        return spellLanguage;
-    }
-
-    /** Supplies the shared (persisted) user-dictionary word set; words added here are never flagged. */
-    public void setSpellUserWords(java.util.Set<String> words) {
-        if (words == null || words == spellUserWords) {
-            return;
-        }
-        this.spellUserWords = words;
-        spellChecker = new SpellChecker(spellLanguage, spellUserWords);
-        spellChecker.setUserWordsEnabled(spellUserWordsEnabled);
-        spellChecker.setTechnicalWordsEnabled(spellTechnicalEnabled);
-        spellOverlay.setChecker(spellChecker);
-    }
-
-    /** Enables/disables the personal dictionary (user words); off re-flags those words. Repaints squiggles. */
-    public void setUserDictionaryEnabled(boolean enabled) {
-        spellUserWordsEnabled = enabled;
-        if (spellChecker != null) {
-            spellChecker.setUserWordsEnabled(enabled);
-            spellOverlay.refresh();
-        }
-    }
-
-    /** Enables/disables the bundled technical dictionary; off re-flags those terms. Repaints squiggles. */
-    public void setTechnicalDictionaryEnabled(boolean enabled) {
-        spellTechnicalEnabled = enabled;
-        if (spellChecker != null) {
-            spellChecker.setTechnicalWordsEnabled(enabled);
-            spellOverlay.refresh();
-        }
-    }
-
-    /** Called when the user picks "Add to Dictionary"; the controller persists the word. */
-    public void setOnAddToDictionary(java.util.function.Consumer<String> callback) {
-        this.onAddToDictionary = callback == null ? w -> {} : callback;
-    }
-
-    /** The overlay is active only when enabled and not in large-file mode (highlighting is off there). */
-    private void applySpellActive() {
-        spellOverlay.setActive(spellCheckOn && !largeFile);
+        return spell.getLanguage();
     }
 
     /**
@@ -8008,7 +7873,7 @@ public class EditorBuffer implements TabContent {
         highlightGen++; // discard any in-flight highlight result
         folds.setHeuristicEnabled(!large); // never schedule a whole-document fold scan for a large file
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
-        applySpellActive(); // spell checking is off in large-file mode (like highlighting)
+        spell.applyActive(); // spell checking is off in large-file mode (like highlighting)
         whitespace.setSuppressed(large); // so are the whitespace markers, whatever the setting says
         // Large files don't need (and shouldn't pay the memory for) undo history.
         applyUndoMode();
@@ -8331,6 +8196,31 @@ public class EditorBuffer implements TabContent {
         return snippetSession.isActive();
     }
 
+    /** {@code Settings.snippetTabExpansion}: whether Tab expands a trigger (the popup and picker always do). */
+    public void setSnippetTabExpansion(boolean on) {
+        this.snippetTabExpansion = on;
+    }
+
+    /** A file's project root ({@code WORKSPACE_*}), and who hears the active field's {position, count} (null = ended). */
+    public void setSnippetHooks(
+            java.util.function.UnaryOperator<Path> root, java.util.function.Consumer<int[]> progress) {
+        this.snippetWorkspaceRoot = root == null ? file -> null : root;
+        this.snippetProgress = progress == null ? p -> {} : progress;
+    }
+
+    /** Leaves the running snippet session where the caret is (what Escape does). */
+    public void endSnippetSession() {
+        snippetSession.cancel();
+    }
+
+    private void snippetSessionChanged() {
+        if (snippetOverlay == null && snippetSession.isActive()) {
+            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), todoOverlay);
+        }
+        if (snippetOverlay != null) snippetOverlay.refresh();
+        snippetProgress.accept(snippetSession.progress());
+    }
+
     /**
      * Tab/Shift-Tab/Escape handling for snippets, as a key filter (runs before RichTextFX's own Tab
      * indent). With an active snippet, Tab/Shift-Tab cycle fields and Escape cancels; otherwise Tab
@@ -8356,8 +8246,11 @@ public class EditorBuffer implements TabContent {
             if (c < 0x20 || c == 0x7F) {
                 return; // control / non-printable (Enter, Tab, Backspace handled elsewhere)
             }
-            if (snippetSession.replaceInActiveField(
-                    a.getSelection().getStart(), a.getSelection().getEnd(), ch)) {
+            // A bracket or quote is paired first (its mirrors follow reactively, as one undo step); the
+            // atomic path below would swallow the key before the auto-close filter saw it.
+            if (TypedText.isText(e) && applyAutoCloseTyped(a, c)
+                    || snippetSession.replaceInActiveField(
+                            a.getSelection().getStart(), a.getSelection().getEnd(), ch)) {
                 e.consume(); // handled atomically; don't let the area also insert the char
             }
         });
@@ -8366,7 +8259,9 @@ public class EditorBuffer implements TabContent {
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (hasActiveSnippet()) {
+            // ownsKeys applies the "caret has left the fields" rule first, so a session the caret walked
+            // away from never takes this Tab — it indents like any other.
+            if ((e.getCode() == KeyCode.TAB || e.getCode() == KeyCode.ESCAPE) && snippetSession.ownsKeys(a)) {
                 if (e.getCode() == KeyCode.TAB) {
                     if (e.isShiftDown()) {
                         snippetSession.previous();
@@ -8535,7 +8430,8 @@ public class EditorBuffer implements TabContent {
      * newline indented per {@link Indenter} (inherit + block-opener +1 + matching-pair split). When a
      * <b>closing token</b> is typed — a {@code )]}} bracket alone on the line, or a closer keyword like
      * {@code end}/{@code fi} completed — the line is re-aligned to its opener's indent. Inert in
-     * read-only mode and while a snippet session owns the keys.
+     * read-only mode. Inside a snippet field these assists work as anywhere else: the session's range
+     * tracking absorbs their edits.
      */
     private void addAutoIndent(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
@@ -8550,7 +8446,7 @@ public class EditorBuffer implements TabContent {
                     || e.isMetaDown()) {
                 return;
             }
-            if (!isEditable() || hasActiveSnippet()) {
+            if (!isEditable()) {
                 return;
             }
             applyEnter(a);
@@ -8574,7 +8470,6 @@ public class EditorBuffer implements TabContent {
             if (e.getCode() != KeyCode.BACK_SPACE
                     || viewMode
                     || !isEditable()
-                    || hasActiveSnippet()
                     || e.isControlDown()
                     || e.isAltDown()
                     || e.isMetaDown()
@@ -8614,7 +8509,6 @@ public class EditorBuffer implements TabContent {
                 return;
             }
             if (!isEditable()
-                    || hasActiveSnippet()
                     || e.getCharacter().length() != 1
                     || !TypedText.isText(e)
                     || a.getSelection().getLength() > 0) {
@@ -8669,7 +8563,7 @@ public class EditorBuffer implements TabContent {
         if (typed != ';' || !smartSemicolonEnabled || !lspActive || smartSemicolonRequester == null) {
             return;
         }
-        if (!isEditable() || hugeFile || largeFile || isNarrowed() || hasActiveSnippet()) {
+        if (!isEditable() || hugeFile || largeFile || isNarrowed()) {
             return;
         }
         int typedAt = a.getCaretPosition();
@@ -8724,7 +8618,7 @@ public class EditorBuffer implements TabContent {
      * is the behaviour that makes on-type formatting infuriating in other editors.
      *
      * <p>Inert unless the setting is on, the server advertises a trigger set containing this character, and
-     * the buffer is an editable, normal-sized, single-caret LSP buffer with no snippet session. A trigger
+     * the buffer is an editable, normal-sized, single-caret LSP buffer. A trigger
      * consumed by auto-close (typing {@code }} to skip over an inserted one) doesn't reach here — that path
      * leaves the line already correct.
      */
@@ -8735,11 +8629,7 @@ public class EditorBuffer implements TabContent {
         if (!lspOnTypeTriggers.contains(typed)) {
             return;
         }
-        if (!isEditable()
-                || hugeFile
-                || largeFile
-                || hasActiveSnippet()
-                || a.getSelection().getLength() > 0) {
+        if (!isEditable() || hugeFile || largeFile || a.getSelection().getLength() > 0) {
             return;
         }
         int par = a.getCurrentParagraph();
@@ -8989,7 +8879,7 @@ public class EditorBuffer implements TabContent {
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
+            if (!isEditable() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
                 return;
             }
             char c = e.getCharacter().charAt(0);
@@ -9005,7 +8895,6 @@ public class EditorBuffer implements TabContent {
             if (e.getCode() != KeyCode.BACK_SPACE
                     || viewMode
                     || !isEditable()
-                    || hasActiveSnippet()
                     || e.isControlDown()
                     || e.isAltDown()
                     || e.isMetaDown()
@@ -9106,42 +8995,17 @@ public class EditorBuffer implements TabContent {
         a.requestFocus();
     }
 
-    /** Expands the token before the caret if it matches a snippet prefix; returns whether it did. */
+    /** Expands the trigger before the caret if Tab may ({@link SnippetTyping#triggerAtCaret}); returns whether it did. */
     private boolean expandPrefixAtCaret(CodeArea a) {
-        if (!isEditable() || a.getSelection().getLength() > 0) {
+        if (!isEditable() || !snippetTabExpansion || a.getSelection().getLength() > 0) {
             return false;
         }
-        // A snippet prefix is a short token ending at the caret: look at the same bounded stretch the
-        // completion prefix uses instead of building the whole document on every plain Tab.
-        int base = Math.max(0, a.getCaretPosition() - BufferCompletion.PREFIX_LOOKBACK);
-        String text = a.getText(base, a.getCaretPosition());
-        int caret = text.length();
-        int identStart = caret;
-        while (identStart > 0 && completionActions.isPrefixChar(text.charAt(identStart - 1))) {
-            identStart--;
+        com.editora.snippet.TabExpansion.Match m =
+                SnippetTyping.triggerAtCaret(a, language, isProse(), snippetProvider);
+        if (m != null) {
+            startSnippet(a, m.snippet(), m.start(), a.getCaretPosition());
         }
-        // Plenty of snippet prefixes aren't identifiers — `#include`/`#ifndef` (c/cpp), `!` (the emmet html
-        // skeleton), `?xml`, `---` (yaml), `->` (ruby), `[PSCustomObject]` — so try the whole
-        // non-whitespace token first and fall back to the identifier run. Matching only the identifier run
-        // left 42 bundled snippets unreachable from the keyboard: at `#inc` the scan stops on the `#` and
-        // looks up "inc", which no snippet is registered under.
-        int tokenStart = completionActions.snippetTokenStart(text, caret);
-        if (tokenStart < identStart) {
-            Snippet wide = snippetProvider.apply(language, text.substring(tokenStart, caret));
-            if (wide != null) {
-                startSnippet(a, wide, base + tokenStart, base + caret);
-                return true;
-            }
-        }
-        if (identStart == caret) {
-            return false;
-        }
-        Snippet snippet = snippetProvider.apply(language, text.substring(identStart, caret));
-        if (snippet == null) {
-            return false;
-        }
-        startSnippet(a, snippet, base + identStart, base + caret);
-        return true;
+        return m != null;
     }
 
     /** Parses {@code snippet}, replaces {@code [from,to)} with the expansion, and begins a session. */
@@ -9150,23 +9014,12 @@ public class EditorBuffer implements TabContent {
     }
 
     private void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
-        String fileName = path == null ? "" : path.getFileName().toString();
-        String directory = path == null || path.toAbsolutePath().getParent() == null
-                ? ""
-                : path.toAbsolutePath().getParent().toString();
-        String filePath = path == null ? "" : path.toAbsolutePath().toString();
-        String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
-                ? LineEndings.toLf(
-                        javafx.scene.input.Clipboard.getSystemClipboard().getString())
-                : "";
-        int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
-                .getMajor();
-        String currentLine = a.getParagraph(line).getText();
-        VariableResolver vars =
-                new VariableResolver(fileName, directory, filePath, a.getSelectedText(), clip, line, currentLine);
-        ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
+        Path root = path == null ? null : snippetWorkspaceRoot.apply(path);
+        ParsedSnippet parsed =
+                SnippetParser.parse(snippet.body(), SnippetTyping.variables(a, from, to, path, language, root));
+        String currentLine = a.getParagraph(SnippetTyping.lineOf(a, from)).getText();
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
-        // asIs (no reindent) keeps the text untouched; otherwise the body's tabs become the buffer's unit.
+        // asIs (no reindent) keeps the text untouched; otherwise the body's indentation becomes the buffer's unit.
         String unit = reindent ? indentUnit() : null;
         snippetSession.start(a, parsed, from, to, indent, unit);
     }
@@ -9662,6 +9515,11 @@ public class EditorBuffer implements TabContent {
         if (!largeFile) {
             area.getUndoManager().preventMerge();
         }
+    }
+
+    /** Makes every edit until the returned action runs ONE undo/redo step (a macro replay), in both views. */
+    public Runnable beginUndoSpan() {
+        return largeFile ? () -> {} : CompletionUndoManager.beginSpan(area, area2);
     }
 
     /** The accessible portion — the narrowed region, or the whole document when not narrowed. */

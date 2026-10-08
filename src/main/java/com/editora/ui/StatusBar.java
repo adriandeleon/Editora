@@ -99,6 +99,10 @@ public final class StatusBar extends HBox {
     private final Label csvField = segment("csv.copyAsMarkdownTable", tr("statusbar.tip.csvField"));
 
     private final Label language = segment("buffer.setLanguage", tr("statusbar.tip.setLanguage"));
+    /** The dictionary the active buffer is spell-checked with ({@code en-US}); clickable → the language
+     *  picker. Hidden when the buffer is not being checked, so its presence also says that it is. */
+    private final Label spell = segment("spell.setLanguage", tr("statusbar.tip.spell"));
+
     private final Label indent = segment("buffer.setTabSize", tr("statusbar.tip.setTabSize"));
     private final Label endings = segment("buffer.convertLineEndings", tr("statusbar.tip.convertEndings"));
     /** File size; clicking it toggles the File Information tool window. */
@@ -120,6 +124,8 @@ public final class StatusBar extends HBox {
     private final Label editorConfig = segment("editorConfig.openActive", tr("statusbar.tip.editorConfig"));
 
     private final Label narrowed = segment("edit.widen", tr("statusbar.tip.narrowed"));
+    /** "Snippet 2/3" while a snippet's tab stops are being filled in; clickable → leave the session. */
+    private final Label snippet = segment("snippets.endSession", tr("statusbar.tip.snippet"));
     /** Read-only ("View mode") indicator; shown only when the active buffer is non-editable. */
     private final Label readOnly = segment("view.toggleReadOnly", tr("statusbar.tip.readOnly"));
     /** Text-zoom percentage (clickable to reset to 100%). */
@@ -188,6 +194,10 @@ public final class StatusBar extends HBox {
         narrowed.setText(tr("statusbar.narrowed"));
         narrowed.setVisible(false);
         narrowed.setManaged(false);
+        // Tab is doing something else while a session runs, so that too is said where the eye checks.
+        snippet.getStyleClass().add("status-snippet");
+        snippet.setVisible(false);
+        snippet.setManaged(false);
 
         editorConfig.getStyleClass().add("status-editorconfig");
         editorConfig.setText(tr("statusbar.editorConfig"));
@@ -267,7 +277,9 @@ public final class StatusBar extends HBox {
                         position,
                         csvField,
                         language,
+                        spell,
                         narrowed,
+                        snippet,
                         editorConfig,
                         formatGroup,
                         size);
@@ -789,6 +801,12 @@ public final class StatusBar extends HBox {
         language.setManaged(hasBuffer && !simpleMode);
         formatGroup.setVisible(hasBuffer && !simpleMode);
         formatGroup.setManaged(hasBuffer && !simpleMode);
+        boolean spellChecked = hasBuffer && !simpleMode && buffer.spell().isActive();
+        spell.setVisible(spellChecked);
+        spell.setManaged(spellChecked);
+        if (spellChecked) {
+            spell.setText(SpellCoordinator.languageTag(buffer.getSpellLanguage()));
+        }
         // The git segment has its own gate (feature on + active file in a repo + not Simple mode).
         applyGitVisibility();
         // The read-only segment is a toggle: always shown (when there's a buffer), reflecting and
@@ -958,6 +976,16 @@ public final class StatusBar extends HBox {
 
     /** Simple UI mode: hide the git / language / tab-size / line-ending / encoding segments (size is kept). */
     /** Shows the narrowing indicator. Deliberately visible in Simple mode too — it is not chrome. */
+    /** Shows "Snippet position/count" while a snippet session runs in the active buffer; a count of 0 hides it. */
+    public void setSnippetSession(int position, int count) {
+        boolean on = count > 0;
+        if (on) {
+            snippet.setText(tr("statusbar.snippet", position, count));
+        }
+        snippet.setVisible(on);
+        snippet.setManaged(on);
+    }
+
     public void setNarrowed(boolean on) {
         narrowed.setVisible(on);
         narrowed.setManaged(on);

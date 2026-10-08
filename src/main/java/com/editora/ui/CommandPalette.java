@@ -202,6 +202,8 @@ public class CommandPalette {
         content.setMaxSize(620, Region.USE_PREF_SIZE); // hug its content; don't stretch to fill the overlay
         // Editor-context chords (C-n/C-p/arrows) are left to the palette's own handler while it's open.
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE);
+        // What is typed here picks a command, and a macro records that command — not the keys that found it.
+        content.getProperties().put(MacroCoordinator.OPAQUE, Boolean.TRUE);
         // (No MOUSE_CLICKED consume on the card: the backdrop dismisses on MOUSE_PRESSED targeted at
         // itself, so a click inside the card never reaches it — and consuming MOUSE_CLICKED here would
         // swallow the result cells' own click-to-run handler.)

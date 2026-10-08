@@ -379,12 +379,62 @@ class ConfigMigrationsTest {
         assertEquals(expected, out, "nothing but the marker changes");
     }
 
+    /**
+     * v112→113: the per-file-type spell switch is new. The master switch stays exactly as the user left it,
+     * and a file that never had the list gets the default one (data and configuration formats off).
+     */
+    @Test
+    void theSpellFileTypeListArrivesWithoutTouchingTheMasterSwitch() throws Exception {
+        for (boolean master : new boolean[] {true, false}) {
+            JsonNode v112 = mapper.readTree(
+                    "{\"schemaVersion\":112,\"spellCheck\":" + master + ",\"spellLanguage\":\"es_MX\"}");
+            ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v112.deepCopy(), mapper);
+            assertEquals(
+                    ConfigSchema.SETTINGS.currentVersion(),
+                    out.get("schemaVersion").asInt());
+            assertEquals(master, out.get("spellCheck").asBoolean(), "the global on/off choice is kept");
+            assertEquals("es_MX", out.get("spellLanguage").asText());
+            assertFalse(out.has("spellDisabledLanguages"), "left to the default");
+            com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+            assertEquals(master, loaded.isSpellCheck());
+            assertEquals(
+                    com.editora.config.Settings.DEFAULT_SPELL_DISABLED_LANGUAGES, loaded.getSpellDisabledLanguages());
+            assertTrue(loaded.getSpellDisabledLanguages().contains("json"));
+            assertFalse(loaded.getSpellDisabledLanguages().contains("markdown"));
+        }
+        // A list the user has edited (JSON turned back on, Java turned off) round-trips as written.
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":113,\"spellDisabledLanguages\":[\"yaml\",\"java\"]}");
+        com.editora.config.Settings kept = mapper.treeToValue(
+                ConfigMigrations.upgrade(ConfigSchema.SETTINGS, chosen.deepCopy(), mapper),
+                com.editora.config.Settings.class);
+        assertEquals(java.util.List.of("yaml", "java"), kept.getSpellDisabledLanguages());
+    }
+
+    /** v113→114: snippetTabExpansion is new — Tab expanded triggers for everyone before, and still does. */
+    @Test
+    void theSnippetTabExpansionSettingArrivesOnWithoutTouchingAnythingElse() throws Exception {
+        JsonNode v112 = mapper.readTree("{\"schemaVersion\":112,\"autocompleteSnippets\":false}");
+        ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v112.deepCopy(), mapper);
+        assertEquals(
+                com.editora.config.Settings.SCHEMA_VERSION,
+                out.get("schemaVersion").asInt());
+        assertFalse(out.get("autocompleteSnippets").asBoolean(), "the popup switch is a different setting");
+        assertFalse(out.has("snippetTabExpansion"), "left to the default");
+        com.editora.config.Settings loaded = mapper.treeToValue(out, com.editora.config.Settings.class);
+        assertTrue(loaded.isSnippetTabExpansion(), "on for everyone who never chose");
+
+        JsonNode chosen = mapper.readTree("{\"schemaVersion\":114,\"snippetTabExpansion\":false}");
+        assertFalse(
+                mapper.treeToValue(chosen, com.editora.config.Settings.class).isSnippetTabExpansion());
+    }
+
     /** v111→112: crashRecovery is new — nothing else in the file changes, and it starts on. */
     @Test
     void theCrashRecoverySettingArrivesOnWithoutTouchingAnythingElse() throws Exception {
         JsonNode v111 = mapper.readTree("{\"schemaVersion\":111,\"localHistory\":false,\"autoSave\":\"afterDelay\"}");
         ObjectNode out = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, v111.deepCopy(), mapper);
-        assertEquals(112, out.get("schemaVersion").asInt());
+        assertEquals(
+                ConfigSchema.SETTINGS.currentVersion(), out.get("schemaVersion").asInt());
         assertFalse(out.get("localHistory").asBoolean());
         assertEquals("afterDelay", out.get("autoSave").asText());
         assertFalse(out.has("crashRecovery"), "left to the default");

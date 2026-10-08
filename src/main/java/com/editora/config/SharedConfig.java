@@ -812,6 +812,10 @@ public class SharedConfig {
     private void loadMacros() {
         // Read even when absent: a copy an older build set aside may be waiting to be restored.
         macroStore = read(getMacrosFile(), new MacroStore(), ConfigSchema.MACROS);
+        if (macroStore == null) {
+            macroStore = new MacroStore();
+        }
+        macroStore.sanitize(); // a hand-edited file may hold a null list or null entries
     }
 
     public void saveMacros() {
@@ -966,8 +970,8 @@ public class SharedConfig {
         if (word == null || word.isBlank()) {
             return;
         }
-        String w = word.strip().toLowerCase(java.util.Locale.ROOT);
-        if (!userDictionary.add(w)) {
+        String w = dictionaryForm(word);
+        if (w.isEmpty() || !userDictionary.add(w)) {
             return; // already present
         }
         try {
@@ -1009,10 +1013,54 @@ public class SharedConfig {
         if (word == null) {
             return;
         }
-        String w = word.strip().toLowerCase(java.util.Locale.ROOT);
+        String w = dictionaryForm(word);
         if (userDictionary.remove(w)) {
             rewriteUserDictionary();
         }
+    }
+
+    /**
+     * The form a word is kept under: lower case, with the typographic apostrophes editors substitute written
+     * as the ASCII one the spell checker looks words up by. A word stored as typed ({@code zzq’abc}) was
+     * written to the file and never matched.
+     */
+    static String dictionaryForm(String word) {
+        return word.strip().replace('’', '\'').replace('‘', '\'').toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * Re-reads {@code dictionary.txt} into the shared set, returning whether the set changed. For a file
+     * edited by hand (the Settings link opens it in the editor): the words used to be read once at startup,
+     * so an added line was not accepted, and a removed one stayed accepted, until the next launch.
+     */
+    public boolean reloadUserDictionary() {
+        java.util.Set<String> onDisk;
+        try {
+            onDisk = readUserDictionary(getUserDictionaryFile());
+        } catch (IOException e) {
+            return false; // unreadable right now: keep what is in memory
+        }
+        // What this process added or removed and has not managed to write yet still applies on top.
+        java.util.Set<String> merged = new java.util.LinkedHashSet<>(onDisk);
+        for (String known : userDictionaryBase) {
+            if (!userDictionary.contains(known)) {
+                merged.remove(known);
+            }
+        }
+        for (String word : userDictionary) {
+            if (!userDictionaryBase.contains(word)) {
+                merged.add(word);
+            }
+        }
+        userDictionaryBase.clear();
+        userDictionaryBase.addAll(onDisk);
+        if (merged.equals(userDictionary)) {
+            return false;
+        }
+        // In place: every buffer's checker holds this very set.
+        userDictionary.retainAll(merged);
+        userDictionary.addAll(merged);
+        return true;
     }
 
     /**
@@ -1078,7 +1126,7 @@ public class SharedConfig {
         // file from that empty set (permanent loss). new String(bytes, UTF_8) replaces instead of throwing.
         String text = new String(Files.readAllBytes(file), java.nio.charset.StandardCharsets.UTF_8);
         for (String line : text.split("\r?\n")) {
-            String w = stripBom(line).strip().toLowerCase(java.util.Locale.ROOT);
+            String w = dictionaryForm(stripBom(line));
             if (!w.isEmpty()) {
                 words.add(w);
             }

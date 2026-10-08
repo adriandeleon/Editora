@@ -66,34 +66,54 @@ public final class CompletionEngine {
         return merge(snip, words, prefix, MAX);
     }
 
-    /** Snippets whose prefix starts with {@code prefix} (case-insensitive), ranked, mapped to completions. Pure. */
+    /**
+     * Snippets whose prefix starts with {@code prefix} (case-insensitive), ranked, mapped to completions.
+     *
+     * <p>A trigger typed out in full does not open the popup on its own — Enter after {@code else} must stay
+     * a line break, and Tab expands it anyway. But when longer triggers keep the popup open, the exact one
+     * is listed too, first: it used to drop out of the list at the very keystroke that completed it, leaving
+     * {@code fori} highlighted under a typed {@code for}. Pure.
+     */
     public static List<Completion> snippetCompletions(List<Snippet> all, String prefix) {
         List<Snippet> matched = new ArrayList<>();
+        List<Snippet> exact = new ArrayList<>();
         for (Snippet s : all) {
-            if (s.prefix() != null
-                    && startsWithIgnoreCase(s.prefix(), prefix)
-                    && !s.prefix().equalsIgnoreCase(prefix)) {
-                matched.add(s);
+            if (s.prefix() != null && startsWithIgnoreCase(s.prefix(), prefix)) {
+                (s.prefix().equalsIgnoreCase(prefix) ? exact : matched).add(s);
             }
         }
         matched.sort((a, b) -> rankCompare(a.prefix(), b.prefix(), prefix));
-        List<Completion> out = new ArrayList<>(matched.size());
+        List<Completion> out = new ArrayList<>(matched.size() + exact.size());
+        if (!matched.isEmpty()) {
+            for (Snippet s : exact) {
+                out.add(Completion.ofSnippet(s));
+            }
+        }
         for (Snippet s : matched) {
             out.add(Completion.ofSnippet(s));
         }
         return out;
     }
 
-    /** Combines snippet + word completions, de-dupes by insert text (snippet wins), and caps. Pure. */
+    /**
+     * Combines snippet + word completions and caps. A word that is also a snippet trigger is dropped (the
+     * snippet wins), and a word is listed once; two <em>snippets</em> that share a trigger are different
+     * things with different bodies and are both kept. Pure.
+     */
     public static List<Completion> merge(List<Completion> snippets, List<Completion> words, String prefix, int max) {
         Map<String, Completion> byInsert = new LinkedHashMap<>();
+        java.util.Set<String> triggers = new java.util.HashSet<>();
         for (Completion c : snippets) {
-            byInsert.putIfAbsent(c.insert(), c);
+            triggers.add(c.insert());
+            String name = c.snippet() == null ? "" : c.snippet().name();
+            byInsert.putIfAbsent(c.insert() + '\u0000' + name, c);
         }
         List<Completion> sortedWords = new ArrayList<>(words);
         sortedWords.sort((a, b) -> rankCompare(a.insert(), b.insert(), prefix));
         for (Completion c : sortedWords) {
-            byInsert.putIfAbsent(c.insert(), c);
+            if (!triggers.contains(c.insert())) {
+                byInsert.putIfAbsent(c.insert(), c);
+            }
         }
         List<Completion> out = new ArrayList<>(byInsert.values());
         return out.size() > max ? out.subList(0, max) : out;

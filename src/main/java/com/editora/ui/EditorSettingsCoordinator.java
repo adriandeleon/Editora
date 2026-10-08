@@ -15,7 +15,6 @@ import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.LanguageRegistry;
-import com.editora.editor.SpellDictionaries;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -134,9 +133,16 @@ final class EditorSettingsCoordinator {
     }
 
     private final Host host;
+    private final SpellCoordinator spell;
 
     EditorSettingsCoordinator(Host host) {
         this.host = host;
+        this.spell = new SpellCoordinator(host, this);
+    }
+
+    /** Spell checking: the per-buffer setup and the spell commands. */
+    SpellCoordinator spell() {
+        return spell;
     }
 
     /** Moves an open Settings window's view switches to the values a toggle command just wrote. */
@@ -285,34 +291,6 @@ final class EditorSettingsCoordinator {
         applyMultiCaret();
         host.settingsWindow().syncMultiCaretCheck(); // keep the Settings window in step if it's open
         host.setStatus(tr("status.toggle.multiCaret", tr(s.isMultiCaret() ? "common.on" : "common.off")));
-    }
-
-    /** Opens a picker to set the spell-check dictionary language for the active file (persisted per file). */
-    void chooseSpellLanguage() {
-        EditorBuffer buffer = host.activeBuffer();
-        if (buffer == null) {
-            host.setStatus(tr("status.noFileOpen"));
-            return;
-        }
-        QuickOpen<String> picker = new QuickOpen<>(
-                tr("palette.spellLanguage.title"),
-                tr("palette.spellLanguage.prompt"),
-                SpellDictionaries::available,
-                id -> id,
-                id -> "",
-                id -> setSpellLanguage(buffer, id));
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.stage());
-    }
-
-    void setSpellLanguage(EditorBuffer buffer, String langId) {
-        buffer.setSpellLanguage(langId);
-        Path p = buffer.getPath();
-        if (p != null) {
-            host.config().getWorkspaceState().getSpellLanguages().put(p.toString(), langId);
-            host.requestSave();
-        }
-        host.setStatus(tr("status.spellLanguage", langId));
     }
 
     /** Picker for the active keybinding theme (the same set as the Settings → Keymaps combo). */
@@ -796,21 +774,6 @@ final class EditorSettingsCoordinator {
                 });
     }
 
-    /** Persists a word to the shared personal dictionary, then drops every open buffer's memoized spell
-     *  verdicts — the word set is shared, but each buffer's overlay caches its own results, so "Add to
-     *  Dictionary" in one tab used to leave the word squiggled in the others for the rest of the session. */
-    void addUserWordAndRefreshAll(String word) {
-        host.config().addUserWord(word);
-        // The user dictionary is shared app-wide (SharedConfig), so re-run the spell pass in EVERY window's
-        // tabs — otherwise another window's buffers keep the stale squiggle on the just-added word until it
-        // happens to apply a setting (#443). Mirrors broadcastSettingsApplied/broadcastMacrosChanged.
-        if (host.windowManager() != null) {
-            host.windowManager().broadcastUserDictionaryChanged();
-        } else {
-            host.refreshSpellAllTabs();
-        }
-    }
-
     void applyViewSettings(EditorBuffer buffer) {
         applyViewSettings(buffer, true);
     }
@@ -844,10 +807,7 @@ final class EditorSettingsCoordinator {
         buffer.setFoldPreviewColors(
                 EditorThemes.editorBackgroundFor(s.getEditorTheme()),
                 EditorThemes.editorForegroundFor(s.getEditorTheme()));
-        buffer.setSpellLanguage(spellLanguageFor(buffer)); // per-file override, else the global default
-        buffer.setSpellCheckEnabled(s.isSpellCheck());
-        buffer.setUserDictionaryEnabled(s.isPersonalDictionary());
-        buffer.setTechnicalDictionaryEnabled(s.isTechnicalDictionary());
+        spell.apply(buffer, s); // dictionary (per-file choice, else the default), switches, file types
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
         buffer.setAiActionsEnabled(host.aiCoordinator().isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
@@ -1035,17 +995,6 @@ final class EditorSettingsCoordinator {
         }
     }
 
-    /** The spell-check language for a buffer: its per-file override (if any/valid), else the global default. */
-    String spellLanguageFor(EditorBuffer buffer) {
-        String def = host.config().getSettings().getSpellLanguage();
-        Path p = buffer.getPath();
-        if (p == null) {
-            return def;
-        }
-        String override = host.config().getWorkspaceState().getSpellLanguages().get(p.toString());
-        return override != null && SpellDictionaries.isAvailable(override) ? override : def;
-    }
-
     void applyViewSettingsToAllBuffers(Settings settings) {
         host.applyEditorTheme(settings.getEditorTheme());
         host.chrome().applyChromeVisibility();
@@ -1154,6 +1103,7 @@ final class EditorSettingsCoordinator {
             if (buffer != null) {
                 buffer.setAutocomplete(
                         s.isAutocomplete(), s.isAutocompleteProse(), s.isAutocompleteSnippets(), mermaidAc);
+                buffer.setSnippetTabExpansion(s.isSnippetTabExpansion());
                 buffer.setCompletionDocEnabled(s.isCompletionDoc());
                 buffer.setAiCompletionEnabled(aiInline);
             }

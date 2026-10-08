@@ -249,6 +249,10 @@ public class SettingsWindow {
     private ComboBox<String> spellLanguageCombo;
     /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
     private ListView<String> dictionaryList;
+    /** The add field of the Personal Dictionary editor; what is typed in it also narrows the list. */
+    private TextField dictionaryInput;
+    /** The Spell Check page's per-file-type tick list ({@code Settings.spellDisabledLanguages}). */
+    private SpellFileTypesEditor spellFileTypes;
     /** "Enable personal dictionary" checkbox (Settings.personalDictionary). */
     private CheckBox dictEnableCheck;
     /** "Enable technical dictionary" checkbox (Settings.technicalDictionary). */
@@ -336,14 +340,10 @@ public class SettingsWindow {
 
     private Runnable reloadTemplates;
 
-    /** Working copies for the Macros master-detail page. */
-    private final javafx.collections.ObservableList<com.editora.macro.Macro> macroItems =
-            javafx.collections.FXCollections.observableArrayList();
-
-    private final javafx.collections.ObservableList<com.editora.macro.MacroStep> macroStepItems =
-            javafx.collections.FXCollections.observableArrayList();
-    private boolean loadingMacro = false;
-    private String macroOriginalName; // the saved name of the selected macro (to detect rename)
+    /** The Macros page's editor (see {@link MacroSettingsPane}); null until that page is built. */
+    private MacroSettingsPane macroPane;
+    /** The Macros page's note, which names the chords of the live keymap. */
+    private Label macroNote;
     /** Re-registers the {@code macro.run.*} commands across windows after a Macros-page edit. */
     private Runnable onMacrosChanged = () -> {};
     /** Hooks used by the separate Run Configurations window; kept here as the window-service owner. */
@@ -354,19 +354,10 @@ public class SettingsWindow {
 
     /** Shared snippet manager (injected after construction); backs the Snippets management page. */
     private com.editora.snippet.SnippetManager snippetManager;
-    /** Working copy of the snippets (bundled + user) for the language selected on the Snippets page. */
-    private final javafx.collections.ObservableList<com.editora.snippet.Snippet> snippetItems =
-            javafx.collections.FXCollections.observableArrayList();
-    /** Names of the shown snippets that are user-owned (a user file entry or an override of a bundled one);
-     *  the rest are read-only bundled snippets. Only these are written back to {@code <lang>.json}. */
-    private final java.util.Set<String> snippetUserNames = new java.util.HashSet<>();
+    /** The Snippets page's list-and-form editor (built with the page). */
+    private SnippetsEditor snippetsEditor;
 
-    private boolean loadingSnippet = false;
-    private String currentSnippetLang = "global";
-
-    /** Why the current language's user snippet file cannot be parsed, or null. While set the page is
-     *  read-only for that language: saving would replace the file with what little the page could load. */
-    private String snippetFileProblem;
+    private CheckBox snippetTabExpansionCheck;
     /** Shared template registry (injected after construction); backs the Templates management page. */
     private com.editora.template.TemplateRegistry templateRegistry;
     /** Working copy of the templates (bundled + user) shown on the Templates page. */
@@ -1193,6 +1184,7 @@ public class SettingsWindow {
         autocompleteCheck = viewCheck(tr("settings.enableAutocomplete"), Settings::setAutocomplete);
         autocompleteProseCheck = viewCheck(tr("settings.autocomplete.prose"), Settings::setAutocompleteProse);
         autocompleteSnippetsCheck = viewCheck(tr("settings.autocomplete.snippets"), Settings::setAutocompleteSnippets);
+        snippetTabExpansionCheck = viewCheck(tr("settings.snippet.tabExpansion"), Settings::setSnippetTabExpansion);
         autocompleteMermaidCheck = viewCheck(tr("settings.autocomplete.mermaid"), Settings::setAutocompleteMermaid);
         completionDocCheck = viewCheck(tr("settings.completionDoc"), Settings::setCompletionDoc);
         semanticHighlightCheck = viewCheck(tr("settings.semanticHighlight"), Settings::setSemanticHighlight);
@@ -2101,8 +2093,9 @@ public class SettingsWindow {
     /** {@link #refreshShortcuts()}, then moves keyboard focus to {@code focusId}'s row (rebuilding drops it). */
     private void refreshShortcuts(String focusId) {
         refreshChordChips();
-        if (refreshMacroKeybinding != null) {
-            refreshMacroKeybinding.run();
+        if (macroPane != null) {
+            macroPane.refreshKeybinding();
+            macroNote.setText(macroNoteText());
         }
         if (shortcutListBox == null || shortcutActions == null) {
             return;
@@ -2325,264 +2318,74 @@ public class SettingsWindow {
     }
 
     /** Re-reads the Macros page's list from the store — called after a macro changes from outside this
-     *  window (e.g. a recording auto-saves "unnamed macro" on F4), so an already-open Settings window
-     *  reflects it live instead of only on the next time the page is built. Harmless if never opened —
-     *  {@link #macroItems} is a plain field, not lazily created with the page. */
+     *  window (e.g. a recording that was just stopped), so an already-open Settings window reflects it live
+     *  instead of only on the next time the page is built. Harmless if the page was never opened. */
     public void refreshMacrosList() {
-        macroItems.setAll(config.getMacroStore().macros);
+        if (macroPane != null) {
+            macroPane.refresh();
+        }
     }
 
     private VBox macrosPage() {
         VBox p = page(tr("settings.cat.macros"));
         Card mainCard = card(p, null);
+        macroPane = new MacroSettingsPane(new MacroSettingsPane.Host() {
+            @Override
+            public ConfigManager config() {
+                return config;
+            }
+
+            @Override
+            public ShortcutActions shortcuts() {
+                return shortcutActions;
+            }
+
+            @Override
+            public void macrosChanged() {
+                onMacrosChanged.run();
+            }
+
+            @Override
+            public boolean rebind(String commandId, String chord) {
+                return rebindWithConflictCheck(commandId, chord);
+            }
+
+            @Override
+            public void shortcutsChanged() {
+                refreshShortcuts();
+            }
+        });
         cardRow(
                 mainCard,
                 Category.MACROS,
-                macrosEditor(),
-                "macros keyboard record replay steps rename delete keybinding command text");
-        Label note = note(tr("settings.macro.note"));
-        note.setWrapText(true);
-        note.setMaxWidth(460);
-        cardRow(mainCard, Category.MACROS, note, "macros record f3 f4 replay keybinding save");
+                macroPane,
+                "macros keyboard record replay steps rename delete keybinding command text key");
+        macroNote = note(macroNoteText());
+        macroNote.setWrapText(true);
+        macroNote.setMaxWidth(460);
+        cardRow(mainCard, Category.MACROS, macroNote, "macros record start stop replay keybinding save cancel");
         return p;
     }
 
-    /** Master-detail editor for saved keyboard macros: list on the left, a name/keybinding/steps form on the right. */
-    private javafx.scene.Node macrosEditor() {
-        macroItems.setAll(config.getMacroStore().macros);
-
-        ListView<com.editora.macro.Macro> list = new ListView<>(macroItems);
-        list.setPrefSize(220, 420);
-        Label noMacros = note(tr("settings.macro.empty"));
-        noMacros.setWrapText(true);
-        noMacros.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
-        noMacros.setMaxWidth(190);
-        list.setPlaceholder(noMacros);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.macro.Macro m, boolean empty) {
-                super.updateItem(m, empty);
-                setText(empty || m == null ? null : m.name() + "  (" + m.steps().size() + ")");
-            }
-        });
-
-        TextField name = new TextField();
-        HBox keybinding = new HBox(8);
-        keybinding.setAlignment(Pos.CENTER_LEFT);
-
-        ListView<com.editora.macro.MacroStep> steps = new ListView<>(macroStepItems);
-        steps.setPrefHeight(180);
-        steps.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.macro.MacroStep s, boolean empty) {
-                super.updateItem(s, empty);
-                setText(empty || s == null ? null : macroStepLabel(s));
-            }
-        });
-        Label stepKind = new Label();
-        stepKind.setMinWidth(Region.USE_PREF_SIZE);
-        TextField stepValue = new TextField();
-        HBox.setHgrow(stepValue, Priority.ALWAYS);
-        stepValue.setDisable(true);
-        Runnable commitStep = () -> {
-            int i = steps.getSelectionModel().getSelectedIndex();
-            com.editora.macro.MacroStep cur = steps.getSelectionModel().getSelectedItem();
-            if (i < 0 || cur == null || loadingMacro) {
-                return;
-            }
-            macroStepItems.set(i, new com.editora.macro.MacroStep(cur.kind(), stepValue.getText()));
-        };
-        stepValue.setOnAction(e -> commitStep.run());
-        stepValue.focusedProperty().addListener((o, was, now) -> {
-            if (!now) {
-                commitStep.run();
-            }
-        });
-        steps.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingMacro = true;
-            try {
-                stepValue.setDisable(now == null);
-                stepKind.setText(
-                        now == null
-                                ? ""
-                                : tr(now.isCommand() ? "settings.macro.kind.command" : "settings.macro.kind.text"));
-                stepValue.setText(now == null ? "" : now.value());
-            } finally {
-                loadingMacro = false;
-            }
-        });
-
-        Button stepUp = new Button("▲");
-        Button stepDown = new Button("▼");
-        nameReorderButtons(stepUp, stepDown);
-        stepUp.getStyleClass().addAll("flat", "reorder-button");
-        stepDown.getStyleClass().addAll("flat", "reorder-button");
-        stepUp.setOnAction(e -> moveStep(steps, -1));
-        stepDown.setOnAction(e -> moveStep(steps, 1));
-        Button stepRemove = new Button(tr("settings.macro.removeStep"));
-        stepRemove.setOnAction(e -> {
-            int i = steps.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                macroStepItems.remove(i);
-            }
-        });
-        Button addCmd = new Button(tr("settings.macro.addCommand"));
-        addCmd.setOnAction(e -> {
-            macroStepItems.add(com.editora.macro.MacroStep.command(""));
-            steps.getSelectionModel().selectLast();
-            stepValue.requestFocus();
-        });
-        Button addText = new Button(tr("settings.macro.addText"));
-        addText.setOnAction(e -> {
-            macroStepItems.add(com.editora.macro.MacroStep.text(""));
-            steps.getSelectionModel().selectLast();
-            stepValue.requestFocus();
-        });
-        // Wraps: the five German buttons are wider than the form at the window's minimum width.
-        WrapRow stepButtons = new WrapRow(6, 6, addCmd, addText, new HBox(6, stepUp, stepDown), stepRemove);
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.macro.name"), name);
-        formRow(form, 1, tr("settings.macro.keybinding"), keybinding);
-        Label stepsLabel = new Label(tr("settings.macro.steps"));
-        stepsLabel.getStyleClass().add("settings-section");
-        VBox stepEditor = new VBox(6, stepsLabel, steps, new HBox(8, stepKind, stepValue), stepButtons);
-        VBox.setVgrow(steps, Priority.ALWAYS);
-        form.setDisable(true);
-        // No macro selected, no steps to edit: Add Command used to add a step that belonged to nothing.
-        stepEditor.disableProperty().bind(form.disabledProperty());
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        // Repopulates the inline keybinding row for the selected macro's command id.
-        java.util.function.Consumer<com.editora.macro.Macro> rebuildKeybinding = m -> {
-            keybinding.getChildren().clear();
-            if (m == null) {
-                return;
-            }
-            String cmdId = com.editora.macro.MacroService.commandIdFor(m.name());
-            String chord = currentChordFor(cmdId);
-            boolean bound = chord != null && !chord.isBlank();
-            Label chordLbl = new Label(bound ? chord : tr("settings.shortcuts.unbound"));
-            chordLbl.getStyleClass().add(bound ? "shortcut-chord" : "shortcut-unbound");
-            chordLbl.setMinWidth(150);
-            Button record = new Button(tr("settings.shortcuts.record"));
-            Button clear = new Button(tr("settings.shortcuts.reset"));
-            clear.setOnAction(e -> {
-                if (shortcutActions != null) {
-                    shortcutActions.reset(cmdId);
-                }
-                rebuildKeybindingFor(keybinding, m, steps);
-                refreshShortcuts();
-            });
-            record.setOnAction(e -> startMacroCapture(keybinding, cmdId, m, steps));
-            keybinding.getChildren().addAll(chordLbl, record, clear);
-        };
-        macroKeybindingRebuilders.put(keybinding, rebuildKeybinding);
-        // The row shows a chord of the live keymap, like the Keymaps list: a keymap switch or a rebind made
-        // elsewhere changes it. Left alone while the user is recording a chord in it.
-        refreshMacroKeybinding = () -> {
-            boolean recording = !keybinding.getChildren().isEmpty()
-                    && keybinding.getChildren().get(0) instanceof TextField;
-            if (!recording) {
-                rebuildKeybinding.accept(list.getSelectionModel().getSelectedItem());
-            }
-        };
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingMacro = true;
-            try {
-                form.setDisable(now == null);
-                macroOriginalName = now == null ? null : now.name();
-                name.setText(now == null ? "" : now.name());
-                macroStepItems.setAll(now == null ? java.util.List.of() : now.steps());
-                rebuildKeybinding.accept(now);
-            } finally {
-                loadingMacro = false;
-            }
-        });
-
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> saveMacro(list, name.getText()));
-        Button delete = new Button(tr("settings.macro.delete"));
-        delete.disableProperty()
-                .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        delete.setOnAction(e -> deleteMacro(list));
-        HBox formButtons = new HBox(8, delete, spacer(), save);
-        formButtons.setAlignment(Pos.CENTER_LEFT);
-
-        VBox right = new VBox(8, form, stepEditor, formButtons);
-        VBox.setVgrow(stepEditor, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-        VBox left = new VBox(6, list);
-        keepWidth(left);
-        VBox.setVgrow(list, Priority.ALWAYS);
-
-        if (!macroItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
+    /**
+     * How to record, in the chords of the keymap in use. The note used to say "F3 (start) and F4 (stop)",
+     * which only the Emacs keymap binds — in CUA and Sublime F3 is Find Next.
+     */
+    private String macroNoteText() {
+        return tr(
+                "settings.macro.note",
+                macroCommandHint("macro.startRecording"),
+                macroCommandHint("macro.stopRecording"),
+                macroCommandHint("macro.replayLast"));
     }
 
-    /** Re-reads the Macros page's key-binding row from the live keymap (set once that page is built). */
-    private Runnable refreshMacroKeybinding;
-
-    /** Maps a keybinding HBox to its rebuilder so {@code reset}/capture can repopulate it. */
-    private final java.util.Map<HBox, java.util.function.Consumer<com.editora.macro.Macro>> macroKeybindingRebuilders =
-            new java.util.HashMap<>();
-
-    private void rebuildKeybindingFor(
-            HBox keybinding, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
-        var rebuilder = macroKeybindingRebuilders.get(keybinding);
-        if (rebuilder != null) {
-            rebuilder.accept(m);
-        }
-    }
-
-    /** Swaps the keybinding row into a live chord-capture field, mirroring the Keymaps recorder. */
-    private void startMacroCapture(
-            HBox keybinding, String commandId, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
-        keybinding.getChildren().clear();
-        Runnable done = () -> {
-            rebuildKeybindingFor(keybinding, m, steps);
-            refreshShortcuts(); // the Keymaps list and the chord chips show this binding too
-        };
-        java.util.function.Consumer<String> commit = seq -> {
-            rebindWithConflictCheck(commandId, seq);
-            done.run();
-        };
-        TextField capture = ShortcutCapture.field(commit, done);
-        Button save = new Button(tr("settings.shortcuts.save"));
-        save.getStyleClass().add("success");
-        save.setOnAction(e -> commit.accept(capture.getText()));
-        Button cancel = new Button(tr("settings.shortcuts.cancel"));
-        cancel.setOnAction(e -> done.run());
-        keybinding.getChildren().addAll(capture, save, cancel);
-        javafx.application.Platform.runLater(capture::requestFocus);
-    }
-
-    private static void moveStep(ListView<com.editora.macro.MacroStep> steps, int delta) {
-        int i = steps.getSelectionModel().getSelectedIndex();
-        int j = i + delta;
-        if (i < 0 || j < 0 || j >= steps.getItems().size()) {
-            return;
-        }
-        com.editora.macro.MacroStep s = steps.getItems().remove(i);
-        steps.getItems().add(j, s);
-        steps.getSelectionModel().select(j);
-    }
-
-    private static String macroStepLabel(com.editora.macro.MacroStep s) {
-        if (s.isCommand()) {
-            return "⌘  " + (s.value() == null || s.value().isBlank() ? "…" : s.value());
-        }
-        String v = s.value() == null ? "" : s.value().replace("\n", "\\n").replace("\t", "\\t");
-        return "✎  \"" + v + "\"";
+    /** A command by title with its chord, or with the fact that it has none. */
+    private String macroCommandHint(String commandId) {
+        String title = tr("command." + commandId);
+        String chord = currentChordFor(commandId);
+        return chord == null || chord.isBlank()
+                ? tr("settings.macro.note.unbound", title)
+                : tr("settings.macro.note.bound", title, chord);
     }
 
     private String currentChordFor(String commandId) {
@@ -2602,92 +2405,6 @@ public class SettingsWindow {
         a.initOwner(stage);
         a.setHeaderText(null);
         a.showAndWait();
-    }
-
-    /** True when {@code name} would take a {@code macro.run.<slug>} id another saved macro already uses. */
-    private static boolean macroSlugTaken(com.editora.config.MacroStore store, String name) {
-        String id = com.editora.macro.MacroService.commandIdFor(name);
-        for (com.editora.macro.Macro m : store.macros) {
-            if (!m.name().equals(name)
-                    && com.editora.macro.MacroService.commandIdFor(m.name()).equals(id)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void saveMacro(ListView<com.editora.macro.Macro> list, String rawName) {
-        String newName = rawName == null ? "" : rawName.trim();
-        if (newName.isEmpty() || macroOriginalName == null) {
-            return;
-        }
-        com.editora.config.MacroStore store = config.getMacroStore();
-        boolean renamed = !macroOriginalName.equals(newName);
-        if (renamed && store.find(newName) != null) {
-            macroWarn(tr("settings.macro.nameExists", newName));
-            return;
-        }
-        // Distinct names can slug to one macro.run.<id> ("my macro" / "my-macro"; any symbol-only name ->
-        // "macro"). The store keys by name but commands key by slug, so the second registration silently
-        // shadowed the first — the older macro became unreachable by command or keybinding.
-        String oldId = com.editora.macro.MacroService.commandIdFor(macroOriginalName);
-        String newId = com.editora.macro.MacroService.commandIdFor(newName);
-        if (renamed && !newId.equals(oldId) && macroSlugTaken(store, newName)) {
-            macroWarn(tr("settings.macro.idExists", newName));
-            return;
-        }
-        String oldChord = renamed ? currentChordFor(oldId) : null;
-        com.editora.macro.Macro updated =
-                new com.editora.macro.Macro(newName, new java.util.ArrayList<>(macroStepItems));
-        if (renamed) {
-            store.remove(macroOriginalName);
-        }
-        store.put(updated);
-        config.saveMacros();
-        onMacrosChanged.run(); // re-register macro.run.* (incl. the renamed id) in every window
-        // Carry the keybinding across only when the command id actually changed. A rename that keeps the
-        // slug ("build" -> "Build") leaves oldId == newId, and resetting after rebinding stripped the chord
-        // we had just re-added — a macro.run.* id has no base default to fall back to, so it went unbound.
-        if (renamed && !newId.equals(oldId) && oldChord != null && !oldChord.isBlank() && shortcutActions != null) {
-            shortcutActions.reset(oldId); // drop the old id's override BEFORE binding the new one
-            shortcutActions.rebind(newId, oldChord);
-        }
-        macroItems.setAll(store.macros);
-        for (com.editora.macro.Macro m : macroItems) {
-            if (m.name().equals(newName)) {
-                list.getSelectionModel().select(m);
-                break;
-            }
-        }
-    }
-
-    private void deleteMacro(ListView<com.editora.macro.Macro> list) {
-        com.editora.macro.Macro sel = list.getSelectionModel().getSelectedItem();
-        if (sel == null) {
-            return;
-        }
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("settings.macro.deleteConfirm", sel.name()),
-                ButtonType.OK,
-                ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-            return;
-        }
-        com.editora.config.MacroStore store = config.getMacroStore();
-        if (shortcutActions != null) {
-            shortcutActions.reset(com.editora.macro.MacroService.commandIdFor(sel.name())); // drop its keybinding
-        }
-        store.remove(sel.name());
-        config.saveMacros();
-        onMacrosChanged.run();
-        macroItems.setAll(store.macros);
-        if (!macroItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
     }
 
     private VBox editorPage() {
@@ -3078,10 +2795,21 @@ public class SettingsWindow {
                 main,
                 Category.SPELL_CHECK,
                 tr("settings.language"),
-                null,
+                tr("settings.spell.languageNote"),
                 spellLanguageCombo,
-                "spell language dictionary english spanish french");
-        // The two dictionary-file links, grouped together near the top (out of the checkbox/list flow).
+                "spell language dictionary english spanish french default per file override");
+        Card types = card(p, tr("settings.spell.fileTypes.title"));
+        spellFileTypes = new SpellFileTypesEditor(config::getSettings, this::apply);
+        Label typesNote = new Label(tr("settings.spell.fileTypes.note"));
+        typesNote.getStyleClass().add("settings-hint");
+        typesNote.setWrapText(true);
+        cardRow(
+                types,
+                Category.SPELL_CHECK,
+                new VBox(6, typesNote, spellFileTypes),
+                "spell file types languages per language json yaml toml xml csv markdown html typst code comments");
+        // The dictionaries get a card of their own: both switches, both file links, then the word list.
+        Card dict = card(p, tr("settings.dict.title"));
         Hyperlink techLink = new Hyperlink(tr("settings.dict.openTechnical"));
         techLink.setTooltip(new Tooltip(tr("settings.dict.openTechnicalTip")));
         techLink.setOnAction(e -> {
@@ -3098,18 +2826,11 @@ public class SettingsWindow {
         });
         HBox dictLinks = new HBox(16, techLink, personalLink);
         dictLinks.setAlignment(Pos.CENTER_LEFT);
-        cardRow(
-                main,
-                Category.SPELL_CHECK,
-                dictLinks,
-                "dictionary open technical personal file dictionary.txt bundled terms");
-
-        Card dict = card(p, tr("settings.dict.title"));
         checkRow(
                 dict,
                 Category.SPELL_CHECK,
                 techDictEnableCheck,
-                null,
+                tr("settings.dict.technicalNote"),
                 "technical dictionary terms programming code config async kubernetes enable on off");
         checkRow(
                 dict,
@@ -3117,6 +2838,11 @@ public class SettingsWindow {
                 dictEnableCheck,
                 tr("settings.dict.note"),
                 "personal dictionary enable on off honor words dictionary.txt file location global");
+        cardRow(
+                dict,
+                Category.SPELL_CHECK,
+                dictLinks,
+                "dictionary open technical personal file dictionary.txt bundled terms");
         cardRow(dict, Category.SPELL_CHECK, dictionaryEditor(), "personal dictionary words add remove custom ignore");
         return p;
     }
@@ -3129,16 +2855,29 @@ public class SettingsWindow {
         refreshDictionaryList();
 
         TextField input = new TextField();
+        dictionaryInput = input;
         input.setPromptText(tr("settings.dict.prompt"));
+        input.setAccessibleText(tr("settings.dict.prompt"));
         HBox.setHgrow(input, Priority.ALWAYS);
+        // The list has no search of its own: what is being typed narrows it, which also shows at once
+        // whether the word is already there. Filtering only — nothing is stored until Add.
+        input.textProperty().addListener((o, was, now) -> refreshDictionaryList());
         Button add = new Button(tr("settings.dict.add"));
         Runnable doAdd = () -> {
-            String w = input.getText().strip().toLowerCase(java.util.Locale.ROOT);
-            if (!w.isEmpty()) {
-                config.addUserWord(w);
+            // One entry per word, in the form the checker looks words up by. A phrase used to be stored
+            // whole ("foo bar"), which no single word can ever match.
+            String last = null;
+            for (String part : input.getText().strip().split("\\s+")) {
+                String w = com.editora.editor.SpellChecker.canonical(part);
+                if (!w.isEmpty()) {
+                    config.addUserWord(w);
+                    last = w;
+                }
+            }
+            if (last != null) {
                 input.clear();
                 refreshDictionaryList();
-                dictionaryList.getSelectionModel().select(w);
+                dictionaryList.getSelectionModel().select(last);
                 apply(); // live-apply like every other control here: re-runs the spell overlays' caches
             }
             input.requestFocus();
@@ -3171,11 +2910,29 @@ public class SettingsWindow {
             return;
         }
         java.util.List<String> words = new java.util.ArrayList<>(config.getUserDictionary());
+        String typed = dictionaryInput == null || dictionaryInput.getText() == null
+                ? ""
+                : dictionaryInput.getText().strip().toLowerCase(java.util.Locale.ROOT);
+        if (!typed.isEmpty() && typed.indexOf(' ') < 0) {
+            words.removeIf(w -> !w.contains(typed));
+        }
         java.util.Collections.sort(words);
         String sel = dictionaryList.getSelectionModel().getSelectedItem();
         dictionaryList.getItems().setAll(words);
         if (sel != null && words.contains(sel)) {
             dictionaryList.getSelectionModel().select(sel);
+        }
+    }
+
+    /** Re-reads the Personal Dictionary list: a word was added, ignored or reloaded while the page is open. */
+    public void syncDictionaryList() {
+        refreshDictionaryList();
+    }
+
+    /** Re-syncs the file-type ticks after {@code spell.toggleForLanguage} (or another window) changed them. */
+    public void syncSpellFileTypes() {
+        if (spellFileTypes != null) {
+            spellFileTypes.sync();
         }
     }
 
@@ -3844,44 +3601,29 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Languages offered in the Snippets-page picker (this curated list plus any language that already
-     *  has a user snippet file). */
-    private static final java.util.List<String> SNIPPET_LANGUAGES = java.util.List.of(
-            "global",
-            "java",
-            "javascript",
-            "typescript",
-            "python",
-            "go",
-            "rust",
-            "c",
-            "cpp",
-            "csharp",
-            "kotlin",
-            "php",
-            "ruby",
-            "lua",
-            "html",
-            "css",
-            "json",
-            "yaml",
-            "xml",
-            "toml",
-            "sql",
-            "shell",
-            "powershell",
-            "batchfile",
-            "groovy",
-            "ini",
-            "markdown",
-            "mermaid",
-            "dockerfile",
-            "terraform");
-
     private VBox snippetsPage() {
         VBox p = page(tr("settings.cat.snippets"));
+        Card expansion = card(p, null);
+        checkRow(
+                expansion,
+                Category.SNIPPETS,
+                snippetTabExpansionCheck,
+                tr("settings.snippet.tabExpansion.desc"),
+                "snippets tab expansion expand trigger prefix key");
         Card mainCard = card(p, null);
-        cardRow(mainCard, Category.SNIPPETS, snippetsEditor(), "snippets user prefix trigger expansion tab stops body");
+        snippetsEditor = new SnippetsEditor(
+                snippetManager,
+                new SnippetsEditor.Hooks(
+                        this::macroWarn,
+                        this::confirmSnippetSave,
+                        SettingsWindow::highlightSnippetBody,
+                        SettingsWindow::installEmacsKeys));
+        reloadSnippets = snippetsEditor::reload;
+        cardRow(
+                mainCard,
+                Category.SNIPPETS,
+                snippetsEditor.node(),
+                "snippets user prefix trigger expansion tab stops body disable bundled filter");
         Label help = note(tr("settings.snippet.help"));
         help.setWrapText(true);
         help.setMaxWidth(460);
@@ -3889,333 +3631,17 @@ public class SettingsWindow {
         return p;
     }
 
-    /** Master-detail editor: a language picker + the user's snippets for it on the left, a form on the right. */
-    private javafx.scene.Node snippetsEditor() {
-        // Language picker: the curated list, plus any languages that already have a user file.
-        java.util.LinkedHashSet<String> langs = new java.util.LinkedHashSet<>(SNIPPET_LANGUAGES);
-        if (snippetManager != null) {
-            langs.addAll(snippetManager.userSnippetLanguages());
-        }
-        ComboBox<String> language = new ComboBox<>(javafx.collections.FXCollections.observableArrayList(langs));
-        language.setValue(currentSnippetLang);
-
-        ListView<com.editora.snippet.Snippet> list = new ListView<>(snippetItems);
-        list.setPrefSize(220, 420);
-        VBox.setVgrow(list, Priority.ALWAYS); // grow the list to fill the page height
-        list.setCellFactory(lv -> new ListCell<>() {
-            {
-                // A ListCell reports its graphic's intrinsic width as its preferred width, so a name
-                // plus the "bundled" tag made the list demand more than its viewport and grow a
-                // horizontal scrollbar — which then stole the height the last row needed, producing a
-                // vertical one too. Asking for nothing lets the row fit the viewport and the name
-                // ellipsize instead.
-                setPrefWidth(0);
-            }
-
-            @Override
-            protected void updateItem(com.editora.snippet.Snippet s, boolean empty) {
-                super.updateItem(s, empty);
-                if (empty || s == null) {
-                    setText(null);
-                    setGraphic(null);
-                    return;
-                }
-                Label nm =
-                        new Label(s.name() == null || s.name().isBlank() ? tr("settings.snippet.unnamed") : s.name());
-                HBox.setHgrow(nm, Priority.ALWAYS);
-                nm.setMaxWidth(Double.MAX_VALUE);
-                HBox cell = new HBox(6, nm);
-                cell.setAlignment(Pos.CENTER_LEFT);
-                if (!snippetUserNames.contains(s.name())) { // a read-only bundled snippet (until edited)
-                    Label tag = new Label(tr("settings.snippet.bundledTag"));
-                    tag.getStyleClass().add("snippet-bundled-tag");
-                    tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
-                    cell.getChildren().add(tag);
-                }
-                setText(null);
-                setGraphic(cell);
-            }
-        });
-
-        TextField name = new TextField();
-        TextField prefix = new TextField();
-        prefix.setPromptText(tr("settings.snippet.prefixPrompt"));
-        TextField description = new TextField();
-        CodeArea body = AreaUndo.bounded(new CodeArea());
-        body.getStyleClass().addAll("editor-area", "snippet-body");
-        body.setWrapText(true);
-        // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
-        body.setPrefHeight(180);
-        installEmacsKeys(body); // basic C-a/C-e/C-f/C-b/C-n/C-p/M-f/M-b/C-d/C-k in the settings scene
-        body.plainTextChanges().subscribe(c -> highlightSnippetBody(body, currentSnippetLang));
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.snippet.name"), name);
-        formRow(form, 1, tr("settings.snippet.prefix"), prefix);
-        formRow(form, 2, tr("settings.snippet.description"), description);
-        formRow(form, 3, tr("settings.snippet.body"), body);
-        javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
-        javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
-        form.setDisable(true);
-        HBox.setHgrow(form, Priority.ALWAYS);
-        Label problem = note("");
-        problem.setWrapText(true);
-        problem.setVisible(false);
-        problem.setManaged(false);
-
-        // The form's texts now, and as they were when the selected row was loaded (or last committed).
-        java.util.function.Supplier<java.util.List<String>> snippetFormText =
-                () -> java.util.Arrays.asList(name.getText(), prefix.getText(), description.getText(), body.getText());
-        java.util.concurrent.atomic.AtomicReference<java.util.List<String>> snippetFormLoaded =
-                new java.util.concurrent.atomic.AtomicReference<>(snippetFormText.get());
-        Runnable commit = () -> {
-            int i = list.getSelectionModel().getSelectedIndex();
-            if (i < 0 || loadingSnippet || snippetFileProblem != null) {
-                return;
-            }
-            // "Nothing was edited" is judged against what the form was loaded with, not against the model:
-            // a single-line field drops the line breaks of a bundled multi-line description, so a rebuilt
-            // snippet never equalled the original and a mere focus loss wrote a user override.
-            if (snippetFormText.get().equals(snippetFormLoaded.get())) {
-                return; // a field merely lost focus — never rewrite the file for that
-            }
-            com.editora.snippet.Snippet cur = snippetItems.get(i);
-            String newName = name.getText().trim();
-            if (newName.isEmpty()) {
-                // The file is keyed by name and the save skips a blank one: committing it deleted the
-                // snippet. Keep the name it has; the other fields still save.
-                newName = cur.name();
-                name.setText(newName);
-                if (newName == null || newName.isBlank()) {
-                    return;
-                }
-            }
-            if (!newName.equals(cur.name())) {
-                for (com.editora.snippet.Snippet other : snippetItems) {
-                    if (other != cur && newName.equals(other.name())) {
-                        // Two rows with one name collapse to a single entry on disk — refuse, as the
-                        // External Tools page does for a colliding command id.
-                        name.setText(cur.name());
-                        macroWarn(tr("settings.snippet.nameExists", newName));
-                        return;
-                    }
-                }
-            }
-            boolean descriptionEdited =
-                    !description.getText().equals(snippetFormLoaded.get().get(2));
-            com.editora.snippet.Snippet updated = new com.editora.snippet.Snippet(
-                    newName,
-                    prefix.getText().trim(),
-                    body.getText(),
-                    descriptionEdited ? description.getText().trim() : cur.description(),
-                    currentSnippetLang);
-            snippetFormLoaded.set(snippetFormText.get());
-            if (updated.equals(cur)) {
-                return; // only whitespace the commit trims away
-            }
-            snippetUserNames.add(updated.name()); // editing a bundled snippet makes it a user override
-            loadingSnippet = true; // replacing at the same index keeps selection; don't reload the fields
-            try {
-                snippetItems.set(i, updated);
-            } finally {
-                loadingSnippet = false;
-            }
-            list.refresh(); // re-render so the "(bundled)" tag drops off the now-overridden row
-            saveSnippets();
-        };
-        // Single-line fields commit on Enter / focus-loss; the body commits on focus-loss (Enter = newline).
-        java.util.function.Consumer<TextField> wire = tf -> {
-            tf.setOnAction(e -> commit.run());
-            tf.focusedProperty().addListener((o, was, now) -> {
-                if (!now) {
-                    commit.run();
-                }
-            });
-        };
-        wire.accept(name);
-        wire.accept(prefix);
-        wire.accept(description);
-        body.focusedProperty().addListener((o, was, now) -> {
-            if (!now) {
-                commit.run();
-            }
-        });
-
-        // Load the form when a *different* row is selected (selectedIndex, so an in-place commit set() is silent).
-        list.getSelectionModel().selectedIndexProperty().addListener((o, was, now) -> {
-            int i = now == null ? -1 : now.intValue();
-            com.editora.snippet.Snippet s = i >= 0 && i < snippetItems.size() ? snippetItems.get(i) : null;
-            loadingSnippet = true;
-            try {
-                form.setDisable(s == null || snippetFileProblem != null);
-                name.setText(s == null ? "" : s.name());
-                prefix.setText(s == null ? "" : s.prefix());
-                description.setText(s == null ? "" : s.description());
-                body.replaceText(s == null ? "" : s.body()); // CodeArea has no setText
-                snippetFormLoaded.set(snippetFormText.get());
-            } finally {
-                loadingSnippet = false;
-            }
-        });
-
-        Runnable loadLang = () -> {
-            String v = language.getValue();
-            currentSnippetLang = v == null || v.isBlank() ? "global" : v.trim();
-            snippetFileProblem = snippetManager == null ? null : snippetManager.userFileProblem(currentSnippetLang);
-            problem.setText(
-                    snippetFileProblem == null
-                            ? ""
-                            : tr(
-                                    "settings.snippet.unreadable",
-                                    snippetManager.userFile(currentSnippetLang).getFileName(),
-                                    snippetFileProblem));
-            problem.setVisible(snippetFileProblem != null);
-            problem.setManaged(snippetFileProblem != null);
-            loadingSnippet = true;
-            try {
-                snippetItems.setAll(mergedSnippetsForCurrentLang());
-            } finally {
-                loadingSnippet = false;
-            }
-            list.getSelectionModel().clearSelection();
-            if (!snippetItems.isEmpty()) {
-                list.getSelectionModel().select(0);
-            } else {
-                form.setDisable(true);
-            }
-        };
-        language.valueProperty().addListener((o, a, b) -> loadLang.run());
-        reloadSnippets = () -> { // another window's Settings may have rewritten this language's file
-            com.editora.snippet.Snippet sel = list.getSelectionModel().getSelectedItem();
-            loadLang.run();
-            for (int k = 0; sel != null && k < snippetItems.size(); k++) {
-                if (java.util.Objects.equals(sel.name(), snippetItems.get(k).name())) {
-                    list.getSelectionModel().select(k);
-                    break;
-                }
-            }
-        };
-
-        Button add = new Button(tr("settings.snippet.add"));
-        add.setOnAction(e -> {
-            if (snippetFileProblem != null) {
-                return;
-            }
-            // The file is keyed by name: a second "New Snippet" would replace the first on disk.
-            java.util.Set<String> taken = new java.util.HashSet<>();
-            for (com.editora.snippet.Snippet other : snippetItems) {
-                taken.add(other.name());
-            }
-            String newName = tr("settings.snippet.newName");
-            for (int n = 2; taken.contains(newName); n++) {
-                newName = tr("settings.snippet.newName") + " " + n;
-            }
-            com.editora.snippet.Snippet s = new com.editora.snippet.Snippet(newName, "", "", "", currentSnippetLang);
-            snippetUserNames.add(s.name());
-            snippetItems.add(s);
-            saveSnippets();
-            list.getSelectionModel().select(snippetItems.size() - 1);
-            name.requestFocus();
-            name.selectAll();
-        });
-        Button remove = new Button(tr("settings.snippet.remove"));
-        // Remove only affects user snippets/overrides; a pristine bundled row can't be deleted (it's shipped).
-        remove.disableProperty()
-                .bind(javafx.beans.binding.Bindings.createBooleanBinding(
-                        () -> {
-                            com.editora.snippet.Snippet s =
-                                    list.getSelectionModel().getSelectedItem();
-                            return s == null || !snippetUserNames.contains(s.name());
-                        },
-                        list.getSelectionModel().selectedItemProperty()));
-        remove.setOnAction(e -> {
-            com.editora.snippet.Snippet s = list.getSelectionModel().getSelectedItem();
-            if (s == null || !snippetUserNames.contains(s.name())) {
-                return;
-            }
-            snippetUserNames.remove(s.name());
-            snippetItems.remove(s);
-            saveSnippets();
-            loadLang.run(); // re-derive: a removed override reverts to its bundled snippet
-        });
-        HBox buttons = new HBox(6, add, remove);
-        // The picker shares the list's width: boxed with a 130px label column it was squeezed to an arrow.
-        Label languageLabel = new Label(tr("settings.snippet.language"));
-        languageLabel.setLabelFor(language);
-        language.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(language, Priority.ALWAYS);
-        HBox languageRow = new HBox(10, languageLabel, language);
-        languageRow.setAlignment(Pos.CENTER_LEFT);
-        VBox left = new VBox(6, languageRow, list, buttons);
-        keepWidth(languageLabel, add, remove, left);
-        VBox.setVgrow(left, Priority.ALWAYS);
-
-        // Explicit Save (edits also auto-save on Enter / focus-loss, so nothing is lost on row switch).
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.setDefaultButton(false);
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> commit.run());
-        HBox saveRow = new HBox(save);
-        saveRow.setAlignment(Pos.CENTER_RIGHT);
-        VBox right = new VBox(8, problem, form, saveRow);
-        VBox.setVgrow(form, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-
-        loadLang.run();
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
+    private boolean confirmSnippetSave(String message) {
+        Alert a = Dialogs.styled(new Alert(Alert.AlertType.CONFIRMATION, message, ButtonType.OK, ButtonType.CANCEL));
+        a.initOwner(stage);
+        a.setHeaderText(null);
+        return a.showAndWait().filter(b -> b == ButtonType.OK).isPresent();
     }
 
-    /**
-     * The snippets shown for the current language: the bundled (shipped) ones, with any user file entries
-     * overriding the bundled one of the same name and net-new user snippets appended. Rebuilds
-     * {@link #snippetUserNames} (the names that are user-owned and therefore writable / removable).
-     */
-    private java.util.List<com.editora.snippet.Snippet> mergedSnippetsForCurrentLang() {
-        snippetUserNames.clear();
-        if (snippetManager == null) {
-            return java.util.List.of();
-        }
-        java.util.LinkedHashMap<String, com.editora.snippet.Snippet> userByName = new java.util.LinkedHashMap<>();
-        for (com.editora.snippet.Snippet u : snippetManager.userSnippets(currentSnippetLang)) {
-            userByName.put(u.name(), u);
-            snippetUserNames.add(u.name());
-        }
-        java.util.List<com.editora.snippet.Snippet> merged = new java.util.ArrayList<>();
-        java.util.Set<String> seen = new java.util.HashSet<>();
-        for (com.editora.snippet.Snippet b : snippetManager.bundledSnippets(currentSnippetLang)) {
-            merged.add(userByName.getOrDefault(b.name(), b)); // user override wins; else the read-only bundled
-            seen.add(b.name());
-        }
-        for (com.editora.snippet.Snippet u : userByName.values()) {
-            if (seen.add(u.name())) {
-                merged.add(u); // a user snippet with no bundled counterpart
-            }
-        }
-        return merged;
-    }
-
-    private void saveSnippets() {
-        if (snippetManager == null || snippetFileProblem != null) {
-            return; // never write back over a file that could not be parsed
-        }
-        // Persist only user-owned snippets (overrides + net-new) — never copy the shipped bundled ones.
-        java.util.List<com.editora.snippet.Snippet> userOnly = new java.util.ArrayList<>();
-        for (com.editora.snippet.Snippet s : snippetItems) {
-            if (snippetUserNames.contains(s.name())) {
-                userOnly.add(s);
-            }
-        }
-        try {
-            snippetManager.saveUserSnippets(currentSnippetLang, userOnly);
-        } catch (java.io.IOException e) {
-            Dialogs.styled(new Alert(
-                            Alert.AlertType.ERROR, tr("settings.snippet.saveFailed", e.getMessage()), ButtonType.OK))
-                    .showAndWait();
+    /** Another window (or a save in the editor) changed a user snippet file: the open Snippets page re-reads it. */
+    public void reloadSnippetsPage() {
+        if (reloadSnippets != null) {
+            reloadSnippets.run();
         }
     }
 
@@ -4267,7 +3693,11 @@ public class SettingsWindow {
                 HBox cell = new HBox(6, nm);
                 cell.setAlignment(Pos.CENTER_LEFT);
                 if (!templateUserIds.contains(t.id())) {
-                    Label tag = new Label(tr("settings.template.bundledTag"));
+                    // Not the user's own file: say whose it is (editing it saves a user copy that overrides it).
+                    Label tag = new Label(tr(
+                            t.origin() == com.editora.template.Template.Origin.PLUGIN
+                                    ? "settings.template.pluginTag"
+                                    : "settings.template.bundledTag"));
                     tag.getStyleClass().add("snippet-bundled-tag");
                     tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
                     cell.getChildren().add(tag);
@@ -4286,7 +3716,10 @@ public class SettingsWindow {
         fileName.setPromptText(tr("settings.template.fileNamePrompt"));
         CodeArea body = AreaUndo.bounded(new CodeArea());
         body.getStyleClass().addAll("editor-area", "snippet-body");
-        body.setWrapText(true);
+        // A template body is a file: its lines are shown as they will be written (scrolling sideways), not
+        // re-wrapped into something that no longer looks like the code it creates.
+        body.setWrapText(false);
+        body.setPrefWidth(480);
         // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
         body.setPrefHeight(180);
         installEmacsKeys(body); // basic Emacs caret movement in the settings scene
@@ -4302,7 +3735,13 @@ public class SettingsWindow {
         formRow(form, 2, tr("settings.template.description"), description);
         formRow(form, 3, tr("settings.template.language"), language);
         formRow(form, 4, tr("settings.template.fileName"), fileName);
-        formRow(form, 5, tr("settings.template.body"), body);
+        // The body gets the form's full width (its label on the line above) rather than the field column:
+        // beside the list, that column is too narrow to read a line of code in.
+        Label bodyLabel = new Label(tr("settings.template.body"));
+        bodyLabel.setLabelFor(body);
+        form.add(bodyLabel, 0, 5, 2, 1);
+        form.add(body, 0, 6, 2, 1);
+        body.setMinWidth(180);
         javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
         javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
@@ -4342,7 +3781,9 @@ public class SettingsWindow {
                 // The id is the file stem: one that is not a plain file name would write outside the
                 // templates folder, and one another row uses would overwrite that template's file.
                 String problem = null;
-                if (!com.editora.template.TemplateRegistry.isValidId(newId)) {
+                if (com.editora.template.TemplateRegistry.isReservedId(newId)) {
+                    problem = tr("settings.template.idReserved", newId); // index.json is the bundled list
+                } else if (!com.editora.template.TemplateRegistry.isValidId(newId)) {
                     problem = tr("settings.template.idInvalid", newId);
                 } else {
                     for (com.editora.template.Template other : templateItems) {
@@ -4380,23 +3821,29 @@ public class SettingsWindow {
                 return; // only whitespace the commit trims away: not an edit, so not a user override either
             }
             String oldId = cur.id();
+            // Save under the new id first: a rename that deleted the old file and then failed to write the
+            // new one lost the template. The wizard labels are not in this form, so they are carried over.
+            com.editora.template.Template toSave = updated.withLabels(cur.labels());
+            if (!saveTemplate(toSave)) {
+                id.setText(oldId);
+                return;
+            }
             if (!oldId.equals(newId) && templateUserIds.contains(oldId)) {
                 try {
                     templateRegistry.deleteUserTemplate(oldId); // renamed: drop the old override file
                 } catch (java.io.IOException ignored) {
-                    // best-effort
+                    // best-effort: the template is safe under its new id either way
                 }
                 templateUserIds.remove(oldId);
             }
-            templateUserIds.add(newId); // editing a bundled template makes it a user override
+            templateUserIds.add(newId); // editing a bundled or plugin template makes it a user override
             loadingTemplate = true;
             try {
-                templateItems.set(i, updated);
+                templateItems.set(i, toSave);
             } finally {
                 loadingTemplate = false;
             }
             list.refresh();
-            saveTemplate(updated);
         };
         java.util.function.Consumer<TextField> wire = tf -> {
             tf.setOnAction(e -> commit.run());
@@ -4539,8 +3986,10 @@ public class SettingsWindow {
     }
 
     /**
-     * The templates shown: bundled (shipped) ones, with any user file override of the same id and net-new
-     * user templates appended. Rebuilds {@link #templateUserIds} (the ids that are user-owned/writable).
+     * The templates shown, in the order they override one another: bundled (shipped) ones, then plugins'
+     * (replacing a bundled one of the same id, else appended), then the user's own files, which win over
+     * both. Rebuilds {@link #templateUserIds} (the ids that are user-owned: writable and removable); every
+     * other row is tagged with where it comes from.
      */
     private java.util.List<com.editora.template.Template> mergedTemplates() {
         templateUserIds.clear();
@@ -4552,30 +4001,30 @@ public class SettingsWindow {
             userById.put(u.id(), u);
             templateUserIds.add(u.id());
         }
-        java.util.List<com.editora.template.Template> merged = new java.util.ArrayList<>();
-        java.util.Set<String> seen = new java.util.HashSet<>();
+        java.util.LinkedHashMap<String, com.editora.template.Template> merged = new java.util.LinkedHashMap<>();
         for (com.editora.template.Template b : templateRegistry.bundledTemplates()) {
-            merged.add(userById.getOrDefault(b.id(), b));
-            seen.add(b.id());
+            merged.put(b.id(), b);
         }
-        for (com.editora.template.Template u : userById.values()) {
-            if (seen.add(u.id())) {
-                merged.add(u);
-            }
+        for (com.editora.template.Template plugin : templateRegistry.pluginTemplates()) {
+            merged.put(plugin.id(), plugin);
         }
-        return merged;
+        merged.putAll(userById); // the user's own file always wins
+        return new java.util.ArrayList<>(merged.values());
     }
 
-    private void saveTemplate(com.editora.template.Template t) {
+    /** Writes {@code t} to the user's templates folder; false (after saying why) when that failed. */
+    private boolean saveTemplate(com.editora.template.Template t) {
         if (templateRegistry == null) {
-            return;
+            return false;
         }
         try {
             templateRegistry.saveUserTemplate(t);
+            return true;
         } catch (java.io.IOException e) {
             Dialogs.styled(new Alert(
                             Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK))
                     .showAndWait();
+            return false;
         }
     }
 
@@ -5225,7 +4674,7 @@ public class SettingsWindow {
     }
 
     /** Re-highlights a snippet/template body {@link CodeArea} for {@code languageName} (plain for global/unknown). */
-    private static void highlightSnippetBody(CodeArea area, String languageName) {
+    static void highlightSnippetBody(CodeArea area, String languageName) {
         String text = area.getText();
         IGrammar g = null;
         if (languageName != null && !languageName.isBlank() && !"global".equals(languageName)) {
@@ -5251,7 +4700,7 @@ public class SettingsWindow {
     /** Installs basic Emacs caret movement on a settings-scene {@link CodeArea} (no global KeyDispatcher there).
      *  Uses absolute-offset {@code moveTo}/{@code deleteText} (robust across RichTextFX versions); each action is
      *  guarded so the key is always consumed (no fall-through to the default behaviour) even at a boundary. */
-    private static void installEmacsKeys(CodeArea area) {
+    static void installEmacsKeys(CodeArea area) {
         installFocusEscape(area);
         area.addEventFilter(javafx.scene.input.KeyEvent.KEY_PRESSED, e -> {
             boolean ctrl = e.isControlDown() && !e.isAltDown() && !e.isMetaDown() && !e.isShiftDown();
@@ -7782,6 +7231,7 @@ public class SettingsWindow {
             autocompleteCheck.setSelected(settings.isAutocomplete());
             autocompleteProseCheck.setSelected(settings.isAutocompleteProse());
             autocompleteSnippetsCheck.setSelected(settings.isAutocompleteSnippets());
+            snippetTabExpansionCheck.setSelected(settings.isSnippetTabExpansion());
             autocompleteMermaidCheck.setSelected(settings.isAutocompleteMermaid());
             autocompleteProseCheck.setDisable(!settings.isAutocomplete());
             autocompleteSnippetsCheck.setDisable(!settings.isAutocomplete());
@@ -7802,6 +7252,7 @@ public class SettingsWindow {
             techDictEnableCheck.setSelected(settings.isTechnicalDictionary());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
+            syncSpellFileTypes();
             menuBarCheck.setSelected(settings.isShowMenuBar());
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
@@ -8765,14 +8216,7 @@ public class SettingsWindow {
     }
 
     private static String spellLanguageName(String id) {
-        return switch (id) {
-            case "en_US" -> tr("spell.lang.en_US");
-            case "en_GB" -> tr("spell.lang.en_GB");
-            case "es" -> tr("spell.lang.es");
-            case "es_MX" -> tr("spell.lang.es_MX");
-            case "fr" -> tr("spell.lang.fr");
-            default -> id;
-        };
+        return SpellCoordinator.languageName(id);
     }
 
     /** Friendly label for an inlay-hint filter mode ({@code literals}/{@code all}); shared with the palette picker. */

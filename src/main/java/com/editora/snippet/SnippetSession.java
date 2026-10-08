@@ -25,6 +25,19 @@ import org.reactfx.Subscription;
  * <p>Field offsets are kept in sync with edits via a {@code plainTextChanges} subscription using the
  * pure {@link #shift} arithmetic; programmatic mirror edits are guarded by {@link #applying} to avoid
  * reentrancy.
+ *
+ * <h2>When it ends</h2>
+ *
+ * <p>The session lives while the caret (and the selection's other end) is inside one of its fields. It
+ * ends at {@code $0}, on Escape, when an edit cuts through a tracked range, and — checked once per event
+ * turn by {@link #settle()} — as soon as the caret is somewhere else: a click on another line, a
+ * navigation command, a search jump. Clicking into a <em>different</em> field makes that one the active
+ * field instead. Until then Tab belongs to the session, which is why it must not outlive the caret's stay.
+ *
+ * <p>An edit that touches no tracked range (a typing assist re-indenting the line, a Backspace that
+ * removes the character in front of the field, an auto-import above) does not end it: the ranges behind
+ * the edit are shifted and the caret rule decides. Undo and redo of edits made in the fields are followed
+ * the same way, so undoing a typo leaves Tab still going to the next stop.
  */
 public final class SnippetSession {
 
@@ -37,8 +50,27 @@ public final class SnippetSession {
     private boolean ended;
     private boolean completed;
     private boolean suspended;
-    private boolean externalEdit;
     private Runnable onEnd = () -> {};
+    private Runnable onChanged = () -> {};
+    private boolean settlePending;
+    /** Where {@link #settle()} must put the caret first (an undo left it in a mirror); -1 = leave it. */
+    private int pendingCaret = -1;
+
+    private final javafx.beans.value.ChangeListener<Integer> caretListener = (o, was, now) -> scheduleSettle();
+
+    /** What a tracked range is, for whoever draws the session ({@link #marks}). */
+    public static final int MARK_ACTIVE = 0;
+
+    public static final int MARK_FIELD = 1;
+    public static final int MARK_MIRROR = 2;
+    public static final int MARK_FINAL = 3;
+
+    /** Receives each tracked range {@code [start, end)} (possibly empty) and its {@code MARK_*} kind. */
+    @FunctionalInterface
+    public interface MarkSink {
+        void mark(int start, int end, int kind);
+    }
+
     private java.util.function.Function<CodeArea, Runnable> undoJoin = a -> () -> {};
     private ContextMenu choiceMenu;
 
@@ -141,8 +173,115 @@ public final class SnippetSession {
             return;
         }
         sub = area.plainTextChanges().subscribe(this::onChange);
+        area.caretPositionProperty().addListener(caretListener);
+        area.anchorProperty().addListener(caretListener);
         active = 0;
         selectActive();
+    }
+
+    /** Run whenever what the session would draw or report may have changed (ranges, active field, end). */
+    void setOnChanged(Runnable onChanged) {
+        this.onChanged = onChanged == null ? () -> {} : onChanged;
+    }
+
+    /** The view this session edits. */
+    CodeArea area() {
+        return area;
+    }
+
+    /** Reports every tracked range of the fields still to visit, the mirrors, and {@code $0}. */
+    void marks(MarkSink sink) {
+        if (ended) {
+            return;
+        }
+        for (int i = 0; i < fields.size(); i++) {
+            Field f = fields.get(i);
+            if (f.retired) {
+                continue;
+            }
+            for (int k = 0; k < f.ranges.size(); k++) {
+                int[] r = f.ranges.get(k);
+                int kind = k != f.primaryIdx ? MARK_MIRROR : i == active && !suspended ? MARK_ACTIVE : MARK_FIELD;
+                sink.mark(r[0], r[1], kind);
+            }
+        }
+        sink.mark(finalRange[0], finalRange[1], MARK_FINAL);
+    }
+
+    /** {@code {position, count}} of the active field among the fields still to visit (1-based). */
+    int[] progress() {
+        int count = 0;
+        int position = 0;
+        for (int i = 0; i < fields.size(); i++) {
+            if (!fields.get(i).retired) {
+                count++;
+                if (i == active) {
+                    position = count;
+                }
+            }
+        }
+        return new int[] {position, count};
+    }
+
+    private void scheduleSettle() {
+        if (ended || settlePending) {
+            return;
+        }
+        settlePending = true;
+        Platform.runLater(() -> {
+            settlePending = false;
+            settle();
+        });
+    }
+
+    /**
+     * Brings the session in line with where the caret is now: ends it when the caret has left every field,
+     * or makes the field the caret moved into the active one. Deferred to the end of the event turn by the
+     * caret and text listeners — inside an edit the text has changed but the caret has not moved yet, so a
+     * check made there would see the caret outside a field it is about to be inside. Callers that are
+     * about to act on a key (Tab, Escape) run it first so a stale session never takes the key.
+     */
+    void settle() {
+        if (ended) {
+            return;
+        }
+        if (pendingCaret >= 0) {
+            int caret = Math.min(pendingCaret, area.getLength());
+            pendingCaret = -1;
+            area.moveTo(caret);
+        }
+        if (!suspended && !applying) {
+            checkCaret();
+        }
+        if (!ended) {
+            onChanged.run();
+        }
+    }
+
+    private void checkCaret() {
+        int lo = Math.min(area.getAnchor(), area.getCaretPosition());
+        int hi = Math.max(area.getAnchor(), area.getCaretPosition());
+        int[] p = fields.get(active).primary();
+        if (lo >= p[0] && hi <= p[1]) {
+            return;
+        }
+        int best = -1;
+        for (int i = 0; i < fields.size(); i++) {
+            Field f = fields.get(i);
+            int[] r = f.primary();
+            if (!f.retired && lo >= r[0] && hi <= r[1]) {
+                int[] b = best < 0 ? null : fields.get(best).primary();
+                if (b == null || r[1] - r[0] < b[1] - b[0]) {
+                    best = i; // the innermost field around the caret
+                }
+            }
+        }
+        if (best < 0) {
+            cancel();
+            return;
+        }
+        active = best;
+        hideChoiceMenu();
     }
 
     public void setOnEnd(Runnable onEnd) {
@@ -179,9 +318,11 @@ public final class SnippetSession {
         if (field.ranges.size() > 1) mirrorInto(field, true);
     }
 
-    public void setExternalEdit(boolean value) {
-        externalEdit = value;
-    }
+    /**
+     * Kept for callers that bracket a programmatic edit; an edit that touches no tracked range is now
+     * always absorbed (see the class comment), so there is nothing to switch.
+     */
+    public void setExternalEdit(boolean value) {}
 
     /** Advances to the next stop; past the last one, jumps to {@code $0} and ends. */
     public void next() {
@@ -195,6 +336,7 @@ public final class SnippetSession {
         if (target < fields.size()) {
             active = target;
             selectActive();
+            onChanged.run();
         } else {
             finish();
         }
@@ -212,6 +354,7 @@ public final class SnippetSession {
         if (target >= 0) {
             active = target;
             selectActive();
+            onChanged.run();
         }
     }
 
@@ -262,6 +405,8 @@ public final class SnippetSession {
             sub.unsubscribe();
             sub = null;
         }
+        area.caretPositionProperty().removeListener(caretListener);
+        area.anchorProperty().removeListener(caretListener);
     }
 
     private void selectActive() {
@@ -368,46 +513,130 @@ public final class SnippetSession {
         if (applying || ended) {
             return;
         }
-        // An undo/redo is rewriting the document (e.g. reverting a mirrored-field edit, now a single undo unit
-        // via replaceInActiveField): end the session cleanly rather than treat the revert as the user leaving
-        // the field and, worse, fire a re-entrant mirror replaceText mid-undo. The document is left consistent
-        // (fully reverted), just no longer tracked (#415).
-        if (area.getUndoManager().isPerformingAction()) {
-            cancel();
-            return;
-        }
         int pos = change.getPosition();
         int removed = change.getRemoved().length();
         int inserted = change.getInserted().length();
-        int delta = inserted - removed;
-
-        if (externalEdit) {
-            List<int[]> ranges = allRanges();
-            for (int[] range : ranges) {
-                if (pos < range[1] && pos + removed > range[0] || removed == 0 && pos > range[0] && pos < range[1]) {
-                    cancel();
-                    return;
-                }
-            }
-            for (int[] range : ranges) {
-                if (range[0] >= pos + removed) {
-                    range[0] += delta;
-                    range[1] += delta;
-                }
-            }
-            return;
-        }
+        // An undo or redo is rewriting the document. It is followed like any other edit, but never mirrored:
+        // the history replays the mirror edits itself, and a re-entrant replaceText mid-undo corrupts it (#415).
+        boolean undoing = area.getUndoManager().isPerformingAction();
 
         int[] primary = fields.get(active).primary();
-        // An edit outside the active field (the user moved away) ends the snippet.
-        if (pos < primary[0] || pos > primary[1] || pos + removed > primary[1]) {
-            cancel();
+        if (pos >= primary[0] && pos + removed <= primary[1]) {
+            retireSwallowed(primary, pos, removed);
+            // Grow/shrink the active field and shift everything after the edit.
+            shift(allRanges(), indexOf(primary), pos, removed, inserted);
+            if (!suspended && !undoing) {
+                mirrorActive();
+            }
+            scheduleSettle();
             return;
         }
-        retireSwallowed(primary, pos, removed);
-        // Grow/shrink the active field and shift everything after the edit.
-        shift(allRanges(), indexOf(primary), pos, removed, inserted);
-        if (!suspended) mirrorActive();
+        if (undoing && absorbUndo(change)) {
+            scheduleSettle();
+            return;
+        }
+        // An edit outside the active field. One that cuts through a tracked range (typing in a mirror, a
+        // delete across the snippet) ends the session; anything else just moves the ranges behind it.
+        List<int[]> ranges = allRanges();
+        for (int[] range : ranges) {
+            if (pos < range[1] && pos + removed > range[0] || removed == 0 && pos > range[0] && pos < range[1]) {
+                cancel();
+                return;
+            }
+        }
+        int delta = inserted - removed;
+        for (int[] range : ranges) {
+            if (range[0] >= pos + removed) {
+                range[0] += delta;
+                range[1] += delta;
+            }
+        }
+        scheduleSettle();
+    }
+
+    /**
+     * Follows an undo/redo change that is not a plain edit of the active field: the replay of a mirror
+     * rewrite (inside one mirror), or of an atomic field-plus-mirrors edit ({@link #replaceInActiveField}
+     * replaces the whole stretch from a field's first occurrence to its last). Returns false when the change
+     * is neither, leaving the caller to treat it as an edit from outside.
+     */
+    private boolean absorbUndo(PlainTextChange change) {
+        int pos = change.getPosition();
+        int removed = change.getRemoved().length();
+        int inserted = change.getInserted().length();
+        Field current = fields.get(active);
+        for (int pass = 0; pass < 2; pass++) { // the active field's occurrences first: an empty one is still it
+            for (Field f : fields) {
+                if (f == current != (pass == 0)) {
+                    continue;
+                }
+                for (int[] r : f.ranges) {
+                    if (pos >= r[0] && pos + removed <= r[1] && (pass == 0 || r[1] > r[0])) {
+                        shift(allRanges(), indexOf(r), pos, removed, inserted);
+                        return true;
+                    }
+                }
+            }
+        }
+        for (Field f : fields) {
+            if (f.ranges.size() < 2 || f.hasTransforms()) {
+                continue;
+            }
+            List<int[]> order = new ArrayList<>(f.ranges);
+            order.sort((x, y) -> Integer.compare(x[0], y[0]));
+            int spanStart = order.get(0)[0];
+            int spanEnd = order.get(order.size() - 1)[1];
+            if (pos != spanStart || pos + removed != spanEnd) {
+                continue;
+            }
+            int length = mirroredLength(order, spanStart, change.getRemoved(), change.getInserted());
+            if (length < 0) {
+                return false;
+            }
+            for (int[] o : order) {
+                shift(allRanges(), indexOf(o), o[0], o[1] - o[0], length);
+            }
+            if (f == current) {
+                pendingCaret = f.primary()[1]; // the history parks the caret after the last mirror
+            }
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * The length each occurrence has in {@code after}, when {@code after} is {@code before} with every
+     * occurrence ({@code order}, offsets relative to {@code spanStart}) replaced by one same text and the
+     * text between them untouched; -1 when it is not. Pure.
+     */
+    static int mirroredLength(List<int[]> order, int spanStart, String before, String after) {
+        int gaps = 0;
+        for (int k = 0; k + 1 < order.size(); k++) {
+            gaps += order.get(k + 1)[0] - order.get(k)[1];
+        }
+        int total = after.length() - gaps;
+        if (total < 0 || total % order.size() != 0) {
+            return -1;
+        }
+        int length = total / order.size();
+        int at = 0;
+        String value = null;
+        for (int k = 0; k < order.size(); k++) {
+            String occurrence = after.substring(at, at + length);
+            if (value != null && !value.equals(occurrence)) {
+                return -1;
+            }
+            value = occurrence;
+            at += length;
+            if (k + 1 < order.size()) {
+                String gap = before.substring(order.get(k)[1] - spanStart, order.get(k + 1)[0] - spanStart);
+                if (!after.startsWith(gap, at)) {
+                    return -1;
+                }
+                at += gap.length();
+            }
+        }
+        return length;
     }
 
     /**
@@ -762,14 +991,19 @@ public final class SnippetSession {
     /**
      * Makes a parsed snippet fit the buffer it is going into, shifting stop ranges: {@code \r\n} and a lone
      * {@code \r} become {@code \n} (wherever they came from — the body, a {@code $CLIPBOARD} value, a
-     * server's text), and, when {@code indentUnit} is given and is not a tab, each tab that indents a line is
-     * replaced by that unit — in the snippet format a leading tab means "one indent level", not a tab
-     * character. Tabs after the first non-tab character of a line are text and are kept. Pure.
+     * server's text), and, when {@code indentUnit} is given, the body's own indentation becomes that unit.
+     * In the snippet format a leading tab means "one indent level", not a tab character; a body indented
+     * with spaces instead (many VS Code bundles are) is read the same way, one level per
+     * {@link #spaceIndentUnit} spaces, so it does not put four spaces into a tab-indented file. Whitespace
+     * after the first other character of a line is text and is kept. Pure.
      */
     public static ParsedSnippet normalize(ParsedSnippet parsed, String indentUnit) {
         String t = parsed.text();
-        boolean tabs = indentUnit != null && !indentUnit.isEmpty() && !indentUnit.equals("\t") && t.indexOf('\t') >= 0;
-        if (!tabs && t.indexOf('\r') < 0) {
+        boolean convert = indentUnit != null && !indentUnit.isEmpty();
+        boolean tabs = convert && !indentUnit.equals("\t") && t.indexOf('\t') >= 0;
+        int spaceUnit = convert ? spaceIndentUnit(t) : 0;
+        boolean spaces = spaceUnit > 0 && !indentUnit.equals(" ".repeat(spaceUnit));
+        if (!tabs && !spaces && t.indexOf('\r') < 0) {
             return parsed;
         }
         int[] map = new int[t.length() + 1]; // old offset → new offset
@@ -788,6 +1022,23 @@ public final class SnippetSession {
                 sb.append(indentUnit);
                 continue;
             }
+            if (c == ' ' && spaces && lineStart) {
+                int n = 0;
+                while (k + n < t.length() && t.charAt(k + n) == ' ') {
+                    n++;
+                }
+                int levels = n / spaceUnit;
+                int start = sb.length();
+                for (int j = 0; j < n; j++) { // an offset inside a level snaps to that level's start
+                    map[k + j] = j < levels * spaceUnit
+                            ? start + (j / spaceUnit) * indentUnit.length()
+                            : start + levels * indentUnit.length() + (j - levels * spaceUnit);
+                }
+                sb.append(indentUnit.repeat(levels)).append(" ".repeat(n - levels * spaceUnit));
+                k += n - 1;
+                lineStart = false;
+                continue;
+            }
             sb.append(c);
             lineStart = c == '\n';
         }
@@ -804,12 +1055,54 @@ public final class SnippetSession {
         return new ParsedSnippet(sb.toString(), stops);
     }
 
-    /** Re-indents continuation lines of a parsed snippet to {@code indent}, shifting stop ranges. Pure. */
+    /**
+     * How many spaces one indent level of a space-indented body is: 4 or 2 when every indented line's
+     * leading run of spaces is a multiple of it, 3 when they are all multiples of three; 0 when the body is
+     * not space-indented, mixes tabs into its indentation, or its runs fit no unit (hand alignment). Pure.
+     */
+    static int spaceIndentUnit(String text) {
+        int gcd = 0;
+        int k = 0;
+        while (k < text.length()) {
+            int n = 0;
+            while (k + n < text.length() && text.charAt(k + n) == ' ') {
+                n++;
+            }
+            if (k + n < text.length() && text.charAt(k + n) == '\t') {
+                return 0;
+            }
+            if (n > 0) { // a line of spaces only counts too: a tab stop alone on its line looks like that
+                gcd = gcd == 0 ? n : gcd(gcd, n);
+            }
+            int nl = text.indexOf('\n', k + n);
+            if (nl < 0) {
+                break;
+            }
+            k = nl + 1;
+        }
+        return gcd % 4 == 0 ? (gcd == 0 ? 0 : 4) : gcd % 2 == 0 ? 2 : gcd == 3 ? 3 : 0;
+    }
+
+    private static int gcd(int a, int b) {
+        return b == 0 ? a : gcd(b, a % b);
+    }
+
+    /**
+     * Re-indents continuation lines of a parsed snippet to {@code indent}, shifting stop ranges. A blank
+     * line inside the body stays empty — indenting it only left trailing whitespace — unless a tab stop
+     * sits on it, where the user is about to type. Pure.
+     */
     public static ParsedSnippet reindent(ParsedSnippet parsed, String indent) {
         if (indent.isEmpty() || parsed.text().indexOf('\n') < 0) {
             return parsed;
         }
         String t = parsed.text();
+        java.util.Set<Integer> stopOffsets = new java.util.HashSet<>();
+        for (TabStop s : parsed.stops()) {
+            for (int[] r : s.ranges()) {
+                stopOffsets.add(r[0]);
+            }
+        }
         int[] add = new int[t.length() + 1];
         StringBuilder sb = new StringBuilder();
         int extra = 0;
@@ -817,7 +1110,8 @@ public final class SnippetSession {
             add[k] = extra;
             char c = t.charAt(k);
             sb.append(c);
-            if (c == '\n') {
+            boolean blankLine = k + 1 < t.length() && t.charAt(k + 1) == '\n' && !stopOffsets.contains(k + 1);
+            if (c == '\n' && !blankLine) {
                 sb.append(indent);
                 extra += indent.length();
             }

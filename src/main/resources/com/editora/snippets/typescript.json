@@ -1,0 +1,736 @@
+{
+  "Log to console": {
+    "prefix": "log",
+    "body": [
+      "console.log($1);$0"
+    ],
+    "description": "Log to the console"
+  },
+  "Log warning to console": {
+    "prefix": "warn",
+    "body": [
+      "console.warn($1);$0"
+    ],
+    "description": "Log a warning to the console"
+  },
+  "Log error to console": {
+    "prefix": "error",
+    "body": [
+      "console.error($1);$0"
+    ],
+    "description": "Log an error to the console"
+  },
+  "Log a labelled value": {
+    "prefix": "logv",
+    "body": [
+      "console.log('${1:value}:', ${1:value});$0"
+    ],
+    "description": "Log a value with its name"
+  },
+  "Constant": {
+    "prefix": "const",
+    "body": [
+      "const ${1:name} = ${2:value};$0"
+    ],
+    "description": "Constant declaration"
+  },
+  "Variable": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name} = ${2:value};$0"
+    ],
+    "description": "Block-scoped variable"
+  },
+  "Destructure object": {
+    "prefix": "dob",
+    "body": [
+      "const { ${2:prop} } = ${1:object};$0"
+    ],
+    "description": "Destructure properties of an object"
+  },
+  "Destructure array": {
+    "prefix": "dar",
+    "body": [
+      "const [${2:first}] = ${1:array};$0"
+    ],
+    "description": "Destructure elements of an array"
+  },
+  "If Statement": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condition}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If statement"
+  },
+  "If-Else Statement": {
+    "prefix": "ifelse",
+    "body": [
+      "if (${1:condition}) {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If-else statement"
+  },
+  "Else Statement": {
+    "prefix": "else",
+    "body": [
+      "else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Else block"
+  },
+  "Else-If Statement": {
+    "prefix": "elseif",
+    "body": [
+      "else if (${1:condition}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Else-if block"
+  },
+  "Ternary": {
+    "prefix": "ter",
+    "body": [
+      "${1:condition} ? ${2:whenTrue} : ${3:whenFalse}"
+    ],
+    "description": "Conditional (ternary) expression"
+  },
+  "Switch Statement": {
+    "prefix": "switch",
+    "body": [
+      "switch (${1:key}) {",
+      "\tcase ${2:value}:",
+      "\t\t$0",
+      "\t\tbreak;",
+      "",
+      "\tdefault:",
+      "\t\tbreak;",
+      "}"
+    ],
+    "description": "Switch statement"
+  },
+  "For Loop": {
+    "prefix": "for",
+    "body": [
+      "for (let ${1:i} = 0; ${1:i} < ${2:array}.length; ${1:i}++) {",
+      "\tconst ${3:element} = ${2:array}[${1:i}];",
+      "\t$0",
+      "}"
+    ],
+    "description": "Indexed for loop"
+  },
+  "For-Of Loop": {
+    "prefix": "forof",
+    "body": [
+      "for (const ${1:item} of ${2:iterable}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "For-of loop over an iterable"
+  },
+  "For-In Loop": {
+    "prefix": "forin",
+    "body": [
+      "for (const ${1:key} in ${2:object}) {",
+      "\tif (Object.hasOwn(${2:object}, ${1:key})) {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "For-in loop over own keys"
+  },
+  "For-Each Loop": {
+    "prefix": "foreach",
+    "body": [
+      "${1:array}.forEach((${2:item}) => {",
+      "\t$0",
+      "});"
+    ],
+    "description": "Array forEach with an arrow function"
+  },
+  "For-Await-Of Loop": {
+    "prefix": "forawait",
+    "body": [
+      "for await (const ${1:item} of ${2:asyncIterable}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "For-await-of loop"
+  },
+  "While Statement": {
+    "prefix": "while",
+    "body": [
+      "while (${1:condition}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "While loop"
+  },
+  "Do-While Statement": {
+    "prefix": "dowhile",
+    "body": [
+      "do {",
+      "\t$0",
+      "} while (${1:condition});"
+    ],
+    "description": "Do-while loop"
+  },
+  "Try-Catch Statement": {
+    "prefix": "trycatch",
+    "body": [
+      "try {",
+      "\t$0",
+      "} catch (${1:error}) {",
+      "\t",
+      "}"
+    ],
+    "description": "Try-catch statement"
+  },
+  "Try-Catch-Finally Statement": {
+    "prefix": "tryfinally",
+    "body": [
+      "try {",
+      "\t$0",
+      "} catch (${1:error}) {",
+      "\t",
+      "} finally {",
+      "\t",
+      "}"
+    ],
+    "description": "Try-catch-finally statement"
+  },
+  "Throw Error": {
+    "prefix": "throw",
+    "body": [
+      "throw new ${1:Error}(${2:'message'});$0"
+    ],
+    "description": "Throw an error"
+  },
+  "Function Statement": {
+    "prefix": "function",
+    "body": [
+      "function ${1:name}(${2:params}): ${3:void} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Function declaration"
+  },
+  "Async Function Statement": {
+    "prefix": "asyncfunction",
+    "body": [
+      "async function ${1:name}(${2:params}): Promise<${3:void}> {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Async function declaration"
+  },
+  "Arrow Function": {
+    "prefix": "af",
+    "body": [
+      "(${1:params}) => ${0:expression}"
+    ],
+    "description": "Arrow function expression"
+  },
+  "Arrow Function Block": {
+    "prefix": "afb",
+    "body": [
+      "(${1:params}) => {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Arrow function with a block body"
+  },
+  "Named Arrow Function": {
+    "prefix": "caf",
+    "body": [
+      "const ${1:name} = (${2:params}): ${3:void} => {",
+      "\t$0",
+      "};"
+    ],
+    "description": "Constant holding an arrow function"
+  },
+  "Named Async Arrow Function": {
+    "prefix": "caaf",
+    "body": [
+      "const ${1:name} = async (${2:params}) => {",
+      "\t$0",
+      "};"
+    ],
+    "description": "Constant holding an async arrow function"
+  },
+  "Immediately Invoked Function": {
+    "prefix": "iife",
+    "body": [
+      "(() => {",
+      "\t$0",
+      "})();"
+    ],
+    "description": "Immediately invoked function expression"
+  },
+  "Class Definition": {
+    "prefix": "class",
+    "body": [
+      "class ${1:Name} {",
+      "\tconstructor(${2:private readonly ${3:dependency}: ${4:Type}}) {",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Class with a constructor"
+  },
+  "Class Extends": {
+    "prefix": "classextends",
+    "body": [
+      "class ${1:Name} extends ${2:Base} {",
+      "\tconstructor(${3:params}) {",
+      "\t\tsuper(${3:params});",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "Subclass with a constructor"
+  },
+  "Constructor": {
+    "prefix": "ctor",
+    "body": [
+      "constructor(${1:params}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Class constructor"
+  },
+  "Method": {
+    "prefix": "method",
+    "body": [
+      "${1:name}(${2:params}): ${3:void} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Class method"
+  },
+  "Async Method": {
+    "prefix": "amethod",
+    "body": [
+      "async ${1:name}(${2:params}): Promise<${3:void}> {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Async class method"
+  },
+  "Getter": {
+    "prefix": "get",
+    "body": [
+      "get ${1:name}(): ${2:type} {",
+      "\treturn ${0:this._${1:name}};",
+      "}"
+    ],
+    "description": "Property getter"
+  },
+  "Setter": {
+    "prefix": "set",
+    "body": [
+      "set ${1:name}(${2:value}: ${3:type}) {",
+      "\t${0:this._${1:name} = ${2:value};}",
+      "}"
+    ],
+    "description": "Property setter"
+  },
+  "New Promise": {
+    "prefix": "promise",
+    "body": [
+      "new Promise((resolve, reject) => {",
+      "\t$0",
+      "})"
+    ],
+    "description": "Promise constructor"
+  },
+  "Promise then-catch": {
+    "prefix": "thencatch",
+    "body": [
+      "${1:promise}",
+      "\t.then((${2:result}) => {",
+      "\t\t$0",
+      "\t})",
+      "\t.catch((${3:error}) => {",
+      "\t\t",
+      "\t});"
+    ],
+    "description": "Promise chain with then and catch"
+  },
+  "Await": {
+    "prefix": "aw",
+    "body": [
+      "const ${1:result} = await ${2:promise};$0"
+    ],
+    "description": "Await a promise into a constant"
+  },
+  "Await all": {
+    "prefix": "awall",
+    "body": [
+      "const [${1:results}] = await Promise.all([${2:promises}]);$0"
+    ],
+    "description": "Await several promises together"
+  },
+  "Fetch JSON": {
+    "prefix": "fetch",
+    "body": [
+      "const ${1:response} = await fetch(${2:url});",
+      "if (!${1:response}.ok) {",
+      "\tthrow new Error(`HTTP \\${${1:response}.status}`);",
+      "}",
+      "const ${3:data} = await ${1:response}.json();$0"
+    ],
+    "description": "Fetch a URL and parse the JSON body"
+  },
+  "Set Timeout Function": {
+    "prefix": "settimeout",
+    "body": [
+      "setTimeout(() => {",
+      "\t$0",
+      "}, ${1:timeout});"
+    ],
+    "description": "Run code after a delay"
+  },
+  "Set Interval Function": {
+    "prefix": "setinterval",
+    "body": [
+      "setInterval(() => {",
+      "\t$0",
+      "}, ${1:interval});"
+    ],
+    "description": "Run code repeatedly"
+  },
+  "Import Statement": {
+    "prefix": "import",
+    "body": [
+      "import { $0 } from \"${1:module}\";"
+    ],
+    "description": "Import named exports from a module"
+  },
+  "Import Default": {
+    "prefix": "importdefault",
+    "body": [
+      "import ${2:name} from \"${1:module}\";$0"
+    ],
+    "description": "Import a module's default export"
+  },
+  "Import Everything": {
+    "prefix": "importall",
+    "body": [
+      "import * as ${2:name} from \"${1:module}\";$0"
+    ],
+    "description": "Import a module as a namespace"
+  },
+  "Dynamic Import": {
+    "prefix": "importdynamic",
+    "body": [
+      "const ${2:module} = await import(\"${1:module}\");$0"
+    ],
+    "description": "Import a module at run time"
+  },
+  "Export": {
+    "prefix": "export",
+    "body": [
+      "export { $0 };"
+    ],
+    "description": "Export bindings"
+  },
+  "Export Default": {
+    "prefix": "exportdefault",
+    "body": [
+      "export default ${0:name};"
+    ],
+    "description": "Default export"
+  },
+  "Export Function": {
+    "prefix": "exportfunction",
+    "body": [
+      "export function ${1:name}(${2:params}): ${3:void} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Exported function"
+  },
+  "Export Class": {
+    "prefix": "exportclass",
+    "body": [
+      "export class ${1:Name} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Exported class"
+  },
+  "Array map": {
+    "prefix": "map",
+    "body": [
+      "${1:array}.map((${2:item}) => ${0:item})"
+    ],
+    "description": "Array map"
+  },
+  "Array filter": {
+    "prefix": "filter",
+    "body": [
+      "${1:array}.filter((${2:item}) => ${0:condition})"
+    ],
+    "description": "Array filter"
+  },
+  "Array reduce": {
+    "prefix": "reduce",
+    "body": [
+      "${1:array}.reduce((${2:total}, ${3:item}) => ${0:total}, ${4:initial})"
+    ],
+    "description": "Array reduce"
+  },
+  "Array find": {
+    "prefix": "find",
+    "body": [
+      "${1:array}.find((${2:item}) => ${0:condition})"
+    ],
+    "description": "Array find"
+  },
+  "Object entries loop": {
+    "prefix": "entries",
+    "body": [
+      "for (const [${1:key}, ${2:value}] of Object.entries(${3:object})) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Loop over an object's entries"
+  },
+  "JSON stringify": {
+    "prefix": "jsons",
+    "body": [
+      "JSON.stringify(${1:value}, null, ${2:2})"
+    ],
+    "description": "Serialize a value as indented JSON"
+  },
+  "JSON parse": {
+    "prefix": "jsonp",
+    "body": [
+      "JSON.parse(${1:text})"
+    ],
+    "description": "Parse JSON text"
+  },
+  "Event listener": {
+    "prefix": "listen",
+    "body": [
+      "${1:target}.addEventListener(\"${2:click}\", (${3:event}) => {",
+      "\t$0",
+      "});"
+    ],
+    "description": "Add an event listener"
+  },
+  "Query selector": {
+    "prefix": "qs",
+    "body": [
+      "document.querySelector(\"${1:selector}\")"
+    ],
+    "description": "First element matching a selector"
+  },
+  "Query selector all": {
+    "prefix": "qsa",
+    "body": [
+      "document.querySelectorAll(\"${1:selector}\")"
+    ],
+    "description": "All elements matching a selector"
+  },
+  "Test suite": {
+    "prefix": "describe",
+    "body": [
+      "describe(\"${1:subject}\", () => {",
+      "\t$0",
+      "});"
+    ],
+    "description": "Test suite (Jest, Vitest, Mocha)"
+  },
+  "Test case": {
+    "prefix": "it",
+    "body": [
+      "it(\"${1:does something}\", () => {",
+      "\t$0",
+      "});"
+    ],
+    "description": "Test case (Jest, Vitest, Mocha)"
+  },
+  "Async test case": {
+    "prefix": "ita",
+    "body": [
+      "it(\"${1:does something}\", async () => {",
+      "\t$0",
+      "});"
+    ],
+    "description": "Async test case"
+  },
+  "Expect": {
+    "prefix": "expect",
+    "body": [
+      "expect(${1:actual}).${2:toBe}(${3:expected});$0"
+    ],
+    "description": "Test expectation"
+  },
+  "Region Start": {
+    "prefix": "#region",
+    "body": [
+      "//#region $0"
+    ],
+    "description": "Folding region start"
+  },
+  "Region End": {
+    "prefix": "#endregion",
+    "body": [
+      "//#endregion"
+    ],
+    "description": "Folding region end"
+  },
+  "Interface": {
+    "prefix": "interface",
+    "body": [
+      "interface ${1:Name} {",
+      "\t${2:property}: ${3:type};$0",
+      "}"
+    ],
+    "description": "Interface declaration"
+  },
+  "Export Interface": {
+    "prefix": "exportinterface",
+    "body": [
+      "export interface ${1:Name} {",
+      "\t${2:property}: ${3:type};$0",
+      "}"
+    ],
+    "description": "Exported interface"
+  },
+  "Type Alias": {
+    "prefix": "type",
+    "body": [
+      "type ${1:Name} = ${0:type};"
+    ],
+    "description": "Type alias"
+  },
+  "Export Type Alias": {
+    "prefix": "exporttype",
+    "body": [
+      "export type ${1:Name} = ${0:type};"
+    ],
+    "description": "Exported type alias"
+  },
+  "Union Type": {
+    "prefix": "union",
+    "body": [
+      "type ${1:Name} = ${2:'first'} | ${0:'second'};"
+    ],
+    "description": "Union of literal types"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:Name} {",
+      "\t${2:First},",
+      "\t${0:Second},",
+      "}"
+    ],
+    "description": "Enum declaration"
+  },
+  "Const Enum Object": {
+    "prefix": "constenum",
+    "body": [
+      "const ${1:Name} = {",
+      "\t${2:First}: \"${3:first}\",$0",
+      "} as const;",
+      "type ${1:Name} = (typeof ${1:Name})[keyof typeof ${1:Name}];"
+    ],
+    "description": "Enum-like constant object with its value type"
+  },
+  "Generic Function": {
+    "prefix": "generic",
+    "body": [
+      "function ${1:name}<${2:T}>(${3:value}: ${2:T}): ${4:${2:T}} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Generic function"
+  },
+  "Type Guard": {
+    "prefix": "guard",
+    "body": [
+      "function is${1:Name}(${2:value}: unknown): ${2:value} is ${1:Name} {",
+      "\treturn ${0:typeof ${2:value} === \"object\"};",
+      "}"
+    ],
+    "description": "User-defined type guard"
+  },
+  "Abstract Class": {
+    "prefix": "abstractclass",
+    "body": [
+      "abstract class ${1:Name} {",
+      "\tabstract ${2:method}(): ${3:void};$0",
+      "}"
+    ],
+    "description": "Abstract class"
+  },
+  "Implements": {
+    "prefix": "classimplements",
+    "body": [
+      "class ${1:Name} implements ${2:Interface} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Class implementing an interface"
+  },
+  "Namespace": {
+    "prefix": "namespace",
+    "body": [
+      "namespace ${1:Name} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Namespace"
+  },
+  "Declare Module": {
+    "prefix": "declaremodule",
+    "body": [
+      "declare module \"${1:module}\" {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Ambient module declaration"
+  },
+  "Import Type": {
+    "prefix": "importtype",
+    "body": [
+      "import type { $0 } from \"${1:module}\";"
+    ],
+    "description": "Type-only import"
+  },
+  "Readonly Property": {
+    "prefix": "readonly",
+    "body": [
+      "readonly ${1:name}: ${2:type};$0"
+    ],
+    "description": "Read-only property"
+  },
+  "Non-null Record": {
+    "prefix": "record",
+    "body": [
+      "Record<${1:string}, ${2:unknown}>"
+    ],
+    "description": "Record type"
+  },
+  "TSDoc comment": {
+    "prefix": "tsdoc",
+    "body": [
+      "/**",
+      " * ${1:Description.}",
+      " *",
+      " * @param ${2:name} - ${3:What it is.}",
+      " * @returns ${4:What comes back.}",
+      " */"
+    ],
+    "description": "TSDoc block for a function"
+  }
+}

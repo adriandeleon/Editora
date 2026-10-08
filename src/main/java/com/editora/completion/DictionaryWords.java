@@ -28,7 +28,8 @@ import javafx.application.Platform;
 public final class DictionaryWords {
 
     private static final String BASE = "/com/editora/dictionaries/";
-    private static final List<String> AVAILABLE = List.of("en_US", "en_GB", "es", "fr");
+    /** Every language the spell checker ships ({@code SpellDictionaries.available()}); a test keeps them equal. */
+    private static final List<String> AVAILABLE = List.of("en_US", "en_GB", "es", "es_MX", "fr");
 
     /** langId -> sorted (case-insensitive), de-duplicated base words. */
     private static final Map<String, String[]> CACHE = new ConcurrentHashMap<>();

@@ -1,8 +1,20 @@
 package com.editora.ui;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.Executor;
+import java.util.function.Consumer;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
+import javafx.application.Platform;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
@@ -15,15 +27,37 @@ import javafx.stage.Stage;
 
 import com.editora.command.KeymapManager;
 import com.editora.config.ConfigManager;
+import com.editora.config.PathKeys;
 import com.editora.config.Project;
 import com.editora.config.ProjectManager;
-import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
+import com.editora.editor.GrammarRegistry;
+import com.editora.editorconfig.EditorConfig;
+import com.editora.editorconfig.EditorConfigProperties;
+import com.editora.i18n.Messages;
+import com.editora.io.PathContainment;
+import com.editora.template.NewFileCatalog;
+import com.editora.template.NewFileContent;
+import com.editora.template.NewFileType;
+import com.editora.template.PortableFileName;
+import com.editora.template.Template;
+import com.editora.template.TemplateEngine;
+import com.editora.template.TemplateNames;
+import com.editora.template.TemplateOutput;
+import com.editora.template.TemplateRegistry;
 import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
 
-/** Creates files and projects from templates and archetypes. */
+/**
+ * Creates files and projects from templates and from the "New ▸ &lt;type&gt;" catalog.
+ *
+ * <p>The deciding is pure and lives in {@code template/} — what a typed name means
+ * ({@link NewFileContent}), which variables to ask for and how a body renders ({@link TemplateEngine}),
+ * which files an apply would create ({@link TemplateOutput}). This class prompts, runs the plan and the
+ * write off the FX thread, and reports: every refusal and failure goes through {@code setError}, and a
+ * wizard stays open with what was typed when its apply does not succeed.
+ */
 final class TemplateCoordinator {
     interface Host {
         FileWorkflowCoordinator fileWorkflows();
@@ -58,7 +92,22 @@ final class TemplateCoordinator {
 
         Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings);
 
-        void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
+        void promptText(String title, String label, String initial, Consumer<String> onAccept);
+    }
+
+    /** How an apply ends, as far as the form that started it is concerned. Called on the FX thread. */
+    interface Reporter {
+        /** The files were created: the form can close. */
+        void done();
+
+        /** Nothing more will happen; {@code message} says why. The form stays, with its fields intact. */
+        void failed(String message);
+
+        /**
+         * Some of the files already exist. Returns true to go on and create only the missing ones; false
+         * when the user has to be asked first ({@code message} is the question).
+         */
+        boolean confirmExisting(Object key, String message);
     }
 
     private final Host host;
@@ -67,7 +116,24 @@ final class TemplateCoordinator {
         this.host = host;
     }
 
-    com.editora.template.TemplateRegistry templates;
+    TemplateRegistry templates;
+
+    /** Opens a just-created project on its primary file; replaceable so a test need not build a window. */
+    java.util.function.BiConsumer<Project, TemplateOutput.Target> openProject = this::openProjectWindow;
+
+    private void openProjectWindow(Project project, TemplateOutput.Target primary) {
+        if (host.windowManager() != null) {
+            // The project opens in its own window, on the file the template marks with ${cursor}.
+            host.windowManager().openInWindow(project.id(), primary.path(), lineOf(primary));
+        } else {
+            openAndPlaceCaret(primary.path(), primary.caret(), null, null);
+        }
+    }
+
+    /** Runs the plan + write off the FX thread; replaceable so a test can run it inline. */
+    Executor io = task -> Thread.ofVirtual().name("template-write").start(task);
+
+    // --- New ▸ <type> -----------------------------------------------------------------------------
 
     /**
      * The Project tree's "New ▸ &lt;type&gt;" flow: prompt for a name (prefilled with the type's
@@ -76,9 +142,9 @@ final class TemplateCoordinator {
      * <p>Deliberately separate from the template wizard: this is the IDE-standard "give me a Python
      * file" gesture, where a picker plus a variable form would be four interactions for one file. All
      * of the deciding — what the typed name means, where it lands, what goes in it — is the pure
-     * {@link com.editora.template.NewFileContent}, so this method only prompts, writes and reports.
+     * {@link NewFileContent}, so this method only prompts, writes and reports.
      */
-    void newFileOfType(java.nio.file.Path dir, com.editora.template.NewFileType type) {
+    void newFileOfType(Path dir, NewFileType type) {
         if (dir == null || type == null) {
             return;
         }
@@ -92,50 +158,55 @@ final class TemplateCoordinator {
     }
 
     /** Writes the planned file and opens it; reports (without creating anything) on any refusal. */
-    void createFileOfType(java.nio.file.Path dir, com.editora.template.NewFileType type, String input) {
+    void createFileOfType(Path dir, NewFileType type, String input) {
         // A Java file's package comes from where it is being created, so "New ▸ Class" in
-        // src/main/java/demo writes `package demo;` the way an IDE does — the folder already knows.
-        String basePackage = type.isJava() ? com.editora.template.NewFileContent.packageFor(dir) : "";
-        com.editora.template.NewFileContent.Plan plan =
-                com.editora.template.NewFileContent.plan(type, input, basePackage);
-        if (plan == null) {
+        // src/main/java/demo writes `package demo;` the way an IDE does — the folder already knows. The
+        // search stops at the project root: a project kept under ~/src is not in package "<user>.…".
+        String basePackage = type.isJava() ? NewFileContent.packageFor(dir, projectRootFor(dir)) : "";
+        NewFileContent.Decision decision = NewFileContent.decide(type, input, basePackage);
+        if (decision.plan() == null) {
+            host.setError(refusalMessage(decision.refusal(), input));
+            return;
+        }
+        NewFileContent.Plan plan = decision.plan();
+        // Re-check containment on the real path even though decide() already refuses `..` and absolute
+        // names: this is the one place a typed string becomes a file, and a folder in the way may be a
+        // symbolic link to somewhere else.
+        Path target = dir.resolve(plan.relativePath()).normalize();
+        if (!target.startsWith(dir.normalize()) || !PathContainment.isWithin(dir, target)) {
             host.setError(tr("status.newfile.invalidName"));
             return;
         }
-        // Re-check containment against the resolved path even though plan() already refuses `..` and
-        // absolute names — the same belt-and-braces the template writer applies, since this is the one
-        // place a typed string becomes a file.
-        java.nio.file.Path target = dir.resolve(plan.relativePath()).normalize();
-        if (!target.startsWith(dir.normalize())) {
-            host.setError(tr("status.newfile.invalidName"));
-            return;
-        }
-        if (java.nio.file.Files.exists(target)) {
+        if (Files.exists(target)) {
             host.setError(tr("status.newfile.exists", plan.fileName()));
             return;
         }
-        com.editora.template.NewFileContent.Rendered rendered =
-                com.editora.template.NewFileContent.render(type, plan.baseName(), plan.packageName());
+        NewFileContent.Rendered rendered = NewFileContent.render(type, plan.baseName(), plan.packageName());
         try {
-            if (target.getParent() != null) {
-                java.nio.file.Files.createDirectories(target.getParent());
-            }
-            // Exclusive create: the exists() check above can answer "no" on a transient remote failure, and a
-            // truncating write would then empty a real file.
-            java.nio.file.Files.writeString(
-                    target,
-                    rendered.text(),
-                    java.nio.file.StandardOpenOption.CREATE_NEW,
-                    java.nio.file.StandardOpenOption.WRITE);
-        } catch (java.io.IOException e) {
+            TemplateOutput.create(dir, target, TemplateOutput.finish(rendered.text(), editorConfigFor(target)));
+        } catch (IOException e) {
             host.setError(tr("status.newfile.failed", e.getMessage()));
             return;
         }
-        openAndPlaceCaret(target, rendered.caret());
-        if (host.projectPanel() != null) {
-            host.projectPanel().refreshTree();
-        }
-        host.setStatus(tr("status.newfile.created", plan.fileName()));
+        String created = tr("status.newfile.created", plan.fileName());
+        openAndPlaceCaret(target, rendered.caret(), null, created);
+        refreshTree();
+        host.setStatus(created);
+    }
+
+    /** The message for a refused name: each reason says what to change, not just "not valid". */
+    static String refusalMessage(NewFileContent.Refusal refusal, String input) {
+        String typed = input == null ? "" : input.strip();
+        return switch (refusal == null ? NewFileContent.Refusal.INVALID_NAME : refusal) {
+            case INVALID_NAME -> tr("status.newfile.invalidName");
+            case ILLEGAL_CHARACTER -> tr("status.newfile.refused.illegalCharacter", typed);
+            case RESERVED_NAME -> tr("status.newfile.refused.reservedName", typed);
+            case HOME_SHORTHAND -> tr("status.newfile.refused.homeShorthand");
+            case NOT_A_JAVA_NAME -> tr("status.newfile.refused.notJavaName", typed);
+            case JAVA_KEYWORD -> tr("status.newfile.refused.javaKeyword", typed);
+            case NOT_A_JAVA_FILE -> tr("status.newfile.refused.notJavaFile", typed);
+            case NO_PACKAGE -> tr("status.newfile.refused.noPackage");
+        };
     }
 
     /**
@@ -144,10 +215,10 @@ final class TemplateCoordinator {
      * palette has no folder context.
      */
     void newFileOfTypePicker() {
-        QuickOpen<com.editora.template.NewFileType> picker = new QuickOpen<>(
+        QuickOpen<NewFileType> picker = new QuickOpen<>(
                 tr("newfile.picker.title"),
                 tr("newfile.picker.prompt"),
-                () -> new ArrayList<>(com.editora.template.NewFileCatalog.all()),
+                () -> new ArrayList<>(NewFileCatalog.all()),
                 ProjectPanel::labelFor,
                 t -> newFileTypeDetail(t),
                 t -> newFileOfType(defaultNewDir(), t));
@@ -156,8 +227,8 @@ final class TemplateCoordinator {
     }
 
     /** A picker row's detail line: the category it lives under, and the file name it suggests. */
-    static String newFileTypeDetail(com.editora.template.NewFileType type) {
-        String category = com.editora.template.NewFileCatalog.categoryOf(type);
+    static String newFileTypeDetail(NewFileType type) {
+        String category = NewFileCatalog.categoryOf(type);
         String suggested = type.suggestedFileName();
         if (category == null) {
             return suggested;
@@ -166,363 +237,862 @@ final class TemplateCoordinator {
         return suggested.isEmpty() ? categoryLabel : categoryLabel + " · " + suggested;
     }
 
+    // --- New from template: picker ----------------------------------------------------------------
+
     /**
-     * Picks a template, runs the variable-entry wizard (if it has any unknown variables), then creates
-     * the file(s). {@code targetDir} {@code null} = a new untitled in-editor buffer (single-file only);
-     * non-null = write the file(s) into that folder and open the primary one.
+     * Picks a template, runs the wizard, then creates the file(s). {@code targetDir} {@code null} = no
+     * folder context: a single-file template becomes an unsaved buffer unless a folder is typed, and a
+     * multi-file template asks for the folder. Non-null = the wizard's folder is pre-filled with it.
      */
-    void newFromTemplate(java.nio.file.Path targetDir) {
-        newFromTemplate(targetDir, t -> true, null);
+    void newFromTemplate(Path targetDir) {
+        pickTemplate(tr("template.picker.title"), t -> true, t -> beginTemplate(t, targetDir, null));
     }
 
     /**
-     * As above, but restricted to templates matching {@code filter} and calling {@code onCreated} with the
-     * folder that received the files.
-     *
-     * <p>The hook is what "New Project" needs: the generation, the variable wizard and the target-folder
-     * field are all already right for scaffolding a tree — the only thing missing was registering the result
-     * as a project afterwards, so that is threaded through rather than duplicating the flow.
-     */
-    void newFromTemplate(
-            java.nio.file.Path targetDir,
-            java.util.function.Predicate<com.editora.template.Template> filter,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        List<com.editora.template.Template> all =
-                templates.all().stream().filter(filter).toList();
-        if (all.isEmpty()) {
-            host.setStatus(tr("status.noTemplates"));
-            return;
-        }
-        QuickOpen<com.editora.template.Template> picker = new QuickOpen<>(
-                tr("template.picker.title"),
-                tr("template.picker.prompt"),
-                () -> new ArrayList<>(all),
-                com.editora.template.Template::name,
-                com.editora.template.Template::description,
-                t -> beginTemplate(t, targetDir, onCreated));
-        // Wider than the default picker + a taller minimum: template descriptions are long, so the
-        // default 620px clipped them (and showed a horizontal scrollbar).
-        picker.setPreferredSize(820, 8);
-        picker.setOverlayHost(host.overlayHost());
-        picker.show(host.stage());
-    }
-
-    /**
-     * {@code project.newFromTemplate}: scaffolds a new project from a multi-file template and opens it.
-     *
-     * <p>Reuses the ordinary template flow — the picker, the variable wizard and its target-folder field
-     * already do the generation correctly — and only adds what was actually missing: registering the folder
-     * as a project and opening its window. Restricted to multi-file templates because a project is a tree; a
-     * single-file template produces a lone file, which is what {@code template.new} is already for.
+     * {@code project.newFromTemplate}: asks for a location and a project name, creates
+     * {@code <location>/<name>/}, scaffolds a multi-file template into it, registers the folder as a project
+     * and opens it. Restricted to multi-file templates because a project is a tree; a single-file template
+     * produces a lone file, which is what {@code template.new} is for.
      */
     void newProjectFromTemplate() {
         if (!host.projectsEnabled()) {
             return; // the palette already hides project.* when the feature is off
         }
-        newFromTemplate(defaultNewDir(), com.editora.template.Template::isMultiFile, dir -> {
-            Project project = host.projects().createOrGet(dir.getFileName().toString(), dir);
-            host.projects().save();
-            host.setStatus(tr("status.project.createdFromTemplate", project.name()));
-            if (host.windowManager() != null) {
-                host.windowManager().openOrFocus(project);
-            }
-        });
+        pickTemplate(tr("template.project.title"), Template::isMultiFile, this::beginProject);
     }
 
-    /** Discovers the template's unknown variables; prompts for them via a wizard, else applies directly. */
-    void beginTemplate(
-            com.editora.template.Template t,
-            java.nio.file.Path targetDir,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        List<com.editora.template.TemplateEngine.TemplateVar> vars;
-        if (t.isMultiFile()) {
-            List<String> texts = new ArrayList<>();
-            for (com.editora.template.TemplateFile f : t.files()) {
-                texts.add(f.path());
-                texts.add(f.body());
-            }
-            vars = com.editora.template.TemplateEngine.discoverVariables(texts.toArray(new String[0]));
-        } else {
-            // The file-name pattern's own ${baseName}/${fileName}/${extension} can't be derived for a new
-            // file, so prompt for them (the body's stay auto-derived) — otherwise ${baseName:Main}.java
-            // silently used its default and the user was never asked for the name.
-            vars = com.editora.template.TemplateEngine.discoverVariablesForNewFile(t.fileName(), t.body());
-        }
-        // Fast path: a variable-less, single-file template invoked with no folder context (palette / toolbar)
-        // creates an untitled scratch buffer immediately — no wizard. A multi-file template always writes to
-        // disk, so it goes through the wizard (to offer the target folder) even with no variables.
-        if (vars.isEmpty() && targetDir == null && !t.isMultiFile()) {
-            applyTemplate(t, null, java.util.Map.of(), onCreated);
+    private void pickTemplate(String title, Predicate<Template> filter, Consumer<Template> onChoose) {
+        TemplateRegistry.Loaded loaded = templates.load();
+        List<Template> all = loaded.templates().stream().filter(filter).toList();
+        if (all.isEmpty()) {
+            host.setStatus(tr("status.noTemplates"));
             return;
         }
+        Set<String> ambiguous = ambiguousNames(all);
+        QuickOpen<Template> picker = new QuickOpen<>(
+                title,
+                tr("template.picker.prompt"),
+                () -> new ArrayList<>(all),
+                t -> pickerLabel(t, ambiguous),
+                TemplateCoordinator::pickerDetail,
+                onChoose);
+        // Wider than the default picker + a taller minimum: template descriptions are long, so the
+        // default 620px clipped them (and showed a horizontal scrollbar).
+        picker.setPreferredSize(820, 8);
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.stage());
+        if (!loaded.problems().isEmpty()) {
+            host.setError(problemsMessage(loaded.problems())); // a template that is missing has a reason
+        }
+    }
 
+    /** The names more than one of {@code templates} share: those rows also show their id. */
+    static Set<String> ambiguousNames(List<Template> templates) {
+        Set<String> seen = new HashSet<>();
+        Set<String> twice = new HashSet<>();
+        for (Template t : templates) {
+            if (!seen.add(t.name())) {
+                twice.add(t.name());
+            }
+        }
+        return twice;
+    }
+
+    /** The picker row's title: the name, plus the id when another template has the same name. */
+    static String pickerLabel(Template t, Set<String> ambiguous) {
+        return ambiguous.contains(t.name()) ? t.name() + " (" + t.id() + ")" : t.name();
+    }
+
+    /** The picker row's detail: where the template comes from, then its description. */
+    static String pickerDetail(Template t) {
+        String origin = originLabel(t);
+        return t.description() == null || t.description().isBlank() ? origin : origin + " · " + t.description();
+    }
+
+    /** "bundled", "yours" or "plugin: name" — the same words the Settings list tags rows with. */
+    static String originLabel(Template t) {
+        return switch (t.origin()) {
+            case BUNDLED -> tr("template.origin.bundled");
+            case USER -> tr("template.origin.user");
+            case PLUGIN ->
+                t.source().isBlank() ? tr("settings.template.pluginTag") : tr("template.origin.plugin", t.source());
+        };
+    }
+
+    // --- New from template: the file wizard -------------------------------------------------------
+
+    /** Asks for the folder and the template's variables, then applies; applies directly when there is nothing to ask. */
+    void beginTemplate(Template t, Path targetDir, Consumer<Path> onCreated) {
+        List<TemplateEngine.TemplateVar> vars =
+                TemplateEngine.promptedVariables(t, new TemplateEngine.Context(activeProject() != null));
+        // Fast path: a variable-less, single-file template invoked with no folder context (palette / toolbar)
+        // creates an untitled scratch buffer immediately — no wizard. A multi-file template always writes to
+        // disk, so it goes through the wizard (which requires the target folder) even with no variables.
+        if (vars.isEmpty() && targetDir == null && !t.isMultiFile()) {
+            applyTemplate(t, null, Map.of(), onCreated);
+            return;
+        }
+        boolean multi = t.isMultiFile();
         VBox body = new VBox(8);
-        // Optional target-folder field (prefilled from the folder context — e.g. the right-clicked project
-        // folder). Left blank, a single-file template opens as an untitled buffer (Save prompts for a
-        // location); filled (typed or Browse), the file(s) are written into that folder, creating it if needed.
+        // The target folder, prefilled from the folder context (the right-clicked project folder). A
+        // single-file template may leave it blank and get an unsaved buffer; a multi-file template has
+        // nowhere else to go, so its field is required and there is no default to fall back on.
         TextField folderField = new TextField(targetDir == null ? "" : targetDir.toString());
-        folderField.setPromptText(tr("template.wizard.folderPrompt"));
-        folderField.setPrefColumnCount(28);
-        com.editora.command.TextInputKeymap.install(folderField, host.keymap());
+        folderField.setPromptText(tr(multi ? "template.wizard.folderRequiredPrompt" : "template.wizard.folderPrompt"));
+        body.getChildren()
+                .addAll(
+                        new Label(tr(multi ? "template.wizard.folderRequiredLabel" : "template.wizard.folder")),
+                        folderRow(folderField, () -> folderChooserDir(folderField.getText(), targetDir)));
+        LinkedHashMap<String, TextField> fields = variableFields(t, vars, body);
+        // Focus the first variable (the thing most likely to be edited), else the folder field.
+        TextField initialFocus =
+                fields.isEmpty() ? folderField : fields.values().iterator().next();
+        Object[] confirmed = {null};
+        OverlayInput.showSubmitting(
+                host.overlayHost(),
+                tr("template.wizard.title", t.name()),
+                body,
+                initialFocus,
+                tr("dialog.template.create"),
+                null,
+                submission -> {
+                    Reporter reporter = wizardReporter(submission, confirmed);
+                    String typed = folderField.getText() == null
+                            ? ""
+                            : folderField.getText().strip();
+                    Path dir = null;
+                    if (typed.isEmpty()) {
+                        if (multi) {
+                            reporter.failed(tr("template.wizard.folderRequired"));
+                            return;
+                        }
+                    } else {
+                        dir = resolveFolder(typed, targetDir);
+                        if (dir == null) {
+                            reporter.failed(tr("template.wizard.folderRelative"));
+                            return;
+                        }
+                    }
+                    apply(t, dir, answersOf(fields), onCreated, reporter);
+                },
+                false);
+    }
+
+    /** The folder field with its Browse button. */
+    private HBox folderRow(TextField field, java.util.function.Supplier<java.io.File> initialDir) {
+        field.setPrefColumnCount(28);
+        com.editora.command.TextInputKeymap.install(field, host.keymap());
         Button browse = new Button(tr("dialog.clone.browse"));
         browse.setFocusTraversable(false);
         browse.setOnAction(e -> {
             DirectoryChooser chooser = new DirectoryChooser();
             chooser.setTitle(tr("template.wizard.folderTitle"));
-            java.io.File init = templateFolderChooserDir(folderField.getText());
+            java.io.File init = initialDir.get();
             if (init != null) {
                 chooser.setInitialDirectory(init);
             }
             java.io.File dir = chooser.showDialog(host.stage());
             if (dir != null) {
-                folderField.setText(dir.toString());
+                field.setText(dir.toString());
             }
         });
-        HBox folderRow = new HBox(6, folderField, browse);
-        HBox.setHgrow(folderField, Priority.ALWAYS);
-        body.getChildren().addAll(new Label(tr("template.wizard.folder")), folderRow);
+        HBox row = new HBox(6, field, browse);
+        HBox.setHgrow(field, Priority.ALWAYS);
+        return row;
+    }
 
-        java.util.LinkedHashMap<String, TextField> fields = new java.util.LinkedHashMap<>();
-        for (var v : vars) {
+    /** One labelled field per prompted variable, pre-filled with its default, added to {@code body}. */
+    private LinkedHashMap<String, TextField> variableFields(
+            Template t, List<TemplateEngine.TemplateVar> vars, VBox body) {
+        LinkedHashMap<String, TextField> fields = new LinkedHashMap<>();
+        for (TemplateEngine.TemplateVar v : vars) {
             TextField field = new TextField(v.defaultValue());
             field.setPrefColumnCount(28);
             com.editora.command.TextInputKeymap.install(field, host.keymap());
             fields.put(v.name(), field);
-            body.getChildren().addAll(new Label(v.name()), field);
+            Label label = new Label(variableLabel(t, v.name()));
+            label.setLabelFor(field);
+            body.getChildren().addAll(label, field);
         }
-        // Focus the first variable (the thing most likely to be edited), else the folder field.
-        TextField initialFocus =
-                fields.isEmpty() ? folderField : fields.values().iterator().next();
-        OverlayInput.show(
-                host.overlayHost(),
-                tr("template.wizard.title"),
-                body,
-                initialFocus,
-                tr("dialog.template.create"),
-                null,
-                () -> {
-                    java.util.LinkedHashMap<String, String> answers = new java.util.LinkedHashMap<>();
-                    fields.forEach((name, f) -> answers.put(name, f.getText()));
-                    // Blank → null (untitled buffer / defaultNewDir for multi-file); a relative path resolves
-                    // against the folder context, else the default new-file dir; ~ expands to home.
-                    java.nio.file.Path base = targetDir != null ? targetDir : defaultNewDir();
-                    java.nio.file.Path dir = com.editora.config.PathKeys.resolveUserInput(
-                            folderField.getText(), base, System.getProperty("user.home"));
-                    applyTemplate(t, dir, answers, onCreated);
-                },
-                null,
-                false);
+        return fields;
     }
 
-    /** The folder a template-wizard folder chooser should open at: the typed folder if it exists, walking up
-     *  to the nearest existing ancestor, else the default new-file directory. Null only if nothing exists. */
-    java.io.File templateFolderChooserDir(String current) {
-        java.nio.file.Path p =
-                com.editora.config.PathKeys.resolveUserInput(current, defaultNewDir(), System.getProperty("user.home"));
-        if (p == null) {
-            p = defaultNewDir();
+    private static LinkedHashMap<String, String> answersOf(Map<String, TextField> fields) {
+        LinkedHashMap<String, String> answers = new LinkedHashMap<>();
+        fields.forEach((name, f) -> answers.put(name, f.getText() == null ? "" : f.getText()));
+        return answers;
+    }
+
+    /**
+     * A wizard field's label: the template's own ({@code "labels"} in its JSON), else Editora's translated
+     * name for a variable it knows ({@code template.var.<name>}), else the identifier made readable
+     * ({@code issueTitle} → "Issue title").
+     */
+    static String variableLabel(Template t, String name) {
+        String own = t == null ? null : t.labels().get(name);
+        if (own != null && !own.isBlank()) {
+            return own;
         }
-        while (p != null && !java.nio.file.Files.isDirectory(p)) {
+        String key = "template.var." + name;
+        return Messages.keys().contains(key) ? tr(key) : TemplateNames.humanize(name);
+    }
+
+    /** Routes an apply's outcome to the wizard card (which stays open on failure) and the status bar. */
+    private Reporter wizardReporter(OverlayInput.Submission submission, Object[] confirmed) {
+        return new Reporter() {
+            @Override
+            public void done() {
+                submission.done();
+            }
+
+            @Override
+            public void failed(String message) {
+                host.setError(message);
+                submission.failed(message);
+            }
+
+            @Override
+            public boolean confirmExisting(Object key, String message) {
+                if (key.equals(confirmed[0])) {
+                    return true; // the same answers, submitted again after seeing the list
+                }
+                confirmed[0] = key;
+                submission.failed(message);
+                return false;
+            }
+        };
+    }
+
+    /**
+     * The typed folder as a path: {@code ~} expands, and a relative path resolves against the folder
+     * context, else the active project's root. With neither, a relative path has nothing sensible to be
+     * relative to and is refused (null) rather than landing beside whatever file happens to be open.
+     */
+    Path resolveFolder(String typed, Path context) {
+        String home = System.getProperty("user.home");
+        Path base = context;
+        if (base == null) {
+            Project p = activeProject();
+            base = p == null ? null : Path.of(p.root());
+        }
+        if (base == null && !isAbsoluteInput(typed)) {
+            return null;
+        }
+        return PathKeys.resolveUserInput(typed, base, home);
+    }
+
+    private static boolean isAbsoluteInput(String typed) {
+        if (typed.equals("~") || typed.startsWith("~/") || typed.startsWith("~\\")) {
+            return true;
+        }
+        try {
+            return Path.of(typed).isAbsolute();
+        } catch (java.nio.file.InvalidPathException e) {
+            return false;
+        }
+    }
+
+    /** Where a folder chooser opens: the typed folder or its nearest existing ancestor, else the context. */
+    java.io.File folderChooserDir(String current, Path context) {
+        Path p = current == null || current.isBlank() ? null : resolveFolder(current.strip(), context);
+        if (p == null) {
+            p = context != null ? context : defaultNewDir();
+        }
+        while (p != null && !Files.isDirectory(p)) {
             p = p.getParent();
         }
         return p == null ? null : p.toFile();
     }
 
-    /** Renders {@code t} with {@code answers} and creates the file(s) (untitled buffer or written to disk). */
-    void applyTemplate(
-            com.editora.template.Template t,
-            java.nio.file.Path targetDir,
-            java.util.Map<String, String> answers,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        Settings s = host.config().getSettings();
-        String author = s.getAuthorName();
-        String projectName = activeProjectName();
-        String packageName = "";
-        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+    // --- New project from template: the project wizard --------------------------------------------
 
-        if (t.isMultiFile()) {
-            applyMultiFileTemplate(
-                    t,
-                    targetDir != null ? targetDir : defaultNewDir(),
-                    answers,
-                    author,
-                    projectName,
-                    packageName,
-                    now,
-                    onCreated);
-            return;
-        }
-        // Resolve the file name first (so the body's ${fileName}/${baseName}/${extension} are correct).
-        com.editora.template.TemplateVariableResolver pre = new com.editora.template.TemplateVariableResolver(
-                answers, author, projectName, packageName, "", targetDir == null ? "" : targetDir.toString(), "", now);
-        String fileName = com.editora.template.TemplateEngine.expand(t.fileName(), pre);
-        if (fileName.isBlank()) {
-            fileName = "untitled";
-        }
-        java.nio.file.Path target = null;
-        if (targetDir != null) {
-            // Contain the file name to targetDir, exactly as the multi-file path does via resolveTargetPath:
-            // a `../…` or absolute fileName pattern (from a malicious/imported template) must not escape and
-            // create files anywhere writable (a shell rc, an autostart entry, a git hook).
-            java.nio.file.Path resolved = targetDir.resolve(fileName).normalize();
-            if (!resolved.startsWith(targetDir.normalize())) {
-                host.setStatus(tr("status.templatePathEscape"));
-                return;
-            }
-            target = resolved;
-        }
-        com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
-                answers,
-                author,
-                projectName,
-                packageName,
-                fileName,
-                targetDir == null ? "" : targetDir.toString(),
-                target == null ? "" : target.toString(),
-                now);
-        com.editora.snippet.ParsedSnippet parsed = com.editora.template.TemplateEngine.substitute(t.body(), vars);
+    /** Location + project name + the template's variables; creates {@code <location>/<name>/} and opens it. */
+    void beginProject(Template t) {
+        List<TemplateEngine.TemplateVar> vars = TemplateEngine.promptedVariables(t, new TemplateEngine.Context(true));
+        VBox body = new VBox(8);
+        Path defaultParent = defaultProjectParent();
+        TextField locationField = new TextField(defaultParent.toString());
+        TextField nameField = new TextField();
+        nameField.setPromptText(tr("template.project.namePrompt"));
+        nameField.setPrefColumnCount(28);
+        com.editora.command.TextInputKeymap.install(nameField, host.keymap());
+        Label nameLabel = new Label(tr("template.project.name"));
+        nameLabel.setLabelFor(nameField);
+        Label willCreate = new Label();
+        willCreate.getStyleClass().add("text-muted");
+        willCreate.setWrapText(true);
+        body.getChildren()
+                .addAll(
+                        nameLabel,
+                        nameField,
+                        new Label(tr("template.project.location")),
+                        folderRow(locationField, () -> folderChooserDir(locationField.getText(), null)),
+                        willCreate);
+        LinkedHashMap<String, TextField> fields = variableFields(t, vars, body);
 
-        if (targetDir == null) {
-            EditorBuffer b = new EditorBuffer();
-            b.setDisplayName(fileName); // tab title + extension-based grammar; path stays null → Save-As
-            host.addBuffer(b, true);
-            b.applyTemplate(parsed);
-            host.setStatus(tr("status.templateCreated", fileName));
-        } else if (writeTemplateFile(target, parsed)) {
-            openAndPlaceCaret(target, finalCaret(parsed));
-            if (host.projectPanel() != null) {
-                host.projectPanel().refreshTree();
-            }
-            host.setStatus(tr("status.templateCreated", fileName));
-        }
-    }
-
-    void applyMultiFileTemplate(
-            com.editora.template.Template t,
-            java.nio.file.Path dir,
-            java.util.Map<String, String> answers,
-            String author,
-            String projectName,
-            String packageName,
-            java.time.LocalDateTime now,
-            java.util.function.Consumer<java.nio.file.Path> onCreated) {
-        com.editora.template.TemplateVariableResolver vars = new com.editora.template.TemplateVariableResolver(
-                answers, author, projectName, packageName, "", dir.toString(), "", now);
-        java.nio.file.Path primary = null;
-        int primaryCaret = 0;
-        for (com.editora.template.TemplateFile f : t.files()) {
-            java.nio.file.Path target = com.editora.template.TemplateEngine.resolveTargetPath(dir, f.path(), vars);
-            if (target == null) {
-                host.setStatus(tr("status.templatePathEscape"));
-                continue;
-            }
-            com.editora.snippet.ParsedSnippet parsed = com.editora.template.TemplateEngine.substitute(f.body(), vars);
-            if (writeTemplateFile(target, parsed) && primary == null) {
-                primary = target;
-                primaryCaret = finalCaret(parsed);
-            }
-        }
-        if (primary != null) {
-            openAndPlaceCaret(primary, primaryCaret);
-            if (host.projectPanel() != null) {
-                host.projectPanel().refreshTree();
-            }
-            host.setStatus(tr("status.templateCreated", primary.getFileName().toString()));
-            if (onCreated != null) {
-                onCreated.accept(dir); // only after at least one file landed — an empty folder is not a project
-            }
-        }
-    }
-
-    /** Writes a rendered template file (UTF-8), refusing to overwrite an existing file. */
-    boolean writeTemplateFile(java.nio.file.Path target, com.editora.snippet.ParsedSnippet parsed) {
-        if (java.nio.file.Files.exists(target)) {
-            host.setStatus(tr("status.templateExists", target.getFileName()));
-            return false;
-        }
-        try {
-            if (target.getParent() != null) {
-                java.nio.file.Files.createDirectories(target.getParent());
-            }
-            // Exclusive create — "refuse to overwrite" must hold even when exists() above was wrong.
-            java.nio.file.Files.writeString(
-                    target,
-                    parsed.text(),
-                    java.nio.file.StandardOpenOption.CREATE_NEW,
-                    java.nio.file.StandardOpenOption.WRITE);
-            return true;
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.templateWriteFailed", e.getMessage()));
-            return false;
-        }
-    }
-
-    /** Opens {@code target} and places the caret at the template's {@code ${cursor}} offset. */
-    void openAndPlaceCaret(java.nio.file.Path target, int caret) {
-        host.fileWorkflows().openPath(target);
-        EditorBuffer b = host.activeBuffer();
-        if (b != null) {
-            CodeArea a = b.getArea();
-            int c = Math.max(0, Math.min(caret, a.getLength()));
-            javafx.application.Platform.runLater(() -> {
-                a.moveTo(c);
-                a.requestFollowCaret();
+        // ${packageName} follows the project name until the user types their own.
+        TextField packageField = fields.get("packageName");
+        String templateDefault = packageField == null ? "" : packageField.getText();
+        boolean[] packageTouched = {false};
+        boolean[] syncing = {false};
+        if (packageField != null) {
+            packageField.textProperty().addListener((o, was, now) -> {
+                if (!syncing[0]) {
+                    packageTouched[0] = true;
+                }
             });
         }
+        Runnable sync = () -> {
+            String name = nameField.getText() == null ? "" : nameField.getText().strip();
+            Path parent = projectParent(locationField.getText());
+            willCreate.setText(
+                    name.isEmpty() || parent == null
+                            ? ""
+                            : tr(
+                                    "template.project.willCreate",
+                                    host.homeCollapsed(parent.resolve(name).toString())));
+            if (packageField != null && !packageTouched[0]) {
+                String derived = TemplateNames.packageNameFor(name);
+                syncing[0] = true;
+                try {
+                    packageField.setText(derived.isEmpty() ? templateDefault : derived);
+                } finally {
+                    syncing[0] = false;
+                }
+            }
+        };
+        nameField.textProperty().addListener((o, was, now) -> sync.run());
+        locationField.textProperty().addListener((o, was, now) -> sync.run());
+        sync.run();
+
+        Object[] confirmed = {null};
+        OverlayInput.showSubmitting(
+                host.overlayHost(),
+                tr("template.project.wizardTitle", t.name()),
+                body,
+                nameField,
+                tr("dialog.template.create"),
+                null,
+                submission -> {
+                    Reporter reporter = wizardReporter(submission, confirmed);
+                    String name = nameField.getText() == null
+                            ? ""
+                            : nameField.getText().strip();
+                    if (name.isEmpty()) {
+                        reporter.failed(tr("template.project.nameRequired"));
+                        return;
+                    }
+                    if (!PortableFileName.isPortable(name)) {
+                        reporter.failed(tr("template.project.nameInvalid", name));
+                        return;
+                    }
+                    Path parent = projectParent(locationField.getText());
+                    if (parent == null) {
+                        reporter.failed(tr("template.wizard.folderRelative"));
+                        return;
+                    }
+                    LinkedHashMap<String, String> answers = answersOf(fields);
+                    answers.put("projectName", name); // the name typed here is the project's name
+                    createProject(t, parent.resolve(name), name, answers, reporter);
+                },
+                false);
     }
 
-    /** The absolute offset of the template's {@code $0} ({@code ${cursor}}) stop, else end of text. */
-    static int finalCaret(com.editora.snippet.ParsedSnippet parsed) {
-        for (com.editora.snippet.TabStop stop : parsed.stops()) {
-            if (stop.isFinal()) {
-                return stop.ranges().get(0)[0];
+    /** The typed location as an absolute folder, or null when it is blank or relative. */
+    private static Path projectParent(String typed) {
+        String s = typed == null ? "" : typed.strip();
+        if (s.isEmpty() || !isAbsoluteInput(s)) {
+            return null;
+        }
+        return PathKeys.resolveUserInput(s, null, System.getProperty("user.home"));
+    }
+
+    /**
+     * Where a new project goes by default: beside the active project (its root's parent), else the home
+     * folder. Never the active file's folder — a project scaffolded inside a source package is the
+     * accident this wizard exists to prevent.
+     */
+    Path defaultProjectParent() {
+        Project p = activeProject();
+        if (p != null) {
+            Path parent = Path.of(p.root()).toAbsolutePath().normalize().getParent();
+            if (parent != null) {
+                return parent;
             }
         }
-        return parsed.text().length();
+        return Path.of(System.getProperty("user.home", "."));
+    }
+
+    /**
+     * Creates {@code projectDir} (refusing one that exists and has anything in it), scaffolds {@code t}
+     * there, then registers it as a project named {@code name} and opens it.
+     */
+    void createProject(Template t, Path projectDir, String name, Map<String, String> answers, Reporter reporter) {
+        TemplateOutput.Request request = request(t, projectDir, answers, name, projectDir);
+        io.execute(() -> {
+            String refusal = null;
+            TemplateOutput.Outcome outcome = null;
+            try {
+                if (Files.exists(projectDir) && (!Files.isDirectory(projectDir) || !isEmptyDir(projectDir))) {
+                    refusal = tr("template.project.exists", host.homeCollapsed(projectDir.toString()));
+                } else {
+                    Files.createDirectories(projectDir);
+                    TemplateOutput.Plan plan = TemplateOutput.plan(request);
+                    if (plan.refused()) {
+                        refusal = tr("status.templatePathEscape", plan.refusedPath());
+                    } else {
+                        outcome = TemplateOutput.write(plan);
+                    }
+                }
+            } catch (IOException | RuntimeException e) {
+                refusal = tr("status.templateWriteFailed", String.valueOf(e.getMessage()));
+            }
+            String refused = refusal;
+            TemplateOutput.Outcome done = outcome;
+            Platform.runLater(() -> {
+                if (refused != null) {
+                    reporter.failed(refused);
+                    return;
+                }
+                finish(t, done, reporter, false, created -> {
+                    Project project = host.projects().createOrGet(name, created.dir());
+                    host.projects().save();
+                    host.setStatus(tr("status.project.createdFromTemplate", project.name()));
+                    openProject.accept(project, created.primary());
+                });
+            });
+        });
+    }
+
+    private static boolean isEmptyDir(Path dir) throws IOException {
+        try (var entries = Files.newDirectoryStream(dir)) {
+            return !entries.iterator().hasNext();
+        }
+    }
+
+    // --- applying ---------------------------------------------------------------------------------
+
+    /**
+     * Renders {@code t} with {@code answers} and creates the file(s) with no form in front: failures go to
+     * the error status, and files that already exist are kept while the missing ones are created.
+     */
+    void applyTemplate(Template t, Path targetDir, Map<String, String> answers, Consumer<Path> onCreated) {
+        apply(t, targetDir, answers, onCreated, new Reporter() {
+            @Override
+            public void done() {}
+
+            @Override
+            public void failed(String message) {
+                host.setError(message);
+            }
+
+            @Override
+            public boolean confirmExisting(Object key, String message) {
+                return true;
+            }
+        });
+    }
+
+    /**
+     * Applies {@code t}: with no folder a single-file template becomes an unsaved buffer (a multi-file one
+     * is refused — it never falls back to a folder nobody chose); with a folder, the plan is computed and
+     * checked before anything is written.
+     */
+    void apply(Template t, Path targetDir, Map<String, String> answers, Consumer<Path> onCreated, Reporter reporter) {
+        if (targetDir == null) {
+            if (t.isMultiFile()) {
+                reporter.failed(tr("template.wizard.folderRequired"));
+                return;
+            }
+            TemplateOutput.Untitled untitled = TemplateOutput.untitled(request(t, null, answers, null, null));
+            reporter.done(); // close the form first, so the new tab gets the focus
+            EditorBuffer b = new EditorBuffer();
+            b.setDisplayName(untitled.fileName()); // tab title + extension-based grammar; path stays null → Save-As
+            host.addBuffer(b, true);
+            CodeArea area = b.getArea();
+            area.replaceText(0, area.getLength(), untitled.rendered().text());
+            applyLanguage(b, t);
+            placeCaret(b, untitled.rendered().caret());
+            area.requestFocus();
+            host.setStatus(tr("status.templateCreated", untitled.fileName()));
+            return;
+        }
+        Path dir = targetDir.toAbsolutePath().normalize();
+        TemplateOutput.Request request = request(t, dir, answers, null, projectRootFor(dir));
+        Object key = List.of(dir, Map.copyOf(answers), t.id());
+        io.execute(() -> {
+            TemplateOutput.Plan plan;
+            try {
+                plan = TemplateOutput.plan(request);
+            } catch (RuntimeException e) {
+                Platform.runLater(
+                        () -> reporter.failed(tr("status.templateWriteFailed", String.valueOf(e.getMessage()))));
+                return;
+            }
+            Platform.runLater(() -> afterPlan(t, plan, key, onCreated, reporter));
+        });
+    }
+
+    /** FX thread: refuse, ask about existing files, or hand the plan to the writer. */
+    private void afterPlan(
+            Template t, TemplateOutput.Plan plan, Object key, Consumer<Path> onCreated, Reporter reporter) {
+        if (plan.refused()) {
+            reporter.failed(tr("status.templatePathEscape", plan.refusedPath()));
+            return;
+        }
+        List<TemplateOutput.Target> existing = plan.existing();
+        if (plan.missing().isEmpty()) {
+            reporter.failed(
+                    plan.targets().size() == 1
+                            ? tr("status.templateExists", plan.targets().get(0).relative())
+                            : tr(
+                                    "status.template.allExist",
+                                    host.homeCollapsed(plan.dir().toString())));
+            return;
+        }
+        if (!existing.isEmpty()
+                && !reporter.confirmExisting(
+                        key,
+                        tr(
+                                "template.wizard.existingFiles",
+                                names(existing),
+                                tr("dialog.template.create"),
+                                plan.missing().size()))) {
+            return;
+        }
+        io.execute(() -> {
+            TemplateOutput.Outcome outcome = TemplateOutput.write(plan);
+            Platform.runLater(() -> finish(
+                    t, outcome, reporter, true, onCreated == null ? null : done -> onCreated.accept(done.dir())));
+        });
+    }
+
+    /** FX thread: report what a write did in one message, open the primary file, refresh the tree. */
+    private void finish(
+            Template t,
+            TemplateOutput.Outcome outcome,
+            Reporter reporter,
+            boolean openHere,
+            Consumer<TemplateOutput.Outcome> onCreated) {
+        String where = host.homeCollapsed(outcome.dir().toString());
+        if (!outcome.created().isEmpty()) {
+            refreshTree();
+        }
+        if (outcome.failed()) {
+            reporter.failed(
+                    outcome.created().isEmpty()
+                            ? tr(
+                                    "status.templateWriteFailed",
+                                    outcome.failedAt().relative() + ": " + outcome.error())
+                            : tr(
+                                    "status.template.partialFailure",
+                                    outcome.failedAt().relative(),
+                                    outcome.error(),
+                                    names(outcome.created())));
+            return;
+        }
+        TemplateOutput.Target primary = outcome.primary();
+        if (primary == null) {
+            // Every missing file appeared between the plan and the write: nothing is ours to report created.
+            reporter.failed(tr("status.template.allExist", where));
+            return;
+        }
+        String summary;
+        if (outcome.created().size() == 1 && outcome.skipped().isEmpty()) {
+            summary = tr("status.templateCreated", primary.relative());
+        } else if (outcome.skipped().isEmpty()) {
+            summary = tr("status.template.createdFiles", outcome.created().size(), where);
+        } else {
+            summary = tr(
+                    "status.template.createdSomeKept",
+                    outcome.created().size(),
+                    where,
+                    outcome.skipped().size());
+        }
+        reporter.done(); // close the form before the file takes the focus
+        host.setStatus(summary);
+        // The language override belongs to a single-file template; a multi-file one's files are typed by
+        // their own names.
+        if (openHere) {
+            openAndPlaceCaret(primary.path(), primary.caret(), t.isMultiFile() ? null : t, summary);
+        }
+        if (onCreated != null) {
+            onCreated.accept(outcome); // only after at least one file landed — an empty folder is not a project
+        }
+    }
+
+    /** The 0-based line of a target's caret, for opening it in another window. */
+    static int lineOf(TemplateOutput.Target target) {
+        int line = 0;
+        String text = target.text();
+        for (int i = 0; i < Math.min(target.caret(), text.length()); i++) {
+            if (text.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
+    }
+
+    private static String names(List<TemplateOutput.Target> targets) {
+        return targets.stream().map(TemplateOutput.Target::relative).collect(Collectors.joining(", "));
+    }
+
+    private TemplateOutput.Request request(
+            Template t, Path dir, Map<String, String> answers, String projectName, Path projectRoot) {
+        return new TemplateOutput.Request(
+                t,
+                dir,
+                answers,
+                host.config().getSettings().getAuthorName(),
+                projectName != null ? projectName : activeProjectName(),
+                projectRoot,
+                java.time.LocalDateTime.now(),
+                this::editorConfigFor);
+    }
+
+    /** The project's {@code .editorconfig} rules for a file about to be created, or null when off. */
+    private EditorConfigProperties editorConfigFor(Path file) {
+        if (!host.config().getSettings().isEditorConfigSupport()) {
+            return null;
+        }
+        try {
+            return EditorConfig.resolveFor(file);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Opens {@code target} and, once its text has loaded, puts the caret at {@code caret}, applies the
+     * template's language, and restores {@code summary} — the open reports "Opened …" when it lands, and
+     * that must not be the last word on what a template just created.
+     */
+    void openAndPlaceCaret(Path target, int caret, Template language, String summary) {
+        host.fileWorkflows().openThen(target, () -> {
+            EditorBuffer b = host.activeBuffer();
+            if (b == null || b.getPath() == null) {
+                return; // whenLoaded has selected the file's tab; anything else means it is gone
+            }
+            applyLanguage(b, language);
+            placeCaret(b, caret);
+            if (summary != null) {
+                host.setStatus(summary);
+            }
+        });
+    }
+
+    private static void placeCaret(EditorBuffer b, int caret) {
+        CodeArea a = b.getArea();
+        a.moveTo(Math.max(0, Math.min(caret, a.getLength())));
+        a.requestFollowCaret();
+    }
+
+    /**
+     * Honours a template's {@code language}: the created buffer gets that grammar when it names a language
+     * Editora has one for and the file name alone did not already select it (a {@code Jenkinsfile} template
+     * that says {@code "language": "groovy"}).
+     */
+    private static void applyLanguage(EditorBuffer b, Template t) {
+        String language = t == null || t.language() == null ? "" : t.language().strip();
+        if (needsLanguageOverride(language, b.getLanguage(), hasGrammar(language))) {
+            b.setLanguageOverride(language.toLowerCase(java.util.Locale.ROOT));
+        }
+    }
+
+    private static boolean hasGrammar(String language) {
+        try {
+            return !language.isEmpty() && GrammarRegistry.shared().forLanguageName(language) != null;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /** Pure: a template language is applied only when it is known and is not what the file already is. */
+    static boolean needsLanguageOverride(String templateLanguage, String bufferLanguage, boolean grammarKnown) {
+        return templateLanguage != null
+                && !templateLanguage.isBlank()
+                && grammarKnown
+                && !templateLanguage.strip().equalsIgnoreCase(bufferLanguage);
+    }
+
+    private void refreshTree() {
+        if (host.projectPanel() != null) {
+            host.projectPanel().refreshTree();
+        }
+    }
+
+    // --- context ----------------------------------------------------------------------------------
+
+    private Project activeProject() {
+        return host.projects() == null ? null : host.projects().active();
     }
 
     /** The active project's name for {@code ${projectName}}, or {@code ""} when there is none. */
     String activeProjectName() {
-        Project p = host.projects() == null ? null : host.projects().active();
+        Project p = activeProject();
         return p == null ? "" : p.name();
     }
 
-    /** The folder a "new in folder" template defaults to: the active file's dir, else project root, else home. */
-    java.nio.file.Path defaultNewDir() {
+    /** The root of the registered project that contains {@code dir} (the innermost one), or null. */
+    Path projectRootFor(Path dir) {
+        if (dir == null || host.projects() == null) {
+            return null;
+        }
+        Path abs = dir.toAbsolutePath().normalize();
+        Path best = null;
+        for (Project p : host.projects().list()) {
+            if (p.root().isBlank()) {
+                continue;
+            }
+            Path root = Path.of(p.root()).toAbsolutePath().normalize();
+            if (abs.startsWith(root) && (best == null || root.getNameCount() > best.getNameCount())) {
+                best = root;
+            }
+        }
+        return best;
+    }
+
+    /** The folder a "new in folder" action defaults to: the active file's dir, else project root, else home. */
+    Path defaultNewDir() {
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.getPath() != null && b.getPath().getParent() != null) {
             return b.getPath().getParent();
         }
-        Project p = host.projects() == null ? null : host.projects().active();
+        Project p = activeProject();
         if (p != null) {
-            return java.nio.file.Path.of(p.root());
+            return Path.of(p.root());
         }
-        return java.nio.file.Path.of(System.getProperty("user.home", "."));
+        return Path.of(System.getProperty("user.home", "."));
     }
 
-    /** Opens (creating from an example if needed) a user template file under {@code <configDir>/templates}. */
-    void editUserTemplates() {
-        java.nio.file.Path file = templates.userDir().resolve("example.json");
-        try {
-            if (!java.nio.file.Files.exists(file)) {
-                java.nio.file.Files.createDirectories(file.getParent());
-                java.nio.file.Files.writeString(file, USER_TEMPLATE_EXAMPLE);
-            }
-            host.fileWorkflows().openPath(file);
-            host.setStatus(tr("status.editingTemplates"));
-        } catch (java.io.IOException e) {
-            host.setStatus(tr("status.templateOpenFailed", e.getMessage()));
+    // --- managing user templates ------------------------------------------------------------------
+
+    /** {@code template.reload}: re-reads every source and reports the files that had to be skipped. */
+    void reloadTemplates() {
+        TemplateRegistry.Loaded loaded = templates.load();
+        if (loaded.problems().isEmpty()) {
+            host.setStatus(tr("status.templatesReloaded"));
+        } else {
+            host.setError(problemsMessage(loaded.problems()));
         }
+    }
+
+    /** "2 template files were skipped — a.json: reason; b.json: reason". */
+    static String problemsMessage(List<TemplateRegistry.Problem> problems) {
+        String details = problems.stream()
+                .map(p -> p.file().getFileName() + ": " + problemText(p))
+                .collect(Collectors.joining("; "));
+        return tr("status.templates.problems", problems.size(), details);
+    }
+
+    /** Why one template file was skipped, in the user's language. */
+    static String problemText(TemplateRegistry.Problem p) {
+        return switch (p.kind()) {
+            case MALFORMED_JSON -> tr("template.problem.malformedJson", p.line(), p.detail());
+            case NOT_AN_OBJECT -> tr("template.problem.notAnObject");
+            case MISSING_NAME -> tr("template.problem.missingName");
+            case NO_CONTENT -> tr("template.problem.noContent");
+            case BAD_FILES -> tr("template.problem.badFiles");
+            case RESERVED_ID -> tr("template.problem.reservedId");
+            case UNREADABLE -> tr("template.problem.unreadable", p.detail());
+        };
+    }
+
+    /** One row of the "Edit User Templates" picker. */
+    record EditRow(String label, String detail, Runnable action) {}
+
+    /**
+     * {@code template.editUser}: a picker over the user's template files (broken ones included, with the
+     * reason they did not load), every bundled or plugin template as "Customize …" (copies it — multi-file
+     * ones too — to the user's folder under the same id, so it overrides the original), and "New template".
+     * The chosen JSON opens in the editor. Nothing is created until a row that says so is chosen.
+     */
+    void editUserTemplates() {
+        QuickOpen<EditRow> picker = new QuickOpen<>(
+                tr("template.edit.title"),
+                tr("template.picker.prompt"),
+                this::editRows,
+                EditRow::label,
+                EditRow::detail,
+                row -> row.action().run());
+        picker.setPreferredSize(820, 8);
+        picker.setOverlayHost(host.overlayHost());
+        picker.show(host.stage());
+    }
+
+    List<EditRow> editRows() {
+        TemplateRegistry.Loaded loaded = templates.load();
+        Map<Path, TemplateRegistry.Problem> broken = new LinkedHashMap<>();
+        for (TemplateRegistry.Problem p : loaded.problems()) {
+            broken.put(p.file(), p);
+        }
+        Map<String, Template> userById = new LinkedHashMap<>();
+        for (Template t : templates.userTemplates()) {
+            userById.put(t.id(), t);
+        }
+        List<EditRow> rows = new ArrayList<>();
+        for (Path file : templates.userFiles()) {
+            String fileName = file.getFileName().toString();
+            String id = fileName.substring(0, fileName.lastIndexOf('.'));
+            TemplateRegistry.Problem problem = broken.get(file);
+            Template t = userById.get(id);
+            rows.add(new EditRow(
+                    t != null && problem == null ? t.name() : fileName,
+                    problem == null ? fileName : fileName + " — " + tr("template.edit.invalid", problemText(problem)),
+                    () -> openTemplateFile(file)));
+        }
+        rows.add(new EditRow(tr("template.edit.new"), tr("template.edit.newDetail"), this::newUserTemplate));
+        for (Template t : loaded.templates()) {
+            if (t.origin() != Template.Origin.USER) {
+                rows.add(new EditRow(
+                        tr("template.edit.customize", t.name()),
+                        originLabel(t) + " · " + tr("template.edit.customizeDetail"),
+                        () -> customize(t)));
+            }
+        }
+        return rows;
+    }
+
+    private void customize(Template t) {
+        try {
+            openTemplateFile(templates.duplicateToUser(t));
+        } catch (IOException e) {
+            host.setError(tr("status.templateOpenFailed", e.getMessage()));
+        }
+    }
+
+    /** Writes a starter template under a free id and opens it. */
+    private void newUserTemplate() {
+        try {
+            Set<String> taken =
+                    templates.load().templates().stream().map(Template::id).collect(Collectors.toSet());
+            String id = "my-template";
+            for (int n = 2; taken.contains(id) || Files.exists(templates.userFile(id)); n++) {
+                id = "my-template-" + n;
+            }
+            Path file = templates.userDir().resolve(id + ".json");
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, USER_TEMPLATE_EXAMPLE, java.nio.file.StandardOpenOption.CREATE_NEW);
+            openTemplateFile(file);
+        } catch (IOException e) {
+            host.setError(tr("status.templateOpenFailed", e.getMessage()));
+        }
+    }
+
+    private void openTemplateFile(Path file) {
+        host.fileWorkflows().openPath(file);
+        host.setStatus(tr("status.editingTemplates", file.getFileName().toString()));
     }
 
     static final String USER_TEMPLATE_EXAMPLE = """
             {
               "name": "My Template",
-              "description": "A starter template — edit it, then run \\"Template: Reload Templates\\"",
+              "description": "A starter template: edit it and save, it is live at once",
               "language": "java",
               "fileName": "${className:Example}.java",
+              "labels": { "className": "Class name" },
               "body": [
-                "public class ${className:Example} {",
+                "${packageDeclaration}public class ${className:Example} {",
                 "    ${cursor}",
                 "}"
               ]

@@ -204,6 +204,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final OverlayHost overlayHost = new OverlayHost();
 
     private com.editora.snippet.SnippetManager snippets;
+    private SnippetCoordinator snippetCoordinator;
 
     /** Shared across windows (owned by WindowManager); plugin classes load once, instances are per-window. */
     private com.editora.plugin.PluginManager pluginManager;
@@ -504,6 +505,16 @@ public class MainController implements com.editora.mcp.McpBridge {
             public void setRecordingIndicator(boolean recording) {
                 statusBar.setMacroRecording(recording);
             }
+
+            @Override
+            public Integer prefixArgument() {
+                return editing.currentPrefixArg;
+            }
+
+            @Override
+            public void resetShortcut(String commandId) {
+                editorSettings.resetShortcut(commandId);
+            }
         });
         // Built here (not as a field initializer) because NotesPanel's constructor reads config.getNotes().
         this.notesCoordinator = new NotesCoordinator(coordinatorHost, new NotesCoordinator.Ops() {
@@ -638,9 +649,42 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         // Record every executed command into an in-progress macro (the service no-ops unless recording).
+        registry.setStartListener(macroCoordinator::onCommandStart);
         registry.setExecutionListener(macroCoordinator::onCommand);
         registry.setBoundaryHook(editing::undoBoundary); // a command's edit is its own undo step
-        this.snippets = new com.editora.snippet.SnippetManager(config);
+        this.snippetCoordinator = new SnippetCoordinator(config, coordinatorHost, new SnippetCoordinator.Ops() {
+            @Override
+            public void openPath(Path file) {
+                fileWorkflows.openPath(file);
+            }
+
+            @Override
+            public void showPicker() {
+                navigation.snippetPalette.show(stage);
+            }
+
+            @Override
+            public Path projectRoot() {
+                Project active = projects == null ? null : projects.active();
+                return active == null ? null : Path.of(active.root());
+            }
+
+            @Override
+            public void broadcast() {
+                if (windowManager != null) windowManager.broadcastSnippetsChanged(MainController.this);
+            }
+
+            @Override
+            public StatusBar statusBar() {
+                return statusBar;
+            }
+
+            @Override
+            public SettingsWindow settingsWindow() {
+                return settingsWindow;
+            }
+        });
+        this.snippets = snippetCoordinator.manager();
         templateActions.templates = new com.editora.template.TemplateRegistry(config);
         this.completion = new com.editora.completion.CompletionEngine(snippets, config::getUserDictionary);
         // Project commands (incl. the Project tool window) are hidden from the palette unless project
@@ -820,6 +864,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         setupProjects();
         pluginCoordinator
                 .applyPlugins(); // register plugin commands/tool windows/hooks (before restore, so visibility restores)
+        snippetCoordinator.checkUserFilesAtStartup(); // a broken user snippet file is reported now, not on first use
         toolWindows.restore();
         // Honor a persisted Zen/Expert state on launch: the view options + chrome already read the flags via
         // the apply paths; this hides the side stripes (restore() opened nothing — windows were
@@ -1343,16 +1388,15 @@ public class MainController implements com.editora.mcp.McpBridge {
      * closes that window and returns focus to the editor (instead of starting the go-to prefix).
      */
     public void setKeyDispatcher(com.editora.command.KeyDispatcher dispatcher) {
-        // Record literally-typed characters + the bare editing/navigation keys the area handles itself into
-        // an in-progress macro (all no-ops unless recording), gated to keys aimed at the active editor — the
-        // hooks are scene filters, so they'd otherwise capture the palette's / find bar's own input.
+        // Keyboard macros: the coordinator is told what was typed and which keys were left to the focused
+        // control while recording, and the dispatcher stands aside for the keys a replay sends.
         if (macroCoordinator != null) {
-            dispatcher.setTypedListener(macroCoordinator::onTypedChar);
-            dispatcher.setKeyListener(macroCoordinator::onKey);
-            dispatcher.setRecordTarget(macroCoordinator::isRecordableTarget);
+            dispatcher.setMacroCapture(macroCoordinator);
         }
         dispatcher.setPrefixArgumentSupport(
-                id -> "edit.setMark".equals(id) || toolWindows.isKeyboardCountAware(id),
+                id -> "edit.setMark".equals(id)
+                        || toolWindows.isKeyboardCountAware(id)
+                        || (macroCoordinator != null && macroCoordinator.isCountAware(id)),
                 arg -> toolWindows.setKeyboardPrefixArgument(editing.currentPrefixArg = arg),
                 editing::selfInsertRepeat);
         dispatcher.setPreDispatch((token, target) -> {
@@ -4246,13 +4290,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void insertSnippetPicker() {
-            MainController.this.insertSnippetPicker();
-        }
-
-        @Override
-        public void editUserSnippets() {
-            MainController.this.editUserSnippets();
+        public SnippetCoordinator snippetCoordinator() {
+            return snippetCoordinator;
         }
 
         @Override
@@ -5123,6 +5162,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public boolean openInAnotherWindow(Path file) {
             return windowManager != null && windowManager.openInAnotherWindow(MainController.this, file);
+        }
+
+        @Override
+        public void fileSaved(Path file) {
+            snippetCoordinator.fileSaved(file);
         }
 
         @Override
@@ -8092,8 +8136,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
-        buffer.setSpellUserWords(config.getUserDictionary());
-        buffer.setOnAddToDictionary(editorSettings::addUserWordAndRefreshAll);
+        editorSettings.spell().wire(buffer);
         editorSettings.applyViewSettings(buffer, resolvePathSettings);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
@@ -8150,7 +8193,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setTypstRootResolver(this::resolveTypstRoot); // typst --root: nearest typst.toml / project root
         buffer.setOnMarkwhenViewChanged(() -> previews.persistMarkwhenView(buffer)); // persist timeline/calendar choice
         buffer.setOnEnableEditing(() -> enableEditing(buffer)); // "Enable Editing" banner button
-        buffer.setSnippetProvider((lang, prefix) -> snippets.byPrefix(lang, prefix));
+        snippetCoordinator.wireBuffer(buffer);
         buffer.setCompletionProvider(completion::complete);
         buffer.setAiCompletionProvider(aiCoordinator::inlineComplete);
         buffer.setAiCompletionEnabled(aiCoordinator.isInlineCompletionEnabled());
@@ -9683,45 +9726,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         setStatus(tr("status.textZoom", Math.round(z * 100)));
     }
 
-    /** Opens the snippet picker for the active buffer's language (plus global snippets). */
-    private void insertSnippetPicker() {
-        EditorBuffer b = activeBuffer();
-        if (b == null) {
-            return;
-        }
-        if (snippets.forLanguage(b.getLanguage()).isEmpty()) {
-            setStatus(tr("status.noSnippets"));
-            return;
-        }
-        navigation.snippetPalette.show(stage);
+    /** This window's snippets, for {@link WindowManager} to tell about a change made in another window. */
+    SnippetCoordinator snippetCoordinator() {
+        return snippetCoordinator;
     }
-
-    /** Opens (creating from a template if needed) the user snippet file for the active language. */
-    private void editUserSnippets() {
-        EditorBuffer b = activeBuffer();
-        String lang = b == null ? "global" : b.getLanguage();
-        Path file = snippets.userFile(lang);
-        try {
-            if (!Files.exists(file)) {
-                Files.createDirectories(file.getParent());
-                Files.writeString(file, USER_SNIPPET_TEMPLATE);
-            }
-            fileWorkflows.openPath(file);
-            setStatus(tr("status.editingSnippets", lang));
-        } catch (IOException e) {
-            setStatus(tr("status.snippetOpenFailed", e.getMessage()));
-        }
-    }
-
-    private static final String USER_SNIPPET_TEMPLATE = """
-            {
-              "Example": {
-                "prefix": "ex",
-                "body": ["// ${1:summary}", "$0"],
-                "description": "Example snippet — edit or add your own, then reload"
-              }
-            }
-            """;
 
     // --- New file of a known type ("New ▸ …") -----------------------------------------------------
 
@@ -9828,6 +9836,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 b.refreshSpell();
             }
         }
+        settingsWindow.syncDictionaryList(); // an open Spell Check page lists the words too
     }
 
     /**
@@ -9878,6 +9887,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             palette.hide();
         } else if (findBar.isShown()) {
             findBar.hideBar();
+        } else if (macroCoordinator.cancelRecording()) {
+            return; // nothing else to dismiss: C-g abandons the macro being recorded (it says so itself)
         } else {
             editing.deactivateMark();
             editing.collapseCarets(); // C-g leaves one caret, as Escape does

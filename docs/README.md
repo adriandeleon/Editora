@@ -66,6 +66,8 @@ architecture and contributor guidance; the exhaustive historical notes are prese
   search syntax and argv safety, file history across renames, and tags.
 - [subsystems/github.md](subsystems/github.md) — the `gh` availability probe and its states, the four
   call lanes and cancellation, tool-window gating, and how oversized logs and diffs are reported.
+- [subsystems/templates.md](subsystems/templates.md) — file templates and New ▸ <type>: the template
+  JSON format and syntax, where templates come from, the plan-then-write apply, and the name rules.
 - [subsystems/java-editing-review.md](subsystems/java-editing-review.md) — Java typing/completion
   pipeline, IntelliJ comparison, regression coverage, performance evidence and remaining server gaps.
 

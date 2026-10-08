@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Unit tests for the pure parts of the snippet session: offset shifting and re-indentation. */
 class SnippetSessionTest {
@@ -206,5 +207,54 @@ class SnippetSessionTest {
         SnippetSession.shift(rs, 0, 73, 1, 4);
         assertArrayEquals(new int[] {73, 77, 5, 6}, rs.get(0));
         assertArrayEquals(new int[] {73, 77, 4, 7}, rs.get(1));
+    }
+
+    // --- N8: a space-indented body follows the buffer's indent unit ---
+
+    @Test
+    void normalizeReadsLeadingSpacesAsIndentLevels() {
+        ParsedSnippet p = SnippetParser.parse("if (${1:x})\n{\n    ${2:a};\n        $0\n}", null);
+        ParsedSnippet tabs = SnippetSession.normalize(p, "\t");
+        assertEquals("if (x)\n{\n\ta;\n\t\t\n}", tabs.text(), "four spaces a level, as tabs");
+        assertArrayEquals(new int[] {10, 11}, tabs.stops().get(1).ranges().get(0), "the stop moved with its line");
+        assertArrayEquals(new int[] {15, 15}, tabs.stops().get(2).ranges().get(0));
+        assertEquals(
+                "if (x)\n{\n  a;\n    \n}", SnippetSession.normalize(p, "  ").text(), "and as two spaces");
+        assertTrue(SnippetSession.normalize(p, "    ") == p, "already the buffer's unit: untouched");
+    }
+
+    @Test
+    void spaceIndentUnitIsOnlyGuessedForRegularIndentation() {
+        assertEquals(4, SnippetSession.spaceIndentUnit("a\n    b\n        c"));
+        assertEquals(2, SnippetSession.spaceIndentUnit("a\n  b\n      c"));
+        assertEquals(0, SnippetSession.spaceIndentUnit("a\n\tb"), "tab-indented");
+        assertEquals(0, SnippetSession.spaceIndentUnit("call(a,\n     b)"), "hand alignment is left alone");
+        assertEquals(0, SnippetSession.spaceIndentUnit("a\n    b\n\tc"), "mixed");
+        ParsedSnippet aligned = SnippetParser.parse("call(a,\n     b)", null);
+        assertEquals("call(a,\n     b)", SnippetSession.normalize(aligned, "\t").text());
+    }
+
+    // --- N20: a blank line of the body stays blank ---
+
+    @Test
+    void reindentLeavesABlankLineEmptyUnlessAStopSitsOnIt() {
+        ParsedSnippet p = SnippetParser.parse("a\n\nb\n$1\nc", null);
+        assertEquals(
+                "a\n\n    b\n    \n    c", SnippetSession.reindent(p, "    ").text());
+        assertArrayEquals(
+                new int[] {13, 13},
+                SnippetSession.reindent(p, "    ").stops().get(0).ranges().get(0));
+    }
+
+    // --- N4: following the undo of an atomic field-plus-mirrors edit ---
+
+    @Test
+    void mirroredLengthReadsTheNewValueOutOfARewrittenSpan() {
+        // "idx = idx + idx" (three occurrences at 0, 6, 12) rewritten to "i = i + i".
+        List<int[]> order = ranges(new int[] {0, 3}, new int[] {6, 9}, new int[] {12, 15});
+        assertEquals(1, SnippetSession.mirroredLength(order, 0, "idx = idx + idx", "i = i + i"));
+        assertEquals(0, SnippetSession.mirroredLength(order, 0, "idx = idx + idx", " =  + "));
+        assertEquals(-1, SnippetSession.mirroredLength(order, 0, "idx = idx + idx", "i = j + i"), "not one value");
+        assertEquals(-1, SnippetSession.mirroredLength(order, 0, "idx = idx + idx", "i - i + i"), "a gap changed");
     }
 }

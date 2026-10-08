@@ -530,6 +530,105 @@ public final class ConfigMigrations {
         return o;
     }
 
+    /**
+     * The names the auto-saved last recording was stored under before v2 — one per UI language. They were
+     * the entry's identity, so switching language orphaned it; these literals are frozen here (not read from
+     * the catalogs, which may change) only to recognize the old entries.
+     */
+    private static final java.util.Set<String> LEGACY_UNNAMED_MACRO = java.util.Set.of(
+            "unnamed macro",
+            "macro sin nombre",
+            "macro sans nom",
+            "unbenanntes Makro",
+            "macro senza nome",
+            "macro sem nome");
+
+    /**
+     * v1 → v2 for {@code macros.json}.
+     *
+     * <ul>
+     *   <li>Each macro gets an {@code id}: the slug its {@code macro.run.<slug>} command (and so any key
+     *       binding) already used. Where several names shared a slug the <em>last</em> keeps it — that is the
+     *       one the shared command ran — and the earlier ones, unreachable until now, get a suffix.
+     *   <li>The auto-saved "unnamed macro" entry becomes {@code lastId} with an empty name. If the user had
+     *       switched language there may be several; the last one is the live one, the rest keep their names.
+     *   <li>A tab, newline or carriage return inside a text step becomes a {@code TAB}/{@code ENTER} key
+     *       step, which replays through the same handlers as the key.
+     * </ul>
+     */
+    static JsonNode macrosGainIds(JsonNode input) {
+        if (!(input instanceof ObjectNode o) || !(o.get("macros") instanceof ArrayNode macros)) {
+            return input;
+        }
+        java.util.Set<String> taken = new java.util.HashSet<>();
+        String lastId = "";
+        ObjectNode last = null;
+        for (int i = macros.size() - 1; i >= 0; i--) {
+            if (!(macros.get(i) instanceof ObjectNode m)) {
+                continue;
+            }
+            JsonNode nameNode = m.get("name");
+            String name = nameNode != null && nameNode.isTextual() ? nameNode.asText() : "";
+            String id = com.editora.macro.MacroIds.unique(com.editora.macro.MacroIds.legacySlug(name), taken);
+            taken.add(id);
+            m.put("id", id);
+            if (last == null && LEGACY_UNNAMED_MACRO.contains(name)) {
+                last = m;
+                lastId = id;
+            }
+            if (m.get("steps") instanceof ArrayNode steps) {
+                m.set("steps", splitControlText(steps));
+            }
+        }
+        if (last != null) {
+            last.put("name", "");
+        }
+        o.put("lastId", lastId);
+        return o;
+    }
+
+    /** Rewrites text steps holding a tab/newline as text and {@code TAB}/{@code ENTER} key steps, in order. */
+    private static ArrayNode splitControlText(ArrayNode steps) {
+        ArrayNode out = JsonNodeFactory.instance.arrayNode();
+        for (JsonNode step : steps) {
+            JsonNode kind = step.get("kind");
+            JsonNode value = step.get("value");
+            boolean text = kind == null || !kind.isTextual() || "text".equals(kind.asText());
+            if (!text || value == null || !value.isTextual()) {
+                out.add(step);
+                continue;
+            }
+            String s = value.asText();
+            StringBuilder run = new StringBuilder();
+            for (int i = 0; i < s.length(); i++) {
+                char c = s.charAt(i);
+                if (c != '\t' && c != '\n' && c != '\r') {
+                    run.append(c);
+                    continue;
+                }
+                if (!run.isEmpty()) {
+                    out.add(macroStep("text", run.toString()));
+                    run.setLength(0);
+                }
+                if (c == '\r' && i + 1 < s.length() && s.charAt(i + 1) == '\n') {
+                    i++; // one Enter, however the line end was spelled
+                }
+                out.add(macroStep("key", c == '\t' ? "TAB" : "ENTER"));
+            }
+            if (!run.isEmpty()) {
+                out.add(macroStep("text", run.toString()));
+            }
+        }
+        return out;
+    }
+
+    private static ObjectNode macroStep(String kind, String value) {
+        ObjectNode n = JsonNodeFactory.instance.objectNode();
+        n.put("kind", kind);
+        n.put("value", value);
+        return n;
+    }
+
     static JsonNode seedOpenProjectIds(JsonNode input) {
         if (!(input instanceof ObjectNode o) || o.has("openProjectIds")) {
             return input;

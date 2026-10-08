@@ -178,7 +178,102 @@ final class CompletionUndoFactory implements UndoManagerFactory {
         @Override
         public void forgetHistory() {
             target = null;
+            spanEntry = null;
+            spanOwned = false;
             delegate.forgetHistory();
+        }
+
+        // --- spans: a run of edits kept as ONE entry (a macro replay) -----------------------------
+
+        private boolean span;
+        /** The entry holding everything the open span has changed so far; null before its first change. */
+        private C spanEntry;
+        /** Whether {@link #spanEntry} is a list this queue built, which it may therefore grow in place. */
+        private boolean spanOwned;
+        /** Size of {@link #spanEntry} when its cost was last accounted for. */
+        private int spanAccounted;
+
+        /**
+         * Until {@link #endSpan}, every change pushed is folded into a single entry instead of becoming its
+         * own. One entry is the only shape that undoes as one step <em>and</em> survives the history bound:
+         * a replay of a few hundred passes makes more entries than the queue holds, so grouping them from
+         * the outside could only ever undo the newest few hundred.
+         *
+         * <p>An entry of this queue is a list of text changes applied in order, so folding is appending —
+         * with a change that continues the previous one (the next typed character) merged into it, which
+         * keeps a long run of typing a single change.
+         */
+        void beginSpan() {
+            span = true;
+            spanEntry = null;
+            spanOwned = false;
+        }
+
+        void endSpan() {
+            if (span && spanOwned && onTop(spanEntry)) {
+                delegate.prev();
+                delegate.push(spanEntry); // the same entry again: its cost grew while it was grown in place
+            }
+            span = false;
+            spanEntry = null;
+            spanOwned = false;
+        }
+
+        boolean spanOpen() {
+            return span;
+        }
+
+        private boolean onTop(C entry) {
+            return entry != null && !delegate.hasNext() && delegate.hasPrev() && delegate.peekPrev() == entry;
+        }
+
+        /** Folds {@code change} into the span's entry. UndoFX pushes one change at a time (or none). */
+        @SuppressWarnings("unchecked")
+        private void pushIntoSpan(C change) {
+            if (spanEntry != null && delegate.hasNext() && delegate.peekNext() == spanEntry) {
+                // UndoFX stepped back over the span's entry and merged the new change into it itself.
+                delegate.push(change);
+                spanEntry = change;
+                spanOwned = false;
+                return;
+            }
+            if (onTop(spanEntry) && spanEntry instanceof List<?> && change instanceof List<?> incoming) {
+                List<Object> batch = spanOwned ? (List<Object>) spanEntry : new ArrayList<>((List<Object>) spanEntry);
+                append(batch, incoming);
+                // Re-pushed (which re-measures it) when first built and each time it doubles; in between it
+                // grows in place, or a replay typing n characters would measure n entries n times over.
+                if (!spanOwned || batch.size() >= 2 * spanAccounted) {
+                    delegate.prev();
+                    delegate.push((C) batch);
+                    spanEntry = (C) batch;
+                    spanOwned = true;
+                    spanAccounted = Math.max(1, batch.size());
+                }
+                return;
+            }
+            delegate.push(change);
+            spanEntry = change;
+            spanOwned = false;
+        }
+
+        /** Appends {@code incoming} to {@code batch}; a single change that continues the last one merges into it. */
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        private static void append(List<Object> batch, List<?> incoming) {
+            if (incoming.size() == 1
+                    && !batch.isEmpty()
+                    && batch.getLast() instanceof TextChange last
+                    && incoming.getFirst() instanceof TextChange next) {
+                Optional<?> merged = last.mergeWith(next);
+                if (merged.isPresent()) {
+                    if (((TextChange) merged.get()).isIdentity()) {
+                        batch.removeLast();
+                    } else {
+                        batch.set(batch.size() - 1, merged.get());
+                    }
+                    return;
+                }
+            }
+            batch.addAll(incoming);
         }
 
         @Override
@@ -186,6 +281,10 @@ final class CompletionUndoFactory implements UndoManagerFactory {
         public final void push(C... changes) {
             C accepted = target;
             target = null;
+            if (span && changes.length == 1) {
+                pushIntoSpan(changes[0]);
+                return;
+            }
             if (accepted != null && changes.length == 1 && !delegate.hasNext() && rebase(accepted, changes[0])) return;
             delegate.push(changes);
         }

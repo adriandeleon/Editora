@@ -5,21 +5,21 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.Set;
 
-import com.editora.snippet.SnippetParser;
 import com.editora.snippet.VariableResolver;
 
 /**
  * Resolves template variables for {@link TemplateEngine}: the wizard's named answers first, then the
- * template built-ins ({@code author}, {@code projectName}, {@code packageName}, {@code fileName},
- * {@code baseName}, {@code extension}, {@code date}, {@code year}, {@code time}), then the standard
- * snippet variables (TM_, CURRENT_, SELECTION, CLIPBOARD) via a wrapped {@link VariableResolver}, then
- * {@code null} (so {@code ${x:default}} falls back). Pure given a fixed clock, so it is unit-tested.
+ * template built-ins ({@code author}, {@code projectName}, {@code packageName},
+ * {@code packageDeclaration}, {@code fileName}, {@code baseName}, {@code extension}, {@code date},
+ * {@code year}, {@code time}), then the standard snippet variables (TM_, CURRENT_, SELECTION, CLIPBOARD)
+ * via a wrapped {@link VariableResolver}, then {@code null} (so {@code ${x:default}} falls back). Pure
+ * given a fixed clock, so it is unit-tested.
  *
- * <p>{@code ${cursor}} is <em>not</em> resolved here — {@link TemplateEngine} rewrites it to {@code $0}
- * (the final caret) before parsing. {@link #isBuiltIn(String)} is the single source of truth shared with
+ * <p>{@code ${cursor}} is <em>not</em> resolved here — {@link TemplateEngine} takes it out of the text
+ * and reports its offset. {@link #isBuiltIn(String)} is the single source of truth shared with
  * {@link TemplateEngine#discoverVariables} so the wizard never asks about a name we can resolve.
  */
-public final class TemplateVariableResolver implements SnippetParser.Variables {
+public final class TemplateVariableResolver implements TemplateEngine.Variables {
 
     /** Template-specific built-ins (plus {@code cursor}, handled as {@code $0} by the engine). */
     private static final Set<String> TEMPLATE_BUILTINS = Set.of(
@@ -27,6 +27,7 @@ public final class TemplateVariableResolver implements SnippetParser.Variables {
             "author",
             "projectName",
             "packageName",
+            "packageDeclaration",
             "fileName",
             "baseName",
             "extension",
@@ -82,9 +83,14 @@ public final class TemplateVariableResolver implements SnippetParser.Variables {
                 this.fileName, directory == null ? "" : directory, filePath == null ? "" : filePath, "", "", 0, "");
     }
 
-    /** Whether {@code name} is auto-resolved (so the variable wizard must not prompt for it). */
+    /** Whether {@code name} is a name Editora itself gives a meaning to (rather than a template's own). */
     public static boolean isBuiltIn(String name) {
         return TEMPLATE_BUILTINS.contains(name) || SNIPPET_BUILTINS.contains(name);
+    }
+
+    /** The documented template built-ins, sorted — the list the Settings help and the docs print. */
+    public static java.util.List<String> documentedBuiltIns() {
+        return TEMPLATE_BUILTINS.stream().sorted().toList();
     }
 
     @Override
@@ -94,8 +100,12 @@ public final class TemplateVariableResolver implements SnippetParser.Variables {
         }
         return switch (name) {
             case "author" -> author;
-            case "projectName" -> projectName;
-            case "packageName" -> packageName;
+            case "projectName" -> blankToNull(projectName);
+            // No project / no package: null, so ${projectName:app} and ${packageName:app} use their default.
+            case "packageName" -> blankToNull(packageName);
+            // A whole `package x.y;` line plus the blank line after it, or nothing outside a package — what
+            // a Java template starts with so the same file works in and out of a source root.
+            case "packageDeclaration" -> packageName.isEmpty() ? "" : "package " + packageName + ";\n\n";
             // When there is no driving file name (e.g. a multi-file template), return null so a
             // ${baseName:default} falls back to its default rather than an empty string.
             case "fileName" -> fileName.isEmpty() ? null : fileName;
@@ -104,7 +114,7 @@ public final class TemplateVariableResolver implements SnippetParser.Variables {
             case "date" -> now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
             case "year" -> now.format(DateTimeFormatter.ofPattern("yyyy"));
             case "time" -> now.format(DateTimeFormatter.ofPattern("HH:mm"));
-            case "cursor" -> null; // rewritten to $0 by TemplateEngine before parsing
+            case "cursor" -> null; // taken out of the text by TemplateEngine
             default -> delegate.resolve(name);
         };
     }

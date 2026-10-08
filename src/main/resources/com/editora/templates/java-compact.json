@@ -5,7 +5,7 @@
   "fileName": "${baseName:Main}.java",
   "body": [
     "void main() {",
-    "    IO.println(\"${1:hello world}\");",
+    "    IO.println(\"hello world\");",
     "}"
   ]
 }

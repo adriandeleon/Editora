@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 112;
+    public static final int SCHEMA_VERSION = 114;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -165,12 +165,47 @@ public class Settings {
     private boolean technicalDictionary = true;
     /** Default spell-check dictionary language id (e.g. {@code en_US}); per-file overrides live in WorkspaceState. */
     private String spellLanguage = "en_US";
+    /**
+     * Languages (as {@code LanguageRegistry} names them) that spell check is switched off for while
+     * {@link #spellCheck} is on. Data and configuration formats are off out of the box: their "words" are
+     * keys, package names and identifiers, and checking them only produced noise.
+     */
+    public static final java.util.List<String> DEFAULT_SPELL_DISABLED_LANGUAGES = java.util.List.of(
+            "json",
+            "yaml",
+            "toml",
+            "xml",
+            "csv",
+            "ini",
+            "properties",
+            "dotenv",
+            "systemd",
+            "desktop",
+            "ssh-config",
+            "git-config",
+            "gitattributes",
+            "ignore",
+            "hosts",
+            "fstab",
+            "crontab",
+            "apt",
+            "apt-sources",
+            "interfaces",
+            "network",
+            "etc",
+            "debian",
+            "log",
+            "diff");
+
+    private java.util.List<String> spellDisabledLanguages = new java.util.ArrayList<>(DEFAULT_SPELL_DISABLED_LANGUAGES);
     /** Autocomplete master switch (gates all sources); on by default. */
     private boolean autocomplete = true;
     /** Per-source autocomplete toggles (gated by {@link #autocomplete}); on by default. */
     private boolean autocompleteProse = true;
 
     private boolean autocompleteSnippets = true;
+    /** Tab expands the snippet trigger before the caret; off leaves snippets to the popup and the picker. */
+    private boolean snippetTabExpansion = true;
     /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
      *  Mermaid support is enabled and the tools are detected. */
     private boolean autocompleteMermaid = true;
@@ -1300,6 +1335,14 @@ public class Settings {
         this.autocompleteSnippets = autocompleteSnippets;
     }
 
+    public boolean isSnippetTabExpansion() {
+        return snippetTabExpansion;
+    }
+
+    public void setSnippetTabExpansion(boolean snippetTabExpansion) {
+        this.snippetTabExpansion = snippetTabExpansion;
+    }
+
     public boolean isAutocompleteMermaid() {
         return autocompleteMermaid;
     }
@@ -1500,6 +1543,15 @@ public class Settings {
 
     public void setSpellLanguage(String spellLanguage) {
         this.spellLanguage = spellLanguage == null || spellLanguage.isBlank() ? "en_US" : spellLanguage;
+    }
+
+    public java.util.List<String> getSpellDisabledLanguages() {
+        return spellDisabledLanguages;
+    }
+
+    /** Null is "nothing is switched off"; the defaults apply only to a file that has no such key at all. */
+    public void setSpellDisabledLanguages(java.util.List<String> languages) {
+        this.spellDisabledLanguages = languages == null ? new java.util.ArrayList<>() : languages;
     }
 
     /** "" (follow app theme), "light", or "dark" — the Markdown preview's independent color theme. */
