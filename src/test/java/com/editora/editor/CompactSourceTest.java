@@ -118,4 +118,65 @@ class CompactSourceTest {
         assertFalse(cleaned.contains("x"));
         assertFalse(cleaned.contains("c"));
     }
+
+    @Test
+    void aNullSourceHasNoMain() {
+        assertEquals(-1, CompactSource.mainLine(null));
+        assertFalse(CompactSource.hasTopLevelMain(null));
+    }
+
+    @Test
+    void aMainSpelledInsideATextBlockOrABlockCommentIsNotAnEntryPoint() {
+        String textBlock = "String doc = \"\"\"\n    void main() {}\n    \"\"\";\nint n;\n";
+        assertEquals(-1, CompactSource.mainLine(textBlock));
+        assertEquals(4, CompactSource.mainLine(textBlock + "void main() {}\n"), "the real one after it counts");
+
+        assertEquals(-1, CompactSource.mainLine("/* void main() {} */\nint n;\n"));
+        assertEquals(1, CompactSource.mainLine("/* a * star and a / slash */\nvoid main() {}\n"));
+    }
+
+    @Test
+    void unterminatedCommentsAndLiteralsBlankTheRestOfTheFile() {
+        assertEquals(-1, CompactSource.mainLine("/* never closed\nvoid main() {}\n"));
+        assertEquals(-1, CompactSource.mainLine("String s = \"never closed\nvoid main() {}\n"));
+        assertEquals(-1, CompactSource.mainLine("String s = \"\"\"\nnever closed\nvoid main() {}\n"));
+        assertEquals(-1, CompactSource.mainLine("int n; // void main() {}"), "a comment that ends the file");
+    }
+
+    @Test
+    void bracesAndQuotesInsideLiteralsDoNotChangeTheDepth() {
+        // A '{' char literal, an escaped quote in a string and an escaped quote char: none opens a block.
+        String src = "char open = '{';\nchar quote = '\\'';\nString s = \"a \\\" {\";\nvoid main() {}\n";
+        assertEquals(3, CompactSource.mainLine(src));
+        String cleaned = CompactSource.stripCommentsAndLiterals(src);
+        assertEquals(src.length(), cleaned.length(), "stripping keeps every offset where it was");
+        assertEquals(
+                src.chars().filter(c -> c == '\n').count(),
+                cleaned.chars().filter(c -> c == '\n').count(),
+                "and every line break");
+        assertEquals(1, cleaned.chars().filter(c -> c == '{').count(), "only main's own brace survives");
+    }
+
+    @Test
+    void anUnbalancedCloserDoesNotPushTheDepthBelowZero() {
+        assertEquals(0, CompactSource.braceDepthAt("} } {", 3));
+        assertEquals(1, CompactSource.braceDepthAt("} } {", 5));
+        assertEquals(1, CompactSource.mainLine("}\nvoid main() {}\n"), "a stray closer above main is ignored");
+    }
+
+    @Test
+    void aPrivateHelperDeclaredBeforeMainDoesNotMakeMainPrivate() {
+        assertEquals(1, CompactSource.mainLine("private int n;\nvoid main() {}\n"));
+        assertEquals(1, CompactSource.mainLine("private void helper() {}\nvoid main() {}\n"));
+        assertEquals(-1, CompactSource.mainLine("int n;\nprivate static void main(String[] args) {}\n"));
+        // The first no-argument main wins when there are two; a String[] one beats both.
+        assertEquals(0, CompactSource.mainLine("void main() {}\nvoid main() {}\n"));
+        assertEquals(1, CompactSource.mainLine("void main() {}\nvoid main(String[] args) {}\n"));
+    }
+
+    @Test
+    void lineOfClampsAnOffsetPastTheEnd() {
+        assertEquals(2, CompactSource.lineOf("a\nb\nc", 99));
+        assertEquals(0, CompactSource.lineOf("a\nb", 0));
+    }
 }
