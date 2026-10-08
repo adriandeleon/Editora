@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Buffer: Toggle Pin` on the Welcome tab (or an image, PDF or hex tab) no longer fails with an internal
   error after pinning the tab, which left a Welcome tab that Close All skipped. It now says there is no
   file open.
+- Save As into a folder reached through a symbolic link (`/home` on some Linux systems, `/tmp` and `/var`
+  on macOS) lost the personal notes of the copy: they were stored under the path as typed and looked up
+  under the real one. A file that does not exist yet is now keyed the way it will be once it is written.
 
 ## [0.20.0] - 2026-10-08
 

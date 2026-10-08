@@ -14,6 +14,7 @@ import com.editora.config.PathKeys;
 import com.editora.config.PersonalNote;
 import com.editora.config.TextAnchor;
 import com.editora.editor.EditorBuffer;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -199,6 +200,47 @@ class RenameMigratesFileStateFxTest {
             assertEquals(List.of(1), lines(bookmarks(fx).get(a.toString())), "the original, still on disk, keeps it");
             assertEquals("mine", notes(fx).get(PathKeys.canonicalKey(b)).get(0).body());
             assertEquals("mine", notes(fx).get(PathKeys.canonicalKey(a)).get(0).body());
+        }
+    }
+
+    /**
+     * The copy does not exist when Save As re-points the buffer, so its notes are stored before the file can
+     * be resolved. In a folder reached through a link (the temp dir on macOS, {@code /home} on some Linux
+     * systems) they were stored under the path as typed and looked up under the real one: the copy had none.
+     */
+    @Test
+    void saveAsIntoAFolderReachedThroughALinkKeepsTheNotes(@TempDir Path dir) throws Exception {
+        Path real = Files.createDirectory(dir.resolve("real"));
+        Path link;
+        try {
+            link = Files.createSymbolicLink(dir.resolve("link"), real);
+        } catch (java.io.IOException | UnsupportedOperationException e) {
+            Assumptions.abort("symbolic links cannot be created here");
+            return;
+        }
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            FxTestSupport.runOnFx(() -> fx.shared.getSettings().setNotesSupport(true));
+            Path a = Files.writeString(link.resolve("a.txt"), "one\ntwo\nthree\n");
+            Path b = link.resolve("b.txt");
+            EditorBuffer buffer = open(fx, a);
+            NotesCoordinator notesCoordinator = FxTestSupport.field(fx.controller, "notesCoordinator");
+            FxTestSupport.runOnFx(() -> {
+                buffer.getNoteManager().add(note(a, 2, "mine"));
+                notesCoordinator.persistNotes(buffer);
+            });
+
+            FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+            assertTrue(FxTestSupport.callOnFx(() -> workflows.applySaveAsTarget(buffer, b)));
+            async.awaitWorker(FxTestSupport.<ExecutorService>field(workflows, "autoSaveExecutor"));
+            async.awaitFx();
+            assertTrue(Files.exists(b));
+
+            String copyKey = PathKeys.canonicalKey(b);
+            assertEquals(real.toRealPath().resolve("b.txt").toString(), copyKey);
+            assertNotNull(notes(fx).get(copyKey), "stored where the written file is looked up");
+            assertEquals("mine", notes(fx).get(copyKey).get(0).body());
+            assertEquals(2, notes(fx).size(), "the original and the copy, and nothing under a third spelling");
         }
     }
 }

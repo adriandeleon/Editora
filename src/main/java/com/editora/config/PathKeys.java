@@ -70,9 +70,15 @@ public final class PathKeys {
             });
 
     /**
-     * A path for cross-source identity comparison: the real (symlink-resolved) path when it exists, else the
-     * absolute-normalized form. Matching by {@code normalize()} alone misses a symlinked path that a tool
-     * reports under its real URI.
+     * A path for cross-source identity comparison: the real (symlink-resolved) path when it exists. Matching
+     * by {@code normalize()} alone misses a symlinked path that a tool reports under its real URI.
+     *
+     * <p>A path that does not exist (yet, or any more) is answered with the real path of its nearest existing
+     * folder plus the names below it — the path it has once it is created, and the one it had before it was
+     * deleted. The plain absolute-normalized form is only that when no folder on the way is a link: a Save As
+     * target in a folder reached through one ({@code /home} on some Linux systems, {@code /tmp} and
+     * {@code /var} on macOS) was keyed under one spelling before its first write and another after it, so
+     * what was stored for it in between — the notes Save As copies — was never found again.
      *
      * <p>Cached ({@link #CANONICAL_CACHE}) — but the not-exists <b>fallback is deliberately never cached</b>:
      * a file that doesn't exist yet resolves to its normalized form, and once created (Save-As) its real
@@ -96,7 +102,26 @@ public final class PathKeys {
             CANONICAL_CACHE.put(cacheKey, real);
             return real;
         } catch (java.io.IOException | RuntimeException e) {
-            return p.toAbsolutePath().normalize(); // NOT cached — see the javadoc
+            return unresolved(p); // NOT cached — see the javadoc
+        }
+    }
+
+    /** {@link #canonical} for a path {@code toRealPath} refused: its nearest existing folder's real path. */
+    private static Path unresolved(Path p) {
+        Path abs = p.toAbsolutePath().normalize();
+        try {
+            if (!abs.equals(p)) {
+                try {
+                    return abs.toRealPath(); // "missing/../file": not a path the OS resolves, but the file is there
+                } catch (java.io.IOException e) {
+                    // not there either: resolve its folder below
+                }
+            }
+            Path parent = abs.getParent();
+            Path name = abs.getFileName();
+            return parent == null || name == null ? abs : canonical(parent).resolve(name);
+        } catch (RuntimeException e) {
+            return abs;
         }
     }
 
