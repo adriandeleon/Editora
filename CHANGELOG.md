@@ -114,6 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Run Configurations: the form only enables the fields the selected type uses. A Java main class has no
+  Script / target; a Python, shell, Make or NPM configuration has no Main class, Module, VM arguments or
+  JDK. A disabled field keeps its value, and the JDK field now follows the type as soon as it is changed.
 - GitHub: the tool window names the repository `gh` resolved, filters pull requests and issues by state
   (open, closed, merged, all) and "Mine", offers "load more" instead of stopping at 50 (30 for runs),
   and shows a spinner while `gh` is working. Row menus open with the Menu key, and the segment buttons
