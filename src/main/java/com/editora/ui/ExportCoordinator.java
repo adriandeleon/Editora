@@ -65,6 +65,14 @@ final class ExportCoordinator {
     /** Told the path of every export that has replaced its destination; the window reloads a viewer tab on it. */
     Consumer<Path> exported = path -> {};
 
+    /**
+     * The grid state of a CSV buffer whose grid is on screen — its visible rows in displayed order and its
+     * header setting — or null when the buffer shows no grid. Set by the window ({@code CsvCoordinator}).
+     */
+    java.util.function.Function<EditorBuffer, CsvGridPanel.Shown> csvShown = b -> null;
+    /** What the active tab holds when it is not an editor buffer (an image, PDF or hex viewer), or null. */
+    java.util.function.Supplier<Object> activeTabContent = () -> null;
+
     ExportCoordinator(
             CoordinatorHost host,
             MermaidCoordinator mermaid,
@@ -91,14 +99,16 @@ final class ExportCoordinator {
     }
 
     void registerCommands(CommandRegistry registry) {
-        registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
+        registry.register(Command.of("editor.exportPdf", this::exportActivePdf));
+        registry.register(Command.of("editor.exportSelectionPdf", this::exportSelectionPdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
         registry.register(Command.of("preview.exportHtml", this::exportPreviewHtml));
         registry.register(Command.of("preview.copy", this::copyPreview));
         registry.register(Command.of("preview.copyHtml", this::copyPreviewHtml));
         registry.register(Command.of("preview.exportDocx", this::exportPreviewDocx));
         registry.register(Command.of("preview.exportOdt", this::exportPreviewOdt));
-        registry.register(Command.of("editor.print", this::printCode));
+        registry.register(Command.of("editor.print", this::printActive));
+        registry.register(Command.of("editor.printSelection", this::printSelection));
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
         registry.register(Command.of("file.openLastExport", this::openLastExport));
@@ -123,11 +133,14 @@ final class ExportCoordinator {
 
     /**
      * Exports a CSV as a PDF through the table renderer of the Markdown → PDF pipeline (the grid's right-click
-     * menu). The table is built from the parsed rows, not from Markdown text, so cells are never re-parsed as
-     * markup and the columns are the ones the grid shows (see {@link CsvTableDocument}).
+     * menu, {@code csv.exportPdf}, and Export Rendered Preview on a CSV). The table is built from the parsed
+     * rows, not from Markdown text, so cells are never re-parsed as markup and the columns are the ones the
+     * grid shows (see {@link CsvTableDocument}). While the grid is on screen the table is what the grid
+     * shows — see {@link #csvRows}.
      */
     void csvExportPdf(String csvText, String baseName) {
-        org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
+        CsvGridPanel.Shown shown = csvRows(csvText);
+        org.commonmark.node.Node table = CsvTableDocument.fromRows(shown.header(), shown.rows());
         if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
@@ -138,7 +151,41 @@ final class ExportCoordinator {
         }
         host.setStatus(tr("status.pdf.exporting"));
         String pageSize = host.settings().getPdfPageSize();
-        stagedPdf(f, (out, report) -> pdfService.exportDocument(table, pageSize, out, report));
+        this.<com.editora.pdf.PdfExportService.Result>staged(
+                f,
+                (out, report) -> pdfService.exportDocument(table, pageSize, out, report),
+                com.editora.pdf.PdfExportService.Result::ok,
+                message -> new com.editora.pdf.PdfExportService.Result(false, message),
+                r -> {
+                    reportPdf(r, f);
+                    // After the report, so a failure keeps its own message and dialog.
+                    if (r.ok() && r.unrendered() == 0 && shown.filtered()) {
+                        host.setStatus(withRowCount(tr("status.pdf.exported", f.toString()), shown));
+                    }
+                });
+    }
+
+    /**
+     * What a CSV print or export holds. While the active buffer's grid is on screen: the grid's visible rows
+     * in their displayed order, under its header row when "first row is a header" is on — a filtered,
+     * sorted grid used to go out as the whole file in file order. In source mode (no grid state to follow):
+     * the whole of {@code csvText} in file order, its first record the header.
+     */
+    CsvGridPanel.Shown csvRows(String csvText) {
+        EditorBuffer b = host.activeBuffer();
+        CsvGridPanel.Shown shown = b == null ? null : csvShown.apply(b);
+        if (shown != null) {
+            return shown;
+        }
+        return CsvGridPanel.Shown.wholeFile(
+                csvText == null || csvText.isBlank() ? java.util.List.of() : com.editora.csv.CsvParser.parse(csvText));
+    }
+
+    /** {@code message} followed by "(n of N rows — the grid is filtered)" when a filter left rows out. */
+    private static String withRowCount(String message, CsvGridPanel.Shown shown) {
+        return shown.filtered()
+                ? message + " " + tr("status.csv.filteredRows", shown.rows().size(), shown.totalRows())
+                : message;
     }
 
     /**
@@ -316,7 +363,8 @@ final class ExportCoordinator {
         if (printBusy()) {
             return;
         }
-        org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
+        CsvGridPanel.Shown shown = csvRows(csvText);
+        org.commonmark.node.Node table = CsvTableDocument.fromRows(shown.header(), shown.rows());
         if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
@@ -328,6 +376,9 @@ final class ExportCoordinator {
             return;
         }
         preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
+        if (shown.filtered()) { // say that the preview about to open is not the whole file
+            host.setStatus(withRowCount(tr("status.print.preparing"), shown));
+        }
     }
 
     /**
@@ -442,6 +493,229 @@ final class ExportCoordinator {
                 officeService.exportOds(rows, hasHeader, out, cb);
             }
         });
+    }
+
+    /**
+     * {@code csv.exportExcel} / {@code csv.exportOds} and the grid's two menu items: the same rows as the PDF
+     * and the print (see {@link #csvRows}), so the four outputs of one grid agree. The header row is bold
+     * when there is one.
+     */
+    void csvExportSpreadsheet(String csvText, String baseName, boolean xlsx) {
+        CsvGridPanel.Shown shown = csvRows(csvText);
+        java.util.List<java.util.List<String>> rows = shown.withHeader();
+        if (rows.isEmpty()) {
+            host.setStatus(tr("status.csv.empty"));
+            return;
+        }
+        String ext = xlsx ? "xlsx" : "ods";
+        java.io.File f = chooseOfficeDestination(
+                baseName, ext, xlsx ? "Excel" : "OpenDocument Spreadsheet", host.activeBuffer());
+        if (f == null) {
+            return;
+        }
+        host.setStatus(tr("status.office.exporting"));
+        boolean hasHeader = shown.header() != null;
+        this.<com.editora.office.OfficeExportService.Result>staged(
+                f,
+                (out, cb) -> {
+                    if (xlsx) {
+                        officeService.exportXlsx(rows, hasHeader, out, cb);
+                    } else {
+                        officeService.exportOds(rows, hasHeader, out, cb);
+                    }
+                },
+                com.editora.office.OfficeExportService.Result::ok,
+                message -> new com.editora.office.OfficeExportService.Result(false, message),
+                r -> {
+                    reportOffice(r, f);
+                    if (r.ok() && shown.filtered()) {
+                        host.setStatus(withRowCount(tr("status.office.exported", f.toString()), shown));
+                    }
+                });
+    }
+
+    // --- the active tab: a text buffer, an image, or something with nothing to put on a page -------------
+
+    /**
+     * {@code editor.print}: prints the active buffer's text, or the picture of an image tab. A PDF or hex
+     * viewer tab has neither — the command is disabled there, and says so when reached by its key chord
+     * (it used to answer "No file open" with a file plainly open).
+     */
+    void printActive() {
+        if (host.activeBuffer() != null) {
+            printCode();
+        } else if (activeTabContent.get() instanceof ImageViewerPane image) {
+            printImage(image);
+        } else {
+            host.setStatus(tr(activeTabContent.get() == null ? "status.noFileOpen" : "status.print.noText"));
+        }
+    }
+
+    /** {@code editor.exportPdf}: the PDF twin of {@link #printActive}. */
+    void exportActivePdf() {
+        if (host.activeBuffer() != null) {
+            exportCodePdf();
+        } else if (activeTabContent.get() instanceof ImageViewerPane image) {
+            exportImagePdf(image);
+        } else {
+            host.setStatus(tr(activeTabContent.get() == null ? "status.noFileOpen" : "status.pdf.noText"));
+        }
+    }
+
+    /** Opens the Print Preview for the picture of an image tab, on the image-page path the Project Map uses. */
+    void printImage(ImageViewerPane pane) {
+        if (printBusy()) {
+            return;
+        }
+        javafx.scene.image.Image image = pane.printableImage();
+        if (image == null) {
+            host.setStatus(tr("status.print.imageNotLoaded"));
+            return;
+        }
+        PrintPreview.Job job = printJobs.get();
+        if (job == null) {
+            host.setStatus(tr("status.print.noPrinter"));
+            return;
+        }
+        preparePrint(() ->
+                printService.prepareFxImages(java.util.List.of(image), prepared -> openPrintPreview(job, prepared)));
+    }
+
+    /** Exports the picture of an image tab to a PDF page of the configured size. */
+    void exportImagePdf(ImageViewerPane pane) {
+        javafx.scene.image.Image image = pane.printableImage();
+        if (image == null) {
+            host.setStatus(tr("status.print.imageNotLoaded"));
+            return;
+        }
+        Path path = pane.getPath();
+        java.io.File f = choosePdfDestination(
+                path == null || path.getFileName() == null
+                        ? null
+                        : path.getFileName().toString(),
+                null);
+        if (f == null) {
+            return;
+        }
+        host.setStatus(tr("status.pdf.exporting"));
+        String pageSize = host.settings().getPdfPageSize();
+        stagedPdf(f, (out, report) -> pdfService.exportFxImages(java.util.List.of(image), pageSize, out, report));
+    }
+
+    // --- the selection only -------------------------------------------------------------------------------
+
+    /** The text a selection is cut from, and the selection widened to whole lines of it. */
+    record SelectedLines(String text, LineSelection lines) {}
+
+    /**
+     * The active buffer's selection as whole lines of its file, or null — with the reason in the status bar —
+     * when there is no buffer or nothing is selected. The lines are numbered as in the file: a narrowed
+     * buffer shows only part of it, so the selection is mapped into the whole text. A filtered log view shows
+     * lines that are not adjacent in the file; there the visible text is used and numbered as shown.
+     */
+    SelectedLines selectedLines() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null) {
+            host.setStatus(tr(activeTabContent.get() == null ? "status.noFileOpen" : "status.print.noText"));
+            return null;
+        }
+        org.fxmisc.richtext.CodeArea area = b.getFocusedArea() == null ? b.getArea() : b.getFocusedArea();
+        javafx.scene.control.IndexRange selection = area.getSelection();
+        boolean partial = b.isLogFiltered();
+        String text = partial ? area.getText() : b.getContent();
+        int shift = partial ? 0 : b.narrowStart();
+        LineSelection lines = LineSelection.of(text, selection.getStart() + shift, selection.getEnd() + shift);
+        if (lines == null) {
+            host.setStatus(tr("status.print.noSelection"));
+            return null;
+        }
+        return new SelectedLines(text, lines);
+    }
+
+    /**
+     * {@code editor.printSelection}: prints the selected lines of the active buffer — whole lines, with the
+     * file's grammar and the line numbers they have in the file.
+     */
+    void printSelection() {
+        if (printBusy()) {
+            return;
+        }
+        SelectedLines selected = selectedLines();
+        if (selected == null) {
+            return;
+        }
+        PrintPreview.Job job = printJobs.get();
+        if (job == null) {
+            host.setStatus(tr("status.print.noPrinter"));
+            return;
+        }
+        Settings s = host.settings();
+        String grammar = grammarKey(host.activeBuffer());
+        LineSelection lines = selected.lines();
+        preparePrint(() -> printService.prepareCodeLines(
+                selected.text(),
+                lines.start(),
+                lines.end(),
+                lines.firstLine(),
+                grammar,
+                s.isPdfSyntaxHighlighting(),
+                s.isPdfLineNumbers(),
+                s.getTabSize(),
+                prepared -> openPrintPreview(job, prepared)));
+    }
+
+    /** {@code editor.exportSelectionPdf}: the PDF twin of {@link #printSelection}. */
+    void exportSelectionPdf() {
+        SelectedLines selected = selectedLines();
+        if (selected == null) {
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        java.io.File f = choosePdfDestination(bufferBaseName(b), b);
+        if (f == null) {
+            return;
+        }
+        Settings s = host.settings();
+        host.setStatus(tr("status.pdf.exporting"));
+        String grammar = grammarKey(b);
+        LineSelection lines = selected.lines();
+        stagedPdf(
+                f,
+                (out, report) -> pdfService.exportCodeLines(
+                        selected.text(),
+                        lines.start(),
+                        lines.end(),
+                        lines.firstLine(),
+                        grammar,
+                        s.isPdfSyntaxHighlighting(),
+                        s.isPdfLineNumbers(),
+                        s.getTabSize(),
+                        s.getPdfPageSize(),
+                        out,
+                        report));
+    }
+
+    /**
+     * The editor's right-click items for printing and exporting — Print…, Export to PDF… and, while text is
+     * selected, their selection-only twins — followed by {@code others} (the items already contributed
+     * there) after a separator.
+     */
+    java.util.List<javafx.scene.control.MenuItem> editorMenuItems(
+            EditorBuffer buffer, java.util.List<javafx.scene.control.MenuItem> others) {
+        java.util.List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>();
+        items.add(LazyContextMenu.item(tr("menu.print"), Icons.print(), this::printActive));
+        items.add(LazyContextMenu.item(tr("menu.exportPdf"), Icons.saveAs(), this::exportActivePdf));
+        org.fxmisc.richtext.CodeArea area =
+                buffer.getFocusedArea() == null ? buffer.getArea() : buffer.getFocusedArea();
+        if (area.getSelection().getLength() > 0) {
+            items.add(LazyContextMenu.item(tr("menu.printSelection"), Icons.print(), this::printSelection));
+            items.add(LazyContextMenu.item(tr("menu.exportSelectionPdf"), Icons.saveAs(), this::exportSelectionPdf));
+        }
+        if (others != null && !others.isEmpty()) {
+            items.add(new javafx.scene.control.SeparatorMenuItem());
+            items.addAll(others);
+        }
+        return items;
     }
 
     /**

@@ -1104,7 +1104,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED,
                 debugCoordinator == null || debugCoordinator.restartAvailable(),
                 git.operationInProgress(),
-                b != null && b.hasExportablePreview());
+                b != null && b.hasExportablePreview() && !b.previewShowsError(),
+                b != null
+                        || (imagePaneOf(activeTab()) != null
+                                && imagePaneOf(activeTab()).printableImage() != null),
+                b != null
+                        && b.getFocusedArea() != null
+                        && b.getFocusedArea().getSelection().getLength() > 0,
+                projectPanel != null && projectPanel.isMapOutputAvailable());
     }
 
     private void setupRecentFiles() {
@@ -2172,6 +2179,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
         projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
         projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
+        exports.activeTabContent =
+                () -> tabPath(activeTab()) == null ? null : activeTab().getUserData();
         projectPanel.setMapOutputActions(
                 exports::printProjectMap, image -> exports.exportProjectMapPdf(image, projectMapBaseName()));
         // An external program (a terminal `git`, another editor, a build) changed files under the repo while
@@ -6536,13 +6545,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public void exportExcel(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName) {
-            exports.csvExportSpreadsheet(rows, hasHeader, baseName, true);
-        }
-
-        @Override
-        public void exportOds(java.util.List<java.util.List<String>> rows, boolean hasHeader, String baseName) {
-            exports.csvExportSpreadsheet(rows, hasHeader, baseName, false);
+        public void exportSpreadsheet(String csvText, String baseName, boolean xlsx) {
+            exports.csvExportSpreadsheet(csvText, baseName, xlsx);
         }
     });
 
@@ -8224,7 +8228,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         buffer.setMenuContributor(
                 () -> { // External Tools submenu + plugin-contributed right-click items
                     List<javafx.scene.control.MenuItem> extra =
-                            new ArrayList<>(externalToolCoordinator.editorMenuItems());
+                            new ArrayList<>(exports.editorMenuItems(buffer, externalToolCoordinator.editorMenuItems()));
                     extra.addAll(pluginCoordinator.editorMenuItems(buffer));
                     return extra;
                 });

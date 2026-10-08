@@ -28,6 +28,18 @@ final class WindowCommandRegistrar {
         return com.editora.ai.AiProvider.from(host.config().getSettings().getAiProvider());
     }
 
+    /** Prints or exports the Project Map through its own buttons' handlers, when the map is on screen. */
+    private void projectMapOutput(boolean print) {
+        ProjectPanel panel = host.projectPanel();
+        if (panel == null || !panel.isMapOutputAvailable()) {
+            host.setStatus(tr("status.projectMap.notShowing"));
+        } else if (print) {
+            panel.printMap();
+        } else {
+            panel.exportMapPdf();
+        }
+    }
+
     interface Host {
         WindowChromeCoordinator chrome();
 
@@ -475,6 +487,15 @@ final class WindowCommandRegistrar {
                                         null)));
         host.registry()
                 .register(Command.of(
+                        "view.togglePageFooter",
+                        () -> host.editorSettings()
+                                .toggleSetting(
+                                        "view.togglePageFooter",
+                                        () -> host.config().getSettings().isPdfPageFooter(),
+                                        v -> host.config().getSettings().setPdfPageFooter(v),
+                                        null)));
+        host.registry()
+                .register(Command.of(
                         "view.toggleEditorConfig",
                         () -> host.editorSettings()
                                 .toggleSetting(
@@ -834,6 +855,10 @@ final class WindowCommandRegistrar {
                                         })));
         host.registry().register(Command.of("editor.setIndentStyle", host.editorSettings()::chooseIndentStyle));
         host.exports().registerCommands(host.registry());
+        host.exports().csvShown = host.csvCoordinator()::shownFor;
+        // The Project Map's two toolbar buttons as commands, so the palette and the keymaps reach them.
+        host.registry().register(Command.of("projectMap.print", () -> projectMapOutput(true)));
+        host.registry().register(Command.of("projectMap.exportPdf", () -> projectMapOutput(false)));
         host.registry().register(Command.of("markwhen.toggleView", host.previews()::toggleMarkwhenView));
         host.registry().register(Command.of("structured.toggleView", host.previews()::toggleStructuredView));
         // Two file-type-agnostic view-mode toggles replace the former per-type view.toggle*Preview palette

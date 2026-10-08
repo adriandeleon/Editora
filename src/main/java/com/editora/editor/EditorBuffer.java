@@ -3080,6 +3080,13 @@ public class EditorBuffer implements TabContent {
         return hasPreview() && !hasHttpPreview();
     }
 
+    /** Whether the tree preview on screen is an error message (as last rendered: nothing is parsed here). */
+    public boolean previewShowsError() {
+        return markdownViewMode != MarkdownViewMode.EDITOR
+                && structuredContentHolder != null
+                && structuredContentHolder.lookup(".structured-error") != null;
+    }
+
     /** A standalone SVG file (by {@code .svg} extension — the buffer stays XML text, so it also gets XML
      *  highlighting/LSP, but gains a rendered preview). */
     public boolean isSvg() {

@@ -132,8 +132,14 @@ class MenuBarModelTest {
         }
         // In the full menu they sit with the preview's own print and export entries, the file first.
         List<String> full = MenuBarModel.menus(false).get(0).entries();
-        assertEquals(full.indexOf("editor.print") + 2, full.indexOf("preview.print"), full.toString());
-        assertEquals(full.indexOf("editor.exportPdf") + 2, full.indexOf("preview.exportPdf"), full.toString());
+        // Each is followed by its selection-only twin.
+        assertEquals(full.indexOf("editor.print") + 1, full.indexOf("editor.printSelection"), full.toString());
+        assertEquals(full.indexOf("editor.exportPdf") + 1, full.indexOf("editor.exportSelectionPdf"), full.toString());
+        assertEquals(full.indexOf("editor.print") + 4, full.indexOf("preview.print"), full.toString());
+        assertEquals(full.indexOf("editor.exportPdf") + 3, full.indexOf("preview.exportPdf"), full.toString());
+        List<String> simpleFile = MenuBarModel.menus(true).get(0).entries();
+        assertFalse(
+                simpleFile.contains("editor.printSelection"), "the Simple menu keeps to the two whole-file entries");
     }
 
     /**

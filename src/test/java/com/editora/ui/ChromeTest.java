@@ -378,15 +378,73 @@ class ChromeTest {
                 Chrome.disabledReason("preview.print", allOn(), noBuffer()).messageKey());
     }
 
-    /** Print and Export to PDF are File-menu entries now: grayed where there is no text to print. */
+    /** A context differing from "everything available" only in what there is to print. */
+    private static Chrome.PaletteContext printing(
+            boolean hasBuffer, boolean printableTab, boolean selection, boolean projectMap) {
+        return new Chrome.PaletteContext(
+                hasBuffer,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                true,
+                printableTab,
+                selection,
+                projectMap);
+    }
+
+    /**
+     * Print and Export to PDF are File-menu entries: grayed where the tab has nothing to put on a page — the
+     * Welcome page, a PDF viewer, a hex viewer — with a reason that does not claim no file is open, and lit
+     * on an image tab, which has no buffer but a picture.
+     */
     @Test
-    void printingTheFileNeedsABuffer() {
+    void printingTheTabNeedsTextOrAPicture() {
+        Chrome.PaletteContext viewer = printing(false, false, false, false);
+        Chrome.PaletteContext image = printing(false, true, false, false);
         for (String id : new String[] {"editor.print", "editor.exportPdf"}) {
-            assertFalse(Chrome.contextEnabled(id, noBuffer()), id + " has nothing to print on the Welcome tab");
+            assertFalse(Chrome.contextEnabled(id, viewer), id + " has nothing to print on a PDF or hex tab");
             assertEquals(
-                    "palette.disabled.needsBuffer",
-                    Chrome.disabledReason(id, allOn(), noBuffer()).messageKey());
+                    "palette.disabled.needsPrintableTab",
+                    Chrome.disabledReason(id, allOn(), viewer).messageKey());
+            assertTrue(Chrome.contextEnabled(id, image), id + " prints the picture of an image tab");
             assertTrue(Chrome.contextEnabled(id, ctx()), id);
+            assertFalse(Chrome.contextEnabled(id, noBuffer()), id + " has nothing to print on the Welcome tab");
+        }
+    }
+
+    @Test
+    void printingTheSelectionNeedsATextBufferWithSomethingSelected() {
+        for (String id : new String[] {"editor.printSelection", "editor.exportSelectionPdf"}) {
+            assertTrue(Chrome.contextEnabled(id, printing(true, true, true, false)), id);
+            Chrome.PaletteContext nothingSelected = printing(true, true, false, false);
+            assertFalse(Chrome.contextEnabled(id, nothingSelected), id);
+            assertEquals(
+                    "palette.disabled.needsSelection",
+                    Chrome.disabledReason(id, allOn(), nothingSelected).messageKey());
+            // An image tab can be printed whole, but has no text to select.
+            Chrome.PaletteContext image = printing(false, true, false, false);
+            assertEquals(
+                    "palette.disabled.needsPrintableTab",
+                    Chrome.disabledReason(id, allOn(), image).messageKey());
+        }
+    }
+
+    @Test
+    void theProjectMapCommandsNeedTheMapOnScreen() {
+        for (String id : new String[] {"projectMap.print", "projectMap.exportPdf"}) {
+            assertTrue(Chrome.contextEnabled(id, printing(false, false, false, true)), id + " needs no buffer");
+            Chrome.PaletteContext treeMode = printing(true, true, true, false);
+            assertFalse(Chrome.contextEnabled(id, treeMode), id);
+            assertEquals(
+                    "palette.disabled.needsProjectMap",
+                    Chrome.disabledReason(id, allOn(), treeMode).messageKey());
         }
     }
 

@@ -59,7 +59,7 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         void commit(int dataRow, int field, String value);
     }
 
-    /** Export actions for the right-click menu (each acts on the whole file/grid). */
+    /** Export actions for the right-click menu (each puts out the rows the grid shows — see {@link Shown}). */
     interface ExportActions {
         void exportPdf();
 
@@ -68,6 +68,39 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
         void exportExcel();
 
         void exportOds();
+    }
+
+    /**
+     * What a print or an export of a CSV holds: {@code rows} in the order to put out, under {@code header}
+     * (null: no header row, every row is data), out of {@code totalRows} data rows in the file.
+     */
+    record Shown(List<String> header, List<List<String>> rows, int totalRows) {
+        /** Whether a filter is hiding some of the file's rows. */
+        boolean filtered() {
+            return rows.size() < totalRows;
+        }
+
+        /** The header (when there is one) followed by the rows — the shape the spreadsheet writers take. */
+        List<List<String>> withHeader() {
+            List<List<String>> all = new ArrayList<>(rows.size() + 1);
+            if (header != null) {
+                all.add(header);
+            }
+            all.addAll(rows);
+            return all;
+        }
+
+        /** A whole file as parsed, in file order, its first record the header (a buffer showing no grid). */
+        static Shown wholeFile(List<List<String>> parsed) {
+            List<List<String>> all = new ArrayList<>(parsed);
+            while (!all.isEmpty() && all.get(all.size() - 1).stream().allMatch(String::isBlank)) {
+                all.remove(all.size() - 1); // drop trailing blank records
+            }
+            if (all.isEmpty()) {
+                return new Shown(null, List.of(), 0);
+            }
+            return new Shown(all.get(0), List.copyOf(all.subList(1, all.size())), all.size() - 1);
+        }
     }
 
     /** A data row plus its original 0-based index (stable through sort/filter, so edits/jumps map back). */
@@ -195,6 +228,19 @@ final class CsvGridPanel extends VBox implements ToolWindowContent {
     /** Whether the first row is treated as a header (the coordinator adds 1 to the data-row→line mapping). */
     boolean isHeaderRow() {
         return headerToggle.isSelected();
+    }
+
+    /**
+     * The grid as displayed: the visible rows in their displayed order (filter and sort applied) and the
+     * header row when "first row is a header" is on. Print and the exports put out exactly this.
+     */
+    Shown shown() {
+        List<List<String>> visible = new ArrayList<>(table.getItems().size());
+        for (Row row : table.getItems()) {
+            visible.add(List.copyOf(row.cells()));
+        }
+        List<String> header = headerToggle.isSelected() && !rows.isEmpty() ? List.copyOf(rows.get(0)) : null;
+        return new Shown(header, visible, allRows.size());
     }
 
     /** The number of data rows currently held (unfiltered) — for the FX test harness. */

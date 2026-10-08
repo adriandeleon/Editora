@@ -227,6 +227,40 @@ public final class PdfExportService {
     }
 
     /**
+     * Exports the lines {@code [start, end)} of {@code text} as a code PDF numbered from
+     * {@code firstLineNumber} — the excerpt's own line numbers in its file. Highlighted from the whole text,
+     * as {@code PrintService.prepareCodeLines} does.
+     */
+    public void exportCodeLines(
+            String text,
+            int start,
+            int end,
+            int firstLineNumber,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            String pageSize,
+            Path out,
+            Consumer<Result> onResult) {
+        exec.submit(() -> {
+            Result result;
+            try {
+                StyleSpans<Collection<String>> spans =
+                        com.editora.print.PrintService.excerptSpans(text, start, end, highlight ? fileName : null);
+                int unrendered = CodePdfWriter.write(
+                        text.substring(start, end), spans, lineNumbers, firstLineNumber, tabSize, pageSize, out);
+                result = new Result(true, "", unrendered);
+            } catch (Throwable e) {
+                LOG.log(java.util.logging.Level.SEVERE, "Code PDF export failed", e);
+                result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
+            }
+            Result r = result;
+            Platform.runLater(() -> onResult.accept(r));
+        });
+    }
+
+    /**
      * Exports {@code markdown} as a native-vector PDF. {@code mmdcCommand} (or null) renders embedded
      * ```mermaid blocks as diagrams. Runs off the FX thread.
      */

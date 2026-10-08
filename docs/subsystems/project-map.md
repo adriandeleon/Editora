@@ -353,6 +353,11 @@ context-menu factory into the map and calls the same `contextMenuFor(...)` path 
 New, Maven, rename, delete, reveal, terminal, local-history, and Git items therefore retain their
 existing availability and behavior without a parallel command list.
 
+The two output buttons are also the commands `projectMap.print` and `projectMap.exportPdf`
+(`WindowCommandRegistrar`), which run the buttons' own handlers through `ProjectPanel.printMap()` /
+`exportMapPdf()`. `Chrome.contextReason` enables them only while `ProjectPanel.isMapOutputAvailable()`:
+Map mode, the tool window in the scene, and at least one column to draw.
+
 ## Threading, bounds, and lifecycle
 
 Filesystem listing runs on the single daemon `project-map-loader` executor, created on the first load.

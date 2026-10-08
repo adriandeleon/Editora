@@ -50,6 +50,22 @@ public final class CodePdfWriter {
         return write(text, spans, lineNumbers, tabSize, pageSizeKey, out, SystemFontFiles.get());
     }
 
+    /**
+     * As {@link #write(String, StyleSpans, boolean, int, String, Path)} for an excerpt of a file: the gutter
+     * counts from {@code firstLineNumber} (1-based), the line the excerpt starts on in its file.
+     */
+    public static int write(
+            String text,
+            StyleSpans<Collection<String>> spans,
+            boolean lineNumbers,
+            int firstLineNumber,
+            int tabSize,
+            String pageSizeKey,
+            Path out)
+            throws IOException {
+        return write(text, spans, lineNumbers, tabSize, pageSizeKey, out, SystemFontFiles.get(), firstLineNumber);
+    }
+
     /** As {@link #write(String, StyleSpans, boolean, int, String, Path)} with explicit fallback font files. */
     static int write(
             String text,
@@ -60,15 +76,29 @@ public final class CodePdfWriter {
             Path out,
             List<Path> fallbackFonts)
             throws IOException {
+        return write(text, spans, lineNumbers, tabSize, pageSizeKey, out, fallbackFonts, 1);
+    }
+
+    /** The fallback-font form with the number of the first line (see the {@code firstLineNumber} overload). */
+    private static int write(
+            String text,
+            StyleSpans<Collection<String>> spans,
+            boolean lineNumbers,
+            int tabSize,
+            String pageSizeKey,
+            Path out,
+            List<Path> fallbackFonts,
+            int firstLineNumber)
+            throws IOException {
         try {
-            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, fallbackFonts);
+            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, fallbackFonts, firstLineNumber);
         } catch (IOException | RuntimeException e) {
             if (fallbackFonts.isEmpty() || PdfExportService.abandoned(e)) { // a cancel is not a bad font
                 throw e;
             }
             // A system font PDFBox turns out unable to embed must not cost the export: retry with the bundled
             // fonts only (a failure unrelated to fonts just happens again and propagates).
-            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, List.of());
+            return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, List.of(), firstLineNumber);
         }
     }
 
@@ -79,7 +109,8 @@ public final class CodePdfWriter {
             int tabSize,
             String pageSizeKey,
             Path out,
-            List<Path> fallbackFonts)
+            List<Path> fallbackFonts,
+            int firstLineNumber)
             throws IOException {
         PDRectangle pageSize = pageRectangle(pageSizeKey);
         List<List<PdfText.Run>> sourceLines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
@@ -93,7 +124,8 @@ public final class CodePdfWriter {
 
             float charWidth = regular.getStringWidth("M") / 1000f * FONT_SIZE;
             int total = sourceLines.size();
-            int digits = Math.max(2, Integer.toString(total).length());
+            int digits =
+                    Math.max(2, Integer.toString(firstLineNumber - 1 + total).length());
             float gutterWidth = lineNumbers ? digits * charWidth + GUTTER_GAP : 0f;
             float codeX = MARGIN + gutterWidth;
             float contentWidth = pageSize.getWidth() - MARGIN - codeX;
@@ -102,7 +134,7 @@ public final class CodePdfWriter {
             float bottomY = MARGIN + FOOTER_SIZE + 6f;
 
             Page page = new Page(doc, pageSize, topY);
-            int lineNo = 0;
+            int lineNo = firstLineNumber - 1;
             for (List<PdfText.Run> source : sourceLines) {
                 lineNo++;
                 List<List<PdfText.Run>> visual = PdfText.wrap(source, maxCols);

@@ -156,6 +156,7 @@ class ExportCoordinatorFxTest {
                 assertEquals(
                         List.of(
                                 "editor.exportPdf",
+                                "editor.exportSelectionPdf",
                                 "preview.exportPdf",
                                 "preview.exportHtml",
                                 "preview.copy",
@@ -163,6 +164,7 @@ class ExportCoordinatorFxTest {
                                 "preview.exportDocx",
                                 "preview.exportOdt",
                                 "editor.print",
+                                "editor.printSelection",
                                 "preview.print",
                                 "markwhen.exportJson",
                                 "file.openLastExport",
@@ -170,12 +172,14 @@ class ExportCoordinatorFxTest {
                         registry.all().stream().map(Command::id).toList());
                 List<String> statuses = List.of(
                         "status.noFileOpen",
+                        "status.noFileOpen",
                         "status.pdf.noPreview",
                         "status.html.notMarkdown",
                         "status.preview.none",
                         "status.html.notMarkdown",
                         "status.office.notMarkdown",
                         "status.office.notMarkdown",
+                        "status.noFileOpen",
                         "status.noFileOpen",
                         "status.print.noPreview",
                         "status.markwhen.notMarkwhen",

@@ -507,6 +507,7 @@ public class SettingsWindow {
     private ComboBox<String> autoSaveCombo;
     private CheckBox pdfLineNumbersCheck;
     private CheckBox pdfHighlightCheck;
+    private CheckBox pdfPageFooterCheck;
     private ComboBox<String> pdfPageSizeCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
 
@@ -1230,6 +1231,7 @@ public class SettingsWindow {
 
         pdfLineNumbersCheck = viewCheck(tr("settings.pdf.lineNumbers"), Settings::setPdfLineNumbers);
         pdfHighlightCheck = viewCheck(tr("settings.pdf.highlight"), Settings::setPdfSyntaxHighlighting);
+        pdfPageFooterCheck = viewCheck(tr("settings.pdf.pageFooter"), Settings::setPdfPageFooter);
         indentStyleCombo = new ComboBox<>();
         indentStyleCombo.getItems().setAll("detect", "space", "tab");
         indentStyleCombo.setConverter(new StringConverter<>() {
@@ -2585,15 +2587,31 @@ public class SettingsWindow {
         adminSaveNote.setMaxWidth(440);
         cardRow(saving, Category.EDITOR, adminSaveNote, "save administrator root permission linux pkexec");
         Card pdf = card(p, tr("settings.section.pdf"));
-        checkRow(pdf, Category.EDITOR, pdfLineNumbersCheck, null, "pdf export line numbers gutter");
-        checkRow(pdf, Category.EDITOR, pdfHighlightCheck, null, "pdf export syntax highlighting colors");
+        checkRow(
+                pdf,
+                Category.EDITOR,
+                pdfLineNumbersCheck,
+                tr("settings.pdf.lineNumbers.desc"),
+                "pdf export print line numbers gutter");
+        checkRow(
+                pdf,
+                Category.EDITOR,
+                pdfHighlightCheck,
+                tr("settings.pdf.highlight.desc"),
+                "pdf export print syntax highlighting colors");
+        checkRow(
+                pdf,
+                Category.EDITOR,
+                pdfPageFooterCheck,
+                tr("settings.pdf.pageFooter.desc"),
+                "pdf export print page footer document name page number");
         controlRow(
                 pdf,
                 Category.EDITOR,
                 tr("settings.pdf.pageSize"),
-                null,
+                tr("settings.pdf.pageSize.desc"),
                 pdfPageSizeCombo,
-                "pdf export page size letter a4 paper");
+                "pdf export page size letter a4 paper print page setup");
         return p;
     }
 
@@ -7599,6 +7617,7 @@ public class SettingsWindow {
             smartSemicolonCheck.setSelected(settings.isLspSmartSemicolon());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
+            pdfPageFooterCheck.setSelected(settings.isPdfPageFooter());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
             spellCheckBox.setSelected(settings.isSpellCheck());
             dictEnableCheck.setSelected(settings.isPersonalDictionary());
