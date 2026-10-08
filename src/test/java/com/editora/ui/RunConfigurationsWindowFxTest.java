@@ -143,4 +143,58 @@ class RunConfigurationsWindowFxTest {
                         () -> list.getSelectionModel().getSelectedItem().name()));
         FxTestSupport.runOnFx(stage::close);
     }
+
+    /** Only the fields the selected type launches with are editable, and they follow the type as it changes. */
+    @Test
+    void onlyTheFieldsOfTheSelectedTypeAreEnabled(@TempDir Path dir) throws Exception {
+        ConfigManager config = new ConfigManager(dir);
+        config.getWorkspaceState()
+                .setRunConfigurations(java.util.List.of(
+                        new RunConfiguration("App", "example.App", "", "", "-Xmx1g", ""),
+                        new RunConfiguration("Other", "example.Other", "", "", "", ""),
+                        new RunConfiguration("Script", "python", "tool.py", "", "", "", "", "", "", "")));
+        RunConfigurationsWindow window =
+                FxTestSupport.callOnFx(() -> new RunConfigurationsWindow(config, () -> null, () -> {}));
+        FxTestSupport.runOnFx(() -> window.show("Script", null));
+        Stage stage = FxTestSupport.field(window, "stage");
+        @SuppressWarnings("unchecked")
+        ListView<RunConfiguration> list = FxTestSupport.field(window, "list");
+        @SuppressWarnings("unchecked")
+        ComboBox<String> type = (ComboBox<String>) stage.getScene().lookup("#run-config-type");
+
+        assertEquals(
+                java.util.List.of(false, true, true, true, true, false), FxTestSupport.callOnFx(() -> disabled(stage)));
+
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+        assertEquals(
+                java.util.List.of(true, false, false, false, false, false),
+                FxTestSupport.callOnFx(() -> disabled(stage)));
+
+        // Java to Java: the type does not change, the fields must still be right.
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(1));
+        assertEquals(
+                java.util.List.of(true, false, false, false, false, false),
+                FxTestSupport.callOnFx(() -> disabled(stage)));
+
+        FxTestSupport.runOnFx(() -> list.getSelectionModel().select(0));
+        FxTestSupport.runOnFx(() -> type.setValue("npm"));
+        assertEquals(
+                java.util.List.of(false, true, true, true, true, false), FxTestSupport.callOnFx(() -> disabled(stage)));
+        assertEquals("npm", persisted(config, "App").type());
+        assertEquals("-Xmx1g", persisted(config, "App").vmArgs(), "a disabled field keeps its value");
+        FxTestSupport.runOnFx(stage::close);
+    }
+
+    /** Disabled state of: target, main class, module, VM arguments, JDK, program arguments. */
+    private static java.util.List<Boolean> disabled(Stage stage) {
+        return java.util.stream.Stream.of(
+                        "#run-config-target",
+                        "#run-config-main-class",
+                        "#run-config-module",
+                        "#run-config-vm-args",
+                        "#run-config-jdk",
+                        "#run-config-args")
+                .map(id -> stage.getScene().lookup(id).isDisabled())
+                .toList();
+    }
 }
