@@ -841,6 +841,22 @@ public final class ConfigMigrations {
         return o;
     }
 
+    /**
+     * v115 → v116 for the settings file: a file with no {@code pdfPageSize} gets {@code "letter"}.
+     *
+     * <p>From this version a missing key means "the paper of this region" (see
+     * {@code PdfPageSizes}), which is right for a new installation but would silently switch an existing
+     * one to A4 outside the Letter countries. Every earlier build exported Letter when the key was absent,
+     * so that is written down. A stored value — either size — is the user's and is not touched. Safe to
+     * repeat.
+     */
+    static JsonNode keepLegacyPdfPageSize(JsonNode input) {
+        if (input instanceof ObjectNode o && !o.hasNonNull("pdfPageSize")) {
+            o.put("pdfPageSize", "letter");
+        }
+        return input;
+    }
+
     private static void blankIfEqual(ObjectNode o, String key, String frozen) {
         JsonNode value = o.get(key);
         if (value != null && value.isTextual() && frozen.equals(value.asText().strip())) {

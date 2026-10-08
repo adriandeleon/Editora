@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PDF orientation, margins and code font size** (Settings → Editor → Export & Print): Portrait or
+  Landscape; Normal, Narrow (0.5 in) or Wide (1 in) margins; 7–12 pt for source code. Orientation and
+  margins apply to source-text, selection, Markdown and CSV PDFs, the font size to source text only.
+  Image, tree, Project Map and tool-rendered PDFs and printing are not affected. Settings schema 117;
+  existing installations keep the page they had.
+- **Page footer** on printed pages and exported PDFs: the document name and "Page n of N". On by
+  default; turn it off under Settings → Editor → Export & Print or with
+  `View: Toggle Page Footer in Print and PDF`.
+- **Print Selection…** and **Export Selection to PDF…** in the editor's right-click menu and the palette:
+  the selected lines, numbered as in the file. Print… and Export to PDF… are in that menu too.
+- Image tabs can be printed and exported to PDF. The Project Map's output is in the palette as
+  `Project Map: Print…` and `Project Map: Export to PDF…`.
+- Exported PDFs have clickable links (web, mail and `#heading`), bookmarks from the headings, and a
+  title, creator and date. Fenced code in a Markdown PDF is syntax-coloured.
+- Print Preview: zoom (Fit Page, Fit Width, 50–400%; Ctrl+wheel, Ctrl +/−/0) and a page number you can
+  type. The window remembers its size and zoom for the session. Printed links show their address.
+- With no printer installed, Print offers Export to PDF instead of only a status-bar message.
+- PDF export shows page progress and says when a second export is queued. New commands
+  `File: Open Last Exported File` and `File: Cancel PDF Export`.
 - Project Map: a command `Project: Toggle Tree / Map View` (no default key), a "?" popover listing the
   mouse and keyboard controls, and an options (⋯) menu holding Keep current zoom, Focus new column, Hide
   all open Personal Notes, Print… and PDF…. Tree/Map and the two navigation options are remembered per
@@ -136,6 +155,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for workspaces with no stored flow; columns follow the Project "show hidden files" setting and the
   per-column checkbox is now "Show hidden"; at most eight cards are open in total, previews and notes
   together.
+- CSV Print, Export to PDF, Excel and ODS output what the grid shows: its visible rows in displayed
+  order, with its header setting. From source mode they output the whole file with row 1 as the header.
+- The page size setting is named **PDF page size**: printing uses the paper chosen in Page Setup. For a
+  new installation it defaults to the region's paper (Letter or A4); an existing choice is kept. It does
+  not apply to Mermaid, Graphviz, PlantUML or Typst PDFs, which are sized by their tools. Settings
+  schema 116.
+- Command titles: "View: Toggle Line Numbers in Print and PDF", "View: Toggle Syntax Highlighting in
+  Print and PDF", "CSV: Print…", "CSV: Export to PDF…".
 - **Print and Export to PDF are in the File menu.** "Print…" and "Export to PDF…" for the current file are
   in the File menu (also in Simple UI mode) and on the tab right-click menu; before, they were reachable
   only from the palette. The commands for the rendered preview are renamed "File: Print Rendered Preview…"
@@ -293,6 +320,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     no longer zooms, pinch zooms (untested on real devices). History is bounded and treats a run of
     arrow-key moves as one step.
   - Project tree and Map: names that differ only by case sort deterministically.
+- Print and Export to PDF, second round from the review:
+  - Printed Markdown fills each page: long lists, quotes, code blocks, tables and paragraphs continue
+    from the current page, and a heading stays with what follows. Long inline code wraps instead of
+    running off the page. A file ending in a newline no longer prints an empty numbered last line, and an
+    empty document says "Nothing to print".
+  - Tree, timeline and summary previews print and export at twice the resolution, with page breaks
+    between rows. A wide image turns the PDF page to landscape and a very wide one is tiled across pages.
+    A Mermaid diagram is no longer enlarged to fill the page; an SVG exports at four times the resolution.
+  - An OpenAPI file prints and exports its documentation view when that is what the preview shows.
+  - Exporting a large tree no longer freezes the window, and says when it stopped at 4,000 rows.
+  - Markdown PDF tables keep bold, code and links in cells and their column alignment, size columns to
+    their content and repeat the header row on each page. Badges and other images in a line of text are
+    embedded. Mermaid diagrams are no longer blown up to a page and formulas are sharp and sized to the
+    text. The status bar says when a diagram could not be rendered.
+  - Code PDF and code print wrap long lines at a space where possible; the PDF marks wrapped lines with
+    `↪`. Line numbers and footers have readable contrast.
+  - Print or Export to PDF on a PDF or hex viewer tab said "No file open"; the preview commands looked
+    enabled on a preview showing a parse error.
+  - Closing a window during a PDF export no longer leaves an `.editora-export-*` folder behind, and a
+    failed DOT/PlantUML print no longer leaves a temporary file. An abandoned print job is cancelled.
+  - A PDF open in a tab reloads when an export replaces its file.
 - Printing, from a review of Print, Print Preview and Export to PDF:
   - Printed Markdown and CSV pages are always light. With a dark theme they came out as a dark sheet, and
     Mermaid, DOT/PlantUML and math printed in the dark palette.

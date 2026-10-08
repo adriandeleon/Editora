@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
+import java.util.function.IntFunction;
 
 import javafx.application.Platform;
 import javafx.print.PageLayout;
@@ -15,14 +16,18 @@ import javafx.print.PrinterJob;
 import javafx.scene.Node;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
+import javafx.scene.layout.Pane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 
 import com.editora.editor.GrammarRegistry;
 import com.editora.editor.MarkdownPrintAssets;
 import com.editora.editor.MarkdownRenderer;
+import com.editora.editor.PreviewImageLoader;
 import com.editora.editor.TextMateHighlighter;
 import com.editora.mermaid.Mermaid;
+import com.editora.pdf.ImagePaging;
+import com.editora.pdf.PageImage;
 import com.editora.pdf.PdfText;
 import org.eclipse.tm4e.core.grammar.IGrammar;
 import org.fxmisc.richtext.model.StyleSpans;
@@ -130,6 +135,24 @@ public final class PrintService {
             boolean lineNumbers,
             int tabSize,
             Consumer<Prepared> onReady) {
+        prepareCode(text, fileName, highlight, lineNumbers, tabSize, null, false, onReady);
+    }
+
+    /**
+     * As {@link #prepareCode(String, String, boolean, boolean, int, Consumer)}; with {@code footer} every
+     * page ends in a line naming {@code documentName} and its place in the job ({@link PageFooter}), and
+     * holds the lines that fit above it.
+     */
+    public void prepareCode(
+            String text,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
                 StyleSpans<Collection<String>> spans = null;
@@ -139,20 +162,87 @@ public final class PrintService {
                         spans = TextMateHighlighter.compute(text, grammar);
                     }
                 }
-                List<List<PdfText.Run>> lines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
-                deliver(onReady, new Prepared(codePaginator(lines, lineNumbers), null));
+                List<List<PdfText.Run>> lines = CodePrintLayout.withoutTrailingEmptyLine(
+                        PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize)));
+                deliver(onReady, new Prepared(codePaginator(lines, lineNumbers, pageFooter), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
         });
     }
 
+    /**
+     * Prepares the lines {@code [start, end)} of {@code text} as code, numbered from {@code firstLineNumber}
+     * — the excerpt's own line numbers in its file. The whole of {@code text} is highlighted and the
+     * excerpt cut out of the result, so a selection that starts inside a block comment or a multi-line
+     * string is coloured as it is in the editor.
+     */
+    public void prepareCodeLines(
+            String text,
+            int start,
+            int end,
+            int firstLineNumber,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            Consumer<Prepared> onReady) {
+        prepareCodeLines(
+                text, start, end, firstLineNumber, fileName, highlight, lineNumbers, tabSize, null, false, onReady);
+    }
+
+    /** As the shorter form, with the page footer {@link #prepareCode} takes. */
+    public void prepareCodeLines(
+            String text,
+            int start,
+            int end,
+            int firstLineNumber,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
+        exec.submit(() -> {
+            try {
+                StyleSpans<Collection<String>> spans = excerptSpans(text, start, end, highlight ? fileName : null);
+                List<List<PdfText.Run>> lines =
+                        PdfText.splitIntoLineRuns(text.substring(start, end), spans, Math.max(1, tabSize));
+                deliver(onReady, new Prepared(codePaginator(lines, lineNumbers, pageFooter, firstLineNumber), null));
+            } catch (Throwable e) {
+                deliver(onReady, new Prepared(null, message(e)));
+            }
+        });
+    }
+
+    /**
+     * The highlight spans of {@code text[start, end)}, cut from the spans of the whole text; null when
+     * {@code fileName} is null (no highlighting asked for) or has no grammar.
+     */
+    public static StyleSpans<Collection<String>> excerptSpans(String text, int start, int end, String fileName) {
+        IGrammar grammar = fileName == null ? null : GrammarRegistry.shared().forFileName(fileName);
+        if (grammar == null || end <= start) {
+            return null;
+        }
+        StyleSpans<Collection<String>> all = TextMateHighlighter.compute(text, grammar);
+        return all == null || all.length() < end ? null : all.subView(start, end);
+    }
+
     /** Prepares {@code markdown} as the rendered preview (block-aware pagination), always in the light theme. */
     public void prepareMarkdown(String markdown, Path baseDir, Consumer<Prepared> onReady) {
+        prepareMarkdown(markdown, baseDir, null, false, onReady);
+    }
+
+    /** As {@link #prepareMarkdown(String, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
+    public void prepareMarkdown(
+            String markdown, Path baseDir, String documentName, boolean footer, Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
                 org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(markdown);
-                deliver(onReady, new Prepared(markdownPaginator(ast, baseDir), null));
+                deliver(onReady, new Prepared(markdownPaginator(ast, baseDir, pageFooter), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -164,9 +254,20 @@ public final class PrintService {
      * source (the CSV print builds its table node by node, so a cell is never re-parsed as markup).
      */
     public void prepareDocument(org.commonmark.node.Node document, Path baseDir, Consumer<Prepared> onReady) {
+        prepareDocument(document, baseDir, null, false, onReady);
+    }
+
+    /** As {@link #prepareDocument(org.commonmark.node.Node, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
+    public void prepareDocument(
+            org.commonmark.node.Node document,
+            Path baseDir,
+            String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
-                deliver(onReady, new Prepared(markdownPaginator(document, baseDir), null));
+                deliver(onReady, new Prepared(markdownPaginator(document, baseDir, pageFooter), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -179,10 +280,10 @@ public final class PrintService {
      * final by then is wrong on paper: an image still loading measures 0px and overflows its page when it
      * arrives, and highlighting applied a pulse later never reaches the printer at all.
      */
-    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir) {
+    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir, PageFooter footer) {
         MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, baseDir);
         return layout -> MarkdownPrintLayout.paginate(
-                ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight());
+                ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight(), footer);
     }
 
     /** Prepares a standalone Mermaid diagram (rendered to PNG via mmdc, scaled to fit one page). */
@@ -195,7 +296,7 @@ public final class PrintService {
                     return;
                 }
                 Image img = new Image(new ByteArrayInputStream(r.image()));
-                deliver(onReady, new Prepared(layout -> List.of(imagePage(img, layout)), null));
+                deliver(onReady, new Prepared(layout -> List.of(imagePage(img, Mermaid.RENDER_SCALE, layout)), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -203,26 +304,66 @@ public final class PrintService {
     }
 
     /**
-     * Prepares a print job from pre-rendered PNG images (a snapshot of an SVG / Markwhen / JSON-YAML-TOML /
-     * XML / DOT-PlantUML preview — see {@code EditorBuffer.snapshotPreviewChunks}). Each image is scaled to
-     * the printable width and, when tall, sliced across pages — the print analogue of
-     * {@code pdf/ImagePdfWriter}. The PNGs are decoded off the FX thread; the {@code Paginator} then builds
-     * the {@code ImageView} pages on the FX thread for the chosen {@link PageLayout}.
+     * Prepares a print job from pre-rendered PNG images of unknown density, one image pixel per point (Typst
+     * pages, a DOT/PlantUML render). See {@link #preparePageImages}.
      */
     public void prepareImages(List<byte[]> pngImages, Consumer<Prepared> onReady) {
+        List<PageImage> images = new java.util.ArrayList<>();
+        for (byte[] png : pngImages == null ? List.<byte[]>of() : pngImages) {
+            if (png != null) {
+                images.add(PageImage.of(png));
+            }
+        }
+        preparePageImages(images, onReady);
+    }
+
+    /**
+     * Prepares a print job from PNG snapshots of a Markwhen / JSON-YAML-TOML / XML / summary preview (see
+     * {@code EditorBuffer.snapshotPreview}). Each image is laid out at its logical size, fitted to the
+     * printable width and continued over pages when tall, cut between rows — the print analogue of
+     * {@code pdf/ImagePdfWriter}, on the same {@link ImagePaging} geometry. The images stay encoded: the
+     * {@code Paginator} decodes the one or two a page shows when that page is asked for.
+     */
+    public void preparePageImages(List<PageImage> pageImages, Consumer<Prepared> onReady) {
         exec.submit(() -> {
             try {
-                List<Image> images = new java.util.ArrayList<>();
-                for (byte[] png : pngImages) {
-                    if (png != null) {
-                        images.add(new Image(new ByteArrayInputStream(png)));
-                    }
-                }
+                List<PageImage> images = pageImages == null
+                        ? List.of()
+                        : pageImages.stream()
+                                .filter(i -> i != null
+                                        && i.source().pixelWidth() > 0
+                                        && i.source().pixelHeight() > 0)
+                                .toList();
                 if (images.isEmpty()) {
                     deliver(onReady, new Prepared(null, "nothing to print"));
                     return;
                 }
-                deliver(onReady, new Prepared(layout -> imagePages(images, layout), null));
+                List<ImagePaging.Source> sources =
+                        images.stream().map(PageImage::source).toList();
+                deliver(onReady, new Prepared(imagePaginator(sources, decoding(images)), null));
+            } catch (Throwable e) {
+                deliver(onReady, new Prepared(null, message(e)));
+            }
+        });
+    }
+
+    /**
+     * Prepares an SVG document: rasterized <b>here</b>, on the prepare thread (a large SVG takes hundreds of
+     * milliseconds), at {@link PreviewImageLoader#PRINT_RASTER_SCALE}× and printed at the SVG's own size. A
+     * failed rasterization reports {@code noImageMessage}.
+     */
+    public void prepareSvg(byte[] svg, String noImageMessage, Consumer<Prepared> onReady) {
+        exec.submit(() -> {
+            try {
+                PreviewImageLoader.SvgPng r = PreviewImageLoader.svgToPng(svg, PreviewImageLoader.PRINT_RASTER_SCALE);
+                if (r == null) {
+                    deliver(onReady, new Prepared(null, noImageMessage));
+                    return;
+                }
+                List<PageImage> images = List.of(PageImage.of(r.png(), r.pixelScale()));
+                deliver(
+                        onReady,
+                        new Prepared(imagePaginator(List.of(images.get(0).source()), decoding(images)), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -259,17 +400,51 @@ public final class PrintService {
         return pages;
     }
 
+    /**
+     * Decodes PNG {@code i} when a page needs it, keeping the last two (a page shows at most the end of one
+     * chunk and the start of the next). A 4,000-row tree at 2× is some 150 million pixels: decoded all at
+     * once that is over half a gigabyte, encoded a few megabytes. FX thread only.
+     */
+    private static IntFunction<Image> decoding(List<PageImage> images) {
+        java.util.Map<Integer, Image> recent = new java.util.LinkedHashMap<>(4, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(java.util.Map.Entry<Integer, Image> eldest) {
+                return size() > 2;
+            }
+        };
+        return i -> recent.computeIfAbsent(
+                i, k -> new Image(new ByteArrayInputStream(images.get(k).png())));
+    }
+
     /** A code paginator whose {@link Paginator#pages} builds each page only when it is asked for. */
-    private static Paginator codePaginator(List<List<PdfText.Run>> lines, boolean lineNumbers) {
+    private static Paginator codePaginator(List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer) {
+        return codePaginator(lines, lineNumbers, footer, 1);
+    }
+
+    /** The code paginator for an excerpt whose gutter counts from {@code firstLineNumber}. */
+    private static Paginator codePaginator(
+            List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer, int firstLineNumber) {
         return new Paginator() {
             @Override
             public List<Node> paginate(PageLayout layout) {
-                return CodePrintLayout.paginate(lines, layout, lineNumbers, font());
+                Pages pages = pages(layout);
+                List<Node> all = new java.util.ArrayList<>(pages.count());
+                for (int i = 0; i < pages.count(); i++) {
+                    all.add(pages.get(i));
+                }
+                return all;
             }
 
             @Override
             public Pages pages(PageLayout layout) {
-                return CodePrintLayout.pages(lines, layout, lineNumbers, font());
+                return CodePrintLayout.pages(
+                        lines,
+                        layout.getPrintableWidth(),
+                        layout.getPrintableHeight(),
+                        lineNumbers,
+                        font(),
+                        footer,
+                        firstLineNumber);
             }
 
             private Font font() {
@@ -333,50 +508,99 @@ public final class PrintService {
         return ok && ended ? new Result(true, "") : new Result(false, "print job failed");
     }
 
-    /** A single page holding {@code img} scaled (preserving ratio) to fit the printable area. */
-    private static Node imagePage(Image img, PageLayout layout) {
-        double pw = layout.getPrintableWidth();
-        double ph = layout.getPrintableHeight();
+    /**
+     * A single page holding {@code img} — rendered at {@code pixelScale} image pixels per logical pixel —
+     * shrunk (preserving ratio) to fit the printable area. A diagram smaller than the page keeps its size:
+     * it is never enlarged past one logical pixel per point.
+     */
+    static Node imagePage(Image img, double pixelScale, PageLayout layout) {
+        return imagePage(img, pixelScale, layout.getPrintableWidth(), layout.getPrintableHeight());
+    }
+
+    /** {@link #imagePage(Image, double, PageLayout)} for a printable area given in points. */
+    public static Node imagePage(Image img, double pixelScale, double pw, double ph) {
+        double w = img.getWidth() / pixelScale;
+        double h = img.getHeight() / pixelScale;
+        double scale = ImagePaging.fitWithin(w, h, pw, ph);
         ImageView iv = new ImageView(img);
         iv.setPreserveRatio(true);
-        iv.setFitWidth(pw);
-        iv.setFitHeight(ph);
+        iv.setFitWidth(w * scale);
+        iv.setFitHeight(h * scale);
         StackPane root = new StackPane(iv);
         root.setPrefSize(pw, ph);
         return root;
     }
 
-    /** Lays each image across pages: scaled to the printable width, sliced by page height via an ImageView
-     *  viewport (shares the pure fit/slice geometry with {@code pdf/ImagePdfWriter}). */
-    private static List<Node> imagePages(List<Image> images, PageLayout layout) {
-        double availW = layout.getPrintableWidth();
-        double availH = layout.getPrintableHeight();
-        List<Node> pages = new java.util.ArrayList<>();
-        for (Image img : images) {
-            int iw = (int) Math.ceil(img.getWidth());
-            int ih = (int) Math.ceil(img.getHeight());
-            if (iw < 1 || ih < 1) {
-                continue;
+    /**
+     * The paginator of raster images: the page plan is {@link ImagePaging#layout} for the layout's printable
+     * area (never rotated — the orientation is the user's choice in Page Setup), and a page's node is built
+     * when it is asked for, from the images {@code images} hands out.
+     */
+    static Paginator imagePaginator(List<ImagePaging.Source> sources, IntFunction<Image> images) {
+        return new Paginator() {
+            @Override
+            public List<Node> paginate(PageLayout layout) {
+                Pages pages = pages(layout);
+                List<Node> nodes = new java.util.ArrayList<>();
+                for (int i = 0; i < pages.count(); i++) {
+                    nodes.add(pages.get(i));
+                }
+                return nodes;
             }
-            double scale = com.editora.pdf.ImagePdfWriter.fitScale(iw, availW);
-            int srcPageRows = com.editora.pdf.ImagePdfWriter.rowsPerPage(availH, scale);
-            double drawW = iw * scale;
-            for (int y = 0; y < ih; y += srcPageRows) {
-                int h = Math.min(srcPageRows, ih - y);
-                ImageView iv = new ImageView(img);
-                iv.setViewport(new javafx.geometry.Rectangle2D(0, y, iw, h));
-                iv.setPreserveRatio(true);
-                iv.setFitWidth(drawW);
-                StackPane root = new StackPane(iv);
-                StackPane.setAlignment(iv, javafx.geometry.Pos.TOP_LEFT);
+
+            @Override
+            public Pages pages(PageLayout layout) {
+                return imagePages(sources, images, layout.getPrintableWidth(), layout.getPrintableHeight());
+            }
+        };
+    }
+
+    /** The pages of {@code sources} on a printable area of {@code availW × availH} points. */
+    public static Pages imagePages(
+            List<ImagePaging.Source> sources, IntFunction<Image> images, double availW, double availH) {
+        List<ImagePaging.Page> plan =
+                ImagePaging.layout(sources, availW, availH, false, (i, row) -> blankRow(images.apply(i), row));
+        return new Pages() {
+            @Override
+            public int count() {
+                return Math.max(1, plan.size()); // nothing to draw still prints one (blank) page
+            }
+
+            @Override
+            public Node get(int index) {
+                Pane root = new Pane();
                 root.setPrefSize(availW, availH);
-                pages.add(root);
+                if (index < plan.size()) {
+                    for (ImagePaging.Slice s : plan.get(index).slices()) {
+                        ImageView iv = new ImageView(images.apply(s.image()));
+                        iv.setViewport(
+                                new javafx.geometry.Rectangle2D(s.srcX(), s.srcY(), s.srcWidth(), s.srcHeight()));
+                        iv.setFitWidth(s.width());
+                        iv.setFitHeight(s.height());
+                        iv.setSmooth(true);
+                        iv.relocate(s.x(), s.y());
+                        root.getChildren().add(iv);
+                    }
+                }
+                return root;
+            }
+        };
+    }
+
+    /** Whether pixel row {@code row} of {@code img} is one colour from edge to edge — a place to cut. */
+    private static boolean blankRow(Image img, int row) {
+        int w = img == null ? 0 : (int) img.getWidth();
+        if (w < 1 || row < 0 || row >= (int) img.getHeight() || img.getPixelReader() == null) {
+            return false;
+        }
+        int[] argb = new int[w];
+        img.getPixelReader().getPixels(0, row, w, 1, javafx.scene.image.PixelFormat.getIntArgbInstance(), argb, 0, w);
+        for (int v : argb) {
+            if (v != argb[0]) {
+                return false;
             }
         }
-        if (pages.isEmpty()) {
-            pages.add(new StackPane());
-        }
-        return pages;
+        return true;
     }
 
     private static void deliver(Consumer<Prepared> onReady, Prepared prepared) {

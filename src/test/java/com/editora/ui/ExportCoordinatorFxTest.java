@@ -86,6 +86,148 @@ class ExportCoordinatorFxTest {
         }
     }
 
+    /** Runs {@code editor.exportPdf} on {@code source} with {@code host}'s settings and waits for the file. */
+    private Path exportCode(Host host, String name, String source, String fileName) throws Exception {
+        Path output = temp.resolve(fileName);
+        java.util.concurrent.CountDownLatch finished = new java.util.concurrent.CountDownLatch(1);
+        host.onStatus = message -> {
+            if (!tr("status.pdf.exporting").equals(message)) {
+                finished.countDown();
+            }
+        };
+        ExportCoordinator[] exports = new ExportCoordinator[1];
+        EditorBuffer[] buffer = new EditorBuffer[1];
+        try {
+            FxTestSupport.runOnFx(() -> {
+                buffer[0] = new EditorBuffer();
+                buffer[0].setDisplayName(name);
+                buffer[0].setContent(source);
+                host.active = buffer[0];
+                exports[0] = new ExportCoordinator(
+                        host, null, null, null, path -> fail("PDF export opens nothing"), chooser -> output.toFile());
+                exports[0].exportCodePdf();
+            });
+            assertTrue(finished.await(30, java.util.concurrent.TimeUnit.SECONDS), "the export should finish");
+            assertEquals(tr("status.pdf.exported", output.toString()), host.status);
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                exports[0].shutdown();
+                buffer[0].dispose();
+            });
+        }
+        return output;
+    }
+
+    /** The font size, in points, of the first glyph of {@code word} in {@code pdf}. */
+    private static float fontSizeOf(Path pdf, String word) throws Exception {
+        float[] size = {Float.NaN};
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(pdf.toFile())) {
+            new org.apache.pdfbox.text.PDFTextStripper() {
+                @Override
+                protected void writeString(String text, List<org.apache.pdfbox.text.TextPosition> positions) {
+                    int at = text.indexOf(word);
+                    if (at >= 0 && Float.isNaN(size[0])) {
+                        size[0] = positions.get(at).getFontSizeInPt();
+                    }
+                }
+            }.getText(doc);
+        }
+        return size[0];
+    }
+
+    /**
+     * The PDF page settings reach the file through the coordinator: orientation, margin preset and code
+     * font size, with the document name as the Title and in the footer — and no footer once it is off.
+     */
+    @Test
+    void aCodePdfIsLaidOutOnThePageTheSettingsDescribe() throws Exception {
+        String source = "class Sample {\n    int answer = 42;\n}\n";
+        Host host = new Host();
+        host.settings.setPdfPageSize("letter");
+        host.settings.setPdfLineNumbers(false); // so the first glyph is the code's, at the margin
+        host.settings.setPdfOrientation("landscape");
+        host.settings.setPdfMargins("narrow");
+        host.settings.setPdfCodeFontSize(11);
+        Path pdf = exportCode(host, "Sample.java", source, "landscape.pdf");
+
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(pdf.toFile())) {
+            org.apache.pdfbox.pdmodel.common.PDRectangle box = doc.getPage(0).getMediaBox();
+            assertEquals(792f, box.getWidth(), 0.01f, "Letter turned on its side");
+            assertEquals(612f, box.getHeight(), 0.01f);
+            assertEquals("Sample.java", doc.getDocumentInformation().getTitle());
+        }
+        com.editora.pdf.PdfProbe.Glyph first =
+                com.editora.pdf.PdfProbe.glyphs(pdf).get(0);
+        assertEquals("c", first.text());
+        assertEquals(36f, first.x(), 0.5f, "the narrow margin");
+        assertEquals(612f - 36f - 11f, first.baseline(), 0.5f, "one 11 pt line below the top margin");
+        assertEquals(11f, fontSizeOf(pdf, "class"), 0.01f);
+        String footer = com.editora.pdf.PdfProbe.artifactText(pdf);
+        assertTrue(footer.contains("Sample.java"), footer);
+        assertTrue(footer.contains(tr("pdf.footer.page", 1, 1)), footer);
+        assertTrue(com.editora.pdf.PdfProbe.text(pdf).contains("int answer = 42;"));
+
+        host.settings.setPdfPageFooter(false);
+        Path bare = exportCode(host, "Sample.java", source, "bare.pdf");
+        assertEquals("", com.editora.pdf.PdfProbe.artifactText(bare).strip(), "no page furniture at all");
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(bare.toFile())) {
+            assertEquals("Sample.java", doc.getDocumentInformation().getTitle(), "the Title stays");
+        }
+
+        // The defaults are the page every export had: portrait, 40 pt, 9 pt.
+        Host plain = new Host();
+        plain.settings.setPdfPageSize("letter");
+        plain.settings.setPdfLineNumbers(false);
+        Path normal = exportCode(plain, "Sample.java", source, "normal.pdf");
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(normal.toFile())) {
+            assertEquals(612f, doc.getPage(0).getMediaBox().getWidth(), 0.01f, "portrait");
+        }
+        com.editora.pdf.PdfProbe.Glyph normalFirst =
+                com.editora.pdf.PdfProbe.glyphs(normal).get(0);
+        assertEquals(40f, normalFirst.x(), 0.5f);
+        assertEquals(792f - 40f - 9f, normalFirst.baseline(), 0.5f);
+        assertEquals(9f, fontSizeOf(normal, "class"), 0.01f);
+    }
+
+    /** The Markdown writer (here the CSV table) takes the orientation and the margin from the same settings. */
+    @Test
+    void aTablePdfTakesOrientationAndMarginsFromTheSettings() throws Exception {
+        Path output = temp.resolve("wide.pdf");
+        Host host = new Host();
+        host.settings.setPdfPageSize("a4");
+        host.settings.setPdfOrientation("landscape");
+        host.settings.setPdfMargins("wide");
+        java.util.concurrent.CountDownLatch finished = new java.util.concurrent.CountDownLatch(1);
+        host.onStatus = message -> {
+            if (!tr("status.pdf.exporting").equals(message)) {
+                finished.countDown();
+            }
+        };
+        ExportCoordinator[] exports = new ExportCoordinator[1];
+        try {
+            FxTestSupport.runOnFx(() -> {
+                exports[0] = new ExportCoordinator(
+                        host, null, null, null, path -> fail("PDF export opens nothing"), chooser -> output.toFile());
+                exports[0].csvExportPdf("name,value\nalpha,1\n", "table.csv");
+            });
+            assertTrue(finished.await(30, java.util.concurrent.TimeUnit.SECONDS), "the export should finish");
+        } finally {
+            FxTestSupport.runOnFx(() -> exports[0].shutdown());
+        }
+        try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(output.toFile())) {
+            org.apache.pdfbox.pdmodel.common.PDRectangle box = doc.getPage(0).getMediaBox();
+            assertEquals(org.apache.pdfbox.pdmodel.common.PDRectangle.A4.getHeight(), box.getWidth(), 0.01f);
+            assertEquals("table.csv", doc.getDocumentInformation().getTitle());
+        }
+        float left = Float.MAX_VALUE;
+        for (com.editora.pdf.PdfProbe.Glyph g : com.editora.pdf.PdfProbe.glyphs(output)) {
+            left = Math.min(left, g.x());
+        }
+        assertTrue(left >= 72f, "nothing left of the one-inch margin: " + left);
+        assertTrue(left < 72f + 12f, "and the table starts there: " + left);
+        assertTrue(com.editora.pdf.PdfProbe.artifactText(output).contains("table.csv"));
+    }
+
     /**
      * An asynchronous export (PDF, office, diagram CLI) writes to a staging path: when it reports failure
      * after writing part of its output, the file the Save dialog agreed to replace is still whole.
@@ -156,6 +298,7 @@ class ExportCoordinatorFxTest {
                 assertEquals(
                         List.of(
                                 "editor.exportPdf",
+                                "editor.exportSelectionPdf",
                                 "preview.exportPdf",
                                 "preview.exportHtml",
                                 "preview.copy",
@@ -163,10 +306,14 @@ class ExportCoordinatorFxTest {
                                 "preview.exportDocx",
                                 "preview.exportOdt",
                                 "editor.print",
+                                "editor.printSelection",
                                 "preview.print",
-                                "markwhen.exportJson"),
+                                "markwhen.exportJson",
+                                "file.openLastExport",
+                                "file.cancelPdfExport"),
                         registry.all().stream().map(Command::id).toList());
                 List<String> statuses = List.of(
+                        "status.noFileOpen",
                         "status.noFileOpen",
                         "status.pdf.noPreview",
                         "status.html.notMarkdown",
@@ -175,8 +322,11 @@ class ExportCoordinatorFxTest {
                         "status.office.notMarkdown",
                         "status.office.notMarkdown",
                         "status.noFileOpen",
+                        "status.noFileOpen",
                         "status.print.noPreview",
-                        "status.markwhen.notMarkwhen");
+                        "status.markwhen.notMarkwhen",
+                        "status.export.none",
+                        "status.pdf.nothingToCancel");
                 int i = 0;
                 for (Command command : registry.all()) {
                     assertTrue(registry.run(command.id()));

@@ -699,6 +699,14 @@
     -fx-background-radius: 4;
     -fx-padding: 0.05em 0.4em 0.05em 0.4em;
 }
+/* Print only: inline code too long for one box is a row of boxes the line can break between
+   (MarkdownRenderer.addInlineCode). Inner edges are squared off and unpadded so a row reads as one pill. */
+.markdown-preview .md-inline-code.md-code-first { -fx-background-radius: 4 0 0 4; -fx-padding: 0.05em 0 0.05em 0.4em; }
+.markdown-preview .md-inline-code.md-code-mid { -fx-background-radius: 0; -fx-padding: 0.05em 0 0.05em 0; }
+.markdown-preview .md-inline-code.md-code-last { -fx-background-radius: 0 4 4 0; -fx-padding: 0.05em 0.4em 0.05em 0; }
+.markdown-preview .md-code-break { -fx-font-size: 0.1px; }
+/* Print only: a link's address, in parentheses after its text (MarkdownRenderer.printedLinkTarget). */
+.markdown-preview .md-text.md-link-url { -fx-fill: -color-fg-muted; -fx-font-size: 0.85em; }
 .markdown-preview .md-code-block {
     -fx-font-family: monospace;
     -fx-background-color: -color-bg-subtle;

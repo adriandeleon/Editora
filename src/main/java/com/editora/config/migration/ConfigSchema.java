@@ -205,7 +205,16 @@ public enum ConfigSchema {
                     Map.entry(113, (Migration) ConfigMigrations::identity),
                     // v114→115: + the sync* keys of settings sync (additive; absent means off — nobody's
                     // editor starts pushing data to a repository on upgrade).
-                    Map.entry(114, (Migration) ConfigMigrations::identity)),
+                    Map.entry(114, (Migration) ConfigMigrations::identity),
+                    // v115→116: the default pdfPageSize now follows the region (Letter or A4). A file that
+                    // has no pdfPageSize key was exporting Letter, so it is given "letter"; a stored value is
+                    // left as it is. Also + pdfPageFooter (additive; absent means on, so printed pages and
+                    // PDFs keep the footer they had).
+                    Map.entry(115, (Migration) ConfigMigrations::keepLegacyPdfPageSize),
+                    // v116→117: + pdfOrientation, pdfMargins, pdfCodeFontSize (additive; absent means
+                    // portrait, each writer's own margin and 9 pt — the page every PDF had before the
+                    // settings existed).
+                    Map.entry(116, (Migration) ConfigMigrations::identity)),
             // Keys that first appear in a settings file of the given version. Each one sits just after a
             // step that is not safe to repeat (v49→50 TODO keywords, v77→78 AI key split, v80→81 keybinding
             // split, v88→89 Projects on, v100→101 Recent in the toolbar), so a current-shape file without

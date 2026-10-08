@@ -23,6 +23,17 @@ public final class OpenApiDoc {
     private OpenApiDoc() {}
 
     public static Node build(OpenApiModel m) {
+        ScrollPane sp = new ScrollPane(content(m));
+        sp.setFitToWidth(true);
+        sp.getStyleClass().add("openapi-scroll");
+        return sp;
+    }
+
+    /**
+     * The docs themselves, without the scroll pane {@link #build} wraps them in — what Print and Export to
+     * PDF snapshot (at a width they set), since a scroll pane would give them only its viewport.
+     */
+    public static VBox content(OpenApiModel m) {
         VBox root = new VBox();
         root.getStyleClass().add("openapi-doc");
 
@@ -58,10 +69,7 @@ public final class OpenApiDoc {
             }
         }
 
-        ScrollPane sp = new ScrollPane(root);
-        sp.setFitToWidth(true);
-        sp.getStyleClass().add("openapi-scroll");
-        return sp;
+        return root;
     }
 
     private static Node operationNode(String path, OpenApiModel.Operation op) {

@@ -73,4 +73,17 @@ class CsvTableDocumentTest {
         assertNull(CsvTableDocument.fromCsv(null));
         assertTrue(cells(CsvTableDocument.fromCsv("only")).equals(List.of(List.of("only"))));
     }
+
+    /** The CSV grid with "first row is a header" off: every row is data, in the order given. */
+    @Test
+    void aTableWithoutAHeaderRowHasOnlyABody() {
+        Node doc = CsvTableDocument.fromRows(null, List.of(List.of("b", "2"), List.of("a")));
+        assertEquals(List.of(List.of("b", "2"), List.of("a", "")), cells(doc));
+        TableBlock table = (TableBlock) doc.getFirstChild();
+        assertInstanceOf(TableBody.class, table.getFirstChild());
+        assertNull(table.getFirstChild().getNext(), "no head section");
+        // A header with every row filtered out is still a table; nothing at all is not.
+        assertEquals(List.of(List.of("h1", "h2")), cells(CsvTableDocument.fromRows(List.of("h1", "h2"), List.of())));
+        assertNull(CsvTableDocument.fromRows(null, List.of()));
+    }
 }

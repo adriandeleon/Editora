@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -559,7 +560,12 @@ class MarkdownPrintLayoutFxTest {
         for (int i = 0; i < pages.size(); i++) {
             StackPane page = (StackPane) pages.get(i);
             double limit = page.getPrefHeight();
-            double content = page.getChildren().get(0).getLayoutBounds().getHeight();
+            // What the content needs, not the height it was given: the page stretches its content box over
+            // itself, so the laid-out height is the page's whatever is in it.
+            Node body = page.getChildren().get(0);
+            double content = body instanceof javafx.scene.layout.Region box
+                    ? box.prefHeight(page.getPrefWidth())
+                    : body.getLayoutBounds().getHeight();
             assertTrue(
                     content <= limit + 1.0,
                     "page " + (i + 1) + " of " + pages.size() + " holds " + content + "px of content on a " + limit
@@ -613,5 +619,276 @@ class MarkdownPrintLayoutFxTest {
         VBox box = new VBox();
         box.getStyleClass().add("markdown-preview");
         return box;
+    }
+
+    // --- a page is filled before the next is started ---------------------------------------------------
+
+    private static String lorem(int sentences) {
+        return "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor. ".repeat(sentences);
+    }
+
+    private static String pageText(Node page) {
+        StringBuilder sb = new StringBuilder();
+        collectInline(page, sb);
+        return sb.toString();
+    }
+
+    /**
+     * A block longer than a page starts under what precedes it.
+     *
+     * <p>The first piece of a split block used to be cut to a whole page, so it never fitted under anything:
+     * a heading followed by a long listing printed page 1 as the heading alone, about 85% blank.
+     */
+    @Test
+    void aLongCodeBlockStartsUnderItsHeading() throws Exception {
+        StringBuilder md = new StringBuilder("# Listing\n\nIntro.\n\n```\n");
+        for (int i = 1; i <= 120; i++) {
+            md.append("code line ").append(i).append('\n');
+        }
+        List<Node> pages = paginate(md.append("```\n").toString());
+        assertNoPageIsScaled(pages);
+        assertNoPageOverflows(pages);
+        assertTrue(pageText(pages.get(0)).contains("Listing"), "the heading is on page 1");
+        List<String> first = codeLines(pages.get(0));
+        assertTrue(first.size() >= 15, "and most of a page of the listing with it, got " + first.size() + " lines");
+        List<String> all = new java.util.ArrayList<>();
+        for (Node page : pages) {
+            all.addAll(codeLines(page));
+        }
+        assertEquals(120, all.size(), "every line prints once");
+        assertEquals("code line 120", all.get(119));
+    }
+
+    @Test
+    void aLongTableAndALongListStartUnderTheirHeadingToo() throws Exception {
+        StringBuilder table = new StringBuilder("# Table\n\n| # | Name |\n|---|---|\n");
+        for (int i = 1; i <= 80; i++) {
+            table.append("| ").append(i).append(" | name ").append(i).append(" |\n");
+        }
+        List<Node> pages = paginate(table.toString());
+        assertNoPageOverflows(pages);
+        assertTrue(pageText(pages.get(0)).contains("Table"));
+        assertTrue(pageText(pages.get(0)).contains("name 10"), "rows follow the heading on page 1");
+
+        StringBuilder list = new StringBuilder("# List\n\n");
+        for (int i = 1; i <= 120; i++) {
+            list.append("- item ").append(i).append('\n');
+        }
+        pages = paginate(list.toString());
+        assertNoPageOverflows(pages);
+        assertTrue(pageText(pages.get(0)).contains("item 10"), "items follow the heading on page 1");
+    }
+
+    /** A listing that is cut leaves at least three lines on each side of the break. */
+    @Test
+    void aCodeBlockIsNotCutWithALineOrTwoOnEitherSide() throws Exception {
+        for (int filler = 20; filler <= 34; filler++) {
+            StringBuilder md = new StringBuilder();
+            for (int i = 0; i < filler; i++) {
+                md.append("filler ").append(i).append("\n\n");
+            }
+            md.append("```\n");
+            for (int i = 1; i <= 8; i++) {
+                md.append("code ").append(i).append('\n');
+            }
+            List<Node> pages = paginate(md.append("```\n").toString());
+            assertNoPageOverflows(pages);
+            for (Node page : pages) {
+                int lines = codeLines(page).size();
+                assertTrue(
+                        lines == 0 || lines >= 3,
+                        filler + " fillers: a page holds only " + lines + " line(s) of the listing");
+            }
+        }
+    }
+
+    /** A heading is never the last thing on a page: it goes over with the block that follows it. */
+    @Test
+    void aHeadingStaysWithTheBlockAfterIt() throws Exception {
+        for (int filler = 18; filler <= 34; filler++) {
+            StringBuilder md = new StringBuilder();
+            for (int i = 0; i < filler; i++) {
+                md.append("filler ").append(i).append("\n\n");
+            }
+            md.append("## Stays together\n\n![x](missing-image-that-cannot-be-cut.png)\n\nafter\n");
+            List<Node> pages = paginate(md.toString());
+            for (Node page : pages) {
+                String text = pageText(page);
+                if (text.contains("Stays together")) {
+                    assertTrue(
+                            text.contains("[image: x]"),
+                            filler + " fillers: the heading is on a page without the block that follows it");
+                }
+            }
+        }
+    }
+
+    /**
+     * A paragraph that is continued on the next page is cut where its line wrapped: no word is lost, none
+     * is glued to its neighbour, and neither side of the cut is a single line.
+     */
+    @Test
+    void aParagraphContinuesOverleafWithEveryWordAndSpaceInPlace() throws Exception {
+        StringBuilder md = new StringBuilder();
+        StringBuilder expected = new StringBuilder();
+        for (int p = 0; p < 12; p++) {
+            StringBuilder para = new StringBuilder();
+            for (int w = 0; w < 90; w++) {
+                String word = "p" + p + "w" + w;
+                para.append(w % 7 == 3 ? "**" + word + "**" : w % 11 == 5 ? "`" + word + "`" : word)
+                        .append(w % 13 == 12 ? "\n" : " ");
+                expected.append(word).append(' ');
+            }
+            md.append(para.toString().strip()).append("\n\n");
+        }
+        List<Node> pages = paginate(md.toString());
+        assertTrue(pages.size() >= 2, "several pages, got " + pages.size());
+        assertNoPageIsScaled(pages);
+        assertNoPageOverflows(pages);
+        StringBuilder printed = new StringBuilder();
+        for (Node page : pages) {
+            VBox content = (VBox) ((StackPane) page).getChildren().get(0);
+            for (Node block : content.getChildren()) {
+                StringBuilder sb = new StringBuilder();
+                collectInline(block, sb);
+                printed.append(sb.toString().strip()).append(' ');
+            }
+        }
+        assertEquals(
+                expected.toString().strip(),
+                printed.toString().replaceAll("\\s+", " ").strip(),
+                "the words of the document, in order, each separated from the next");
+        // the pages are full: only the last may be short
+        for (int i = 0; i < pages.size() - 1; i++) {
+            double used = contentHeight(pages.get(i));
+            assertTrue(used > PAGE_H * 0.85, "page " + (i + 1) + " is only " + used + "px full");
+        }
+    }
+
+    /** What a page's content needs, top padding to bottom padding — not the page it is stretched over. */
+    private static double contentHeight(Node page) {
+        return ((javafx.scene.layout.Region) ((StackPane) page).getChildren().get(0)).prefHeight(PAGE_W);
+    }
+
+    private static void collectInline(Node node, StringBuilder out) {
+        if (node instanceof javafx.scene.text.Text t) {
+            out.append(t.getText());
+        } else if (node instanceof javafx.scene.control.Label l) {
+            out.append(l.getText());
+        } else if (node instanceof javafx.scene.Parent p) {
+            p.getChildrenUnmodifiable().forEach(c -> collectInline(c, out));
+        }
+    }
+
+    // --- nothing runs off the right edge ---------------------------------------------------------------
+
+    /**
+     * Inline code longer than the line wraps inside the page.
+     *
+     * <p>It is a {@code Label}, one box that cannot wrap: about 60 characters of it ran off the right edge
+     * of a Letter page, and an {@code npm install …} command in this repo's README was cut at the margin.
+     */
+    @Test
+    void longInlineCodeWrapsInsideThePage() throws Exception {
+        String command = "npm install -g @mermaid-js/mermaid-cli @markwhen/cli another-long-package@1.2.3 "
+                + "--registry=https://registry.example.org/";
+        String path = "/home/someone/" + "a-long-directory-name/".repeat(8) + "file.properties";
+        String md = "Install with `" + command + "` then run.\n\n- A path: `" + path
+                + "`\n\n| k | v |\n|---|---|\n| cmd | `" + command + "` |\n\nShort `code` stays one pill.\n";
+        List<Node> pages = paginate(md);
+        StringBuilder code = new StringBuilder();
+        int pills = 0;
+        for (Node page : pages) {
+            for (Node n : page.lookupAll(".md-inline-code")) {
+                javafx.geometry.Bounds b = n.localToScene(n.getBoundsInLocal());
+                assertTrue(
+                        b.getMaxX() <= PAGE_W + 0.5,
+                        "inline code reaches x=" + b.getMaxX() + " on a " + PAGE_W + " page");
+                code.append(((javafx.scene.control.Label) n).getText());
+                pills++;
+            }
+        }
+        assertEquals(command + path + command + "code", code.toString(), "all of the code, in order");
+        assertTrue(pills > 10, "the long ones are in pieces");
+        // …and only in print: the preview keeps one label per code span
+        int preview =
+                FxTestSupport.callOnFx(() -> MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(md), null)
+                        .lookupAll(".md-inline-code")
+                        .size());
+        assertEquals(4, preview, "the live preview is unchanged");
+    }
+
+    // --- links ----------------------------------------------------------------------------------------
+
+    @Test
+    void aPrintedLinkShowsItsAddressAndThePreviewDoesNot() throws Exception {
+        String md = "See [the site](https://example.org/docs), <https://example.org/auto>, [below](#x) and"
+                + " [mail](mailto:a@b.example).\n";
+        String printed = pageText(paginate(md).get(0));
+        assertTrue(printed.contains("the site (https://example.org/docs)"), printed);
+        assertTrue(printed.contains("mail (a@b.example)"), printed);
+        assertEquals(1, printed.split("https://example.org/auto", -1).length - 1, "an autolink is not repeated");
+        assertFalse(printed.contains("#x"), "an in-document anchor is not shown");
+        String preview = FxTestSupport.callOnFx(
+                () -> pageText(MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(md), null)));
+        assertFalse(preview.contains("(https://example.org/docs)"), "the live preview is unchanged");
+    }
+
+    // --- the page footer ------------------------------------------------------------------------------
+
+    private static List<Node> paginate(String md, com.editora.print.PageFooter footer) throws Exception {
+        org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+        MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, null);
+        return FxTestSupport.callOnFx(() -> MarkdownPrintLayout.paginate(ast, null, assets, PAGE_W, PAGE_H, footer));
+    }
+
+    /** With a footer every page names the document and its place, and the content stops above it. */
+    @Test
+    void aFooterNamesTheDocumentAndThePageOnEveryPage() throws Exception {
+        StringBuilder md = new StringBuilder("# Notes\n\n");
+        for (int i = 0; i < 60; i++) {
+            md.append(lorem(3)).append("\n\n");
+        }
+        List<Node> pages = paginate(md.toString(), com.editora.print.PageFooter.of("notes.md"));
+        assertTrue(pages.size() >= 3);
+        for (int i = 0; i < pages.size(); i++) {
+            StackPane page = (StackPane) pages.get(i);
+            assertEquals(PAGE_H, page.getPrefHeight(), "the page is still the printable area");
+            Node footer = page.lookup(".print-page-footer");
+            assertTrue(footer != null, "page " + (i + 1) + " has a footer");
+            String text = pageText(footer);
+            assertTrue(text.startsWith("notes.md"), text);
+            assertTrue(text.endsWith(com.editora.i18n.Messages.tr("print.footer.page", i + 1, pages.size())), text);
+            javafx.geometry.Bounds f = footer.localToScene(footer.getBoundsInLocal());
+            assertTrue(f.getMaxY() <= PAGE_H + 0.5 && f.getMaxX() <= PAGE_W + 0.5, "the footer is on the page");
+            double content = contentHeight(page);
+            assertTrue(
+                    content <= f.getMinY() + 1.0,
+                    "page " + (i + 1) + ": content " + content + " runs into the footer at " + f.getMinY());
+        }
+    }
+
+    /** Without one, pagination is what it was: the whole height, and no footer node. */
+    @Test
+    void withoutAFooterThePageIsUsedWhole() throws Exception {
+        StringBuilder md = new StringBuilder();
+        for (int i = 0; i < 400; i++) {
+            md.append("- item ").append(i).append('\n');
+        }
+        List<Node> plain = paginate(md.toString(), null);
+        List<Node> legacy = paginate(md.toString());
+        List<Node> withFooter = paginate(md.toString(), com.editora.print.PageFooter.of("x.md"));
+        assertEquals(legacy.size(), plain.size());
+        for (Node page : plain) {
+            assertTrue(page.lookup(".print-page-footer") == null, "no footer when it is off");
+        }
+        assertNoPageOverflows(plain);
+        assertTrue(withFooter.size() >= plain.size(), "a footer can only cost room");
+        double fullest = 0;
+        for (Node page : plain) {
+            fullest = Math.max(fullest, contentHeight(page));
+        }
+        assertTrue(fullest > PAGE_H - 40, "the footer's strip is used for content when there is none: " + fullest);
+        assertEquals(null, com.editora.print.PageFooter.of("x.md", false), "off is no footer at all");
     }
 }

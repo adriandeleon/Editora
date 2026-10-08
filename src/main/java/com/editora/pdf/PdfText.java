@@ -102,11 +102,27 @@ public final class PdfText {
         buf.setLength(0);
     }
 
+    /** What marks a wrapped line's continuation, where its line number would be (code PDF and code print). */
+    public static final String CONTINUATION_MARK = "\u21AA";
+
     /**
-     * The number of monospace cells {@code cp} occupies: two for an East Asian wide character (CJK
-     * ideographs, kana, hangul, full-width forms), one for everything else.
+     * A long line prefers to break after the last whitespace found in this final share of the width; a line
+     * with none there (a long identifier, a URL, minified code) is cut at the column limit.
+     */
+    static final double SOFT_WRAP_ZONE = 0.25;
+
+    /**
+     * The number of monospace cells {@code cp} occupies: none for a combining mark or an invisible format
+     * character (it is drawn on its base), two for an East Asian wide character (CJK ideographs, kana,
+     * hangul, full-width forms) or an emoji, one for everything else.
      */
     public static int columns(int cp) {
+        if (cp < 0x300) {
+            return 1; // ASCII and Latin-1/Extended: the hot path
+        }
+        if (isZeroWidth(cp)) {
+            return 0;
+        }
         boolean wide = (cp >= 0x1100 && cp <= 0x115F)
                 || (cp >= 0x2E80 && cp <= 0x303E)
                 || (cp >= 0x3041 && cp <= 0x33FF)
@@ -118,8 +134,22 @@ public final class PdfText {
                 || (cp >= 0xFE30 && cp <= 0xFE4F)
                 || (cp >= 0xFF00 && cp <= 0xFF60)
                 || (cp >= 0xFFE0 && cp <= 0xFFE6)
+                || (cp >= 0x1F300 && cp <= 0x1F64F) // pictographs, emoticons
+                || (cp >= 0x1F680 && cp <= 0x1F6FF) // transport
+                || (cp >= 0x1F900 && cp <= 0x1FAFF) // supplemental symbols, extended pictographs
                 || (cp >= 0x20000 && cp <= 0x3FFFD);
         return wide ? 2 : 1;
+    }
+
+    /**
+     * Whether {@code cp} takes no cell of its own: combining and enclosing marks, variation selectors, and
+     * format characters such as the zero-width joiner. It belongs to the character before it.
+     */
+    static boolean isZeroWidth(int cp) {
+        return switch (Character.getType(cp)) {
+            case Character.NON_SPACING_MARK, Character.ENCLOSING_MARK, Character.FORMAT -> true;
+            default -> false;
+        };
     }
 
     /** The number of monospace cells {@code text} occupies (see {@link #columns(int)}). */
@@ -135,7 +165,10 @@ public final class PdfText {
 
     /**
      * Wraps one line's runs into visual lines no wider than {@code maxCols} cells (monospace: one cell per
-     * character, two for a wide one). Never splits a surrogate pair.
+     * character, two for a wide one, none for a combining mark). A line breaks after the last whitespace in
+     * the final quarter of the width when there is one, so words stay whole; otherwise at the column limit.
+     * Never splits a surrogate pair, nor a combining mark from its base. Every visual line after the first is
+     * a continuation of the same source line ({@link #CONTINUATION_MARK}).
      */
     public static List<List<Run>> wrap(List<Run> line, int maxCols) {
         int total = 0;
@@ -145,36 +178,73 @@ public final class PdfText {
         if (maxCols <= 0 || total <= maxCols) {
             return List.of(line);
         }
+        StringBuilder all = new StringBuilder();
+        for (Run r : line) {
+            all.append(r.text());
+        }
+        List<Integer> cuts = breaks(all, maxCols);
         List<List<Run>> out = new ArrayList<>();
         List<Run> cur = new ArrayList<>();
-        int col = 0;
+        int next = 0; // index into cuts
+        int offset = 0; // start of the current run within the whole line
         for (Run r : line) {
             String t = r.text();
             int pos = 0;
             while (pos < t.length()) {
-                int end = pos;
-                int used = 0;
-                while (end < t.length()) {
-                    int cp = t.codePointAt(end);
-                    int w = columns(cp);
-                    if (col + used + w > maxCols && (col + used > 0)) {
-                        break; // (a wide character alone on a 1-cell line is still emitted)
-                    }
-                    used += w;
-                    end += Character.charCount(cp);
+                int cut = next < cuts.size() ? cuts.get(next) : Integer.MAX_VALUE;
+                int end = (int) Math.min(t.length(), (long) cut - offset);
+                if (end > pos) {
+                    cur.add(new Run(t.substring(pos, end), r.color(), r.bold(), r.italic()));
+                    pos = end;
                 }
-                if (end == pos) {
+                if (offset + pos == cut) {
                     out.add(cur);
                     cur = new ArrayList<>();
-                    col = 0;
-                    continue;
+                    next++;
                 }
-                cur.add(new Run(t.substring(pos, end), r.color(), r.bold(), r.italic()));
-                pos = end;
-                col += used;
             }
+            offset += t.length();
         }
         out.add(cur);
         return out;
+    }
+
+    /** The char offsets at which {@code text} breaks into visual lines of at most {@code maxCols} cells. */
+    private static List<Integer> breaks(CharSequence text, int maxCols) {
+        List<Integer> cuts = new ArrayList<>();
+        int softFrom = maxCols - (int) Math.floor(maxCols * SOFT_WRAP_ZONE); // a soft break leaves at least this
+        int n = text.length();
+        int start = 0;
+        while (start < n) {
+            int end = start;
+            int used = 0;
+            int soft = -1; // the end of the last usable whitespace run on this visual line
+            boolean ink = false; // a non-blank character has been placed on this visual line
+            while (end < n) {
+                int cp = Character.codePointAt(text, end);
+                int w = columns(cp);
+                if (used + w > maxCols && used > 0) {
+                    break; // (a wide character alone on a 1-cell line is still emitted)
+                }
+                used += w;
+                end += Character.charCount(cp);
+                if (cp == ' ' || cp == '\t') {
+                    if (ink && used >= softFrom) {
+                        soft = end; // indentation alone is never a place to break
+                    }
+                } else {
+                    ink = true;
+                }
+            }
+            if (end >= n) {
+                break;
+            }
+            // A line that ends exactly at a word boundary is already a clean break.
+            boolean boundary = text.charAt(end) == ' ' || text.charAt(end - 1) == ' ';
+            int cut = !boundary && soft > start ? soft : end;
+            cuts.add(cut);
+            start = cut;
+        }
+        return cuts;
     }
 }

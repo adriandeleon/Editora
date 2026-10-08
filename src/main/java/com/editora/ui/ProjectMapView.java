@@ -1038,6 +1038,21 @@ final class ProjectMapView extends VBox {
         onExportPdf = exportPdf == null ? ignored -> {} : exportPdf;
     }
 
+    /** Whether the map has columns to put on a page (the two output buttons are enabled). */
+    boolean canOutput() {
+        return !printButton.isDisable();
+    }
+
+    /** Runs the Print… button's action (the {@code projectMap.print} command); nothing while it is disabled. */
+    void print() {
+        printButton.fire();
+    }
+
+    /** Runs the PDF… button's action (the {@code projectMap.exportPdf} command). */
+    void exportPdf() {
+        exportPdfButton.fire();
+    }
+
     void hidePreview() {
         closeAllPreviews();
     }

@@ -203,7 +203,7 @@ class PrintPreviewFxTest {
     }
 
     private String pageText() throws Exception {
-        return FxTestSupport.callOnFx(() -> this.<Label>part("pageLabel").getText());
+        return FxTestSupport.callOnFx(() -> preview.pageText());
     }
 
     private String notice() throws Exception {
@@ -286,7 +286,10 @@ class PrintPreviewFxTest {
     @Test
     void downScrollsTheSheetAndTurnsThePageAtItsEnd() throws Exception {
         open(new FakeJob(letter()), new FakePaginator(3));
-        FxTestSupport.runOnFx(() -> stage().setHeight(420)); // the sheet no longer fits: it scrolls
+        FxTestSupport.runOnFx(() -> {
+            preview.setZoom(PrintZoom.Setting.percent(1)); // Fit Page, the default, never scrolls
+            stage().setHeight(420); // the sheet no longer fits: it scrolls
+        });
         settle();
         ScrollPane scroll = part("scroll");
         press(KeyCode.DOWN);
@@ -303,7 +306,10 @@ class PrintPreviewFxTest {
     @Test
     void aNewPageStartsAtItsTop() throws Exception {
         open(new FakeJob(letter()), new FakePaginator(3));
-        FxTestSupport.runOnFx(() -> stage().setHeight(420));
+        FxTestSupport.runOnFx(() -> {
+            preview.setZoom(PrintZoom.Setting.percent(1));
+            stage().setHeight(420);
+        });
         settle();
         ScrollPane scroll = part("scroll");
         FxTestSupport.runOnFx(() -> scroll.setVvalue(1.0));
@@ -600,6 +606,360 @@ class PrintPreviewFxTest {
             assertEquals((60_000 + perPage - 1) / perPage, pages.count());
             List<String> last = rows(pages.get(pages.count() - 1));
             assertTrue(last.get(last.size() - 1).startsWith("60000|"), last.get(last.size() - 1));
+        });
+    }
+
+    // --- zoom (A6) ---
+
+    private double factor() throws Exception {
+        return FxTestSupport.callOnFx(() -> preview.zoomFactor());
+    }
+
+    private PrintZoom.Setting setting() throws Exception {
+        return FxTestSupport.callOnFx(() -> preview.zoomSetting());
+    }
+
+    private void zoomTo(PrintZoom.Setting setting) throws Exception {
+        FxTestSupport.runOnFx(() -> preview.setZoom(setting));
+        settle();
+    }
+
+    private void press(KeyCode code, boolean control) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Scene scene = stage().getScene();
+            javafx.event.EventTarget target = scene.getFocusOwner() != null ? scene.getFocusOwner() : scene;
+            Event.fireEvent(target, new KeyEvent(KeyEvent.KEY_PRESSED, "", "", code, false, control, false, false));
+        });
+        settle();
+    }
+
+    private void wheel(double deltaY, boolean control) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            ScrollPane scroll = part("scroll");
+            Event.fireEvent(
+                    scroll,
+                    new javafx.scene.input.ScrollEvent(
+                            javafx.scene.input.ScrollEvent.SCROLL,
+                            10,
+                            10,
+                            10,
+                            10,
+                            false,
+                            control,
+                            false,
+                            false,
+                            false,
+                            false,
+                            0,
+                            deltaY,
+                            0,
+                            deltaY,
+                            javafx.scene.input.ScrollEvent.HorizontalTextScrollUnits.NONE,
+                            0,
+                            javafx.scene.input.ScrollEvent.VerticalTextScrollUnits.NONE,
+                            0,
+                            0,
+                            null));
+        });
+        settle();
+    }
+
+    /** The whole sheet, shadow included, is inside the viewport — and the viewport shows no scroll bar. */
+    @Test
+    void thePreviewOpensWithTheWholePageVisible() throws Exception {
+        open(new FakeJob(letter()), new FakePaginator(3));
+        assertEquals(PrintZoom.Setting.FIT_PAGE, setting());
+        FxTestSupport.runOnFx(() -> {
+            ScrollPane scroll = part("scroll");
+            StackPane sheet = part("sheet");
+            Bounds shown = sheet.getParent().getBoundsInParent(); // the scaled sheet, in the holder
+            assertTrue(shown.getHeight() <= scroll.getViewportBounds().getHeight(), "the page fits in height");
+            assertTrue(shown.getWidth() <= scroll.getViewportBounds().getWidth(), "and in width");
+            assertEquals(ScrollPane.ScrollBarPolicy.NEVER, scroll.getVbarPolicy());
+            assertEquals(
+                    PrintZoom.percentOf(preview.zoomFactor()) + "%",
+                    this.<javafx.scene.control.MenuButton>part("zoomMenu").getText(),
+                    "the zoom button shows the scale in effect");
+        });
+    }
+
+    /** The cap at 100% is gone: in a large window the page grows to use it. */
+    @Test
+    void aFitGrowsPastActualSizeInALargeWindow() throws Exception {
+        open(new FakeJob(letter()), new FakePaginator(2));
+        FxTestSupport.runOnFx(() -> {
+            stage().setWidth(1150);
+            stage().setHeight(700);
+        });
+        zoomTo(PrintZoom.Setting.FIT_WIDTH);
+        assertTrue(factor() > 1.3, "612 pt of paper in an 1150 px window is well over 100%: " + factor());
+        FxTestSupport.runOnFx(() -> {
+            ScrollPane scroll = part("scroll");
+            StackPane sheet = part("sheet");
+            double shown = sheet.getPrefWidth() * preview.zoomFactor();
+            assertTrue(shown <= scroll.getViewportBounds().getWidth(), "the sheet is not wider than the viewport");
+            assertTrue(shown > scroll.getViewportBounds().getWidth() - 80, "and nearly fills it");
+        });
+        double fitWidth = factor();
+        zoomTo(PrintZoom.Setting.FIT_PAGE);
+        assertTrue(factor() < fitWidth, "a portrait page that must fit in height is smaller than one fit to width");
+    }
+
+    @Test
+    void theZoomButtonsMenuKeysAndWheelChangeTheScale() throws Exception {
+        open(new FakeJob(letter()), new FakePaginator(2));
+        zoomTo(PrintZoom.Setting.percent(1));
+        fire("zoomIn");
+        assertEquals(PrintZoom.Setting.percent(1.25), setting());
+        assertEquals(1.25, factor(), 1e-9);
+        assertEquals(
+                "125%",
+                FxTestSupport.callOnFx(() ->
+                        this.<javafx.scene.control.MenuButton>part("zoomMenu").getText()));
+        fire("zoomOut");
+        fire("zoomOut");
+        assertEquals(0.75, factor(), 1e-9);
+
+        press(KeyCode.EQUALS, true); // Ctrl + (the unshifted key)
+        assertEquals(1.0, factor(), 1e-9);
+        press(KeyCode.ADD, true);
+        assertEquals(1.25, factor(), 1e-9);
+        press(KeyCode.MINUS, true);
+        assertEquals(1.0, factor(), 1e-9);
+        press(KeyCode.DIGIT0, true);
+        assertEquals(PrintZoom.Setting.FIT_PAGE, setting(), "Ctrl+0 fits the page");
+        press(KeyCode.EQUALS, false);
+        assertEquals(PrintZoom.Setting.FIT_PAGE, setting(), "a plain = is not a zoom key");
+
+        zoomTo(PrintZoom.Setting.percent(1));
+        wheel(40, true);
+        assertEquals(1.25, factor(), 1e-9, "Ctrl+wheel up zooms in");
+        wheel(-40, true);
+        wheel(-40, true);
+        assertEquals(0.75, factor(), 1e-9, "Ctrl+wheel down zooms out");
+        wheel(-40, false);
+        assertEquals(0.75, factor(), 1e-9, "a plain wheel only scrolls");
+
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.MenuButton menu = part("zoomMenu");
+            javafx.scene.control.MenuItem twoHundred = menu.getItems().stream()
+                    .filter(i -> "200%".equals(i.getText()))
+                    .findFirst()
+                    .orElseThrow();
+            twoHundred.fire();
+        });
+        settle();
+        assertEquals(2.0, factor(), 1e-9);
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.MenuButton menu = part("zoomMenu");
+            assertEquals(
+                    List.of(tr("print.preview.fitPage"), tr("print.preview.fitWidth")),
+                    menu.getItems().stream()
+                            .limit(2)
+                            .map(javafx.scene.control.MenuItem::getText)
+                            .toList());
+            assertTrue(
+                    menu.getItems().stream()
+                            .filter(i -> i instanceof javafx.scene.control.RadioMenuItem r && r.isSelected())
+                            .allMatch(i -> "200%".equals(i.getText())),
+                    "the menu marks the zoom in effect");
+        });
+        for (int i = 0; i < 6; i++) {
+            fire("zoomIn");
+        }
+        assertEquals(PrintZoom.MAX, factor(), 1e-9, "the zoom stops at its largest step");
+        assertTrue(FxTestSupport.callOnFx(() -> this.<Button>part("zoomIn").isDisabled()));
+    }
+
+    // --- page field (A6) ---
+
+    private void typePage(String text) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.control.TextField field = part("pageField");
+            field.requestFocus();
+            field.setText(text);
+            field.fireEvent(new javafx.event.ActionEvent());
+        });
+        settle();
+    }
+
+    private String pageFieldText() throws Exception {
+        return FxTestSupport.callOnFx(
+                () -> this.<javafx.scene.control.TextField>part("pageField").getText());
+    }
+
+    @Test
+    void thePageFieldJumpsToThePageTyped() throws Exception {
+        open(new FakeJob(letter()), new FakePaginator(15));
+        assertEquals("1", pageFieldText());
+        assertEquals(
+                tr("print.preview.pageAfter", 15),
+                FxTestSupport.callOnFx(() -> this.<Label>part("pageAfter").getText()));
+        typePage(" 12 ");
+        assertEquals(page(12, 15), pageText());
+        assertEquals("12", pageFieldText());
+        assertSame(
+                part("scroll"),
+                FxTestSupport.callOnFx(() -> stage().getScene().getFocusOwner()),
+                "after a jump the focus is back on the page, so the page keys work");
+        press(KeyCode.PAGE_DOWN);
+        assertEquals("13", pageFieldText(), "the field follows the page");
+    }
+
+    @Test
+    void thePageFieldRejectsWhatIsNotAPage() throws Exception {
+        open(new FakeJob(letter()), new FakePaginator(15));
+        typePage("7");
+        for (String bad : List.of("0", "16", "999999999999", "-3", "abc", "", "2.5")) {
+            typePage(bad);
+            assertEquals(page(7, 15), pageText(), "'" + bad + "' is not a page: nothing moves");
+            assertEquals("7", pageFieldText(), "the field shows the current page again after '" + bad + "'");
+            assertEquals(tr("print.preview.pageInvalid", 15), notice());
+        }
+        assertTrue(FxTestSupport.callOnFx(() -> stage().isShowing()));
+        typePage("8");
+        assertEquals("", notice(), "a good page number takes the message away");
+    }
+
+    /** The key filter must leave a text field its keys: Left/Right/Home/End move the caret there. */
+    @Test
+    void thePageKeysDoNotTurnThePageWhileTypingInThePageField() throws Exception {
+        open(new FakeJob(letter()), new FakePaginator(5));
+        FxTestSupport.runOnFx(
+                () -> this.<javafx.scene.control.TextField>part("pageField").requestFocus());
+        settle();
+        for (KeyCode code : List.of(KeyCode.RIGHT, KeyCode.END, KeyCode.DOWN, KeyCode.PAGE_DOWN)) {
+            press(code);
+        }
+        assertEquals(page(1, 5), pageText());
+        // Escape in the field puts the number back and returns to the page; it does not close the window.
+        FxTestSupport.runOnFx(
+                () -> this.<javafx.scene.control.TextField>part("pageField").setText("4"));
+        press(KeyCode.ESCAPE);
+        settle();
+        assertTrue(FxTestSupport.callOnFx(() -> stage().isShowing()), "Escape left the field, not the preview");
+        assertEquals("1", pageFieldText());
+        assertEquals(0, outcome.cancels);
+    }
+
+    /** At the minimum width the action buttons take a second row; nothing is cut down to "…". */
+    @Test
+    void theBarFitsAtTheMinimumWidth() throws Exception {
+        open(new FakeJob(letter()), new FakePaginator(1189));
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.layout.HBox top = part("barTop");
+            javafx.scene.layout.HBox actions = part("actions");
+            assertSame(top, actions.getParent(), "at the default width the bar is one row");
+            stage().setWidth(stage().getMinWidth());
+            stage().setHeight(stage().getMinHeight());
+        });
+        settle();
+        FxTestSupport.runOnFx(() -> {
+            double width = stage().getScene().getWidth();
+            javafx.scene.layout.HBox bottom = part("barBottom");
+            javafx.scene.layout.HBox actions = part("actions");
+            assertSame(bottom, actions.getParent(), "at the minimum width the actions wrap");
+            for (String name : List.of("prev", "next", "zoomOut", "zoomIn", "setup", "print", "close", "pageField")) {
+                javafx.scene.layout.Region control = part(name);
+                assertTrue(
+                        control.getWidth() >= Math.floor(control.prefWidth(-1)),
+                        name + " has its full width: " + control.getWidth() + " of " + control.prefWidth(-1));
+                Bounds inScene = control.localToScene(control.getBoundsInLocal());
+                assertTrue(
+                        inScene.getMinX() >= 0 && inScene.getMaxX() <= width + 0.5,
+                        name + " is inside the window: " + inScene);
+            }
+        });
+    }
+
+    // --- the printer job is cancelled when abandoned, and only then (A18) ---
+
+    @Test
+    void closingThePreviewCancelsTheJob() throws Exception {
+        FakeJob job = new FakeJob(letter());
+        open(job, new FakePaginator(2));
+        fire("close");
+        assertEquals(1, job.cancelled, "Close abandons the job: it must be cancelled, not dropped");
+        assertEquals(0, job.ended);
+        FxTestSupport.runOnFx(() -> stage().close());
+        assertEquals(1, job.cancelled, "never twice");
+    }
+
+    @Test
+    void aFinishedPrintDoesNotCancelTheJob() throws Exception {
+        FakeJob job = new FakeJob(letter());
+        open(job, new FakePaginator(2));
+        fire("print");
+        assertEquals(1, job.ended);
+        assertEquals(0, job.cancelled, "an ended job must not be cancelled");
+        assertTrue(outcome.results.get(0).ok());
+    }
+
+    @Test
+    void aFailureBeforeAnyPrintCancelsTheJob() throws Exception {
+        FakeJob job = new FakeJob(letter());
+        FakePaginator paginator = new FakePaginator(2);
+        open(job, paginator);
+        paginator.failure = new IllegalStateException("layout failed");
+        job.layoutAfterPageSetup = layout(Paper.A4, PageOrientation.PORTRAIT, 54, 54, 54, 54);
+        fire("setup");
+        assertFalse(outcome.results.get(0).ok());
+        assertEquals(1, job.cancelled, "the failed preview's job is cancelled");
+    }
+
+    // --- size and zoom are remembered for the session (A13) ---
+
+    @Test
+    void theWindowSizeAndZoomAreRememberedInTheMemoryItWasGiven() throws Exception {
+        PrintPreview.Memory memory = new PrintPreview.Memory();
+        PrintPreview first = FxTestSupport.callOnFx(() -> {
+            PrintPreview p = new PrintPreview(
+                    null, new FakeJob(letter()), new FakePaginator(2), r -> {}, () -> {}, () -> {}, memory);
+            p.show();
+            return p;
+        });
+        preview = first;
+        settle();
+        FxTestSupport.runOnFx(() -> {
+            stage().setWidth(640);
+            stage().setHeight(520);
+            first.setZoom(PrintZoom.Setting.FIT_WIDTH);
+        });
+        settle();
+        fire("close");
+        assertEquals(640, memory.width, 0.5);
+        assertEquals(520, memory.height, 0.5);
+        assertEquals(PrintZoom.Setting.FIT_WIDTH, memory.zoom);
+
+        preview = FxTestSupport.callOnFx(() -> {
+            PrintPreview p = new PrintPreview(
+                    null, new FakeJob(letter()), new FakePaginator(2), r -> {}, () -> {}, () -> {}, memory);
+            p.show();
+            return p;
+        });
+        settle();
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(640, stage().getWidth(), 0.5, "the next preview opens at the remembered width");
+            assertEquals(520, stage().getHeight(), 0.5);
+            assertEquals(PrintZoom.Setting.FIT_WIDTH, preview.zoomSetting());
+        });
+
+        // A remembered size larger than the screen is still clamped to it.
+        fire("close");
+        memory.width = 100_000;
+        memory.height = 100_000;
+        preview = FxTestSupport.callOnFx(() -> {
+            PrintPreview p = new PrintPreview(
+                    null, new FakeJob(letter()), new FakePaginator(2), r -> {}, () -> {}, () -> {}, memory);
+            p.show();
+            return p;
+        });
+        settle();
+        FxTestSupport.runOnFx(() -> {
+            javafx.geometry.Rectangle2D screen =
+                    javafx.stage.Screen.getPrimary().getVisualBounds();
+            assertTrue(stage().getWidth() <= screen.getWidth(), "clamped to the screen: " + stage().getWidth());
+            assertTrue(stage().getHeight() <= screen.getHeight());
         });
     }
 }

@@ -507,7 +507,11 @@ public class SettingsWindow {
     private ComboBox<String> autoSaveCombo;
     private CheckBox pdfLineNumbersCheck;
     private CheckBox pdfHighlightCheck;
+    private CheckBox pdfPageFooterCheck;
     private ComboBox<String> pdfPageSizeCombo;
+    private ComboBox<String> pdfOrientationCombo;
+    private ComboBox<String> pdfMarginsCombo;
+    private ComboBox<Integer> pdfCodeFontSizeCombo;
     private Spinner<Integer> autoSaveDelaySpinner;
 
     // --- shell ---
@@ -1230,6 +1234,7 @@ public class SettingsWindow {
 
         pdfLineNumbersCheck = viewCheck(tr("settings.pdf.lineNumbers"), Settings::setPdfLineNumbers);
         pdfHighlightCheck = viewCheck(tr("settings.pdf.highlight"), Settings::setPdfSyntaxHighlighting);
+        pdfPageFooterCheck = viewCheck(tr("settings.pdf.pageFooter"), Settings::setPdfPageFooter);
         indentStyleCombo = new ComboBox<>();
         indentStyleCombo.getItems().setAll("detect", "space", "tab");
         indentStyleCombo.setConverter(new StringConverter<>() {
@@ -1271,6 +1276,30 @@ public class SettingsWindow {
                 return;
             }
             config.getSettings().setPdfPageSize(now);
+            apply();
+        });
+        pdfOrientationCombo =
+                pdfChoiceCombo(Settings.PDF_ORIENTATIONS, "settings.pdf.orientation.", Settings::setPdfOrientation);
+        pdfMarginsCombo = pdfChoiceCombo(Settings.PDF_MARGINS, "settings.pdf.margins.", Settings::setPdfMargins);
+        pdfCodeFontSizeCombo = new ComboBox<>();
+        pdfCodeFontSizeCombo.getItems().setAll(Settings.PDF_CODE_FONT_SIZES);
+        pdfCodeFontSizeCombo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(Integer points) {
+                return points == null ? "" : tr("settings.pdf.codeFontSize.points", points);
+            }
+
+            @Override
+            public Integer fromString(String label) {
+                return null; // not editable
+            }
+        });
+        pdfCodeFontSizeCombo.setMinWidth(170);
+        pdfCodeFontSizeCombo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            config.getSettings().setPdfCodeFontSize(now);
             apply();
         });
 
@@ -2585,16 +2614,83 @@ public class SettingsWindow {
         adminSaveNote.setMaxWidth(440);
         cardRow(saving, Category.EDITOR, adminSaveNote, "save administrator root permission linux pkexec");
         Card pdf = card(p, tr("settings.section.pdf"));
-        checkRow(pdf, Category.EDITOR, pdfLineNumbersCheck, null, "pdf export line numbers gutter");
-        checkRow(pdf, Category.EDITOR, pdfHighlightCheck, null, "pdf export syntax highlighting colors");
+        checkRow(
+                pdf,
+                Category.EDITOR,
+                pdfLineNumbersCheck,
+                tr("settings.pdf.lineNumbers.desc"),
+                "pdf export print line numbers gutter");
+        checkRow(
+                pdf,
+                Category.EDITOR,
+                pdfHighlightCheck,
+                tr("settings.pdf.highlight.desc"),
+                "pdf export print syntax highlighting colors");
+        checkRow(
+                pdf,
+                Category.EDITOR,
+                pdfPageFooterCheck,
+                tr("settings.pdf.pageFooter.desc"),
+                "pdf export print page footer document name page number");
         controlRow(
                 pdf,
                 Category.EDITOR,
                 tr("settings.pdf.pageSize"),
-                null,
+                tr("settings.pdf.pageSize.desc"),
                 pdfPageSizeCombo,
-                "pdf export page size letter a4 paper");
+                "pdf export page size letter a4 paper print page setup");
+        controlRow(
+                pdf,
+                Category.EDITOR,
+                tr("settings.pdf.orientation"),
+                tr("settings.pdf.orientation.desc"),
+                pdfOrientationCombo,
+                "pdf export orientation portrait landscape page");
+        controlRow(
+                pdf,
+                Category.EDITOR,
+                tr("settings.pdf.margins"),
+                tr("settings.pdf.margins.desc"),
+                pdfMarginsCombo,
+                "pdf export margin margins normal narrow wide page");
+        controlRow(
+                pdf,
+                Category.EDITOR,
+                tr("settings.pdf.codeFontSize"),
+                tr("settings.pdf.codeFontSize.desc"),
+                pdfCodeFontSizeCombo,
+                "pdf export code font size text size points source");
         return p;
+    }
+
+    /**
+     * A combo over the fixed {@code keys} of a PDF page setting, shown as {@code tr(prefix + key)} and
+     * written through {@code setter} — the shape of the "PDF page size" combo.
+     */
+    private ComboBox<String> pdfChoiceCombo(
+            List<String> keys, String prefix, java.util.function.BiConsumer<Settings, String> setter) {
+        ComboBox<String> combo = new ComboBox<>();
+        combo.getItems().setAll(keys);
+        combo.setConverter(new StringConverter<>() {
+            @Override
+            public String toString(String key) {
+                return key == null ? "" : tr(prefix + key);
+            }
+
+            @Override
+            public String fromString(String label) {
+                return label;
+            }
+        });
+        combo.setMinWidth(170);
+        combo.valueProperty().addListener((obs, was, now) -> {
+            if (loading || now == null) {
+                return;
+            }
+            setter.accept(config.getSettings(), now);
+            apply();
+        });
+        return combo;
     }
 
     /** The Markdown settings page: editing (format bar), preview/PDF (math), and linting (enable + per-rule). */
@@ -7599,7 +7695,11 @@ public class SettingsWindow {
             smartSemicolonCheck.setSelected(settings.isLspSmartSemicolon());
             pdfLineNumbersCheck.setSelected(settings.isPdfLineNumbers());
             pdfHighlightCheck.setSelected(settings.isPdfSyntaxHighlighting());
+            pdfPageFooterCheck.setSelected(settings.isPdfPageFooter());
             pdfPageSizeCombo.setValue(settings.getPdfPageSize());
+            pdfOrientationCombo.setValue(settings.getPdfOrientation());
+            pdfMarginsCombo.setValue(settings.getPdfMargins());
+            pdfCodeFontSizeCombo.setValue(settings.getPdfCodeFontSize());
             spellCheckBox.setSelected(settings.isSpellCheck());
             dictEnableCheck.setSelected(settings.isPersonalDictionary());
             techDictEnableCheck.setSelected(settings.isTechnicalDictionary());

@@ -46,6 +46,32 @@ final class ExportCoordinator {
     };
     /** Where a print result goes; tests replace it so a failure does not open a modal alert. */
     Consumer<com.editora.print.PrintService.Result> printReporter = r -> reportPrint(r);
+    /** Shows the "no printer" dialog and returns the button chosen; tests answer without showing it. */
+    java.util.function.Function<Alert, java.util.Optional<javafx.scene.control.ButtonType>> noPrinterPrompt =
+            Alert::showAndWait;
+    /** The size and zoom this window's Print Preview had last time (this session only). */
+    private final PrintPreview.Memory previewMemory = new PrintPreview.Memory();
+
+    /** Staged exports whose result has not arrived; {@link #shutdown} removes their staging directories. */
+    private final java.util.Set<com.editora.io.StagedExport> pendingStages = new java.util.LinkedHashSet<>();
+    /** The window is closing: a late export result is dropped, not committed or reported. */
+    private boolean shutDown;
+    /** PDF exports started through {@link #stagedPdf} that have not reported yet (running + queued). */
+    private int pdfExportsPending;
+    /** The status-bar entry of the running PDF exports, re-labelled as pages are written; null when idle. */
+    private AutoCloseable pdfExportTask;
+    /** The file this window last exported successfully, for {@code file.openLastExport}; null before any. */
+    private Path lastExported;
+    /** Told the path of every export that has replaced its destination; the window reloads a viewer tab on it. */
+    Consumer<Path> exported = path -> {};
+
+    /**
+     * The grid state of a CSV buffer whose grid is on screen — its visible rows in displayed order and its
+     * header setting — or null when the buffer shows no grid. Set by the window ({@code CsvCoordinator}).
+     */
+    java.util.function.Function<EditorBuffer, CsvGridPanel.Shown> csvShown = b -> null;
+    /** What the active tab holds when it is not an editor buffer (an image, PDF or hex viewer), or null. */
+    java.util.function.Supplier<Object> activeTabContent = () -> null;
 
     ExportCoordinator(
             CoordinatorHost host,
@@ -73,31 +99,48 @@ final class ExportCoordinator {
     }
 
     void registerCommands(CommandRegistry registry) {
-        registry.register(Command.of("editor.exportPdf", this::exportCodePdf));
+        registry.register(Command.of("editor.exportPdf", this::exportActivePdf));
+        registry.register(Command.of("editor.exportSelectionPdf", this::exportSelectionPdf));
         registry.register(Command.of("preview.exportPdf", this::exportPreviewPdf));
         registry.register(Command.of("preview.exportHtml", this::exportPreviewHtml));
         registry.register(Command.of("preview.copy", this::copyPreview));
         registry.register(Command.of("preview.copyHtml", this::copyPreviewHtml));
         registry.register(Command.of("preview.exportDocx", this::exportPreviewDocx));
         registry.register(Command.of("preview.exportOdt", this::exportPreviewOdt));
-        registry.register(Command.of("editor.print", this::printCode));
+        registry.register(Command.of("editor.print", this::printActive));
+        registry.register(Command.of("editor.printSelection", this::printSelection));
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
+        registry.register(Command.of("file.openLastExport", this::openLastExport));
+        registry.register(Command.of("file.cancelPdfExport", this::cancelPdfExports));
     }
 
+    /**
+     * Stops the output services and removes the staging directory of every export still running or queued:
+     * closing the window drops those exports, and their {@code .editora-export-<n>/} folders used to stay
+     * beside the destination. A result that still arrives afterwards is ignored (see {@link #staged}).
+     */
     void shutdown() {
+        shutDown = true;
         pdfService.shutdown();
         officeService.shutdown();
         printService.shutdown();
+        for (com.editora.io.StagedExport stage : java.util.List.copyOf(pendingStages)) {
+            stage.close();
+        }
+        endPdfExportTask();
     }
 
     /**
      * Exports a CSV as a PDF through the table renderer of the Markdown → PDF pipeline (the grid's right-click
-     * menu). The table is built from the parsed rows, not from Markdown text, so cells are never re-parsed as
-     * markup and the columns are the ones the grid shows (see {@link CsvTableDocument}).
+     * menu, {@code csv.exportPdf}, and Export Rendered Preview on a CSV). The table is built from the parsed
+     * rows, not from Markdown text, so cells are never re-parsed as markup and the columns are the ones the
+     * grid shows (see {@link CsvTableDocument}). While the grid is on screen the table is what the grid
+     * shows — see {@link #csvRows}.
      */
     void csvExportPdf(String csvText, String baseName) {
-        org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
+        CsvGridPanel.Shown shown = csvRows(csvText);
+        org.commonmark.node.Node table = CsvTableDocument.fromRows(shown.header(), shown.rows());
         if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
@@ -108,7 +151,62 @@ final class ExportCoordinator {
         }
         host.setStatus(tr("status.pdf.exporting"));
         String pageSize = host.settings().getPdfPageSize();
-        stagedPdf(f, (out, report) -> pdfService.exportDocument(table, pageSize, out, report));
+        this.<com.editora.pdf.PdfExportService.Result>staged(
+                f,
+                (out, report) -> pdfService.exportDocument(table, pdfPage(), pdfMeta(baseName), out, report),
+                com.editora.pdf.PdfExportService.Result::ok,
+                message -> new com.editora.pdf.PdfExportService.Result(false, message),
+                r -> {
+                    reportPdf(r, f);
+                    // After the report, so a failure keeps its own message and dialog.
+                    if (r.ok() && r.unrendered() == 0 && shown.filtered()) {
+                        host.setStatus(withRowCount(tr("status.pdf.exported", f.toString()), shown));
+                    }
+                });
+    }
+
+    /**
+     * What a CSV print or export holds. While the active buffer's grid is on screen: the grid's visible rows
+     * in their displayed order, under its header row when "first row is a header" is on — a filtered,
+     * sorted grid used to go out as the whole file in file order. In source mode (no grid state to follow):
+     * the whole of {@code csvText} in file order, its first record the header.
+     */
+    CsvGridPanel.Shown csvRows(String csvText) {
+        EditorBuffer b = host.activeBuffer();
+        CsvGridPanel.Shown shown = b == null ? null : csvShown.apply(b);
+        if (shown != null) {
+            return shown;
+        }
+        return CsvGridPanel.Shown.wholeFile(
+                csvText == null || csvText.isBlank() ? java.util.List.of() : com.editora.csv.CsvParser.parse(csvText));
+    }
+
+    /** {@code message} followed by "(n of N rows — the grid is filtered)" when a filter left rows out. */
+    private static String withRowCount(String message, CsvGridPanel.Shown shown) {
+        return shown.filtered()
+                ? message + " " + tr("status.csv.filteredRows", shown.rows().size(), shown.totalRows())
+                : message;
+    }
+
+    /**
+     * The page every text PDF (source text, Markdown, CSV table) is laid out on, from the settings: paper,
+     * orientation, margin preset, code font size, and the page footer on or off. The image and tree PDFs
+     * take only the paper size — {@code ImagePdfWriter} turns each page to fit its picture.
+     */
+    private com.editora.pdf.PdfPageSpec pdfPage() {
+        Settings s = host.settings();
+        return new com.editora.pdf.PdfPageSpec(
+                s.getPdfPageSize(),
+                "landscape".equals(s.getPdfOrientation()),
+                com.editora.pdf.PdfPageSpec.marginOf(s.getPdfMargins()),
+                s.getPdfCodeFontSize(),
+                s.isPdfPageFooter());
+    }
+
+    /** The document name (PDF title and footer) and the footer's localised page label. */
+    private static com.editora.pdf.PdfDocMeta pdfMeta(String name) {
+        return new com.editora.pdf.PdfDocMeta(
+                name, com.editora.i18n.Messages.current(), (page, pages) -> tr("pdf.footer.page", page, pages));
     }
 
     /**
@@ -135,12 +233,20 @@ final class ExportCoordinator {
             report.accept(failure.apply(e.getMessage() == null ? e.toString() : e.getMessage()));
             return;
         }
+        pendingStages.add(stage);
         try {
             export.accept(stage.path(), result -> {
+                pendingStages.remove(stage);
+                if (shutDown) { // the window closed meanwhile: nothing is replaced and nobody is left to tell
+                    stage.close(); // again — the writer may have still been at work when shutdown() cleaned up
+                    return;
+                }
                 R outcome = result;
+                boolean committed = false;
                 if (ok.test(result)) {
                     try {
                         stage.commit();
+                        committed = true;
                     } catch (java.io.IOException e) {
                         outcome = failure.apply(e.getMessage() == null ? e.toString() : e.getMessage());
                     }
@@ -148,8 +254,12 @@ final class ExportCoordinator {
                     stage.close();
                 }
                 report.accept(outcome);
+                if (committed) {
+                    exported.accept(f.toPath()); // a viewer tab open on the replaced file shows the new one
+                }
             });
         } catch (RuntimeException e) {
+            pendingStages.remove(stage);
             stage.close();
             throw e;
         }
@@ -161,12 +271,97 @@ final class ExportCoordinator {
             java.util.function.BiConsumer<
                             java.nio.file.Path, java.util.function.Consumer<com.editora.pdf.PdfExportService.Result>>
                     export) {
-        this.<com.editora.pdf.PdfExportService.Result>staged(
-                f,
-                export,
-                com.editora.pdf.PdfExportService.Result::ok,
-                message -> new com.editora.pdf.PdfExportService.Result(false, message),
-                r -> reportPdf(r, f));
+        beginPdfExport();
+        try {
+            this.<com.editora.pdf.PdfExportService.Result>staged(
+                    f,
+                    export,
+                    com.editora.pdf.PdfExportService.Result::ok,
+                    message -> new com.editora.pdf.PdfExportService.Result(false, message),
+                    r -> {
+                        endPdfExport();
+                        reportPdf(r, f);
+                    });
+        } catch (RuntimeException | Error e) {
+            endPdfExport(); // never submitted: no result will come to count it off
+            throw e;
+        }
+    }
+
+    /**
+     * Counts a PDF export in. The exports of a window run one at a time, so one that finds another still
+     * unfinished says that it is queued (over the caller's "Exporting…"); the first puts the export in the
+     * status bar's background-work indicator, which then follows the pages being written.
+     */
+    private void beginPdfExport() {
+        if (pdfExportsPending++ > 0) {
+            host.setStatus(tr("status.pdf.queued", pdfExportsPending - 1));
+            return;
+        }
+        pdfService.onProgress(pages -> labelPdfExportTask(tr("status.pdf.exportingPage", pages)));
+        labelPdfExportTask(tr("status.pdf.exporting"));
+    }
+
+    private void endPdfExport() {
+        if (pdfExportsPending > 0 && --pdfExportsPending == 0) {
+            endPdfExportTask();
+        } else if (pdfExportsPending > 0) {
+            labelPdfExportTask(tr("status.pdf.exporting")); // the next one starts: its page count is not this one's
+        }
+    }
+
+    /** Shows {@code label} as this window's running PDF export (a task's label is fixed, so it is replaced). */
+    private void labelPdfExportTask(String label) {
+        if (shutDown || pdfExportsPending == 0) {
+            return; // a progress report that arrived after the last result
+        }
+        endPdfExportTask();
+        pdfExportTask = host.startBackgroundTask(label);
+    }
+
+    private void endPdfExportTask() {
+        AutoCloseable task = pdfExportTask;
+        pdfExportTask = null;
+        if (task != null) {
+            try {
+                task.close();
+            } catch (Exception ignored) {
+                // a status-bar entry that will not close is not worth failing an export over
+            }
+        }
+    }
+
+    /**
+     * Cancels this window's PDF exports — the one being written and any queued behind it ({@code
+     * file.cancelPdfExport}). Each then reports "cancelled" through {@link #reportPdf}; its staging file is
+     * dropped and the destination keeps what it had.
+     */
+    void cancelPdfExports() {
+        if (pdfExportsPending == 0 || !pdfService.cancelAll()) {
+            host.setStatus(tr("status.pdf.nothingToCancel"));
+        }
+    }
+
+    /**
+     * Opens the file this window exported last ({@code file.openLastExport}): a PDF or a text format in a
+     * tab, an office document — which Editora cannot show — in the application the system opens it with.
+     */
+    void openLastExport() {
+        Path file = lastExported;
+        if (file == null) {
+            host.setStatus(tr("status.export.none"));
+            return;
+        }
+        if (!java.nio.file.Files.isRegularFile(file)) {
+            host.setStatus(tr("status.export.gone", file.toString()));
+            return;
+        }
+        String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".docx") || name.endsWith(".odt") || name.endsWith(".xlsx") || name.endsWith(".ods")) {
+            host.openExternalUrl(file.toUri().toString());
+        } else {
+            openPath.accept(file);
+        }
     }
 
     /** {@link #staged} for the office service: reports through {@link #reportOffice}. */
@@ -189,17 +384,27 @@ final class ExportCoordinator {
         if (printBusy()) {
             return;
         }
-        org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
+        CsvGridPanel.Shown shown = csvRows(csvText);
+        org.commonmark.node.Node table = CsvTableDocument.fromRows(shown.header(), shown.rows());
         if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            EditorBuffer active = host.activeBuffer();
+            noPrinter(() -> csvExportPdf(csvText, active == null ? null : bufferBaseName(active)));
             return;
         }
-        preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
+        preparePrint(() -> printService.prepareDocument(
+                table,
+                null,
+                host.activeBuffer() == null ? null : bufferBaseName(host.activeBuffer()),
+                host.settings().isPdfPageFooter(),
+                prepared -> openPrintPreview(job, prepared)));
+        if (shown.filtered()) { // say that the preview about to open is not the whole file
+            host.setStatus(withRowCount(tr("status.print.preparing"), shown));
+        }
     }
 
     /**
@@ -245,7 +450,7 @@ final class ExportCoordinator {
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            noPrinter(() -> exportProjectMapPdf(output, null));
             return;
         }
         if (output.landscape()) {
@@ -317,6 +522,238 @@ final class ExportCoordinator {
     }
 
     /**
+     * {@code csv.exportExcel} / {@code csv.exportOds} and the grid's two menu items: the same rows as the PDF
+     * and the print (see {@link #csvRows}), so the four outputs of one grid agree. The header row is bold
+     * when there is one.
+     */
+    void csvExportSpreadsheet(String csvText, String baseName, boolean xlsx) {
+        CsvGridPanel.Shown shown = csvRows(csvText);
+        java.util.List<java.util.List<String>> rows = shown.withHeader();
+        if (rows.isEmpty()) {
+            host.setStatus(tr("status.csv.empty"));
+            return;
+        }
+        String ext = xlsx ? "xlsx" : "ods";
+        java.io.File f = chooseOfficeDestination(
+                baseName, ext, xlsx ? "Excel" : "OpenDocument Spreadsheet", host.activeBuffer());
+        if (f == null) {
+            return;
+        }
+        host.setStatus(tr("status.office.exporting"));
+        boolean hasHeader = shown.header() != null;
+        this.<com.editora.office.OfficeExportService.Result>staged(
+                f,
+                (out, cb) -> {
+                    if (xlsx) {
+                        officeService.exportXlsx(rows, hasHeader, out, cb);
+                    } else {
+                        officeService.exportOds(rows, hasHeader, out, cb);
+                    }
+                },
+                com.editora.office.OfficeExportService.Result::ok,
+                message -> new com.editora.office.OfficeExportService.Result(false, message),
+                r -> {
+                    reportOffice(r, f);
+                    if (r.ok() && shown.filtered()) {
+                        host.setStatus(withRowCount(tr("status.office.exported", f.toString()), shown));
+                    }
+                });
+    }
+
+    // --- the active tab: a text buffer, an image, or something with nothing to put on a page -------------
+
+    /**
+     * {@code editor.print}: prints the active buffer's text, or the picture of an image tab. A PDF or hex
+     * viewer tab has neither — the command is disabled there, and says so when reached by its key chord
+     * (it used to answer "No file open" with a file plainly open).
+     */
+    void printActive() {
+        if (host.activeBuffer() != null) {
+            printCode();
+        } else if (activeTabContent.get() instanceof ImageViewerPane image) {
+            printImage(image);
+        } else {
+            host.setStatus(tr(activeTabContent.get() == null ? "status.noFileOpen" : "status.print.noText"));
+        }
+    }
+
+    /** {@code editor.exportPdf}: the PDF twin of {@link #printActive}. */
+    void exportActivePdf() {
+        if (host.activeBuffer() != null) {
+            exportCodePdf();
+        } else if (activeTabContent.get() instanceof ImageViewerPane image) {
+            exportImagePdf(image);
+        } else {
+            host.setStatus(tr(activeTabContent.get() == null ? "status.noFileOpen" : "status.pdf.noText"));
+        }
+    }
+
+    /** Opens the Print Preview for the picture of an image tab, on the image-page path the Project Map uses. */
+    void printImage(ImageViewerPane pane) {
+        if (printBusy()) {
+            return;
+        }
+        javafx.scene.image.Image image = pane.printableImage();
+        if (image == null) {
+            host.setStatus(tr("status.print.imageNotLoaded"));
+            return;
+        }
+        PrintPreview.Job job = printJobs.get();
+        if (job == null) {
+            noPrinter(() -> exportImagePdf(pane));
+            return;
+        }
+        java.util.List<com.editora.pdf.PageImage> pages = pageImage(image);
+        preparePrint(() -> printService.preparePageImages(pages, prepared -> openPrintPreview(job, prepared)));
+    }
+
+    /** Exports the picture of an image tab to a PDF page of the configured size. */
+    void exportImagePdf(ImageViewerPane pane) {
+        javafx.scene.image.Image image = pane.printableImage();
+        if (image == null) {
+            host.setStatus(tr("status.print.imageNotLoaded"));
+            return;
+        }
+        Path path = pane.getPath();
+        java.io.File f = choosePdfDestination(
+                path == null || path.getFileName() == null
+                        ? null
+                        : path.getFileName().toString(),
+                null);
+        if (f == null) {
+            return;
+        }
+        host.setStatus(tr("status.pdf.exporting"));
+        String pageSize = host.settings().getPdfPageSize();
+        java.util.List<com.editora.pdf.PageImage> pages = pageImage(image);
+        stagedPdf(f, (out, report) -> pdfService.exportPageImages(pages, pageSize, out, report));
+    }
+
+    /** An image tab's picture as the one-pixel-per-point page image the raster print and PDF paths take. */
+    private static java.util.List<com.editora.pdf.PageImage> pageImage(javafx.scene.image.Image image) {
+        return java.util.List.of(com.editora.pdf.PageImage.of(com.editora.editor.PreviewImageLoader.imageToPng(image)));
+    }
+
+    // --- the selection only -------------------------------------------------------------------------------
+
+    /** The text a selection is cut from, and the selection widened to whole lines of it. */
+    record SelectedLines(String text, LineSelection lines) {}
+
+    /**
+     * The active buffer's selection as whole lines of its file, or null — with the reason in the status bar —
+     * when there is no buffer or nothing is selected. The lines are numbered as in the file: a narrowed
+     * buffer shows only part of it, so the selection is mapped into the whole text. A filtered log view shows
+     * lines that are not adjacent in the file; there the visible text is used and numbered as shown.
+     */
+    SelectedLines selectedLines() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null) {
+            host.setStatus(tr(activeTabContent.get() == null ? "status.noFileOpen" : "status.print.noText"));
+            return null;
+        }
+        org.fxmisc.richtext.CodeArea area = b.getFocusedArea() == null ? b.getArea() : b.getFocusedArea();
+        javafx.scene.control.IndexRange selection = area.getSelection();
+        boolean partial = b.isLogFiltered();
+        String text = partial ? area.getText() : b.getContent();
+        int shift = partial ? 0 : b.narrowStart();
+        LineSelection lines = LineSelection.of(text, selection.getStart() + shift, selection.getEnd() + shift);
+        if (lines == null) {
+            host.setStatus(tr("status.print.noSelection"));
+            return null;
+        }
+        return new SelectedLines(text, lines);
+    }
+
+    /**
+     * {@code editor.printSelection}: prints the selected lines of the active buffer — whole lines, with the
+     * file's grammar and the line numbers they have in the file.
+     */
+    void printSelection() {
+        if (printBusy()) {
+            return;
+        }
+        SelectedLines selected = selectedLines();
+        if (selected == null) {
+            return;
+        }
+        PrintPreview.Job job = printJobs.get();
+        if (job == null) {
+            host.setStatus(tr("status.print.noPrinter"));
+            return;
+        }
+        Settings s = host.settings();
+        String grammar = grammarKey(host.activeBuffer());
+        LineSelection lines = selected.lines();
+        preparePrint(() -> printService.prepareCodeLines(
+                selected.text(),
+                lines.start(),
+                lines.end(),
+                lines.firstLine(),
+                grammar,
+                s.isPdfSyntaxHighlighting(),
+                s.isPdfLineNumbers(),
+                s.getTabSize(),
+                bufferBaseName(host.activeBuffer()),
+                s.isPdfPageFooter(),
+                prepared -> openPrintPreview(job, prepared)));
+    }
+
+    /** {@code editor.exportSelectionPdf}: the PDF twin of {@link #printSelection}. */
+    void exportSelectionPdf() {
+        SelectedLines selected = selectedLines();
+        if (selected == null) {
+            return;
+        }
+        EditorBuffer b = host.activeBuffer();
+        java.io.File f = choosePdfDestination(bufferBaseName(b), b);
+        if (f == null) {
+            return;
+        }
+        Settings s = host.settings();
+        host.setStatus(tr("status.pdf.exporting"));
+        String grammar = grammarKey(b);
+        LineSelection lines = selected.lines();
+        stagedPdf(
+                f,
+                (out, report) -> pdfService.exportCodeLines(
+                        selected.text(),
+                        lines.start(),
+                        lines.end(),
+                        lines.firstLine(),
+                        grammar,
+                        s.isPdfSyntaxHighlighting(),
+                        s.isPdfLineNumbers(),
+                        s.getTabSize(),
+                        pdfPage(),
+                        pdfMeta(bufferBaseName(b)),
+                        out,
+                        report));
+    }
+
+    /**
+     * The editor's right-click items for printing and exporting — Print…, Export to PDF… and, while text is
+     * selected, their selection-only twins — followed by {@code others} (the items already contributed
+     * there) after a separator.
+     */
+    java.util.List<javafx.scene.control.MenuItem> editorMenuItems(
+            EditorBuffer buffer, java.util.List<javafx.scene.control.MenuItem> others) {
+        java.util.List<javafx.scene.control.MenuItem> items = new java.util.ArrayList<>();
+        items.add(LazyContextMenu.item(tr("menu.print"), Icons.print(), this::printActive));
+        items.add(LazyContextMenu.item(tr("menu.exportPdf"), Icons.saveAs(), this::exportActivePdf));
+        org.fxmisc.richtext.CodeArea area =
+                buffer.getFocusedArea() == null ? buffer.getArea() : buffer.getFocusedArea();
+        if (area.getSelection().getLength() > 0) {
+            items.add(LazyContextMenu.item(tr("menu.printSelection"), Icons.print(), this::printSelection));
+            items.add(LazyContextMenu.item(tr("menu.exportSelectionPdf"), Icons.saveAs(), this::exportSelectionPdf));
+        }
+        if (others != null && !others.isEmpty()) {
+            items.add(new javafx.scene.control.SeparatorMenuItem());
+            items.addAll(others);
+        }
+        return items;
+    }
+
+    /**
      * Exports the active buffer's source text to a syntax-highlighted, light-themed PDF (any text file).
      * Honors the Settings toggles (line numbers, syntax highlighting) + page size. Runs off the FX thread.
      */
@@ -342,7 +779,8 @@ final class ExportCoordinator {
                         s.isPdfSyntaxHighlighting(),
                         s.isPdfLineNumbers(),
                         s.getTabSize(),
-                        s.getPdfPageSize(),
+                        pdfPage(),
+                        pdfMeta(bufferBaseName(b)),
                         out,
                         report));
     }
@@ -416,7 +854,14 @@ final class ExportCoordinator {
         if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            pdfService.exportMarkdown(b.getContent(), baseDir, pageSize, mermaid.mmdcCommandOrNull(), out, report);
+            pdfService.exportMarkdown(
+                    b.getContent(),
+                    baseDir,
+                    pdfPage(),
+                    pdfMeta(bufferBaseName(b)),
+                    mermaid.mmdcCommandOrNull(),
+                    out,
+                    report);
         } else if (b.isDiagram()) { // Mermaid (.mmd) — CLI render to PDF
             mermaid.exportDiagram(
                     b.getContent(),
@@ -428,21 +873,34 @@ final class ExportCoordinator {
                     b.getContent(),
                     out,
                     r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
-        } else if (b.isSvg()) { // rasterize the SVG source and embed it as a PDF page
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(java.util.List.of(png), pageSize, out, report);
+        } else if (b.isSvg()) { // rasterize the SVG source (on the export thread) and embed it as a PDF page
+            pdfService.exportSvg(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    tr("status.pdf.noPreview"),
+                    pageSize,
+                    out,
+                    report);
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(chunks, pageSize, out, report);
+            b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet(), this::snapshotProgress, snap -> {
+                if (snap == null || snap.images().isEmpty()) {
+                    report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
+                    return;
+                }
+                host.setStatus(tr("status.pdf.exporting"));
+                pdfService.exportPageImages(com.editora.pdf.PageImage.of(snap), pageSize, out, r -> {
+                    report.accept(r);
+                    if (r.ok() && snap.truncated()) { // after the plain "exported": the PDF is not the whole tree
+                        host.setStatus(tr("status.pdf.exportedTruncated", snap.shownRows(), snap.totalRows()));
+                    }
+                });
+            });
+        }
+    }
+
+    /** Status while a tree preview is snapshotted chunk by chunk (it takes several pulses of the FX thread). */
+    private void snapshotProgress(int done, int total) {
+        if (total > 1) {
+            host.setStatus(tr("status.preview.snapshotting", Math.round(100f * done / total)));
         }
     }
 
@@ -621,12 +1079,21 @@ final class ExportCoordinator {
 
     /** Reports a PDF export result: status + (on failure) an error dialog. */
     private void reportPdf(com.editora.pdf.PdfExportService.Result r, java.io.File f) {
+        if (com.editora.pdf.PdfExportService.cancelled(r)) {
+            host.setStatus(tr("status.pdf.cancelled")); // asked for: no error dialog
+            return;
+        }
         if (r.ok()) {
-            // Characters no installed font could draw were written as "?": say so rather than a bare "Exported".
-            host.setStatus(
-                    r.unrendered() > 0
-                            ? tr("status.pdf.exportedUnrendered", f.toString(), r.unrendered())
-                            : tr("status.pdf.exported", f.toString()));
+            lastExported = f.toPath();
+            // Characters no installed font could draw were written as "?", and a Mermaid block that failed to
+            // render went out as its source: say so rather than a bare "Exported".
+            if (r.unrendered() > 0) {
+                host.setStatus(tr("status.pdf.exportedUnrendered", f.toString(), r.unrendered()));
+            } else if (r.failedDiagrams() > 0) {
+                host.setStatus(tr("status.pdf.exportedDiagramsFailed", f.toString(), r.failedDiagrams()));
+            } else {
+                host.setStatus(tr("status.pdf.exported", f.toString()));
+            }
         } else {
             String msg = failureDetail(r.message());
             host.setStatus(tr("status.pdf.exportFailed", msg));
@@ -694,6 +1161,7 @@ final class ExportCoordinator {
     /** Reports an office export result: status + (on failure) an error dialog. */
     private void reportOffice(com.editora.office.OfficeExportService.Result r, java.io.File f) {
         if (r.ok()) {
+            lastExported = f.toPath();
             host.setStatus(tr("status.office.exported", f.toString()));
         } else {
             String msg = failureDetail(r.message());
@@ -716,9 +1184,13 @@ final class ExportCoordinator {
             host.setStatus(tr("status.noFileOpen"));
             return;
         }
+        if (b.getContent().isBlank()) {
+            host.setStatus(tr("status.print.nothing")); // a blank sheet is not worth a preview or a job
+            return;
+        }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            noPrinter(this::exportCodePdf);
             return;
         }
         Settings s = host.settings();
@@ -728,6 +1200,8 @@ final class ExportCoordinator {
                 s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(),
                 s.getTabSize(),
+                bufferBaseName(b),
+                s.isPdfPageFooter(),
                 prepared -> openPrintPreview(job, prepared)));
     }
 
@@ -777,39 +1251,41 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.noPreview"));
             return;
         }
+        if (b.getContent().isBlank()) {
+            host.setStatus(tr("status.print.nothing")); // a blank sheet is not worth a preview or a job
+            return;
+        }
         if (previewUnparsable(b)) {
             host.setStatus(tr("status.print.cannotPrintUnparsed"));
             return;
         }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            noPrinter(this::exportPreviewPdf);
             return;
         }
         preparePrint(() -> preparePreviewPrint(b, job));
     }
 
     /** Starts the preparation for {@code b}'s kind of preview; every branch ends in {@link #openPrintPreview}. */
-    private void preparePreviewPrint(EditorBuffer b, javafx.print.PrinterJob job) {
+    private void preparePreviewPrint(EditorBuffer b, PrintPreview.Job job) {
         java.util.function.Consumer<com.editora.print.PrintService.Prepared> open =
                 prepared -> openPrintPreview(job, prepared);
         if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            printService.prepareMarkdown(b.getContent(), baseDir, open);
+            printService.prepareMarkdown(
+                    b.getContent(), baseDir, bufferBaseName(b), host.settings().isPdfPageFooter(), open);
         } else if (b.isDiagram()) { // Mermaid — CLI render
             // Light, like every other printed kind: the app theme must not reach white paper.
             printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), false, open);
         } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to a temp PNG, then paginate
             printDiagramViaImage(b, job);
-        } else if (b.isSvg()) { // rasterize the SVG source, paginate as image pages
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(java.util.List.of(png), open);
+        } else if (b.isSvg()) { // rasterize the SVG source (on the prepare thread), paginate as image pages
+            printService.prepareSvg(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    tr("status.print.noPreview"),
+                    open);
         } else if (b.isTypst()) { // Typst — CLI render to page PNGs, paginate as image pages
             typst.renderPages(b.getContent(), b.getPath(), pages -> {
                 if (pages == null || pages.isEmpty()) {
@@ -817,21 +1293,36 @@ final class ExportCoordinator {
                             job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
                     return;
                 }
-                printService.prepareImages(pages, open);
+                // A page PNG is rendered at renderPpi: that many pixels per inch of paper, 72 points.
+                double density = com.editora.typst.TypstRenderer.renderPpi() / 72.0;
+                printService.preparePageImages(
+                        pages.stream()
+                                .filter(java.util.Objects::nonNull)
+                                .map(png -> com.editora.pdf.PageImage.of(png, density))
+                                .toList(),
+                        open);
             });
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(chunks, open);
+            b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet(), this::snapshotProgress, snap -> {
+                if (snap == null || snap.images().isEmpty()) {
+                    openPrintPreview(
+                            job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
+                    return;
+                }
+                host.setStatus(tr("status.print.preparing"));
+                printService.preparePageImages(com.editora.pdf.PageImage.of(snap), prepared -> {
+                    open.accept(prepared);
+                    if (snap.truncated() && openPreview != null) { // the last page says so too
+                        host.setStatus(tr("status.print.truncated", snap.shownRows(), snap.totalRows()));
+                    }
+                });
+            });
         }
     }
 
     /** Prints a DOT/PlantUML diagram by rendering it to a temporary PNG via its CLI, then paginating the image
      *  (there's no native-vector print path for the diagram tools, unlike Markdown). */
-    private void printDiagramViaImage(EditorBuffer b, javafx.print.PrinterJob job) {
+    private void printDiagramViaImage(EditorBuffer b, PrintPreview.Job job) {
         java.nio.file.Path tmp;
         try {
             tmp = java.nio.file.Files.createTempFile("editora-diagram", ".png");
@@ -839,45 +1330,98 @@ final class ExportCoordinator {
             openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
             return;
         }
-        diagram.exportToPath(
-                b.diagramKind(),
-                b.getContent(),
-                tmp,
-                false,
-                r -> { // light: this is for paper
-                    if (!r.ok()) {
-                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
-                        return;
-                    }
-                    try {
-                        byte[] png = java.nio.file.Files.readAllBytes(tmp);
-                        java.nio.file.Files.deleteIfExists(tmp);
+        try {
+            diagram.exportToPath(
+                    b.diagramKind(),
+                    b.getContent(),
+                    tmp,
+                    false,
+                    r -> { // light: this is for paper
+                        byte[] png = null;
+                        String error = r.message();
+                        try {
+                            png = takeRenderedPng(tmp, r.ok());
+                        } catch (java.io.IOException e) {
+                            error = e.getMessage() == null ? e.toString() : e.getMessage();
+                        }
+                        if (png == null) {
+                            openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, error));
+                            return;
+                        }
                         printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
-                    } catch (java.io.IOException e) {
-                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-                    }
-                });
-    }
-
-    /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
-    private void openPrintPreview(javafx.print.PrinterJob job, com.editora.print.PrintService.Prepared prepared) {
-        openPrintPreview(PrintPreview.Job.of(job), prepared);
+                    });
+        } catch (RuntimeException | Error e) {
+            deleteQuietly(tmp); // the render never started: its callback will not run
+            throw e;
+        }
     }
 
     /**
-     * {@link #openPrintPreview(javafx.print.PrinterJob, com.editora.print.PrintService.Prepared)} on the
-     * preview's own job type. Every way out clears the busy state: a preparation error, a failure to
-     * paginate or open (any {@code Throwable} — the pagination runs the whole layout engine here, and an
-     * escaped error used to leave "Preparing print preview…" in the status bar with no dialog), and the
-     * preview's result and cancel callbacks.
+     * The PNG a diagram render left at {@code tmp} — {@code null} when it did not render — deleting the
+     * temp file on every path: a failed render and a failed read leave nothing behind either.
+     */
+    static byte[] takeRenderedPng(java.nio.file.Path tmp, boolean rendered) throws java.io.IOException {
+        try {
+            return rendered ? java.nio.file.Files.readAllBytes(tmp) : null;
+        } finally {
+            deleteQuietly(tmp);
+        }
+    }
+
+    private static void deleteQuietly(java.nio.file.Path file) {
+        try {
+            java.nio.file.Files.deleteIfExists(file);
+        } catch (java.io.IOException | RuntimeException e) {
+            // a temp file the system will clear; nothing the user can act on
+        }
+    }
+
+    /**
+     * There is no printer to print to: says so in the status bar, as before, and in a dialog that offers the
+     * way out — {@code exportPdf}, the Export to PDF command for what was being printed. (Ctrl+P used to
+     * look like it did nothing: the status line was the only sign.)
+     */
+    private void noPrinter(Runnable exportPdf) {
+        host.setStatus(tr("status.print.noPrinter"));
+        Alert alert = noPrinterAlert();
+        javafx.scene.control.ButtonType export = alert.getButtonTypes().get(0);
+        if (noPrinterPrompt.apply(alert).filter(export::equals).isPresent()) {
+            exportPdf.run();
+        }
+    }
+
+    /** The "No printer is available" dialog: Export to PDF… (its first button) or Cancel. */
+    Alert noPrinterAlert() {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.print.title"));
+        alert.setHeaderText(tr("dialog.print.noPrinter.header"));
+        alert.setContentText(tr("dialog.print.noPrinter.content"));
+        alert.getButtonTypes()
+                .setAll(
+                        new javafx.scene.control.ButtonType(
+                                tr("dialog.print.noPrinter.exportPdf"),
+                                javafx.scene.control.ButtonBar.ButtonData.OK_DONE),
+                        javafx.scene.control.ButtonType.CANCEL);
+        return Dialogs.styled(alert);
+    }
+
+    /**
+     * Opens the Print Preview window for a prepared document, or reports a preparation failure. Every way
+     * out clears the busy state: a preparation error, a failure to paginate or open (any {@code Throwable} —
+     * the pagination runs the whole layout engine here, and an escaped error used to leave "Preparing print
+     * preview…" in the status bar with no dialog), and the preview's result and cancel callbacks. A job that
+     * does not reach an open preview is cancelled here; one that does is the preview's to end or cancel.
      */
     void openPrintPreview(PrintPreview.Job job, com.editora.print.PrintService.Prepared prepared) {
         printPreparing = false;
         if (openPreview != null) { // a request that was already on its way when the first preview opened
+            cancelQuietly(job);
             openPreview.toFront();
             return;
         }
         if (!prepared.ok()) {
+            cancelQuietly(job);
             printReporter.accept(new com.editora.print.PrintService.Result(false, prepared.error()));
             return;
         }
@@ -894,13 +1438,24 @@ final class ExportCoordinator {
                     () -> {
                         openPreview = null;
                         host.setStatus(tr("status.print.cancelled"));
-                    });
+                    },
+                    previewMemory);
             openPreview = preview;
             preview.show();
         } catch (Throwable t) {
             openPreview = null;
+            cancelQuietly(job); // the preview never took the job over
             printReporter.accept(new com.editora.print.PrintService.Result(
                     false, t.getMessage() == null ? t.toString() : t.getMessage()));
+        }
+    }
+
+    /** Cancels a printer job that will not be used; a job that cannot even do that is simply dropped. */
+    private static void cancelQuietly(PrintPreview.Job job) {
+        try {
+            job.cancel();
+        } catch (Throwable ignored) {
+            // the reason the job is being dropped is what gets reported
         }
     }
 

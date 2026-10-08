@@ -30,17 +30,14 @@ final class CsvCoordinator {
         /** Moves the active buffer's caret to {@code line} (0-based paragraph) / {@code col} (char offset). */
         void jumpTo(int line, int col);
 
-        /** Exports the CSV as a PDF (reuses the Markdown-table → PDF pipeline; a FileChooser picks the file). */
+        /** Exports the CSV as a PDF table (a FileChooser picks the file). */
         void exportPdf(String csvText, String baseName);
 
-        /** Opens the print preview for the CSV (reuses the Markdown-table → print pipeline). */
+        /** Opens the print preview for the CSV as a table. */
         void printCsv(String csvText);
 
-        /** Exports parsed {@code rows} to Excel ({@code .xlsx}); {@code baseName} seeds the FileChooser. */
-        void exportExcel(List<List<String>> rows, boolean hasHeader, String baseName);
-
-        /** Exports parsed {@code rows} to an OpenDocument spreadsheet ({@code .ods}). */
-        void exportOds(List<List<String>> rows, boolean hasHeader, String baseName);
+        /** Exports the CSV to Excel ({@code .xlsx}, {@code xlsx} true) or an OpenDocument {@code .ods}. */
+        void exportSpreadsheet(String csvText, String baseName, boolean xlsx);
     }
 
     /** Above this size the whole-file parse + TableView build is skipped (the huge-file guard idiom). */
@@ -251,11 +248,11 @@ final class CsvCoordinator {
     }
 
     private void exportExcel() {
-        withCsv(b -> ops.exportExcel(currentRows(b), headerRowFor(b), host.bufferBaseName(b)));
+        withCsv(b -> ops.exportSpreadsheet(b.getContent(), host.bufferBaseName(b), true));
     }
 
     private void exportOds() {
-        withCsv(b -> ops.exportOds(currentRows(b), headerRowFor(b), host.bufferBaseName(b)));
+        withCsv(b -> ops.exportSpreadsheet(b.getContent(), host.bufferBaseName(b), false));
     }
 
     /** Runs {@code action} on the active buffer when it's a CSV/TSV file and the feature is on. */
@@ -266,14 +263,27 @@ final class CsvCoordinator {
         }
     }
 
-    /** The active buffer's grid header-row state (defaults to true when no grid is built yet). */
-    private boolean headerRowFor(EditorBuffer b) {
-        CsvGridPanel panel = panels.get(b);
-        return panel == null || panel.isHeaderRow();
-    }
-
-    private List<List<String>> currentRows(EditorBuffer b) {
-        return CsvParser.parse(b.getContent(), CsvParser.detectDelimiter(b.getContent()));
+    /**
+     * What a print or an export of {@code b} holds while its grid is on screen (Split or Preview): the
+     * grid's visible rows in displayed order and its header setting — the four outputs used to ignore the
+     * filter, the sort and (the PDF and the print) the header checkbox, and write the whole file. Null in
+     * source mode, where there is no grid state to follow, and for a file too large for the grid; the
+     * caller then puts out the whole file. The grid is re-parsed first when the text changed since its
+     * last (debounced) build, so an edit made a moment ago is not left out.
+     */
+    CsvGridPanel.Shown shownFor(EditorBuffer b) {
+        CsvGridPanel panel = b == null ? null : panels.get(b);
+        if (panel == null || !b.isCsv() || b.getMarkdownViewMode() == EditorBuffer.MarkdownViewMode.EDITOR) {
+            return null;
+        }
+        String text = b.getContent();
+        if (text.length() > MAX_PREVIEW_CHARS) {
+            return null;
+        }
+        if (!text.equals(builtFrom.get(b))) {
+            rebuild(b);
+        }
+        return panel.shown();
     }
 
     /** Exposed for the FX test harness (asserting a per-buffer grid was injected). */

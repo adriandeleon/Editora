@@ -44,15 +44,29 @@ public final class CsvTableDocument {
 
     /** A document holding one table: {@code rows.get(0)} is the header, short rows are padded. */
     public static Node fromRows(List<List<String>> rows) {
-        int columns = CsvParser.columnCount(rows);
+        return fromRows(rows.get(0), rows.subList(1, rows.size()));
+    }
+
+    /**
+     * A document holding one table of {@code rows} in the order given, under {@code header} — or with no
+     * header row at all when that is null (the CSV grid with "first row is a header" off: every row is
+     * data). Short rows are padded to the widest. Null when there is neither a header nor a row.
+     */
+    public static Node fromRows(List<String> header, List<List<String>> rows) {
+        if (header == null && rows.isEmpty()) {
+            return null;
+        }
+        int columns = Math.max(header == null ? 0 : header.size(), CsvParser.columnCount(rows));
         TableBlock table = new TableBlock();
-        TableHead head = new TableHead();
-        head.appendChild(row(rows.get(0), columns, true));
-        table.appendChild(head);
-        if (rows.size() > 1) {
+        if (header != null) {
+            TableHead head = new TableHead();
+            head.appendChild(row(header, columns, true));
+            table.appendChild(head);
+        }
+        if (!rows.isEmpty()) {
             TableBody body = new TableBody();
-            for (int i = 1; i < rows.size(); i++) {
-                body.appendChild(row(rows.get(i), columns, false));
+            for (List<String> cells : rows) {
+                body.appendChild(row(cells, columns, false));
             }
             table.appendChild(body);
         }
