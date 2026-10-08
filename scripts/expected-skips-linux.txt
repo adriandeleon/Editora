@@ -1,0 +1,36 @@
+# Tests the Linux CI lanes are expected to skip. Read by scripts/check_skips.py; anything skipped that
+# is not listed here fails the build. Keep the reason beside each group.
+
+# Opt-in probes: need a real JDT LS, debug adapter, Node or Codex login (-Dgroups=probe and friends).
+com.editora.ai.CodexAiProbeTest
+com.editora.lsp.JavaProjectEditingProbeTest
+com.editora.lsp.JdtlsCompactSourceProbeTest
+com.editora.lsp.JdtlsCrossFileRenameProbeFxTest
+com.editora.lsp.JdtlsDynamicRegistrationProbeTest
+com.editora.lsp.JdtlsExtensionContractProbeTest
+com.editora.lsp.JdtlsInlayRangeProbeTest
+com.editora.lsp.JdtlsPasteProbeTest
+com.editora.lsp.JdtlsProbeTest
+com.editora.lsp.JdtlsRefactorProbeTest
+com.editora.lsp.JdtlsResolveMainClassProbeTest
+com.editora.lsp.JdtlsSnippetProbeTest
+com.editora.lsp.JdtlsTypingProbeTest
+com.editora.ui.CompactSourceDebugProbeFxTest
+com.editora.ui.JavaEditingCostProbeTest
+com.editora.ui.JavaTypingSoakProbeTest
+com.editora.ui.JsDebugProbeFxTest
+com.editora.ui.MenuShadowCostProbeTest
+
+# Measurement harnesses, @Disabled by design.
+com.editora.index.SearchEverywhereBenchmarkTest
+com.editora.ui.TypingLatencyBenchmarkTest
+
+# Needs a case-insensitive volume; ext4 is not one.
+com.editora.io.CaseOnlyRenameTest#onAVolumeThatIgnoresCaseTheOtherSpellingIsAnAliasAndCanBeRenamed
+
+# One parameterised case needs a case-insensitive volume.
+com.editora.ui.FileWorkflowSaveOrderingFxTest#newerSaveFromAnotherWindowSupersedesAnOlderStagedSave
+
+# External tools the runner does not install (a JRE-sized download each). Covered on developer machines.
+com.editora.diagram.PlantumlOutputTest
+com.editora.typst.TypstStagedExportTest
