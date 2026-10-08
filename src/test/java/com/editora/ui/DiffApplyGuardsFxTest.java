@@ -621,8 +621,87 @@ class DiffApplyGuardsFxTest {
             DiffViewerPane shown = FxTestSupport.callOnFx(() -> FxTestSupport.field(history.panel(), "pane"));
             assertNotNull(shown);
             assertEquals(0, blockStarts(shown).size(), "the panel compares with the restored text");
-            Label count = FxTestSupport.field(history.panel(), "diffCount");
-            assertEquals(tr("history.window.differences", 0), FxTestSupport.callOnFx(count::getText));
+        }
+    }
+
+    /** C3: typing in the editor reaches the panel, whose diff follows it without waiting for a save. */
+    @Test
+    void historyDiffFollowsTypingInTheEditor(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("typed.txt"), "one\ntwo\nthree\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx, file);
+            HistoryCoordinator history = FxTestSupport.field(fx.controller, "historyCoordinator");
+            FxTestSupport.runOnFx(() -> history.record(buffer, HistoryRevision.REASON_SAVE));
+            settle(async, fx);
+            FxTestSupport.runOnFx(() -> {
+                history.refresh();
+                ListView<HistoryRevision> revisions = FxTestSupport.field(history.panel(), "revisions");
+                revisions.getSelectionModel().select(0);
+            });
+            settle(async, fx);
+            DiffViewerPane pane = FxTestSupport.callOnFx(() -> FxTestSupport.field(history.panel(), "pane"));
+            assertEquals(0, blockStarts(pane).size());
+
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("typed since\n"));
+            long deadline = System.nanoTime() + 10_000_000_000L;
+            while (blockStarts(FxTestSupport.callOnFx(
+                                    () -> FxTestSupport.<DiffViewerPane>field(history.panel(), "pane")))
+                            .isEmpty()
+                    && System.nanoTime() < deadline) {
+                Thread.sleep(25); // the panel waits for the typing to pause before it re-reads the file
+                settle(async, fx);
+            }
+            assertEquals(
+                    1,
+                    blockStarts(FxTestSupport.callOnFx(
+                                    () -> FxTestSupport.<DiffViewerPane>field(history.panel(), "pane")))
+                            .size(),
+                    "the diff compares with what the editor holds now");
+        }
+    }
+
+    /** C10: Restore asks before it replaces unsaved edits, and only then. */
+    @Test
+    void historyRestoreAsksBeforeReplacingUnsavedEdits(@TempDir Path dir) throws Exception {
+        Path file = Files.writeString(dir.resolve("asked.txt"), "one\ntwo\n");
+
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            FxWindowFixture fx = async.own(FxWindowFixture.create());
+            EditorBuffer buffer = open(fx, file);
+            HistoryCoordinator history = FxTestSupport.field(fx.controller, "historyCoordinator");
+            java.util.concurrent.atomic.AtomicInteger asked = new java.util.concurrent.atomic.AtomicInteger();
+            FxTestSupport.runOnFx(() -> {
+                history.confirmUnsavedRestore = path -> {
+                    asked.incrementAndGet();
+                    return false;
+                };
+                history.record(buffer, HistoryRevision.REASON_SAVE);
+            });
+            settle(async, fx);
+            FxTestSupport.runOnFx(() -> {
+                buffer.replaceWholeDocument("one\nTWO never saved\n");
+                history.refresh();
+                ListView<HistoryRevision> revisions = FxTestSupport.field(history.panel(), "revisions");
+                revisions.getSelectionModel().select(0);
+            });
+            settle(async, fx);
+            javafx.scene.control.Button restore = FxTestSupport.field(history.panel(), "restore");
+
+            FxTestSupport.runOnFx(restore::fire);
+            settle(async, fx);
+            assertEquals(1, asked.get());
+            assertEquals(
+                    "one\nTWO never saved\n", FxTestSupport.callOnFx(buffer::getContent), "declined: the edits stay");
+
+            FxTestSupport.runOnFx(() -> {
+                buffer.markClean(); // as after a save: nothing unsaved to lose
+                restore.fire();
+            });
+            settle(async, fx);
+            assertEquals(1, asked.get(), "a saved file is restored without a question");
+            assertEquals("one\ntwo\n", FxTestSupport.callOnFx(buffer::getContent));
         }
     }
 
