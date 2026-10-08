@@ -77,6 +77,10 @@ class DebugCoordinatorCommandsFxTest {
     private final List<String> stored = new ArrayList<>();
     private volatile boolean saveOk = true;
     private volatile String promptAnswer;
+    private volatile String promptInitial;
+    private int settingsSaves;
+    private OverlayHost overlay;
+    private javafx.scene.layout.StackPane sceneRoot;
     private int saves;
 
     private final class Host extends CoordinatorHostStub {
@@ -104,10 +108,21 @@ class DebugCoordinatorCommandsFxTest {
 
         @Override
         public void promptText(String title, String label, String initial, Consumer<String> onAccept) {
+            promptInitial = initial;
             String answer = promptAnswer;
             if (answer != null) {
                 onAccept.accept(answer);
             }
+        }
+
+        @Override
+        public OverlayHost overlayHost() {
+            return overlay;
+        }
+
+        @Override
+        public void requestSave() {
+            settingsSaves++;
         }
     }
 
@@ -195,6 +210,10 @@ class DebugCoordinatorCommandsFxTest {
         lspManager.configure(true, Map.of("java", "jdtls"));
         dap = new DapManager(lspManager);
         FxTestSupport.runOnFx(() -> {
+            sceneRoot = new javafx.scene.layout.StackPane();
+            new javafx.scene.Scene(sceneRoot, 900, 600);
+            overlay = new OverlayHost();
+            overlay.install(sceneRoot);
             host = new Host();
             host.settings.setDebugSupport(true);
             host.settings.setLspSupport(true);
@@ -858,6 +877,274 @@ class DebugCoordinatorCommandsFxTest {
         FxTestSupport.runOnFx(() -> debug.restart());
         awaitStatus(tr("status.debug.error", "launch failed: The class is not on the classpath"));
         awaitState(null);
+    }
+
+    // --- pickers ----------------------------------------------------------------------------------------
+
+    /** The rows of the picker on screen, as shown. */
+    private List<String> pickerRows() throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            javafx.scene.Node card = sceneRoot.lookup(".command-palette");
+            assertTrue(card != null, "a picker is showing");
+            javafx.scene.control.ListView<?> list = (javafx.scene.control.ListView<?>) card.lookup(".list-view");
+            return list.getItems().stream().map(String::valueOf).toList();
+        });
+    }
+
+    /** Highlights row {@code index} of the picker and presses {@code key} in its field. */
+    private void answerPicker(int index, javafx.scene.input.KeyCode key) throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.Node card = sceneRoot.lookup(".command-palette");
+            assertTrue(card != null, "a picker is showing");
+            ((javafx.scene.control.ListView<?>) card.lookup(".list-view"))
+                    .getSelectionModel()
+                    .select(index);
+            card.lookup(".text-field")
+                    .fireEvent(new javafx.scene.input.KeyEvent(
+                            javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", key, false, false, false, false));
+        });
+        FxTestSupport.drainFx();
+    }
+
+    @Test
+    void severalMainClassesAreOfferedAndTheChosenOneIsDebugged() throws Exception {
+        open("src/main/java/demo/Helper.java");
+        mainClasses("demo.Args", "demo.Other");
+        java.util.concurrent.CountDownLatch listed = new java.util.concurrent.CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> {
+            debug.debugMainClass();
+            dap.resolveMainClasses(active.getPath(), options -> listed.countDown()); // answered after the first
+        });
+        assertTrue(listed.await(20, TimeUnit.SECONDS), "jdtls answered");
+        FxTestSupport.drainFx();
+
+        assertEquals(2, pickerRows().size());
+        answerPicker(1, javafx.scene.input.KeyCode.ENTER);
+
+        assertEquals("demo.Other", session("launch").launchArgs.get("mainClass"));
+        assertEquals(List.of(), statuses());
+    }
+
+    @Test
+    void anAdaptersCommandOrPathIsSetThroughThePickerAndAPrompt() throws Exception {
+        String python = project.resolve("no-such-python").toString();
+        host.settings.setPythonDebugCommand("python3");
+
+        FxTestSupport.runOnFx(() -> debug.chooseAdapterPath());
+        assertEquals(List.of("java", "python", "javascript"), pickerRows());
+        promptAnswer = "  " + python + " ";
+        answerPicker(1, javafx.scene.input.KeyCode.ENTER);
+
+        assertEquals("python3", promptInitial, "the prompt starts from the current value");
+        assertEquals(python, host.settings.getPythonDebugCommand(), "trimmed, and stored for Python only");
+        assertEquals("", host.settings.getJsDebugPath());
+        assertEquals(List.of(tr("status.settingChanged", "Python", python)), statuses());
+        assertEquals(1, settingsSaves);
+
+        clearLog();
+        String plugin = project.resolve("no-plugin-here").toString();
+        promptAnswer = plugin;
+        FxTestSupport.runOnFx(() -> debug.chooseAdapterPath());
+        answerPicker(0, javafx.scene.input.KeyCode.ENTER);
+        assertEquals(plugin, host.settings.getJavaDebugPluginPath());
+        assertEquals(List.of(tr("status.settingChanged", "Java", plugin)), statuses());
+
+        clearLog();
+        promptAnswer = "/opt/js-debug";
+        FxTestSupport.runOnFx(() -> debug.chooseAdapterPath());
+        answerPicker(2, javafx.scene.input.KeyCode.ENTER);
+        assertEquals("/opt/js-debug", host.settings.getJsDebugPath());
+        assertEquals(List.of(tr("status.settingChanged", "JavaScript", "/opt/js-debug")), statuses());
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.chooseAdapterPath());
+        answerPicker(1, javafx.scene.input.KeyCode.ESCAPE);
+        assertEquals(List.of(), statuses(), "a dismissed picker changes nothing");
+        assertEquals(python, host.settings.getPythonDebugCommand());
+        assertEquals(3, settingsSaves);
+    }
+
+    @Test
+    void anAdapterIsTurnedOnAndOffFromThePicker() throws Exception {
+        // An interpreter that does not exist: turning Python on probes for debugpy, and must start nothing.
+        host.settings.setPythonDebugCommand(project.resolve("no-such-python").toString());
+        host.settings.setPythonDebugEnabled(false);
+        boolean javascript = host.settings.isJsDebugEnabled();
+
+        FxTestSupport.runOnFx(() -> debug.chooseAdapterToggle());
+        assertEquals(List.of("python", "javascript"), pickerRows());
+        answerPicker(0, javafx.scene.input.KeyCode.ENTER);
+        assertTrue(host.settings.isPythonDebugEnabled());
+        assertEquals(javascript, host.settings.isJsDebugEnabled(), "the other adapter is left as it was");
+        assertEquals(List.of(tr("status.settingToggled", "Python", tr("common.on"))), statuses());
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.chooseAdapterToggle());
+        answerPicker(0, javafx.scene.input.KeyCode.ENTER);
+        assertFalse(host.settings.isPythonDebugEnabled());
+        assertEquals(List.of(tr("status.settingToggled", "Python", tr("common.off"))), statuses());
+        assertEquals(2, settingsSaves);
+        assertFalse(FxTestSupport.callOnFx(() -> debug.debugEffectiveFor("python")), "debugpy was never found");
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> debug.chooseAdapterToggle());
+        answerPicker(0, javafx.scene.input.KeyCode.ESCAPE);
+        assertEquals(List.of(), statuses(), "a dismissed picker toggles nothing");
+        assertEquals(2, settingsSaves);
+    }
+
+    // --- breakpoints by key -----------------------------------------------------------------------------
+
+    @Test
+    void aBreakpointIsToggledAtTheCaretOnlyWhereThereIsAGutterForIt() throws Exception {
+        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret()); // no file in front: nothing to say
+        assertEquals(List.of(), statuses());
+
+        buffer(loose.resolve("notes.txt"), "plain\ntext\n");
+        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret());
+        assertEquals(List.of(tr("status.debug.noBreakpointsHere")), statuses());
+
+        clearLog();
+        open("src/main/java/demo/Args.java");
+        EditorBuffer b = active;
+        FxTestSupport.runOnFx(() -> {
+            debug.wireBuffer(b);
+            b.getFocusedArea().moveTo(3, 0);
+            debug.toggleBreakpointAtCaret();
+        });
+        assertEquals(
+                List.of(3),
+                FxTestSupport.callOnFx(() -> b.getBreakpointManager().snapshot().stream()
+                        .map(Breakpoint::line)
+                        .toList()));
+        assertEquals(
+                List.of(3),
+                store.get(b.getPath().toString()).stream().map(Breakpoint::line).toList());
+
+        FxTestSupport.runOnFx(() -> debug.toggleBreakpointAtCaret());
+        assertNull(store.get(b.getPath().toString()), "the last breakpoint of a file takes its entry with it");
+
+        FxTestSupport.runOnFx(() -> {
+            host.settings.setDebugSupport(false);
+            debug.toggleBreakpointAtCaret();
+            debug.editBreakpointAtCaret();
+        });
+        assertEquals(List.of(tr("statusbar.tip.debugDisabled"), tr("statusbar.tip.debugDisabled")), statuses());
+        assertEquals(
+                List.of(), FxTestSupport.callOnFx(() -> b.getBreakpointManager().snapshot()));
+    }
+
+    @Test
+    void breakpointsOfFilesWithNoTabAreArmedAtLaunchFromTheirCurrentText() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        Path closed = project.resolve("src/main/java/demo/Closed.java");
+        Files.writeString(closed, "package demo;\n\nclass Closed {\n    int marked;\n}\n");
+        Path gone = project.resolve("src/main/java/demo/Deleted.java");
+        // Stored on line 3 (0-based 2) with its text; a line was since added above it. The other file no
+        // longer exists.
+        store.put(closed.toString(), new ArrayList<>(List.of(new Breakpoint(2, "", "", true, "int marked;"))));
+        store.put(gone.toString(), new ArrayList<>(List.of(at(7))));
+
+        FakeDebugAdapter.Session session = launch();
+        session.awaitRequests("setBreakpoints", 2);
+
+        Map<String, Integer> armed = new java.util.HashMap<>();
+        for (var request : session.breakpoints) {
+            armed.put(request.getSource().getPath(), request.getBreakpoints()[0].getLine());
+        }
+        assertEquals(4, armed.get(closed.toString()), "re-anchored to where its line is now (1-based)");
+        assertEquals(8, armed.get(gone.toString()), "an unreadable file keeps its stored line");
+    }
+
+    @Test
+    void anEditedFileIsSavedBeforeItsMainClassOrConfigurationIsDebugged() throws Exception {
+        open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        saveOk = false;
+
+        FxTestSupport.runOnFx(() -> {
+            active.getFocusedArea().insertText(0, "// edited\n");
+            debug.debugMainClass();
+            debug.debugConfig(config("App", "java", "demo.Args", ""));
+        });
+        FxTestSupport.drainFx();
+
+        assertEquals(2, saves);
+        assertEquals(List.of(), statuses());
+        assertEquals(List.of(), commands, "a refused save launches nothing");
+    }
+
+    // --- a compact source -------------------------------------------------------------------------------
+
+    /** A tab whose editor has found its compact {@code main}. */
+    private EditorBuffer compact(Path file, String source) throws Exception {
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, source);
+        java.util.concurrent.CountDownLatch scanned = new java.util.concurrent.CountDownLatch(1);
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer made = new EditorBuffer();
+            made.setOnRunnableChanged(scanned::countDown);
+            made.setPath(file);
+            made.setContent(source);
+            buffers.add(made);
+            active = made;
+            return made;
+        });
+        assertTrue(scanned.await(20, TimeUnit.SECONDS), "the editor never found a main in " + file.getFileName());
+        assertTrue(FxTestSupport.callOnFx(b::isCompactSource));
+        return b;
+    }
+
+    @Test
+    void aShebangScriptForAnOlderJavaIsNotDebugged() throws Exception {
+        compact(loose.resolve("tool"), "#!/usr/bin/env -S java --source 21\nvoid main() {\n}\n");
+
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+
+        assertEquals(List.of(tr("status.debug.needSource25", 21)), statuses());
+        assertFalse(FxTestSupport.callOnFx(debug::sessionLive));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in compiler is a /bin/sh script
+    void aCompactSourceIsCompiledWithTheSelectedJdkAndDebuggedAsTheClassNamedAfterIt() throws Exception {
+        Path jdk = loose.resolve("jdk");
+        Path javac = Files.createDirectories(jdk.resolve("bin")).resolve("javac");
+        Files.writeString(javac, "#!/bin/sh\nprintf '%s\\n' \"$@\" > '" + loose.resolve("javac-args.txt") + "'\n");
+        Files.setPosixFilePermissions(javac, java.nio.file.attribute.PosixFilePermissions.fromString("rwxr-xr-x"));
+        host.settings.setMavenJdkHome(jdk.toString());
+        Path file = loose.resolve("Hello.java");
+        compact(file, "void main() {\n    IO.println(\"hi\");\n}\n");
+        lspManager.openDocument(file, loose, "java", Files.readString(file));
+        for (FakeLanguageServer fake : fakes) {
+            fake.executeCommandHandler = params -> replies.get(params.getCommand());
+        }
+
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+
+        FakeDebugAdapter.Session session = session("launch");
+        assertEquals("Hello", session.launchArgs.get("mainClass"));
+        assertEquals(jdk.resolve("bin").resolve("java").toString(), session.launchArgs.get("javaExec"));
+        List<String> args = Files.readAllLines(loose.resolve("javac-args.txt"));
+        assertEquals(file.toString(), args.get(args.size() - 1));
+        assertEquals("-g", args.get(0));
+
+        // A shebang script goes through a copy compiled for the release it names.
+        awaitState("debug.state.running");
+        FxTestSupport.runOnFx(() -> debug.stop());
+        awaitState(null);
+        Path script = loose.resolve("tool");
+        compact(script, "#!/usr/bin/env -S java --source 25\nvoid main() {\n}\n");
+        lspManager.openDocument(script, loose, "java", Files.readString(script));
+        for (FakeLanguageServer fake : fakes) {
+            fake.executeCommandHandler = params -> replies.get(params.getCommand());
+        }
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        assertEquals("tool", session("launch").launchArgs.get("mainClass"));
+        List<String> shebangArgs = Files.readAllLines(loose.resolve("javac-args.txt"));
+        assertEquals(List.of("-g", "--release", "25"), shebangArgs.subList(0, 3));
+        assertTrue(shebangArgs.get(shebangArgs.size() - 1).endsWith("tool.java"), shebangArgs.toString());
     }
 
     // --- stored breakpoints follow the file -------------------------------------------------------------
