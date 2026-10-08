@@ -21,6 +21,7 @@ import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
@@ -363,6 +364,8 @@ class ProjectMapViewFxTest {
                 FxTestSupport.call(
                         surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
                 FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, javaFile);
+                // The accent fill (and so the on-emphasis ink) marks the selection of a focused map.
+                FxTestSupport.call(surface, "setFocused", new Class<?>[] {boolean.class}, true);
                 mapView.applyCss();
                 mapView.layout();
 
@@ -548,8 +551,8 @@ class ProjectMapViewFxTest {
                 new Scene(mapView, 900, 600);
                 mapView.resize(900, 600);
                 mapView.layout();
-                CheckBox keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
-                CheckBox focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
+                CheckMenuItem keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
+                CheckMenuItem focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
                 assertTrue(keepZoom.isSelected());
                 assertTrue(focusColumn.isSelected());
 
@@ -568,14 +571,18 @@ class ProjectMapViewFxTest {
             FxTestSupport.runOnFx(() -> {
                 Region surface = FxTestSupport.field(mapView, "surface");
                 assertEquals(zoomBeforeExpansion[0], (double) FxTestSupport.field(surface, "zoom"), 0.001);
+                // The new column is brought into view whole, beside the row that opened it.
                 Object newColumn = columnBoxForParent(surface, src);
-                assertEquals(surface.getWidth() / 2, center(newColumn, "x", "width"), 0.001);
-                assertEquals(surface.getHeight() / 2, center(newColumn, "y", "height"), 0.001);
+                Object parentRow = boxFor(surface, src);
+                for (Object shown : List.of(newColumn, parentRow)) {
+                    assertTrue(origin(shown, "x") >= 0 && edge(shown, "x", "width") <= surface.getWidth());
+                    assertTrue(origin(shown, "y") >= 0 && edge(shown, "y", "height") <= surface.getHeight());
+                }
 
-                CheckBox keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
-                CheckBox focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
-                keepZoom.fire();
-                focusColumn.fire();
+                CheckMenuItem keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
+                CheckMenuItem focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
+                keepZoom.setSelected(false);
+                focusColumn.setSelected(false);
                 assertFalse((boolean) FxTestSupport.field(surface, "keepZoomOnColumnOpen"));
                 assertFalse((boolean) FxTestSupport.field(surface, "focusNewColumn"));
             });
@@ -688,8 +695,8 @@ class ProjectMapViewFxTest {
                 double liveCanvasWidth = canvas.getWidth();
                 double liveCanvasHeight = canvas.getHeight();
 
-                FxTestSupport.<Button>field(mapView, "printButton").fire();
-                FxTestSupport.<Button>field(mapView, "exportPdfButton").fire();
+                FxTestSupport.<MenuItem>field(mapView, "printButton").fire();
+                FxTestSupport.<MenuItem>field(mapView, "exportPdfButton").fire();
 
                 assertTrue(printed.get().getHeight() > liveCanvasHeight, "print must include rows below the viewport");
                 assertTrue(exported.get().getHeight() > liveCanvasHeight, "PDF must include rows below the viewport");
@@ -1117,13 +1124,13 @@ class ProjectMapViewFxTest {
                 assertEquals(1, previews(mapView).size());
                 assertEquals(1, cards.size());
 
-                ToggleButton hide = FxTestSupport.field(mapView, "hideOpenNotes");
+                CheckMenuItem hide = FxTestSupport.field(mapView, "hideOpenNotes");
                 assertFalse(hide.isSelected(), "open note cards are visible by default");
-                hide.fire();
+                hide.setSelected(true);
                 assertFalse(card.isVisible());
                 assertEquals(1, cards.size(), "hiding cards must not close them");
                 assertTrue(previewFor(mapView, file).isVisible(), "the code preview remains independent");
-                hide.fire();
+                hide.setSelected(false);
                 assertTrue(card.isVisible());
 
                 FxTestSupport.<Button>field(card, "close").fire();
@@ -1620,12 +1627,12 @@ class ProjectMapViewFxTest {
 
                 @SuppressWarnings("unchecked")
                 ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
-                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, flow.getValue());
-                assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
-
-                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
-                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue());
+                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue(), "the default flow");
                 assertTrue(origin(boxFor(surface, java), "x") > origin(boxFor(surface, src), "x"));
+
+                mapView.setRememberedFlow("RIGHT_TO_LEFT", ignored -> {});
+                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, flow.getValue(), "a stored flow is kept");
+                assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
 
                 flow.setValue(ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
                 assertTrue(origin(boxFor(surface, java), "y") > origin(boxFor(surface, src), "y"));

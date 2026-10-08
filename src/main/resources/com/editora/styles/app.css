@@ -1219,14 +1219,64 @@
 .project-map-breadcrumbs {
     -fx-alignment: center-left;
 }
+/* "?" opens the mouse/keyboard help; the options (⋯) menu holds what is not a filter: the two
+   navigation options, the Personal Notes toggle, Print and PDF. Its arrow is dropped — the glyph
+   already says "menu" — and its font is left at the UI size so the popup's items stay readable (a
+   popup inherits its font from its owner). */
+.project-map-help-button {
+    -fx-font-weight: bold;
+    -fx-padding: 2 6 2 6;
+}
+.project-map-options {
+    -fx-background-color: transparent;
+    -fx-background-radius: 4;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+.project-map-options:hover,
+.project-map-options:showing {
+    -fx-background-color: -color-neutral-muted;
+}
+.project-map-options > .label {
+    -fx-padding: 0 3 0 3;
+}
+.project-map-options > .arrow-button {
+    -fx-padding: 0;
+}
+.project-map-options > .arrow-button > .arrow {
+    -fx-padding: 0;
+    -fx-shape: null;
+}
+.project-map-options:hover .icon-line,
+.project-map-options:showing .icon-line {
+    -fx-stroke: -color-fg-default;
+}
+.project-map-help {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+    -fx-padding: 10 14 12 14;
+    -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.3), 16, 0.12, 0, 5);
+}
+.project-map-help-heading {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 4 0 1 0;
+}
+.project-map-help-gesture {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-default;
+}
+.project-map-help-text {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-muted;
+}
 .project-map-breadcrumb-separator {
     -fx-font-size: 10px;
     -fx-text-fill: -color-fg-muted;
-}
-.project-map-filter-heading {
-    -fx-text-fill: -color-fg-muted;
-    -fx-font-size: 10px;
-    -fx-padding: 0 2 0 1;
 }
 .project-map-filter-chip,
 .project-map-type-filter,
@@ -1255,11 +1305,19 @@
 .project-map-filter-clear:hover {
     -fx-text-fill: -color-fg-default;
 }
-.project-map-type-filter {
-    -fx-pref-width: 92px;
-}
+/* The selectors are as wide as their widest value and no wider: "Type:" / "Flow:" moved to the tooltip
+   and accessible name, and the theme's roomy combo insets are trimmed to the chips' scale. */
+.project-map-type-filter,
 .project-map-flow-filter {
-    -fx-pref-width: 132px;
+    -fx-padding: 0;
+}
+.project-map-type-filter > .list-cell,
+.project-map-flow-filter > .list-cell {
+    -fx-padding: 3 2 3 8;
+}
+.project-map-type-filter > .arrow-button,
+.project-map-flow-filter > .arrow-button {
+    -fx-padding: 0 6 0 4;
 }
 .project-map-host {
     -fx-background-color: -color-bg-default;
@@ -1279,6 +1337,10 @@
 }
 .project-map-column-filter:focused {
     -fx-border-color: -color-accent-emphasis;
+}
+.project-map-column-filter {
+    /* The theme's prompt colour is the ~3:1 "subtle" role; this prompt is the field's only label. */
+    -fx-prompt-text-fill: -color-fg-muted;
 }
 .project-map-column-hidden {
     -fx-font-size: 9px;
@@ -1321,13 +1383,35 @@
 }
 .project-map-zoom-control {
     -fx-background-color: transparent;
-    -fx-padding: 3 6 3 6;
+    -fx-background-radius: 4;
+    -fx-padding: 2 3 2 3;
     -fx-font-size: 10px;
     -fx-text-fill: -color-fg-muted;
 }
 .project-map-zoom-control:hover {
     -fx-background-color: -color-neutral-muted;
     -fx-text-fill: -color-fg-default;
+}
+/* Wide enough for "225%", so the bar keeps its width while zooming and the figure is never cut. */
+.project-map-zoom-level {
+    -fx-min-width: 38px;
+    -fx-alignment: center;
+    -fx-padding: 2 2 2 2;
+}
+.project-map-zoom-level:hover {
+    -fx-background-color: transparent;
+    -fx-text-fill: -color-fg-muted;
+}
+/* Shown over the canvas when a query or filter chip matches no loaded file. */
+.project-map-no-matches {
+    -fx-background-color: -color-bg-overlay;
+    -fx-background-radius: 8;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 8;
+    -fx-padding: 8 14 8 14;
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-default;
+    -fx-text-alignment: center;
 }
 .project-map-preview {
     -fx-effect: dropshadow(gaussian, rgba(0, 0, 0, 0.42), 22, 0.16, 0, 7);
@@ -1352,7 +1436,8 @@
     -fx-text-fill: -color-fg-default;
 }
 .project-map-preview-title .toolbar-icon {
-    -fx-fill: -project-file-color;
+    /* Not -project-file-color: that is defined on .project-tree, which a preview card is not inside. */
+    -fx-fill: -color-fg-muted;
 }
 .project-map-preview-status {
     -fx-font-size: 10px;
@@ -1385,39 +1470,45 @@
     -fx-border-width: 0 2 2 0;
     -fx-opacity: 0.72;
 }
+/* A Personal Notes card is a sticky note in either theme: the warning (amber) family gives a pale
+   yellow sheet on light themes and a dark amber one on dark themes, with the theme's own ink on it. */
 .project-map-note-preview-frame,
 .project-map-note-preview-scroll,
 .project-map-note-preview-scroll > .viewport,
 .project-map-note-preview-notes {
-    -fx-background-color: #fff9c4;
+    -fx-background-color: -color-warning-subtle;
+}
+.project-map-note-preview-frame {
+    -fx-border-color: -color-warning-muted;
 }
 .project-map-note-preview-header {
-    -fx-background-color: #fff3ad;
-    -fx-border-color: transparent transparent #eadf9b transparent;
+    -fx-background-color: -color-warning-muted, -color-warning-subtle;
+    -fx-background-insets: 0, 0 0 1 0;
+    -fx-border-color: transparent;
 }
 .project-map-note-preview .label,
 .project-map-note-preview .button {
-    -fx-text-fill: #3d3520;
+    -fx-text-fill: -color-fg-default;
 }
 .project-map-note-preview-kind {
-    -fx-background-color: rgba(112, 90, 0, 0.12);
+    -fx-background-color: -color-warning-muted;
     -fx-background-radius: 4;
     -fx-padding: 1 5 1 5;
     -fx-font-size: 8px;
     -fx-font-weight: bold;
 }
 .project-map-note-preview-editor {
-    -fx-control-inner-background: #fff9c4;
-    -fx-text-fill: #3d3520;
-    -fx-highlight-fill: #eadf9b;
-    -fx-highlight-text-fill: #3d3520;
-    -fx-border-color: #eadf9b;
+    -fx-control-inner-background: -color-warning-subtle;
+    -fx-text-fill: -color-fg-default;
+    -fx-highlight-fill: -color-warning-muted;
+    -fx-highlight-text-fill: -color-fg-default;
+    -fx-border-color: -color-warning-muted;
     -fx-border-radius: 4;
     -fx-background-radius: 4;
     -fx-font-size: 12px;
 }
 .project-map-note-preview-empty {
-    -fx-text-fill: #6b6040;
+    -fx-text-fill: -color-fg-muted;
 }
 
 /* Zero-sized Shapes let Canvas painting consume the active AtlantaFX palette after CSS resolution. */
@@ -1427,6 +1518,10 @@
 .project-map-probe-text { -fx-fill: -color-fg-default; }
 .project-map-probe-muted { -fx-fill: -color-fg-muted; }
 .project-map-probe-accent { -fx-fill: -color-accent-emphasis; }
+.project-map-probe-accent-fg { -fx-fill: -color-accent-fg; }
+.project-map-probe-accent-subtle { -fx-fill: -color-accent-subtle; }
+.project-map-probe-focus-ring { -fx-fill: -focus-ring; }
+.project-map-probe-danger { -fx-fill: -color-danger-fg; }
 .project-map-probe-on-accent { -fx-fill: -color-fg-emphasis; }
 .project-map-probe-warning { -fx-fill: -state-amber; }
 .project-map-probe-success { -fx-fill: -state-green; }
@@ -1440,6 +1535,11 @@
 }
 .project-tree .folder-cell .toolbar-icon { -fx-fill: -project-folder-color; }
 .project-tree .file-cell .toolbar-icon { -fx-fill: -project-file-color; }
+/* The map's selected row is an accent fill: its glyph is rasterised in the on-accent ink instead of a
+   folder, file-type or Git colour that would vanish into the fill. The extra class on the first compound
+   outranks every .project-tree status rule below. */
+.project-map-surface.project-tree .project-map-icon-on-accent .toolbar-icon { -fx-fill: -color-fg-emphasis; }
+.project-map-surface.project-tree .project-map-icon-on-accent .icon-line { -fx-stroke: -color-fg-emphasis; }
 /* Drag-and-drop move target: the folder cell being hovered while dragging file(s) onto it. */
 .project-tree .tree-cell.project-drop-target {
     -fx-background-color: -color-accent-subtle;
