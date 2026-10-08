@@ -1223,4 +1223,147 @@ class LspManagerFeatureRequestsFxTest {
         assertEquals(opened + 1, manager.documentVersion(file));
         Platform.runLater(() -> {});
     }
+
+    // --- no server, and the smaller answers ----------------------------------------------------------
+
+    /** Every request for a file no server manages calls back with its empty value instead of hanging. */
+    @Test
+    void theRemainingRequestsCallBackEmptyForAnUnmanagedFile() throws Exception {
+        Path other = unopened();
+
+        assertNull(
+                this.<org.eclipse.lsp4j.SignatureHelp>await(cb -> manager.signatureHelp(other, 0, 0, "(", false, cb)));
+        assertEquals(
+                List.of(), this.<List<LspManager.CodeLensSpan>>await(cb -> manager.requestCodeLens(other, 0, 9, cb)));
+        assertEquals(
+                List.of(),
+                this.<List<LspTextEdit>>await(cb -> manager.rangeFormatting(other, 0, 0, 0, 1, 4, true, cb)));
+        assertEquals(List.of(), this.<List<SymbolNode>>await(cb -> manager.latestDocumentSymbols(other, cb)));
+        assertEquals(
+                List.of(),
+                this.<List<com.editora.editor.FoldRegions.Region>>await(cb -> manager.foldingRanges(other, cb)));
+        assertEquals(List.of(), this.<List<int[]>>await(cb -> manager.selectionRanges(other, 0, 0, new int[] {0}, cb)));
+        assertNull(this.<Boolean>await(cb -> manager.isTestFile(other, cb)));
+        assertNull(this.<String>await(cb -> manager.resolveStackTraceLocation(other, "at demo.A.go(A.java:3)", cb)));
+        assertFalse(this.<Boolean>await(cb -> manager.organizeImports(other, 0, 0, cb)));
+        assertNull(this.<String>await(cb -> manager.fullyQualifiedName(other, 0, 0, cb)));
+        var references = new AtomicReference<List<LspManager.Target>>();
+        manager.references(other, 0, 0, references::set);
+        assertEquals(List.of(), references.get());
+        manager.retain(other).run(); // nothing to keep alive, nothing to release
+        manager.pullDiagnostics(null);
+        manager.closeDocument(null);
+        assertNull(manager.managedServerId(other));
+        assertFalse(manager.supportsSelectionRanges(other));
+    }
+
+    @Test
+    void aBlankTraceLineIsNotSentForResolution() throws Exception {
+        var fake = open();
+        assertNull(this.<String>await(cb -> manager.resolveStackTraceLocation(file, "  ", cb)));
+        assertNull(this.<String>await(cb -> manager.resolveStackTraceLocation(file, null, cb)));
+        assertTrue(fake.executedCommands.isEmpty());
+    }
+
+    /** The boolean arrives as a Java Boolean in process and as a JSON primitive off the wire. */
+    @Test
+    void isTestFileReadsTheJsonBooleanAndTreatsAnythingElseAsUnknown() throws Exception {
+        var fake = open();
+        fake.executeCommandResponse = new com.google.gson.JsonPrimitive(false);
+        assertEquals(Boolean.FALSE, this.<Boolean>await(cb -> manager.isTestFile(file, cb)));
+        fake.executeCommandResponse = new com.google.gson.JsonPrimitive("yes");
+        assertNull(this.<Boolean>await(cb -> manager.isTestFile(file, cb)), "not a boolean: don't know");
+        fake.executeCommandResponse = 1;
+        assertNull(this.<Boolean>await(cb -> manager.isTestFile(file, cb)));
+    }
+
+    /** An answer in the shape of an edit that is not one degrades to "nothing generated". */
+    @Test
+    void aMalformedEditAnswerIsNothingGenerated() throws Exception {
+        var fake = open();
+        var applied = new AtomicReference<>(false);
+        manager.setApplyEditHandler((mapped, done) -> {
+            applied.set(true);
+            done.accept(true);
+        });
+        fake.rawResponse = JsonParser.parseString("{\"changes\":\"not a map of edits\"}");
+
+        assertFalse(this.<Boolean>await(cb -> manager.organizeImports(file, 0, 10, cb)));
+        assertFalse(applied.get());
+    }
+
+    /** A pull server that answers "unchanged" re-publishes nothing; the editor is told, so it can put back
+     *  the marks an edit cleared. */
+    @Test
+    void anUnchangedDiagnosticReportIsPassedOnAsUnchanged() throws Exception {
+        capabilities.setDiagnosticProvider(new org.eclipse.lsp4j.DiagnosticRegistrationOptions());
+        var fake = open();
+        var unchanged = new CountDownLatch(1);
+        var reported = new AtomicReference<Path>();
+        manager.setOnDiagnosticsUnchanged(f -> {
+            reported.set(f);
+            unchanged.countDown();
+        });
+        fake.diagnosticResponse = new org.eclipse.lsp4j.DocumentDiagnosticReport(
+                new org.eclipse.lsp4j.RelatedUnchangedDocumentDiagnosticReport("r1"));
+
+        manager.pullDiagnostics(file);
+
+        assertTrue(unchanged.await(10, TimeUnit.SECONDS), "the editor was never told");
+        assertEquals(file, reported.get());
+        manager.setOnDiagnosticsUnchanged(null); // a missing handler is a no-op, not a null to trip over
+        manager.invalidateRequests(file);
+        manager.pullDiagnostics(file);
+        fake.failEverything = true;
+        manager.invalidateRequests(file);
+        manager.pullDiagnostics(file); // a failed pull publishes nothing and reports nothing
+        Platform.runLater(() -> {});
+    }
+
+    /** Two commands at once would share one stale-edit guard: the second is refused, not interleaved. */
+    @Test
+    void aSecondCommandWhileOneIsRunningIsRefused() throws Exception {
+        var fake = open();
+        var firstReply = new java.util.concurrent.CompletableFuture<Object>();
+        var entered = new CountDownLatch(1);
+        var results = new CopyOnWriteArrayList<String>();
+        var done = new CountDownLatch(2);
+        fake.executeCommandHandler = params -> {
+            entered.countDown();
+            return firstReply.join(); // the server is still working on the first command
+        };
+        Thread first = Thread.ofVirtual()
+                .start(() -> manager.applyCodeAction(file, (Object) new Command("a", "java.a"), ok -> {
+                    results.add("first:" + ok);
+                    done.countDown();
+                }));
+        assertTrue(entered.await(10, TimeUnit.SECONDS));
+
+        manager.applyCodeAction(file, (Object) new Command("b", "java.b"), ok -> {
+            results.add("second:" + ok);
+            done.countDown();
+        });
+        firstReply.complete(null);
+        first.join();
+
+        assertTrue(done.await(10, TimeUnit.SECONDS));
+        assertTrue(results.contains("second:false"), "the overlapping command must be refused: " + results);
+        assertTrue(results.contains("first:true"), "the first one is unaffected: " + results);
+        assertEquals(1, fake.executedCommands.size(), "the refused command never reached the server");
+    }
+
+    @Test
+    void restartingAServerDropsItsSessionsAndTheNextOpenStartsAFreshOne() {
+        open();
+        assertTrue(manager.isManaged(file));
+        assertEquals("java", manager.managedServerId(file));
+
+        manager.restartServer("java");
+        assertFalse(manager.isManaged(file));
+        manager.invalidateDetection();
+
+        manager.openDocument(file, root, "java", "class A {}\n");
+        assertEquals(2, fakes.size());
+        assertTrue(manager.isManaged(file));
+    }
 }

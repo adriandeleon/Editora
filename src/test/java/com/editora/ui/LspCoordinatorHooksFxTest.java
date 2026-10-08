@@ -541,6 +541,65 @@ class LspCoordinatorHooksFxTest {
         assertFalse(fx.manager.isManaged(root.resolve("NotOpen.java")));
     }
 
+    /**
+     * astro-ls has no TypeScript of its own and would load the folder's — code from a folder nobody has
+     * trusted. The server is not started (nothing is forked here: the manager withholds before it would),
+     * and the user is told why and which command changes that.
+     */
+    @Test
+    void anAstroServerWithheldForAnUntrustedFolderIsExplained() throws Exception {
+        Path site = Files.createDirectories(root.resolve("site"));
+        Files.createFile(Files.createDirectories(site.resolve("node_modules/typescript/lib"))
+                .resolve("typescript.js"));
+        Path page = Files.writeString(site.resolve("index.astro"), "---\n---\n");
+        String explained = tr("status.lsp.astroSdkUntrusted", tr("command.lsp.trustProjectSettings"));
+        var told = new CountDownLatch(1);
+        var settings = new com.editora.config.Settings();
+        settings.setAstroLspCommand(root.resolve("absent/astro-ls") + " --stdio");
+        EditorBuffer buffer = FxTestSupport.callOnFx(EditorBuffer::new);
+        var host = new CoordinatorHostStub() {
+            @Override
+            public com.editora.config.Settings settings() {
+                return settings;
+            }
+
+            @Override
+            public void forEachBuffer(Consumer<EditorBuffer> action) {
+                action.accept(buffer);
+            }
+
+            @Override
+            public EditorBuffer activeBuffer() {
+                return buffer;
+            }
+
+            @Override
+            public void setStatus(String message) {
+                if (explained.equals(message)) {
+                    told.countDown();
+                }
+            }
+        };
+        var real = new com.editora.lsp.LspManager((f, d) -> {}, (t, m) -> {});
+        try {
+            real.configure(true, java.util.Map.of("astro", settings.getAstroLspCommand()));
+            FxTestSupport.runOnFx(() -> {
+                LspCoordinator coordinator = new LspCoordinator(host, real, new LspOpsStub());
+                coordinator.setServerAvailableForTest("astro", true);
+                buffer.setPath(page);
+                buffer.setContent("---\n---\n");
+                coordinator.syncBuffer(buffer);
+            });
+
+            assertTrue(told.await(30, TimeUnit.SECONDS), "the user was never told why there is no Astro server");
+            assertFalse(real.isManaged(page), "a document must not look managed by a server that never started");
+            assertFalse(FxTestSupport.callOnFx(buffer::isLspActive));
+        } finally {
+            real.close();
+            FxTestSupport.runOnFx(buffer::dispose);
+        }
+    }
+
     // --- the questions asked before something irreversible -------------------------------------------
 
     /** What a dialog said, and the answer given to it. */
