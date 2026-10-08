@@ -131,4 +131,59 @@ class SettingsTemplateRemoveFxTest {
             });
         }
     }
+
+    /** T17/T19: a plugin's template is listed and tagged, the user's file wins, and the body does not wrap. */
+    @Test
+    void pluginTemplatesAreListedAndTheBodyEditorShowsCodeUnwrapped() throws Exception {
+        Path configDir = Files.createTempDirectory("editora-template-plugin");
+        Path plugin = Files.createDirectories(configDir.resolve("fake-plugins/acme/templates"));
+        Files.writeString(plugin.resolve("acme-note.json"), "{\"name\":\"Acme Note\",\"body\":\"n\"}");
+        Files.writeString(plugin.resolve("shared.json"), "{\"name\":\"Plugin Shared\",\"body\":\"p\"}");
+        Files.writeString(
+                Files.createDirectories(configDir.resolve("templates")).resolve("shared.json"),
+                "{\"name\":\"My Shared\",\"body\":\"u\"}");
+        try (var fx = FxWindowFixture.create(configDir, shared -> {})) {
+            FxTestSupport.runOnFx(() -> {
+                TemplateCoordinator tc = FxTestSupport.field(fx.controller, "templateActions");
+                tc.templates.addExtraSourceDir(plugin);
+                SettingsWindow w = FxTestSupport.field(fx.controller, "settingsWindow");
+                Stage owner = new Stage();
+                owner.setWidth(1400);
+                owner.setHeight(900);
+                w.showTemplates(owner);
+                Region pg = page(w, "TEMPLATES");
+                @SuppressWarnings("unchecked")
+                ListView<Template> list = (ListView<Template>)
+                        all(pg, ListView.class, new ArrayList<>()).get(0);
+                Template note = list.getItems().stream()
+                        .filter(t -> t.id().equals("acme-note"))
+                        .findFirst()
+                        .orElseThrow();
+                assertEquals(Template.Origin.PLUGIN, note.origin(), "plugin templates are shown");
+                Template shared = list.getItems().stream()
+                        .filter(t -> t.id().equals("shared"))
+                        .findFirst()
+                        .orElseThrow();
+                assertEquals("My Shared", shared.name(), "the user's file wins over the plugin's");
+                list.getSelectionModel().select(note);
+                assertTrue(button(pg, tr("settings.template.remove")).isDisabled(), "not the user's to remove");
+                list.getSelectionModel().select(shared);
+                assertFalse(button(pg, tr("settings.template.remove")).isDisabled());
+
+                org.fxmisc.richtext.CodeArea body = all(pg, org.fxmisc.richtext.CodeArea.class, new ArrayList<>())
+                        .get(0);
+                assertFalse(body.isWrapText(), "a template body is code: it scrolls, it does not re-wrap");
+            });
+            FxTestSupport.drainFx(); // let the shown page lay out at its real size
+            FxTestSupport.runOnFx(() -> {
+                SettingsWindow w = FxTestSupport.field(fx.controller, "settingsWindow");
+                org.fxmisc.richtext.CodeArea body = all(
+                                page(w, "TEMPLATES"), org.fxmisc.richtext.CodeArea.class, new ArrayList<>())
+                        .get(0);
+                // The headless screen clamps the window near its minimum width, the worst case for this form.
+                assertTrue(body.getWidth() >= 300, "body editor is " + body.getWidth() + "px wide");
+                FxTestSupport.<Stage>field(w, "stage").hide();
+            });
+        }
+    }
 }

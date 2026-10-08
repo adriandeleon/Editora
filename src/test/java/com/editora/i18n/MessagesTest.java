@@ -357,6 +357,7 @@ class MessagesTest {
             Map.entry("agent.context.header", new int[] {1}),
             Map.entry("agent.exited", new int[] {0}),
             Map.entry("csvgrid.column", new int[] {0}),
+            Map.entry("template.problem.malformedJson", new int[] {0}),
             Map.entry("dialog.removeBookmark.body", new int[] {0}),
             Map.entry("dialog.review.title", new int[] {0}),
             Map.entry("diff.title.prFile", new int[] {1}),

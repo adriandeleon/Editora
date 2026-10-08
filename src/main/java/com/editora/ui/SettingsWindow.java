@@ -4264,7 +4264,11 @@ public class SettingsWindow {
                 HBox cell = new HBox(6, nm);
                 cell.setAlignment(Pos.CENTER_LEFT);
                 if (!templateUserIds.contains(t.id())) {
-                    Label tag = new Label(tr("settings.template.bundledTag"));
+                    // Not the user's own file: say whose it is (editing it saves a user copy that overrides it).
+                    Label tag = new Label(tr(
+                            t.origin() == com.editora.template.Template.Origin.PLUGIN
+                                    ? "settings.template.pluginTag"
+                                    : "settings.template.bundledTag"));
                     tag.getStyleClass().add("snippet-bundled-tag");
                     tag.setMinWidth(Region.USE_PREF_SIZE); // the name gives way, not the tag ("bund…")
                     cell.getChildren().add(tag);
@@ -4283,7 +4287,10 @@ public class SettingsWindow {
         fileName.setPromptText(tr("settings.template.fileNamePrompt"));
         CodeArea body = AreaUndo.bounded(new CodeArea());
         body.getStyleClass().addAll("editor-area", "snippet-body");
-        body.setWrapText(true);
+        // A template body is a file: its lines are shown as they will be written (scrolling sideways), not
+        // re-wrapped into something that no longer looks like the code it creates.
+        body.setWrapText(false);
+        body.setPrefWidth(480);
         // Modest preferred height so the page fits the window; GridPane Vgrow lets it expand when there's room.
         body.setPrefHeight(180);
         installEmacsKeys(body); // basic Emacs caret movement in the settings scene
@@ -4299,7 +4306,13 @@ public class SettingsWindow {
         formRow(form, 2, tr("settings.template.description"), description);
         formRow(form, 3, tr("settings.template.language"), language);
         formRow(form, 4, tr("settings.template.fileName"), fileName);
-        formRow(form, 5, tr("settings.template.body"), body);
+        // The body gets the form's full width (its label on the line above) rather than the field column:
+        // beside the list, that column is too narrow to read a line of code in.
+        Label bodyLabel = new Label(tr("settings.template.body"));
+        bodyLabel.setLabelFor(body);
+        form.add(bodyLabel, 0, 5, 2, 1);
+        form.add(body, 0, 6, 2, 1);
+        body.setMinWidth(180);
         javafx.scene.layout.GridPane.setHgrow(body, Priority.ALWAYS);
         javafx.scene.layout.GridPane.setVgrow(body, Priority.ALWAYS);
         form.setDisable(true);
@@ -4339,7 +4352,9 @@ public class SettingsWindow {
                 // The id is the file stem: one that is not a plain file name would write outside the
                 // templates folder, and one another row uses would overwrite that template's file.
                 String problem = null;
-                if (!com.editora.template.TemplateRegistry.isValidId(newId)) {
+                if (com.editora.template.TemplateRegistry.isReservedId(newId)) {
+                    problem = tr("settings.template.idReserved", newId); // index.json is the bundled list
+                } else if (!com.editora.template.TemplateRegistry.isValidId(newId)) {
                     problem = tr("settings.template.idInvalid", newId);
                 } else {
                     for (com.editora.template.Template other : templateItems) {
@@ -4377,23 +4392,29 @@ public class SettingsWindow {
                 return; // only whitespace the commit trims away: not an edit, so not a user override either
             }
             String oldId = cur.id();
+            // Save under the new id first: a rename that deleted the old file and then failed to write the
+            // new one lost the template. The wizard labels are not in this form, so they are carried over.
+            com.editora.template.Template toSave = updated.withLabels(cur.labels());
+            if (!saveTemplate(toSave)) {
+                id.setText(oldId);
+                return;
+            }
             if (!oldId.equals(newId) && templateUserIds.contains(oldId)) {
                 try {
                     templateRegistry.deleteUserTemplate(oldId); // renamed: drop the old override file
                 } catch (java.io.IOException ignored) {
-                    // best-effort
+                    // best-effort: the template is safe under its new id either way
                 }
                 templateUserIds.remove(oldId);
             }
-            templateUserIds.add(newId); // editing a bundled template makes it a user override
+            templateUserIds.add(newId); // editing a bundled or plugin template makes it a user override
             loadingTemplate = true;
             try {
-                templateItems.set(i, updated);
+                templateItems.set(i, toSave);
             } finally {
                 loadingTemplate = false;
             }
             list.refresh();
-            saveTemplate(updated);
         };
         java.util.function.Consumer<TextField> wire = tf -> {
             tf.setOnAction(e -> commit.run());
@@ -4536,8 +4557,10 @@ public class SettingsWindow {
     }
 
     /**
-     * The templates shown: bundled (shipped) ones, with any user file override of the same id and net-new
-     * user templates appended. Rebuilds {@link #templateUserIds} (the ids that are user-owned/writable).
+     * The templates shown, in the order they override one another: bundled (shipped) ones, then plugins'
+     * (replacing a bundled one of the same id, else appended), then the user's own files, which win over
+     * both. Rebuilds {@link #templateUserIds} (the ids that are user-owned: writable and removable); every
+     * other row is tagged with where it comes from.
      */
     private java.util.List<com.editora.template.Template> mergedTemplates() {
         templateUserIds.clear();
@@ -4549,30 +4572,30 @@ public class SettingsWindow {
             userById.put(u.id(), u);
             templateUserIds.add(u.id());
         }
-        java.util.List<com.editora.template.Template> merged = new java.util.ArrayList<>();
-        java.util.Set<String> seen = new java.util.HashSet<>();
+        java.util.LinkedHashMap<String, com.editora.template.Template> merged = new java.util.LinkedHashMap<>();
         for (com.editora.template.Template b : templateRegistry.bundledTemplates()) {
-            merged.add(userById.getOrDefault(b.id(), b));
-            seen.add(b.id());
+            merged.put(b.id(), b);
         }
-        for (com.editora.template.Template u : userById.values()) {
-            if (seen.add(u.id())) {
-                merged.add(u);
-            }
+        for (com.editora.template.Template plugin : templateRegistry.pluginTemplates()) {
+            merged.put(plugin.id(), plugin);
         }
-        return merged;
+        merged.putAll(userById); // the user's own file always wins
+        return new java.util.ArrayList<>(merged.values());
     }
 
-    private void saveTemplate(com.editora.template.Template t) {
+    /** Writes {@code t} to the user's templates folder; false (after saying why) when that failed. */
+    private boolean saveTemplate(com.editora.template.Template t) {
         if (templateRegistry == null) {
-            return;
+            return false;
         }
         try {
             templateRegistry.saveUserTemplate(t);
+            return true;
         } catch (java.io.IOException e) {
             Dialogs.styled(new Alert(
                             Alert.AlertType.ERROR, tr("settings.template.saveFailed", e.getMessage()), ButtonType.OK))
                     .showAndWait();
+            return false;
         }
     }
 
