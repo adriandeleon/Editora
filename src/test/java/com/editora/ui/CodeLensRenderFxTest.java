@@ -155,11 +155,12 @@ class CodeLensRenderFxTest {
                     Point2D inArea = b.getArea()
                             .sceneToLocal(bounds.getMinX() + across * bounds.getWidth(), bounds.getCenterY());
                     Point2D onScreen = b.getArea().localToScreen(inArea);
+                    // The label is mouse-transparent: a real click picks the area, never the lens.
                     Event.fireEvent(
-                            label,
+                            b.getArea(),
                             new MouseEvent(
                                     b.getArea(),
-                                    label,
+                                    b.getArea(),
                                     MouseEvent.MOUSE_CLICKED,
                                     inArea.getX(),
                                     inArea.getY(),
@@ -177,12 +178,66 @@ class CodeLensRenderFxTest {
                                     true,
                                     false,
                                     true,
-                                    new PickResult(label, inArea.getX(), inArea.getY())));
+                                    new PickResult(b.getArea(), inArea.getX(), inArea.getY())));
                 });
                 assertEquals(List.of(1, "run"), clicked, "clicked " + across + " of the way across the lens");
             }
+            // The gap before the label belongs to the code: a click there places the caret.
+            clicked.clear();
+            FxTestSupport.runOnFx(() -> {
+                ((javafx.scene.layout.Region) label).setPadding(new javafx.geometry.Insets(0, 0, 0, 20));
+                b.getNode().applyCss();
+                b.getNode().layout();
+            });
+            FxTestSupport.drainFx();
+            FxTestSupport.runOnFx(() -> {
+                var bounds = label.localToScene(label.getBoundsInLocal());
+                Event.fireEvent(b.getArea(), mouse(b, MouseEvent.MOUSE_CLICKED, bounds.getMinX() + 5, bounds));
+            });
+            assertEquals(List.of(), clicked);
+
+            // Hovering lights the lens and shows the hand; leaving it puts the cursor back.
+            FxTestSupport.runOnFx(() -> {
+                var bounds = label.localToScene(label.getBoundsInLocal());
+                var before = b.getArea().getCursor();
+                Event.fireEvent(b.getArea(), mouse(b, MouseEvent.MOUSE_MOVED, bounds.getMaxX() - 4, bounds));
+                assertEquals(javafx.scene.Cursor.HAND, b.getArea().getCursor());
+                assertTrue(label.getPseudoClassStates().stream()
+                        .anyMatch(c -> c.getPseudoClassName().equals("lens-hover")));
+                Event.fireEvent(b.getArea(), mouse(b, MouseEvent.MOUSE_MOVED, bounds.getMaxX() + 200, bounds));
+                assertEquals(before, b.getArea().getCursor());
+                assertTrue(label.getPseudoClassStates().stream()
+                        .noneMatch(c -> c.getPseudoClassName().equals("lens-hover")));
+            });
         } finally {
             FxTestSupport.runOnFx(() -> shown[0].close());
         }
+    }
+
+    /** A primary-button mouse event at scene x on the row of {@code row}, picked on the area as a real one is. */
+    private static MouseEvent mouse(
+            EditorBuffer b, javafx.event.EventType<MouseEvent> type, double sceneX, javafx.geometry.Bounds row) {
+        Point2D inArea = b.getArea().sceneToLocal(sceneX, row.getCenterY());
+        return new MouseEvent(
+                b.getArea(),
+                b.getArea(),
+                type,
+                inArea.getX(),
+                inArea.getY(),
+                0,
+                0,
+                MouseButton.PRIMARY,
+                1,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                true,
+                new PickResult(b.getArea(), inArea.getX(), inArea.getY()));
     }
 }

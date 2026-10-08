@@ -402,17 +402,19 @@ class LspCoordinatorHooksFxTest {
                 fx.server().implementations.get(0).getPosition(),
                 "the request is made from the declaration's name, where the lens put the caret");
 
-        // One lens under the click: no question.
+        // One lens under the click: no question. A references lens lists even a lone reference.
+        int opened = fx.ops.referencesWindowOpened;
         fx.run(() -> buffer.codeLens.accept(1, List.of(buffer.lenses.get(0))));
         assertFalse(fx.host.overlay.isShowing());
-        assertEquals(new LspCoordinatorFixture.Jump(user, 0, 6), fx.ops.jumps.get(1));
+        assertEquals(opened + 1, fx.ops.referencesWindowOpened);
+        assertEquals(1, fx.ops.jumps.size());
 
         // Nothing under it, or something that is not one of ours: nothing happens.
         fx.run(() -> {
             buffer.codeLens.accept(1, List.of());
             buffer.codeLens.accept(1, List.of(new EditorBuffer.CodeLens(1, "stray", "not a lens span")));
         });
-        assertEquals(2, fx.ops.jumps.size());
+        assertEquals(1, fx.ops.jumps.size());
 
         fx.host.settings.setCodeLens(false);
         fx.run(() -> fx.coordinator.requestCodeLens(buffer));

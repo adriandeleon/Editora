@@ -3285,15 +3285,15 @@
 }
 
 /* A code lens ("3 references") follows the end of its line: set apart from the code, upright so it
-   does not read as an inlay hint, and clickable. */
+   does not read as an inlay hint, and clickable. The label is mouse-transparent, so EditorBuffer sets
+   the hover state and the hand cursor itself. */
 .inlay.code-lens {
     -fx-font-style: normal;
     -fx-font-size: 0.85em;
     -fx-padding: 0 0 0 1.5em;
-    -fx-cursor: hand;
 }
 
-.inlay.code-lens:hover {
+.inlay.code-lens:lens-hover {
     -fx-text-fill: -color-accent-fg;
     -fx-underline: true;
 }

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A click on a code lens works, and a references lens always opens the References tool window.** A
+  lens ("3 references") did not react to the mouse at all: no hand cursor, no highlight, and a click only
+  placed the caret. It now lights up under the pointer and a click opens what it counts. A references
+  lens opens the References tool window with its first row selected — also for a single reference and
+  for "0 references", which shows the empty list. The *Find References* command is unchanged: it still
+  jumps straight to a lone reference.
+
 - **The branch dropdown's sections fold, and it is larger.** A click on the *Actions*, *Local* or
   *Remote* header (or Enter, or ←/→, with the header selected) collapses that section to its header, which
   then shows how many rows it hides; the choice is remembered with the workspace. A search still looks
