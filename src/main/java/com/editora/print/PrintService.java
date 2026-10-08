@@ -10,6 +10,7 @@ import java.util.function.Consumer;
 
 import javafx.application.Platform;
 import javafx.print.PageLayout;
+import javafx.print.PageRange;
 import javafx.print.PrinterJob;
 import javafx.scene.Node;
 import javafx.scene.image.Image;
@@ -18,6 +19,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 
 import com.editora.editor.GrammarRegistry;
+import com.editora.editor.MarkdownPrintAssets;
 import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.TextMateHighlighter;
 import com.editora.mermaid.Mermaid;
@@ -41,10 +43,67 @@ public final class PrintService {
     /** Outcome of a print: {@code ok} plus an error {@code message} on failure. */
     public record Result(boolean ok, String message) {}
 
+    /**
+     * The pages of one pagination. {@link #get} may build its node on demand, so a long document need not
+     * hold every page's nodes at once (code pages are line slices — see {@link CodePrintLayout#pages}); a
+     * caller asks for a page when it shows or prints it and keeps no reference afterwards. FX thread only.
+     */
+    public interface Pages {
+        int count();
+
+        /** The node of page {@code index} (0-based). A lazy implementation builds a fresh node per call. */
+        Node get(int index);
+
+        /** Pages that are already built. */
+        static Pages of(List<Node> nodes) {
+            List<Node> copy = List.copyOf(nodes);
+            return new Pages() {
+                @Override
+                public int count() {
+                    return copy.size();
+                }
+
+                @Override
+                public Node get(int index) {
+                    return copy.get(index);
+                }
+            };
+        }
+    }
+
     /** Builds the printable page nodes for a given page layout. Runs on the FX thread. */
     @FunctionalInterface
     public interface Paginator {
         List<Node> paginate(PageLayout layout);
+
+        /**
+         * The same pages as {@link #paginate}, possibly built on demand. The default wraps the eager list;
+         * a paginator whose pages are cheap to rebuild (code) overrides it.
+         */
+        default Pages pages(PageLayout layout) {
+            return Pages.of(paginate(layout));
+        }
+    }
+
+    /** Where printed pages go: a {@link PrinterJob} in the app, a recorder in tests. */
+    public interface PageSink {
+        boolean printPage(PageLayout layout, Node page);
+
+        boolean endJob();
+
+        static PageSink of(PrinterJob job) {
+            return new PageSink() {
+                @Override
+                public boolean printPage(PageLayout layout, Node page) {
+                    return job.printPage(layout, page);
+                }
+
+                @Override
+                public boolean endJob() {
+                    return job.endJob();
+                }
+            };
+        }
     }
 
     /** Result of the off-thread prepare step: a {@link Paginator} on success, else an {@code error}. */
@@ -81,24 +140,19 @@ public final class PrintService {
                     }
                 }
                 List<List<PdfText.Run>> lines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
-                deliver(
-                        onReady,
-                        new Prepared(
-                                layout -> CodePrintLayout.paginate(
-                                        lines, layout, lineNumbers, Font.font(MONO_FAMILY, CodePrintLayout.FONT_SIZE)),
-                                null));
+                deliver(onReady, new Prepared(codePaginator(lines, lineNumbers), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
         });
     }
 
-    /** Prepares {@code markdown} as the rendered preview (block-aware pagination). */
+    /** Prepares {@code markdown} as the rendered preview (block-aware pagination), always in the light theme. */
     public void prepareMarkdown(String markdown, Path baseDir, Consumer<Prepared> onReady) {
         exec.submit(() -> {
             try {
                 org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(markdown);
-                deliver(onReady, new Prepared(layout -> MarkdownPrintLayout.paginate(ast, baseDir, layout), null));
+                deliver(onReady, new Prepared(markdownPaginator(ast, baseDir), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -110,8 +164,25 @@ public final class PrintService {
      * source (the CSV print builds its table node by node, so a cell is never re-parsed as markup).
      */
     public void prepareDocument(org.commonmark.node.Node document, Path baseDir, Consumer<Prepared> onReady) {
-        exec.submit(() -> deliver(
-                onReady, new Prepared(layout -> MarkdownPrintLayout.paginate(document, baseDir, layout), null)));
+        exec.submit(() -> {
+            try {
+                deliver(onReady, new Prepared(markdownPaginator(document, baseDir), null));
+            } catch (Throwable e) {
+                deliver(onReady, new Prepared(null, message(e)));
+            }
+        });
+    }
+
+    /**
+     * The paginator for a parsed document, with its images, Mermaid diagrams and code colours resolved
+     * <b>here</b>, on the prepare thread. Pagination measures every block exactly once, so whatever is not
+     * final by then is wrong on paper: an image still loading measures 0px and overflows its page when it
+     * arrives, and highlighting applied a pulse later never reaches the printer at all.
+     */
+    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir) {
+        MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, baseDir);
+        return layout -> MarkdownPrintLayout.paginate(
+                ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight());
     }
 
     /** Prepares a standalone Mermaid diagram (rendered to PNG via mmdc, scaled to fit one page). */
@@ -178,16 +249,77 @@ public final class PrintService {
         });
     }
 
-    /** Prints each page node, ends the job, and returns the result. Must run on the FX thread. */
+    /** A code paginator whose {@link Paginator#pages} builds each page only when it is asked for. */
+    private static Paginator codePaginator(List<List<PdfText.Run>> lines, boolean lineNumbers) {
+        return new Paginator() {
+            @Override
+            public List<Node> paginate(PageLayout layout) {
+                return CodePrintLayout.paginate(lines, layout, lineNumbers, font());
+            }
+
+            @Override
+            public Pages pages(PageLayout layout) {
+                return CodePrintLayout.pages(lines, layout, lineNumbers, font());
+            }
+
+            private Font font() {
+                return Font.font(MONO_FAMILY, CodePrintLayout.FONT_SIZE);
+            }
+        };
+    }
+
+    /**
+     * The 0-based indices of the pages a job should print, ascending and without repeats, for the page
+     * ranges chosen in the print dialog ({@code JobSettings.getPageRanges()}: 1-based, inclusive, possibly
+     * several, possibly overlapping). {@code null} or empty means every page; a range is clamped to the
+     * document, so one that lies wholly past the last page selects nothing.
+     *
+     * <p>The pages have to be chosen here: JavaFX hands the ranges to the platform job, which then asks its
+     * pageable only for the page numbers inside them — and JavaFX answers each request with <em>the next
+     * node the app submits</em>, whatever its number. Submitting every page therefore printed the
+     * document's first pages under the requested numbers and failed the job on the first page too many.
+     */
+    public static int[] pageIndices(PageRange[] ranges, int pageCount) {
+        if (pageCount <= 0) {
+            return new int[0];
+        }
+        if (ranges == null || ranges.length == 0) {
+            return java.util.stream.IntStream.range(0, pageCount).toArray();
+        }
+        java.util.BitSet chosen = new java.util.BitSet(pageCount);
+        for (PageRange range : ranges) {
+            if (range == null) {
+                continue;
+            }
+            int from = Math.max(1, range.getStartPage());
+            int to = Math.min(pageCount, range.getEndPage());
+            if (from <= to) {
+                chosen.set(from - 1, to);
+            }
+        }
+        return chosen.stream().toArray();
+    }
+
+    /**
+     * Prints the pages of {@code pages} that the job's page ranges select, ends the job, and returns the
+     * result. Must run on the FX thread.
+     */
     public static Result printPages(List<Node> pages, PageLayout layout, PrinterJob job) {
+        Pages all = Pages.of(pages);
+        return printPages(
+                all, pageIndices(job.getJobSettings().getPageRanges(), all.count()), layout, PageSink.of(job));
+    }
+
+    /** Prints the pages at {@code indices}, in that order, to {@code sink} and ends the job. */
+    public static Result printPages(Pages pages, int[] indices, PageLayout layout, PageSink sink) {
         boolean ok = true;
-        for (Node page : pages) {
-            if (!job.printPage(layout, page)) {
+        for (int index : indices) {
+            if (!sink.printPage(layout, pages.get(index))) {
                 ok = false;
                 break;
             }
         }
-        boolean ended = job.endJob();
+        boolean ended = sink.endJob();
         return ok && ended ? new Result(true, "") : new Result(false, "print job failed");
     }
 

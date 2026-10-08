@@ -111,6 +111,32 @@ class MenuBarModelTest {
     }
 
     /**
+     * Printing the file and exporting it to PDF are in File, in <b>both</b> menu tables.
+     *
+     * <p>They were in the palette only. The File menu listed just the two <em>preview</em> commands, which
+     * are disabled for a source file — so the menu said printing was unavailable — and Simple UI mode's had
+     * no print entry at all. The default keymap binds no chord to either, so the menu is the way in.
+     */
+    @Test
+    void bothFileMenusPrintAndExportTheCurrentFile() {
+        for (boolean simple : new boolean[] {false, true}) {
+            List<String> file = MenuBarModel.menus(simple).stream()
+                    .filter(m -> "menubar.file".equals(m.titleKey()))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("no File menu, simple=" + simple))
+                    .entries();
+            assertTrue(file.contains("editor.print"), "File should offer Print (simple=" + simple + "): " + file);
+            assertTrue(
+                    file.contains("editor.exportPdf"),
+                    "File should offer Export to PDF (simple=" + simple + "): " + file);
+        }
+        // In the full menu they sit with the preview's own print and export entries, the file first.
+        List<String> full = MenuBarModel.menus(false).get(0).entries();
+        assertEquals(full.indexOf("editor.print") + 2, full.indexOf("preview.print"), full.toString());
+        assertEquals(full.indexOf("editor.exportPdf") + 2, full.indexOf("preview.exportPdf"), full.toString());
+    }
+
+    /**
      * The documentation link is in Help, in <b>both</b> menu tables.
      *
      * <p>Simple UI mode's Help is a deliberately short list, and this is the one entry that most belongs

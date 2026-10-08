@@ -505,14 +505,16 @@ Editora is built with the help of AI coding tools.
 - **Export to PDF** — export the active file as a real, *searchable* PDF: source code with syntax
   highlighting and optional line numbers (always a light theme), the **Markdown** preview as native
   vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
-  diagram. Run "File: Export to PDF" / "File: Export Preview to PDF" from the palette; choose line
-  numbers, syntax highlighting, and page size (Letter / A4) under *Settings → Editor → PDF Export*.
+  diagram. Use **File → Export to PDF…** for the file's text or **Export Rendered Preview to PDF…** for
+  its preview (both also in the palette); choose line numbers, syntax highlighting, and page size
+  (Letter / A4) under *Settings → Editor → Export & Print*.
 - **Export to HTML** — export a Markdown file's rendered preview to a standalone, self-contained `.html`
   file (embedded stylesheet, heading anchors, math rendered as images). Run "Preview: Export to HTML" from
   the palette.
 - **Print** — native printing of code or the rendered Markdown preview, with a print-preview window
-  first (always light, what-you-preview-is-what-prints), reusing the PDF layout core. Run "File: Print"
-  / "File: Print Preview" from the palette.
+  first (always light, what-you-preview-is-what-prints) with page setup and keyboard page navigation.
+  Use **File → Print…** for the file's text or **Print Rendered Preview…** for its preview (both also in
+  the palette).
 - **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a trigger + Tab to
   expand, or pick one with "Snippet: Insert…" (palette, Code menu; `C-c i` in the Emacs keymap) or from
   the completion popup. Triggers needn't be plain words: `#inc` (C/C++ `#include`), `!` (the HTML

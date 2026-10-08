@@ -61,37 +61,80 @@ public final class CodePrintLayout {
      * Lays {@code lines} (per-source-line runs from {@link PdfText#splitIntoLineRuns}) out into one
      * {@code VBox} per printed page for {@code layout}, wrapping long lines to the printable width and
      * packing whole visual lines per page. {@code lineNumbers} adds a muted right-aligned gutter.
+     *
+     * <p>Builds every page at once; {@link #pages} is the on-demand form the preview and the print use.
      */
     public static List<Node> paginate(
             List<List<PdfText.Run>> lines, PageLayout layout, boolean lineNumbers, Font mono) {
+        PrintService.Pages pages = pages(lines, layout, lineNumbers, mono);
+        List<Node> all = new ArrayList<>(pages.count());
+        for (int i = 0; i < pages.count(); i++) {
+            all.add(pages.get(i));
+        }
+        return all;
+    }
+
+    /**
+     * The same pages as {@link #paginate}, built one at a time. Only the page breaks are worked out up
+     * front (two ints per page); a page's rows are created when it is asked for and are not kept, so a
+     * 60,000-line file costs one page of nodes at a time instead of half a million held for the preview's
+     * lifetime.
+     */
+    public static PrintService.Pages pages(
+            List<List<PdfText.Run>> lines, PageLayout layout, boolean lineNumbers, Font mono) {
         double charW = charWidth(mono);
         double lineH = Math.ceil(mono.getSize() * LINE_SPACING);
-        int total = lines.size();
-        int digits = Integer.toString(Math.max(1, total)).length();
+        int digits = Integer.toString(Math.max(1, lines.size())).length();
         double gutterW = lineNumbers ? digits * charW + GUTTER_GAP : 0;
         int cols = columns(layout.getPrintableWidth() - gutterW, charW);
         int perPage = linesPerPage(layout.getPrintableHeight(), lineH);
+        int[][] starts = pageStarts(lines, cols, perPage);
+        return new PrintService.Pages() {
+            @Override
+            public int count() {
+                return starts.length;
+            }
 
-        List<Node> pages = new ArrayList<>();
-        VBox page = new VBox();
-        int onPage = 0;
-        for (int i = 0; i < total; i++) {
-            List<List<PdfText.Run>> visual = PdfText.wrap(lines.get(i), cols);
-            for (int v = 0; v < visual.size(); v++) {
+            @Override
+            public Node get(int index) {
+                VBox page = new VBox();
+                int rows = 0;
+                int firstVisual = starts[index][1];
+                for (int i = starts[index][0]; i < lines.size() && rows < perPage; i++) {
+                    List<List<PdfText.Run>> visual = PdfText.wrap(lines.get(i), cols);
+                    for (int v = firstVisual; v < visual.size() && rows < perPage; v++, rows++) {
+                        int lineNo = v == 0 ? i + 1 : 0; // 0 → blank gutter on a wrap continuation
+                        page.getChildren().add(row(visual.get(v), lineNo, lineNumbers, gutterW, mono, lineH));
+                    }
+                    firstVisual = 0;
+                }
+                return page;
+            }
+        };
+    }
+
+    /**
+     * Where each page starts, as {@code {source line, visual line within it}}: {@code perPage} visual
+     * lines per page, a source line wrapped at {@code cols} counting as several. Always at least one page,
+     * so an empty document still previews and prints a blank sheet. Pure.
+     */
+    static int[][] pageStarts(List<List<PdfText.Run>> lines, int cols, int perPage) {
+        List<int[]> starts = new ArrayList<>();
+        int onPage = perPage; // "full", so the first visual line opens page 1
+        for (int i = 0; i < lines.size(); i++) {
+            int visualLines = PdfText.wrap(lines.get(i), cols).size();
+            for (int v = 0; v < visualLines; v++) {
                 if (onPage == perPage) {
-                    pages.add(page);
-                    page = new VBox();
+                    starts.add(new int[] {i, v});
                     onPage = 0;
                 }
-                int lineNo = v == 0 ? i + 1 : 0; // 0 → blank gutter on a wrap continuation
-                page.getChildren().add(row(visual.get(v), lineNo, lineNumbers, gutterW, mono, lineH));
                 onPage++;
             }
         }
-        if (onPage > 0 || pages.isEmpty()) {
-            pages.add(page);
+        if (starts.isEmpty()) {
+            starts.add(new int[] {0, 0});
         }
-        return pages;
+        return starts.toArray(int[][]::new);
     }
 
     private static HBox row(

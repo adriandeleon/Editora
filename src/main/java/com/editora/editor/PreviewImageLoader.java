@@ -122,19 +122,74 @@ public final class PreviewImageLoader {
             return; // recently unreachable — leave the slot blank rather than refetch on every re-render
         }
         EXEC.submit(() -> {
-            Loaded loaded = load(url);
-            if (loaded == null) {
-                FAILED.put(url, System.currentTimeMillis());
-                return;
+            Loaded loaded = loadAndCache(url);
+            if (loaded != null) {
+                Platform.runLater(() -> apply(view, loaded, maxWidth));
             }
-            FAILED.remove(url);
-            CACHE.put(url, loaded);
-            synchronized (CACHE) { // byte cap behind the count cap: one huge image is not 1/64th of a budget
-                ImageCacheBudget.trim(
-                        CACHE, l -> ImageCacheBudget.footprint(l.image()), ImageCacheBudget.PREVIEW_BUDGET_BYTES);
-            }
-            Platform.runLater(() -> apply(view, loaded, maxWidth));
         });
+    }
+
+    /** Loads {@code url} on the calling thread and records the outcome in the cache or the failure memory. */
+    private static Loaded loadAndCache(String url) {
+        Loaded loaded = load(url);
+        if (loaded == null) {
+            FAILED.put(url, System.currentTimeMillis());
+            return null;
+        }
+        FAILED.remove(url);
+        CACHE.put(url, loaded);
+        synchronized (CACHE) { // byte cap behind the count cap: one huge image is not 1/64th of a budget
+            ImageCacheBudget.trim(
+                    CACHE, l -> ImageCacheBudget.footprint(l.image()), ImageCacheBudget.PREVIEW_BUDGET_BYTES);
+        }
+        return loaded;
+    }
+
+    /**
+     * Loads every one of {@code urls} and waits for them, for at most {@code timeoutMs} in total — for print,
+     * which has to know each image's size before it paginates and cannot wait on a host that never answers.
+     * A URL that failed, or was still loading at the deadline, is simply absent from the result. Blocks; call
+     * off the FX thread.
+     */
+    static Map<String, Loaded> loadAll(java.util.Collection<String> urls, long timeoutMs) {
+        Map<String, Loaded> out = new java.util.HashMap<>();
+        java.util.List<String> pending = new java.util.ArrayList<>();
+        for (String url : urls) {
+            Loaded hit = CACHE.get(url);
+            if (hit != null) {
+                out.put(url, hit);
+            } else {
+                pending.add(url);
+            }
+        }
+        if (pending.isEmpty()) {
+            return out;
+        }
+        java.util.List<java.util.concurrent.Callable<Loaded>> tasks = new java.util.ArrayList<>();
+        for (String url : pending) {
+            tasks.add(() -> loadAndCache(url));
+        }
+        try {
+            java.util.List<java.util.concurrent.Future<Loaded>> done =
+                    EXEC.invokeAll(tasks, Math.max(1, timeoutMs), java.util.concurrent.TimeUnit.MILLISECONDS);
+            for (int i = 0; i < done.size(); i++) {
+                Loaded loaded = finished(done.get(i));
+                if (loaded != null) {
+                    out.put(pending.get(i), loaded);
+                }
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return out;
+    }
+
+    private static Loaded finished(java.util.concurrent.Future<Loaded> f) throws InterruptedException {
+        try {
+            return f.isCancelled() ? null : f.get();
+        } catch (java.util.concurrent.ExecutionException e) {
+            return null;
+        }
     }
 
     private static void apply(ImageView view, Loaded loaded, double maxWidth) {

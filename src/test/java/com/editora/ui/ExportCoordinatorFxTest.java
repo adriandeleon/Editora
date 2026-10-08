@@ -271,6 +271,329 @@ class ExportCoordinatorFxTest {
         });
     }
 
+    /** A buffer named {@code name} holding {@code text}, with the previews a window would have attached. */
+    private static EditorBuffer buffer(String name, String text) {
+        EditorBuffer b = new EditorBuffer();
+        b.setDisplayName(name);
+        b.setContent(text);
+        b.setStructuredPreviewEnabled(true);
+        b.setPomPreviewEnabled(true);
+        if (b.isCsv()) {
+            b.setCsvPreviewNode(new javafx.scene.layout.Region());
+        }
+        if (b.isHttpFile()) {
+            b.setHttpPreviewNode(new javafx.scene.layout.Region());
+        }
+        return b;
+    }
+
+    /**
+     * The two preview commands say no <em>before</em> the Save dialog (or a printer job) when the preview
+     * cannot be put on a page: an {@code .http} response panel, a JSON or XML file that does not parse, a
+     * file with no preview. They used to accept a destination and then fail with "open a Markdown or Mermaid
+     * file".
+     */
+    @Test
+    void aPreviewThatCannotBeExportedIsRefusedBeforeTheSaveDialog() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Host host = new Host();
+            ExportCoordinator exports =
+                    new ExportCoordinator(host, null, null, null, path -> fail("opens nothing"), chooser -> {
+                        fail("no Save dialog for a preview that cannot be exported: " + host.active.getDisplayName());
+                        return null;
+                    });
+            record Case(String name, String text, String pdfKey, String printKey) {}
+            List<EditorBuffer> buffers = new ArrayList<>();
+            try {
+                for (Case c : List.of(
+                        new Case(
+                                "req.http",
+                                "GET https://example.com\n",
+                                "status.pdf.noPreview",
+                                "status.print.noPreview"),
+                        new Case("Main.java", "class Main {}\n", "status.pdf.noPreview", "status.print.noPreview"),
+                        new Case(
+                                "broken.json",
+                                "{\"a\": [1, 2,\n",
+                                "status.pdf.cannotExportUnparsed",
+                                "status.print.cannotPrintUnparsed"),
+                        new Case(
+                                "broken.xml",
+                                "<a><b></a>\n",
+                                "status.pdf.cannotExportUnparsed",
+                                "status.print.cannotPrintUnparsed"))) {
+                    EditorBuffer b = buffer(c.name(), c.text());
+                    buffers.add(b);
+                    host.active = b;
+                    assertEquals(!c.name().equals("Main.java"), b.hasPreview(), c.name());
+                    exports.exportPreviewPdf();
+                    assertEquals(tr(c.pdfKey()), host.status, c.name());
+                    exports.printPreview();
+                    assertEquals(tr(c.printKey()), host.status, c.name());
+                }
+                assertFalse(buffers.get(0).hasExportablePreview(), "an .http response panel is not exportable");
+                assertFalse(buffers.get(1).hasExportablePreview(), "no preview at all");
+                // Exportable by kind — what a menu item is gated on — and refused only once it is asked for.
+                assertTrue(buffers.get(2).hasExportablePreview());
+                assertTrue(ExportCoordinator.previewUnparsable(buffers.get(2)));
+            } finally {
+                exports.shutdown();
+                buffers.forEach(EditorBuffer::dispose);
+            }
+        });
+    }
+
+    /** What still parses, or is not rendered from a parse at all, is not refused. */
+    @Test
+    void onlyAnUnparsableTreePreviewIsReportedAsUnparsable() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            List<EditorBuffer> buffers = new ArrayList<>();
+            try {
+                for (String[] file : new String[][] {
+                    {"ok.json", "{\"a\": 1}\n"},
+                    {"ok.xml", "<a><b/></a>\n"},
+                    {"notes.md", "# Title\n\n{ not json\n"},
+                    {"data.csv", "a,b\n1,2\n"},
+                    {"broken.svg", "<svg><g></svg>\n"},
+                    {"pom.xml", "<project><modelVersion>4.0.0</project>\n"}
+                }) {
+                    EditorBuffer b = buffer(file[0], file[1]);
+                    buffers.add(b);
+                    assertFalse(ExportCoordinator.previewUnparsable(b), file[0]);
+                }
+            } finally {
+                buffers.forEach(EditorBuffer::dispose);
+            }
+        });
+    }
+
+    /**
+     * On a CSV buffer the preview <em>is</em> the grid, so the two preview commands do what
+     * {@code csv.exportPdf} / {@code csv.print} do — the table — rather than failing after the Save dialog.
+     */
+    @Test
+    void thePreviewCommandsExportAndPrintACsvAsItsTable() throws Exception {
+        Path output = temp.resolve("data.pdf");
+        Host host = new Host();
+        java.util.concurrent.CountDownLatch finished = new java.util.concurrent.CountDownLatch(1);
+        ExportCoordinator[] exports = new ExportCoordinator[1];
+        EditorBuffer[] csv = new EditorBuffer[2];
+        List<String> suggested = new ArrayList<>();
+        try {
+            FxTestSupport.runOnFx(() -> {
+                exports[0] = new ExportCoordinator(host, null, null, null, path -> fail("opens nothing"), chooser -> {
+                    suggested.add(chooser.getInitialFileName());
+                    return output.toFile();
+                });
+                // An empty CSV has no table: csvPrint says so before it asks for a printer, which is how the
+                // routing can be seen without one (the old path answered "no preview to print").
+                csv[1] = buffer("empty.csv", "");
+                host.active = csv[1];
+                exports[0].printPreview();
+                assertEquals(tr("status.csv.empty"), host.status);
+                exports[0].exportPreviewPdf();
+                assertEquals(tr("status.csv.empty"), host.status);
+                assertEquals(List.of(), suggested, "an empty CSV opens no Save dialog");
+
+                csv[0] = buffer("data.csv", "name;qty\nalpha;2\nbeta;3\n");
+                host.active = csv[0];
+                host.onStatus = message -> {
+                    if (!tr("status.pdf.exporting").equals(message)) {
+                        finished.countDown();
+                    }
+                };
+                exports[0].exportPreviewPdf();
+            });
+            assertTrue(finished.await(30, java.util.concurrent.TimeUnit.SECONDS), "the export should finish");
+            assertEquals(List.of("data.pdf"), suggested);
+            assertEquals(tr("status.pdf.exported", output.toString()), host.status);
+            String text;
+            try (org.apache.pdfbox.pdmodel.PDDocument doc = org.apache.pdfbox.Loader.loadPDF(output.toFile())) {
+                text = new org.apache.pdfbox.text.PDFTextStripper().getText(doc);
+            }
+            // Columns, not source lines: the semicolon delimiter was detected and is not in the output.
+            assertTrue(text.contains("name qty") && text.contains("alpha 2"), text);
+            assertFalse(text.contains(";"), text);
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                exports[0].shutdown();
+                for (EditorBuffer b : csv) {
+                    if (b != null) {
+                        b.dispose();
+                    }
+                }
+            });
+        }
+    }
+
+    /**
+     * Every export's Save dialog opens beside the document when it is a saved local file, and otherwise
+     * where this window last exported to. It had no starting folder at all, so it opened wherever the
+     * toolkit had last been.
+     */
+    @Test
+    void theSaveDialogStartsBesideTheDocumentOrWhereTheLastExportWent() throws Exception {
+        Path docs = Files.createDirectories(temp.resolve("proj/docs"));
+        Path elsewhere = Files.createDirectories(temp.resolve("exports"));
+        FxTestSupport.runOnFx(() -> {
+            Host host = new Host();
+            List<java.io.File> initial = new ArrayList<>();
+            java.io.File[] answer = new java.io.File[1];
+            ExportCoordinator exports = new ExportCoordinator(host, null, null, null, path -> {}, chooser -> {
+                initial.add(chooser.getInitialDirectory());
+                return answer[0];
+            });
+            EditorBuffer saved = new EditorBuffer();
+            EditorBuffer untitled = new EditorBuffer();
+            try {
+                saved.setPath(docs.resolve("notes.md"));
+                saved.setContent("# Notes");
+                untitled.setDisplayName("scratch.md");
+                untitled.setContent("# Scratch");
+
+                // Nothing exported yet and no file on disk: the dialog is left to the platform.
+                host.active = untitled;
+                exports.exportCodePdf();
+                exports.exportPreviewHtml();
+                assertEquals(java.util.Arrays.asList(null, null), initial);
+
+                host.active = saved;
+                exports.exportCodePdf();
+                exports.exportPreviewPdf();
+                exports.exportPreviewHtml();
+                exports.exportPreviewDocx();
+                exports.exportPreviewOdt();
+                exports.exportCsvTextToFile("a,b", "notes.md");
+                exports.exportMarkwhenJson(); // not a Markwhen file: no dialog
+                assertEquals(java.util.Collections.nCopies(6, docs.toFile()), initial.subList(2, initial.size()));
+
+                // An export that went somewhere is remembered — for a buffer with no folder of its own...
+                answer[0] = elsewhere.resolve("notes.html").toFile();
+                exports.exportPreviewHtml();
+                answer[0] = null;
+                initial.clear();
+                host.active = untitled;
+                exports.exportCodePdf();
+                exports.exportProjectMapPdf(null, "workspace-map");
+                // ...while a saved document still opens in its own folder.
+                host.active = saved;
+                exports.exportCodePdf();
+                assertEquals(List.of(elsewhere.toFile(), elsewhere.toFile(), docs.toFile()), initial);
+
+                // A remembered folder that is gone is not handed to the dialog (the native one throws on it).
+                Files.delete(elsewhere.resolve("notes.html"));
+                Files.delete(elsewhere);
+                initial.clear();
+                host.active = untitled;
+                exports.exportCodePdf();
+                assertEquals(java.util.Arrays.asList((java.io.File) null), initial);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            } finally {
+                exports.shutdown();
+                saved.dispose();
+                untitled.dispose();
+            }
+        });
+    }
+
+    /**
+     * A name typed without the extension gets it (the GTK dialog adds none, so the PDF was written as
+     * {@code report}). When that makes the target a file that already exists, the dialog never asked about
+     * it: the export asks, and does nothing when the answer is no.
+     */
+    @Test
+    void aNameTypedWithoutTheExtensionGetsItAndNeverReplacesAFileUnasked() throws Exception {
+        assertEquals(
+                new java.io.File("/x/report.pdf"),
+                ExportCoordinator.withExtension(new java.io.File("/x/report"), "pdf"));
+        assertEquals(
+                new java.io.File("/x/report.PDF"),
+                ExportCoordinator.withExtension(new java.io.File("/x/report.PDF"), "pdf"));
+        assertEquals(
+                new java.io.File("/x/notes.v2.pdf"),
+                ExportCoordinator.withExtension(new java.io.File("/x/notes.v2"), "pdf"));
+        assertEquals(
+                new java.io.File("/x/.pdf.pdf"), ExportCoordinator.withExtension(new java.io.File("/x/.pdf"), "pdf"));
+
+        Path typed = temp.resolve("report");
+        Path existing = Files.writeString(temp.resolve("report.html"), "the report that was already there");
+        FxTestSupport.runOnFx(() -> {
+            Host host = new Host();
+            List<Path> opened = new ArrayList<>();
+            List<java.io.File> asked = new ArrayList<>();
+            boolean[] agree = {false};
+            ExportCoordinator exports =
+                    new ExportCoordinator(host, null, null, null, opened::add, chooser -> typed.toFile());
+            exports.confirmReplace = file -> {
+                asked.add(file);
+                return agree[0];
+            };
+            EditorBuffer b = buffer("draft.md", "# Draft");
+            host.active = b;
+            try {
+                host.status = "unchanged";
+                exports.exportPreviewHtml();
+                assertEquals(List.of(existing.toFile()), asked, "asked about the file the extension leads to");
+                assertEquals("the report that was already there", Files.readString(existing));
+                assertFalse(Files.exists(typed), "nothing is written under the bare name either");
+                assertEquals("unchanged", host.status);
+                assertEquals(List.of(), opened);
+
+                agree[0] = true;
+                exports.exportPreviewHtml();
+                assertTrue(Files.readString(existing).contains("Draft"));
+                assertEquals(List.of(existing), opened);
+                assertFalse(Files.exists(typed));
+
+                // No file in the way: no question, and the extension is simply added.
+                Files.delete(existing);
+                asked.clear();
+                exports.exportPreviewHtml();
+                assertEquals(List.of(), asked);
+                assertTrue(Files.exists(existing));
+                assertEquals(tr("status.html.exported", existing.toString()), host.status);
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            } finally {
+                exports.shutdown();
+                b.dispose();
+            }
+        });
+    }
+
+    /**
+     * The failure dialogs name what failed in the header and why in the body. The header used to be the
+     * status message with an empty argument ("Printing failed: "), the print dialog's title the command
+     * title "File: Print…", and a failure with no message read "null".
+     */
+    @Test
+    void failureDialogsHaveAHeaderOfTheirOwnAndNeverSayNull() throws Exception {
+        for (String key : List.of(
+                "dialog.pdfExport.failed", "dialog.officeExport.failed", "dialog.print.failed", "dialog.print.title")) {
+            assertNotEquals(key, tr(key), key + " must be in the catalog");
+            assertFalse(tr(key).contains(":"), "a dialog header or title is not a status prefix: " + tr(key));
+        }
+        assertEquals(tr("dialog.export.noDetails"), ExportCoordinator.failureDetail(null));
+        assertEquals(tr("dialog.export.noDetails"), ExportCoordinator.failureDetail("  "));
+        assertEquals("mmdc exited with 1", ExportCoordinator.failureDetail("mmdc exited with 1"));
+        FxTestSupport.runOnFx(() -> {
+            ExportCoordinator exports =
+                    new ExportCoordinator(new Host(), null, null, null, path -> {}, chooser -> null);
+            try {
+                javafx.scene.control.Alert alert = exports.failureAlert(
+                        tr("dialog.print.title"), tr("dialog.print.failed"), ExportCoordinator.failureDetail(null));
+                assertEquals(javafx.scene.control.Alert.AlertType.ERROR, alert.getAlertType());
+                assertEquals(tr("dialog.print.title"), alert.getTitle());
+                assertNotEquals(tr("command.editor.print"), alert.getTitle());
+                assertEquals(tr("dialog.print.failed"), alert.getHeaderText());
+                assertEquals(tr("dialog.export.noDetails"), alert.getContentText());
+            } finally {
+                exports.shutdown();
+            }
+        });
+    }
+
     @Test
     void namingUsesSavedPathAndPreservesPathBasedGrammar() throws Exception {
         FxTestSupport.runOnFx(() -> {

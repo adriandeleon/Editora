@@ -126,6 +126,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Print and Export to PDF are in the File menu.** "Print…" and "Export to PDF…" for the current file are
+  in the File menu (also in Simple UI mode) and on the tab right-click menu; before, they were reachable
+  only from the palette. The commands for the rendered preview are renamed "File: Print Rendered Preview…"
+  and "File: Export Rendered Preview to PDF…". On a CSV file they print or export the table; they are
+  disabled for `.http` files.
+- **Print Preview** has a Page Setup… button, shows the printer, paper and orientation, draws the sheet at
+  paper size with its margins, and turns pages from the keyboard (Page Up/Down, Left/Right, Home/End).
+  Printing shows "Printing page n of N…" with a Cancel. The window is modal to its own window only, is
+  centred on it and has a minimum size.
+- Export Save dialogs (PDF, HTML, Word, ODT, spreadsheet, CSV) open beside the document, or else in the
+  last export folder; they add a missing extension and ask before replacing an existing file.
 - Run Configurations: the form only enables the fields the selected type uses. A Java main class has no
   Script / target; a Python, shell, Make or NPM configuration has no Main class, Module, VM arguments or
   JDK. A disabled field keeps its value, and the JDK field now follows the type as soon as it is changed.
@@ -224,6 +235,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Printing, from a review of Print, Print Preview and Export to PDF:
+  - Printed Markdown and CSV pages are always light. With a dark theme they came out as a dark sheet, and
+    Mermaid, DOT/PlantUML and math printed in the dark palette.
+  - A printed table taller than a page splits between rows and repeats its header; it used to break into
+    one cell per row, which hit most CSV prints. A very wide table is condensed instead. Preparing a
+    5,000-row CSV takes about two seconds instead of minutes.
+  - Long code blocks in printed Markdown print every line, monospaced and syntax-coloured; a plain block
+    used to stop at the end of the page with "...".
+  - Images and diagrams are measured at their final size, so content no longer runs off the page or
+    paginates differently on paper than in the preview. An image that cannot be loaded prints its alt text.
+  - A page range chosen in the system print dialog is honoured.
+  - Changing paper or orientation in the system print dialog shows the new preview instead of printing
+    pages you had not seen.
+  - Running Print twice no longer opens two previews, a failure while preparing or printing is reported
+    instead of leaving "Preparing…" in the status bar, and a very large source file no longer builds
+    every page up front.
+- Export to PDF:
+  - A table row or CSV cell taller than a page continues on the next page; its text used to run off the
+    bottom and be lost.
+  - Task lists show their checkboxes (searchable as `[x]` / `[ ]`), `~~strikethrough~~` is struck, and
+    numbered lists of ten or more items no longer overprint their text.
+  - Text after a table, image, rule or formula no longer touches it; headings stay with their section and
+    quote bars continue across pages.
+  - A Mermaid `.mmd` diagram exports light regardless of the app theme.
+  - "Export Rendered Preview to PDF…" no longer shows the Save dialog and then fails for a file whose
+    preview cannot be exported; a JSON, YAML, TOML or XML file that does not parse says so.
+  - Failure dialogs for print, PDF and Word/ODT export no longer show "failed: " with nothing after it,
+    or "null".
 - Tabs restored from the last session no longer keep the muted italic read-only title for files that
   are editable. The title was drawn while the file was still loading and never redrawn afterwards.
 - Abbreviations that contain punctuation now expand: `adl-fn`, `;sig`, `e.g`. Only letters and digits were
