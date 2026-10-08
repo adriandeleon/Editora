@@ -35,17 +35,20 @@ last selected flow is stored in workspace state and restored when the editor is 
 
 | Gesture | Result |
 | --- | --- |
-| Single-click a folder | Select and expand it, or collapse it if it is already expanded |
+| Single-click a folder | Select and expand it; if it is already expanded, select it and bring its column into view |
+| Click a folder's chevron (the row's trailing edge) | Expand or collapse it; collapsing closes its descendant columns |
 | Single-click a file | Open it in a normal editor tab |
 | Click a file's preview icon | Open or focus that file's floating read-only preview on the canvas |
 | Right-click a node | Select it and open the same context menu as the Project tree, including first-line bookmark and Personal Note actions |
 | Drag empty canvas space | Pan the map |
-| Middle-button drag | Pan the map |
-| Mouse wheel | Zoom around the pointer position |
+| Middle-button drag | Pan the map, wherever the drag starts (including on a row) |
+| Mouse wheel | Zoom around the pointer position; scroll inertia does not zoom |
 | Shortcut + mouse wheel | Zoom faster around the pointer position |
+| Horizontal scroll (touchpad swipe, tilt wheel) | Pan horizontally |
+| Pinch | Zoom around the gesture |
 | Shift + mouse wheel | Pan horizontally |
 | Alt + mouse wheel | Pan vertically |
-| Drag a column header | Move that column independently unless it is locked |
+| Drag a column header | Move that column independently unless it is locked; it stops at its parent column |
 | Click a column lock | Prevent or allow accidental header dragging |
 | Click a column close button | Close that branch and all of its descendant columns |
 | Click **Print…** | Open the standard print preview for the complete map layout |
@@ -86,18 +89,41 @@ the target file.
 | Arrow against the flow | Select the parent |
 | Perpendicular arrows | Move among siblings |
 | `Ctrl-N` / `Ctrl-P` | Select the next or previous sibling |
-| `Page Down` / `Page Up` | Move ten siblings forward or backward |
-| `Enter` or `Space` | Activate the selected node |
+| `Page Down` / `Page Up` | Move ten siblings forward or backward, stopping at the last or first row |
+| `Enter` or `Space` | Open the selected file, or expand or collapse the selected folder |
+| `F2` | Rename the selected file or folder (not the project root), as in the Project tree |
+| `Delete` | Delete the selected file through the Project tree's confirmed delete |
+| Menu key / `Shift-F10` | Open the selected node's context menu at its row |
 | `Backspace` | Select the parent |
 | `Home` | Select the project root |
 | `Alt-Left` / `Alt-Right` | Move backward or forward through map selection history |
-| `/` | Focus and select the current column's filter text |
+| `/` | Focus and select the selected column's filter text |
 | Shortcut + `0` | Fit all visible columns |
-| `Escape` | Fit all visible columns |
+| `Escape` | Close the open preview and note cards; otherwise clear the Project search query; otherwise return focus to the editor |
 
-Text fields own their keystrokes. In particular, `Backspace`, arrows, and `Home` edit a focused
-column filter rather than triggering map navigation. Pressing Enter in a column filter returns focus
-to the map.
+Single sibling steps (perpendicular arrows, `Ctrl-N` / `Ctrl-P`) wrap around the column; page moves do
+not. `/` is matched by the character typed rather than the key, so it works where the slash is a
+shifted key and on the numeric keypad. When the selected column's filter is hidden by a low zoom the map
+zooms in just far enough and scrolls it into view first; the project column has no filter and reports
+that in the status bar.
+
+Text fields own their keystrokes. In particular, `Backspace`, arrows, `Home`, `F2`, and `Delete` edit a
+focused column filter rather than triggering map navigation. Pressing Enter in a column filter returns
+focus to the map and selects that column's first remaining row unless the selection is already one of
+them. Activating a selection whose row a column filter has hidden does nothing. If a focused column
+control is hidden (zooming out) or removed (closing its column), focus returns to the map surface.
+
+The scene-level `KeyDispatcher` sees every key before the map. While the surface itself is the focus
+owner it declares `Alt-Left`, `Alt-Right`, Shortcut + `0`, `Ctrl-N`, `Ctrl-P`, `F2`, and `Delete` through
+`KeyDispatcher.CLAIMED_KEYS`, so they reach it in every bundled keymap instead of running the keymap's
+command for the same chord (text-zoom reset, New File, Print, Find File, symbol rename) or being
+swallowed as an unbound `Alt` chord. The surface always consumes them; the dispatcher consumes a
+claimed `Alt` chord that comes back unconsumed, so none reaches the native menu. The shared Project
+search field claims `Ctrl-N` / `Ctrl-P` the same way.
+
+Selection history holds at most 100 entries. A run of sibling moves is one entry, so Back returns to
+where the run started rather than retracing each row. Closing a column moves the selection to that
+column's folder only when the selection was inside the closed branch.
 
 The bottom-left controls provide zoom out, the current percentage, zoom in, Fit, Center selection,
 and Reset. Reset restores 100% zoom and clears manual column positions and locks. Initial content is
@@ -222,6 +248,9 @@ The focused coverage lives in:
 
 - `ProjectMapModelTest` for bounded loading, hidden files, filter semantics, ancestor emphasis,
   independent branch expansion, sorting, and column filtering;
+- `ProjectMapInputFxTest` for keyboard and pointer input: real key events fired through a wired window
+  under the Emacs, CUA, VS Code, IntelliJ, and Sublime keymaps, `/` by typed character, the keyboard
+  context menu, row keys, Escape, history coalescing, header drags, hover, and wheel and pinch gestures;
 - `ProjectMapViewFxTest` for Tree/Map integration, native icon rasterization, open markers,
   tooltips, single-click expansion, multiple independent previews, shared context menus and dismissal, text-field
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
@@ -238,4 +267,6 @@ When extending the map:
 5. Keep native controls for text entry and popups; ensure the map key filter does not consume their
    editing keys.
 6. Add or update every message key in all six localization catalogs.
-7. Run `mvn spotless:apply`, the two focused test classes, `git diff --check`, and `mvn verify`.
+7. When adding a key, check it against every bundled keymap: a chord the keymap binds, or any unbound
+   `Alt` chord, reaches the surface only if it is in `ProjectMapView.claimedChords`.
+8. Run `mvn spotless:apply`, the focused test classes, `git diff --check`, and `mvn verify`.

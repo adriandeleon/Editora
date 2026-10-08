@@ -292,6 +292,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final TreeView<Path> tree = new TreeView<>();
     private final ProjectMapView mapView;
     private boolean mapMode;
+    private Runnable onFocusEditor = () -> {};
     private final StackPane placeholderPane;
     private final PauseTransition filterDebounce = new PauseTransition(Duration.millis(150));
 
@@ -394,6 +395,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.mapView.setOnExpandedChanged(this::syncWatches);
         this.mapView.setContextMenuFactory(entry -> contextMenuFor(
                 new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root)));
+        // F2 / Delete on the map's selection run the tree's row actions (see onKey), with the same limits.
+        this.mapView.setRowActions(
+                entry -> {
+                    if (!entry.path().equals(root)) {
+                        renameItem(new TreeItem<>(entry.path()));
+                    }
+                },
+                entry -> deleteSelected(new TreeItem<>(entry.path())));
+        this.mapView.setEscapeActions(filterField::clear, () -> onFocusEditor.run());
         getStyleClass().add("project-panel");
         getProperties().put("editora.ownsKeys", Boolean.TRUE);
         setSpacing(4);
@@ -454,6 +464,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         FilterFieldNav.install(filterField, tree, this::openSelected);
         // The same search field fronts both modes. Intercept navigation before FilterFieldNav's tree handler
         // when Map is active, then hand focus/activation to the Canvas surface.
+        // C-n / C-p move the selection from this field in both modes (FilterFieldNav, and the filter below);
+        // outside Emacs the keymap binds them to New File / Print / Find File, which would run instead.
+        filterField.getProperties().put(com.editora.command.KeyDispatcher.CLAIMED_KEYS, java.util.Set.of("C-n", "C-p"));
         filterField.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
             if (!mapMode) {
                 return;
@@ -1430,6 +1443,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     public void setOnStatus(Consumer<String> onStatus) {
         this.onStatus = onStatus == null ? m -> {} : onStatus;
         mapView.setOnStatus(this.onStatus);
+    }
+
+    /** Injects how the Project Map hands keyboard focus back to the editor (Escape with nothing left to dismiss). */
+    public void setOnFocusEditor(Runnable onFocusEditor) {
+        this.onFocusEditor = onFocusEditor == null ? () -> {} : onFocusEditor;
     }
 
     /** Restores and persists the Project Map's directional layout in workspace state. */
