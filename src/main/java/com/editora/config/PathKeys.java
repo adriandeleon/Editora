@@ -141,6 +141,17 @@ public final class PathKeys {
         return Vfs.isRemote(p) ? Vfs.toStorableString(p) : canonical(p).toString();
     }
 
+    /**
+     * The key one file's Local History belongs under whichever way the file was reached: {@link #key} — the
+     * real path with links resolved (and, on a case-insensitive volume, in the case the volume stores), the
+     * same identity notes and breakpoints use. The index is still keyed by {@link #normalizedKey}, the path
+     * as it was spelled, so {@code link/a.txt} and {@code real/a.txt} are two histories of one file; moving
+     * to this key takes the recorder and the stored index together ({@code HistoryMoves.rekey}).
+     */
+    public static String historyKey(Path p) {
+        return key(p);
+    }
+
     /** The absolute-normalized string (the Local File History index key — never symlink-resolved). */
     public static String normalizedKey(Path p) {
         return p.toAbsolutePath().normalize().toString();
