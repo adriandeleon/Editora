@@ -32,8 +32,19 @@ public class WorkspaceState {
      *
      * <p>v10 → v11 added {@code projectMapFlow}; right-to-left is the default canvas layout. v11 → v12
      * added the optional per-run-configuration Maven JDK override.
+     *
+     * <p>v12 → v13 added {@code projectViewMode}, {@code projectMapKeepZoom} and {@code projectMapFocusNewColumn}
+     * (the Project panel's Tree/Map choice and the Map's two navigation options). Additive, with defaults that
+     * are what every window did before (Tree, both options on), so the migration is identity. The same step
+     * changed the default of {@code projectMapFlow} to left-to-right; a file that already stores a flow keeps it.
      */
-    public static final int SCHEMA_VERSION = 12;
+    public static final int SCHEMA_VERSION = 13;
+
+    /** {@link #getProjectViewMode()} values. */
+    public static final String PROJECT_VIEW_TREE = "TREE";
+
+    public static final String PROJECT_VIEW_MAP = "MAP";
+    private static final String DEFAULT_PROJECT_MAP_FLOW = "LEFT_TO_RIGHT";
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -113,8 +124,14 @@ public class WorkspaceState {
 
     /** Name of the configuration selected in the toolbar, so the choice survives a restart. */
     private String selectedRunConfig = "";
-    /** Last Project Map flow direction; blank/unknown values fall back to right-to-left. Additive in v11. */
-    private String projectMapFlow = "RIGHT_TO_LEFT";
+    /** Last Project Map flow direction; blank/unknown values fall back to left-to-right. Additive in v11. */
+    private String projectMapFlow = DEFAULT_PROJECT_MAP_FLOW;
+    /** Which Project view this workspace last showed: "TREE" or "MAP". Additive in v13; missing means Tree. */
+    private String projectViewMode = PROJECT_VIEW_TREE;
+    /** Project Map "Keep current zoom" when a column opens. Additive in v13; on by default. */
+    private boolean projectMapKeepZoom = true;
+    /** Project Map "Focus new column". Additive in v13; on by default. */
+    private boolean projectMapFocusNewColumn = true;
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
 
@@ -400,11 +417,35 @@ public class WorkspaceState {
     }
 
     public String getProjectMapFlow() {
-        return projectMapFlow == null ? "RIGHT_TO_LEFT" : projectMapFlow;
+        return projectMapFlow == null ? DEFAULT_PROJECT_MAP_FLOW : projectMapFlow;
     }
 
     public void setProjectMapFlow(String projectMapFlow) {
-        this.projectMapFlow = projectMapFlow == null ? "RIGHT_TO_LEFT" : projectMapFlow;
+        this.projectMapFlow = projectMapFlow == null ? DEFAULT_PROJECT_MAP_FLOW : projectMapFlow;
+    }
+
+    public String getProjectViewMode() {
+        return PROJECT_VIEW_MAP.equals(projectViewMode) ? PROJECT_VIEW_MAP : PROJECT_VIEW_TREE;
+    }
+
+    public void setProjectViewMode(String projectViewMode) {
+        this.projectViewMode = PROJECT_VIEW_MAP.equals(projectViewMode) ? PROJECT_VIEW_MAP : PROJECT_VIEW_TREE;
+    }
+
+    public boolean isProjectMapKeepZoom() {
+        return projectMapKeepZoom;
+    }
+
+    public void setProjectMapKeepZoom(boolean projectMapKeepZoom) {
+        this.projectMapKeepZoom = projectMapKeepZoom;
+    }
+
+    public boolean isProjectMapFocusNewColumn() {
+        return projectMapFocusNewColumn;
+    }
+
+    public void setProjectMapFocusNewColumn(boolean projectMapFocusNewColumn) {
+        this.projectMapFocusNewColumn = projectMapFocusNewColumn;
     }
 
     public Map<String, String> getProgramArgs() {

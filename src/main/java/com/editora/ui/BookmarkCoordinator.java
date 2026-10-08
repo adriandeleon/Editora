@@ -142,6 +142,11 @@ final class BookmarkCoordinator {
         onChanged = callback == null ? () -> {} : callback;
     }
 
+    /** The path keys of this project's stored bookmarks (files and folders). No filesystem access. */
+    java.util.Collection<String> storedKeys() {
+        return List.copyOf(ops.bookmarks().keySet());
+    }
+
     boolean hasBookmarks(Path file) {
         if (file == null) {
             return false;

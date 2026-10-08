@@ -176,6 +176,11 @@ final class NotesCoordinator {
         onChanged = callback == null ? () -> {} : callback;
     }
 
+    /** The path keys of this project's stored Personal Notes (files and folders). No filesystem access. */
+    java.util.Collection<String> storedKeys() {
+        return isEnabled() ? List.copyOf(ops.notes().keySet()) : List.of();
+    }
+
     boolean hasPersonalNotes(Path file) {
         if (!isEnabled() || file == null) {
             return false;

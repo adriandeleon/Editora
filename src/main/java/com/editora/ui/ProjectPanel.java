@@ -278,6 +278,30 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
 
         default void updatePersonalNote(Path path, PersonalNote note, String body) {}
+
+        /**
+         * Every path that may carry a bookmark or a Personal Note (the stores' keys). The Map uses it to mark
+         * the collapsed folders that hold such files; {@link #hasBookmarks} / {@link #hasPersonalNotes} still
+         * decide each one, so a superset is fine. Must not touch the filesystem.
+         */
+        default java.util.Collection<Path> markedPaths() {
+            return List.of();
+        }
+    }
+
+    /** Parses stored path keys, dropping any this platform cannot parse. For {@link MarkerActions#markedPaths}. */
+    static List<Path> pathsOf(java.util.Collection<String> first, java.util.Collection<String> second) {
+        List<Path> result = new ArrayList<>(first.size() + second.size());
+        for (java.util.Collection<String> keys : List.of(first, second)) {
+            for (String key : keys) {
+                try {
+                    result.add(Path.of(key));
+                } catch (RuntimeException unparseable) {
+                    // a remote or foreign-platform key: it cannot be under a local project root anyway
+                }
+            }
+        }
+        return result;
     }
 
     /** In-scene single-line prompt (injected by MainController) used to rename a file/folder. */
@@ -293,6 +317,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     private final ProjectMapView mapView;
     private boolean mapMode;
     private Runnable onFocusEditor = () -> {};
+    /** The tree currently holds the lazy project tree (not flat filter results) built for {@link #root}. */
+    private boolean treeShowsProject;
+    /** Told when the Tree/Map choice changes, so the window can remember it. */
+    private Consumer<Boolean> onMapModeChanged = map -> {};
+
     private final StackPane placeholderPane;
     private final PauseTransition filterDebounce = new PauseTransition(Duration.millis(150));
 
@@ -392,6 +421,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         this.isModified = isModified;
         this.isOpen = isOpen == null ? path -> false : isOpen;
         this.mapView = new ProjectMapView(onOpenFile, isOpen, isModified, previewContent);
+        this.mapView.setActive(false); // nothing is listed for the Map until it is first shown
+        this.mapView.setShowHidden(showHidden);
         this.mapView.setOnExpandedChanged(this::syncWatches);
         this.mapView.setContextMenuFactory(entry -> contextMenuFor(
                 new TreeItem<>(entry.path()), entry.directory(), entry.path().equals(root)));
@@ -513,8 +544,9 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapModeButton.getStyleClass().add("project-view-toggle");
         treeMode.setTooltip(new Tooltip(tr("project.view.tree.tooltip")));
         mapModeButton.setTooltip(new Tooltip(tr("project.view.map.tooltip")));
-        treeMode.setFocusTraversable(false);
-        mapModeButton.setFocusTraversable(false);
+        // Reachable by Tab: without it switching to the Map was mouse-only (project.toggleMapView aside).
+        treeMode.setFocusTraversable(true);
+        mapModeButton.setFocusTraversable(true);
         ToggleGroup modes = new ToggleGroup();
         treeMode.setToggleGroup(modes);
         mapModeButton.setToggleGroup(modes);
@@ -526,7 +558,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 return;
             }
             mapMode = selected == mapModeButton;
-            rebuildBody();
+            showMode();
+            onMapModeChanged.accept(mapMode);
         });
         HBox viewModes = new HBox(treeMode, mapModeButton);
         viewModes.getStyleClass().add("project-view-modes");
@@ -535,6 +568,55 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         filterBar.getStyleClass().add("project-filter-bar");
         filterBar.setAlignment(Pos.CENTER);
         filterBar.getChildren().setAll(filterField, clear, viewModes);
+    }
+
+    /**
+     * Shows the body for the mode just chosen. Coming back from the Map, the project tree that was showing
+     * before is put back as it was — expanded folders and selection included — and only re-listed, instead
+     * of being rebuilt from the root.
+     */
+    private void showMode() {
+        boolean keepTree = !mapMode
+                && root != null
+                && treeShowsProject
+                && filterField.getText().trim().isEmpty()
+                && tree.getRoot() instanceof PathItem rootItem
+                && rootItem.showHidden == showHidden
+                && com.editora.config.PathKeys.samePath(rootItem.getValue(), root);
+        if (!keepTree) {
+            rebuildBody();
+            return;
+        }
+        searchGen.incrementAndGet(); // a Map search still in flight has nowhere to land
+        mapView.setActive(false);
+        mapView.hidePreview();
+        filtering = false;
+        getChildren().setAll(filterBar, tree);
+        refreshTree(); // files changed while the Map was showing reached the Map only
+        syncWatches();
+    }
+
+    /** Switches between Tree and Map and moves focus into the view now showing ({@code project.toggleMapView}). */
+    public void toggleMapView() {
+        (mapMode ? treeMode : mapModeButton).setSelected(true);
+        if (root == null) {
+            return;
+        }
+        if (mapMode) {
+            mapView.focusMap();
+        } else {
+            tree.requestFocus();
+        }
+    }
+
+    /** Whether the Map (not the Tree) is the chosen Project view. */
+    public boolean isMapMode() {
+        return mapMode;
+    }
+
+    /** Open editor files, so the Map's Open / Modified chips can mark the collapsed folders that hold them. */
+    public void setOpenFiles(java.util.function.Supplier<java.util.Collection<Path>> openFiles) {
+        mapView.setOpenFiles(openFiles);
     }
 
     /** Re-renders the visible tree cells so each file's modified marker/color reflects current state. */
@@ -838,6 +920,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         this.showHidden = showHidden;
+        mapView.setShowHidden(showHidden); // each Map column's default, and what the Map loads
         if (root != null) {
             rebuildBody(); // recreate the tree (PathItems capture the flag) with the new visibility
         }
@@ -860,6 +943,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     /** Rebuilds the body: placeholder (no project), filtered flat results, or the lazy tree. */
     private void rebuildBody() {
         long gen = searchGen.incrementAndGet(); // invalidate any in-flight search
+        mapView.setActive(mapMode && root != null); // entering the Map (re)loads it; the Tree leaves it idle
         if (root == null) {
             getChildren().setAll(placeholderPane);
             return;
@@ -891,6 +975,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             return;
         }
         mapView.hidePreview();
+        treeShowsProject = q.isEmpty();
         if (q.isEmpty()) {
             filtering = false;
             PathItem rootItem = new PathItem(root, showHidden, true);
@@ -1459,6 +1544,38 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         });
     }
 
+    /**
+     * Restores what the workspace remembers of this panel — Tree or Map, the Map's flow and its two
+     * navigation options — and writes later changes back through {@code state} and {@code save}.
+     */
+    public void setRememberedMapState(
+            java.util.function.Supplier<com.editora.config.WorkspaceState> state, Runnable save) {
+        com.editora.config.WorkspaceState stored = state.get();
+        setRememberedMapFlow(stored.getProjectMapFlow(), flow -> {
+            state.get().setProjectMapFlow(flow);
+            save.run();
+        });
+        mapView.setRememberedNavigation(
+                stored.isProjectMapKeepZoom(), stored.isProjectMapFocusNewColumn(), (keepZoom, focusColumn) -> {
+                    state.get().setProjectMapKeepZoom(keepZoom);
+                    state.get().setProjectMapFocusNewColumn(focusColumn);
+                    save.run();
+                });
+        onMapModeChanged = map -> {};
+        (com.editora.config.WorkspaceState.PROJECT_VIEW_MAP.equals(stored.getProjectViewMode())
+                        ? mapModeButton
+                        : treeMode)
+                .setSelected(true);
+        onMapModeChanged = map -> {
+            state.get()
+                    .setProjectViewMode(
+                            map
+                                    ? com.editora.config.WorkspaceState.PROJECT_VIEW_MAP
+                                    : com.editora.config.WorkspaceState.PROJECT_VIEW_TREE);
+            save.run();
+        };
+    }
+
     /** Injects the window-owned print and PDF handlers for a full Project Map snapshot. */
     public void setMapOutputActions(Consumer<javafx.scene.image.Image> print, Consumer<javafx.scene.image.Image> pdf) {
         mapView.setOutputActions(print, pdf);
@@ -1533,6 +1650,8 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                                 markerActions.addPersonalNote(file, draft);
                             }
                         });
+        mapView.setMarkerCandidates(
+                () -> this.markerActions == null ? List.<Path>of() : this.markerActions.markedPaths());
         mapView.setMarkerStates(
                 path -> this.markerActions != null && this.markerActions.hasBookmarks(path),
                 path -> this.markerActions != null
@@ -1682,6 +1801,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         return;
                     }
                     markLocalChange(); // tree re-listed below; suppress the watcher's redundant refresh
+                    mapView.pathRenamed(path, target); // a renamed open folder stays open in the Map
                     refreshAfterChange();
                     onFileRenamed.accept(path, target);
                 });
@@ -1852,6 +1972,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 skipped++;
                 continue;
             }
+            mapView.pathRenamed(src, dest);
             onFileRenamed.accept(src, dest); // update the open buffer(s) for a moved file / under a moved dir
             done.add(new Move(src, dest));
         }
@@ -1902,6 +2023,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                 stuck++;
                 continue;
             }
+            mapView.pathRenamed(move.to(), move.from());
             onFileRenamed.accept(move.to(), move.from());
             restored++;
         }
@@ -2091,6 +2213,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
      */
     private void refreshAfterChange() {
         if (filtering) {
+            if (mapMode) {
+                // Re-running the search only reloads the Map when the matches changed; a deleted or renamed
+                // row that was not a match would stay on show until some unrelated refresh.
+                mapView.refresh();
+            }
             rebuildBody();
         } else {
             refreshTree();

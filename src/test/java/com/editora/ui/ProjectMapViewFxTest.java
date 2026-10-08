@@ -138,6 +138,15 @@ class ProjectMapViewFxTest {
                 Region surface = FxTestSupport.field(mapView, "surface");
                 assertTrue(surface.getWidth() > 0);
                 assertTrue(surface.getHeight() > 0);
+            });
+            // The Map lists nothing until it is first shown, so its rows arrive after the switch.
+            ProjectMapView shownMap = FxTestSupport.field(panel, "mapView");
+            Region shownSurface = FxTestSupport.field(shownMap, "surface");
+            waitForFx(
+                    () -> (boolean) FxTestSupport.call(shownSurface, "contains", new Class<?>[] {Path.class}, readme));
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapView mapView = shownMap;
+                Region surface = shownSurface;
 
                 @SuppressWarnings("unchecked")
                 Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory =

@@ -6,6 +6,13 @@ Tree/Map switch chooses the presentation, while both modes share the active proj
 field, filesystem watcher, file-opening callback, editor and Git state, ordering, icons, and context
 menu actions.
 
+The switch is two focus-traversable toggles beside the search field, and the `project.toggleMapView`
+command (no default key) flips it from the palette, opening the Project tool window if needed. The
+choice is remembered per workspace. The Map lists nothing until it is first shown, and reloads every
+time it is entered, so a window that stays on the Tree costs no listing and no loader thread, and
+changes made while the Tree was showing are picked up. Returning to the Tree puts the same tree back —
+expanded folders and selection included — and only re-lists it.
+
 The implementation is deliberately hybrid. Native JavaFX controls handle text entry, checkboxes,
 buttons, focus, accessibility, and popups. A focusable `Canvas` draws the hierarchy, connectors,
 selection state, and overview and performs explicit hit-testing. A separate native overlay provides
@@ -73,8 +80,8 @@ Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. T
 other Project menus and ensures a click elsewhere closes the menu even on platforms where the
 native popup grab misses the press.
 
-Files with one or more bookmarks or Personal Notes show compact, independently colored indicators
-in both the Tree and Map. Personal Notes indicators are interactive: they open a separate editable note card attached to the same
+Files and folders with one or more bookmarks or Personal Notes show compact, independently colored
+indicators in both the Tree and Map. Personal Notes indicators are interactive: they open a separate editable note card attached to the same
 file or folder row by a connector. Note cards and code previews have independent lifecycles. The filter row's
 default-off “Hide all open Personal Notes” toggle temporarily hides those cards without closing them.
 Marker state is read from an open buffer when available and otherwise from
@@ -129,7 +136,8 @@ The bottom-left controls provide zoom out, the current percentage, zoom in, Fit,
 and Reset. Reset restores 100% zoom and clears manual column positions and locks. Initial content is
 automatically fitted once the surface has usable dimensions.
 
-The filter row also has default-on **Keep current zoom** and **Focus new column** session options.
+The filter row also has default-on **Keep current zoom** and **Focus new column** options, remembered per
+workspace.
 Opening a folder therefore preserves the user's scale while centering the newly created column. Either
 effect can be disabled independently; disabling zoom preservation restores fit-to-content on expansion.
 
@@ -140,14 +148,36 @@ The Project tool window's search field becomes the map's global fuzzy name query
 - status chips for files that are open, modified, Git-changed, bookmarked, or have Personal Notes;
 - a type selector for source, markup, configuration, other files, or all files;
 - a fuzzy free-text filter in every non-root column;
-- a per-column **Hidden** checkbox, enabled by default.
+- a per-column **Show hidden** checkbox.
+
+Hidden (dot) entries follow the Project "show hidden files" setting: it is each column's default, it is
+what the loader lists (so hidden entries spend no row budget while it is off), and changing it puts every
+column back on the setting. Ticking one column's checkbox overrides the setting for that folder only and
+lists the folder again.
 
 The status chips are alternatives to one another: selecting Open and Bookmarks matches either state.
-The type and text criteria constrain that working set. A global filename query uses the Project tree's
-bounded, off-thread search and temporarily opens every ancestor column needed to reveal its matches;
-clearing the query restores the manually expanded branches. Global matches and their ancestors remain
-prominent while unrelated nodes fade, preserving spatial context. A column filter removes unmatched rows
-and their now-unreachable descendants so the remaining geometry is still a valid hierarchy.
+The type and text criteria constrain that working set. Matches and their ancestors remain prominent while
+unrelated nodes fade, preserving spatial context. A match does not have to be a loaded row: the Open,
+Modified, Bookmarks and Personal Notes chips also light the collapsed folders that hold a matching file,
+as the Git chip does. Those ancestor sets come from the open tabs and the marker stores' keys
+(`ProjectPanel.setOpenFiles`, `MarkerActions.markedPaths`) by path arithmetic; nothing is read from disk
+on the FX thread. Folders match the Bookmarks and Personal Notes chips in their own right.
+
+The type selector asks `ProjectMapModel.classify`, which maps `LanguageRegistry.forFileName` — the
+registry behind the file icons and the editor's language detection — to a bucket: program languages are
+Source, document and style languages Markup, every other recognized language (data formats, unit files,
+the name-determined configuration files) Config. A short extension table covers common types the registry
+has no language for, and a few build files (`pom.xml`, `*.gradle`, `CMakeLists.txt`) are pinned to Config.
+
+A global filename query uses the Project tree's bounded, off-thread search and temporarily opens every
+ancestor column needed to reveal its matches. The matches are loaded before anything else, in rank order,
+so the first match is always present and is selected; when they do not all fit the row limit the status
+bar says "showing N of M matches". The search never writes to the manual expansion set. Folders opened or
+closed by hand while a query is active (chevron, column ×, a reveal) are kept in the search's own view, so
+closing a search-opened column really closes it, and clearing the query restores exactly the manually
+expanded branches. Re-running the same query after an in-app file change reloads the map and leaves the
+selection alone. A column filter removes unmatched rows and their now-unreachable descendants so the
+remaining geometry is still a valid hierarchy.
 
 Rows use `ProjectPathOrder`: directories first, then case-insensitive names with a deterministic
 case-sensitive tie-break. This is the same ordering contract as the traditional Project explorer.
@@ -203,13 +233,16 @@ flowchart LR
 
 Responsibilities are split as follows:
 
-- `ProjectPanel` owns the Tree/Map mode, shared search field, filesystem watcher, root, editor state,
-  Git state, open-file action, and construction of the traditional context menu.
-- `ProjectMapView` owns expansion, selection history, breadcrumbs, global controls, async reloads,
-  print/PDF snapshot actions, and the bounded collection of floating preview cards.
-- `ProjectMapModel` is JavaFX-free. It loads normalized metadata snapshots, maintains independent
-  branch expansions, groups entries by owning parent, applies ordering and filters, and determines
-  emphasized ancestor paths.
+- `ProjectPanel` owns the Tree/Map mode and its persistence, shared search field, filesystem watcher,
+  root, editor state, Git state, open-file action, and construction of the traditional context menu. It
+  tells the map when it is on screen (`setActive`), forwards the hidden-files setting, and reports in-app
+  renames and moves (`pathRenamed`).
+- `ProjectMapView` owns expansion (manual and per-search), row limits, selection history, breadcrumbs,
+  global controls, async reloads, print/PDF snapshot actions, and the bounded collection of floating
+  preview cards.
+- `ProjectMapModel` is JavaFX-free. It loads bounded snapshots with per-directory facts, maintains
+  independent branch expansions, groups entries by owning parent, applies ordering and filters,
+  classifies file types, and determines emphasized ancestor paths.
 - `ProjectMapView.MapSurface` owns paint, layout, transforms, hit-testing, pointer/keyboard input,
   column controls, icon snapshots, and accessibility text.
 - `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
@@ -222,11 +255,42 @@ existing availability and behavior without a parallel command list.
 
 ## Threading, bounds, and lifecycle
 
-Filesystem listing runs on the single daemon `project-map-loader` executor. Each request captures
-the root and expanded set; an atomic generation rejects obsolete results before they reach the FX
-thread. The model reads only the root and explicitly expanded directories breadth-first, and caps the
-visible snapshot at `ProjectMapModel.MAX_VISIBLE_ITEMS` (1,200). A failure to read one directory does
-not discard the rest of the snapshot.
+Filesystem listing runs on the single daemon `project-map-loader` executor, created on the first load.
+Each request captures the root, the expanded set, the hidden-files rules, the row limits and the pinned
+paths. An atomic generation is checked when a queued request starts and between directories, so a burst of
+requests lists the folders once, and obsolete results never reach the FX thread. A request made after
+`dispose()` is ignored. Each child costs one attribute read (two for a symbolic link), which serves both
+the ordering and the row. A load that outlasts 200 ms shows a "Loading…" label over the canvas, and an
+empty map reads "Loading…" rather than "No project items" while its first load is in flight. Every action
+still re-lists every expanded directory, and one hung listing still blocks later reloads for that window;
+there is no per-directory cache or timeout.
+
+`ProjectMapModel.load` reads only the root and the expanded directories, under two limits:
+
+- **per directory**, `DIRECTORY_CHUNK` (300) rows. A longer directory ends in a "+N more…" row; activating
+  it (click, Enter, or the arrow that expands) raises that directory's limit by another chunk.
+- **overall**, `MAX_VISIBLE_ITEMS` (1,200) real rows. Pinned paths — the search's matches and a revealed
+  file — are charged first, with the rows that lead to them, wherever they sort; the rest is handed out
+  breadth-first.
+
+Nothing is dropped silently. The snapshot carries `DirectoryFacts` (real child count, rows loaded,
+unreadable) for every listed directory, and a column header shows "shown/total" whenever a filter or a
+limit hides rows. A directory that got no rows at all is reported as skipped, is not drawn as expanded,
+leaves the manual expansion set, and the status bar says the overall limit was reached; the same message
+appears when "+N more…" cannot load anything. An expanded folder with nothing to list gets a column holding
+one stub row, "Empty folder" or "Cannot read this folder". A failure to read one directory does not
+discard the rest of the snapshot.
+
+The "+N more…" and stub rows are placeholder entries (`Entry.isPlaceholder()`): they flow through layout,
+selection and hit-testing like any row, report themselves as directories so file-only behaviour never
+applies, are drawn as text by `drawPlaceholderRow`, have no context menu, and are exempt from column
+filters. Code that acts on a folder entry must check `isPlaceholder()` first.
+
+After a load the manual expansion set is pruned to folders that actually loaded, so a renamed, deleted or
+replaced folder does not leave stale expansion (or watch keys) behind; folders beneath one that could not
+be read are kept. An in-app rename or move remaps expansion, limits and the selection to the new path.
+`revealPath` adds the target's ancestors to the expansion instead of replacing it, and a pending selection
+that a reload does not contain is dropped, together with its selection-history entries.
 
 Each open preview owns a daemon `project-map-preview-loader`; the eight-card limit bounds their total
 number. Every loader queue is coalesced so stale work for that card does not accumulate. Closed text
@@ -239,15 +303,23 @@ No paint, hover, or per-keystroke path accesses the filesystem. `dispose()` inva
 stops both executors, hides popups and tooltips, and clears control and measurement caches.
 
 Changing roots clears expansion, selection history, per-column filters, positions, locks, zoom, and
-preview state. The selected flow is persisted in workspace state; global status/type filters remain
-active only in the current view.
+preview state. The view remembers the open branches, row limits and selection of the last eight local
+folders it showed, so in the window with no project — where the root follows the active tab's folder —
+switching back to a folder restores its map instead of starting from the root; zoom and column positions
+are not carried over. Workspace state (schema v13) persists the Tree/Map choice, the flow, and the two
+navigation options; expansion, zoom and the status/type filters are not persisted.
 
 ## Tests and change checklist
 
 The focused coverage lives in:
 
-- `ProjectMapModelTest` for bounded loading, hidden files, filter semantics, ancestor emphasis,
-  independent branch expansion, sorting, and column filtering;
+- `ProjectMapModelTest` for hidden files, filter semantics, ancestor emphasis, independent branch
+  expansion, sorting, and column filtering;
+- `ProjectMapModelLoadingTest` for the per-directory and overall limits, "+N more" and stub rows,
+  pinned paths, cancellation, expansion pruning, rename remapping, and type classification;
+- `ProjectMapDataFxTest` for deferred and re-entered loading, the Tree round trip, reloads during a
+  search, search expansion and its status message, reveal, the hidden-files setting, chip emphasis of
+  collapsed folders, folder markers, remembered mode and options, and per-folder memory;
 - `ProjectMapInputFxTest` for keyboard and pointer input: real key events fired through a wired window
   under the Emacs, CUA, VS Code, IntelliJ, and Sublime keymaps, `/` by typed character, the keyboard
   context menu, row keys, Escape, history coalescing, header drags, hover, and wheel and pinch gestures;

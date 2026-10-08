@@ -26,17 +26,17 @@ class ConfigVersioningTest {
     }
 
     @Test
-    void projectMapDefaultsRightToLeftAndPreservesAnExplicitFlow(@TempDir Path dir) {
+    void projectMapDefaultsLeftToRightAndPreservesAnExplicitFlow(@TempDir Path dir) {
         ConfigManager first = new ConfigManager(dir);
         first.load();
-        assertEquals("RIGHT_TO_LEFT", first.getWorkspaceState().getProjectMapFlow());
+        assertEquals("LEFT_TO_RIGHT", first.getWorkspaceState().getProjectMapFlow());
 
-        first.getWorkspaceState().setProjectMapFlow("LEFT_TO_RIGHT");
+        first.getWorkspaceState().setProjectMapFlow("RIGHT_TO_LEFT");
         first.save();
 
         ConfigManager reopened = new ConfigManager(dir);
         reopened.load();
-        assertEquals("LEFT_TO_RIGHT", reopened.getWorkspaceState().getProjectMapFlow());
+        assertEquals("RIGHT_TO_LEFT", reopened.getWorkspaceState().getProjectMapFlow());
     }
 
     @Test
