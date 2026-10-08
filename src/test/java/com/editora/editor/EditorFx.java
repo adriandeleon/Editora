@@ -312,6 +312,34 @@ final class EditorFx {
         }
     }
 
+    /**
+     * The first node under {@code root} carrying {@code styleClass}, or null. Unlike {@code Node.lookup} this
+     * also descends into a {@code ScrollPane}'s content before the pane has a skin.
+     */
+    static Node styled(Node root, String styleClass) {
+        if (root == null) {
+            return null;
+        }
+        if (root.getStyleClass().contains(styleClass)) {
+            return root;
+        }
+        if (root instanceof javafx.scene.control.ScrollPane scroll) {
+            Node found = styled(scroll.getContent(), styleClass);
+            if (found != null) {
+                return found;
+            }
+        }
+        if (root instanceof Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                Node found = styled(child, styleClass);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
     /** The first item titled {@code text}, searching submenus; fails when the menu has no such item. */
     static MenuItem menuItem(java.util.List<MenuItem> items, String text) {
         MenuItem found = findMenuItem(items, text);
