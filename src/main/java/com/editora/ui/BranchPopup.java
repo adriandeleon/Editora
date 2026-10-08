@@ -27,13 +27,17 @@ import com.editora.search.FuzzyMatch;
 import static com.editora.i18n.Messages.tr;
 
 /**
- * IntelliJ-style branch dropdown: a search field over a sectioned list — the <em>Local</em> branches (the
- * current one first), the <em>Remote</em> branches, then the <em>actions</em> (New Branch, Pull, Fetch,
- * Push, Stash, Commit…). Branches come first because they are what the dropdown is opened for: with the
- * seven action rows on top, the current branch sat below the fold at the default height. Typing filters
- * branches <em>and</em> actions together; ↑/↓ navigate (skipping section headers, and wrapping — so ↑ from
- * the current branch lands on the last action), Enter activates, Esc closes. A row is activated by a click
- * on that row only. Anchored just above the status-bar branch segment.
+ * IntelliJ-style branch dropdown: a search field over a sectioned list — the <em>actions</em> (New Branch,
+ * Pull, Fetch, Push, Stash, Commit…), the <em>Local</em> branches (the current one first), then the
+ * <em>Remote</em> branches. The list is tall enough that the actions do not push the current branch below
+ * the fold, and it opens with the current branch selected, so Enter straight away changes nothing. Typing filters
+ * branches <em>and</em> actions together; ↑/↓ navigate (wrapping), Enter activates, Esc closes. A row is
+ * activated by a click on that row only. Anchored just above the status-bar branch segment.
+ *
+ * <p>Each section collapses to its header: a click on the header, Enter on it, or ←/→ while it is
+ * selected. The headers are therefore stops for ↑/↓ — but only while nothing is typed: a search looks
+ * through every section, collapsed or not, and its headers are plain labels again. The owner is told the
+ * collapsed set ({@link #setOnCollapsedSectionsChanged}) so it can outlive the popup.
  *
  * <p>Pure view: the owner supplies the branch lists and the action/checkout callbacks via
  * {@link #show}. Modeled on {@link QuickOpen} (popup + filtered {@link ListView}).
@@ -62,7 +66,11 @@ public final class BranchPopup {
 
     private sealed interface Row permits Header, ActionRow, BranchRow {}
 
-    private record Header(String title) implements Row {}
+    /**
+     * A section label. {@code key} names the section in the collapsed set and {@code count} is how many
+     * rows it holds, shown while they are folded away.
+     */
+    private record Header(String title, String key, int count) implements Row {}
 
     private record ActionRow(String label, String accel, String commandId, Runnable run) implements Row {}
     /** A branch row: {@code upstream}/{@code ahead}/{@code behind} are the tracking info (locals only). */
@@ -89,6 +97,26 @@ public final class BranchPopup {
     private final ObservableList<Row> items = FXCollections.observableArrayList();
     private List<Row> all = List.of();
 
+    /** Wide enough for a long branch name beside its upstream without a horizontal scroll bar. */
+    private static final double WIDTH = 640;
+
+    /** Eighteen menu-height rows: the actions, and a screenful of branches under them. */
+    private static final double LIST_HEIGHT = 520;
+
+    /** Section keys: the collapsed set is made of these ({@code remote:<name>} with several remotes). */
+    static final String SECTION_LOCAL = "local";
+
+    static final String SECTION_REMOTE = "remote";
+    static final String SECTION_ACTIONS = "actions";
+
+    /** The sections shown as their header only. Kept across shows; the owner may seed and persist it. */
+    private final java.util.Set<String> collapsed = new java.util.LinkedHashSet<>();
+
+    private Consumer<java.util.Set<String>> onCollapsedChanged = keys -> {};
+
+    /** The search text the list is filtered by (lower-cased, trimmed); empty when nothing is typed. */
+    private String query = "";
+
     /** Shared in-scene overlay host (injected by MainController) + the card it shows. */
     private OverlayHost overlayHost;
 
@@ -104,7 +132,7 @@ public final class BranchPopup {
     public BranchPopup() {
         search.setPromptText(tr("branchpopup.searchPrompt"));
         list.setItems(items);
-        list.setPrefHeight(360);
+        list.setPrefHeight(LIST_HEIGHT);
         list.setFocusTraversable(false);
         // Activation by mouse belongs to the cell (see RowCell): a handler on the list fired for a click
         // anywhere inside it — a section header, the empty space under the rows — and ran whichever row
@@ -126,14 +154,27 @@ public final class BranchPopup {
         hint.getStyleClass().add("palette-hint");
         content = new VBox(6, header, search, list, hint);
         content.getStyleClass().addAll("command-palette", "branch-popup");
-        content.setPrefWidth(480);
-        content.setMaxSize(480, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
+        content.setPrefWidth(WIDTH);
+        content.setMaxSize(WIDTH, Region.USE_PREF_SIZE); // hug content; don't stretch to fill the overlay
         content.getProperties().put("editora.ownsKeys", Boolean.TRUE); // keep C-n/C-p for the picker
     }
 
     /** Injects the shared overlay host used to show the branch dropdown. */
     public void setOverlayHost(OverlayHost overlayHost) {
         this.overlayHost = overlayHost;
+    }
+
+    /** Replaces the collapsed sections (keys as handed to {@link #setOnCollapsedSectionsChanged}). */
+    public void setCollapsedSections(java.util.Collection<String> keys) {
+        collapsed.clear();
+        if (keys != null) {
+            collapsed.addAll(keys);
+        }
+    }
+
+    /** Called with the whole collapsed set each time the user folds or unfolds a section. */
+    public void setOnCollapsedSectionsChanged(Consumer<java.util.Set<String>> listener) {
+        onCollapsedChanged = listener == null ? keys -> {} : listener;
     }
 
     /** When the popup last hid — lets the status-bar click that auto-hid it act as a clean toggle. */
@@ -194,7 +235,17 @@ public final class BranchPopup {
             java.util.function.Function<BranchRef, List<RowAction>> rowActions) {
         this.rowActions = rowActions == null ? branch -> List.of() : rowActions;
         List<Row> rows = new ArrayList<>();
-        rows.add(new Header(tr("branchpopup.local")));
+        List<Row> section = new ArrayList<>();
+        if (!actions.isEmpty()) {
+            // The chord beside an action comes from the live keymap, never from the caller: a hardcoded
+            // "C-x g" was only true of the Emacs keymap.
+            var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
+            for (MenuAction a : actions) {
+                String chord = keymap == null ? null : keymap.displayChord(a.commandId());
+                section.add(new ActionRow(a.label(), chord == null ? "" : chord, a.commandId(), a.run()));
+            }
+            addSection(rows, tr("branchpopup.actions"), SECTION_ACTIONS, section);
+        }
         List<com.editora.git.GitService.BranchInfo> locals = new ArrayList<>(local);
         locals.sort((x, y) -> {
             if (x.name().equals(current)) {
@@ -207,7 +258,7 @@ public final class BranchPopup {
         });
         for (var b : locals) {
             boolean cur = b.name().equals(current);
-            rows.add(new BranchRow(
+            section.add(new BranchRow(
                     b.name(),
                     false,
                     cur,
@@ -217,22 +268,17 @@ public final class BranchPopup {
                     b.gone(),
                     cur ? this::hide : () -> onCheckoutLocal.accept(b.name())));
         }
+        addSection(rows, tr("branchpopup.local"), SECTION_LOCAL, section);
         for (var group : remoteGroups(remote, remoteNames).entrySet()) {
-            rows.add(new Header(
-                    group.getKey().isEmpty() ? tr("branchpopup.remote") : tr("branchpopup.remoteOf", group.getKey())));
+            String name = group.getKey();
             for (String b : group.getValue()) {
-                rows.add(new BranchRow(b, true, false, "", 0, 0, false, () -> onCheckoutRemote.accept(b)));
+                section.add(new BranchRow(b, true, false, "", 0, 0, false, () -> onCheckoutRemote.accept(b)));
             }
-        }
-        if (!actions.isEmpty()) {
-            rows.add(new Header(tr("branchpopup.actions")));
-            // The chord beside an action comes from the live keymap, never from the caller: a hardcoded
-            // "C-x g" was only true of the Emacs keymap.
-            var keymap = com.editora.command.TextInputKeymap.sharedKeymap();
-            for (MenuAction a : actions) {
-                String chord = keymap == null ? null : keymap.displayChord(a.commandId());
-                rows.add(new ActionRow(a.label(), chord == null ? "" : chord, a.commandId(), a.run()));
-            }
+            addSection(
+                    rows,
+                    name.isEmpty() ? tr("branchpopup.remote") : tr("branchpopup.remoteOf", name),
+                    name.isEmpty() ? SECTION_REMOTE : SECTION_REMOTE + ":" + name,
+                    section);
         }
         titleLabel.setText(tr("branchpopup.title"));
         // Never the raw URL: one stored as https://user:token@host would put the token on screen.
@@ -241,6 +287,13 @@ public final class BranchPopup {
         remoteUrlLabel.setTooltip(shownUrl.isBlank() ? null : new Tooltip(shownUrl));
         all = rows;
         present(owner, anchor);
+    }
+
+    /** Appends a header and its rows to {@code rows}, then empties {@code section} for the next one. */
+    private static void addSection(List<Row> rows, String title, String key, List<Row> section) {
+        rows.add(new Header(title, key, section.size()));
+        rows.addAll(section);
+        section.clear();
     }
 
     /**
@@ -321,16 +374,27 @@ public final class BranchPopup {
         return "";
     }
 
-    private void filter(String query) {
-        String q = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+    private void filter(String text) {
+        query = text == null ? "" : text.toLowerCase(Locale.ROOT).trim();
+        rebuild();
+        selectFirstSelectable();
+    }
+
+    /** Fills the list from {@link #all}: the rows matching the search, minus those of a folded section. */
+    private void rebuild() {
         List<Row> out = new ArrayList<>();
         Header pending = null;
+        boolean folded = false;
         for (Row r : all) {
             if (r instanceof Header h) {
-                pending = h; // only emitted if a following row in its section matches
+                folded = isFolded(h);
+                pending = folded ? null : h; // only emitted if a following row in its section matches
+                if (folded) {
+                    out.add(h);
+                }
                 continue;
             }
-            if (q.isEmpty() || FuzzyMatch.of(labelOf(r), q) != null) {
+            if (!folded && (query.isEmpty() || FuzzyMatch.of(labelOf(r), query) != null)) {
                 if (pending != null) {
                     out.add(pending);
                     pending = null;
@@ -339,15 +403,58 @@ public final class BranchPopup {
             }
         }
         items.setAll(out);
-        selectFirstSelectable();
+    }
+
+    /**
+     * Whether {@code header} folds and unfolds right now. Not during a search: its results come from every
+     * section, so a fold would hide the branch that was typed for.
+     */
+    private boolean toggleable(Header header) {
+        return query.isEmpty();
+    }
+
+    private boolean isFolded(Header header) {
+        return toggleable(header) && collapsed.contains(header.key());
+    }
+
+    /** Folds or unfolds {@code header}'s section and leaves the selection on the header. */
+    private void setFolded(Header header, boolean fold) {
+        if (!toggleable(header) || fold == collapsed.contains(header.key())) {
+            return;
+        }
+        if (fold) {
+            collapsed.add(header.key());
+        } else {
+            collapsed.remove(header.key());
+        }
+        onCollapsedChanged.accept(new java.util.LinkedHashSet<>(collapsed));
+        rebuild();
+        list.getSelectionModel().select(items.indexOf(header));
+    }
+
+    /** Whether the cursor stops on {@code row}: every action and branch, and a header that folds. */
+    private boolean selectable(Row row) {
+        return !(row instanceof Header header) || toggleable(header);
     }
 
     private void selectFirstSelectable() {
-        for (int i = 0; i < items.size(); i++) {
-            if (!(items.get(i) instanceof Header)) {
-                list.getSelectionModel().select(i);
-                list.scrollTo(0); // from the top: the section header above the first row stays in view
-                return;
+        // With nothing typed, the current branch: the actions above it are a keystroke away, and Enter on a
+        // just-opened dropdown must not run one. Else the first branch or action; a header is only the
+        // first stop when everything is folded.
+        for (int pass = query.isEmpty() ? 0 : 1; pass < 3; pass++) {
+            for (int i = 0; i < items.size(); i++) {
+                Row row = items.get(i);
+                boolean wanted =
+                        switch (pass) {
+                            case 0 -> row instanceof BranchRow branch && branch.current();
+                            case 1 -> !(row instanceof Header);
+                            default -> selectable(row);
+                        };
+                if (wanted) {
+                    list.getSelectionModel().select(i);
+                    list.scrollTo(0); // from the top: the section header above the first row stays in view
+                    return;
+                }
             }
         }
         list.getSelectionModel().clearSelection();
@@ -361,13 +468,24 @@ public final class BranchPopup {
             e.consume();
             return;
         }
+        // ←/→ fold and unfold the selected section, as in a tree. A header is only ever selected while the
+        // search field is empty, so the caret has nowhere to go and loses nothing.
+        boolean left = e.getCode() == javafx.scene.input.KeyCode.LEFT;
+        if ((left || e.getCode() == javafx.scene.input.KeyCode.RIGHT)
+                && !e.isShiftDown()
+                && !e.isShortcutDown()
+                && !e.isAltDown()
+                && list.getSelectionModel().getSelectedItem() instanceof Header header) {
+            setFolded(header, left);
+            e.consume();
+            return;
+        }
         PickerKeys.Action action = PickerKeys.action(e);
         switch (action) {
             case CANCEL -> hide();
             case ACCEPT -> activate(list.getSelectionModel().getSelectedItem());
             default -> {
-                // Section headers are stepped over.
-                if (!PickerKeys.navigate(list, action, row -> !(row instanceof Header))) {
+                if (!PickerKeys.navigate(list, action, this::selectable)) {
                     return;
                 }
             }
@@ -382,6 +500,8 @@ public final class BranchPopup {
         } else if (row instanceof BranchRow b) {
             hide();
             b.run().run();
+        } else if (row instanceof Header header) {
+            setFolded(header, !collapsed.contains(header.key()));
         }
     }
 
@@ -455,17 +575,16 @@ public final class BranchPopup {
     /** Width of the leading icon column — the menu bar's {@code ICON_COLUMN}, so both read alike. */
     private static final double ICON_COLUMN = 22;
 
-    /** Whether a click or Enter on {@code row} does something: a real action or branch, never a header. */
-    private static boolean activatable(Row row) {
-        return row instanceof ActionRow || row instanceof BranchRow;
-    }
+    /** Side of the square a header's fold chevron is centred in. */
+    private static final double CHEVRON_BOX = 12;
 
     private final class RowCell extends ListCell<Row> {
         RowCell() {
-            // Only a primary click on this cell, and only while it shows an action or a branch.
+            // Only a primary click on this cell, and only while it shows a row that does something: an
+            // action, a branch, or a header that folds.
             setOnMouseClicked(e -> {
                 Row row = getItem();
-                if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && activatable(row)) {
+                if (e.getButton() == MouseButton.PRIMARY && !isEmpty() && row != null && selectable(row)) {
                     activate(row);
                     e.consume();
                 }
@@ -494,10 +613,13 @@ public final class BranchPopup {
                 return;
             }
             if (item instanceof Header h) {
-                setGraphic(null);
-                setText(h.title());
                 getStyleClass().add("branch-popup-header");
-                setDisable(true); // visually a non-selectable section label
+                setText(null);
+                setGraphic(header(h));
+                setDisable(!toggleable(h)); // during a search: a plain, non-selectable section label
+                if (toggleable(h)) {
+                    setTooltip(new Tooltip(tr(isFolded(h) ? "branchpopup.expand" : "branchpopup.collapse", h.title())));
+                }
             } else if (item instanceof ActionRow a) {
                 setDisable(false);
                 Label label = new Label(a.label());
@@ -511,6 +633,26 @@ public final class BranchPopup {
                 setText(null);
                 setGraphic(branchRow(br));
             }
+        }
+
+        /** A section header: the fold chevron, the title and — while folded — how many rows it hides. */
+        private HBox header(Header h) {
+            boolean folded = isFolded(h);
+            Node chevron = Icons.chevronRight();
+            chevron.setRotate(folded ? 0 : 90);
+            javafx.scene.layout.StackPane box = new javafx.scene.layout.StackPane(chevron);
+            box.setMinSize(CHEVRON_BOX, CHEVRON_BOX);
+            box.setPrefSize(CHEVRON_BOX, CHEVRON_BOX);
+            box.setMaxSize(CHEVRON_BOX, CHEVRON_BOX);
+            box.getStyleClass().add("branch-popup-chevron");
+            HBox row = new HBox(4, box, new Label(h.title()));
+            if (folded) {
+                Label count = new Label(Integer.toString(h.count()));
+                count.getStyleClass().add("branch-popup-count");
+                row.getChildren().add(count);
+            }
+            row.setAlignment(Pos.CENTER_LEFT);
+            return row;
         }
 
         private HBox row(Node icon, Label left, Label right) {

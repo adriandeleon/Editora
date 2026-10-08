@@ -691,7 +691,7 @@ Editora is built with the help of AI coding tools.
   options — include untracked files, staged changes only (Git 2.35+), keep the index — and saves unsaved
   buffers first, so the stash holds what is on screen. A stash that applies with conflicts says so, says
   the stash was kept, and lists the conflicted files. Pop-latest / apply / drop pickers remain on the
-  palette and the VCS menu; the branch dropdown (branches first, then the actions) offers *Stash Changes*
+  palette and the VCS menu; the branch dropdown (the actions first, then the branches; each section folds) offers *Stash Changes*
   and *Unstash…*.
   **Patches:** *Git: Apply Patch…* applies a `.patch`/`.diff` file, or the active buffer when it is a
   patch, to the working tree or the index — checked first, so a patch that does not fit changes nothing

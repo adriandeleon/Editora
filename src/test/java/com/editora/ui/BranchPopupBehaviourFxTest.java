@@ -130,6 +130,57 @@ class BranchPopupBehaviourFxTest {
                         null));
     }
 
+    private static void relayout(ListView<Object> list) {
+        list.getScene().getRoot().applyCss();
+        list.getScene().getRoot().layout();
+    }
+
+    private static void press(Node target, javafx.scene.input.KeyCode code) {
+        Event.fireEvent(
+                target,
+                new javafx.scene.input.KeyEvent(
+                        javafx.scene.input.KeyEvent.KEY_PRESSED, "", "", code, false, false, false, false));
+    }
+
+    private static String title(Object header) {
+        return String.valueOf(FxTestSupport.call(header, "title", new Class<?>[] {}));
+    }
+
+    private static List<String> headers(ListView<Object> list) {
+        return list.getItems().stream()
+                .filter(r -> kind(r).equals("Header"))
+                .map(BranchPopupBehaviourFxTest::title)
+                .toList();
+    }
+
+    private static List<String> branches(ListView<Object> list) {
+        return list.getItems().stream()
+                .filter(r -> kind(r).equals("BranchRow"))
+                .map(BranchPopupBehaviourFxTest::name)
+                .toList();
+    }
+
+    private static int headerIndex(ListView<Object> list, String title) {
+        for (int i = 0; i < list.getItems().size(); i++) {
+            Object row = list.getItems().get(i);
+            if (kind(row).equals("Header") && title(row).equals(title)) {
+                return i;
+            }
+        }
+        throw new AssertionError("no header " + title);
+    }
+
+    /** The text of every label inside {@code cell}'s graphic. */
+    private static List<String> labels(ListCell<?> cell) {
+        List<String> out = new ArrayList<>();
+        for (Node n : cell.lookupAll(".label")) {
+            if (n instanceof Label label && n != cell) {
+                out.add(label.getText());
+            }
+        }
+        return out;
+    }
+
     private static int indexOf(ListView<Object> list, String kind, String name) {
         for (int i = 0; i < list.getItems().size(); i++) {
             Object row = list.getItems().get(i);
@@ -152,9 +203,10 @@ class BranchPopupBehaviourFxTest {
                 assertTrue(s.ran().isEmpty(), "a click on empty list space checked out the selected branch");
                 assertTrue(s.popup().isShown());
 
-                click(cellOf(s.list(), indexOf(s.list(), "Header", ""))); // the "Local" section label
+                click(cellOf(s.list(), indexOf(s.list(), "Header", ""))); // the "Actions" section label
                 assertTrue(s.ran().isEmpty(), "a click on a section header activated the selected row");
                 assertTrue(s.popup().isShown());
+                relayout(s.list()); // the click folded the section: the rows below it moved up
 
                 click(cellOf(s.list(), indexOf(s.list(), "BranchRow", "spike")));
                 assertEquals(List.of("local:spike"), s.ran(), "the clicked row runs — not the selected one");
@@ -166,41 +218,135 @@ class BranchPopupBehaviourFxTest {
     }
 
     @Test
-    void theBranchesComeFirstAndFitWithoutScrolling() throws Exception {
+    void theActionsComeFirstAndTheCursorStartsOnTheCurrentBranch() throws Exception {
         FxTestSupport.runOnFx(() -> {
             Shown s = show();
             try {
                 List<Object> rows = s.list().getItems();
+                assertEquals(List.of("Actions", "Local", "Remote"), headers(s.list()));
                 assertEquals("Header", kind(rows.get(0)));
-                assertEquals("main", name(rows.get(1)), "the current branch is the first row under Local");
-                assertEquals(1, s.list().getSelectionModel().getSelectedIndex(), "and it is where the cursor starts");
+                assertEquals("ActionRow", kind(rows.get(1)));
+                int main = indexOf(s.list(), "BranchRow", "main");
+                assertEquals("Header", kind(rows.get(main - 1)), "the current branch is the first row under Local");
+                assertEquals(
+                        main,
+                        s.list().getSelectionModel().getSelectedIndex(),
+                        "the cursor starts on the current branch, not on an action Enter would run");
+                assertEquals(
+                        7,
+                        rows.stream().filter(r -> kind(r).equals("ActionRow")).count(),
+                        "actions still listed");
 
-                int lastBranch = -1;
-                int firstAction = -1;
-                for (int i = 0; i < rows.size(); i++) {
-                    if (kind(rows.get(i)).equals("BranchRow")) {
-                        lastBranch = i;
-                    } else if (kind(rows.get(i)).equals("ActionRow") && firstAction < 0) {
-                        firstAction = i;
-                    }
-                }
-                assertTrue(lastBranch < firstAction, "every branch is listed before the first action");
-
-                // At the default height the whole branch list is on screen (seven action rows used to push the
-                // current branch below the fold).
+                // At the default height everything is on screen: the actions above do not push a branch
+                // below the fold.
                 double viewport = s.list().getHeight();
-                for (int i = 0; i <= lastBranch; i++) {
+                for (int i = 0; i < rows.size(); i++) {
                     ListCell<?> cell = cellOf(s.list(), i);
                     assertTrue(
                             cell.getBoundsInParent().getMaxY() <= viewport + 0.5,
                             "row " + i + " (" + kind(rows.get(i)) + ") ends at "
                                     + cell.getBoundsInParent().getMaxY() + " in a " + viewport + " px list");
                 }
-                assertEquals(
-                        7,
-                        rows.stream().filter(r -> kind(r).equals("ActionRow")).count(),
-                        "actions still listed");
             } finally {
+                s.stage().hide();
+            }
+        });
+    }
+
+    @Test
+    void aClickOnAHeaderFoldsItsSectionAndASearchStillLooksInside() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = show();
+            try {
+                List<java.util.Set<String>> told = new ArrayList<>();
+                s.popup().setOnCollapsedSectionsChanged(told::add);
+                javafx.scene.control.TextField search = FxTestSupport.field(s.popup(), "search");
+                int local = headerIndex(s.list(), "Local");
+
+                click(cellOf(s.list(), local));
+                relayout(s.list());
+                assertEquals(List.of(java.util.Set.of("local")), told);
+                assertEquals(
+                        List.of("origin/feature/a", "origin/main"),
+                        branches(s.list()),
+                        "the Local rows are folded away; Remote is untouched");
+                assertEquals(List.of("Actions", "Local", "Remote"), headers(s.list()), "the header stays");
+                assertEquals(local, s.list().getSelectionModel().getSelectedIndex(), "and keeps the cursor");
+                assertTrue(labels(cellOf(s.list(), local)).contains("5"), "it says how many rows it hides");
+
+                search.setText("spike");
+                assertEquals(List.of("spike"), branches(s.list()), "a search finds a branch in a folded section");
+                assertEquals("spike", name(s.list().getSelectionModel().getSelectedItem()));
+                relayout(s.list());
+                click(cellOf(s.list(), headerIndex(s.list(), "Local")));
+                assertEquals(1, told.size(), "during a search a header is a plain label");
+
+                search.setText("");
+                assertEquals(
+                        List.of("origin/feature/a", "origin/main"),
+                        branches(s.list()),
+                        "the fold is back once the search is cleared");
+
+                relayout(s.list());
+                click(cellOf(s.list(), headerIndex(s.list(), "Local")));
+                assertEquals(java.util.Set.of(), told.get(told.size() - 1));
+                assertEquals(7, branches(s.list()).size());
+                assertTrue(s.ran().isEmpty());
+                assertTrue(s.popup().isShown());
+            } finally {
+                s.stage().hide();
+            }
+        });
+    }
+
+    @Test
+    void theKeyboardReachesAHeaderAndFoldsIt() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = show();
+            try {
+                javafx.scene.control.TextField search = FxTestSupport.field(s.popup(), "search");
+                assertEquals("main", name(s.list().getSelectionModel().getSelectedItem()));
+
+                press(search, javafx.scene.input.KeyCode.UP);
+                int local = headerIndex(s.list(), "Local");
+                assertEquals(local, s.list().getSelectionModel().getSelectedIndex(), "↑ stops on the header");
+
+                press(search, javafx.scene.input.KeyCode.LEFT);
+                assertEquals(2, branches(s.list()).size(), "← folds");
+                press(search, javafx.scene.input.KeyCode.LEFT);
+                assertEquals(2, branches(s.list()).size(), "← on a folded section changes nothing");
+                press(search, javafx.scene.input.KeyCode.RIGHT);
+                assertEquals(7, branches(s.list()).size(), "→ unfolds");
+                press(search, javafx.scene.input.KeyCode.ENTER);
+                assertEquals(2, branches(s.list()).size(), "Enter toggles");
+                assertEquals(local, s.list().getSelectionModel().getSelectedIndex());
+                assertTrue(s.popup().isShown(), "folding does not close the dropdown");
+
+                press(search, javafx.scene.input.KeyCode.DOWN);
+                assertEquals(
+                        headerIndex(s.list(), "Remote"),
+                        s.list().getSelectionModel().getSelectedIndex(),
+                        "↓ from a folded header goes to the next section");
+                assertTrue(s.ran().isEmpty());
+            } finally {
+                s.stage().hide();
+            }
+        });
+    }
+
+    @Test
+    void theOwnersCollapsedSetIsHonouredWhenShown() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            Shown s = show();
+            try {
+                s.popup().hide();
+                s.popup().setCollapsedSections(List.of("actions", "local", "remote"));
+                FxTestSupport.call(
+                        s.popup(), "present", new Class<?>[] {javafx.stage.Window.class, Node.class}, s.stage(), null);
+                assertEquals(3, s.list().getItems().size(), "three headers and nothing else");
+                assertEquals(0, s.list().getSelectionModel().getSelectedIndex(), "the first header takes the cursor");
+            } finally {
+                s.popup().hide();
                 s.stage().hide();
             }
         });

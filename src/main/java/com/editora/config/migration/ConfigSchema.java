@@ -256,7 +256,8 @@ public enum ConfigSchema {
                     // v12→13: + projectViewMode / projectMapKeepZoom / projectMapFocusNewColumn (additive;
                     // missing means Tree with both options on, which is what every window did before). A
                     // stored projectMapFlow is left as it is: only a file without one gets the new default.
-                    Map.entry(12, ConfigMigrations::identity))),
+                    Map.entry(12, ConfigMigrations::identity),
+                    Map.entry(13, ConfigMigrations::identity))), // v13→14: + collapsedBranchSections (additive)
     // v1 → v2: Bookmark gained `mnemonic` (additive; absent ⇒ none). The bump is what makes an older build
     // set the file aside rather than rewrite it without the field.
     BOOKMARKS(BookmarkStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity)),
