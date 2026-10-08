@@ -25,7 +25,8 @@ jobs:
           persist-credentials: false
 
       # Palantir Java Format currently depends on JDK 25-era javac internals. Keep formatting
-      # isolated here so the JDK 27 compatibility lane can exercise the application itself.
+      # isolated here so a newer-JDK compatibility lane (JDK 27, disabled for now) can exercise the
+      # application itself.
       - name: Set up JDK 25
         uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
@@ -46,9 +47,10 @@ jobs:
         include:
           - java: '25'
             distribution: temurin
-          # Temurin 27 binaries were not yet published on GA day; Oracle provides the GA build.
-          - java: '27'
-            distribution: oracle
+          # The JDK 27 compatibility lane is disabled for now. To bring it back:
+          # (Temurin 27 binaries were not yet published on GA day; Oracle provides the GA build.)
+          # - java: '27'
+          #   distribution: oracle
 
     steps:
       - name: Check out repository

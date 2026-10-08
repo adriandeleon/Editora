@@ -143,6 +143,10 @@ Stage step and `jreleaser.yml` together — `test_check_release.py` cross-checks
 
 ### Experimental Native Image archives
 
+**Disabled for now** (`if: false` on the job, and it is out of the `release` job's `needs`): in the
+v0.20.0 release every target failed, Linux x64 with `native-image` out of heap, so that release has no
+native archives. The rest of this section describes the job as it runs when enabled.
+
 A separate, best-effort `native-experimental` matrix builds the opt-in `-Pnative` profile on
 Linux x64, macOS x64/arm64, and Windows x64. Each job runs on its own host OS with Oracle
 GraalVM for JDK 25; Intel macOS uses the last available JDK 25 update for that host. Native

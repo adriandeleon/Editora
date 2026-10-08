@@ -990,8 +990,8 @@ and the matching `Editora-<version>-<platform>.jar` with `-Pfatjar` on its own r
 installer for a normal setup; the fat jar is handy if you already have a JDK 25 and just want
 `java -jar`.
 
-Releases also attempt `Editora-<version>-<target>-native-experimental` archives (`.tar.gz` on
-Linux/macOS, `.zip` on Windows). Extract one and run `./run-editora-native` or the Windows
+Releases up to 0.19.0 also attempted `Editora-<version>-<target>-native-experimental` archives (`.tar.gz`
+on Linux/macOS, `.zip` on Windows). That job is disabled for now, and 0.20.0 has none. Extract one and run `./run-editora-native` or the Windows
 `run-editora-native.cmd`; its launcher uses separate settings. The native build
 has [measured editing regressions and feature limits](docs/native-image-staticfx.md), so use the
 regular installer for normal work. If its build or smoke test fails, the ordinary release still
