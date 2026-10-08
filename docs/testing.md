@@ -53,28 +53,6 @@ prototype platform's input/rendering limitations don't apply.
   stands in for the native file chooser, and `elevationProcess` for `pkexec`/`osascript` — a test never
   launches a real elevation helper; `AdminSaveDecisionsFxTest` runs the same script without privileges.
 
-## Download and install tests
-
-Code that downloads, verifies and unpacks things (`install/InstallService`, `plugin/PluginRegistry`,
-`plugin/PluginInstaller`, and the `ui` coordinators over them) is tested without the network and without
-installing anything outside a JUnit temp dir.
-
-- **`io/LoopbackDownloads`** (test tree) is a JDK `HttpServer` on `127.0.0.1:0` plus an `HttpClient` that
-  sends every request to it. Production code is still given real-looking URLs
-  (`https://download.eclipse.org/…`), so its own rules — HTTPS only, the install catalog's host list — run
-  as they do for a user; the client rewrites `https://host/path` to the loopback server only after that.
-  It can answer with a body, a status, a redirect, a transfer cut off part-way, or a body held until a
-  latch is released, and it records what was requested.
-- **`io/TestArchives`** builds zips and tarballs in memory, including entries no honest archive has
-  (`..` segments, absolute names, links that point out of the tree).
-- The services take the client through a package-private constructor and expose a synchronous form of
-  their worker job (`installSync`, `fetchSync`, `installFromUrlSync`) so the pure lane needs no toolkit.
-  `InstallTestAccess` / `PluginTestAccess` hand those seams to tests in other packages.
-- Tarball extraction is the system `tar`'s, not Editora's. `InstallServiceTarTest` asserts only what must
-  hold for both GNU tar and bsdtar — nothing outside the install folder is created or changed — and is
-  disabled on Windows.
-- Never trigger an npm/pip/toolchain install step from a test: those run the real package manager.
-
 ### Every command is run
 
 `CommandSweepFxTest` builds a real window and runs **every** id in its `CommandRegistry` through
@@ -110,6 +88,28 @@ In `pom.xml`:
 Because the backend ships inside JavaFX, it can never go stale on a JavaFX bump — unlike the
 previously self-built Monocle backend it replaced (see
 [dependencies.md](dependencies.md#the-headless-test-backend-no-vendored-dependency)).
+
+## Download and install tests
+
+Code that downloads, verifies and unpacks things (`install/InstallService`, `plugin/PluginRegistry`,
+`plugin/PluginInstaller`, and the `ui` coordinators over them) is tested without the network and without
+installing anything outside a JUnit temp dir.
+
+- **`io/LoopbackDownloads`** (test tree) is a JDK `HttpServer` on `127.0.0.1:0` plus an `HttpClient` that
+  sends every request to it. Production code is still given real-looking URLs
+  (`https://download.eclipse.org/…`), so its own rules — HTTPS only, the install catalog's host list — run
+  as they do for a user; the client rewrites `https://host/path` to the loopback server only after that.
+  It can answer with a body, a status, a redirect, a transfer cut off part-way, or a body held until a
+  latch is released, and it records what was requested.
+- **`io/TestArchives`** builds zips and tarballs in memory, including entries no honest archive has
+  (`..` segments, absolute names, links that point out of the tree).
+- The services take the client through a package-private constructor and expose a synchronous form of
+  their worker job (`installSync`, `fetchSync`, `installFromUrlSync`) so the pure lane needs no toolkit.
+  `InstallTestAccess` / `PluginTestAccess` hand those seams to tests in other packages.
+- Tarball extraction is the system `tar`'s, not Editora's. `InstallServiceTarTest` asserts only what must
+  hold for both GNU tar and bsdtar — nothing outside the install folder is created or changed — and is
+  disabled on Windows.
+- Never trigger an npm/pip/toolchain install step from a test: those run the real package manager.
 
 ## JDK compatibility lanes
 
