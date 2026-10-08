@@ -1102,7 +1102,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 debugActive,
                 dapManager.state() == com.editora.dap.DapManager.State.SUSPENDED,
                 debugCoordinator == null || debugCoordinator.restartAvailable(),
-                git.operationInProgress());
+                git.operationInProgress(),
+                b != null && b.hasExportablePreview());
     }
 
     private void setupRecentFiles() {
@@ -2077,7 +2078,7 @@ public class MainController implements com.editora.mcp.McpBridge {
      * the old one (otherwise the user has to click to get a caret). Robust regardless of whether the picker
      * hides before or after invoking this.
      */
-    private void activateAndFocusTab(Tab tab) {
+    void activateAndFocusTab(Tab tab) {
         editorArea.select(tab);
         EditorBuffer buffer = bufferOf(tab);
         if (buffer != null) {
@@ -6032,7 +6033,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private final TypstCoordinator typst = new TypstCoordinator(coordinatorHost, this::resolveTypstRoot);
 
     /** Owns all document export/print services and their window lifecycle. */
-    private final ExportCoordinator exports =
+    final ExportCoordinator exports =
             new ExportCoordinator(coordinatorHost, mermaid, diagram, typst, fileWorkflows::openPath);
 
     // --- HTML Live Preview (serve via a loopback HttpServer + open in a detected browser) ---------

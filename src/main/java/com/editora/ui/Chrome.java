@@ -275,7 +275,39 @@ final class Chrome {
             boolean debugActive,
             boolean debugSuspended,
             boolean debugRestartable,
-            boolean gitOperation) {
+            boolean gitOperation,
+            boolean exportablePreview) {
+
+        /**
+         * A context whose preview, if it has one, can be exported and printed — every preview but the
+         * {@code .http} response panel (see {@code EditorBuffer.hasExportablePreview}).
+         */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended,
+                boolean debugRestartable,
+                boolean gitOperation) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    debugRestartable,
+                    gitOperation,
+                    hasPreview);
+        }
 
         /** A context with no merge, rebase, cherry-pick or revert in progress in its repository. */
         PaletteContext(
@@ -329,7 +361,7 @@ final class Chrome {
 
         /** Everything available — the neutral value for tests and for callers with no window context. */
         static PaletteContext all() {
-            return new PaletteContext(true, true, true, true, true, true, true, true, true, true, true);
+            return new PaletteContext(true, true, true, true, true, true, true, true, true, true, true, true);
         }
     }
 
@@ -360,6 +392,13 @@ final class Chrome {
     /** Git commands that act on a merge, rebase, cherry-pick or revert in progress, and need one. */
     private static final java.util.Set<String> NEEDS_GIT_OPERATION =
             java.util.Set.of("git.continueOperation", "git.skipOperation", "git.abortOperation");
+
+    /** Preview commands that put the preview on a page, which not every preview can be. */
+    private static final java.util.Set<String> PREVIEW_NEEDS_EXPORTABLE =
+            java.util.Set.of("preview.exportPdf", "preview.print");
+
+    /** The two {@code editor.} commands that act on the active buffer's text as a whole. */
+    private static final java.util.Set<String> PRINTS_THE_BUFFER = java.util.Set.of("editor.print", "editor.exportPdf");
 
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
             "debug.continue",
@@ -393,7 +432,14 @@ final class Chrome {
             return c.typstFile() ? null : new DisabledReason("palette.disabled.needsTypst", null);
         }
         if (id.startsWith("preview.")) {
-            return c.hasPreview() ? null : new DisabledReason("palette.disabled.needsPreview", null);
+            if (!c.hasPreview()) {
+                return new DisabledReason("palette.disabled.needsPreview", null);
+            }
+            // A preview that is a live panel rather than a document (an .http response) has nothing to put
+            // on a page: lit, these two only reported that after the Save dialog had been answered.
+            return PREVIEW_NEEDS_EXPORTABLE.contains(id) && !c.exportablePreview()
+                    ? new DisabledReason("palette.disabled.needsExportablePreview", null)
+                    : null;
         }
         // Git acts on the repo the active file lives in — except cloning and init, which are exactly what
         // you run when you have no repo yet. Gating those on inRepo() would grey them out in the only
@@ -420,7 +466,11 @@ final class Chrome {
                     : null;
         }
         // Whole-family buffer requirements: these do nothing on the Welcome page or an image/hex/PDF tab.
-        if (id.startsWith("edit.") || id.startsWith("nav.") || id.startsWith("markwhen.")) {
+        // Printing and exporting the file are listed in the File menu, so they are grayed there too.
+        if (id.startsWith("edit.")
+                || id.startsWith("nav.")
+                || id.startsWith("markwhen.")
+                || PRINTS_THE_BUFFER.contains(id)) {
             return c.hasBuffer() ? null : new DisabledReason("palette.disabled.needsBuffer", null);
         }
         return null;
