@@ -103,7 +103,11 @@ class LocalHistoryCommandsFxTest {
                     FxTestSupport.callOnFx(() -> revisions(win, file).get(0));
             assertEquals("first draft", first.label(), "the typed name is trimmed");
             assertEquals(HistoryRevision.REASON_LABEL, first.reason());
-            assertEquals(tr("status.history.labeled", "first draft"), win.w().status());
+            OverlayTestKit.await(
+                    async,
+                    "the label to be reported once it is stored",
+                    () -> tr("status.history.labeled", "first draft")
+                            .equals(win.w().status()));
 
             // A blank name records nothing.
             win.w().clearStatus();
@@ -343,8 +347,10 @@ class LocalHistoryCommandsFxTest {
             assertTrue(
                     cells.stream()
                             .filter(cell -> cell.getItem() instanceof FileHistoryPanel.FileGroup)
-                            .allMatch(cell -> cell.getContextMenu() == null),
-                    "a file row has nothing to restore by itself");
+                            .allMatch(cell -> OverlayTestKit.labels(
+                                            cell.getContextMenu().getItems())
+                                    .equals(List.of(tr("history.menu.purge")))),
+                    "a file row has nothing to restore by itself: it offers to delete its history");
             TreeCell<Object> goneRevision = cells.stream()
                     .filter(cell -> cell.getItem() instanceof HistoryRevision revision
                             && revision.path().equals(gone.toString()))
