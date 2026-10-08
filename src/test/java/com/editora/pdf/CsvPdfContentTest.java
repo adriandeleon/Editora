@@ -44,4 +44,33 @@ class CsvPdfContentTest {
         assertTrue(text.contains("2 León c;d"), text);
         assertFalse(text.contains("|"), "the delimiter is not cell content: " + text);
     }
+
+    @Test
+    void aCellTallerThanAPageIsSplitNotCutOff(@TempDir Path dir) throws Exception {
+        StringBuilder cell = new StringBuilder();
+        for (int i = 1; i <= 60; i++) {
+            cell.append("note ")
+                    .append(i)
+                    .append(" is one of sixty long remarks kept in a single cell end")
+                    .append(i)
+                    .append(". ");
+        }
+        Path out = dir.resolve("long.pdf");
+        MarkdownPdfWriter.write(
+                CsvTableDocument.fromCsv("id,notes\n1,\"" + cell + "\"\n2,short\n"),
+                null,
+                "letter",
+                null,
+                out,
+                List.of());
+        String text = PdfProbe.squeezed(out);
+        for (int i = 1; i <= 60; i++) {
+            assertTrue(text.contains("cellend" + i + "."), "remark " + i + " is lost");
+        }
+        assertTrue(text.contains("2short"), "the row after it survives");
+        assertTrue(PdfProbe.pages(out) >= 2, "the cell spans pages");
+        for (PdfProbe.Glyph g : PdfProbe.glyphs(out)) {
+            assertTrue(g.baseline() >= 50f, "drawn below the bottom margin: " + g);
+        }
+    }
 }
