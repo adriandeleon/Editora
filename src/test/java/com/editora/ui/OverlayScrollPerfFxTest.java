@@ -51,7 +51,16 @@ class OverlayScrollPerfFxTest {
     @BeforeAll
     void setUp() throws Exception {
         FxTestSupport.bootToolkit();
-        fx = FxWindowFixture.create();
+        // These tests put their own diagnostics into the lint overlays, and the editor's linters write to the
+        // same overlays on their own schedule. With Mermaid support on (the default) every window probes for
+        // its tools at startup — `npx -y @probelabs/maid --version`, seconds where npx has to fetch it — and
+        // the probe's answer re-gates every buffer: a file that is not a diagram has its Mermaid overlay
+        // switched off and emptied, whatever a test had put there meanwhile. The Markdown linter answers
+        // 450 ms after a Markdown file loads, likewise over what is there. Neither is what is measured here.
+        fx = FxWindowFixture.create(Files.createTempDirectory("editora-fx-test"), shared -> {
+            shared.getSettings().setMermaidSupport(false);
+            shared.getSettings().setMarkdownLint(false);
+        });
     }
 
     @AfterAll
