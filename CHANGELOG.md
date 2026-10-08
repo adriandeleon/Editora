@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Right-clicking a class row in Test Results opened no menu, so "Go to Test Class", "Rerun This Class"
+  and "Debug This Class" could not be reached; only test rows had one.
 - **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
   turned out to be incomplete or not the expected tool was unpacked over the installed version before it
   was checked: the working version was gone, and the half-unpacked folder was then detected as installed,

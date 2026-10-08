@@ -340,6 +340,37 @@ class TestRunCoordinatorActionsFxTest {
                 "with no row selected there is nothing to offer");
     }
 
+    /**
+     * A class row had no menu at all: only test rows knew their class, and the menu is not shown for a row
+     * without one. "Go to Test Class", "Rerun This Class" and "Debug This Class" could not be reached.
+     */
+    @Test
+    void aClassRowHasItsOwnMenuAndRerunsOrDebugsTheWholeClass() throws Exception {
+        finishedGradleRun();
+        showWindow();
+        debugAvailable = true;
+
+        assertEquals(
+                List.of(
+                        tr("testrunner.menu.goToClass"),
+                        tr("testrunner.menu.rerunClass"),
+                        tr("testrunner.menu.debugClass")),
+                menuLabels(null));
+
+        chooseFromMenu(null, tr("testrunner.menu.goToClass"));
+        assertEquals(List.of("jump GRADLE com.x.FooTest#null"), calls);
+
+        calls.clear();
+        chooseFromMenu(null, tr("testrunner.menu.rerunClass"));
+        assertEquals("run GRADLE [test, --tests, com.x.FooTest] [--offline]", calls.get(0));
+
+        finishedGradleRun(); // the rerun started a new run: finish it before using its rows
+        chooseFromMenu(null, tr("testrunner.menu.debugClass"));
+        assertEquals("run GRADLE [test, --tests, com.x.FooTest, --debug-jvm] [--offline]", calls.get(0));
+        FxTestSupport.runOnFx(() -> coordinator.onTestOutput(JDWP_BANNER, false));
+        assertEquals("attach com.x.FooTest localhost:5005", calls.get(calls.size() - 1));
+    }
+
     @Test
     void goToJumpsToTheTestAndRerunRunsOnlyThatTest() throws Exception {
         finishedGradleRun();
