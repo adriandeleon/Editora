@@ -35,6 +35,18 @@ final class ExportCoordinator {
     /** Asks before an export replaces {@code file}, when the Save dialog did not ask (tests replace it). */
     java.util.function.Predicate<java.io.File> confirmReplace = this::confirmReplace;
 
+    /** A print preparation started by this window has not reached {@link #openPrintPreview} yet. */
+    private boolean printPreparing;
+    /** The Print Preview open for this window, or {@code null}. */
+    private PrintPreview openPreview;
+    /** Creates the printer job behind a preview ({@code null}: no printer). Tests supply a fake — never a real job. */
+    java.util.function.Supplier<PrintPreview.Job> printJobs = () -> {
+        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        return job == null ? null : PrintPreview.Job.of(job);
+    };
+    /** Where a print result goes; tests replace it so a failure does not open a modal alert. */
+    Consumer<com.editora.print.PrintService.Result> printReporter = r -> reportPrint(r);
+
     ExportCoordinator(
             CoordinatorHost host,
             MermaidCoordinator mermaid,
@@ -174,18 +186,20 @@ final class ExportCoordinator {
 
     /** Opens the print preview for a CSV through the same directly-built table (see {@link #csvExportPdf}). */
     void csvPrint(String csvText) {
+        if (printBusy()) {
+            return;
+        }
         org.commonmark.node.Node table = CsvTableDocument.fromCsv(csvText);
         if (table == null) {
             host.setStatus(tr("status.csv.empty"));
             return;
         }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
-        host.setStatus(tr("status.print.preparing"));
-        printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared));
+        preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
     }
 
     /** Exports the complete Project Map layout—not merely the visible viewport—to a paginated PDF. */
@@ -201,13 +215,16 @@ final class ExportCoordinator {
 
     /** Opens the normal Print Preview flow for the complete Project Map layout. */
     void printProjectMap(javafx.scene.image.Image image) {
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        if (printBusy()) {
+            return;
+        }
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
-        host.setStatus(tr("status.print.preparing"));
-        printService.prepareFxImages(java.util.List.of(image), prepared -> openPrintPreview(job, prepared));
+        preparePrint(() ->
+                printService.prepareFxImages(java.util.List.of(image), prepared -> openPrintPreview(job, prepared)));
     }
 
     /** Exports parsed CSV rows to a spreadsheet — {@code xlsx} true → Excel {@code .xlsx}, else ODF {@code .ods}. */
@@ -625,25 +642,55 @@ final class ExportCoordinator {
      * "include line numbers" + "syntax highlighting" settings; always light. Off the FX thread.
      */
     void printCode() {
+        if (printBusy()) {
+            return;
+        }
         EditorBuffer b = host.activeBuffer();
         if (b == null) {
             host.setStatus(tr("status.noFileOpen"));
             return;
         }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
         Settings s = host.settings();
-        host.setStatus(tr("status.print.preparing"));
-        printService.prepareCode(
+        preparePrint(() -> printService.prepareCode(
                 b.getContent(),
                 grammarKey(b),
                 s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(),
                 s.getTabSize(),
-                prepared -> openPrintPreview(job, prepared));
+                prepared -> openPrintPreview(job, prepared)));
+    }
+
+    /**
+     * Whether this window is already printing — a preparation is in flight, or its Print Preview is open
+     * (which is then brought forward). A print request that finds it busy is dropped: running the command
+     * twice used to stack two modal previews, each with its own printer job.
+     */
+    private boolean printBusy() {
+        if (openPreview != null) {
+            openPreview.toFront();
+            return true;
+        }
+        return printPreparing;
+    }
+
+    /**
+     * Starts an off-thread preparation that ends in {@link #openPrintPreview}, which is where the in-flight
+     * mark is cleared — on success, on a preparation error and on a failure to open alike.
+     */
+    private void preparePrint(Runnable start) {
+        printPreparing = true;
+        host.setStatus(tr("status.print.preparing"));
+        try {
+            start.run();
+        } catch (RuntimeException | Error e) {
+            printPreparing = false; // never submitted: nothing will call back to clear it
+            throw e;
+        }
     }
 
     /**
@@ -652,6 +699,9 @@ final class ExportCoordinator {
      * {@code csv.print} does. A buffer whose preview cannot be put on a page is told so before a job is made.
      */
     void printPreview() {
+        if (printBusy()) {
+            return;
+        }
         EditorBuffer b = host.activeBuffer();
         if (b != null && b.hasCsvPreview()) {
             csvPrint(b.getContent());
@@ -735,18 +785,47 @@ final class ExportCoordinator {
 
     /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
     private void openPrintPreview(javafx.print.PrinterJob job, com.editora.print.PrintService.Prepared prepared) {
-        if (!prepared.ok()) {
-            reportPrint(new com.editora.print.PrintService.Result(false, prepared.error()));
+        openPrintPreview(PrintPreview.Job.of(job), prepared);
+    }
+
+    /**
+     * {@link #openPrintPreview(javafx.print.PrinterJob, com.editora.print.PrintService.Prepared)} on the
+     * preview's own job type. Every way out clears the busy state: a preparation error, a failure to
+     * paginate or open (any {@code Throwable} — the pagination runs the whole layout engine here, and an
+     * escaped error used to leave "Preparing print preview…" in the status bar with no dialog), and the
+     * preview's result and cancel callbacks.
+     */
+    void openPrintPreview(PrintPreview.Job job, com.editora.print.PrintService.Prepared prepared) {
+        printPreparing = false;
+        if (openPreview != null) { // a request that was already on its way when the first preview opened
+            openPreview.toFront();
             return;
         }
-        new PrintPreview(
-                        host.window(),
-                        job,
-                        prepared.paginator(),
-                        this::reportPrint,
-                        () -> host.setStatus(tr("status.print.printing")),
-                        () -> host.setStatus(tr("status.print.cancelled")))
-                .show();
+        if (!prepared.ok()) {
+            printReporter.accept(new com.editora.print.PrintService.Result(false, prepared.error()));
+            return;
+        }
+        try {
+            PrintPreview preview = new PrintPreview(
+                    host.window(),
+                    job,
+                    prepared.paginator(),
+                    result -> {
+                        openPreview = null;
+                        printReporter.accept(result);
+                    },
+                    () -> host.setStatus(tr("status.print.printing")),
+                    () -> {
+                        openPreview = null;
+                        host.setStatus(tr("status.print.cancelled"));
+                    });
+            openPreview = preview;
+            preview.show();
+        } catch (Throwable t) {
+            openPreview = null;
+            printReporter.accept(new com.editora.print.PrintService.Result(
+                    false, t.getMessage() == null ? t.toString() : t.getMessage()));
+        }
     }
 
     /** Reports a print result: status + (on failure) an error dialog. */
