@@ -291,9 +291,10 @@ public final class HistoryRetention {
     /**
      * What {@code bucket} takes: the summed uncompressed {@code sizeBytes} of its <em>distinct</em> revision
      * bodies. Rows that share a body (the same {@code sha256}) are one body on disk and count once. This is
-     * the number the per-project size limit is compared with.
+     * the number the per-project size limit is compared with, and the one to show a user. It hashes every
+     * row; for the check made after each save use {@link #exceedsBudget}.
      */
-    public static long totalBytes(Map<String, List<HistoryRevision>> bucket) {
+    public static long storedBytes(Map<String, List<HistoryRevision>> bucket) {
         Usage usage = new Usage();
         if (bucket != null) {
             for (List<HistoryRevision> list : bucket.values()) {
@@ -308,7 +309,26 @@ public final class HistoryRetention {
     }
 
     /**
-     * Whether {@code bucket} takes more than {@code maxTotalBytes} (see {@link #totalBytes}); false for a
+     * The summed {@code sizeBytes} of every <em>row</em> in {@code bucket}; allocates nothing. An upper bound
+     * of {@link #storedBytes} — equal to it unless rows share a body — and so a cheap first answer to "can
+     * this bucket be over its limit at all?".
+     */
+    public static long totalBytes(Map<String, List<HistoryRevision>> bucket) {
+        long total = 0;
+        if (bucket != null) {
+            for (List<HistoryRevision> list : bucket.values()) {
+                if (list != null) {
+                    for (int i = 0, n = list.size(); i < n; i++) {
+                        total += list.get(i).sizeBytes();
+                    }
+                }
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Whether {@code bucket} takes more than {@code maxTotalBytes} (see {@link #storedBytes}); false for a
      * non-positive limit. The check made after every recorded save, so it first sums the rows as they are —
      * an upper bound that allocates nothing — and only counts distinct bodies when that sum is over.
      */
@@ -316,15 +336,7 @@ public final class HistoryRetention {
         if (maxTotalBytes <= 0 || bucket == null) {
             return false;
         }
-        long rows = 0;
-        for (List<HistoryRevision> list : bucket.values()) {
-            if (list != null) {
-                for (int i = 0, n = list.size(); i < n; i++) {
-                    rows += list.get(i).sizeBytes();
-                }
-            }
-        }
-        return rows > maxTotalBytes && totalBytes(bucket) > maxTotalBytes;
+        return totalBytes(bucket) > maxTotalBytes && storedBytes(bucket) > maxTotalBytes;
     }
 
     /** How close together automatic saves are folded into one revision (see {@link #replacesNewestAutosave}). */

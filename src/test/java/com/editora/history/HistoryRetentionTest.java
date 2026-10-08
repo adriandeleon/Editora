@@ -408,7 +408,7 @@ class HistoryRetentionTest {
         assertEquals(8, out.get("/p/big.bin").size(), "the large file gave up its two oldest");
         assertEquals("big10", out.get("/p/big.bin").get(0).sha256());
         assertEquals("big3", out.get("/p/big.bin").get(7).sha256());
-        assertTrue(HistoryRetention.totalBytes(out) <= 50 * MB);
+        assertTrue(HistoryRetention.storedBytes(out) <= 50 * MB);
     }
 
     @Test
@@ -447,7 +447,9 @@ class HistoryRetentionTest {
         bucket.put("/p/a", original);
         assertTrue(HistoryMoves.copy(bucket, "/p/a", "/p/b"));
 
-        assertEquals(30 * MB, HistoryRetention.totalBytes(bucket), "sixty rows, thirty bodies on disk");
+        assertEquals(30 * MB, HistoryRetention.storedBytes(bucket), "sixty rows, thirty bodies on disk");
+        assertEquals(60 * MB, HistoryRetention.totalBytes(bucket), "the row sum is only an upper bound");
+        assertEquals(0, HistoryRetention.storedBytes(null));
         assertFalse(HistoryRetention.exceedsBudget(bucket, 50 * MB));
         Map<String, List<HistoryRevision>> out = HistoryRetention.enforceProjectBudget(bucket, 50 * MB);
         assertEquals(30, out.get("/p/a").size());
@@ -458,7 +460,7 @@ class HistoryRetentionTest {
         for (int i = 60; i >= 1; i--) {
             repeated.add(labelled(i, MB, "same", "safety " + i));
         }
-        assertEquals(MB, HistoryRetention.totalBytes(Map.of("/p/x", repeated)));
+        assertEquals(MB, HistoryRetention.storedBytes(Map.of("/p/x", repeated)));
     }
 
     @Test
@@ -467,12 +469,12 @@ class HistoryRetentionTest {
         bucket.put(
                 "/a", List.of(revAt("/a", 9, 10, "new"), revAt("/a", 3, 60, "shared"), revAt("/a", 2, 60, "shared")));
         bucket.put("/b", List.of(revAt("/b", 8, 10, "b")));
-        assertEquals(80, HistoryRetention.totalBytes(bucket));
+        assertEquals(80, HistoryRetention.storedBytes(bucket));
         Map<String, List<HistoryRevision>> out = HistoryRetention.enforceProjectBudget(bucket, 70);
         assertEquals(
                 List.of("new"),
                 out.get("/a").stream().map(HistoryRevision::sha256).toList());
-        assertEquals(20, HistoryRetention.totalBytes(out));
+        assertEquals(20, HistoryRetention.storedBytes(out));
     }
 
     @Test
@@ -489,7 +491,7 @@ class HistoryRetentionTest {
                 List.copyOf(HistoryRetention.enforceProjectBudget(bucket, 1).keySet()));
         // A row without a hash cannot be told apart from another: each counts.
         assertEquals(
-                14, HistoryRetention.totalBytes(Map.of("/n", List.of(revAt("/n", 2, 7, ""), revAt("/n", 1, 7, "")))));
+                14, HistoryRetention.storedBytes(Map.of("/n", List.of(revAt("/n", 2, 7, ""), revAt("/n", 1, 7, "")))));
         assertEquals(
                 1,
                 HistoryRetention.enforceProjectBudget(
@@ -565,7 +567,7 @@ class HistoryRetentionTest {
     }
 
     @Test
-    void totalBytesIsTheSumTheBudgetIsCheckedAgainst() {
+    void totalBytesIsTheSumOfTheRows() {
         Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
         bucket.put("/a", List.of(rev(1, 100, "a1"), rev(2, 50, "a2")));
         bucket.put("/b", List.of(rev(3, 7, "b1")));
