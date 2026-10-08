@@ -192,7 +192,9 @@ class LocalHistoryRecordRestoreFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             Window win = window(async);
             EditorBuffer buffer = open(async, win, file);
-            save(async, win, buffer);
+            save(async, win, buffer); // not dirty: nothing to wait for but the revision itself
+            awaitRevisions(async, win, file, 1);
+            settle(async, win);
 
             List<HistoryRevision> recorded = FxTestSupport.callOnFx(() -> revisions(win, file));
             assertEquals(1, recorded.size(), "the text the save replaced and the text it wrote are one text");
@@ -201,6 +203,7 @@ class LocalHistoryRecordRestoreFxTest {
             // An edited first save: what it replaced is named for what it is, not as an "external change".
             FxTestSupport.runOnFx(() -> buffer.replaceWholeDocument("gamma\n"));
             save(async, win, buffer);
+            awaitRevisions(async, win, file, 2);
             assertEquals(
                     List.of(HistoryRevision.REASON_SAVE, HistoryCoordinator.REASON_BASELINE),
                     FxTestSupport.callOnFx(() -> revisions(win, file).stream()
@@ -211,6 +214,8 @@ class LocalHistoryRecordRestoreFxTest {
             EditorBuffer blank = open(async, win, empty);
             FxTestSupport.runOnFx(() -> blank.replaceWholeDocument("first words\n"));
             save(async, win, blank);
+            awaitRevisions(async, win, empty, 1);
+            settle(async, win);
             assertEquals(
                     List.of(HistoryRevision.REASON_SAVE),
                     FxTestSupport.callOnFx(() -> revisions(win, empty).stream()
