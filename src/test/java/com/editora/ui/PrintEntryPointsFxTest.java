@@ -341,7 +341,16 @@ class PrintEntryPointsFxTest {
             assertTrue(map.get("projectMap.exportPdf"));
 
             Path out = dir.resolve("map.pdf");
-            FxTestSupport.runOnFx(() -> exports(fx.controller).chooseDestination = chooser -> out.toFile());
+            FxTestSupport.runOnFx(() -> {
+                // The map draws nothing into a panel that has no size yet, and then has nothing to export:
+                // lay the window out as a shown one is (the headless stage may not have done it).
+                javafx.scene.Parent root = panel.getScene().getRoot();
+                root.resize(1500, 800);
+                root.applyCss();
+                root.layout();
+                exports(fx.controller).chooseDestination = chooser -> out.toFile();
+            });
+            FxTestSupport.drainFx();
             run(fx.controller, "projectMap.exportPdf");
             for (int i = 0; i < 300 && !Files.exists(out); i++) {
                 Thread.sleep(50);
