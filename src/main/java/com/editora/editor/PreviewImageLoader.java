@@ -501,9 +501,14 @@ public final class PreviewImageLoader {
      * falls back to a badge-sized default. Pure; unit-tested.
      */
     static Raster rasterFor(double width, double height) {
+        return rasterFor(width, height, RASTER_SCALE);
+    }
+
+    /** As {@link #rasterFor(double, double)} at {@code wanted}× instead of the preview's 2× (print and PDF). */
+    static Raster rasterFor(double width, double height, double wanted) {
         double w = width > 0 && Double.isFinite(width) ? width : 100;
         double h = height > 0 && Double.isFinite(height) ? height : 20;
-        double scale = Math.min(RASTER_SCALE, Math.min(MAX_RASTER_SIDE / w, MAX_RASTER_SIDE / h));
+        double scale = Math.min(wanted, Math.min(MAX_RASTER_SIDE / w, MAX_RASTER_SIDE / h));
         double pixels = (w * scale) * (h * scale);
         if (pixels > MAX_RASTER_PIXELS) {
             scale *= Math.sqrt(MAX_RASTER_PIXELS / pixels);
@@ -539,14 +544,32 @@ public final class PreviewImageLoader {
      * {@code null} when the SVG can't be parsed/rendered, so callers degrade gracefully.
      */
     public static byte[] svgToPng(byte[] svg) {
+        SvgPng r = svgToPng(svg, RASTER_SCALE);
+        return r == null ? null : r.png();
+    }
+
+    /** A rasterized SVG and its density: {@code pixelScale} bitmap pixels per unit of the SVG's own size. */
+    public record SvgPng(byte[] png, double pixelScale) {}
+
+    /** The scale an SVG is rasterized at for paper: 288 dpi at its natural size, where the pixel cap allows. */
+    public static final double PRINT_RASTER_SCALE = 4.0;
+
+    /**
+     * As {@link #svgToPng(byte[])} at {@code wanted}× the SVG's declared size (less when
+     * {@link #MAX_RASTER_PIXELS} clamps it), returning the scale actually used so the caller can draw the
+     * bitmap at the SVG's logical size. Blocking — a large SVG takes hundreds of milliseconds; never call it
+     * on the FX thread.
+     */
+    public static SvgPng svgToPng(byte[] svg, double wanted) {
         try {
             SVGDocument doc = new SVGLoader().load(new ByteArrayInputStream(svg), null, LoaderContext.createDefault());
             if (doc == null) {
                 return null;
             }
-            BufferedImage buf = paint(doc, rasterFor(doc.size().width, doc.size().height));
+            Raster r = rasterFor(doc.size().width, doc.size().height, wanted);
+            BufferedImage buf = paint(doc, r);
             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-            return javax.imageio.ImageIO.write(buf, "png", out) ? out.toByteArray() : null;
+            return javax.imageio.ImageIO.write(buf, "png", out) ? new SvgPng(out.toByteArray(), r.scale()) : null;
         } catch (RuntimeException | java.io.IOException | OutOfMemoryError e) {
             return null;
         }

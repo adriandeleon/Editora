@@ -123,30 +123,17 @@ public final class PdfExportService {
     }
 
     /**
-     * Exports one or more PNG images (produced by snapshotting an image/tree preview on the FX thread) into a
-     * single PDF — each image scaled to the page width and sliced across pages when tall (see
-     * {@link ImagePdfWriter}). Used by the SVG / Markwhen / JSON-YAML-TOML / XML preview PDF export. Runs off
-     * the FX thread.
+     * Exports PNG images (produced by snapshotting an image/tree preview on the FX thread) into a single PDF
+     * — each at its logical size, fitted to the page width and continued over pages when tall, cut between
+     * rows (see {@link ImagePdfWriter}). Used by the Markwhen / JSON-YAML-TOML / XML / summary preview PDF
+     * export. Runs off the FX thread and decodes one image at a time.
      */
-    public void exportImages(java.util.List<byte[]> pngImages, String pageSize, Path out, Consumer<Result> onResult) {
+    public void exportPageImages(
+            java.util.List<PageImage> images, String pageSize, Path out, Consumer<Result> onResult) {
         exec.submit(() -> {
             Result result;
             try {
-                java.util.List<java.awt.image.BufferedImage> imgs = new java.util.ArrayList<>();
-                for (byte[] png : pngImages) {
-                    if (png == null) {
-                        continue;
-                    }
-                    java.awt.image.BufferedImage img =
-                            javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(png));
-                    if (img != null) {
-                        imgs.add(img);
-                    }
-                }
-                if (imgs.isEmpty()) {
-                    throw new IllegalStateException("nothing to export (the preview produced no image)");
-                }
-                ImagePdfWriter.write(imgs, pageSize, out);
+                writePageImages(images, pageSize, out);
                 result = new Result(true, "");
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "Image PDF export failed", e);
@@ -157,22 +144,68 @@ public final class PdfExportService {
         });
     }
 
-    /** Exports already-rendered JavaFX images, such as a complete Project Map snapshot, off the FX thread. */
+    private static void writePageImages(java.util.List<PageImage> images, String pageSize, Path out)
+            throws java.io.IOException {
+        java.util.List<PageImage> usable = images == null
+                ? java.util.List.of()
+                : images.stream()
+                        .filter(i -> i != null
+                                && i.source().pixelWidth() > 0
+                                && i.source().pixelHeight() > 0)
+                        .toList();
+        if (usable.isEmpty()) {
+            throw new IllegalStateException("nothing to export (the preview produced no image)");
+        }
+        ImagePdfWriter.writePng(usable, pageSize, out);
+    }
+
+    /**
+     * Exports an SVG document as a PDF page: rasterized <b>here</b>, off the FX thread (a large SVG takes
+     * hundreds of milliseconds), at {@link com.editora.editor.PreviewImageLoader#PRINT_RASTER_SCALE}× and
+     * drawn at the SVG's own size. A failed rasterization reports {@code noImageMessage}.
+     */
+    public void exportSvg(byte[] svg, String noImageMessage, String pageSize, Path out, Consumer<Result> onResult) {
+        exec.submit(() -> {
+            Result result;
+            try {
+                com.editora.editor.PreviewImageLoader.SvgPng r = com.editora.editor.PreviewImageLoader.svgToPng(
+                        svg, com.editora.editor.PreviewImageLoader.PRINT_RASTER_SCALE);
+                if (r == null) {
+                    result = new Result(false, noImageMessage);
+                } else {
+                    writePageImages(java.util.List.of(PageImage.of(r.png(), r.pixelScale())), pageSize, out);
+                    result = new Result(true, "");
+                }
+            } catch (Throwable e) {
+                LOG.log(java.util.logging.Level.SEVERE, "SVG PDF export failed", e);
+                result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
+            }
+            Result r = result;
+            Platform.runLater(() -> onResult.accept(r));
+        });
+    }
+
+    /**
+     * Exports already-rendered JavaFX images, such as a complete Project Map snapshot, off the FX thread. A
+     * {@link HiDpiImage} is laid out at its logical size.
+     */
     public void exportFxImages(java.util.List<Image> images, String pageSize, Path out, Consumer<Result> onResult) {
         exec.submit(() -> {
             Result result;
             try {
                 java.util.List<java.awt.image.BufferedImage> converted = new java.util.ArrayList<>();
+                java.util.List<ImagePaging.Source> sources = new java.util.ArrayList<>();
                 for (Image image : images == null ? java.util.List.<Image>of() : images) {
                     java.awt.image.BufferedImage buffered = toBufferedImage(image);
                     if (buffered != null) {
                         converted.add(buffered);
+                        sources.add(ImagePdfWriter.plain(buffered, HiDpiImage.scaleOf(image)));
                     }
                 }
                 if (converted.isEmpty()) {
                     throw new IllegalStateException("nothing to export (the map produced no image)");
                 }
-                ImagePdfWriter.write(converted, pageSize, out);
+                ImagePdfWriter.write(sources, converted::get, pageSize, out);
                 result = new Result(true, "");
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "JavaFX image PDF export failed", e);

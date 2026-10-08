@@ -693,6 +693,11 @@ class ProjectMapViewFxTest {
 
                 assertTrue(printed.get().getHeight() > liveCanvasHeight, "print must include rows below the viewport");
                 assertTrue(exported.get().getHeight() > liveCanvasHeight, "PDF must include rows below the viewport");
+                assertEquals(
+                        2.0,
+                        com.editora.pdf.HiDpiImage.scaleOf(exported.get()),
+                        0.001,
+                        "a small map is rendered at 2× and says so, so it is laid out at its logical size");
                 assertEquals(liveZoom, (double) FxTestSupport.field(surface, "zoom"), 0.001);
                 assertEquals(liveOffsetX, (double) FxTestSupport.field(surface, "offsetX"), 0.001);
                 assertEquals(liveOffsetY, (double) FxTestSupport.field(surface, "offsetY"), 0.001);

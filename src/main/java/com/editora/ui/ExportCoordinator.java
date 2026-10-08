@@ -362,21 +362,34 @@ final class ExportCoordinator {
                     b.getContent(),
                     out,
                     r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
-        } else if (b.isSvg()) { // rasterize the SVG source and embed it as a PDF page
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(java.util.List.of(png), pageSize, out, report);
+        } else if (b.isSvg()) { // rasterize the SVG source (on the export thread) and embed it as a PDF page
+            pdfService.exportSvg(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    tr("status.pdf.noPreview"),
+                    pageSize,
+                    out,
+                    report);
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(chunks, pageSize, out, report);
+            b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet(), this::snapshotProgress, snap -> {
+                if (snap == null || snap.images().isEmpty()) {
+                    report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
+                    return;
+                }
+                host.setStatus(tr("status.pdf.exporting"));
+                pdfService.exportPageImages(snap.images(), pageSize, out, r -> {
+                    report.accept(r);
+                    if (r.ok() && snap.truncated()) { // after the plain "exported": the PDF is not the whole tree
+                        host.setStatus(tr("status.pdf.exportedTruncated", snap.shownRows(), snap.totalRows()));
+                    }
+                });
+            });
+        }
+    }
+
+    /** Status while a tree preview is snapshotted chunk by chunk (it takes several pulses of the FX thread). */
+    private void snapshotProgress(int done, int total) {
+        if (total > 1) {
+            host.setStatus(tr("status.preview.snapshotting", Math.round(100f * done / total)));
         }
     }
 
@@ -736,14 +749,11 @@ final class ExportCoordinator {
             printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), false, open);
         } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to a temp PNG, then paginate
             printDiagramViaImage(b, job);
-        } else if (b.isSvg()) { // rasterize the SVG source, paginate as image pages
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(java.util.List.of(png), open);
+        } else if (b.isSvg()) { // rasterize the SVG source (on the prepare thread), paginate as image pages
+            printService.prepareSvg(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    tr("status.print.noPreview"),
+                    open);
         } else if (b.isTypst()) { // Typst — CLI render to page PNGs, paginate as image pages
             typst.renderPages(b.getContent(), b.getPath(), pages -> {
                 if (pages == null || pages.isEmpty()) {
@@ -751,15 +761,30 @@ final class ExportCoordinator {
                             job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
                     return;
                 }
-                printService.prepareImages(pages, open);
+                // A page PNG is rendered at renderPpi: that many pixels per inch of paper, 72 points.
+                double density = com.editora.typst.TypstRenderer.renderPpi() / 72.0;
+                printService.preparePageImages(
+                        pages.stream()
+                                .filter(java.util.Objects::nonNull)
+                                .map(png -> com.editora.pdf.PageImage.of(png, density))
+                                .toList(),
+                        open);
             });
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(chunks, open);
+            b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet(), this::snapshotProgress, snap -> {
+                if (snap == null || snap.images().isEmpty()) {
+                    openPrintPreview(
+                            job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
+                    return;
+                }
+                host.setStatus(tr("status.print.preparing"));
+                printService.preparePageImages(snap.images(), prepared -> {
+                    open.accept(prepared);
+                    if (snap.truncated() && openPreview != null) { // the last page says so too
+                        host.setStatus(tr("status.print.truncated", snap.shownRows(), snap.totalRows()));
+                    }
+                });
+            });
         }
     }
 

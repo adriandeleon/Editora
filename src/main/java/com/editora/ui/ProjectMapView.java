@@ -1500,7 +1500,8 @@ final class ProjectMapView extends VBox {
                 offsetY = OUTPUT_MARGIN - minWorldY * outputScale;
                 hovered = null;
                 paint();
-                WritableImage image = new WritableImage(outputWidth, outputHeight);
+                // Carries its density, so print and PDF lay the map out at its logical size.
+                WritableImage image = new com.editora.pdf.HiDpiImage(outputWidth, outputHeight, outputScale);
                 return canvas.snapshot(new SnapshotParameters(), image);
             } finally {
                 canvas.setWidth(liveCanvasWidth);
