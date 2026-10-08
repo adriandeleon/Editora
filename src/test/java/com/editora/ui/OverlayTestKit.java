@@ -255,11 +255,25 @@ final class OverlayTestKit {
         return checks;
     }
 
+    /**
+     * Every node of {@code type} under {@code root}, in document order. Walks the tree itself rather than
+     * through CSS lookup, so it also sees inside a scroll pane that has not been laid out yet.
+     */
+    static <T> List<T> descendants(Node root, Class<T> type) {
+        List<T> out = new ArrayList<>();
+        collect(root, type, out);
+        return out;
+    }
+
     private static <T> void collect(Node node, Class<T> type, List<T> out) {
         if (type.isInstance(node)) {
             out.add(type.cast(node));
         }
-        if (node instanceof javafx.scene.Parent parent) {
+        if (node instanceof javafx.scene.control.ScrollPane scroll) {
+            if (scroll.getContent() != null) {
+                collect(scroll.getContent(), type, out);
+            }
+        } else if (node instanceof javafx.scene.Parent parent) {
             for (Node child : parent.getChildrenUnmodifiable()) {
                 collect(child, type, out);
             }

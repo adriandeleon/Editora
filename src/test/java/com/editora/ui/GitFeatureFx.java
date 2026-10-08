@@ -40,6 +40,12 @@ final class GitFeatureFx {
         return new GitFeatureFx(fx, git, area);
     }
 
+    /** The same plumbing over a window the test configured and owns itself. */
+    static GitFeatureFx attach(FxWindowFixture fx) {
+        return new GitFeatureFx(
+                fx, FxTestSupport.field(fx.controller, "git"), FxTestSupport.field(fx.controller, "editorArea"));
+    }
+
     /** Opens {@code file} as the active tab and waits until its repository is the active one. */
     EditorBuffer open(Path file) throws Exception {
         FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(file, 0));
