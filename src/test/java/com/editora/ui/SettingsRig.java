@@ -282,6 +282,42 @@ final class SettingsRig implements AutoCloseable {
         return answered;
     }
 
+    /**
+     * Runs {@code action}, which must open a modal dialog, and {@code inside} while that dialog is open — for
+     * a dialog with controls of its own to drive before it is answered. Whatever {@code inside} does, the
+     * dialog is closed afterwards, and a failure in there fails the test.
+     */
+    static void inDialog(Runnable action, java.util.function.Consumer<DialogPane> inside) {
+        Throwable[] failure = new Throwable[1];
+        boolean[] seen = new boolean[1];
+        Platform.runLater(() -> {
+            for (Window window : List.copyOf(Window.getWindows())) {
+                if (window.isShowing()
+                        && window.getScene() != null
+                        && window.getScene().getRoot() instanceof DialogPane pane) {
+                    seen[0] = true;
+                    try {
+                        inside.accept(pane);
+                    } catch (Throwable t) {
+                        failure[0] = t;
+                    } finally {
+                        if (window.isShowing()) {
+                            window.hide();
+                        }
+                    }
+                    return;
+                }
+            }
+        });
+        action.run();
+        if (failure[0] != null) {
+            throw new AssertionError(failure[0]);
+        }
+        if (!seen[0]) {
+            throw new AssertionError("no dialog was shown");
+        }
+    }
+
     static List<Shown> answering(ButtonBar.ButtonData answer, Runnable action) {
         return answering(shown -> answer, action);
     }
