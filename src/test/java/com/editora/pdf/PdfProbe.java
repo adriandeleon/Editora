@@ -44,6 +44,8 @@ public final class PdfProbe {
             addOperator(new BeginMarkedContentSequenceWithProperties(this));
             addOperator(new EndMarkedContentSequence(this));
             setLineSeparator("\n");
+            // The page end defaults to the platform separator: "\r\n" on Windows, once per page.
+            setPageEnd("\n");
         }
 
         @Override
@@ -92,6 +94,7 @@ public final class PdfProbe {
         try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setLineSeparator("\n");
+            stripper.setPageEnd("\n");
             return stripper.getText(doc);
         }
     }
