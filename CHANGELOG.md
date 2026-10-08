@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaces it only once it is complete; a failed install leaves things as they were.
 - Installing the Maven `pom.xml` server reported success, and saved a launch command, when the download
   was an error page rather than the server.
+- A language-server archive whose binary was a link to a file outside the install is no longer accepted
+  (the file it pointed at was marked executable and saved as the server's command).
+- The "Install this plugin?" question ran the version and the author together ("Greeter 1.0Ada"); the
+  author is now in brackets.
 
 ## [0.20.0] - 2026-10-08
 

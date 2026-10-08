@@ -431,7 +431,9 @@ final class PluginCoordinator {
                 "dialog.plugins.installBody",
                 (e.name == null || e.name.isBlank() ? e.id : e.name),
                 (e.version == null ? "" : e.version),
-                (e.author == null ? "" : e.author),
+                // The message runs version and author together ("{1}{2}"), so the author brings its own
+                // separator — it used to read "Install Greeter 1.0Ada?".
+                (e.author == null || e.author.isBlank() ? "" : " (" + e.author.strip() + ")"),
                 e.download);
         if (!browseSigned) {
             body = tr("dialog.plugins.unsignedWarn") + "\n\n" + body; // reached only when the gate is off

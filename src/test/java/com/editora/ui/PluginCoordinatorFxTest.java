@@ -484,7 +484,7 @@ class PluginCoordinatorFxTest {
 
             assertEquals(List.of(Question.Kind.INSTALL, Question.Kind.ENABLE), rig.asked());
             String install = rig.questions.get(0).body();
-            assertTrue(install.contains("Greeter") && install.contains("1.0") && install.contains("Ada"), install);
+            assertTrue(install.contains("Greeter 1.0 (Ada)"), "name, version and author are told apart: " + install);
             assertTrue(install.contains(ZIP_URL), "where it will be downloaded from is shown: " + install);
             assertFalse(install.contains(tr("dialog.plugins.unsignedWarn")), install);
             assertTrue(rig.enabled("greeter"));
