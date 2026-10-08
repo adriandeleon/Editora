@@ -4,7 +4,7 @@
   "language": "java",
   "fileName": "${className:Main}.java",
   "body": [
-    "public class ${className:Main} {",
+    "${packageDeclaration}public class ${className:Main} {",
     "",
     "    public static void main(String[] args) {",
     "        ${cursor}",

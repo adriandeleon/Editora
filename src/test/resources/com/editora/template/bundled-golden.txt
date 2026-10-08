@@ -1,0 +1,165 @@
+=== java-class
+--- Widget.java caret=76
+public class Widget {
+
+    public static void main(String[] args) {
+        
+    }
+}
+--- end
+=== java-compact
+--- sample.java caret=46
+void main() {
+    IO.println("hello world");
+}
+--- end
+=== html-page
+--- sample.html caret=187
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>My Title</title>
+</head>
+<body>
+    
+</body>
+</html>
+--- end
+=== markdown-doc
+--- sample.md caret=32
+# My Title
+
+> Ada · 2026-01-02
+
+
+--- end
+=== python-script
+--- sample.py caret=59
+#!/usr/bin/env python3
+"""Sum"""
+
+
+def main() -> None:
+    
+
+
+if __name__ == "__main__":
+    main()
+--- end
+=== shell-script
+--- sample.sh caret=61
+#!/usr/bin/env bash
+#
+# Sum
+
+set -euo pipefail
+
+main() {
+    
+}
+
+main "$@"
+--- end
+=== zsh-script
+--- sample.zsh caret=89
+#!/usr/bin/env zsh
+#
+# Sum
+
+emulate -L zsh
+setopt errexit nounset pipefail
+
+main() {
+    
+}
+
+main "$@"
+--- end
+=== html-bundle
+--- sample.html
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>My Title</title>
+    <link rel="stylesheet" href="sample.css">
+</head>
+<body>
+    
+</body>
+</html>
+--- end
+--- sample.css
+body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+}
+--- end
+=== python-project
+--- pyproject.toml
+[project]
+name = "pkg"
+version = "0.1.0"
+description = "Desc"
+requires-python = ">=3.11"
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+--- end
+--- src/pkg/__init__.py
+"""Desc."""
+
+__version__ = "0.1.0"
+--- end
+--- src/pkg/main.py
+"""Entry point for pkg."""
+
+
+def main() -> None:
+    print("Hello from pkg")
+
+
+if __name__ == "__main__":
+    main()
+--- end
+--- tests/test_main.py
+from pkg import __version__
+
+
+def test_version() -> None:
+    assert __version__ == "0.1.0"
+--- end
+--- README.md
+# pkg
+
+Desc
+
+## Run
+
+```bash
+python -m pkg.main
+```
+
+## Test
+
+```bash
+pytest
+```
+
+---
+
+Created by Ada on 2026-01-02.
+--- end
+--- .gitignore
+__pycache__/
+*.py[cod]
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+--- end

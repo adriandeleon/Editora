@@ -80,10 +80,6 @@ module com.editora {
     // need no opens — our own SnippetManager reads them via Class.getResourceAsStream.
     opens com.editora.snippet to
             com.fasterxml.jackson.databind;
-    // Jackson reflects on the template JSON DTOs (TemplateRegistry.Dto/FileDto); bundled template
-    // resources are read via Class.getResourceAsStream and need no opens.
-    opens com.editora.template to
-            com.fasterxml.jackson.databind;
     // Jackson reflects on the plugin manifest DTO (PluginManifest); the public plugin API also lives here.
     opens com.editora.plugin to
             com.fasterxml.jackson.databind;

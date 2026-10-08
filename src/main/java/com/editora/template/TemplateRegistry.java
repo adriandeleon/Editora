@@ -7,62 +7,116 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
 import com.editora.config.ConfigManager;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
- * Loads and serves file templates. Bundled templates live at {@code /com/editora/templates/<id>.json}
- * and are enumerated by a bundled {@code index.json} (a JSON array of ids, since a classpath/JAR
- * directory can't be listed); user templates are any {@code *.json} under
- * {@code <configDir>/templates/} and override a bundled template with the same id. Results are cached
- * until {@link #reload()}.
+ * Loads and serves file templates from three places, later ones overriding earlier ones by id:
  *
- * <p>The JSON shape mirrors snippets (lenient — unknown fields ignored; string-or-array bodies):
- * <pre>{ "name", "description", "language", "fileName", "body" }</pre>
- * or, for multi-file templates, a {@code "files": [{ "path", "body" }]} array instead of fileName/body.
+ * <ol>
+ *   <li><b>bundled</b> — {@code /com/editora/templates/<id>.json}, enumerated by a bundled
+ *       {@code index.json} (a classpath/JAR directory can't be listed);
+ *   <li><b>plugin</b> — each enabled plugin's {@code templates/*.json};
+ *   <li><b>user</b> — {@code <configDir>/templates/*.json}. The user's own file always wins: a plugin
+ *       must not be able to replace "Java Class" behind the user's back.
+ * </ol>
+ *
+ * <p><b>Nothing is cached</b> except the bundled set (which cannot change). Every window has its own
+ * registry over the same folder, so a cache made a template added in one window invisible in the others
+ * until each ran "Reload Templates"; reading a handful of small files when a picker opens costs nothing
+ * next to that.
+ *
+ * <p>The JSON shape (unknown fields ignored; a body may be a string or an array of lines):
+ * <pre>{ "name", "description", "language", "fileName", "body", "labels": { "variable": "Label" } }</pre>
+ * or, for a multi-file template, a {@code "files": [{ "path", "body" }]} array instead of fileName/body.
+ * A file that is not that shape is <em>skipped and reported</em> ({@link #problems()}) rather than loaded
+ * as a nameless, empty row.
  */
 public final class TemplateRegistry {
 
     private static final Logger LOG = Logger.getLogger(TemplateRegistry.class.getName());
     private static final String DIR = "/com/editora/templates/";
+    /** The bundled index's stem: a user file with this id could never be told apart from the index. */
+    public static final String RESERVED_ID = "index";
+
+    /** Why a template file was skipped. */
+    public enum ProblemKind {
+        /** Not parseable as JSON ({@code detail} = the parser's message, {@code line} = where). */
+        MALFORMED_JSON,
+        /** Valid JSON that is not an object (an array, a string, {@code null}). */
+        NOT_AN_OBJECT,
+        /** No {@code name}, or a blank one. */
+        MISSING_NAME,
+        /** Neither a {@code body} nor a non-empty {@code files} array, or a body that is not text. */
+        NO_CONTENT,
+        /** {@code files} is not an array of objects that each have a non-blank {@code path}. */
+        BAD_FILES,
+        /** The file is called {@code index.json}, which is reserved. */
+        RESERVED_ID,
+        /** The file could not be read ({@code detail} = the IO error). */
+        UNREADABLE
+    }
+
+    /** A template file that was skipped: which, why, and (for a syntax error) on which line. */
+    public record Problem(Path file, ProblemKind kind, String detail, int line) {}
+
+    /** The result of one read of every source. */
+    public record Loaded(List<Template> templates, List<Problem> problems) {}
 
     private final ConfigManager config;
-    private final ObjectMapper mapper =
-            new ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-    private List<Template> cache;
-    /** Extra template source dirs (a plugin's {@code templates/}); their {@code *.json} win by id. */
+    private final ObjectMapper mapper = new ObjectMapper();
+    /** The bundled templates, read once (they are classpath resources and cannot change). */
+    private List<Template> bundled;
+    /** Extra template source dirs (a plugin's {@code templates/}); they override bundled, not user. */
     private final List<Path> extraDirs = new ArrayList<>();
 
     public TemplateRegistry(ConfigManager config) {
         this.config = config;
     }
 
-    /** Drops the cache so edited/added user template files are picked up. */
+    /** Kept for callers that used to drop a cache: every read is already fresh. */
     public synchronized void reload() {
-        cache = null;
+        // Nothing to drop — see the class comment.
     }
 
-    /** Adds an extra template source dir (a plugin's {@code templates/}); its {@code *.json} win by id. */
+    /** Adds an extra template source dir (a plugin's {@code templates/}). */
     public synchronized void addExtraSourceDir(Path dir) {
         if (dir != null && !extraDirs.contains(dir)) {
             extraDirs.add(dir);
-            cache = null;
         }
     }
 
-    /** All templates (bundled + user, user winning on id), in a stable order. */
+    /** All templates (bundled, then plugin, then user — each overriding by id), in a stable order. */
     public synchronized List<Template> all() {
-        if (cache == null) {
-            cache = load();
+        return load().templates();
+    }
+
+    /** The template files skipped by a read of every source, in source order. */
+    public synchronized List<Problem> problems() {
+        return load().problems();
+    }
+
+    /** Reads every source once: the templates and the files that had to be skipped. */
+    public synchronized Loaded load() {
+        Map<String, Template> byId = new LinkedHashMap<>();
+        List<Problem> problems = new ArrayList<>();
+        for (Template t : bundledTemplates()) {
+            byId.put(t.id(), t);
         }
-        return cache;
+        for (Path extra : extraDirs) {
+            scanDir(extra, Template.Origin.PLUGIN, byId, problems);
+        }
+        scanDir(userDir(), Template.Origin.USER, byId, problems); // the user's own file wins
+        return new Loaded(List.copyOf(byId.values()), List.copyOf(problems));
     }
 
     /** The user templates directory ({@code <configDir>/templates}); may not exist yet. */
@@ -70,48 +124,60 @@ public final class TemplateRegistry {
         return config.getConfigDir().resolve("templates");
     }
 
-    /** The bundled (shipped) templates — only the classpath resources, not the user dir or plugins. Shown
-     *  read-only in the Settings → Templates page; editing one writes a user override of the same id. */
+    /** The bundled (shipped) templates — only the classpath resources, not the user dir or plugins. */
     public synchronized List<Template> bundledTemplates() {
-        List<Template> out = new ArrayList<>();
-        for (String id : bundledIds()) {
-            Template t = readBundled(id);
-            if (t != null) {
-                out.add(t);
+        if (bundled == null) {
+            List<Template> out = new ArrayList<>();
+            for (String id : bundledIds()) {
+                Template t = readBundled(id);
+                if (t != null) {
+                    out.add(t);
+                }
             }
+            bundled = List.copyOf(out);
         }
-        return out;
+        return bundled;
+    }
+
+    /** The plugins' templates, id-keyed (a later plugin overriding an earlier one). */
+    public synchronized List<Template> pluginTemplates() {
+        Map<String, Template> byId = new LinkedHashMap<>();
+        for (Path extra : extraDirs) {
+            scanDir(extra, Template.Origin.PLUGIN, byId, new ArrayList<>());
+        }
+        return new ArrayList<>(byId.values());
     }
 
     /** The user's own templates ({@code <configDir>/templates/*.json}), id-keyed in file order. */
     public synchronized List<Template> userTemplates() {
         Map<String, Template> byId = new LinkedHashMap<>();
-        scanDir(userDir(), byId);
+        scanDir(userDir(), Template.Origin.USER, byId, new ArrayList<>());
         return new ArrayList<>(byId.values());
     }
 
-    /**
-     * True when {@code id} can be a template's file stem: non-blank and free of path separators and of the
-     * characters a file name cannot hold on every platform, so {@code <id>.json} always stays inside
-     * {@link #userDir()}.
-     */
-    public static boolean isValidId(String id) {
-        if (id == null || id.isBlank()) {
-            return false;
-        }
-        for (int i = 0; i < id.length(); i++) {
-            char c = id.charAt(i);
-            if (c < 0x20 || "/\\:*?\"<>|".indexOf(c) >= 0) {
-                return false;
-            }
-        }
-        return true;
+    /** Every {@code *.json} file in the user templates folder, valid or not, sorted by name. */
+    public synchronized List<Path> userFiles() {
+        return jsonFiles(userDir());
     }
 
     /**
-     * Writes {@code t} as the user template {@code <configDir>/templates/<id>.json} (creating the dir),
-     * then drops the cache so it's live. Single-file templates write {@code fileName}/{@code body};
-     * multi-file ones write a {@code files} array.
+     * True when {@code id} can be a template's file stem: a file name every platform accepts (no path
+     * separators, no reserved characters or device names), so {@code <id>.json} always stays inside
+     * {@link #userDir()} — and not the reserved {@link #RESERVED_ID}.
+     */
+    public static boolean isValidId(String id) {
+        return id != null && !id.isBlank() && PortableFileName.isPortable(id) && !isReservedId(id);
+    }
+
+    /** True for the one id a template may not have: {@code index}, the bundled list's own file name. */
+    public static boolean isReservedId(String id) {
+        return id != null && RESERVED_ID.equalsIgnoreCase(id.trim());
+    }
+
+    /**
+     * Writes {@code t} as the user template {@code <configDir>/templates/<id>.json} (creating the dir).
+     * Single-file templates write {@code fileName}/{@code body}; multi-file ones write a {@code files}
+     * array. A blank name is written as the id, so the saved file is always one this registry loads.
      */
     public synchronized void saveUserTemplate(Template t) throws IOException {
         if (t == null || t.id() == null || t.id().isBlank()) {
@@ -122,21 +188,22 @@ public final class TemplateRegistry {
         }
         Files.createDirectories(userDir());
         LinkedHashMap<String, Object> m = new LinkedHashMap<>();
-        if (t.name() != null && !t.name().isBlank()) {
-            m.put("name", t.name());
-        }
+        m.put("name", t.name() == null || t.name().isBlank() ? t.id() : t.name());
         if (t.description() != null && !t.description().isBlank()) {
             m.put("description", t.description());
         }
         if (t.language() != null && !t.language().isBlank()) {
             m.put("language", t.language());
         }
+        if (!t.labels().isEmpty()) {
+            m.put("labels", new java.util.TreeMap<>(t.labels()));
+        }
         if (t.isMultiFile()) {
             List<Map<String, Object>> files = new ArrayList<>();
             for (TemplateFile f : t.files()) {
                 LinkedHashMap<String, Object> fm = new LinkedHashMap<>();
                 fm.put("path", f.path());
-                fm.put("body", f.body());
+                fm.put("body", lines(f.body()));
                 files.add(fm);
             }
             m.put("files", files);
@@ -147,7 +214,7 @@ public final class TemplateRegistry {
             m.put("body", t.body() == null ? "" : t.body());
         }
         byte[] bytes = mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(m);
-        Path file = userDir().resolve(t.id() + ".json");
+        Path file = userFile(t.id());
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.write(tmp, bytes);
         Files.move(
@@ -155,51 +222,102 @@ public final class TemplateRegistry {
                 file,
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE);
-        cache = null;
     }
 
-    /** Deletes the user template {@code <configDir>/templates/<id>.json} (reverting to bundled if any). */
+    /** A multi-line body as an array of lines (readable to hand-edit); a one-line body as a string. */
+    private static Object lines(String body) {
+        String text = body == null ? "" : body;
+        return text.indexOf('\n') < 0 ? text : List.of(text.split("\n", -1));
+    }
+
+    /**
+     * Copies {@code t} (a bundled or plugin template) into the user templates folder under the same id, so
+     * it overrides the original and can be edited — multi-file templates included. Returns the file, which
+     * is left untouched when the user already has one for that id.
+     */
+    public synchronized Path duplicateToUser(Template t) throws IOException {
+        if (t == null || !isValidId(t.id())) {
+            throw new IOException("Invalid template id: " + (t == null ? null : t.id()));
+        }
+        Path file = userFile(t.id());
+        if (!Files.exists(file)) {
+            saveUserTemplate(t.asUserCopy());
+        }
+        return file;
+    }
+
+    /** Deletes the user template file for {@code id} (reverting to a plugin's or the bundled one, if any). */
     public synchronized void deleteUserTemplate(String id) throws IOException {
         if (id == null || id.isBlank()) {
             return;
         }
-        Files.deleteIfExists(userDir().resolve(id + ".json"));
-        cache = null;
+        if (!PortableFileName.isPortable(id)) {
+            throw new IOException("Invalid template id: " + id); // never resolve a path-shaped id
+        }
+        Files.deleteIfExists(userFile(id));
     }
 
-    private List<Template> load() {
-        Map<String, Template> byId = new LinkedHashMap<>();
-        for (String id : bundledIds()) {
-            Template t = readBundled(id);
-            if (t != null) {
-                byId.put(id, t);
+    /**
+     * The user's file for {@code id}: the existing one whatever the case of its extension
+     * ({@code Notes.JSON}), else {@code <id>.json}.
+     */
+    public synchronized Path userFile(String id) {
+        for (Path p : jsonFiles(userDir())) {
+            if (stem(p.getFileName().toString()).equals(id)) {
+                return p;
             }
         }
-        scanDir(userDir(), byId); // user overrides bundled
-        for (Path extra : extraDirs) { // plugin templates win by id
-            scanDir(extra, byId);
-        }
-        return new ArrayList<>(byId.values());
+        return userDir().resolve(id + ".json");
     }
 
-    /** Adds every {@code *.json} template in {@code dir} (id = file stem), overriding any earlier entry. */
-    private void scanDir(Path dir, Map<String, Template> byId) {
-        if (!Files.isDirectory(dir)) {
-            return;
+    private static List<Path> jsonFiles(Path dir) {
+        if (dir == null || !Files.isDirectory(dir)) {
+            return List.of();
         }
         try (Stream<Path> s = Files.list(dir)) {
-            s.filter(p -> p.getFileName().toString().endsWith(".json")).sorted().forEach(p -> {
-                String id = stem(p.getFileName().toString());
-                if (!id.equals("index")) {
-                    Template t = readUser(p, id);
-                    if (t != null) {
-                        byId.put(id, t);
-                    }
-                }
-            });
+            return s.filter(p ->
+                            p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json"))
+                    .filter(Files::isRegularFile)
+                    .sorted()
+                    .toList();
         } catch (IOException e) {
             LOG.log(Level.WARNING, "Failed to list templates in " + dir, e);
+            return List.of();
         }
+    }
+
+    /** Adds every valid {@code *.json} template in {@code dir} (id = file stem), overriding earlier entries. */
+    private void scanDir(Path dir, Template.Origin origin, Map<String, Template> byId, List<Problem> problems) {
+        String source = origin == Template.Origin.PLUGIN ? pluginName(dir) : "";
+        for (Path p : jsonFiles(dir)) {
+            String id = stem(p.getFileName().toString());
+            if (isReservedId(id)) {
+                if (origin == Template.Origin.USER) {
+                    problems.add(new Problem(p, ProblemKind.RESERVED_ID, "", 0));
+                }
+                continue; // a plugin may ship its own index.json the way the bundled set does
+            }
+            try (InputStream in = Files.newInputStream(p)) {
+                Template t = parse(mapper.readTree(in), id, origin, source, p, problems);
+                if (t != null) {
+                    byId.remove(id); // re-insert, so an override takes the later source's position
+                    byId.put(id, t);
+                }
+            } catch (JsonProcessingException e) {
+                int line = e.getLocation() == null ? 0 : e.getLocation().getLineNr();
+                problems.add(new Problem(p, ProblemKind.MALFORMED_JSON, e.getOriginalMessage(), line));
+            } catch (IOException e) {
+                problems.add(new Problem(p, ProblemKind.UNREADABLE, String.valueOf(e.getMessage()), 0));
+            }
+        }
+    }
+
+    /** A plugin's display name for its {@code templates/} dir: the plugin folder's name. */
+    private static String pluginName(Path templatesDir) {
+        Path parent = templatesDir.toAbsolutePath().normalize().getParent();
+        return parent == null || parent.getFileName() == null
+                ? ""
+                : parent.getFileName().toString();
     }
 
     private List<String> bundledIds() {
@@ -215,75 +333,113 @@ public final class TemplateRegistry {
 
     private Template readBundled(String id) {
         try (InputStream in = TemplateRegistry.class.getResourceAsStream(DIR + id + ".json")) {
-            return in == null ? null : toTemplate(mapper.readValue(in, Dto.class), id);
+            if (in == null) {
+                return null;
+            }
+            List<Problem> problems = new ArrayList<>();
+            Template t = parse(mapper.readTree(in), id, Template.Origin.BUNDLED, "", Path.of(id + ".json"), problems);
+            if (t == null) {
+                LOG.warning("Invalid bundled template " + id + ": " + problems);
+            }
+            return t;
         } catch (IOException e) {
             LOG.log(Level.WARNING, "Malformed bundled template " + id + " — skipped", e);
             return null;
         }
     }
 
-    private Template readUser(Path file, String id) {
-        try (InputStream in = Files.newInputStream(file)) {
-            return toTemplate(mapper.readValue(in, Dto.class), id);
-        } catch (IOException e) {
-            LOG.log(Level.WARNING, "Malformed user template " + file + " — skipped", e);
+    /** Validates {@code root} and builds the template, or records why not and returns null. */
+    private static Template parse(
+            JsonNode root, String id, Template.Origin origin, String source, Path file, List<Problem> problems) {
+        if (root == null || !root.isObject()) {
+            problems.add(new Problem(file, ProblemKind.NOT_AN_OBJECT, "", 0));
             return null;
         }
-    }
-
-    private static Template toTemplate(Dto dto, String id) {
-        if (dto == null) {
+        String name = textOf(root.get("name"), " ");
+        if (name == null || name.isBlank()) {
+            problems.add(new Problem(file, ProblemKind.MISSING_NAME, "", 0));
             return null;
         }
-        String name = dto.name == null ? id : String.valueOf(dto.name);
-        String description = joinText(dto.description, " ");
-        String language = dto.language == null ? "" : String.valueOf(dto.language);
+        String description = textOf(root.get("description"), " ");
+        String language = textOf(root.get("language"), " ");
+        String fileName = textOf(root.get("fileName"), "");
         List<TemplateFile> files = null;
-        if (dto.files != null && !dto.files.isEmpty()) {
+        JsonNode filesNode = root.get("files");
+        if (filesNode != null && !filesNode.isNull()) {
+            if (!filesNode.isArray()) {
+                problems.add(new Problem(file, ProblemKind.BAD_FILES, "", 0));
+                return null;
+            }
             files = new ArrayList<>();
-            for (FileDto f : dto.files) {
-                if (f != null && f.path != null) {
-                    files.add(new TemplateFile(String.valueOf(f.path), joinText(f.body, "\n")));
+            for (JsonNode f : filesNode) {
+                String path = f != null && f.isObject() ? textOf(f.get("path"), "") : null;
+                String body = f != null && f.isObject() ? textOf(f.get("body"), "\n") : null;
+                if (path == null || path.isBlank() || (f.has("body") && body == null)) {
+                    problems.add(new Problem(file, ProblemKind.BAD_FILES, "", 0));
+                    return null;
                 }
+                files.add(new TemplateFile(path, body == null ? "" : body));
             }
         }
-        String fileName = dto.fileName == null ? "" : String.valueOf(dto.fileName);
-        String body = joinText(dto.body, "\n");
-        return new Template(id, name, description, language, fileName, body, files);
+        String body = textOf(root.get("body"), "\n");
+        boolean multi = files != null && !files.isEmpty();
+        if (!multi && (!root.has("body") || body == null)) {
+            problems.add(new Problem(file, ProblemKind.NO_CONTENT, "", 0));
+            return null;
+        }
+        Map<String, String> labels = new LinkedHashMap<>();
+        JsonNode labelsNode = root.get("labels");
+        if (labelsNode != null && labelsNode.isObject()) {
+            labelsNode.fieldNames().forEachRemaining(key -> {
+                JsonNode value = labelsNode.get(key);
+                if (value.isTextual() && !value.asText().isBlank()) {
+                    labels.put(key, value.asText());
+                }
+            });
+        }
+        return new Template(
+                id,
+                name.strip(),
+                description == null ? "" : description,
+                language == null ? "" : language.strip(),
+                fileName == null ? "" : fileName,
+                body == null ? "" : body,
+                multi ? List.copyOf(files) : null,
+                labels,
+                origin,
+                source);
     }
 
-    /** Joins a field that may be a single string or a list of strings (VS Code style). */
-    private static String joinText(Object value, String separator) {
-        if (value instanceof List<?> parts) {
+    /**
+     * A field that may be one string or an array of strings (VS Code style), joined with
+     * {@code separator}; {@code ""} when absent, null when it is some other shape.
+     */
+    private static String textOf(JsonNode node, String separator) {
+        if (node == null || node.isNull()) {
+            return "";
+        }
+        if (node.isTextual()) {
+            return node.asText();
+        }
+        if (node.isArray()) {
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < parts.size(); i++) {
-                if (i > 0) {
+            int i = 0;
+            for (JsonNode part : node) {
+                if (!part.isValueNode()) {
+                    return null;
+                }
+                if (i++ > 0) {
                     sb.append(separator);
                 }
-                sb.append(String.valueOf(parts.get(i)));
+                sb.append(part.asText());
             }
             return sb.toString();
         }
-        return value == null ? "" : String.valueOf(value);
+        return node.isValueNode() ? node.asText() : null;
     }
 
     private static String stem(String fileName) {
         int dot = fileName.lastIndexOf('.');
         return dot > 0 ? fileName.substring(0, dot) : fileName;
-    }
-
-    /** Jackson DTO (public fields so no getter-opens are needed). */
-    static final class Dto {
-        public Object name; // String
-        public Object description; // String or List<String>
-        public Object language; // String
-        public Object fileName; // String
-        public Object body; // String or List<String>
-        public List<FileDto> files;
-    }
-
-    static final class FileDto {
-        public Object path; // String
-        public Object body; // String or List<String>
     }
 }
