@@ -282,9 +282,25 @@ class HistoryRetentionTest {
         assertTrue(HistoryRetention.evicted(before, before).isEmpty());
     }
 
-    // --- the budget's eviction order, pinned against the original one-scan-per-eviction algorithm ---------
+    // --- the budget's eviction order, pinned against a one-scan-per-eviction reference -------------------
 
-    /** The algorithm as it was: rescan every file for the globally oldest evictable row, once per eviction. */
+    private static long ownBytes(List<HistoryRevision> list) {
+        return list.stream().mapToLong(HistoryRevision::sizeBytes).sum(); // every body is distinct here
+    }
+
+    private static int oldestEvictableOf(List<HistoryRevision> list) {
+        for (int i = list.size() - 1; i >= 1; i--) {
+            if (!HistoryRetention.isProtected(list.get(i))) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /**
+     * The policy written the slow, obvious way: rescan every file once per eviction. First the largest file
+     * above an equal share sheds its oldest evictable row, then the globally oldest evictable row goes.
+     */
     private static Map<String, List<HistoryRevision>> referenceBudget(
             Map<String, List<HistoryRevision>> bucket, long maxTotalBytes) {
         Map<String, List<HistoryRevision>> out = new LinkedHashMap<>();
@@ -292,28 +308,38 @@ class HistoryRetentionTest {
         for (Map.Entry<String, List<HistoryRevision>> e : bucket.entrySet()) {
             List<HistoryRevision> copy = new java.util.ArrayList<>(e.getValue());
             out.put(e.getKey(), copy);
-            for (HistoryRevision r : copy) {
-                total += r.sizeBytes();
+            total += ownBytes(copy);
+        }
+        long share = maxTotalBytes / Math.max(1, out.size());
+        Set<String> spent = new java.util.HashSet<>();
+        while (out.size() > 1 && total > maxTotalBytes) {
+            String largest = null;
+            for (Map.Entry<String, List<HistoryRevision>> e : out.entrySet()) {
+                long own = ownBytes(e.getValue());
+                if (!spent.contains(e.getKey())
+                        && own > share
+                        && (largest == null || own > ownBytes(out.get(largest)))) {
+                    largest = e.getKey();
+                }
+            }
+            if (largest == null) {
+                break;
+            }
+            int idx = oldestEvictableOf(out.get(largest));
+            if (idx < 0) {
+                spent.add(largest);
+            } else {
+                total -= out.get(largest).remove(idx).sizeBytes();
             }
         }
-        while (maxTotalBytes > 0 && total > maxTotalBytes) {
+        while (total > maxTotalBytes) {
             String victimFile = null;
             int victimIndex = -1;
             long victimTs = Long.MAX_VALUE;
             for (Map.Entry<String, List<HistoryRevision>> e : out.entrySet()) {
-                List<HistoryRevision> list = e.getValue();
-                if (list.size() <= 1) {
-                    continue;
-                }
-                int idx = -1;
-                for (int i = list.size() - 1; i >= 1; i--) {
-                    if (!HistoryRetention.isProtected(list.get(i))) {
-                        idx = i;
-                        break;
-                    }
-                }
-                if (idx >= 0 && list.get(idx).timestamp() < victimTs) {
-                    victimTs = list.get(idx).timestamp();
+                int idx = oldestEvictableOf(e.getValue());
+                if (idx >= 0 && e.getValue().get(idx).timestamp() < victimTs) {
+                    victimTs = e.getValue().get(idx).timestamp();
                     victimFile = e.getKey();
                     victimIndex = idx;
                 }
@@ -356,6 +382,186 @@ class HistoryRetentionTest {
                     HistoryRetention.enforceProjectBudget(bucket, budget),
                     "round " + round + " budget " + budget + " of " + total);
         }
+    }
+
+    // --- B1: one large file must not evict the other files' history ---------------------------------------
+
+    private static final long MB = 1024L * 1024L;
+
+    @Test
+    void aLargeFileShedsItsOwnRevisionsBeforeAnyOtherFileLosesOne() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        List<HistoryRevision> big = new java.util.ArrayList<>();
+        for (int i = 10; i >= 1; i--) {
+            big.add(revAt("/p/big.bin", 1000 + i, 6 * MB, "big" + i)); // saved last: every row is newer
+        }
+        List<HistoryRevision> small = new java.util.ArrayList<>();
+        for (int i = 6; i >= 1; i--) {
+            small.add(revAt("/p/small.txt", i, 20, "small" + i)); // the oldest rows of the project
+        }
+        bucket.put("/p/small.txt", small);
+        bucket.put("/p/big.bin", big);
+
+        Map<String, List<HistoryRevision>> out = HistoryRetention.enforceProjectBudget(bucket, 50 * MB);
+
+        assertEquals(small, out.get("/p/small.txt"), "the small file keeps all six revisions");
+        assertEquals(8, out.get("/p/big.bin").size(), "the large file gave up its two oldest");
+        assertEquals("big10", out.get("/p/big.bin").get(0).sha256());
+        assertEquals("big3", out.get("/p/big.bin").get(7).sha256());
+        assertTrue(HistoryRetention.totalBytes(out) <= 50 * MB);
+    }
+
+    @Test
+    void aFileWithinItsShareIsOnlyTouchedByTheOldestFirstStep() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        // Two files of 60 bytes each; the limit of 100 gives each a share of 50: both are above it, the
+        // first sheds first and that is enough.
+        bucket.put("/a", List.of(revAt("/a", 9, 30, "a2"), revAt("/a", 1, 30, "a1")));
+        bucket.put("/b", List.of(revAt("/b", 8, 30, "b2"), revAt("/b", 2, 30, "b1")));
+        Map<String, List<HistoryRevision>> out = HistoryRetention.enforceProjectBudget(bucket, 100);
+        assertEquals(1, out.get("/a").size());
+        assertEquals(2, out.get("/b").size());
+
+        // A large file that can shed nothing (one row) leaves the work to the oldest-first step.
+        bucket = new LinkedHashMap<>();
+        bucket.put("/huge", List.of(revAt("/huge", 9, 90, "h")));
+        bucket.put("/b", List.of(revAt("/b", 8, 10, "b2"), revAt("/b", 2, 10, "b1")));
+        out = HistoryRetention.enforceProjectBudget(bucket, 100);
+        assertEquals(
+                List.of("h"),
+                out.get("/huge").stream().map(HistoryRevision::sha256).toList());
+        assertEquals(
+                List.of("b2"),
+                out.get("/b").stream().map(HistoryRevision::sha256).toList());
+    }
+
+    // --- A6: a body shared by several rows is one body ----------------------------------------------------
+
+    @Test
+    void aBodySharedByRowsCountsOnceAndASaveAsCopyEvictsNothing() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        List<HistoryRevision> original = new java.util.ArrayList<>();
+        for (int i = 30; i >= 1; i--) {
+            original.add(revAt("/p/a", i, MB, "body" + i));
+        }
+        bucket.put("/p/a", original);
+        assertTrue(HistoryMoves.copy(bucket, "/p/a", "/p/b"));
+
+        assertEquals(30 * MB, HistoryRetention.totalBytes(bucket), "sixty rows, thirty bodies on disk");
+        assertFalse(HistoryRetention.exceedsBudget(bucket, 50 * MB));
+        Map<String, List<HistoryRevision>> out = HistoryRetention.enforceProjectBudget(bucket, 50 * MB);
+        assertEquals(30, out.get("/p/a").size());
+        assertEquals(30, out.get("/p/b").size());
+
+        // Sixty rows of one body are one megabyte, not sixty.
+        List<HistoryRevision> repeated = new java.util.ArrayList<>();
+        for (int i = 60; i >= 1; i--) {
+            repeated.add(labelled(i, MB, "same", "safety " + i));
+        }
+        assertEquals(MB, HistoryRetention.totalBytes(Map.of("/p/x", repeated)));
+    }
+
+    @Test
+    void evictingOneOfTwoRowsThatShareABodyFreesNothingSoTheNextOneGoesToo() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        bucket.put(
+                "/a", List.of(revAt("/a", 9, 10, "new"), revAt("/a", 3, 60, "shared"), revAt("/a", 2, 60, "shared")));
+        bucket.put("/b", List.of(revAt("/b", 8, 10, "b")));
+        assertEquals(80, HistoryRetention.totalBytes(bucket));
+        Map<String, List<HistoryRevision>> out = HistoryRetention.enforceProjectBudget(bucket, 70);
+        assertEquals(
+                List.of("new"),
+                out.get("/a").stream().map(HistoryRevision::sha256).toList());
+        assertEquals(20, HistoryRetention.totalBytes(out));
+    }
+
+    @Test
+    void exceedsBudgetAgreesWithTheDistinctTotal() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        bucket.put("/a", List.of(revAt("/a", 2, 60, "x"), revAt("/a", 1, 60, "x")));
+        bucket.put("/gone", null); // a damaged index: tolerated, counted as nothing
+        assertFalse(HistoryRetention.exceedsBudget(bucket, 100), "rows sum to 120, the one body is 60");
+        assertTrue(HistoryRetention.exceedsBudget(bucket, 59));
+        assertFalse(HistoryRetention.exceedsBudget(bucket, 0), "no limit");
+        assertFalse(HistoryRetention.exceedsBudget(null, 1));
+        assertEquals(
+                List.of("/a"),
+                List.copyOf(HistoryRetention.enforceProjectBudget(bucket, 1).keySet()));
+        // A row without a hash cannot be told apart from another: each counts.
+        assertEquals(
+                14, HistoryRetention.totalBytes(Map.of("/n", List.of(revAt("/n", 2, 7, ""), revAt("/n", 1, 7, "")))));
+        assertEquals(
+                1,
+                HistoryRetention.enforceProjectBudget(
+                                Map.of("/n", List.of(revAt("/n", 2, 7, ""), revAt("/n", 1, 7, ""))), 10)
+                        .get("/n")
+                        .size());
+    }
+
+    // --- A12 / B13: folding a recorded revision into the list as it is now --------------------------------
+
+    private static HistoryRevision auto(long ts, String sha) {
+        return new HistoryRevision("/tmp/a.txt", ts, 1, sha, HistoryRevision.REASON_AUTOSAVE);
+    }
+
+    @Test
+    void aRevisionThatRepeatsTheNewestRowIsNotFoldedInTwice() {
+        List<HistoryRevision> current = List.of(rev(10, 1, "same"), rev(5, 1, "older"));
+        HistoryRevision again = new HistoryRevision("/tmp/a.txt", 11, 1, "same", HistoryRevision.REASON_EXTERNAL);
+        assertTrue(HistoryRetention.repeatsNewest(current, again));
+        assertTrue(HistoryRetention.fold(current, again, 0) == current, "the same instance: nothing to save");
+        assertFalse(HistoryRetention.repeatsNewest(current, rev(11, 1, "older")), "only the newest row counts");
+        assertFalse(HistoryRetention.repeatsNewest(current, labelled(11, 1, "same", "v1")), "a label is a point");
+        assertFalse(HistoryRetention.repeatsNewest(current, deleted(11, 1, "same")));
+        assertFalse(HistoryRetention.repeatsNewest(current, null));
+        assertFalse(HistoryRetention.repeatsNewest(List.of(), again));
+        assertEquals(List.of(), HistoryRetention.fold(null, null, 0));
+        assertEquals(
+                List.of(labelled(11, 1, "same", "v1"), rev(10, 1, "same"), rev(5, 1, "older")),
+                HistoryRetention.fold(current, labelled(11, 1, "same", "v1"), 0));
+        assertEquals(List.of(again), HistoryRetention.fold(null, again, 0));
+    }
+
+    @Test
+    void aRunOfAutoSavesLeavesOneRevisionPerWindowPlusTheLatest() {
+        long window = HistoryRetention.AUTOSAVE_COALESCE_MILLIS;
+        List<HistoryRevision> list = List.of();
+        for (long t = 0; t <= 2 * window + 20_000; t += 10_000) { // an auto-save every ten seconds
+            list = HistoryRetention.fold(list, auto(t, "text@" + t), window);
+        }
+        assertEquals(
+                List.of(2 * window + 20_000, 2 * window - 20_000, window - 10_000, 0L),
+                list.stream().map(HistoryRevision::timestamp).toList());
+    }
+
+    @Test
+    void onlyAnAutoSaveReplacesAndOnlyAnAutoSaveIsReplaced() {
+        long window = 1000;
+        List<HistoryRevision> autos = List.of(auto(20, "b"), auto(10, "a"));
+        assertTrue(HistoryRetention.replacesNewestAutosave(autos, auto(30, "c"), window));
+        assertEquals(List.of(auto(30, "c"), auto(10, "a")), HistoryRetention.fold(autos, auto(30, "c"), window));
+        assertFalse(HistoryRetention.replacesNewestAutosave(autos, rev(30, 1, "c"), window), "a manual save");
+        assertFalse(HistoryRetention.replacesNewestAutosave(autos, auto(1010, "c"), window), "window over");
+        assertFalse(HistoryRetention.replacesNewestAutosave(autos, auto(15, "c"), window), "older than newest");
+        assertFalse(HistoryRetention.replacesNewestAutosave(autos, auto(30, "c"), 0), "coalescing off");
+        assertFalse(HistoryRetention.replacesNewestAutosave(autos, null, window));
+        assertFalse(HistoryRetention.replacesNewestAutosave(null, auto(30, "c"), window));
+        assertFalse(HistoryRetention.replacesNewestAutosave(List.of(auto(20, "b")), auto(30, "c"), window));
+        // The newest row is a manual save or a labelled auto-save: kept.
+        assertFalse(HistoryRetention.replacesNewestAutosave(
+                List.of(rev(20, 1, "b"), auto(10, "a")), auto(30, "c"), window));
+        HistoryRevision named = new HistoryRevision("/tmp/a.txt", 20, 1, "b", HistoryRevision.REASON_AUTOSAVE, "keep");
+        assertFalse(HistoryRetention.replacesNewestAutosave(List.of(named, auto(10, "a")), auto(30, "c"), window));
+        // The anchor is in the future (a clock that went back): do not replace.
+        assertFalse(HistoryRetention.replacesNewestAutosave(
+                List.of(auto(20, "b"), rev(40, 1, "a")), auto(30, "c"), window));
+    }
+
+    @Test
+    void liveHashesSkipsANullRow() {
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        bucket.put("/a", java.util.Arrays.asList(rev(2, 1, "x"), null));
+        assertEquals(Set.of("x"), HistoryRetention.liveHashes(Map.of("p", bucket)));
     }
 
     @Test
