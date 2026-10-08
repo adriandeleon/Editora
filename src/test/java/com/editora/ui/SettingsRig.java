@@ -244,6 +244,44 @@ final class SettingsRig implements AutoCloseable {
         }
     }
 
+    /**
+     * Answers the next modal dialog to appear, whenever that is — for a dialog opened by something that
+     * finishes later (a worker's result), which {@link #answering} cannot see. The future holds what the
+     * dialog showed; cancel it to stop waiting.
+     */
+    static java.util.concurrent.CompletableFuture<Shown> answerNextDialog(ButtonBar.ButtonData answer)
+            throws Exception {
+        java.util.concurrent.CompletableFuture<Shown> answered = new java.util.concurrent.CompletableFuture<>();
+        javafx.animation.AnimationTimer timer = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                if (answered.isDone()) {
+                    stop();
+                    return;
+                }
+                for (Window window : List.copyOf(Window.getWindows())) {
+                    if (window.isShowing()
+                            && window.getScene() != null
+                            && window.getScene().getRoot() instanceof DialogPane pane) {
+                        stop();
+                        answered.complete(new Shown(
+                                window instanceof Stage s ? s.getTitle() : null,
+                                pane.getHeaderText(),
+                                pane.getContentText()));
+                        ((Button) pane.lookupButton(pane.getButtonTypes().stream()
+                                        .filter(type -> type.getButtonData() == answer)
+                                        .findFirst()
+                                        .orElseThrow()))
+                                .fire();
+                        return;
+                    }
+                }
+            }
+        };
+        FxTestSupport.runOnFx(timer::start);
+        return answered;
+    }
+
     static List<Shown> answering(ButtonBar.ButtonData answer, Runnable action) {
         return answering(shown -> answer, action);
     }
