@@ -341,6 +341,25 @@ class SyncEngineTest {
         assertEquals("1\n", git(remote, "rev-list", "--count", "main"), "and nothing was committed");
     }
 
+    /** A user's {@code url.<base>.insteadOf} must not make every sync look like a change of repository. */
+    @Test
+    void aRewrittenUrlIsStillTheSameRepository() throws Exception {
+        String url = "https://sync.test/me/editora-sync.git";
+        Path clone = Files.createDirectories(a.config.resolve("sync").resolve("repo"));
+        git(clone, "init", "-q");
+        git(clone, "config", "url." + remote.toUri() + ".insteadOf", url);
+        SyncEngine engine = a.engine(url, new FileSyncTarget(a.config));
+        a.write("dictionary.txt", "editora\nzim\n");
+        assertOk(engine.run(ALL, false));
+        assertOk(b.sync());
+
+        b.write("dictionary.txt", "editora\n");
+        assertOk(b.sync());
+        assertOk(engine.run(ALL, false));
+
+        assertEquals("editora\n", a.read("dictionary.txt"), "the removal arrives: this was not a first sync");
+    }
+
     @Test
     void pointingAtAnotherRepositoryStartsOverWithoutRemovingAnything() throws Exception {
         a.write("dictionary.txt", "one\ntwo\n");

@@ -33,6 +33,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Settings sync keeps working when you switch GitHub accounts.** With a personal and a work account in
+  the GitHub CLI, sync failed for as long as the account that cannot read the sync repository was the
+  active one (`gh auth switch`). Sync now finds out which of your gh accounts can read the repository,
+  remembers it on this computer, and signs in as that account whichever one is active; Settings → Sync
+  names it under Status. This applies to an `https://` repository on a host gh is signed in to — an SSH
+  URL or another credential helper works as before — and Editora still never sees or stores a token.
+
+- **Settings sync no longer starts over on every sync when Git rewrites the repository URL.** With a
+  `url.<base>.insteadOf` rule in your Git configuration (for example one that turns GitHub HTTPS URLs
+  into SSH ones), each sync was treated as the first with a new repository, so an entry deleted on one
+  computer came back from the others.
+
+- **The repository field on Settings → Sync shows the whole URL.** It was too narrow for an ordinary
+  `https://github.com/<you>/<repository>` address.
+
 - Paging a full-width Markdown preview (Space, Page Down) just after it rendered jumped to wherever the
   hidden editor was scrolled instead of moving one page, and a re-render put the preview back there too.
   The preview follows the editor's scroll position only in Split view now.

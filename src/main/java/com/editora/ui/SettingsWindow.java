@@ -82,6 +82,8 @@ public class SettingsWindow {
 
     /** Wide enough to read a path or a command in; SettingRowPane puts the field under its title when the row is narrow. */
     private static final double PATH_FIELD_WIDTH = 320;
+    /** Wide enough to show a whole {@code https://github.com/<owner>/<repository>.git}. */
+    private static final double REPO_URL_FIELD_WIDTH = 480;
 
     /**
      * The narrowest the window may be made. The pages that put a list beside a form (Snippets, Templates,
@@ -3418,6 +3420,7 @@ public class SettingsWindow {
     private Button syncNowButton;
     private Button syncAnywayButton;
     private Label syncStateLabel;
+    private Label syncAccountLabel;
     private CheckBox syncSnippetsCheck;
     private CheckBox syncAbbreviationsCheck;
     private CheckBox syncTemplatesCheck;
@@ -3458,7 +3461,7 @@ public class SettingsWindow {
         Card repo = card(p, null);
         syncUrlField = new TextField();
         syncUrlField.setPromptText(tr("settings.sync.repo.prompt"));
-        syncUrlField.setPrefWidth(PATH_FIELD_WIDTH);
+        syncUrlField.setPrefWidth(REPO_URL_FIELD_WIDTH);
         commitOnEnterOrBlur(syncUrlField, settings::getSyncRepoUrl, text -> {
             config.getSettings().setSyncRepoUrl(text);
             config.save();
@@ -3500,6 +3503,10 @@ public class SettingsWindow {
         syncStateLabel = new Label();
         syncStateLabel.setWrapText(true);
         syncStateLabel.setMaxWidth(420);
+        syncAccountLabel = new Label();
+        syncAccountLabel.getStyleClass().add("settings-row-desc");
+        syncAccountLabel.setWrapText(true);
+        syncAccountLabel.setMaxWidth(420);
         syncNowButton = new Button(tr("settings.sync.now"));
         syncNowButton.setOnAction(e -> {
             if (settingsSync != null) {
@@ -3520,8 +3527,12 @@ public class SettingsWindow {
                 settingRow(
                         tr("settings.sync.status"),
                         null,
-                        new VBox(6, syncStateLabel, new HBox(8, syncNowButton, syncAnywayButton, openFolder))),
-                "sync now status last synced received sent conflict backups folder");
+                        new VBox(
+                                6,
+                                syncStateLabel,
+                                syncAccountLabel,
+                                new HBox(8, syncNowButton, syncAnywayButton, openFolder))),
+                "sync now status last synced received sent conflict backups folder github account signed in");
 
         Card what = card(p, tr("settings.sync.what"));
         syncSnippetsCheck = syncCategoryCheck("settings.sync.snippets", Settings::setSyncSnippets);
@@ -3634,6 +3645,10 @@ public class SettingsWindow {
                 && state.report().status() == com.editora.sync.SyncReport.Status.NEEDS_CONFIRMATION;
         syncAnywayButton.setVisible(needsConfirmation);
         syncAnywayButton.setManaged(needsConfirmation);
+        String account = connected && settingsSync != null ? settingsSync.account() : "";
+        syncAccountLabel.setText(account.isEmpty() ? "" : tr("sync.state.account", account));
+        syncAccountLabel.setVisible(!account.isEmpty());
+        syncAccountLabel.setManaged(!account.isEmpty());
         syncStateLabel.setText(
                 syncConnectMessage != null
                         ? syncConnectMessage
