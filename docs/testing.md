@@ -145,19 +145,85 @@ one-command check.
 ## Coverage
 
 `mvn test` runs the JaCoCo agent and writes `target/site/jacoco/index.html` (+ `jacoco.xml`).
-`mvn verify` additionally runs a JaCoCo **`check`** that enforces a per-package **line-coverage
-floor** on the well-covered packages — `config.migration` and `diff` ≥ 0.90, `config` ≥ 0.86,
-`template`/`editorconfig` ≥ 0.82, `completion`/`http`/`pdf` ≥ 0.70, `lsp` ≥ 0.58 — plus a
-class-level floor on `ui.LspCoordinator` ≥ 0.34. The `jacoco-check` execution in `pom.xml` is the
-source of truth; `BuildHygieneTest` fails when these numbers and the pom disagree.
+`mvn verify` additionally runs a JaCoCo **`check`** that enforces a **line-coverage floor** per
+package, and per class where a package is too large for its own number to protect one class. The
+`jacoco-check` execution in `pom.xml` is the source of truth; `BuildHygieneTest` fails when the
+table below and the pom disagree.
 
-- The floors sit **below** current levels — they're a regression net, not a target. **When you
-  raise a package's coverage, ratchet its floor up.**
-- `ui`/`editor` are deliberately **ungated** (the FX harness covers only a few percent of `ui`
-  so far). Add a floor for them only once coverage is meaningful — and the cheapest way to get
-  there is still to extract pure helpers.
+Measured on 2026-10-08 the full suite covers 83.5% of lines and 71.0% of branches. The pure suite
+alone (`-DexcludedGroups=fx`) covers about 42%, which is all the Windows lane exercises.
+
+| Package | Floor | Measured |
+|---|---|---|
+| `csv` | 0.95 | 98.2% |
+| `editops` | 0.94 | 97.1% |
+| `mcp` | 0.93 | 96.1% |
+| `template` | 0.93 | 96.1% |
+| `diff` | 0.92 | 95.4% |
+| `logviewer` | 0.92 | 95.5% |
+| `todo` | 0.92 | 95.6% |
+| `config` | 0.91 | 94.6% |
+| `config.migration` | 0.91 | 94.9% |
+| `git` | 0.91 | 94.7% |
+| `github` | 0.91 | 94.3% |
+| `index` | 0.91 | 94.4% |
+| `markdown` | 0.91 | 94.6% |
+| `agent` | 0.90 | 93.2% |
+| `editorconfig` | 0.90 | 93.8% |
+| `pdf` | 0.90 | 93.2% |
+| `command` | 0.89 | 92.3% |
+| `completion` | 0.89 | 92.3% |
+| `install` | 0.89 | 92.6% |
+| `sync` | 0.89 | 92.1% |
+| `test` | 0.89 | 92.7% |
+| `run` | 0.88 | 91.0% |
+| `search` | 0.88 | 91.8% |
+| `snippet` | 0.88 | 91.5% |
+| `maven` | 0.87 | 90.4% |
+| `plugin` | 0.87 | 90.7% |
+| `build` | 0.86 | 89.6% |
+| `process` | 0.86 | 89.6% |
+| `history` | 0.85 | 89.0% |
+| `print` | 0.84 | 87.4% |
+| `recovery` | 0.84 | 88.0% |
+| `ai` | 0.83 | 86.9% |
+| `cron` | 0.83 | 86.7% |
+| `editor` | 0.83 | 86.7% |
+| `http` | 0.83 | 86.3% |
+| `io` | 0.81 | 84.3% |
+| `web` | 0.80 | 83.8% |
+| `lsp` | 0.79 | 82.7% |
+| `ui` | 0.75 | 78.5% |
+| `ui.LspCoordinator` (class) | 0.59 | 62.5% |
+| `ui.WindowCommandRegistrar` (class) | 0.93 | 96.3% |
+
+- Each floor sits **three points below** the measured level — a regression net, not a target. **When
+  you raise a package's coverage, ratchet its floor up.**
+- Every package of 300 lines or more that measures 80% or better has a floor, and so does the FX-bound
+  half of the codebase. Left out on purpose: the entry point, and the diagram, Typst and Mermaid
+  packages, whose tests need tools the CI runner does not install. Packages under 80% (the DAP client,
+  the office writers, systemd) get a floor once tests bring them up.
+- The command-registrar class floor is held up by `CommandSweepFxTest`. If it drops, the sweep has
+  stopped reaching commands.
+
+CI writes the two totals to the job summary and uploads the HTML report from the JDK 25 lane as the
+`jacoco-report` artifact.
 
 The dev loop (`mvn javafx:run`/`compile`) is unaffected; the check runs only at `verify`.
+
+### Skipped tests are checked
+
+A test guarded by an assumption reports "skipped" when its tool or filesystem feature is missing, so a
+runner that loses the tool stays green while the feature goes untested. After the Linux lanes run,
+`scripts/check_skips.py` compares every skipped test with `scripts/expected-skips-linux.txt` and fails
+on one that is not listed. To run it locally after `mvn test`:
+
+```
+python3 scripts/check_skips.py target/surefire-reports scripts/expected-skips-linux.txt
+```
+
+If you add a test that legitimately skips on the runner, list it there with the reason. If it skips
+because the runner lacks a tool, prefer installing the tool in `ci.yml`, as is done for ripgrep.
 
 ## Script tests
 
@@ -178,7 +244,9 @@ without the network); and the release-asset manifest. The Java side has matching
 `SshdModuleDescriptorTest`, `WindowsFileAssociationsTest`) that read the workflows, the pom and the
 packaging files as text.
 
-CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`.
+CI also runs the pure suite (`-DexcludedGroups=fx`) on `windows-latest` and `macos-15`. A separate
+advisory job runs the FX suite (`-Dgroups=fx`) on `macos-15`; it does not block a merge until it has a
+track record there.
 
 ## What to test for a typical change
 

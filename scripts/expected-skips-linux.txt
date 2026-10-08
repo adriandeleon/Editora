@@ -34,3 +34,7 @@ com.editora.ui.FileWorkflowSaveOrderingFxTest#newerSaveFromAnotherWindowSupersed
 # External tools the runner does not install (a JRE-sized download each). Covered on developer machines.
 com.editora.diagram.PlantumlOutputTest
 com.editora.typst.TypstStagedExportTest
+
+# Self-guarding: skips when the headless window does not grant focus to the Debug panel. Seen once in a
+# full run and not reproduced since; if it starts skipping regularly, the guard has stopped testing anything.
+com.editora.ui.DebugPanelFocusRetentionFxTest#steppingFromThePanelKeepsFocusInThePanel

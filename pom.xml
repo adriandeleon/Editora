@@ -495,10 +495,9 @@
                  generated after the `test` phase (HTML + XML under target/site/jacoco/).
                  jacoco wires its agent into surefire via the `argLine` property (surefire sets none).
                  A `check` (bound to `verify`) enforces a per-package LINE-coverage FLOOR on the pure,
-                 well-covered packages so their coverage can't silently regress. Floors are set comfortably
-                 below current levels — a regression net, not a stretch goal — and the toolkit-bound packages
-                 (ui, editor, …) are deliberately ungated (they need a headless-FX harness to test). When you
-                 raise a package's coverage, ratchet its floor up here. The `mvn javafx:run`/`compile` dev
+                 well-covered packages so their coverage can't silently regress. Floors sit three points below
+                 measured levels — a regression net, not a stretch goal. When you raise a package's coverage,
+                 ratchet its floor up here. The `mvn javafx:run`/`compile` dev
                  loop is unaffected (check runs only at `verify`/`package`). -->
             <plugin>
                 <groupId>org.jacoco</groupId>
@@ -526,16 +525,92 @@
                         </goals>
                         <configuration>
                             <haltOnFailure>true</haltOnFailure>
-                            <!-- Floors are a regression net, ratcheted to a few points below the actual
-                                 measured coverage (not a target). Raise them again whenever a package's
-                                 real coverage climbs. -->
+                            <!-- Floors are a regression net, three points below the measured coverage (not a
+                                 target). Raise them again whenever a package's real coverage climbs. -->
                             <rules>
-                                <!-- Tier A (~0.90): the highest-covered pure packages (diff 96%, migration 94%). -->
+                                <!-- PACKAGE floors, grouped by value. Every package of 300+ lines that measures
+                                     80% or better is listed, three points under its measured line coverage
+                                     (2026-10-08). Left out on purpose: the entry point (com.editora), and
+                                     diagram / typst / mermaid, whose tests need tools the CI runner lacks. -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.config.migration</include>
+                                        <include>com.editora.csv</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.95</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.editops</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.94</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.mcp</include>
+                                        <include>com.editora.template</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.93</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
                                         <include>com.editora.diff</include>
+                                        <include>com.editora.logviewer</include>
+                                        <include>com.editora.todo</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.92</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.config</include>
+                                        <include>com.editora.config.migration</include>
+                                        <include>com.editora.git</include>
+                                        <include>com.editora.github</include>
+                                        <include>com.editora.index</include>
+                                        <include>com.editora.markdown</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.91</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.agent</include>
+                                        <include>com.editora.editorconfig</include>
+                                        <include>com.editora.pdf</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -545,11 +620,57 @@
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- config (~88%): mostly pure models/stores + some IO glue. -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.config</include>
+                                        <include>com.editora.command</include>
+                                        <include>com.editora.completion</include>
+                                        <include>com.editora.install</include>
+                                        <include>com.editora.sync</include>
+                                        <include>com.editora.test</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.89</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.run</include>
+                                        <include>com.editora.search</include>
+                                        <include>com.editora.snippet</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.88</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.maven</include>
+                                        <include>com.editora.plugin</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.87</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.build</include>
+                                        <include>com.editora.process</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -559,46 +680,75 @@
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- Tier B (~0.82): template / editorconfig (both ~85%). -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.template</include>
-                                        <include>com.editora.editorconfig</include>
+                                        <include>com.editora.history</include>
                                     </includes>
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.82</minimum>
+                                            <minimum>0.85</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- CLASS-level floors. A PACKAGE floor cannot protect these: com.editora.ui
-                                     is ~33k lines, so LspCoordinator (1k) could fall from 38% to zero and
-                                     move the package number by ~1 point. Where coverage was built
-                                     deliberately, pin the class. -->
                                 <rule>
-                                    <element>CLASS</element>
+                                    <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.ui.LspCoordinator</include>
+                                        <include>com.editora.print</include>
+                                        <include>com.editora.recovery</include>
                                     </includes>
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.34</minimum>
+                                            <minimum>0.84</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- Tier D (~0.45): com.editora.lsp. Two classes here dominate the line
-                                     count and both talk to a forked subprocess, so the ceiling is lower than
-                                     a pure package's — but the floor exists because this package produced
-                                     four defects in one audit (#715/#723/#724/#725) while its pure mappers
-                                     beside them, at 90-100%, produced none. Raised from nothing to 0.45 when
-                                     the LanguageServerSession/LspManager test seams landed (package was
-                                     ~52%), then to 0.58 when the lifecycle/request seams landed (~62%);
-                                     ratchet it up as those two climb. -->
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.ai</include>
+                                        <include>com.editora.cron</include>
+                                        <include>com.editora.editor</include>
+                                        <include>com.editora.http</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.83</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.io</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.81</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.web</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.80</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
@@ -608,23 +758,53 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.58</minimum>
+                                            <minimum>0.79</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
-                                <!-- Tier C (~0.70): good-but-not-pure packages (some service glue). -->
+                                <!-- com.editora.ui (78.5%) is below the 80% line but is half the codebase, so it
+                                     gets a floor too. -->
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.completion</include>
-                                        <include>com.editora.http</include>
-                                        <include>com.editora.pdf</include>
+                                        <include>com.editora.ui</include>
                                     </includes>
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.70</minimum>
+                                            <minimum>0.75</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <!-- CLASS floors. A PACKAGE floor cannot protect these: com.editora.ui is ~66k
+                                     lines, so one coordinator could fall to zero and move the package number by
+                                     a point or two. LspCoordinator's coverage was built deliberately;
+                                     WindowCommandRegistrar is held up by CommandSweepFxTest, which runs every
+                                     command, so a drop here means the sweep stopped reaching them. -->
+                                <rule>
+                                    <element>CLASS</element>
+                                    <includes>
+                                        <include>com.editora.ui.LspCoordinator</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.59</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                                <rule>
+                                    <element>CLASS</element>
+                                    <includes>
+                                        <include>com.editora.ui.WindowCommandRegistrar</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.93</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
