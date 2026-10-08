@@ -110,6 +110,21 @@ class AbbrevTest {
     }
 
     @Test
+    void anAbbreviationWithPunctuationExpands() {
+        Map<String, String> table =
+                Map.of("adl-fn", "Adrian De Leon", "fn", "function", ";sig", "Regards", "e.g", "for example");
+        assertEquals(new Abbrev.Edit(4, 10, "Adrian De Leon"), Abbrev.expand("see adl-fn", 10, table), "not just fn");
+        assertEquals(new Abbrev.Edit(2, 4, "function"), Abbrev.expand("a fn", 4, table));
+        assertEquals(
+                new Abbrev.Edit(4, 6, "function"),
+                Abbrev.expand("xyz-fn", 6, table),
+                "the word after other punctuation");
+        assertEquals(new Abbrev.Edit(0, 4, "Regards"), Abbrev.expand(";sig", 4, table));
+        assertEquals(new Abbrev.Edit(3, 6, "for example"), Abbrev.expand("so e.g", 6, table));
+        assertNull(Abbrev.expand("defn", 4, table), "never from the middle of a word");
+    }
+
+    @Test
     void aTypedTerminatorEndsAWord() {
         assertTrue(Abbrev.terminates(" "));
         assertTrue(Abbrev.terminates("."));

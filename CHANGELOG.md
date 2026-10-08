@@ -165,6 +165,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Abbreviations that contain punctuation now expand: `adl-fn`, `;sig`, `e.g`. Only letters and digits were
+  looked up, so such an entry could be saved in Settings and never expanded, with nothing saying why. The
+  longest match wins (`adl-fn` over a separate `fn`), and a space typed around the abbreviation in Settings
+  no longer stops it matching.
 - Settings: closing the window no longer drops what was typed last in a list-and-form page. An
   abbreviation's expansion, a remote site's host or an external tool's command typed and followed straight
   by Close or Escape (no Enter, no Save, no click elsewhere) was not saved; an abbreviation left that way
