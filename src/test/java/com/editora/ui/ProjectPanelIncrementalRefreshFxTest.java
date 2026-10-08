@@ -3,9 +3,13 @@ package com.editora.ui;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import javafx.animation.PauseTransition;
 import javafx.event.ActionEvent;
@@ -20,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -152,6 +157,78 @@ class ProjectPanelIncrementalRefreshFxTest {
             FxTestSupport.runOnFx(panel::dispose);
         }
     }
+
+    /**
+     * macOS has no native watcher in the JDK: the polling one reports a save up to two seconds later, as the
+     * file having been modified. The window in which a watch event is taken for Editora's own save was
+     * shorter than that, so there every save came back as somebody else's change.
+     */
+    @Test
+    void aSaveAPollingWatcherReportsSecondsLaterIsStillEditorasOwn(@TempDir Path root) throws Exception {
+        Path file = Files.writeString(root.resolve("open.txt"), "v1");
+        AtomicInteger external = new AtomicInteger();
+        ProjectPanel panel = panel(root, external);
+        try {
+            TreeView<Path> tree = FxTestSupport.field(panel, "tree");
+            TreeItem<Path> rootItem = FxTestSupport.callOnFx(tree::getRoot);
+            await(() -> child(rootItem, file));
+            AtomicLong clock = new AtomicLong(1_000_000);
+            long debounce = (long) FxTestSupport.<PauseTransition>field(panel, "watchDebounce")
+                    .getDuration()
+                    .toMillis();
+            long latest = ProjectPanel.POLLING_WATCH_INTERVAL_MS + debounce;
+            assertTrue(ProjectPanel.localWriteWindowMs(true) > latest, "the window outlasts a whole poll");
+
+            FxTestSupport.runOnFx(() -> {
+                panel.localWriteClockForTest = clock::get;
+                panel.localWriteWindowMs = ProjectPanel.localWriteWindowMs(true);
+                panel.noteLocalWrite(file);
+                clock.addAndGet(latest);
+                deliver(panel, root, List.of(new FsChange(file, FsKind.CHANGED)));
+            });
+            assertEquals(0, external.get(), "the save's own event, however late the poll made it");
+            assertEquals(0, FxTestSupport.callOnFx(() -> panel.directoryListCountForTest));
+
+            FxTestSupport.runOnFx(() -> {
+                clock.addAndGet(ProjectPanel.localWriteWindowMs(true));
+                deliver(panel, root, List.of(new FsChange(file, FsKind.CHANGED)));
+            });
+            assertEquals(1, external.get(), "a change after the window is somebody else's");
+        } finally {
+            FxTestSupport.runOnFx(panel::dispose);
+        }
+    }
+
+    @Test
+    void thePollingWatcherIsToldFromANativeOne() {
+        assertTrue(ProjectPanel.isPollingWatcher(new PollingWatchService()));
+        assertFalse(ProjectPanel.isPollingWatcher(new NativeWatcher()));
+        assertFalse(ProjectPanel.isPollingWatcher(null));
+        assertTrue(ProjectPanel.localWriteWindowMs(false) < ProjectPanel.localWriteWindowMs(true));
+    }
+
+    /** Named as the JDK's own is ({@code sun.nio.fs.PollingWatchService}); it is not on every platform's JDK. */
+    private static class PollingWatchService implements WatchService {
+        @Override
+        public void close() {}
+
+        @Override
+        public WatchKey poll() {
+            return null;
+        }
+
+        @Override
+        public WatchKey poll(long timeout, TimeUnit unit) {
+            return null;
+        }
+
+        @Override
+        public WatchKey take() {
+            return null;
+        }
+    }
+
+    private static final class NativeWatcher extends PollingWatchService {}
 
     @Test
     void aFirstSaveOfANewFileStillAppearsInTheTree(@TempDir Path root) throws Exception {

@@ -77,6 +77,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Installed", and the other showed whichever of the two checks finished last.
 - Settings ▸ Keymaps: the Up arrow on the first shortcut row moved the focus out of the list, to the
   filter field. It now stays on the row, as the Down arrow does on the last one.
+- Save As into a folder reached through a symbolic link (`/home` on some Linux systems, `/tmp` and `/var`
+  on macOS) lost the personal notes of the copy: they were stored under the path as typed and looked up
+  under the real one. A file that does not exist yet is now keyed the way it will be once it is written.
+- On macOS a save Editora made itself was often taken for a change by another program, which refreshed
+  Git, the diffs and the index after it: the file watcher there reports a write up to two seconds later,
+  longer than the editor waited for it.
+- Clicking the right-hand half of a code lens ran the lenses of the line below it, or nothing.
+- On macOS, Enter did nothing in the "modified outside Editora" prompt of a file without unsaved changes.
+  Reload is now the default button there, so Enter reloads as it does on Windows and Linux.
 
 ## [0.20.0] - 2026-10-08
 

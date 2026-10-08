@@ -1231,6 +1231,8 @@ final class FileWorkflowCoordinator {
         alert.getButtonTypes().setAll(reload, keep);
         if (buffer.isDirty()) {
             ExternalChangePrompt.keepIsTheKeyboardDefault(alert, reload, keep);
+        } else {
+            ExternalChangePrompt.reloadIsTheKeyboardDefault(alert, reload);
         }
         if (alert.showAndWait().filter(b -> b == reload).isPresent()) {
             reloadFromDisk(tab, buffer);

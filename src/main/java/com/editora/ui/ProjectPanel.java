@@ -368,6 +368,15 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     // Files Editora saved a moment ago (path -> when): the watcher reports the atomic rename as the file being
     // created, which is neither an external change nor, for a file the tree already shows, a reason to re-list.
     private final java.util.Map<Path, Long> localWrites = new java.util.HashMap<>();
+    /**
+     * How often the JDK's polling watcher looks at a directory ({@code sun.nio.fs.PollingWatchService}, the
+     * only one there is on macOS): the events of a write arrive up to this long after it.
+     */
+    static final long POLLING_WATCH_INTERVAL_MS = 2000;
+    // How long after a save its watch events are still that save's; set with the watcher (see below).
+    long localWriteWindowMs = SELF_CHANGE_WINDOW_MS;
+    /** The clock the saved-a-moment-ago window is measured on; a test moves it instead of waiting. */
+    java.util.function.LongSupplier localWriteClockForTest = System::currentTimeMillis;
     // A file that is merely rewritten (a log, a build output) changes no tree, and the Git/diff refresh it
     // asks for is coalesced to one per interval rather than one per write.
     private static final long MODIFY_THROTTLE_MS = 2000;
@@ -803,9 +812,25 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         if (file == null || watchService == null || !com.editora.vfs.Vfs.isLocal(file)) {
             return;
         }
-        long now = System.currentTimeMillis();
-        localWrites.values().removeIf(at -> now - at >= SELF_CHANGE_WINDOW_MS);
+        long now = localWriteClockForTest.getAsLong();
+        localWrites.values().removeIf(at -> now - at >= localWriteWindowMs);
         localWrites.put(file.toAbsolutePath().normalize(), now);
+    }
+
+    /**
+     * How long after Editora wrote a file the watcher's events for that file are taken for the write. It has
+     * to outlast the watcher's own delay: a polling watcher reports a save up to a whole interval later, which
+     * is longer than the window a native one needs — so on macOS a save Editora made itself came back as
+     * somebody else's change, and refreshed Git, the diffs and the index after it.
+     */
+    static long localWriteWindowMs(boolean pollingWatcher) {
+        return SELF_CHANGE_WINDOW_MS + (pollingWatcher ? POLLING_WATCH_INTERVAL_MS : 0);
+    }
+
+    /** Whether {@code service} is the JDK's polling watcher rather than one the OS notifies. */
+    static boolean isPollingWatcher(java.nio.file.WatchService service) {
+        return service != null
+                && "PollingWatchService".equals(service.getClass().getSimpleName());
     }
 
     /** {@link #noteLocalWrite(Path)} for a caller whose window may have no panel (a test host). */
@@ -817,7 +842,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
 
     private boolean recentlyWrittenLocally(Path path) {
         Long at = localWrites.get(path.toAbsolutePath().normalize());
-        return at != null && System.currentTimeMillis() - at < SELF_CHANGE_WINDOW_MS;
+        return at != null && localWriteClockForTest.getAsLong() - at < localWriteWindowMs;
     }
 
     /** The debounced half of the watcher: applies what accumulated since the last tick. FX thread. */
@@ -1058,6 +1083,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             watchService = null; // watching unsupported here; the focus-regain refresh still applies
             return;
         }
+        localWriteWindowMs = localWriteWindowMs(isPollingWatcher(watchService));
         watchThread = new Thread(this::watchLoop, "project-fs-watch");
         watchThread.setDaemon(true);
         watchThread.start();

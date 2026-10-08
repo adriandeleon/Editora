@@ -195,7 +195,10 @@ class SettingsWindowFxTest {
                     .add(SettingsWindowFxTest.class
                             .getResource("/com/editora/styles/app.css")
                             .toExternalForm());
-            status.setText("Für die aktive Datei/das aktive Projekt wurde kein Maven-Projekt erkannt");
+            // Long enough to need more than the 440px cap in any UI font: in the macOS system font the
+            // sentence alone is 382px wide, fits on one line, and the cap is never reached.
+            String sentence = "Für die aktive Datei/das aktive Projekt wurde kein Maven-Projekt erkannt";
+            status.setText(sentence + " – " + sentence);
             box.applyCss();
             box.layout();
 
@@ -208,6 +211,7 @@ class SettingsWindowFxTest {
             assertFalse(((SettingRowPane) narrow).isStacked(), "a switch stays beside its description");
 
             assertFalse(((SettingRowPane) pill).isStacked());
+            assertTrue(status.prefWidth(-1) > 440, "the text needs more than the cap: " + status.prefWidth(-1));
             assertEquals(440, status.getWidth(), 0.5, "the pill is laid out at its capped width");
             assertTrue(
                     status.getHeight() + 0.5 >= status.prefHeight(status.getWidth()),

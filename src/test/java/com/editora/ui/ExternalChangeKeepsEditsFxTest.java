@@ -89,6 +89,11 @@ class ExternalChangeKeepsEditsFxTest {
                     async, "the reload", () -> "changed by another program\n".equals(buffer.getContent()));
 
             assertEquals(tr("dialog.externalChange.reload"), pressed.focused().get());
+            // On macOS Enter never fires the focused button, only the default one: Reload has to be both.
+            assertEquals(
+                    tr("dialog.externalChange.reload"),
+                    pressed.defaultButton().get(),
+                    "Reload is the default button, so Enter reaches it on macOS too");
             assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
         }
     }
