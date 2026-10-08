@@ -297,6 +297,7 @@ final class LspCoordinatorFixture implements AutoCloseable {
             host.active = buffer;
             coordinator.syncBuffer(buffer);
         });
+        quiesce();
         ops.open.put(file.toAbsolutePath().normalize(), buffer);
         layout();
         assertTrue(manager.isManaged(file), "precondition: " + name + " is on a language server");
@@ -341,6 +342,17 @@ final class LspCoordinatorFixture implements AutoCloseable {
         for (int i = 0; i < 6; i++) {
             FxTestSupport.drainFx();
         }
+    }
+
+    /**
+     * Brings the coordinator to rest after a server has started. A new session announces its capabilities,
+     * and the coordinator answers that with a round of re-requests a short, timer-driven moment later;
+     * flushing it here means it has happened before a test counts requests, whenever the timer fires.
+     */
+    void quiesce() throws Exception {
+        settle();
+        FxTestSupport.runOnFx(() -> coordinator.flushRefreshes());
+        settle();
     }
 
     /** Moves the caret of {@code buffer} to a 0-based position. */

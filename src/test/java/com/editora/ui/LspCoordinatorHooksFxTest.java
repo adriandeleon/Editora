@@ -329,7 +329,9 @@ class LspCoordinatorHooksFxTest {
 
         fx.run(() -> buffer.change.accept(SOURCE)); // the same text the server already has
 
-        assertEquals(List.of(List.of(diagnostic)), shown);
+        // (The editor's own typing-pause timer may call the hook once more; every call must do the same.)
+        assertFalse(shown.isEmpty(), "the marks were not put back");
+        assertTrue(shown.stream().allMatch(List.of(diagnostic)::equals), "what was put back: " + shown);
         assertTrue(fx.server().changed.isEmpty(), "an unchanged document is not re-sent");
     }
 
@@ -354,11 +356,12 @@ class LspCoordinatorHooksFxTest {
             buffer.semanticTokens.run();
         });
 
-        assertEquals(pulls + 1, server.diagnosticPulls.size());
-        assertEquals(symbols + 1, server.documentSymbols.size());
-        assertEquals(folds + 1, server.foldingRanges.size());
-        assertEquals(tokens + 1, server.semanticFulls.size(), "the text changed, so the tokens are stale");
-        assertEquals(hints + 1, server.inlayHints.size());
+        // "More than before", not "one more": the editor's own typing-pause timer runs the same hooks.
+        assertTrue(server.diagnosticPulls.size() > pulls, "diagnostics were not pulled again");
+        assertTrue(server.documentSymbols.size() > symbols, "the outline was not refreshed");
+        assertTrue(server.foldingRanges.size() > folds, "the folds were not refreshed");
+        assertTrue(server.semanticFulls.size() > tokens, "the text changed, so the tokens are stale");
+        assertTrue(server.inlayHints.size() > hints, "the hints were not refreshed");
     }
 
     // --- code lenses ---------------------------------------------------------------------------------
@@ -422,10 +425,10 @@ class LspCoordinatorHooksFxTest {
     void aRefreshIsRequestedForTheTabOnScreenAndOwedToTheOthers() throws Exception {
         fx.host.settings.setInlayHints(true);
         fx.host.settings.setSemanticHighlight(true);
-        HookedBuffer background = wired("B.java");
-        HookedBuffer active = wired("A.java");
+        // Not wired: a wired buffer re-requests on its own typing-pause timer, and this test counts requests.
+        EditorBuffer background = fx.open("B.java", SOURCE);
+        EditorBuffer active = fx.open("A.java", SOURCE);
         FakeLanguageServer server = fx.server();
-        fx.settle();
         String a = active.getPath().toUri().toString();
         String b = background.getPath().toUri().toString();
         int tokensA =
@@ -543,7 +546,11 @@ class LspCoordinatorHooksFxTest {
     /** What a dialog said, and the answer given to it. */
     private record Asked(String header, String content) {}
 
-    /** Answers the next dialog to appear with its button of kind {@code answer}, recording what it said. */
+    /**
+     * Answers the next dialog to appear with its button of kind {@code answer}. The future completes with
+     * what the dialog said once the answer has been acted on: the code that asked runs on when the dialog
+     * closes, and only a task queued behind it can know that it has.
+     */
     private CompletableFuture<Asked> answerNextDialog(ButtonBar.ButtonData answer) throws Exception {
         CompletableFuture<Asked> asked = new CompletableFuture<>();
         AnimationTimer timer = new AnimationTimer() {
@@ -554,12 +561,13 @@ class LspCoordinatorHooksFxTest {
                             && window.getScene() != null
                             && window.getScene().getRoot() instanceof DialogPane pane) {
                         stop();
-                        asked.complete(new Asked(pane.getHeaderText(), pane.getContentText()));
+                        Asked said = new Asked(pane.getHeaderText(), pane.getContentText());
                         ((Button) pane.lookupButton(pane.getButtonTypes().stream()
                                         .filter(type -> type.getButtonData() == answer)
                                         .findFirst()
                                         .orElseThrow()))
                                 .fire();
+                        javafx.application.Platform.runLater(() -> asked.complete(said));
                         return;
                     }
                 }
@@ -663,9 +671,10 @@ class LspCoordinatorHooksFxTest {
         FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
 
         CompletableFuture<Asked> restore = answerNextDialog(ButtonBar.ButtonData.OK_DONE);
-        fx.run(() -> fx.coordinator.offerInterruptedEdits());
+        FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
 
         Asked asked = restore.get(30, TimeUnit.SECONDS);
+        fx.settle();
         assertEquals(tr("dialog.lsp.interruptedEdit.header"), asked.header());
         assertEquals(project.resolve("Lost.java").toString(), asked.content(), "the files it is about are named");
         assertEquals("class Lost {}\n", Files.readString(project.resolve("Lost.java")));
@@ -681,8 +690,10 @@ class LspCoordinatorHooksFxTest {
         fx.ops.projectRoot = project;
         FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
 
-        answerNextDialog(ButtonBar.ButtonData.CANCEL_CLOSE);
-        fx.run(() -> fx.coordinator.offerInterruptedEdits());
+        CompletableFuture<Asked> later = answerNextDialog(ButtonBar.ButtonData.CANCEL_CLOSE);
+        FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
+        later.get(30, TimeUnit.SECONDS);
+        fx.settle();
 
         assertTrue(Files.exists(stage), "nothing moves without a yes");
         assertFalse(Files.exists(project.resolve("Lost.java")));
@@ -703,8 +714,10 @@ class LspCoordinatorHooksFxTest {
         fx.ops.projectRoot = project;
         FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
 
-        answerNextDialog(ButtonBar.ButtonData.OTHER); // "Leave As Is"
-        fx.run(() -> fx.coordinator.offerInterruptedEdits());
+        CompletableFuture<Asked> keep = answerNextDialog(ButtonBar.ButtonData.OTHER); // "Leave As Is"
+        FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
+        keep.get(30, TimeUnit.SECONDS);
+        fx.settle();
 
         assertTrue(Files.exists(stage), "every file stays where it is");
         assertEquals(tr("status.lsp.interruptedEdit.kept", stage.getFileName().toString()), fx.host.lastStatus());
@@ -721,11 +734,12 @@ class LspCoordinatorHooksFxTest {
         FxTestSupport.runOnFx(() -> fx.coordinator.workspaceEditJournalDir = journals);
 
         CompletableFuture<Asked> asked = answerNextDialog(ButtonBar.ButtonData.OK_DONE);
-        fx.run(() -> fx.coordinator.offerInterruptedEdits());
+        FxTestSupport.runOnFx(() -> fx.coordinator.offerInterruptedEdits());
 
         assertEquals(
                 tr("dialog.lsp.interruptedEdit.headerCommitted"),
                 asked.get(30, TimeUnit.SECONDS).header());
+        fx.settle();
         assertFalse(Files.exists(stage));
         assertFalse(Files.exists(project.resolve("Gone.java")), "a decided delete is not undone");
         assertEquals(tr("status.lsp.interruptedEdit.removed"), fx.host.lastStatus());
