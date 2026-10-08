@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 116;
+    public static final int SCHEMA_VERSION = 117;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -645,6 +645,15 @@ public class Settings {
      * {@link PdfPageSizes}); a stored value always wins.
      */
     private String pdfPageSize = PdfPageSizes.systemDefault();
+    /** PDF export orientation: "portrait" (default) or "landscape". Text PDFs only — see the getter. */
+    private String pdfOrientation = "portrait";
+    /**
+     * PDF export margins: "normal" (default — each writer's own margin, 40 pt for source text and 50 pt for
+     * Markdown and tables), "narrow" or "wide". Text PDFs only.
+     */
+    private String pdfMargins = "normal";
+    /** PDF export: the monospace size of a source-text PDF in points, 7–12 (default 9). */
+    private int pdfCodeFontSize = DEFAULT_PDF_CODE_FONT_SIZE;
 
     /**
      * Optional per-binding overrides applied on top of the named keymap: chord -&gt; command id. <b>Split per
@@ -2649,6 +2658,53 @@ public class Settings {
 
     public void setPdfPageSize(String pdfPageSize) {
         this.pdfPageSize = "a4".equalsIgnoreCase(pdfPageSize) ? "a4" : "letter";
+    }
+
+    /** The orientations a text PDF can have, default first. */
+    public static final java.util.List<String> PDF_ORIENTATIONS = java.util.List.of("portrait", "landscape");
+    /** The margin presets of a text PDF, default first. */
+    public static final java.util.List<String> PDF_MARGINS = java.util.List.of("normal", "narrow", "wide");
+    /** The point sizes offered for the source-text PDF. */
+    public static final java.util.List<Integer> PDF_CODE_FONT_SIZES = java.util.List.of(7, 8, 9, 10, 11, 12);
+
+    public static final int DEFAULT_PDF_CODE_FONT_SIZE = 9;
+
+    /**
+     * "portrait" or "landscape"; unknown values normalize to "portrait". Applies to the PDFs laid out as
+     * text (source text, Markdown, CSV tables). Printing takes its orientation from Page Setup, and an
+     * image or tree PDF turns each page to fit its picture.
+     */
+    public String getPdfOrientation() {
+        return oneOf(PDF_ORIENTATIONS, pdfOrientation);
+    }
+
+    public void setPdfOrientation(String pdfOrientation) {
+        this.pdfOrientation = oneOf(PDF_ORIENTATIONS, pdfOrientation);
+    }
+
+    /** "normal", "narrow" or "wide"; unknown values normalize to "normal". Text PDFs only. */
+    public String getPdfMargins() {
+        return oneOf(PDF_MARGINS, pdfMargins);
+    }
+
+    public void setPdfMargins(String pdfMargins) {
+        this.pdfMargins = oneOf(PDF_MARGINS, pdfMargins);
+    }
+
+    /** One of {@link #PDF_CODE_FONT_SIZES}; any other value normalizes to 9. Source-text PDFs only. */
+    public int getPdfCodeFontSize() {
+        return PDF_CODE_FONT_SIZES.contains(pdfCodeFontSize) ? pdfCodeFontSize : DEFAULT_PDF_CODE_FONT_SIZE;
+    }
+
+    public void setPdfCodeFontSize(int pdfCodeFontSize) {
+        this.pdfCodeFontSize =
+                PDF_CODE_FONT_SIZES.contains(pdfCodeFontSize) ? pdfCodeFontSize : DEFAULT_PDF_CODE_FONT_SIZE;
+    }
+
+    /** {@code value} in the spelling of {@code allowed} when it is one of them, else the first (the default). */
+    private static String oneOf(java.util.List<String> allowed, String value) {
+        String v = value == null ? "" : value.strip().toLowerCase(java.util.Locale.ROOT);
+        return allowed.contains(v) ? v : allowed.get(0);
     }
 
     public Map<String, String> getKeybindings() {

@@ -188,10 +188,19 @@ final class ExportCoordinator {
                 : message;
     }
 
-    /** The page every text PDF is laid out on: the configured size, with or without the page footer. */
+    /**
+     * The page every text PDF (source text, Markdown, CSV table) is laid out on, from the settings: paper,
+     * orientation, margin preset, code font size, and the page footer on or off. The image and tree PDFs
+     * take only the paper size — {@code ImagePdfWriter} turns each page to fit its picture.
+     */
     private com.editora.pdf.PdfPageSpec pdfPage() {
         Settings s = host.settings();
-        return com.editora.pdf.PdfPageSpec.of(s.getPdfPageSize()).withFooter(s.isPdfPageFooter());
+        return new com.editora.pdf.PdfPageSpec(
+                s.getPdfPageSize(),
+                "landscape".equals(s.getPdfOrientation()),
+                com.editora.pdf.PdfPageSpec.marginOf(s.getPdfMargins()),
+                s.getPdfCodeFontSize(),
+                s.isPdfPageFooter());
     }
 
     /** The document name (PDF title and footer) and the footer's localised page label. */

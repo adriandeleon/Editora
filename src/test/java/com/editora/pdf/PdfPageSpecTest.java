@@ -44,6 +44,18 @@ class PdfPageSpecTest {
     }
 
     @Test
+    void aMarginPresetIsTheWritersOwnMarginOrAFixedOne() {
+        assertEquals(PdfPageSpec.WRITER_MARGIN, PdfPageSpec.marginOf("normal"));
+        assertEquals(36f, PdfPageSpec.marginOf("narrow"));
+        assertEquals(72f, PdfPageSpec.marginOf(" Wide "));
+        assertEquals(PdfPageSpec.WRITER_MARGIN, PdfPageSpec.marginOf("huge"), "unknown is normal");
+        assertEquals(PdfPageSpec.WRITER_MARGIN, PdfPageSpec.marginOf(null));
+        // "normal" is exactly the page PdfPageSpec.of builds: 40 pt for code, 50 pt for Markdown.
+        PdfPageSpec normal = new PdfPageSpec("letter", false, PdfPageSpec.marginOf("normal"), 9f, true);
+        assertEquals(PdfPageSpec.of("letter"), normal);
+    }
+
+    @Test
     void anUnknownPageSizeFallsBackToLetterAndIsLoggedOnce() {
         List<LogRecord> records = new ArrayList<>();
         Handler handler = new Handler() {

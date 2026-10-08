@@ -296,4 +296,74 @@ class PdfNavigationTest {
         assertTrue(lowestBody >= 12f + PdfChrome.FOOTER_SIZE + 3f, "the body stops above the footer: " + lowestBody);
         assertTrue(PdfProbe.rightmostInk(out) <= PDRectangle.A4.getHeight() - 18f + 0.5f);
     }
+
+    /**
+     * The "narrow" preset in both writers: with the footer the body stops above it and loses no more than
+     * the footer needs; without it the body runs down to the margin. Nothing is drawn outside the margins.
+     */
+    @Test
+    void theNarrowMarginPresetKeepsTheFooterClearAndTheBodyInsideTheMargins(@TempDir Path dir) throws Exception {
+        float m = PdfPageSpec.NARROW_MARGIN;
+        float[] mdLowestByFooter = new float[2];
+        for (boolean footer : new boolean[] {true, false}) {
+            PdfPageSpec narrow = new PdfPageSpec("letter", false, PdfPageSpec.marginOf("narrow"), 9f, footer);
+
+            Path md = write(dir, "Paragraph of the body.\n\n".repeat(120), narrow, META);
+            float mdLowest = lowestBaseline(md);
+            assertTrue(mdLowest >= m, "Markdown body inside the bottom margin (footer " + footer + "): " + mdLowest);
+            mdLowestByFooter[footer ? 1 : 0] = mdLowest;
+            assertEquals(footer, PdfProbe.artifactText(md).contains("notes.md"), "Markdown footer " + footer);
+            if (footer) {
+                assertTrue(mdLowest >= footerBaseline(md) + PdfChrome.FOOTER_SIZE + 3f, "clear of the footer");
+            }
+            assertEquals(m, PdfProbe.glyphs(md).get(0).x(), 0.5f, "the body starts at the narrow margin");
+
+            Path code = dir.resolve("code-" + footer + ".pdf");
+            CodePdfWriter.write("int x = 1;\n".repeat(200), null, false, 4, narrow, META, code);
+            float codeLowest = lowestBaseline(code);
+            float floor = footer ? m + PdfChrome.FOOTER_SIZE + 6f : m;
+            assertTrue(codeLowest >= floor, "code body above " + floor + " (footer " + footer + "): " + codeLowest);
+            assertTrue(codeLowest < floor + 9f * 1.6f, "and uses the page down to there: " + codeLowest);
+            assertEquals(footer, PdfProbe.artifactText(code).contains("notes.md"), "code footer " + footer);
+            if (footer) {
+                assertTrue(codeLowest >= footerBaseline(code) + PdfChrome.FOOTER_SIZE + 2f, "clear of the footer");
+            }
+            assertEquals(m, PdfProbe.glyphs(code).get(0).x(), 0.5f, "the code starts at the narrow margin");
+        }
+        assertEquals(
+                mdLowestByFooter[0],
+                mdLowestByFooter[1],
+                0.01f,
+                "at this margin the footer fits below the Markdown body and costs it no line");
+    }
+
+    /** The lowest body baseline of the first page (a full one in these tests). */
+    private static float lowestBaseline(Path pdf) throws Exception {
+        assertTrue(PdfProbe.pages(pdf) > 1, "the first page is full");
+        float lowest = Float.MAX_VALUE;
+        for (PdfProbe.Glyph g : PdfProbe.glyphs(pdf)) {
+            if (g.page() == 1) {
+                lowest = Math.min(lowest, g.baseline());
+            }
+        }
+        return lowest;
+    }
+
+    /** The baseline of the footer (the only text below the body) on the first page. */
+    private static float footerBaseline(Path pdf) throws Exception {
+        float[] lowest = {Float.MAX_VALUE};
+        try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
+            org.apache.pdfbox.text.PDFTextStripper stripper = new org.apache.pdfbox.text.PDFTextStripper() {
+                @Override
+                protected void writeString(String text, List<org.apache.pdfbox.text.TextPosition> positions) {
+                    for (org.apache.pdfbox.text.TextPosition p : positions) {
+                        lowest[0] = Math.min(lowest[0], p.getPageHeight() - p.getYDirAdj());
+                    }
+                }
+            };
+            stripper.setEndPage(1);
+            stripper.getText(doc);
+        }
+        return lowest[0];
+    }
 }

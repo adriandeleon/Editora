@@ -648,7 +648,29 @@ class ConfigMigrationsTest {
         ObjectNode none =
                 ConfigMigrations.upgrade(ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":115}"), mapper);
         assertEquals("letter", none.get("pdfPageSize").asText(), "the step is registered and runs");
-        assertEquals(116, none.get("schemaVersion").asInt());
+        assertEquals(
+                ConfigSchema.SETTINGS.currentVersion(),
+                none.get("schemaVersion").asInt());
+    }
+
+    // --- v116→117: + pdfOrientation / pdfMargins / pdfCodeFontSize (additive) ---------------------------
+
+    @Test
+    void upgradingASettingsFileFromV116AddsNoPdfPageKeysAndKeepsStoredOnes() throws Exception {
+        ObjectNode plain = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":116,\"pdfPageSize\":\"a4\"}"), mapper);
+        assertEquals(117, plain.get("schemaVersion").asInt(), "the step is registered");
+        assertEquals("a4", plain.get("pdfPageSize").asText());
+        // Absent means portrait, the writers' own margins and 9 pt — nothing is written for the upgrade.
+        for (String key : new String[] {"pdfOrientation", "pdfMargins", "pdfCodeFontSize"}) {
+            assertFalse(plain.has(key), key);
+        }
+        JsonNode stored = mapper.readTree(
+                "{\"schemaVersion\":116,\"pdfOrientation\":\"landscape\",\"pdfMargins\":\"wide\",\"pdfCodeFontSize\":12}");
+        ObjectNode kept = ConfigMigrations.upgrade(ConfigSchema.SETTINGS, stored.deepCopy(), mapper);
+        assertEquals("landscape", kept.get("pdfOrientation").asText());
+        assertEquals("wide", kept.get("pdfMargins").asText());
+        assertEquals(12, kept.get("pdfCodeFontSize").asInt());
     }
 
     // --- v104→105: authorName persists its raw value; dead keys dropped ---------------------------------
