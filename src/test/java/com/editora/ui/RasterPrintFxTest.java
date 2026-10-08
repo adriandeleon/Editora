@@ -16,7 +16,6 @@ import javafx.scene.layout.StackPane;
 
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
-import com.editora.pdf.HiDpiImage;
 import com.editora.pdf.ImagePaging;
 import com.editora.pdf.PageImage;
 import com.editora.pdf.PdfExportService;
@@ -33,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The image pipeline print and PDF share, where it meets the toolkit: printed image pages (density, no
- * enlarging, tiling), the Project Map's density, the truncation notice of a capped tree, and the diagram
+ * enlarging, tiling), the truncation notice of a capped tree, and the diagram
  * print's temp file. No printer is involved: pages are built for a printable area given in points.
  */
 @Tag("fx")
@@ -79,16 +78,10 @@ class RasterPrintFxTest {
             assertEquals(1152, second.getViewport().getMinX(), 1e-6, "the next column to the right");
             assertEquals(576, second.getFitWidth(), 1e-6);
 
-            // The Project Map's own snapshot says how dense it is, so a small map at 2× is not mistaken for a
-            // huge one: 1600 px at 2× is 800 logical pixels — fitted to the width, on one page.
-            Image small = new HiDpiImage(1600, 1200, 2);
-            assertEquals(2, HiDpiImage.scaleOf(small));
-            assertEquals(1, HiDpiImage.scaleOf(map));
+            // A 2× image of the same pixel width is 800 logical pixels: fitted to the width, on one page.
+            Image small = new WritableImage(1600, 1200);
             pages = PrintService.imagePages(
-                    List.of(new ImagePaging.Source(1600, 1200, HiDpiImage.scaleOf(small), null, false)),
-                    i -> small,
-                    W,
-                    H);
+                    List.of(new ImagePaging.Source(1600, 1200, 2, null, false)), i -> small, W, H);
             assertEquals(1, pages.count());
             assertEquals(576, only(pages.get(0)).getFitWidth(), 1e-6);
         });

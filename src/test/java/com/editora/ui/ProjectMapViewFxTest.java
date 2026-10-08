@@ -21,6 +21,7 @@ import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.control.Button;
 import javafx.scene.control.CheckBox;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.ContextMenu;
 import javafx.scene.control.MenuItem;
@@ -138,6 +139,15 @@ class ProjectMapViewFxTest {
                 Region surface = FxTestSupport.field(mapView, "surface");
                 assertTrue(surface.getWidth() > 0);
                 assertTrue(surface.getHeight() > 0);
+            });
+            // The Map lists nothing until it is first shown, so its rows arrive after the switch.
+            ProjectMapView shownMap = FxTestSupport.field(panel, "mapView");
+            Region shownSurface = FxTestSupport.field(shownMap, "surface");
+            waitForFx(
+                    () -> (boolean) FxTestSupport.call(shownSurface, "contains", new Class<?>[] {Path.class}, readme));
+            FxTestSupport.runOnFx(() -> {
+                ProjectMapView mapView = shownMap;
+                Region surface = shownSurface;
 
                 @SuppressWarnings("unchecked")
                 Function<ProjectMapModel.Entry, ContextMenu> contextMenuFactory =
@@ -363,6 +373,8 @@ class ProjectMapViewFxTest {
                 FxTestSupport.call(
                         surface, "setEntries", new Class<?>[] {List.class, Set.class}, entries, Set.of(root));
                 FxTestSupport.call(surface, "setSelected", new Class<?>[] {Path.class}, javaFile);
+                // The accent fill (and so the on-emphasis ink) marks the selection of a focused map.
+                FxTestSupport.call(surface, "setFocused", new Class<?>[] {boolean.class}, true);
                 mapView.applyCss();
                 mapView.layout();
 
@@ -435,8 +447,18 @@ class ProjectMapViewFxTest {
                         FxTestSupport.call(surface, "selectedEntry", new Class<?>[0]);
                 assertEquals(project, selected.orElseThrow().path());
 
+                // A click on the open folder's row only selects it; its chevron (the row's trailing edge)
+                // collapses it. (The reload that reports the folder as open is asynchronous: deliver it.)
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        entries,
+                        Set.of(project, source));
                 Object currentSourceBox = boxFor(surface, source);
                 click(surface, center(currentSourceBox, "x", "width"), center(currentSourceBox, "y", "height"));
+                assertTrue(mapView.expandedDirectories().contains(source));
+                click(surface, edge(currentSourceBox, "x", "width") - 8, center(currentSourceBox, "y", "height"));
                 assertFalse(mapView.expandedDirectories().contains(source));
             });
         } finally {
@@ -548,8 +570,8 @@ class ProjectMapViewFxTest {
                 new Scene(mapView, 900, 600);
                 mapView.resize(900, 600);
                 mapView.layout();
-                CheckBox keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
-                CheckBox focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
+                CheckMenuItem keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
+                CheckMenuItem focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
                 assertTrue(keepZoom.isSelected());
                 assertTrue(focusColumn.isSelected());
 
@@ -568,14 +590,18 @@ class ProjectMapViewFxTest {
             FxTestSupport.runOnFx(() -> {
                 Region surface = FxTestSupport.field(mapView, "surface");
                 assertEquals(zoomBeforeExpansion[0], (double) FxTestSupport.field(surface, "zoom"), 0.001);
+                // The new column is brought into view whole, beside the row that opened it.
                 Object newColumn = columnBoxForParent(surface, src);
-                assertEquals(surface.getWidth() / 2, center(newColumn, "x", "width"), 0.001);
-                assertEquals(surface.getHeight() / 2, center(newColumn, "y", "height"), 0.001);
+                Object parentRow = boxFor(surface, src);
+                for (Object shown : List.of(newColumn, parentRow)) {
+                    assertTrue(origin(shown, "x") >= 0 && edge(shown, "x", "width") <= surface.getWidth());
+                    assertTrue(origin(shown, "y") >= 0 && edge(shown, "y", "height") <= surface.getHeight());
+                }
 
-                CheckBox keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
-                CheckBox focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
-                keepZoom.fire();
-                focusColumn.fire();
+                CheckMenuItem keepZoom = FxTestSupport.field(mapView, "keepZoomOnOpen");
+                CheckMenuItem focusColumn = FxTestSupport.field(mapView, "focusNewColumn");
+                keepZoom.setSelected(false);
+                focusColumn.setSelected(false);
                 assertFalse((boolean) FxTestSupport.field(surface, "keepZoomOnColumnOpen"));
                 assertFalse((boolean) FxTestSupport.field(surface, "focusNewColumn"));
             });
@@ -664,8 +690,9 @@ class ProjectMapViewFxTest {
             entries.add(
                     new ProjectMapModel.Entry(normalizedRoot.resolve("File" + i + ".java"), normalizedRoot, 1, false));
         }
-        AtomicReference<Image> printed = new AtomicReference<>();
-        AtomicReference<Image> exported = new AtomicReference<>();
+        AtomicReference<ProjectMapOutput> printed = new AtomicReference<>();
+        AtomicReference<ProjectMapOutput> exported = new AtomicReference<>();
+        AtomicReference<ProjectMapOutput.Rendered> exportedPages = new AtomicReference<>();
         ProjectMapView mapView =
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
         try {
@@ -688,16 +715,18 @@ class ProjectMapViewFxTest {
                 double liveCanvasWidth = canvas.getWidth();
                 double liveCanvasHeight = canvas.getHeight();
 
-                FxTestSupport.<Button>field(mapView, "printButton").fire();
-                FxTestSupport.<Button>field(mapView, "exportPdfButton").fire();
+                FxTestSupport.<MenuItem>field(mapView, "printButton").fire();
+                FxTestSupport.<MenuItem>field(mapView, "exportPdfButton").fire();
 
-                assertTrue(printed.get().getHeight() > liveCanvasHeight, "print must include rows below the viewport");
-                assertTrue(exported.get().getHeight() > liveCanvasHeight, "PDF must include rows below the viewport");
-                assertEquals(
-                        2.0,
-                        com.editora.pdf.HiDpiImage.scaleOf(exported.get()),
-                        0.001,
-                        "a small map is rendered at 2× and says so, so it is laid out at its logical size");
+                // The buttons hand over a deferred job; the receiver renders it for its page (Letter here).
+                ProjectMapOutput.Rendered print = printed.get().render(540, 720);
+                exportedPages.set(exported.get().render(540, 720));
+                assertTrue(
+                        print.pages().getFirst().getHeight() > liveCanvasHeight,
+                        "print must include rows below the viewport");
+                assertTrue(
+                        exportedPages.get().pages().getFirst().getHeight() > liveCanvasHeight,
+                        "PDF must include rows below the viewport");
                 assertEquals(liveZoom, (double) FxTestSupport.field(surface, "zoom"), 0.001);
                 assertEquals(liveOffsetX, (double) FxTestSupport.field(surface, "offsetX"), 0.001);
                 assertEquals(liveOffsetY, (double) FxTestSupport.field(surface, "offsetY"), 0.001);
@@ -710,7 +739,8 @@ class ProjectMapViewFxTest {
             AtomicReference<PdfExportService.Result> result = new AtomicReference<>();
             PdfExportService pdfService = new PdfExportService();
             try {
-                pdfService.exportFxImages(List.of(exported.get()), "letter", pdf, value -> {
+                ProjectMapOutput.Rendered pages = exportedPages.get();
+                pdfService.exportFxPages(pages.pages(), pages.pointsPerPixel(), "letter", false, pdf, value -> {
                     result.set(value);
                     exportedPdf.countDown();
                 });
@@ -1122,13 +1152,13 @@ class ProjectMapViewFxTest {
                 assertEquals(1, previews(mapView).size());
                 assertEquals(1, cards.size());
 
-                ToggleButton hide = FxTestSupport.field(mapView, "hideOpenNotes");
+                CheckMenuItem hide = FxTestSupport.field(mapView, "hideOpenNotes");
                 assertFalse(hide.isSelected(), "open note cards are visible by default");
-                hide.fire();
+                hide.setSelected(true);
                 assertFalse(card.isVisible());
                 assertEquals(1, cards.size(), "hiding cards must not close them");
                 assertTrue(previewFor(mapView, file).isVisible(), "the code preview remains independent");
-                hide.fire();
+                hide.setSelected(false);
                 assertTrue(card.isVisible());
 
                 FxTestSupport.<Button>field(card, "close").fire();
@@ -1180,50 +1210,40 @@ class ProjectMapViewFxTest {
                     mapView.applyCss();
                     mapView.layout();
                     preview.layout();
-                    assertTrue(preview.getWidth() > 640, "long lines should widen the preview");
-
-                    Object column = columnBoxFor(surface, 1);
-                    switch (flow) {
-                        case LEFT_TO_RIGHT ->
-                            assertTrue(
-                                    edge(column, "x", "width") <= preview.getLayoutX(),
-                                    () -> "the preview must open right of its column: column edge "
-                                            + edge(column, "x", "width")
-                                            + ", preview x "
-                                            + preview.getLayoutX());
-                        case RIGHT_TO_LEFT ->
-                            assertTrue(
-                                    preview.getLayoutX() + preview.getWidth() <= origin(column, "x"),
-                                    () -> "the preview must open left of its column: preview edge "
-                                            + (preview.getLayoutX() + preview.getWidth())
-                                            + ", column x "
-                                            + origin(column, "x"));
-                        case TOP_TO_BOTTOM ->
-                            assertTrue(
-                                    edge(column, "y", "height") <= preview.getLayoutY(),
-                                    () -> "the preview must open below its column: column edge "
-                                            + edge(column, "y", "height")
-                                            + ", preview y "
-                                            + preview.getLayoutY());
-                        case BOTTOM_TO_TOP ->
-                            assertTrue(
-                                    preview.getLayoutY() + preview.getHeight() <= origin(column, "y"),
-                                    () -> "the preview must open above its column: preview edge "
-                                            + (preview.getLayoutY() + preview.getHeight())
-                                            + ", column y "
-                                            + origin(column, "y"));
+                    // The map is no longer panned to make room: beside its column a card takes the room there
+                    // is (never less than its minimum), and only a flow that leaves the full width free lets
+                    // long lines widen it past the default.
+                    if (flow == ProjectMapView.FlowDirection.TOP_TO_BOTTOM
+                            || flow == ProjectMapView.FlowDirection.BOTTOM_TO_TOP) {
+                        assertTrue(preview.getWidth() > 640, "long lines should widen the preview");
+                    } else {
+                        assertTrue(
+                                preview.getWidth() >= ProjectMapPreview.MIN_WIDTH,
+                                () -> "a card beside its column keeps a usable width: " + preview.getWidth());
                     }
 
-                    org.fxmisc.flowless.VirtualizedScrollPane<?> editorScroll =
-                            FxTestSupport.field(preview, "editorScroll");
-                    double contentWidth =
-                            editorScroll.totalWidthEstimateProperty().getValue();
-                    assertTrue(
-                            contentWidth <= editorScroll.getWidth(),
-                            () -> "the initial preview should fit its longest line: "
-                                    + contentWidth
-                                    + " > "
-                                    + editorScroll.getWidth());
+                    // Preferably on the side the flow leaves free, otherwise on the other one: with room on
+                    // either side the card never lies over the column whose row it previews.
+                    Object column = columnBoxFor(surface, 1);
+                    boolean beside = preview.getLayoutX() >= edge(column, "x", "width")
+                            || preview.getLayoutX() + preview.getWidth() <= origin(column, "x")
+                            || preview.getLayoutY() >= edge(column, "y", "height")
+                            || preview.getLayoutY() + preview.getHeight() <= origin(column, "y");
+                    assertTrue(beside, () -> "the preview must open beside its column in " + flow);
+
+                    if (flow == ProjectMapView.FlowDirection.TOP_TO_BOTTOM
+                            || flow == ProjectMapView.FlowDirection.BOTTOM_TO_TOP) {
+                        org.fxmisc.flowless.VirtualizedScrollPane<?> editorScroll =
+                                FxTestSupport.field(preview, "editorScroll");
+                        double contentWidth =
+                                editorScroll.totalWidthEstimateProperty().getValue();
+                        assertTrue(
+                                contentWidth <= editorScroll.getWidth(),
+                                () -> "the initial preview should fit its longest line: "
+                                        + contentWidth
+                                        + " > "
+                                        + editorScroll.getWidth());
+                    }
                 });
             } finally {
                 FxTestSupport.runOnFx(mapView::dispose);
@@ -1625,12 +1645,12 @@ class ProjectMapViewFxTest {
 
                 @SuppressWarnings("unchecked")
                 ComboBox<ProjectMapView.FlowDirection> flow = FxTestSupport.field(mapView, "flowFilter");
-                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, flow.getValue());
-                assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
-
-                mapView.setRememberedFlow("LEFT_TO_RIGHT", ignored -> {});
-                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue());
+                assertEquals(ProjectMapView.FlowDirection.LEFT_TO_RIGHT, flow.getValue(), "the default flow");
                 assertTrue(origin(boxFor(surface, java), "x") > origin(boxFor(surface, src), "x"));
+
+                mapView.setRememberedFlow("RIGHT_TO_LEFT", ignored -> {});
+                assertEquals(ProjectMapView.FlowDirection.RIGHT_TO_LEFT, flow.getValue(), "a stored flow is kept");
+                assertTrue(origin(boxFor(surface, java), "x") < origin(boxFor(surface, src), "x"));
 
                 flow.setValue(ProjectMapView.FlowDirection.TOP_TO_BOTTOM);
                 assertTrue(origin(boxFor(surface, java), "y") > origin(boxFor(surface, src), "y"));
@@ -1738,13 +1758,17 @@ class ProjectMapViewFxTest {
                 double x = (double) FxTestSupport.call(columnBox, "x", new Class<?>[0]) + 5;
                 double y = (double) FxTestSupport.call(columnBox, "y", new Class<?>[0]) + 5;
                 drag(surface, x, y, x + 45, y + 20);
+                // Across the flow a column moves freely; along it the stored offset stops at the parent
+                // (which side that is depends on the flow), so the cross-axis is what proves the drag.
                 Object layout = columnLayoutFor(surface, root);
                 double movedX = FxTestSupport.field(layout, "x");
-                assertTrue(movedX > 0);
+                double movedY = FxTestSupport.field(layout, "y");
+                assertTrue(movedY > 0);
 
                 pin.fire();
                 drag(surface, x + 45, y + 20, x + 100, y + 50);
                 assertEquals(movedX, (double) FxTestSupport.field(layout, "x"), 0.001);
+                assertEquals(movedY, (double) FxTestSupport.field(layout, "y"), 0.001);
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);

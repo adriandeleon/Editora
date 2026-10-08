@@ -1,7 +1,11 @@
 package com.editora.ui;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.function.BiConsumer;
 
 import javafx.geometry.Insets;
@@ -16,6 +20,7 @@ import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -30,10 +35,27 @@ import static com.editora.i18n.Messages.tr;
 /** An editable Personal Notes card attached to one Project Canvas file or folder row. */
 final class ProjectMapNotePreview extends StackPane {
 
-    private static final double DEFAULT_WIDTH = 420;
-    private static final double DEFAULT_HEIGHT = 300;
+    static final double DEFAULT_WIDTH = 420;
+    static final double DEFAULT_HEIGHT = 300;
     static final double MIN_WIDTH = 300;
     static final double MIN_HEIGHT = 180;
+
+    /** One note's editor, with the body the store last held: an edit is whatever differs from that. */
+    private static final class Row {
+        private PersonalNote note;
+        private String saved;
+        private final TextArea editor;
+
+        private Row(PersonalNote note, TextArea editor) {
+            this.note = note;
+            this.saved = note.body().strip();
+            this.editor = editor;
+        }
+
+        private boolean edited() {
+            return !editor.getText().strip().equals(saved);
+        }
+    }
 
     private final BorderPane frame = new BorderPane();
     private final HBox titleBar = new HBox(7);
@@ -44,9 +66,13 @@ final class ProjectMapNotePreview extends StackPane {
     private final Button close = new Button("×");
     private final Region resizeGrip = new Region();
     private final BiConsumer<PersonalNote, String> onSave;
+    private final List<Row> rows = new ArrayList<>();
 
     private Runnable onClose = () -> setVisible(false);
     private Runnable onActivate = () -> {};
+    private Runnable onTouch = () -> {};
+    private Runnable onEscape = () -> onClose.run();
+    private Runnable onBlankRejected = () -> {};
     private boolean placed;
     private double preferredWidth = DEFAULT_WIDTH;
     private double preferredHeight = DEFAULT_HEIGHT;
@@ -99,6 +125,24 @@ final class ProjectMapNotePreview extends StackPane {
             toFront();
             onActivate.run();
         });
+        // Keyboard focus and scrolling are use too (see ProjectMapPreview): they keep the card from eviction.
+        focusWithinProperty().addListener((obs, was, within) -> {
+            if (within) {
+                toFront();
+                onActivate.run();
+            }
+        });
+        addEventFilter(ScrollEvent.SCROLL, event -> onTouch.run());
+        addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+            if (event.getCode() == KeyCode.ESCAPE
+                    && !event.isShiftDown()
+                    && !event.isControlDown()
+                    && !event.isAltDown()
+                    && !event.isMetaDown()) {
+                onEscape.run(); // closing saves any edit, exactly as the close button does
+                event.consume();
+            }
+        });
     }
 
     void showNotes(Path path, List<PersonalNote> values, ProjectMapPreview.Placement placement) {
@@ -109,33 +153,7 @@ final class ProjectMapNotePreview extends StackPane {
         title.setGraphic(Icons.notes());
         title.setTooltip(new Tooltip(path.toString()));
         setAccessibleText(tr("project.map.notes.accessible", path.toString()));
-        notes.getChildren().clear();
-        for (PersonalNote note : values == null ? List.<PersonalNote>of() : values) {
-            TextArea editor = new TextArea(note.body());
-            editor.setWrapText(true);
-            editor.setUserData(note);
-            editor.setPrefRowCount(
-                    Math.max(3, Math.min(8, note.body().lines().toList().size() + 1)));
-            editor.getStyleClass().add("project-map-note-preview-editor");
-            Runnable save = () -> saveIfChanged(note, editor);
-            editor.focusedProperty().addListener((obs, was, focused) -> {
-                if (!focused) {
-                    save.run();
-                }
-            });
-            editor.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
-                if (event.getCode() == KeyCode.ENTER && event.isShortcutDown()) {
-                    save.run();
-                    event.consume();
-                }
-            });
-            notes.getChildren().add(editor);
-        }
-        if (notes.getChildren().isEmpty()) {
-            Label empty = new Label(tr("project.map.notes.empty"));
-            empty.getStyleClass().add("project-map-note-preview-empty");
-            notes.getChildren().add(empty);
-        }
+        rebuild(values == null ? List.of() : values, Map.of());
         setVisible(true);
         resizeRelocate(placement.x(), placement.y(), placement.width(), placement.height());
         preferredWidth = placement.width();
@@ -144,11 +162,119 @@ final class ProjectMapNotePreview extends StackPane {
         toFront();
     }
 
-    private void saveIfChanged(PersonalNote note, TextArea editor) {
-        String value = editor.getText().strip();
-        if (!value.isBlank() && !value.equals(note.body())) {
-            onSave.accept(note, value);
+    /**
+     * Brings the card in line with the store after notes changed elsewhere (the Notes panel, the editor
+     * gutter, this card's own save). Every row adopts the stored note — a later save must carry its current
+     * anchor, not the one the card opened with — and shows its body, unless the user has an edit in
+     * progress there, which is kept and saved over it as usual. Rows are rebuilt only when notes were added
+     * or removed, so typing is never interrupted by a refresh.
+     */
+    void refreshNotes(List<PersonalNote> values) {
+        List<PersonalNote> current = values == null ? List.of() : values;
+        boolean sameNotes = current.size() == rows.size();
+        for (int i = 0; sameNotes && i < rows.size(); i++) {
+            sameNotes = rows.get(i).note.id().equals(current.get(i).id());
         }
+        if (!sameNotes) {
+            Map<UUID, String> edits = new HashMap<>();
+            for (Row row : rows) {
+                if (row.edited()) {
+                    edits.put(row.note.id(), row.editor.getText());
+                }
+            }
+            rebuild(current, edits);
+            return;
+        }
+        for (int i = 0; i < rows.size(); i++) {
+            Row row = rows.get(i);
+            PersonalNote note = current.get(i);
+            String body = note.body().strip();
+            boolean edited = row.edited();
+            row.note = note;
+            row.editor.setUserData(note);
+            row.saved = body;
+            if (!edited && !row.editor.getText().strip().equals(body)) {
+                row.editor.setText(note.body());
+            }
+        }
+    }
+
+    private void rebuild(List<PersonalNote> values, Map<UUID, String> edits) {
+        rows.clear();
+        notes.getChildren().clear();
+        for (PersonalNote note : values) {
+            TextArea editor = new TextArea(note.body());
+            editor.setWrapText(true);
+            editor.setUserData(note);
+            editor.setPrefRowCount(
+                    Math.max(3, Math.min(8, note.body().lines().toList().size() + 1)));
+            editor.getStyleClass().add("project-map-note-preview-editor");
+            Row row = new Row(note, editor);
+            String edit = edits.get(note.id());
+            if (edit != null) {
+                editor.setText(edit);
+            }
+            editor.focusedProperty().addListener((obs, was, focused) -> {
+                if (!focused) {
+                    saveIfChanged(row);
+                }
+            });
+            editor.addEventFilter(KeyEvent.KEY_PRESSED, event -> {
+                if (event.getCode() == KeyCode.ENTER && event.isShortcutDown()) {
+                    saveIfChanged(row);
+                    event.consume();
+                }
+            });
+            rows.add(row);
+            notes.getChildren().add(editor);
+        }
+        if (rows.isEmpty()) {
+            Label empty = new Label(tr("project.map.notes.empty"));
+            empty.getStyleClass().add("project-map-note-preview-empty");
+            notes.getChildren().add(empty);
+        }
+    }
+
+    /**
+     * Saves a row whose text differs from the body the store holds. A blanked note is not a deletion here
+     * (the Notes panel deletes): its text comes back and the owner is told, instead of the card silently
+     * showing an empty note the store still has.
+     */
+    private void saveIfChanged(Row row) {
+        String value = row.editor.getText().strip();
+        if (value.isBlank()) {
+            if (!row.saved.isBlank()) {
+                row.editor.setText(row.saved);
+                onBlankRejected.run();
+            }
+            return;
+        }
+        if (!value.equals(row.saved)) {
+            row.saved = value; // before the callback: the store answers with a refresh of this very card
+            onSave.accept(row.note, value);
+        }
+    }
+
+    /** Moves keyboard focus to the first note. */
+    void focusContent() {
+        if (rows.isEmpty()) {
+            close.requestFocus();
+        } else {
+            rows.getFirst().editor.requestFocus();
+        }
+    }
+
+    void setOnTouch(Runnable action) {
+        onTouch = action == null ? () -> {} : action;
+    }
+
+    void setOnEscape(Runnable action) {
+        onEscape = action == null ? () -> onClose.run() : action;
+    }
+
+    /** Called when a note was blanked and its text restored. */
+    void setOnBlankRejected(Runnable action) {
+        onBlankRejected = action == null ? () -> {} : action;
     }
 
     void setOnClose(Runnable action) {
@@ -163,21 +289,21 @@ final class ProjectMapNotePreview extends StackPane {
         if (!placed || width <= 0 || height <= 0) {
             return;
         }
-        double w = Math.min(preferredWidth, Math.max(MIN_WIDTH, width - ProjectMapPreview.EDGE_MARGIN * 2));
-        double h = Math.min(preferredHeight, Math.max(MIN_HEIGHT, height - ProjectMapPreview.EDGE_MARGIN * 2));
-        double x = Math.max(
-                ProjectMapPreview.EDGE_MARGIN, Math.min(getLayoutX(), width - w - ProjectMapPreview.EDGE_MARGIN));
-        double y = Math.max(
-                ProjectMapPreview.EDGE_MARGIN, Math.min(getLayoutY(), height - h - ProjectMapPreview.EDGE_MARGIN));
-        resizeRelocate(x, y, w, h);
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        double w = ProjectMapPreview.boundedSize(preferredWidth, MIN_WIDTH, width - margin * 2);
+        double h = ProjectMapPreview.boundedSize(preferredHeight, MIN_HEIGHT, height - margin * 2);
+        resizeRelocate(
+                ProjectMapPreview.clamp(getLayoutX(), margin, Math.max(margin, width - w - margin)),
+                ProjectMapPreview.clamp(getLayoutY(), margin, Math.max(margin, height - h - margin)),
+                w,
+                h);
     }
 
     void dispose() {
-        for (var child : notes.getChildren()) {
-            if (child instanceof TextArea editor && editor.getUserData() instanceof PersonalNote note) {
-                saveIfChanged(note, editor);
-            }
+        for (Row row : rows) {
+            saveIfChanged(row);
         }
+        rows.clear();
         notes.getChildren().clear();
     }
 
@@ -216,6 +342,9 @@ final class ProjectMapNotePreview extends StackPane {
     }
 
     private void resizePressed(MouseEvent event) {
+        if (event.getButton() != MouseButton.PRIMARY) {
+            return;
+        }
         resizeScreenX = event.getScreenX();
         resizeScreenY = event.getScreenY();
         resizeWidth = getWidth();
@@ -224,8 +353,18 @@ final class ProjectMapNotePreview extends StackPane {
     }
 
     private void resized(MouseEvent event) {
-        preferredWidth = Math.max(MIN_WIDTH, resizeWidth + event.getScreenX() - resizeScreenX);
-        preferredHeight = Math.max(MIN_HEIGHT, resizeHeight + event.getScreenY() - resizeScreenY);
+        if (!(getParent() instanceof Region parent) || !event.isPrimaryButtonDown()) {
+            return;
+        }
+        double margin = ProjectMapPreview.EDGE_MARGIN;
+        preferredWidth = ProjectMapPreview.boundedSize(
+                resizeWidth + event.getScreenX() - resizeScreenX,
+                MIN_WIDTH,
+                Math.max(1, parent.getWidth() - getLayoutX() - margin));
+        preferredHeight = ProjectMapPreview.boundedSize(
+                resizeHeight + event.getScreenY() - resizeScreenY,
+                MIN_HEIGHT,
+                Math.max(1, parent.getHeight() - getLayoutY() - margin));
         resize(preferredWidth, preferredHeight);
         event.consume();
     }

@@ -32,6 +32,8 @@ public class KeyDispatcher {
     private boolean consumedPress;
     /** True while the AltGr key itself is held (it arrives as {@link KeyCode#ALT_GRAPH}); see {@link #altGrText}. */
     private boolean altGrHeld;
+    /** True while an unbound plain-Alt press is on its way to the component that claimed it; see {@link #consumeClaimedAlt}. */
+    private boolean claimedAltPress;
 
     /** The Emacs prefix (universal) argument being entered, if any. See {@link #handle}. */
     private final PrefixArg prefixArg = new PrefixArg();
@@ -98,6 +100,7 @@ public class KeyDispatcher {
 
     public void install(Scene scene) {
         scene.addEventFilter(KeyEvent.KEY_PRESSED, this::handle);
+        scene.addEventHandler(KeyEvent.KEY_PRESSED, this::consumeClaimedAlt);
         scene.addEventFilter(KeyEvent.KEY_TYPED, this::handleTyped);
         scene.addEventFilter(KeyEvent.KEY_RELEASED, this::handleReleased);
         scene.addEventFilter(javafx.scene.input.InputMethodEvent.INPUT_METHOD_TEXT_CHANGED, this::handleInputMethod);
@@ -111,6 +114,19 @@ public class KeyDispatcher {
             if (committed != null && !committed.isEmpty()) {
                 cap.text(committed, event.getTarget());
             }
+        }
+    }
+
+    /**
+     * The other half of the Windows menu-mode guard for a <em>claimed</em> plain-Alt chord (see
+     * {@link #CLAIMED_KEYS}): the press was left to the component that claimed it, which normally consumes
+     * it. If it comes back up to the scene unconsumed (the component had nothing to do with it just now), it
+     * is consumed here, before the scene's mnemonic handling and the native menu can see it.
+     */
+    void consumeClaimedAlt(KeyEvent event) {
+        if (claimedAltPress) {
+            claimedAltPress = false;
+            event.consume();
         }
     }
 
@@ -267,6 +283,7 @@ public class KeyDispatcher {
             capture.keySeen();
         }
         consumedPress = false;
+        claimedAltPress = false;
         // Bare Alt: consume so Windows can't enter menu mode (which freezes the keyboard). Plain Alt
         // only — AltGr (Ctrl+Alt) is left alone (see plainAltActive).
         if (event.getCode() == KeyCode.ALT && plainAltActive(mac, event.isAltDown(), event.isControlDown())) {
@@ -396,9 +413,18 @@ public class KeyDispatcher {
         // and the keyboard freezes app-wide (mouse still works) until restart — the reported bug. AltGr
         // (Ctrl+Alt) is excluded by plainAltActive, so international layouts keep composing characters.
         if (plainAltActive(mac, event.isAltDown(), event.isControlDown())) {
+            prefixArg.reset();
+            // …unless the focused component claimed this very chord (the Project Map's Alt+Left/Right
+            // history). It gets the press and consumes it; consumeClaimedAlt() does so if it does not.
+            if (claimsKey(event.getTarget(), token)) {
+                claimedAltPress = true;
+                if (macro == MacroCapture.RECORDING) {
+                    capture.key(event, event.getTarget());
+                }
+                return;
+            }
             event.consume();
             consumedPress = true;
-            prefixArg.reset();
             return;
         }
         // A stray unbound key (not a self-insert candidate) ends any pending argument rather than leaving it
@@ -626,6 +652,10 @@ public class KeyDispatcher {
      * {@code editora.ownsKeys} only yields editor-context chords, which is not enough for a key like F2 —
      * "rename the selected file" in a file tree, but bound to {@code lsp.rename} in three keymaps. Set it on
      * the node that should have the key (the tree, not its whole panel), and keep the set small.
+     *
+     * <p>A claim also lets an <em>unbound</em> plain-Alt chord through ({@code "M-left"}), which is otherwise
+     * consumed on Windows and Linux so it cannot open the native menu. The claiming component must consume
+     * such a press; {@link #consumeClaimedAlt} is the backstop.
      */
     public static final String CLAIMED_KEYS = "editora.claimsKeys";
 

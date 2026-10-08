@@ -115,7 +115,7 @@ class ExportCoordinatorPrintFxTest {
             exports.csvPrint(CSV); // before the first preparation has returned
             exports.printCode();
             exports.printPreview();
-            exports.printProjectMap(new javafx.scene.image.WritableImage(10, 10));
+            exports.printProjectMap(mapOutput());
         });
         awaitPreviews(1);
         assertEquals(1, jobsCreated, "only the first request may create a printer job");
@@ -207,7 +207,7 @@ class ExportCoordinatorPrintFxTest {
             exports.printCode(); // no active buffer
             exports.printJobs = () -> null; // no printer
             exports.csvPrint(CSV);
-            exports.printProjectMap(new javafx.scene.image.WritableImage(10, 10));
+            exports.printProjectMap(mapOutput());
         });
         assertFalse(preparing());
         assertEquals(
@@ -217,6 +217,23 @@ class ExportCoordinatorPrintFxTest {
                         tr("status.print.noPrinter"),
                         tr("status.print.noPrinter")),
                 host.statuses);
+    }
+
+    /** A one-page Project Map job, as the map's Print… action hands over. */
+    private static ProjectMapOutput mapOutput() {
+        return new ProjectMapOutput() {
+            @Override
+            public boolean landscape() {
+                return false;
+            }
+
+            @Override
+            public Rendered render(double pageWidth, double pageHeight) {
+                ProjectMapOutputPlan.Plan plan = ProjectMapOutputPlan.plan(
+                        new ProjectMapOutputPlan.Box(0, 0, 10, 10), List.of(), pageWidth, pageHeight);
+                return new Rendered(List.of(new javafx.scene.image.WritableImage(10, 10)), 1, plan);
+            }
+        };
     }
 
     private interface Throwing<T> {
