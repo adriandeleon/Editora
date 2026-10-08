@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A Word (`.docx`) export no longer puts an empty paragraph in front of every Mermaid block or display
+  formula it has to write as source — which, without `mmdc` installed, was every Mermaid block.
 - **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
   turned out to be incomplete or not the expected tool was unpacked over the installed version before it
   was checked: the working version was gone, and the half-unpacked folder was then detected as installed,

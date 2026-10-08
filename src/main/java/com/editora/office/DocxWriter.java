@@ -92,7 +92,7 @@ public final class DocxWriter {
             addRuns(p, InlineRun.flatten(h), baseDir, true, size);
         } else if (n instanceof Paragraph p) {
             String math = InlineRun.soleDisplayMath(p);
-            if (math != null && embedBytes(doc.createParagraph(), OfficeImages.renderMath(math, true), null)) {
+            if (math != null && embedBlock(doc, OfficeImages.renderMath(math, true))) {
                 return; // rendered the $$…$$ block as an image
             }
             if (isBlockImage(p)) {
@@ -118,7 +118,7 @@ public final class DocxWriter {
             }
         } else if (n instanceof FencedCodeBlock f) {
             if (InlineRun.isMermaidInfo(f.getInfo())
-                    && embedBytes(doc.createParagraph(), OfficeImages.renderMermaid(mmdc, f.getLiteral()), null)) {
+                    && embedBlock(doc, OfficeImages.renderMermaid(mmdc, f.getLiteral()))) {
                 return; // rendered the ```mermaid block as a diagram image
             }
             codeBlock(doc, f.getLiteral(), indentLevel);
@@ -385,6 +385,23 @@ public final class DocxWriter {
             r.setText(fallback);
             r.setItalic(true);
         }
+    }
+
+    /**
+     * Embeds {@code bytes} as a picture paragraph of its own. Nothing is added to the document when there are
+     * no bytes or they cannot be decoded, so the caller's fallback (the block as text) is not preceded by an
+     * empty paragraph.
+     */
+    private static boolean embedBlock(XWPFDocument doc, byte[] bytes) {
+        if (bytes == null) {
+            return false;
+        }
+        XWPFParagraph p = doc.createParagraph();
+        if (embedBytes(p, bytes, null)) {
+            return true;
+        }
+        doc.removeBodyElement(doc.getPosOfParagraph(p));
+        return false;
     }
 
     /**
