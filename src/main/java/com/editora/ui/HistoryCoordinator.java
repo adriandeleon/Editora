@@ -265,8 +265,23 @@ final class HistoryCoordinator {
             public com.editora.config.Settings settings() {
                 return host.settings();
             }
+
+            @Override
+            public boolean hasUnsavedEdits(Path target) {
+                EditorBuffer b = host.activeBuffer();
+                return b != null
+                        && b.getPath() != null
+                        && PathKeys.key(target).equals(PathKeys.key(b.getPath()))
+                        && b.isDirty();
+            }
         };
     }
+
+    /** Test seam: answers the "replace unsaved edits?" question instead of the dialog. */
+    Predicate<Path> confirmUnsavedRestore;
+
+    private EditorBuffer watchedBuffer; // the buffer whose edits are forwarded to the panel
+    private org.reactfx.Subscription watchedText;
 
     /** The File History tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     FileHistoryPanel panel() {
@@ -274,6 +289,7 @@ final class HistoryCoordinator {
     }
 
     void shutdown() {
+        watchEditorText(null);
         restoreExecutor.shutdownNow();
         if (ownsHistoryService) {
             historyService.shutdown();
@@ -540,6 +556,7 @@ final class HistoryCoordinator {
         EditorBuffer b = host.activeBuffer();
         boolean available = isEnabled() && b != null && b.getPath() != null && host.isLocalBuffer(b);
         ops.setToolWindowAvailable(available);
+        watchEditorText(available ? b : null);
         if (available) {
             List<HistoryRevision> revs = ops.historyMap().getOrDefault(historyKey(b.getPath()), List.of());
             panel.setRevisions(revs, b.getPath().getFileName().toString(), b.getPath());
@@ -887,7 +904,53 @@ final class HistoryCoordinator {
             public void editLabel(HistoryRevision revision) {
                 HistoryCoordinator.this.editLabel(revision);
             }
+
+            @Override
+            public boolean confirmRestoreOverUnsavedEdits(Path file) {
+                Predicate<Path> asked = confirmUnsavedRestore;
+                return asked == null ? confirmRestoreOverUnsaved(file) : asked.test(file);
+            }
+
+            @Override
+            public void focusEditor() {
+                EditorBuffer b = host.activeBuffer();
+                if (b != null) {
+                    b.getArea().requestFocus();
+                }
+            }
         };
+    }
+
+    /** The panel's Restore asks before it replaces text that was never saved (a saved file is one undo away). */
+    private boolean confirmRestoreOverUnsaved(Path file) {
+        Alert confirm = new Alert(
+                Alert.AlertType.CONFIRMATION,
+                tr("history.restoreUnsaved", file.getFileName()),
+                ButtonType.OK,
+                ButtonType.CANCEL);
+        confirm.initOwner(host.window());
+        confirm.setTitle(tr("history.menu.restore"));
+        confirm.setHeaderText(null);
+        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+    }
+
+    /**
+     * Tells the panel when the active file's text changes, so its diff and its "Current" row follow typing,
+     * undo and restores rather than waiting for the next save. One subscription, moved with the active
+     * buffer; the panel waits for a pause before it re-reads anything.
+     */
+    private void watchEditorText(EditorBuffer buffer) {
+        if (buffer == watchedBuffer) {
+            return;
+        }
+        if (watchedText != null) {
+            watchedText.unsubscribe();
+            watchedText = null;
+        }
+        watchedBuffer = buffer;
+        if (buffer != null) {
+            watchedText = buffer.getArea().plainTextChanges().subscribe(change -> panel.editorTextChanged());
+        }
     }
 
     /**
@@ -986,7 +1049,7 @@ final class HistoryCoordinator {
             host.setStatus(tr("status.history.folderEmpty", folder.getFileName()));
             return;
         }
-        panel.setFolderHistory(folder.getFileName().toString(), groups);
+        panel.setFolderHistory(folder, groups);
         ops.setToolWindowAvailable(true);
         ops.openToolWindow();
     }

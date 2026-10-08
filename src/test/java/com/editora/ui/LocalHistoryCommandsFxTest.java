@@ -171,14 +171,16 @@ class LocalHistoryCommandsFxTest {
                                     .toList());
                     assertEquals(
                             "beta".equals(revision.label()),
-                            cell.getText().startsWith(tr("history.current")),
-                            "only the newest revision is the current one: " + cell.getText());
-                    assertTrue(cell.getText().contains(tr("history.reason.label")), cell.getText());
+                            cell.getAccessibleText().startsWith(tr("history.current") + ", "),
+                            "only the newest revision is the current one: " + cell.getAccessibleText());
+                    assertNull(cell.getText(), "the row is drawn by its graphic");
+                    assertTrue(cell.getAccessibleText().contains(tr("history.reason.label")), cell.getAccessibleText());
                     assertEquals(
                             List.of(tr("history.menu.restore"), tr("history.menu.editLabel")),
                             OverlayTestKit.labels(cell.getContextMenu().getItems()));
                     cell.updateIndex(-1); // an emptied cell shows nothing and offers nothing
-                    assertNull(cell.getText());
+                    assertNull(cell.getGraphic());
+                    assertNull(cell.getAccessibleText());
                     assertNull(cell.getContextMenu());
                 }
             });
@@ -334,9 +336,10 @@ class LocalHistoryCommandsFxTest {
             });
             assertEquals(4, cells.size());
             assertTrue(
-                    cells.stream().anyMatch(cell -> ("gone.txt  ·  " + tr("history.deleted")).equals(cell.getText())),
-                    cells.stream().map(TreeCell::getText).toList().toString());
-            assertTrue(cells.stream().anyMatch(cell -> "kept.txt".equals(cell.getText())));
+                    cells.stream()
+                            .anyMatch(cell -> ("gone.txt, " + tr("history.deleted")).equals(cell.getAccessibleText())),
+                    cells.stream().map(TreeCell::getAccessibleText).toList().toString());
+            assertTrue(cells.stream().anyMatch(cell -> "kept.txt".equals(cell.getAccessibleText())));
             assertTrue(
                     cells.stream()
                             .filter(cell -> cell.getItem() instanceof FileHistoryPanel.FileGroup)
@@ -347,8 +350,12 @@ class LocalHistoryCommandsFxTest {
                             && revision.path().equals(gone.toString()))
                     .findFirst()
                     .orElseThrow();
-            assertTrue(goneRevision.getText().contains(tr("history.reason.delete")), goneRevision.getText());
-            assertTrue(goneRevision.getText().endsWith(FileHistoryPanel.humanSize(19)), goneRevision.getText());
+            assertTrue(
+                    goneRevision.getAccessibleText().contains(tr("history.reason.delete")),
+                    goneRevision.getAccessibleText());
+            assertTrue(
+                    goneRevision.getTooltip().getText().endsWith("19 B"),
+                    goneRevision.getTooltip().getText());
 
             // Restore the deleted file from its row's menu: nothing to overwrite, so nothing is asked.
             FxTestSupport.runOnFx(
@@ -469,12 +476,13 @@ class LocalHistoryCommandsFxTest {
 
     @Test
     void sizesAndReasonsAreSpelledForTheReader() {
-        assertEquals("0 B", FileHistoryPanel.humanSize(0));
-        assertEquals("1023 B", FileHistoryPanel.humanSize(1023));
-        assertEquals(String.format("%.1f KB", 1.0), FileHistoryPanel.humanSize(1024));
-        assertEquals(String.format("%.1f KB", 1536 / 1024.0), FileHistoryPanel.humanSize(1536));
-        assertEquals(String.format("%.1f MB", 1.0), FileHistoryPanel.humanSize(1024 * 1024));
-        assertEquals(String.format("%.1f MB", 2.5), FileHistoryPanel.humanSize((long) (2.5 * 1024 * 1024)));
+        assertEquals("0 B", HistoryRowText.sizeText(0, java.util.Locale.ROOT));
+        assertEquals("1023 B", HistoryRowText.sizeText(1023, java.util.Locale.ROOT));
+        assertEquals("1.0 KB", HistoryRowText.sizeText(1024, java.util.Locale.ROOT));
+        assertEquals("1.5 KB", HistoryRowText.sizeText(1536, java.util.Locale.ROOT));
+        assertEquals("1.0 MB", HistoryRowText.sizeText(1024 * 1024, java.util.Locale.ROOT));
+        assertEquals("2.5 MB", HistoryRowText.sizeText((long) (2.5 * 1024 * 1024), java.util.Locale.ROOT));
+        assertEquals("2,5 MB", HistoryRowText.sizeText((long) (2.5 * 1024 * 1024), java.util.Locale.GERMANY));
 
         assertEquals(tr("history.reason.autosave"), FileHistoryPanel.reasonLabel(HistoryRevision.REASON_AUTOSAVE));
         assertEquals(tr("history.reason.external"), FileHistoryPanel.reasonLabel(HistoryRevision.REASON_EXTERNAL));
