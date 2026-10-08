@@ -58,7 +58,6 @@ import com.editora.snippet.ParsedSnippet;
 import com.editora.snippet.Snippet;
 import com.editora.snippet.SnippetParser;
 import com.editora.snippet.SnippetSessions;
-import com.editora.snippet.VariableResolver;
 import com.editora.structured.StructuredParser;
 import com.editora.structured.XmlParser;
 import com.editora.typst.TypstMarkup;
@@ -517,6 +516,11 @@ public class EditorBuffer implements TabContent {
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
     /** Resolves (language, prefix) → snippet for Tab-expand; injected by the controller (default: none). */
     private java.util.function.BiFunction<String, String, Snippet> snippetProvider = (lang, prefix) -> null;
+
+    private boolean snippetTabExpansion = true;
+    private java.util.function.UnaryOperator<Path> snippetWorkspaceRoot = file -> null;
+    private java.util.function.Consumer<int[]> snippetProgress = progress -> {};
+    private SnippetFieldOverlay snippetOverlay; // lazily attached when the first session starts
     /** Resolves completions for the typed prefix; injected by the controller (default: none). */
 
     // Settings: auto-show docs beside the list
@@ -969,6 +973,8 @@ public class EditorBuffer implements TabContent {
         completionActions.addCompletionKeys(area); // popup owns Enter/Tab before snippet and indentation filters
         completionActions.installCommitCharacters(area);
         addSnippetKeys(area); // Tab expands/cycles snippets (else falls through to indent)
+        snippetSession.setOnChanged(this::snippetSessionChanged);
+        focusedView.addListener((o, was, now) -> snippetSession.focusMovedTo(now)); // the other split view
         addAutoClose(area); // auto-close ()[]{} and quotes (before auto-indent so it sees the keystroke first)
         addAutoIndent(area); // Enter auto-indents; closers de-indent (per-language smart indent)
         completionActions.installCompletionTrigger(area);
@@ -6819,6 +6825,7 @@ public class EditorBuffer implements TabContent {
     public void setRenderingActive(boolean active) {
         boolean wasInactive = !renderingActive;
         renderingActive = active;
+        if (!active) snippetSession.cancel(); // a background tab: Tab must not come back to its fields
         if (active && wasInactive) {
             scheduleRulerMeasure(); // catch up on measures skipped while the tab was hidden
         }
@@ -8331,6 +8338,31 @@ public class EditorBuffer implements TabContent {
         return snippetSession.isActive();
     }
 
+    /** {@code Settings.snippetTabExpansion}: whether Tab expands a trigger (the popup and picker always do). */
+    public void setSnippetTabExpansion(boolean on) {
+        this.snippetTabExpansion = on;
+    }
+
+    /** A file's project root ({@code WORKSPACE_*}), and who hears the active field's {position, count} (null = ended). */
+    public void setSnippetHooks(
+            java.util.function.UnaryOperator<Path> root, java.util.function.Consumer<int[]> progress) {
+        this.snippetWorkspaceRoot = root == null ? file -> null : root;
+        this.snippetProgress = progress == null ? p -> {} : progress;
+    }
+
+    /** Leaves the running snippet session where the caret is (what Escape does). */
+    public void endSnippetSession() {
+        snippetSession.cancel();
+    }
+
+    private void snippetSessionChanged() {
+        if (snippetOverlay == null && snippetSession.isActive()) {
+            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), todoOverlay);
+        }
+        if (snippetOverlay != null) snippetOverlay.refresh();
+        snippetProgress.accept(snippetSession.progress());
+    }
+
     /**
      * Tab/Shift-Tab/Escape handling for snippets, as a key filter (runs before RichTextFX's own Tab
      * indent). With an active snippet, Tab/Shift-Tab cycle fields and Escape cancels; otherwise Tab
@@ -8356,8 +8388,11 @@ public class EditorBuffer implements TabContent {
             if (c < 0x20 || c == 0x7F) {
                 return; // control / non-printable (Enter, Tab, Backspace handled elsewhere)
             }
-            if (snippetSession.replaceInActiveField(
-                    a.getSelection().getStart(), a.getSelection().getEnd(), ch)) {
+            // A bracket or quote is paired first (its mirrors follow reactively, as one undo step); the
+            // atomic path below would swallow the key before the auto-close filter saw it.
+            if (TypedText.isText(e) && applyAutoCloseTyped(a, c)
+                    || snippetSession.replaceInActiveField(
+                            a.getSelection().getStart(), a.getSelection().getEnd(), ch)) {
                 e.consume(); // handled atomically; don't let the area also insert the char
             }
         });
@@ -8366,7 +8401,9 @@ public class EditorBuffer implements TabContent {
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (hasActiveSnippet()) {
+            // ownsKeys applies the "caret has left the fields" rule first, so a session the caret walked
+            // away from never takes this Tab — it indents like any other.
+            if ((e.getCode() == KeyCode.TAB || e.getCode() == KeyCode.ESCAPE) && snippetSession.ownsKeys(a)) {
                 if (e.getCode() == KeyCode.TAB) {
                     if (e.isShiftDown()) {
                         snippetSession.previous();
@@ -8535,7 +8572,8 @@ public class EditorBuffer implements TabContent {
      * newline indented per {@link Indenter} (inherit + block-opener +1 + matching-pair split). When a
      * <b>closing token</b> is typed — a {@code )]}} bracket alone on the line, or a closer keyword like
      * {@code end}/{@code fi} completed — the line is re-aligned to its opener's indent. Inert in
-     * read-only mode and while a snippet session owns the keys.
+     * read-only mode. Inside a snippet field these assists work as anywhere else: the session's range
+     * tracking absorbs their edits.
      */
     private void addAutoIndent(CodeArea a) {
         a.addEventFilter(KeyEvent.KEY_PRESSED, e -> {
@@ -8550,7 +8588,7 @@ public class EditorBuffer implements TabContent {
                     || e.isMetaDown()) {
                 return;
             }
-            if (!isEditable() || hasActiveSnippet()) {
+            if (!isEditable()) {
                 return;
             }
             applyEnter(a);
@@ -8574,7 +8612,6 @@ public class EditorBuffer implements TabContent {
             if (e.getCode() != KeyCode.BACK_SPACE
                     || viewMode
                     || !isEditable()
-                    || hasActiveSnippet()
                     || e.isControlDown()
                     || e.isAltDown()
                     || e.isMetaDown()
@@ -8614,7 +8651,6 @@ public class EditorBuffer implements TabContent {
                 return;
             }
             if (!isEditable()
-                    || hasActiveSnippet()
                     || e.getCharacter().length() != 1
                     || !TypedText.isText(e)
                     || a.getSelection().getLength() > 0) {
@@ -8669,7 +8705,7 @@ public class EditorBuffer implements TabContent {
         if (typed != ';' || !smartSemicolonEnabled || !lspActive || smartSemicolonRequester == null) {
             return;
         }
-        if (!isEditable() || hugeFile || largeFile || isNarrowed() || hasActiveSnippet()) {
+        if (!isEditable() || hugeFile || largeFile || isNarrowed()) {
             return;
         }
         int typedAt = a.getCaretPosition();
@@ -8724,7 +8760,7 @@ public class EditorBuffer implements TabContent {
      * is the behaviour that makes on-type formatting infuriating in other editors.
      *
      * <p>Inert unless the setting is on, the server advertises a trigger set containing this character, and
-     * the buffer is an editable, normal-sized, single-caret LSP buffer with no snippet session. A trigger
+     * the buffer is an editable, normal-sized, single-caret LSP buffer. A trigger
      * consumed by auto-close (typing {@code }} to skip over an inserted one) doesn't reach here — that path
      * leaves the line already correct.
      */
@@ -8735,11 +8771,7 @@ public class EditorBuffer implements TabContent {
         if (!lspOnTypeTriggers.contains(typed)) {
             return;
         }
-        if (!isEditable()
-                || hugeFile
-                || largeFile
-                || hasActiveSnippet()
-                || a.getSelection().getLength() > 0) {
+        if (!isEditable() || hugeFile || largeFile || a.getSelection().getLength() > 0) {
             return;
         }
         int par = a.getCurrentParagraph();
@@ -8989,7 +9021,7 @@ public class EditorBuffer implements TabContent {
             if (multiCaretActiveOn(a)) { // suspend single-caret assists while multiple carets exist
                 return;
             }
-            if (!isEditable() || hasActiveSnippet() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
+            if (!isEditable() || e.getCharacter().length() != 1 || !TypedText.isText(e)) {
                 return;
             }
             char c = e.getCharacter().charAt(0);
@@ -9005,7 +9037,6 @@ public class EditorBuffer implements TabContent {
             if (e.getCode() != KeyCode.BACK_SPACE
                     || viewMode
                     || !isEditable()
-                    || hasActiveSnippet()
                     || e.isControlDown()
                     || e.isAltDown()
                     || e.isMetaDown()
@@ -9106,42 +9137,17 @@ public class EditorBuffer implements TabContent {
         a.requestFocus();
     }
 
-    /** Expands the token before the caret if it matches a snippet prefix; returns whether it did. */
+    /** Expands the trigger before the caret if Tab may ({@link SnippetTyping#triggerAtCaret}); returns whether it did. */
     private boolean expandPrefixAtCaret(CodeArea a) {
-        if (!isEditable() || a.getSelection().getLength() > 0) {
+        if (!isEditable() || !snippetTabExpansion || a.getSelection().getLength() > 0) {
             return false;
         }
-        // A snippet prefix is a short token ending at the caret: look at the same bounded stretch the
-        // completion prefix uses instead of building the whole document on every plain Tab.
-        int base = Math.max(0, a.getCaretPosition() - BufferCompletion.PREFIX_LOOKBACK);
-        String text = a.getText(base, a.getCaretPosition());
-        int caret = text.length();
-        int identStart = caret;
-        while (identStart > 0 && completionActions.isPrefixChar(text.charAt(identStart - 1))) {
-            identStart--;
+        com.editora.snippet.TabExpansion.Match m =
+                SnippetTyping.triggerAtCaret(a, language, isProse(), snippetProvider);
+        if (m != null) {
+            startSnippet(a, m.snippet(), m.start(), a.getCaretPosition());
         }
-        // Plenty of snippet prefixes aren't identifiers — `#include`/`#ifndef` (c/cpp), `!` (the emmet html
-        // skeleton), `?xml`, `---` (yaml), `->` (ruby), `[PSCustomObject]` — so try the whole
-        // non-whitespace token first and fall back to the identifier run. Matching only the identifier run
-        // left 42 bundled snippets unreachable from the keyboard: at `#inc` the scan stops on the `#` and
-        // looks up "inc", which no snippet is registered under.
-        int tokenStart = completionActions.snippetTokenStart(text, caret);
-        if (tokenStart < identStart) {
-            Snippet wide = snippetProvider.apply(language, text.substring(tokenStart, caret));
-            if (wide != null) {
-                startSnippet(a, wide, base + tokenStart, base + caret);
-                return true;
-            }
-        }
-        if (identStart == caret) {
-            return false;
-        }
-        Snippet snippet = snippetProvider.apply(language, text.substring(identStart, caret));
-        if (snippet == null) {
-            return false;
-        }
-        startSnippet(a, snippet, base + identStart, base + caret);
-        return true;
+        return m != null;
     }
 
     /** Parses {@code snippet}, replaces {@code [from,to)} with the expansion, and begins a session. */
@@ -9150,23 +9156,12 @@ public class EditorBuffer implements TabContent {
     }
 
     private void startSnippet(CodeArea a, Snippet snippet, int from, int to, boolean reindent) {
-        String fileName = path == null ? "" : path.getFileName().toString();
-        String directory = path == null || path.toAbsolutePath().getParent() == null
-                ? ""
-                : path.toAbsolutePath().getParent().toString();
-        String filePath = path == null ? "" : path.toAbsolutePath().toString();
-        String clip = javafx.scene.input.Clipboard.getSystemClipboard().hasString()
-                ? LineEndings.toLf(
-                        javafx.scene.input.Clipboard.getSystemClipboard().getString())
-                : "";
-        int line = a.offsetToPosition(from, org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
-                .getMajor();
-        String currentLine = a.getParagraph(line).getText();
-        VariableResolver vars =
-                new VariableResolver(fileName, directory, filePath, a.getSelectedText(), clip, line, currentLine);
-        ParsedSnippet parsed = SnippetParser.parse(snippet.body(), vars);
+        Path root = path == null ? null : snippetWorkspaceRoot.apply(path);
+        ParsedSnippet parsed =
+                SnippetParser.parse(snippet.body(), SnippetTyping.variables(a, from, to, path, language, root));
+        String currentLine = a.getParagraph(SnippetTyping.lineOf(a, from)).getText();
         String indent = reindent ? completionActions.leadingIndent(currentLine) : "";
-        // asIs (no reindent) keeps the text untouched; otherwise the body's tabs become the buffer's unit.
+        // asIs (no reindent) keeps the text untouched; otherwise the body's indentation becomes the buffer's unit.
         String unit = reindent ? indentUnit() : null;
         snippetSession.start(a, parsed, from, to, indent, unit);
     }
