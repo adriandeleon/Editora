@@ -37,19 +37,36 @@ public final class XmlTree {
      * standalone {@code TextFlow}s (not a virtualized {@code TreeView}), for snapshot-to-PDF export.
      */
     public static java.util.List<Node> printableRows(XmlNode root) {
+        return printableRows(root, Integer.MAX_VALUE);
+    }
+
+    /** The first {@code max} rows of {@link #printableRows(XmlNode)} — a capped export builds no more. */
+    public static java.util.List<Node> printableRows(XmlNode root, int max) {
         java.util.List<Node> rows = new java.util.ArrayList<>();
-        appendRows(root, 0, rows);
+        appendRows(root, 0, rows, max);
         return rows;
     }
 
-    private static void appendRows(XmlNode n, int depth, java.util.List<Node> rows) {
+    /** How many rows {@link #printableRows(XmlNode)} has: one per node. */
+    public static int rowCount(XmlNode root) {
+        int count = 1;
+        for (XmlNode c : root.children()) {
+            count += rowCount(c);
+        }
+        return count;
+    }
+
+    private static void appendRows(XmlNode n, int depth, java.util.List<Node> rows, int max) {
+        if (rows.size() >= max) {
+            return;
+        }
         TextFlow row = render(n);
         if (depth > 0) {
             row.getChildren().add(0, styled("  ".repeat(depth), "xml-punct")); // monospace indent
         }
         rows.add(row);
         for (XmlNode c : n.children()) {
-            appendRows(c, depth + 1, rows);
+            appendRows(c, depth + 1, rows, max);
         }
     }
 

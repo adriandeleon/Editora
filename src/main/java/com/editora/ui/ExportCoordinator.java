@@ -574,11 +574,11 @@ final class ExportCoordinator {
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            noPrinter(() -> exportImagePdf(pane));
             return;
         }
-        preparePrint(() ->
-                printService.prepareFxImages(java.util.List.of(image), prepared -> openPrintPreview(job, prepared)));
+        java.util.List<com.editora.pdf.PageImage> pages = pageImage(image);
+        preparePrint(() -> printService.preparePageImages(pages, prepared -> openPrintPreview(job, prepared)));
     }
 
     /** Exports the picture of an image tab to a PDF page of the configured size. */
@@ -599,7 +599,14 @@ final class ExportCoordinator {
         }
         host.setStatus(tr("status.pdf.exporting"));
         String pageSize = host.settings().getPdfPageSize();
-        stagedPdf(f, (out, report) -> pdfService.exportFxImages(java.util.List.of(image), pageSize, out, report));
+        java.util.List<com.editora.pdf.PageImage> pages = pageImage(image);
+        stagedPdf(f, (out, report) -> pdfService.exportPageImages(pages, pageSize, out, report));
+    }
+
+    /** An image tab's picture as the one-pixel-per-point page image the raster print and PDF paths take. */
+    private static java.util.List<com.editora.pdf.PageImage> pageImage(javafx.scene.image.Image image) {
+        return java.util.List.of(
+                com.editora.pdf.PageImage.of(com.editora.editor.PreviewImageLoader.imageToPng(image)));
     }
 
     // --- the selection only -------------------------------------------------------------------------------
@@ -830,21 +837,34 @@ final class ExportCoordinator {
                     b.getContent(),
                     out,
                     r -> report.accept(new com.editora.pdf.PdfExportService.Result(r.ok(), r.message())));
-        } else if (b.isSvg()) { // rasterize the SVG source and embed it as a PDF page
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(java.util.List.of(png), pageSize, out, report);
+        } else if (b.isSvg()) { // rasterize the SVG source (on the export thread) and embed it as a PDF page
+            pdfService.exportSvg(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    tr("status.pdf.noPreview"),
+                    pageSize,
+                    out,
+                    report);
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
-                return;
-            }
-            pdfService.exportImages(chunks, pageSize, out, report);
+            b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet(), this::snapshotProgress, snap -> {
+                if (snap == null || snap.images().isEmpty()) {
+                    report.accept(new com.editora.pdf.PdfExportService.Result(false, tr("status.pdf.noPreview")));
+                    return;
+                }
+                host.setStatus(tr("status.pdf.exporting"));
+                pdfService.exportPageImages(snap.images(), pageSize, out, r -> {
+                    report.accept(r);
+                    if (r.ok() && snap.truncated()) { // after the plain "exported": the PDF is not the whole tree
+                        host.setStatus(tr("status.pdf.exportedTruncated", snap.shownRows(), snap.totalRows()));
+                    }
+                });
+            });
+        }
+    }
+
+    /** Status while a tree preview is snapshotted chunk by chunk (it takes several pulses of the FX thread). */
+    private void snapshotProgress(int done, int total) {
+        if (total > 1) {
+            host.setStatus(tr("status.preview.snapshotting", Math.round(100f * done / total)));
         }
     }
 
@@ -1211,14 +1231,11 @@ final class ExportCoordinator {
             printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), false, open);
         } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to a temp PNG, then paginate
             printDiagramViaImage(b, job);
-        } else if (b.isSvg()) { // rasterize the SVG source, paginate as image pages
-            byte[] png = com.editora.editor.PreviewImageLoader.svgToPng(
-                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            if (png == null) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(java.util.List.of(png), open);
+        } else if (b.isSvg()) { // rasterize the SVG source (on the prepare thread), paginate as image pages
+            printService.prepareSvg(
+                    b.getContent().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                    tr("status.print.noPreview"),
+                    open);
         } else if (b.isTypst()) { // Typst — CLI render to page PNGs, paginate as image pages
             typst.renderPages(b.getContent(), b.getPath(), pages -> {
                 if (pages == null || pages.isEmpty()) {
@@ -1226,15 +1243,30 @@ final class ExportCoordinator {
                             job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
                     return;
                 }
-                printService.prepareImages(pages, open);
+                // A page PNG is rendered at renderPpi: that many pixels per inch of paper, 72 points.
+                double density = com.editora.typst.TypstRenderer.renderPpi() / 72.0;
+                printService.preparePageImages(
+                        pages.stream()
+                                .filter(java.util.Objects::nonNull)
+                                .map(png -> com.editora.pdf.PageImage.of(png, density))
+                                .toList(),
+                        open);
             });
         } else { // Markwhen timeline / JSON-YAML-TOML tree / XML tree — snapshot the rendered preview (light)
-            java.util.List<byte[]> chunks = b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet());
-            if (chunks == null || chunks.isEmpty()) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
-                return;
-            }
-            printService.prepareImages(chunks, open);
+            b.snapshotPreviewChunks(Themes.lightUserAgentStylesheet(), this::snapshotProgress, snap -> {
+                if (snap == null || snap.images().isEmpty()) {
+                    openPrintPreview(
+                            job, new com.editora.print.PrintService.Prepared(null, tr("status.print.noPreview")));
+                    return;
+                }
+                host.setStatus(tr("status.print.preparing"));
+                printService.preparePageImages(snap.images(), prepared -> {
+                    open.accept(prepared);
+                    if (snap.truncated() && openPreview != null) { // the last page says so too
+                        host.setStatus(tr("status.print.truncated", snap.shownRows(), snap.totalRows()));
+                    }
+                });
+            });
         }
     }
 
@@ -1248,24 +1280,50 @@ final class ExportCoordinator {
             openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
             return;
         }
-        diagram.exportToPath(
-                b.diagramKind(),
-                b.getContent(),
-                tmp,
-                false,
-                r -> { // light: this is for paper
-                    if (!r.ok()) {
-                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
-                        return;
-                    }
-                    try {
-                        byte[] png = java.nio.file.Files.readAllBytes(tmp);
-                        java.nio.file.Files.deleteIfExists(tmp);
+        try {
+            diagram.exportToPath(
+                    b.diagramKind(),
+                    b.getContent(),
+                    tmp,
+                    false,
+                    r -> { // light: this is for paper
+                        byte[] png = null;
+                        String error = r.message();
+                        try {
+                            png = takeRenderedPng(tmp, r.ok());
+                        } catch (java.io.IOException e) {
+                            error = e.getMessage() == null ? e.toString() : e.getMessage();
+                        }
+                        if (png == null) {
+                            openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, error));
+                            return;
+                        }
                         printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
-                    } catch (java.io.IOException e) {
-                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-                    }
-                });
+                    });
+        } catch (RuntimeException | Error e) {
+            deleteQuietly(tmp); // the render never started: its callback will not run
+            throw e;
+        }
+    }
+
+    /**
+     * The PNG a diagram render left at {@code tmp} — {@code null} when it did not render — deleting the
+     * temp file on every path: a failed render and a failed read leave nothing behind either.
+     */
+    static byte[] takeRenderedPng(java.nio.file.Path tmp, boolean rendered) throws java.io.IOException {
+        try {
+            return rendered ? java.nio.file.Files.readAllBytes(tmp) : null;
+        } finally {
+            deleteQuietly(tmp);
+        }
+    }
+
+    private static void deleteQuietly(java.nio.file.Path file) {
+        try {
+            java.nio.file.Files.deleteIfExists(file);
+        } catch (java.io.IOException | RuntimeException e) {
+            // a temp file the system will clear; nothing the user can act on
+        }
     }
 
     /**

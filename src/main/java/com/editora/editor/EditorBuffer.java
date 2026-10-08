@@ -6069,7 +6069,7 @@ public class EditorBuffer implements TabContent {
             err.setWrapText(true);
             node = err;
         } else {
-            boolean showDocs = parsed.isOpenApi() && (structuredShowApiDocs == null || structuredShowApiDocs);
+            boolean showDocs = parsed.isOpenApi() && showsApiDocs();
             node = showDocs ? OpenApiDoc.build(parsed.openApi()) : StructuredTree.build(parsed.root());
         }
         structuredContentHolder().getChildren().setAll(node);
@@ -6163,151 +6163,25 @@ public class EditorBuffer implements TabContent {
         treePreviewContextMenu.show(structuredContentHolder(), screenX, screenY);
     }
 
-    // ---- Preview → PDF snapshot (SVG / Markwhen / JSON-YAML-TOML / XML) -------------------------------
-    /** Max rows captured for a tree PDF (the parser already caps nodes at 50k; this bounds the image size). */
-    private static final int MAX_PRINT_ROWS = 4000;
-    /** Rows per snapshot chunk — each chunk is one bounded image, so a big tree can't build a giant texture. */
-    private static final int ROWS_PER_CHUNK = 250;
-    /** Fixed width the Markwhen timeline is re-laid-out to for its export snapshot. */
-    private static final double EXPORT_TIMELINE_WIDTH = 1100;
+    // ---- Preview → PDF snapshot (Markwhen / JSON-YAML-TOML / XML / summaries) — see PreviewSnapshots ----
 
     /**
-     * Renders the current image/tree preview to a list of PNG images for PDF export (a full snapshot of the
-     * whole tree/timeline, captured in bounded chunks — not just the visible viewport). Returns {@code null}
-     * for a buffer whose preview isn't snapshot-based (Markdown/CSV/Mermaid/diagram export semantically /
-     * via their CLI instead). FX thread only.
+     * Renders the current image/tree preview to PNG images for print and PDF export (a full snapshot of the
+     * whole tree/timeline, not just the visible viewport), in steps that keep the window responsive. Hands
+     * {@code done} the result, or {@code null} for a buffer whose preview isn't snapshot-based
+     * (Markdown/CSV/Mermaid/diagram export semantically / via their CLI instead) or does not parse. FX
+     * thread only; {@code progress} gets (chunks done, chunks in all).
      */
-    public java.util.List<byte[]> snapshotPreviewChunks(String lightUaStylesheet) {
-        if (hasGithubActionsPreview()) {
-            javafx.scene.layout.VBox box = GithubActionsPreview.content(
-                    com.editora.ghactions.Workflow.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        if (isStructured()) {
-            StructuredParser.Parsed p = StructuredParser.parse(area.getText(), structuredFormat());
-            return p.ok()
-                    ? snapshotRows(StructuredTree.printableRows(p.root()), "structured-tree", lightUaStylesheet)
-                    : null;
-        }
-        if (hasPomPreview()) {
-            javafx.scene.layout.VBox box =
-                    PomPreview.content(com.editora.maven.PomSummary.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        if (isXml()) {
-            XmlParser.Parsed p = XmlParser.parse(area.getText());
-            return p.ok() ? snapshotRows(XmlTree.printableRows(p.root()), "xml-tree", lightUaStylesheet) : null;
-        }
-        if (isCrontab()) {
-            com.editora.cron.Crontab parsed = com.editora.cron.Crontab.parse(area.getText());
-            javafx.scene.layout.VBox box =
-                    CrontabPreview.content(parsed, java.time.LocalDateTime.now(), EXPORT_TIMELINE_WIDTH);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        if (isFstab()) {
-            javafx.scene.layout.VBox box =
-                    FstabPreview.content(com.editora.fstab.Fstab.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        if (isSystemd()) {
-            javafx.scene.layout.VBox box = SystemdPreview.content(
-                    com.editora.systemd.SystemdUnit.parse(area.getText()),
-                    java.time.LocalDateTime.now(),
-                    EXPORT_TIMELINE_WIDTH);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        if (isSshConfig()) {
-            javafx.scene.layout.VBox box = SshConfigPreview.content(
-                    com.editora.sshconfig.SshConfig.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        if (isDockerfile()) {
-            javafx.scene.layout.VBox box = DockerfilePreview.content(
-                    com.editora.dockerfile.Dockerfile.parse(area.getText()), EXPORT_TIMELINE_WIDTH);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        if (isMarkwhen()) {
-            com.editora.markwhen.Timeline model = com.editora.markwhen.MarkwhenParser.parse(area.getText());
-            Node timeline = markwhenView == MarkwhenView.CALENDAR
-                    ? MarkwhenCalendar.build(model, 1.0, EXPORT_TIMELINE_WIDTH)
-                    : MarkwhenTimeline.build(model, 1.0, EXPORT_TIMELINE_WIDTH);
-            javafx.scene.layout.VBox box = new javafx.scene.layout.VBox(timeline);
-            box.getStyleClass().add("markdown-preview");
-            byte[] png = snapshotNodePng(box, lightUaStylesheet);
-            return png == null ? null : java.util.List.of(png);
-        }
-        return null;
+    public void snapshotPreviewChunks(
+            String lightUaStylesheet,
+            java.util.function.BiConsumer<Integer, Integer> progress,
+            java.util.function.Consumer<PreviewSnapshots.Result> done) {
+        PreviewSnapshots.capture(this, lightUaStylesheet, progress, done);
     }
 
-    /** Snapshots a flat, indented row list in bounded chunks (one image each) styled as {@code treeClass}. */
-    private java.util.List<byte[]> snapshotRows(java.util.List<Node> rows, String treeClass, String lightUa) {
-        int total = Math.min(rows.size(), MAX_PRINT_ROWS);
-        java.util.List<byte[]> out = new java.util.ArrayList<>();
-        for (int i = 0; i < total; i += ROWS_PER_CHUNK) {
-            javafx.scene.layout.VBox chunk = new javafx.scene.layout.VBox();
-            chunk.getStyleClass().add(treeClass);
-            chunk.setFillWidth(false);
-            chunk.setPadding(new javafx.geometry.Insets(6));
-            chunk.getChildren().addAll(rows.subList(i, Math.min(i + ROWS_PER_CHUNK, total)));
-            byte[] png = snapshotNodePng(chunk, lightUa);
-            if (png != null) {
-                out.add(png);
-            }
-        }
-        return out.isEmpty() ? null : out;
-    }
-
-    /**
-     * Lays a node out off-screen (a throwaway {@link javafx.scene.Scene} carrying this buffer's app/syntax
-     * stylesheets so the token CSS resolves) at its preferred size and snapshots it to PNG bytes. The scene's
-     * user-agent stylesheet is forced to {@code lightUaStylesheet} (Primer Light) when given, so the
-     * {@code -color-*}-based tree/timeline colors resolve to an ink-friendly light palette regardless of the
-     * app theme (a snapshot PDF/print is always light, like the native-vector exporters). Returns {@code null}
-     * on a zero-size result / render failure.
-     */
-    private byte[] snapshotNodePng(Node node, String lightUaStylesheet) {
-        try {
-            javafx.scene.Group holder = new javafx.scene.Group(node);
-            javafx.scene.Scene sc = new javafx.scene.Scene(holder);
-            javafx.scene.Scene live = getNode().getScene();
-            if (live != null) {
-                sc.getStylesheets().setAll(live.getStylesheets());
-            }
-            // Force a light user-agent theme for the export (else the scene inherits the app's global UA,
-            // dark or light). A null falls back to the inherited/global UA (e.g. in a headless test).
-            if (lightUaStylesheet != null) {
-                sc.setUserAgentStylesheet(lightUaStylesheet);
-            } else if (live != null && live.getUserAgentStylesheet() != null) {
-                sc.setUserAgentStylesheet(live.getUserAgentStylesheet());
-            }
-            holder.applyCss();
-            holder.layout();
-            javafx.scene.SnapshotParameters sp = new javafx.scene.SnapshotParameters();
-            sp.setFill(javafx.scene.paint.Color.WHITE); // backstop behind any transparent margins
-            javafx.scene.image.WritableImage img = node.snapshot(sp, null);
-            if (img == null || img.getWidth() < 1 || img.getHeight() < 1) {
-                return null;
-            }
-            return PreviewImageLoader.imageToPng(img);
-        } catch (RuntimeException e) {
-            java.util.logging.Logger.getLogger(EditorBuffer.class.getName())
-                    .log(java.util.logging.Level.WARNING, "preview snapshot failed", e);
-            return null;
-        }
+    /** Whether an OpenAPI document shows its docs view (the default) rather than the tree behind it. */
+    boolean showsApiDocs() {
+        return structuredShowApiDocs == null || structuredShowApiDocs;
     }
 
     /** Wraps the structured holder so the floating Editor/Split/Preview toggle can overlay it in PREVIEW mode. */
