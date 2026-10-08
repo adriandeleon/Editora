@@ -66,7 +66,10 @@ Unknown fields are ignored (the parser is lenient), so a manifest can carry extr
 
 - **Snippets** — drop `snippets/<lang>.json` (VS Code / TextMate snippet format). They merge into the
   built-in snippets for that language.
-- **Templates** — drop `templates/<id>.json` (the same format as Editora's bundled file templates).
+- **Templates** — drop `templates/<id>.json` (the same format as Editora's bundled file templates; see
+  [templates](subsystems/templates.md)). A plugin template overrides a bundled one with the same id; the
+  user's own `~/.editora/templates/<id>.json` overrides both. Plugin templates are listed in Settings →
+  Templates tagged "plugin".
 - **Keybindings** — the manifest `keymap` map.
 - **External commands** — the manifest `commands` array; each becomes a palette entry
   `Example: …` that runs its argv via Editora's subprocess runner (with a timeout).
