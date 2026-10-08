@@ -106,6 +106,40 @@ final class PluginCoordinator {
             ConfigManager config,
             PluginManager pluginManager,
             Ops ops) {
+        this(
+                host,
+                registry,
+                keymap,
+                snippets,
+                templates,
+                toolWindows,
+                statusBar,
+                settingsWindow,
+                config,
+                pluginManager,
+                ops,
+                pluginManager != null ? new PluginRegistry() : null,
+                pluginManager != null ? new PluginInstaller(pluginManager) : null);
+    }
+
+    /**
+     * As the constructor above, with the registry client and the installer supplied — the seam that lets a
+     * test point the browse and install flows at a loopback server.
+     */
+    PluginCoordinator(
+            CoordinatorHost host,
+            CommandRegistry registry,
+            KeymapManager keymap,
+            SnippetManager snippets,
+            TemplateRegistry templates,
+            ToolWindowManager toolWindows,
+            StatusBar statusBar,
+            SettingsWindow settingsWindow,
+            ConfigManager config,
+            PluginManager pluginManager,
+            Ops ops,
+            PluginRegistry pluginRegistry,
+            PluginInstaller pluginInstaller) {
         this.host = host;
         this.registry = registry;
         this.keymap = keymap;
@@ -118,8 +152,8 @@ final class PluginCoordinator {
         this.pluginManager = pluginManager;
         this.ops = ops;
         // Per-window registry/installer over the shared manager (mirrors the old setPluginManager wiring).
-        this.pluginRegistry = pluginManager != null ? new PluginRegistry() : null;
-        this.pluginInstaller = pluginManager != null ? new PluginInstaller(pluginManager) : null;
+        this.pluginRegistry = pluginRegistry;
+        this.pluginInstaller = pluginInstaller;
         this.browsePalette = new QuickOpen<>(
                 tr("plugins.browseTitle"),
                 tr("plugins.browsePrompt"),
@@ -402,11 +436,8 @@ final class PluginCoordinator {
         if (!browseSigned) {
             body = tr("dialog.plugins.unsignedWarn") + "\n\n" + body; // reached only when the gate is off
         }
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.plugins.installTitle"));
-        confirm.setHeaderText(tr("dialog.plugins.installHeader"));
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+        if (!confirm.test(new Question(
+                Question.Kind.INSTALL, tr("dialog.plugins.installTitle"), tr("dialog.plugins.installHeader"), body))) {
             return;
         }
         host.setStatus(tr("status.plugins.installing", e.name == null || e.name.isBlank() ? e.id : e.name));
@@ -419,15 +450,19 @@ final class PluginCoordinator {
             host.setStatus(tr("status.plugins.disabled"));
             return;
         }
-        FileChooser fc = new FileChooser();
-        fc.setTitle(tr("dialog.plugins.installFileTitle"));
-        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("dialog.plugins.zipFilter"), "*.zip"));
-        File f = fc.showOpenDialog(host.window());
+        File f = zipChooser.get();
         if (f == null) {
             return;
         }
         host.setStatus(tr("status.plugins.installing", f.getName()));
         pluginInstaller.installFromZip(f.toPath(), this::onPluginInstalled);
+    }
+
+    private File chooseZipDialog() {
+        FileChooser fc = new FileChooser();
+        fc.setTitle(tr("dialog.plugins.installFileTitle"));
+        fc.getExtensionFilters().add(new FileChooser.ExtensionFilter(tr("dialog.plugins.zipFilter"), "*.zip"));
+        return fc.showOpenDialog(host.window());
     }
 
     /** Common post-install handling: disclose capabilities + confirm enable, persist, refresh, report. */
@@ -486,12 +521,44 @@ final class PluginCoordinator {
                 name,
                 d.manifest().version == null ? "" : d.manifest().version,
                 pluginCapabilitySummary(d.manifest(), d.hasJavaEntry()));
-        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, body, ButtonType.OK, ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.plugins.enableTitle"));
-        confirm.setHeaderText(tr("dialog.plugins.enableHeader"));
-        confirm.getDialogPane().setMinWidth(480);
-        return confirm.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        return confirm.test(new Question(
+                Question.Kind.ENABLE, tr("dialog.plugins.enableTitle"), tr("dialog.plugins.enableHeader"), body));
+    }
+
+    /** A yes/no question asked before a plugin is installed, enabled or removed. */
+    record Question(Kind kind, String title, String header, String body) {
+        enum Kind {
+            INSTALL,
+            ENABLE,
+            UNINSTALL
+        }
+    }
+
+    /** Asks a {@link Question}; {@code true} = go ahead. Replaceable so a test can answer without a modal dialog. */
+    private java.util.function.Predicate<Question> confirm = this::confirmDialog;
+
+    /** Test seam for {@link #confirm}. */
+    void setConfirmForTest(java.util.function.Predicate<Question> confirm) {
+        this.confirm = java.util.Objects.requireNonNull(confirm, "confirm");
+    }
+
+    /** Picks the {@code .zip} to install from disk (null = cancelled). Replaceable, like {@link #confirm}. */
+    private Supplier<File> zipChooser = this::chooseZipDialog;
+
+    /** Test seam for {@link #zipChooser}. */
+    void setZipChooserForTest(Supplier<File> chooser) {
+        this.zipChooser = java.util.Objects.requireNonNull(chooser, "chooser");
+    }
+
+    private boolean confirmDialog(Question q) {
+        Alert alert = new Alert(Alert.AlertType.CONFIRMATION, q.body(), ButtonType.OK, ButtonType.CANCEL);
+        alert.initOwner(host.window());
+        alert.setTitle(q.title());
+        alert.setHeaderText(q.header());
+        if (q.kind() == Question.Kind.ENABLE) {
+            alert.getDialogPane().setMinWidth(480); // the capability list is wide
+        }
+        return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
     }
 
     /**
@@ -527,12 +594,11 @@ final class PluginCoordinator {
         if (pluginManager == null || id == null || id.isBlank()) {
             return;
         }
-        Alert confirm = new Alert(
-                Alert.AlertType.CONFIRMATION, tr("dialog.plugins.uninstallBody", id), ButtonType.OK, ButtonType.CANCEL);
-        confirm.initOwner(host.window());
-        confirm.setTitle(tr("dialog.plugins.uninstallTitle"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+        if (!confirm.test(new Question(
+                Question.Kind.UNINSTALL,
+                tr("dialog.plugins.uninstallTitle"),
+                null,
+                tr("dialog.plugins.uninstallBody", id)))) {
             return;
         }
         if (!removeInstalled(id)) {
