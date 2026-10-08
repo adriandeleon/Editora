@@ -50,6 +50,7 @@ import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
+import javafx.scene.input.ZoomEvent;
 import javafx.scene.layout.FlowPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -78,6 +79,9 @@ import static com.editora.i18n.Messages.tr;
 final class ProjectMapView extends VBox {
 
     private static final int MAX_OPEN_PREVIEWS = 8;
+    /** Selections kept for Back/Forward; the oldest are dropped beyond this. */
+    static final int MAX_SELECTION_HISTORY = 100;
+
     private static final double PREVIEW_CASCADE = 28;
 
     enum FlowDirection {
@@ -129,6 +133,13 @@ final class ProjectMapView extends VBox {
     private Runnable onExpandedChanged = () -> {};
     private int historyIndex = -1;
     private boolean navigatingHistory;
+    /** Whether the newest history entry came from a sibling move, so the next one replaces it. */
+    private boolean historyHeadFromSiblingMove;
+
+    private Runnable onClearSearch = () -> {};
+    private Runnable onLeaveMap = () -> {};
+    private Consumer<ProjectMapModel.Entry> onRenameEntry = entry -> {};
+    private Consumer<ProjectMapModel.Entry> onDeleteEntry = entry -> {};
     private Path pendingSelection;
     private Consumer<FlowDirection> onFlowChanged = ignored -> {};
     private Consumer<Image> onPrint = ignored -> {};
@@ -507,7 +518,39 @@ final class ProjectMapView extends VBox {
     }
 
     void openSelection() {
-        surface.selectedEntry().ifPresent(surface.onActivate);
+        surface.activateSelection();
+    }
+
+    /**
+     * What Escape falls back to once no preview or note card is open: {@code clearSearch} empties the shared
+     * Project search field while it holds a query, otherwise {@code leave} hands focus back to the editor.
+     */
+    void setEscapeActions(Runnable clearSearch, Runnable leave) {
+        onClearSearch = clearSearch == null ? () -> {} : clearSearch;
+        onLeaveMap = leave == null ? () -> {} : leave;
+    }
+
+    /** The Project tree's F2 (rename) and Delete row actions, applied to the selected map entry. */
+    void setRowActions(Consumer<ProjectMapModel.Entry> rename, Consumer<ProjectMapModel.Entry> delete) {
+        onRenameEntry = rename == null ? entry -> {} : rename;
+        onDeleteEntry = delete == null ? entry -> {} : delete;
+    }
+
+    /** Escape: close the open cards, else clear the search, else leave the map for the editor. */
+    private void escapePressed() {
+        // Note cards hidden by the "Hide all open Personal Notes" toggle are not on screen: leave them be.
+        List<ProjectMapPreview> cards = List.copyOf(previews.values());
+        List<ProjectMapNotePreview> notes = notePreviews.values().stream()
+                .filter(ProjectMapNotePreview::isVisible)
+                .toList();
+        if (!cards.isEmpty() || !notes.isEmpty()) {
+            cards.forEach(this::closePreview);
+            notes.forEach(this::closeNotePreview);
+        } else if (!query.isBlank()) {
+            onClearSearch.run();
+        } else {
+            onLeaveMap.run();
+        }
     }
 
     void setOnExpandedChanged(Runnable callback) {
@@ -632,8 +675,10 @@ final class ProjectMapView extends VBox {
         }
         expanded.removeIf(path -> path.startsWith(normalized));
         closePreviewsUnder(normalized);
-        pendingSelection = normalized;
-        surface.setSelected(normalized);
+        if (surface.selectionBelow(normalized)) { // a selection elsewhere stays where it is
+            pendingSelection = normalized;
+            surface.select(normalized);
+        }
         reload();
         onExpandedChanged.run();
     }
@@ -643,7 +688,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         if (!navigatingHistory) {
-            recordSelection(path);
+            recordSelection(path, surface.movingSibling);
         }
         updateNavigation();
     }
@@ -946,17 +991,40 @@ final class ProjectMapView extends VBox {
     private record PreviewConnector(double startX, double startY, double endX, double endY) {}
 
     private void recordSelection(Path path) {
+        recordSelection(path, false);
+    }
+
+    /**
+     * Appends a selection to the Back/Forward history. A run of sibling moves (arrows, Page Up/Down,
+     * Ctrl-N/Ctrl-P) is one entry — the row the run ended on — so Back does not retrace every keystroke, and
+     * the list is capped at {@link #MAX_SELECTION_HISTORY}.
+     */
+    private void recordSelection(Path path, boolean siblingMove) {
         Path normalized = ProjectMapModel.normalize(path);
         if (normalized == null
                 || historyIndex >= 0
                         && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex), normalized)) {
             return;
         }
-        if (historyIndex + 1 < selectionHistory.size()) {
+        boolean atHead = historyIndex == selectionHistory.size() - 1;
+        if (!atHead) {
             selectionHistory.subList(historyIndex + 1, selectionHistory.size()).clear();
         }
-        selectionHistory.add(normalized);
-        historyIndex = selectionHistory.size() - 1;
+        if (siblingMove && atHead && historyHeadFromSiblingMove && historyIndex >= 0) {
+            selectionHistory.set(historyIndex, normalized);
+            if (historyIndex > 0
+                    && com.editora.config.PathKeys.samePath(selectionHistory.get(historyIndex - 1), normalized)) {
+                selectionHistory.remove(historyIndex--); // the run came back to where it started
+                historyHeadFromSiblingMove = false;
+            }
+        } else {
+            selectionHistory.add(normalized);
+            if (selectionHistory.size() > MAX_SELECTION_HISTORY) {
+                selectionHistory.removeFirst();
+            }
+            historyIndex = selectionHistory.size() - 1;
+            historyHeadFromSiblingMove = siblingMove;
+        }
         updateNavigation();
     }
 
@@ -966,6 +1034,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         historyIndex = target;
+        historyHeadFromSiblingMove = false;
         navigatingHistory = true;
         try {
             revealPath(selectionHistory.get(target));
@@ -1065,6 +1134,10 @@ final class ProjectMapView extends VBox {
         private static final double MAX_OUTPUT_DIMENSION = 8_192;
         private static final double MAX_OUTPUT_PIXELS = 12_000_000;
         private static final double CONNECTOR_VIEWPORT_OVERSCAN = 24;
+        /** Trailing part of a folder row that toggles its expansion; the rest of the row selects. */
+        private static final double CHEVRON_ZONE = 24;
+        /** Zoom levels tried, in order, to bring a hidden column filter back for the {@code /} key. */
+        private static final double[] FILTER_ZOOM_STEPS = {0.8, 1.0};
 
         private final Canvas canvas = new Canvas(1, 1);
         private final Rectangle viewportClip = new Rectangle();
@@ -1148,6 +1221,15 @@ final class ProjectMapView extends VBox {
         private Scene dismissScene;
         private EventHandler<MouseEvent> dismissFilter;
         private boolean panning;
+        /** The pointer moved the viewport or a column since the last press, so its release is not a click. */
+        private boolean dragMoved;
+        /** Set while {@link #moveSibling} selects, so the history can fold a run of such moves into one entry. */
+        private boolean movingSibling;
+
+        private boolean pointerInside;
+        private double pointerX;
+        private double pointerY;
+        private final javafx.beans.value.ChangeListener<Node> focusOwnerListener = this::focusOwnerChanged;
         private boolean painting;
         private boolean viewportRepaintPending;
         private boolean viewportInitialized;
@@ -1227,10 +1309,22 @@ final class ProjectMapView extends VBox {
                 draggedColumn = null;
             });
             addEventHandler(MouseEvent.MOUSE_MOVED, this::mouseMoved);
+            addEventHandler(MouseEvent.MOUSE_EXITED, this::mouseExited);
             addEventHandler(MouseEvent.MOUSE_CLICKED, this::mouseClicked);
             addEventHandler(ContextMenuEvent.CONTEXT_MENU_REQUESTED, this::contextMenuRequested);
             addEventHandler(ScrollEvent.SCROLL, this::scrolled);
+            addEventHandler(ZoomEvent.ZOOM, this::pinched);
             addEventFilter(KeyEvent.KEY_PRESSED, this::keyPressed);
+            addEventFilter(KeyEvent.KEY_TYPED, this::keyTyped);
+            sceneProperty().addListener((obs, old, scene) -> {
+                if (old != null) {
+                    old.focusOwnerProperty().removeListener(focusOwnerListener);
+                }
+                if (scene != null) {
+                    scene.focusOwnerProperty().addListener(focusOwnerListener);
+                }
+                claimKeys(scene != null && scene.getFocusOwner() == this);
+            });
         }
 
         void setOnActivate(Consumer<ProjectMapModel.Entry> onActivate) {
@@ -1427,6 +1521,9 @@ final class ProjectMapView extends VBox {
             painting = true;
             try {
                 paint();
+                if (syncHover()) {
+                    paint(); // the row under a resting pointer changed with the viewport
+                }
                 completedPaints++;
                 repaintPreviewConnectors();
             } finally {
@@ -1526,6 +1623,7 @@ final class ProjectMapView extends VBox {
         }
 
         void fitContent() {
+            flushPendingRepaint();
             if (columnBoxes.isEmpty() || getWidth() <= 0 || getHeight() <= 0) {
                 return;
             }
@@ -1562,6 +1660,7 @@ final class ProjectMapView extends VBox {
         }
 
         void centerSelection() {
+            flushPendingRepaint();
             NodeBox box = boxes.stream()
                     .filter(candidate -> candidate.entry().path().equals(selected))
                     .findFirst()
@@ -1642,7 +1741,7 @@ final class ProjectMapView extends VBox {
                                 .ifPresent(box -> select(box.entry().path()));
                     }
                 });
-                filter.setOnAction(event -> requestFocus());
+                filter.setOnAction(event -> leaveColumnFilter(id));
 
                 CheckBox showHidden = new CheckBox(tr("project.map.column.showHidden"));
                 showHidden.getStyleClass().add("project-map-column-hidden");
@@ -2300,12 +2399,14 @@ final class ProjectMapView extends VBox {
         }
 
         private void mousePressed(MouseEvent event) {
+            dragMoved = false;
             if (isColumnControl(event.getTarget())) {
                 panning = false;
                 draggedColumn = null;
                 return;
             }
             requestFocus();
+            flushPendingRepaint();
             pressX = event.getX();
             pressY = event.getY();
             pressOffsetX = offsetX;
@@ -2326,16 +2427,22 @@ final class ProjectMapView extends VBox {
                     return;
                 }
             }
-            panning = hit(event.getX(), event.getY()) == null
-                    && (event.getButton() == MouseButton.PRIMARY || event.getButton() == MouseButton.MIDDLE);
+            panning = event.getButton() == MouseButton.MIDDLE
+                    || event.getButton() == MouseButton.PRIMARY && hit(event.getX(), event.getY()) == null;
         }
 
         private void mouseDragged(MouseEvent event) {
             if (draggedColumn != null) {
                 ColumnLayout layout = columnLayouts.get(draggedColumn);
                 if (layout != null && !layout.locked) {
-                    layout.x = columnPressOffsetX + (event.getX() - pressX) / zoom;
-                    layout.y = columnPressOffsetY + (event.getY() - pressY) / zoom;
+                    // Store what the layout will actually use: an offset past the parent-side limit would
+                    // have to be dragged back out again before the column moved.
+                    boolean limited = draggedColumn.depth() > 0;
+                    layout.x = flowLimitedOffset(
+                            flowDirection, true, limited, columnPressOffsetX + (event.getX() - pressX) / zoom);
+                    layout.y = flowLimitedOffset(
+                            flowDirection, false, limited, columnPressOffsetY + (event.getY() - pressY) / zoom);
+                    dragMoved = true;
                     requestViewportRepaint();
                 }
                 event.consume();
@@ -2346,6 +2453,9 @@ final class ProjectMapView extends VBox {
             }
             offsetX = pressOffsetX + event.getX() - pressX;
             offsetY = pressOffsetY + event.getY() - pressY;
+            dragMoved = true;
+            pointerX = event.getX();
+            pointerY = event.getY();
             requestViewportRepaint();
             event.consume();
         }
@@ -2354,6 +2464,10 @@ final class ProjectMapView extends VBox {
             if (isColumnControl(event.getTarget())) {
                 return;
             }
+            flushPendingRepaint();
+            pointerInside = true;
+            pointerX = event.getX();
+            pointerY = event.getY();
             NodeBox hit = hit(event.getX(), event.getY());
             Path next = hit == null ? null : hit.entry().path();
             ColumnBox header = headerHit(event.getX(), event.getY());
@@ -2372,6 +2486,38 @@ final class ProjectMapView extends VBox {
                 }
                 repaint();
             }
+        }
+
+        /** The pointer left the map: nothing is hovered any more. */
+        private void mouseExited(MouseEvent event) {
+            pointerInside = false;
+            setCursor(Cursor.DEFAULT);
+            if (hovered != null) {
+                clearNodeTooltip();
+                repaint();
+            }
+        }
+
+        /**
+         * Re-points the hover at whatever row now lies under a resting pointer, after a zoom, pan or reload
+         * moved the rows. Returns whether the highlighted row changed (the caller repaints).
+         */
+        private boolean syncHover() {
+            if (!pointerInside) {
+                return false;
+            }
+            NodeBox hit = hit(pointerX, pointerY);
+            Path next = hit == null ? null : hit.entry().path();
+            if (java.util.Objects.equals(next, hovered)) {
+                return false;
+            }
+            if (hit == null) {
+                clearNodeTooltip();
+            } else {
+                hovered = next;
+                nodeTooltip.setText(tooltipText(hit.entry()));
+            }
+            return true;
         }
 
         private void clearNodeTooltip() {
@@ -2433,9 +2579,11 @@ final class ProjectMapView extends VBox {
         }
 
         private void mouseClicked(MouseEvent event) {
-            if (event.getButton() != MouseButton.PRIMARY || panning) {
+            // The release that ends a pan or a header drag is not a click on the row it happens to land on.
+            if (event.getButton() != MouseButton.PRIMARY || dragMoved || !event.isStillSincePress()) {
                 return;
             }
+            flushPendingRepaint();
             if (overviewBox != null && overviewBox.contains(event.getX(), event.getY())) {
                 event.consume();
                 return;
@@ -2444,15 +2592,27 @@ final class ProjectMapView extends VBox {
             if (hit == null) {
                 return;
             }
-            select(hit.entry().path());
+            ProjectMapModel.Entry entry = hit.entry();
+            select(entry.path());
             if (notePreviewHit(hit, event.getX())) {
-                onNotesPreview.accept(hit.entry().path());
-            } else if (!hit.entry().directory() && previewHit(hit, event.getX())) {
-                onPreview.accept(hit.entry().path());
+                onNotesPreview.accept(entry.path());
+            } else if (!entry.directory() && previewHit(hit, event.getX())) {
+                onPreview.accept(entry.path());
             } else if (event.getClickCount() == 1) {
-                onActivate.accept(hit.entry());
+                // A folder that is already open is only selected; its chevron (or the column's close
+                // button) collapses it. Collapsing on any click threw away the whole subtree's expansion.
+                if (entry.directory() && expandedSnapshot.contains(entry.path()) && !chevronHit(hit, event.getX())) {
+                    revealColumnOf(entry.path());
+                } else {
+                    onActivate.accept(entry);
+                }
             }
             event.consume();
+        }
+
+        /** Whether {@code x} is on a folder row's expand/collapse chevron, at the row's trailing edge. */
+        private boolean chevronHit(NodeBox box, double x) {
+            return box.entry().directory() && x >= box.x() + box.width() - CHEVRON_ZONE * zoom;
         }
 
         private boolean previewHit(NodeBox box, double x) {
@@ -2469,16 +2629,42 @@ final class ProjectMapView extends VBox {
 
         private void contextMenuRequested(ContextMenuEvent event) {
             dismissContextMenu();
-            if (overviewBox != null && overviewBox.contains(event.getX(), event.getY())) {
-                return;
-            }
-            NodeBox hit = hit(event.getX(), event.getY());
-            if (hit == null) {
-                return;
+            flushPendingRepaint();
+            NodeBox hit;
+            double screenX = event.getScreenX();
+            double screenY = event.getScreenY();
+            if (event.isKeyboardTrigger()) {
+                // The Menu key / Shift+F10 carry a point inside the focus owner that has nothing to do with
+                // the selection. The menu is the selected row's, opened at that row (as RowContextMenu does
+                // for the trees).
+                if (isColumnControl(event.getTarget())) {
+                    return;
+                }
+                revealSelected();
+                repaint();
+                hit = nodeBox(selected);
+                if (hit == null) {
+                    event.consume();
+                    return;
+                }
+                javafx.geometry.Point2D anchor =
+                        localToScreen(hit.x() + RowContextMenu.anchorX(hit.width()), hit.y() + hit.height());
+                if (anchor != null) {
+                    screenX = anchor.getX();
+                    screenY = anchor.getY();
+                }
+            } else {
+                if (overviewBox != null && overviewBox.contains(event.getX(), event.getY())) {
+                    return;
+                }
+                hit = hit(event.getX(), event.getY());
+                if (hit == null) {
+                    return;
+                }
+                select(hit.entry().path());
             }
             requestFocus();
             clearNodeTooltip();
-            select(hit.entry().path());
             ContextMenu menu = contextMenuFactory.apply(hit.entry());
             if (menu != null && !menu.getItems().isEmpty()) {
                 activeContextMenu = menu;
@@ -2488,7 +2674,7 @@ final class ProjectMapView extends VBox {
                         removeDismissFilter();
                     }
                 });
-                menu.show(this, event.getScreenX(), event.getScreenY());
+                menu.show(this, screenX, screenY);
                 installDismissFilter(menu);
             }
             event.consume();
@@ -2534,16 +2720,37 @@ final class ProjectMapView extends VBox {
         }
 
         private void scrolled(ScrollEvent event) {
-            if (event.isShiftDown()) {
-                offsetX += event.getDeltaY();
-                requestViewportRepaint();
-            } else if (event.isAltDown()) {
-                offsetY += event.getDeltaY();
-                requestViewportRepaint();
-            } else {
-                double speed = event.isControlDown() || event.isMetaDown() ? 0.004 : 0.0025;
-                double exponent = Math.max(-0.45, Math.min(0.45, event.getDeltaY() * speed));
-                setZoom(zoom * Math.exp(exponent), event.getX(), event.getY());
+            pointerInside = true;
+            pointerX = event.getX();
+            pointerY = event.getY();
+            double deltaX = event.getDeltaX();
+            double deltaY = event.getDeltaY();
+            // Some platforms report Shift+wheel as a horizontal delta already; take whichever axis moved.
+            double wheel = deltaY != 0 ? deltaY : deltaX;
+            switch (wheelAction(deltaX, deltaY, event.isShiftDown(), event.isAltDown(), event.isInertia())) {
+                case PAN_X -> {
+                    offsetX += event.isShiftDown() ? wheel : deltaX;
+                    requestViewportRepaint();
+                }
+                case PAN_Y -> {
+                    offsetY += wheel;
+                    requestViewportRepaint();
+                }
+                case ZOOM -> {
+                    double speed = event.isControlDown() || event.isMetaDown() ? 0.004 : 0.0025;
+                    double exponent = Math.max(-0.45, Math.min(0.45, deltaY * speed));
+                    setZoom(zoom * Math.exp(exponent), event.getX(), event.getY());
+                }
+                case NONE -> {}
+            }
+            event.consume();
+        }
+
+        /** A touchpad or touch-screen pinch zooms around the gesture's centre. */
+        private void pinched(ZoomEvent event) {
+            double factor = event.getZoomFactor();
+            if (Double.isFinite(factor) && factor > 0) {
+                setZoom(zoom * factor, event.getX(), event.getY());
             }
             event.consume();
         }
@@ -2567,47 +2774,131 @@ final class ProjectMapView extends VBox {
             if (isColumnControl(event.getTarget())) {
                 return;
             }
-            if (entries.isEmpty()) {
-                return;
-            }
-            if (event.isAltDown() && event.getCode() == KeyCode.LEFT) {
-                moveHistory(-1);
+            boolean plain = !event.isControlDown() && !event.isAltDown() && !event.isMetaDown();
+            // Escape, history and Fit do not need a row, and the chords the surface claims from the global
+            // dispatcher (see claimKeys) are always consumed here so they never reach the native menu.
+            if (event.getCode() == KeyCode.ESCAPE && plain) {
+                escapePressed();
                 event.consume();
                 return;
             }
-            if (event.isAltDown() && event.getCode() == KeyCode.RIGHT) {
-                moveHistory(1);
+            boolean onlyAlt =
+                    event.isAltDown() && !event.isControlDown() && !event.isMetaDown() && !event.isShiftDown();
+            if (onlyAlt && (event.getCode() == KeyCode.LEFT || event.getCode() == KeyCode.RIGHT)) {
+                moveHistory(event.getCode() == KeyCode.LEFT ? -1 : 1);
                 event.consume();
                 return;
             }
-            if (event.isShortcutDown() && event.getCode() == KeyCode.DIGIT0) {
+            if (event.isShortcutDown()
+                    && !event.isAltDown()
+                    && (event.getCode() == KeyCode.DIGIT0 || event.getCode() == KeyCode.NUMPAD0)) {
                 fitContent();
                 event.consume();
+                return;
+            }
+            if (entries.isEmpty()) {
                 return;
             }
             if (selected == null) {
                 selected = entries.getFirst().path();
             }
+            boolean onlyControl = event.isControlDown() && !event.isAltDown() && !event.isMetaDown();
             switch (event.getCode()) {
                 case UP, DOWN, LEFT, RIGHT -> navigateArrow(event.getCode());
                 case PAGE_UP -> moveSibling(-10);
                 case PAGE_DOWN -> moveSibling(10);
                 case BACK_SPACE -> selectParent();
-                case ENTER, SPACE -> selectedEntry().ifPresent(onActivate);
+                case ENTER, SPACE -> activateSelection();
                 case HOME -> select(entries.getFirst().path());
-                case ESCAPE -> fitContent();
-                case SLASH -> focusSelectedColumnFilter();
                 default -> {
-                    if (event.isControlDown() && event.getCode() == KeyCode.N) {
+                    if (onlyControl && event.getCode() == KeyCode.N) {
                         moveSibling(1);
-                    } else if (event.isControlDown() && event.getCode() == KeyCode.P) {
+                    } else if (onlyControl && event.getCode() == KeyCode.P) {
                         moveSibling(-1);
+                    } else if (plain && !event.isShiftDown() && rowAction(event.getCode())) {
+                        // handled: F2 / Delete, the Project tree's row actions
                     } else {
                         return;
                     }
                 }
             }
             event.consume();
+        }
+
+        /**
+         * {@code /} focuses the selected column's filter. It is matched by the character typed, not the key:
+         * on most non-US layouts the slash is Shift+7, and the numpad has one too. Acting on KEY_TYPED also
+         * means the character has already been delivered here, so it cannot land in the field.
+         */
+        private void keyTyped(KeyEvent event) {
+            if (isColumnControl(event.getTarget()) || entries.isEmpty()) {
+                return;
+            }
+            boolean shortcut = event.isMetaDown() || event.isControlDown() && !event.isAltDown(); // not AltGr
+            if (!shortcut && "/".equals(event.getCharacter())) {
+                focusSelectedColumnFilter();
+                event.consume();
+            }
+        }
+
+        /** F2 renames and Delete deletes the selected entry, through the Project tree's own row actions. */
+        private boolean rowAction(KeyCode code) {
+            ProjectMapModel.Entry entry = selectedEntry().orElse(null);
+            switch (ProjectPanel.rowKey(code, true, entry != null)) {
+                case RENAME -> onRenameEntry.accept(entry);
+                case DELETE -> onDeleteEntry.accept(entry);
+                default -> {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        /**
+         * Hands the surface's own chords to it ahead of the keymap while it is the focus owner: history
+         * (Alt+Left/Right, otherwise swallowed as an unbound Alt chord), Fit (Shortcut+0, text-zoom reset in
+         * every keymap), Ctrl-N/Ctrl-P (New File, Print or Find File outside Emacs) and the row actions F2
+         * and Delete. Not while a column filter has the focus: there the keymap keeps its meaning.
+         */
+        private void claimKeys(boolean claim) {
+            if (claim) {
+                getProperties()
+                        .put(
+                                com.editora.command.KeyDispatcher.CLAIMED_KEYS,
+                                claimedChords(com.editora.command.KeymapManager.isMac()));
+            } else {
+                getProperties().remove(com.editora.command.KeyDispatcher.CLAIMED_KEYS);
+            }
+        }
+
+        private void focusOwnerChanged(
+                javafx.beans.value.ObservableValue<? extends Node> property, Node old, Node owner) {
+            claimKeys(owner == this);
+            // A column control that held the focus was hidden (zoomed out) or removed (column closed): the
+            // scene then picks the next focusable node, a zoom-bar button, and the arrow keys stop
+            // navigating. Keep the keyboard on the map instead.
+            if (old != null
+                    && old != this
+                    && isColumnControl(old)
+                    && (old.getScene() == null || !old.isVisible())
+                    && !withinSurface(owner)) {
+                // Deferred: the scene may still be half-way through choosing that next node.
+                Platform.runLater(() -> {
+                    Scene scene = getScene();
+                    if (scene != null && !withinSurface(scene.getFocusOwner())) {
+                        requestFocus();
+                    }
+                });
+            }
+        }
+
+        private boolean withinSurface(Node node) {
+            for (Node current = node; current != null; current = current.getParent()) {
+                if (current == this) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void navigateArrow(KeyCode code) {
@@ -2650,8 +2941,13 @@ final class ProjectMapView extends VBox {
                 return;
             }
             int index = column.indexOf(current);
-            int start = index < 0 ? 0 : index;
-            select(column.get(Math.floorMod(start + delta, column.size())).path());
+            movingSibling = true;
+            try {
+                select(column.get(siblingIndex(index < 0 ? 0 : index, delta, column.size()))
+                        .path());
+            } finally {
+                movingSibling = false;
+            }
         }
 
         private void selectParent() {
@@ -2693,14 +2989,114 @@ final class ProjectMapView extends VBox {
             onSelectionChanged.accept(path);
         }
 
+        /** Activates the selection — unless a column filter has hidden its row: nobody opens what is not shown. */
+        private void activateSelection() {
+            flushPendingRepaint();
+            selectedEntry().filter(entry -> nodeBox(entry.path()) != null).ifPresent(onActivate);
+        }
+
+        /** Whether the selection lies strictly below {@code directory} (in the branch a column close removes). */
+        private boolean selectionBelow(Path directory) {
+            return selected != null && !selected.equals(directory) && selected.startsWith(directory);
+        }
+
+        /**
+         * Focuses the selected column's filter. A filter hidden by a low zoom is brought back first — the
+         * map zooms in just far enough, around that column's header — and scrolled into the viewport. The
+         * project column has no filter; say so instead of swallowing the key.
+         */
         private void focusSelectedColumnFilter() {
-            selectedEntry().map(MapSurface::columnId).map(columnControls::get).ifPresent(controls -> {
-                controls.filter().requestFocus();
-                controls.filter().selectAll();
-            });
+            ProjectMapModel.ColumnId id =
+                    selectedEntry().map(MapSurface::columnId).orElse(null);
+            ColumnControls controls = id == null ? null : columnControls.get(id);
+            if (controls == null) {
+                onStatus.accept(tr("project.map.status.rootColumnNoFilter"));
+                return;
+            }
+            TextField filter = controls.filter();
+            repaint();
+            for (double step : FILTER_ZOOM_STEPS) {
+                ColumnBox column = columnBox(id);
+                if (filter.isVisible() || column == null) {
+                    break;
+                }
+                if (zoom < step) {
+                    setZoom(step, column.x(), column.y());
+                    repaint();
+                }
+            }
+            if (!filter.isVisible()) {
+                onStatus.accept(tr("project.map.status.columnFilterCannotShow"));
+                return;
+            }
+            double margin = 12;
+            double shiftX = shiftIntoView(filter.getLayoutX(), filter.getWidth(), getWidth(), margin);
+            double shiftY = shiftIntoView(filter.getLayoutY(), filter.getHeight(), getHeight(), margin);
+            if (shiftX != 0 || shiftY != 0) {
+                offsetX += shiftX;
+                offsetY += shiftY;
+                repaint();
+            }
+            filter.requestFocus();
+            filter.selectAll();
+        }
+
+        /**
+         * Enter in a column filter returns to the map. The selection moves to that column's first remaining
+         * row unless it is already one of them, so the next Enter acts on what the filter found rather than on
+         * the folder that owns the column.
+         */
+        private void leaveColumnFilter(ProjectMapModel.ColumnId id) {
+            boolean selectionInColumn = selected != null
+                    && boxes.stream()
+                            .anyMatch(box -> box.entry().path().equals(selected)
+                                    && columnId(box.entry()).equals(id));
+            if (!selectionInColumn) {
+                boxes.stream()
+                        .filter(box -> columnId(box.entry()).equals(id))
+                        .findFirst()
+                        .ifPresent(box -> select(box.entry().path()));
+            }
+            requestFocus();
+        }
+
+        /** Scrolls the column a folder opened into the viewport, leading edge and header first. */
+        private void revealColumnOf(Path directory) {
+            ColumnBox column = columnBoxes.stream()
+                    .filter(box -> directory.equals(box.column().parent()))
+                    .findFirst()
+                    .orElse(null);
+            if (column == null) {
+                return;
+            }
+            double margin = 20;
+            double shiftX = shiftIntoView(column.x(), column.width(), getWidth(), margin);
+            double shiftY = shiftIntoView(column.y(), column.height(), getHeight(), margin);
+            if (shiftX != 0 || shiftY != 0) {
+                offsetX += shiftX;
+                offsetY += shiftY;
+                repaint();
+            }
+        }
+
+        private ColumnBox columnBox(ProjectMapModel.ColumnId id) {
+            for (ColumnBox box : columnBoxes) {
+                if (box.column().id().equals(id)) {
+                    return box;
+                }
+            }
+            return null;
+        }
+
+        /** Input handlers hit-test the boxes of the last paint; bring them up to date with a coalesced pan or zoom. */
+        private void flushPendingRepaint() {
+            if (viewportRepaintPending) {
+                repaint();
+            }
         }
 
         private void revealSelected() {
+            flushPendingRepaint();
             NodeBox box = boxes.stream()
                     .filter(candidate -> candidate.entry().path().equals(selected))
                     .findFirst()
@@ -2943,6 +3339,76 @@ final class ProjectMapView extends VBox {
         }
 
         private record IconKey(String kind, String statusClass) {}
+    }
+
+    /** What one wheel or touchpad scroll event does to the viewport. */
+    enum WheelAction {
+        NONE,
+        PAN_X,
+        PAN_Y,
+        ZOOM
+    }
+
+    /**
+     * Shift pans across and Alt pans down, whichever axis the platform reports the wheel on. Otherwise a
+     * mostly-horizontal delta (a touchpad swipe, a tilt wheel) pans across, and a vertical one zooms — but not
+     * the inertia that keeps arriving after the fingers have lifted, which is ignored. Pure — tested.
+     */
+    static WheelAction wheelAction(double deltaX, double deltaY, boolean shift, boolean alt, boolean inertia) {
+        if (deltaX == 0 && deltaY == 0) {
+            return WheelAction.NONE;
+        }
+        if (shift) {
+            return WheelAction.PAN_X;
+        }
+        if (alt) {
+            return WheelAction.PAN_Y;
+        }
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            return WheelAction.PAN_X;
+        }
+        return inertia ? WheelAction.NONE : WheelAction.ZOOM;
+    }
+
+    /**
+     * The row a sibling move lands on. A single step wraps around the column; a page move (any larger step)
+     * stops at the first or last row. Pure — tested.
+     */
+    static int siblingIndex(int start, int delta, int size) {
+        return Math.abs(delta) == 1 ? Math.floorMod(start + delta, size) : Math.clamp(start + delta, 0, size - 1);
+    }
+
+    /**
+     * A dragged column's manual offset along one axis, as the layout will use it: a column with a parent may
+     * move farther out along the flow or anywhere across it, but never back through its parent. Pure — tested.
+     */
+    static double flowLimitedOffset(FlowDirection flow, boolean xAxis, boolean hasParent, double offset) {
+        if (!hasParent) {
+            return offset;
+        }
+        return switch (flow) {
+            case LEFT_TO_RIGHT -> xAxis ? Math.max(0, offset) : offset;
+            case RIGHT_TO_LEFT -> xAxis ? Math.min(0, offset) : offset;
+            case TOP_TO_BOTTOM -> xAxis ? offset : Math.max(0, offset);
+            case BOTTOM_TO_TOP -> xAxis ? offset : Math.min(0, offset);
+        };
+    }
+
+    /**
+     * How far to move a span so it lies inside {@code [margin, viewport - margin]}; a span too long for
+     * that is aligned at its start. Zero when it already fits. Pure — tested.
+     */
+    static double shiftIntoView(double start, double length, double viewport, double margin) {
+        if (start < margin || length > viewport - margin * 2) {
+            return margin - start;
+        }
+        double overflow = start + length - (viewport - margin);
+        return overflow > 0 ? -overflow : 0;
+    }
+
+    /** The chord tokens the focused map surface takes ahead of the keymap; see {@code MapSurface.claimKeys}. */
+    static Set<String> claimedChords(boolean mac) {
+        return Set.of("M-left", "M-right", mac ? "Cmd-0" : "C-0", "C-n", "C-p", "f2", "delete");
     }
 
     private static boolean safeTest(Predicate<Path> predicate, Path path) {

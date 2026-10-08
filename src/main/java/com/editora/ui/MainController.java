@@ -2145,6 +2145,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             config.save();
         });
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
+        projectPanel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
         projectDeletes = new ProjectDeleteCoordinator(
                 path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
                 buffer -> ownerOf(buffer).revealBufferLocal(buffer),

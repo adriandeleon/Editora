@@ -435,8 +435,18 @@ class ProjectMapViewFxTest {
                         FxTestSupport.call(surface, "selectedEntry", new Class<?>[0]);
                 assertEquals(project, selected.orElseThrow().path());
 
+                // A click on the open folder's row only selects it; its chevron (the row's trailing edge)
+                // collapses it. (The reload that reports the folder as open is asynchronous: deliver it.)
+                FxTestSupport.call(
+                        surface,
+                        "setEntries",
+                        new Class<?>[] {List.class, Set.class},
+                        entries,
+                        Set.of(project, source));
                 Object currentSourceBox = boxFor(surface, source);
                 click(surface, center(currentSourceBox, "x", "width"), center(currentSourceBox, "y", "height"));
+                assertTrue(mapView.expandedDirectories().contains(source));
+                click(surface, edge(currentSourceBox, "x", "width") - 8, center(currentSourceBox, "y", "height"));
                 assertFalse(mapView.expandedDirectories().contains(source));
             });
         } finally {
@@ -1733,13 +1743,17 @@ class ProjectMapViewFxTest {
                 double x = (double) FxTestSupport.call(columnBox, "x", new Class<?>[0]) + 5;
                 double y = (double) FxTestSupport.call(columnBox, "y", new Class<?>[0]) + 5;
                 drag(surface, x, y, x + 45, y + 20);
+                // Across the flow a column moves freely; along it the stored offset stops at the parent
+                // (which side that is depends on the flow), so the cross-axis is what proves the drag.
                 Object layout = columnLayoutFor(surface, root);
                 double movedX = FxTestSupport.field(layout, "x");
-                assertTrue(movedX > 0);
+                double movedY = FxTestSupport.field(layout, "y");
+                assertTrue(movedY > 0);
 
                 pin.fire();
                 drag(surface, x + 45, y + 20, x + 100, y + 50);
                 assertEquals(movedX, (double) FxTestSupport.field(layout, "x"), 0.001);
+                assertEquals(movedY, (double) FxTestSupport.field(layout, "y"), 0.001);
             });
         } finally {
             FxTestSupport.runOnFx(mapView::dispose);
