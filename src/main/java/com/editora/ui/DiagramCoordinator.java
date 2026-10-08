@@ -43,7 +43,17 @@ final class DiagramCoordinator {
             String source,
             java.nio.file.Path dest,
             java.util.function.Consumer<com.editora.process.ProcessRunner.Result> onResult) {
-        service.export(kind, source, dest, host.appThemeDark(), onResult);
+        exportToPath(kind, source, dest, host.appThemeDark(), onResult);
+    }
+
+    /** As above with an explicit theme — print is on white paper, so it asks for light whatever the app is. */
+    void exportToPath(
+            com.editora.diagram.DiagramKind kind,
+            String source,
+            java.nio.file.Path dest,
+            boolean dark,
+            java.util.function.Consumer<com.editora.process.ProcessRunner.Result> onResult) {
+        service.export(kind, source, dest, dark, onResult);
     }
 
     /** Whether the diagram feature is enabled in Settings (default on). */
