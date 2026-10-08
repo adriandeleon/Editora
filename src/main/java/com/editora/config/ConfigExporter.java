@@ -80,6 +80,9 @@ public final class ConfigExporter {
      *   <li>{@code plugins/lsp/} and {@code plugins/dap/} — downloaded language servers and debug adapters,
      *       hundreds of megabytes of binaries (a plugin the user installed, {@code plugins/<id>/}, is kept);
      *   <li>{@code jdtls-workspaces/} — the Java language server's index cache;
+     *   <li>{@code history/} — Local History: the index and a copy of every recorded revision of the user's
+     *       <em>files</em>, from every project. That is their work, not their configuration, it can be many
+     *       times the size of everything else, and an export is the thing people hand to someone else;
      *   <li>{@code sync/} — settings sync's clone of the user's repository and its backup copies of files
      *       that are in the export anyway;
      *   <li>the instance lock, the single-instance and MCP endpoint files (the latter holds a live access
@@ -93,6 +96,7 @@ public final class ConfigExporter {
         if (relative.startsWith("plugins/lsp/")
                 || relative.startsWith("plugins/dap/")
                 || relative.startsWith("jdtls-workspaces/")
+                || relative.startsWith("history/")
                 || relative.startsWith("sync/")) {
             return false;
         }
@@ -115,8 +119,8 @@ public final class ConfigExporter {
      * them next door would protect nothing.
      *
      * <p>A failed export leaves nothing behind: the half-written zip is deleted, so a truncated archive is
-     * never mistaken for a backup. A file that disappears while the directory is being read (a Local History
-     * blob collected mid-walk) is skipped rather than failing the export.
+     * never mistaken for a backup. A file that disappears while the directory is being read (a staging
+     * file of a write in flight) is skipped rather than failing the export.
      *
      * @throws IOException if the destination can't be written or a file can't be read
      */
