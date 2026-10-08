@@ -1446,6 +1446,21 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         mapView.setOutputActions(print, pdf);
     }
 
+    /** Whether the Project Map is the view on screen and has something to print or export. */
+    public boolean isMapOutputAvailable() {
+        return mapMode && getScene() != null && mapView.canOutput();
+    }
+
+    /** {@code projectMap.print}: what the map's Print… button does. */
+    public void printMap() {
+        mapView.print();
+    }
+
+    /** {@code projectMap.exportPdf}: what the map's PDF… button does. */
+    public void exportMapPdf() {
+        mapView.exportPdf();
+    }
+
     /** One filesystem watcher event: what happened to which path (#677). */
     public record FsChange(Path path, FsKind kind) {}
 

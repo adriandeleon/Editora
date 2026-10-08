@@ -285,6 +285,10 @@ final class ProjectMapView extends VBox {
         reset.setTooltip(new Tooltip(tr("project.map.zoom.reset")));
         printButton.setTooltip(new Tooltip(tr("project.map.print.help")));
         exportPdfButton.setTooltip(new Tooltip(tr("project.map.exportPdf.help")));
+        // The bar is too narrow for "Export to PDF…"; the button keeps its short label and is named in full,
+        // as the menus and the palette name the action, for assistive technology.
+        printButton.setAccessibleText(tr("menu.print"));
+        exportPdfButton.setAccessibleText(tr("menu.exportPdf"));
         printButton.setDisable(true);
         exportPdfButton.setDisable(true);
         zoomOut.setOnAction(event -> {
@@ -533,6 +537,21 @@ final class ProjectMapView extends VBox {
     void setOutputActions(Consumer<Image> print, Consumer<Image> exportPdf) {
         onPrint = print == null ? ignored -> {} : print;
         onExportPdf = exportPdf == null ? ignored -> {} : exportPdf;
+    }
+
+    /** Whether the map has columns to put on a page (the two output buttons are enabled). */
+    boolean canOutput() {
+        return !printButton.isDisable();
+    }
+
+    /** Runs the Print… button's action (the {@code projectMap.print} command); nothing while it is disabled. */
+    void print() {
+        printButton.fire();
+    }
+
+    /** Runs the PDF… button's action (the {@code projectMap.exportPdf} command). */
+    void exportPdf() {
+        exportPdfButton.fire();
     }
 
     void hidePreview() {

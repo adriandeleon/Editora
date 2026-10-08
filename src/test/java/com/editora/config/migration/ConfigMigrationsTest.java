@@ -30,6 +30,7 @@ class ConfigMigrationsTest {
                 .put("aiApiKeyOpenai", "local-key")
                 .put("codexAgentCommand", "/custom/codex-acp");
         ObjectNode expected = previous.deepCopy().put("schemaVersion", ConfigSchema.SETTINGS.currentVersion());
+        expected.put("pdfPageSize", "letter"); // v115→116 writes down the size a file without the key was using
         assertEquals(expected, ConfigMigrations.upgrade(ConfigSchema.SETTINGS, previous, mapper));
     }
 
@@ -618,6 +619,36 @@ class ConfigMigrationsTest {
         ObjectNode out = ConfigMigrations.splitKeybindings((ObjectNode) in, true);
         assertEquals("edit.cut", out.get("keybindingsMac").get("Cmd-k").asText(), "the Cmd overrides are kept");
         assertEquals("file.save", out.get("keybindings").get("C-k").asText(), "and the Ctrl map is not emptied");
+    }
+
+    // --- v115→116: the default PDF page size follows the region; existing files keep theirs ---------------
+
+    @Test
+    void keepLegacyPdfPageSizeWritesLetterOnlyWhereNoSizeIsStored() throws Exception {
+        assertEquals(
+                "letter",
+                ConfigMigrations.keepLegacyPdfPageSize(mapper.readTree("{\"tabSize\":4}"))
+                        .get("pdfPageSize")
+                        .asText());
+        for (String stored : new String[] {"a4", "letter"}) {
+            JsonNode out =
+                    ConfigMigrations.keepLegacyPdfPageSize(mapper.readTree("{\"pdfPageSize\":\"" + stored + "\"}"));
+            assertEquals(stored, out.get("pdfPageSize").asText(), "a stored size is the user's");
+        }
+        // Safe to repeat.
+        JsonNode once = ConfigMigrations.keepLegacyPdfPageSize(mapper.readTree("{}"));
+        assertEquals(once.deepCopy(), ConfigMigrations.keepLegacyPdfPageSize(once));
+    }
+
+    @Test
+    void upgradingASettingsFileFromV115KeepsItsPdfPageSize() throws Exception {
+        ObjectNode a4 = ConfigMigrations.upgrade(
+                ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":115,\"pdfPageSize\":\"a4\"}"), mapper);
+        assertEquals("a4", a4.get("pdfPageSize").asText());
+        ObjectNode none =
+                ConfigMigrations.upgrade(ConfigSchema.SETTINGS, mapper.readTree("{\"schemaVersion\":115}"), mapper);
+        assertEquals("letter", none.get("pdfPageSize").asText(), "the step is registered and runs");
+        assertEquals(116, none.get("schemaVersion").asInt());
     }
 
     // --- v104→105: authorName persists its raw value; dead keys dropped ---------------------------------

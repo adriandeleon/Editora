@@ -48,8 +48,8 @@ last selected flow is stored in workspace state and restored when the editor is 
 | Drag a column header | Move that column independently unless it is locked |
 | Click a column lock | Prevent or allow accidental header dragging |
 | Click a column close button | Close that branch and all of its descendant columns |
-| Click **Print…** | Open the standard print preview for the complete map layout |
-| Click **PDF…** | Export the complete map layout using the configured PDF page size |
+| Click **Print…** (`projectMap.print`) | Open the standard print preview for the complete map layout |
+| Click **PDF…** (`projectMap.exportPdf`) | Export the complete map layout using the configured PDF page size |
 | Click the overview | Recenter the canvas around that content position |
 
 Floating previews stay at screen scale instead of participating in canvas zoom. Each title bar moves
@@ -193,6 +193,11 @@ The Project tree is the source of truth for file-management actions. `ProjectPan
 context-menu factory into the map and calls the same `contextMenuFor(...)` path used by tree cells.
 New, Maven, rename, delete, reveal, terminal, local-history, and Git items therefore retain their
 existing availability and behavior without a parallel command list.
+
+The two output buttons are also the commands `projectMap.print` and `projectMap.exportPdf`
+(`WindowCommandRegistrar`), which run the buttons' own handlers through `ProjectPanel.printMap()` /
+`exportMapPdf()`. `Chrome.contextReason` enables them only while `ProjectPanel.isMapOutputAvailable()`:
+Map mode, the tool window in the scene, and at least one column to draw.
 
 ## Threading, bounds, and lifecycle
 

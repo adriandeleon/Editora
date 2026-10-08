@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 115;
+    public static final int SCHEMA_VERSION = 116;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -638,8 +638,13 @@ public class Settings {
     private boolean pdfLineNumbers = true;
     /** PDF export: apply syntax-highlighting colors (code PDFs); off = plain monospace. */
     private boolean pdfSyntaxHighlighting = true;
-    /** PDF export page size: "letter" (default) or "a4". */
-    private String pdfPageSize = "letter";
+    /** Print and PDF export: the footer of each page — the document name and "Page n of N". */
+    private boolean pdfPageFooter = true;
+    /**
+     * PDF export page size: "letter" or "a4". A new installation starts with the paper of its region (see
+     * {@link PdfPageSizes}); a stored value always wins.
+     */
+    private String pdfPageSize = PdfPageSizes.systemDefault();
 
     /**
      * Optional per-binding overrides applied on top of the named keymap: chord -&gt; command id. <b>Split per
@@ -2629,7 +2634,15 @@ public class Settings {
         this.pdfSyntaxHighlighting = pdfSyntaxHighlighting;
     }
 
-    /** "letter" (default) or "a4"; unknown values normalize to "letter". */
+    public boolean isPdfPageFooter() {
+        return pdfPageFooter;
+    }
+
+    public void setPdfPageFooter(boolean pdfPageFooter) {
+        this.pdfPageFooter = pdfPageFooter;
+    }
+
+    /** "letter" or "a4"; unknown values normalize to "letter". */
     public String getPdfPageSize() {
         return "a4".equalsIgnoreCase(pdfPageSize) ? "a4" : "letter";
     }

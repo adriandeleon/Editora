@@ -276,7 +276,46 @@ final class Chrome {
             boolean debugSuspended,
             boolean debugRestartable,
             boolean gitOperation,
-            boolean exportablePreview) {
+            boolean exportablePreview,
+            boolean printableTab,
+            boolean selection,
+            boolean projectMap) {
+
+        /**
+         * A context with nothing but a buffer to print — the active tab can be printed when it is one —
+         * some text selected in it, and the Project Map on screen: the neutral values for callers that
+         * are not asking about printing.
+         */
+        PaletteContext(
+                boolean hasBuffer,
+                boolean inRepo,
+                boolean markdownLike,
+                boolean csvFile,
+                boolean httpFile,
+                boolean typstFile,
+                boolean hasPreview,
+                boolean debugActive,
+                boolean debugSuspended,
+                boolean debugRestartable,
+                boolean gitOperation,
+                boolean exportablePreview) {
+            this(
+                    hasBuffer,
+                    inRepo,
+                    markdownLike,
+                    csvFile,
+                    httpFile,
+                    typstFile,
+                    hasPreview,
+                    debugActive,
+                    debugSuspended,
+                    debugRestartable,
+                    gitOperation,
+                    exportablePreview,
+                    hasBuffer,
+                    hasBuffer,
+                    true);
+        }
 
         /**
          * A context whose preview, if it has one, can be exported and printed — every preview but the
@@ -361,7 +400,8 @@ final class Chrome {
 
         /** Everything available — the neutral value for tests and for callers with no window context. */
         static PaletteContext all() {
-            return new PaletteContext(true, true, true, true, true, true, true, true, true, true, true, true);
+            return new PaletteContext(
+                    true, true, true, true, true, true, true, true, true, true, true, true, true, true, true);
         }
     }
 
@@ -397,8 +437,15 @@ final class Chrome {
     private static final java.util.Set<String> PREVIEW_NEEDS_EXPORTABLE =
             java.util.Set.of("preview.exportPdf", "preview.print");
 
-    /** The two {@code editor.} commands that act on the active buffer's text as a whole. */
-    private static final java.util.Set<String> PRINTS_THE_BUFFER = java.util.Set.of("editor.print", "editor.exportPdf");
+    /**
+     * The two {@code editor.} commands that put the active tab on a page: a buffer's text, or the picture of
+     * an image tab. A PDF or hex viewer tab, and the Welcome page, have neither.
+     */
+    private static final java.util.Set<String> PRINTS_THE_TAB = java.util.Set.of("editor.print", "editor.exportPdf");
+
+    /** The selection-only twins of {@link #PRINTS_THE_TAB}: a text buffer with some text selected. */
+    private static final java.util.Set<String> PRINTS_THE_SELECTION =
+            java.util.Set.of("editor.printSelection", "editor.exportSelectionPdf");
 
     private static final java.util.Set<String> DEBUG_NEEDS_SUSPENDED = java.util.Set.of(
             "debug.continue",
@@ -465,12 +512,22 @@ final class Chrome {
                     ? new DisabledReason("status.debug.cannotRestartAttached", null)
                     : null;
         }
+        // Printing and exporting are listed in the File menu, so they are grayed there too — with a reason
+        // that fits a tab holding a PDF or a hex dump, where "no file is open" would be plainly untrue.
+        if (PRINTS_THE_TAB.contains(id)) {
+            return c.printableTab() ? null : new DisabledReason("palette.disabled.needsPrintableTab", null);
+        }
+        if (PRINTS_THE_SELECTION.contains(id)) {
+            if (!c.hasBuffer()) {
+                return new DisabledReason("palette.disabled.needsPrintableTab", null);
+            }
+            return c.selection() ? null : new DisabledReason("palette.disabled.needsSelection", null);
+        }
+        if (id.startsWith("projectMap.")) {
+            return c.projectMap() ? null : new DisabledReason("palette.disabled.needsProjectMap", null);
+        }
         // Whole-family buffer requirements: these do nothing on the Welcome page or an image/hex/PDF tab.
-        // Printing and exporting the file are listed in the File menu, so they are grayed there too.
-        if (id.startsWith("edit.")
-                || id.startsWith("nav.")
-                || id.startsWith("markwhen.")
-                || PRINTS_THE_BUFFER.contains(id)) {
+        if (id.startsWith("edit.") || id.startsWith("nav.") || id.startsWith("markwhen.")) {
             return c.hasBuffer() ? null : new DisabledReason("palette.disabled.needsBuffer", null);
         }
         return null;

@@ -276,6 +276,11 @@ public final class ImageViewerPane implements TabContent {
         return loaded;
     }
 
+    /** The decoded picture for Print and Export to PDF, or null while loading and when it failed to load. */
+    Image printableImage() {
+        return hasImage() ? image : null;
+    }
+
     /** The decoded bitmap (smaller than the picture when it was reduced). Test accessor. */
     Image imageForTest() {
         return image;

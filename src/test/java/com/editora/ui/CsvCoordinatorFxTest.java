@@ -86,10 +86,7 @@ class CsvCoordinatorFxTest {
         public void printCsv(String csvText) {}
 
         @Override
-        public void exportExcel(List<List<String>> rows, boolean hasHeader, String baseName) {}
-
-        @Override
-        public void exportOds(List<List<String>> rows, boolean hasHeader, String baseName) {}
+        public void exportSpreadsheet(String csvText, String baseName, boolean xlsx) {}
     }
 
     private static EditorBuffer csvBuffer(String content) throws Exception {
