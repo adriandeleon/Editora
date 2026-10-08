@@ -199,7 +199,12 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
-        preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
+        preparePrint(() -> printService.prepareDocument(
+                table,
+                null,
+                host.activeBuffer() == null ? null : bufferBaseName(host.activeBuffer()),
+                true,
+                prepared -> openPrintPreview(job, prepared)));
     }
 
     /** Exports the complete Project Map layout—not merely the visible viewport—to a paginated PDF. */
@@ -662,6 +667,8 @@ final class ExportCoordinator {
                 s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(),
                 s.getTabSize(),
+                bufferBaseName(b),
+                true,
                 prepared -> openPrintPreview(job, prepared)));
     }
 
@@ -730,7 +737,7 @@ final class ExportCoordinator {
         if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            printService.prepareMarkdown(b.getContent(), baseDir, open);
+            printService.prepareMarkdown(b.getContent(), baseDir, bufferBaseName(b), true, open);
         } else if (b.isDiagram()) { // Mermaid — CLI render
             // Light, like every other printed kind: the app theme must not reach white paper.
             printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), false, open);

@@ -31,8 +31,17 @@ import com.editora.editor.MarkdownRenderer;
  * syntax.css}) the live preview uses.
  *
  * <p><b>Block-aware pagination:</b> each top-level block (heading, paragraph, list, table, code
- * block, image, …) is measured at the printable width, then whole blocks are greedily packed into
- * pages so nothing is split across a page boundary (the pure, unit-tested {@link #packBlocks}).
+ * block, image, …) is measured at the printable width, then blocks are packed into pages (the pure,
+ * unit-tested {@link #packBlocks}). An image, a diagram or a formula is never cut by a page boundary.
+ *
+ * <p><b>Text, a list, a quote, a code block or a table that does not fit what is left of the page continues
+ * on the next</b> — it is cut at a line, an item or a row, sized against the room actually left
+ * ({@link Packer#room}), rather than being moved whole. Moving it whole is what a first version did, and it
+ * stranded every heading above a long listing on a page of its own: this repo's README printed as 72
+ * pages, a third of them under two-thirds full. A cut needs at least {@link #MIN_SPLIT_ROOM} of room,
+ * {@link #MIN_CODE_LINES} lines of a code block or {@link #MIN_TABLE_ROWS} rows of a table on the old
+ * page, else the block starts the new one. <b>A heading stays with what follows it</b>: when the next
+ * block opens a new page the heading goes along.
  *
  * <p><b>A block taller than a page is split, not scaled.</b> It used to get a page of its own, shrunk
  * uniformly to fit — fine for an oversized image, catastrophic for anything made of text, because a
@@ -43,9 +52,9 @@ import com.editora.editor.MarkdownRenderer;
  *
  * <p>So an over-tall container is regrouped into clones of itself holding as many of its children as fit
  * ({@link #splitToFit}) — a list becomes several lists, a long paragraph several paragraphs, each
- * carrying the original's style classes so it renders identically. A {@code TextFlow} splits at its
- * inline runs, which is what keeps the text vectors rather than slicing a rendered bitmap: crisp on
- * paper, at the cost of a seam that does not hang-indent. Uniform scaling survives only as the last
+ * carrying the original's style classes so it renders identically. A {@code TextFlow} is cut at the word
+ * its last line would have wrapped at ({@link #splitFlow}), which keeps the text vectors rather than
+ * slicing a rendered bitmap: crisp on paper. Uniform scaling survives only as the last
  * resort for a genuinely atomic over-tall block (one enormous image), where it is the right answer.
  *
  * <p><b>A table is split between its rows</b> ({@link #splitTable}), each piece a table again with the same
@@ -82,39 +91,228 @@ public final class MarkdownPrintLayout {
      * because the preview clips.
      */
     public static List<List<Integer>> packBlocks(List<Double> heights, double pageHeight, double spacing) {
-        List<List<Integer>> pages = new ArrayList<>();
-        boolean validPage = pageHeight > 0 && Double.isFinite(pageHeight);
-        double gap = Math.max(0, spacing);
-        List<Integer> cur = new ArrayList<>();
-        double used = 0;
+        return packBlocks(heights, pageHeight, spacing, i -> false);
+    }
+
+    /**
+     * As {@link #packBlocks(List, double, double)}, with a <b>keep-with-next</b> rule for headings: a block
+     * for which {@code keepWithNext} answers true is not left as the last thing on a page. When the block
+     * after it has to open a new page, the heading (and any run of headings directly above it) goes along —
+     * provided something else stays behind on the old page and the headings and the block fit one page
+     * together. Pure.
+     */
+    public static List<List<Integer>> packBlocks(
+            List<Double> heights, double pageHeight, double spacing, java.util.function.IntPredicate keepWithNext) {
+        Packer packer = new Packer(pageHeight, spacing);
         for (int i = 0; i < heights.size(); i++) {
-            double h = Math.max(0, heights.get(i));
-            if (validPage && h > pageHeight) { // taller than any page → its own page (scaled to fit)
+            packer.add(heights.get(i), keepWithNext.test(i));
+        }
+        return packer.pages();
+    }
+
+    /**
+     * The page being filled, one block at a time — {@link #packBlocks} as a running state, so the splitter
+     * can ask how much room is left <em>before</em> it sizes the next piece ({@link #room}). Pure.
+     */
+    static final class Packer {
+        private final double pageHeight;
+        private final double gap;
+        private final boolean valid;
+        private final List<List<Integer>> pages = new ArrayList<>();
+        private final List<Double> heights = new ArrayList<>();
+        private final java.util.BitSet keep = new java.util.BitSet();
+        private List<Integer> cur = new ArrayList<>();
+        private double used;
+        private boolean breakPending;
+
+        Packer(double pageHeight, double spacing) {
+            this.pageHeight = pageHeight;
+            this.gap = Math.max(0, spacing);
+            this.valid = pageHeight > 0 && Double.isFinite(pageHeight);
+        }
+
+        /** The tallest block that still goes on the current page (or on the next, once a break is asked for). */
+        double room() {
+            if (!valid) {
+                return Double.MAX_VALUE;
+            }
+            if (breakPending) {
+                return freshRoom();
+            }
+            return cur.isEmpty() ? pageHeight : pageHeight - used - gap;
+        }
+
+        /** The tallest block a new page would take now: a page, less the headings it would bring along. */
+        double freshRoom() {
+            if (!valid) {
+                return Double.MAX_VALUE;
+            }
+            int from = trailingKept();
+            return from == 0 || from == cur.size() ? pageHeight : pageHeight - stacked(from) - gap;
+        }
+
+        /** Whether ending the page here would help: it holds something besides headings waiting for a block. */
+        boolean canBreak() {
+            return valid && !breakPending && trailingKept() > 0;
+        }
+
+        /** The next block opens a new page, whatever its height. A no-op where {@link #canBreak} is false. */
+        void breakPage() {
+            breakPending = canBreak();
+        }
+
+        void add(double height, boolean keepWithNext) {
+            double h = Math.max(0, height);
+            int index = heights.size();
+            heights.add(h);
+            keep.set(index, keepWithNext);
+            if (valid && h > pageHeight) { // taller than any page → its own page (scaled to fit)
                 if (!cur.isEmpty()) {
                     pages.add(cur);
                     cur = new ArrayList<>();
                     used = 0;
                 }
-                pages.add(new ArrayList<>(List.of(i)));
-                continue;
+                pages.add(new ArrayList<>(List.of(index)));
+                breakPending = false;
+                return;
             }
-            double cost = cur.isEmpty() ? h : gap + h;
-            if (validPage && !cur.isEmpty() && used + cost > pageHeight) {
+            if (valid && !cur.isEmpty() && (breakPending || used + gap + h > pageHeight)) {
+                int from = trailingKept();
+                List<Integer> carried = new ArrayList<>();
+                if (from > 0 && from < cur.size() && stacked(from) + gap + h <= pageHeight) {
+                    carried.addAll(cur.subList(from, cur.size()));
+                    cur.subList(from, cur.size()).clear();
+                }
                 pages.add(cur);
-                cur = new ArrayList<>();
-                used = 0;
-                cost = h;
+                cur = carried;
+                used = cur.isEmpty() ? 0 : stacked(0);
             }
-            cur.add(i);
-            used += cost;
+            breakPending = false;
+            used += cur.isEmpty() ? h : gap + h;
+            cur.add(index);
         }
-        if (!cur.isEmpty()) {
-            pages.add(cur);
+
+        /** The pages so far (always at least one). */
+        List<List<Integer>> pages() {
+            List<List<Integer>> all = new ArrayList<>(pages);
+            if (!cur.isEmpty() || all.isEmpty()) {
+                all.add(new ArrayList<>(cur));
+            }
+            return all;
         }
-        if (pages.isEmpty()) {
-            pages.add(new ArrayList<>());
+
+        double height(int index) {
+            return heights.get(index);
         }
-        return pages;
+
+        /** The state to come back to with {@link #rewind}: everything added after it is forgotten. */
+        Mark mark() {
+            return new Mark(pages.size(), new ArrayList<>(cur), used, heights.size(), breakPending);
+        }
+
+        /** Whether a page has been closed since {@code mark}. */
+        boolean brokeSince(Mark mark) {
+            return pages.size() > mark.pages();
+        }
+
+        void rewind(Mark mark) {
+            pages.subList(mark.pages(), pages.size()).clear();
+            cur = new ArrayList<>(mark.cur());
+            used = mark.used();
+            heights.subList(mark.count(), heights.size()).clear();
+            keep.clear(mark.count(), Math.max(mark.count(), keep.length()));
+            breakPending = mark.breakPending();
+        }
+
+        record Mark(int pages, List<Integer> cur, double used, int count, boolean breakPending) {}
+
+        int count() {
+            return heights.size();
+        }
+
+        /**
+         * Where the current page's trailing run of keep-with-next blocks starts: its size when there is no
+         * such run, and 0 when the run is the whole page (or the page is empty) — in which case nothing is
+         * moved, since that would only leave an empty page behind.
+         */
+        private int trailingKept() {
+            int from = cur.size();
+            while (from > 0 && keep.get(cur.get(from - 1))) {
+                from--;
+            }
+            return from;
+        }
+
+        /** The height of the current page's blocks from position {@code from} on, with the gaps between them. */
+        private double stacked(int from) {
+            double h = 0;
+            for (int i = from; i < cur.size(); i++) {
+                h += heights.get(cur.get(i)) + (i > from ? gap : 0);
+            }
+            return h;
+        }
+    }
+
+    /**
+     * What the splitter sizes its pieces against: the room left on the page being filled, which shrinks as
+     * pieces are {@link #placed}. {@link #fixed} is the degenerate form — every piece gets the same limit —
+     * for content that is not flowing down a page (the cells of one table row, split side by side).
+     */
+    private static final class Flow {
+        private final Packer packer;
+        private final double fixed;
+
+        Flow(Packer packer) {
+            this.packer = packer;
+            this.fixed = 0;
+        }
+
+        private Flow(double fixed) {
+            this.packer = null;
+            this.fixed = fixed;
+        }
+
+        static Flow fixed(double limit) {
+            return new Flow(limit);
+        }
+
+        double limit() {
+            return packer == null ? fixed : packer.room();
+        }
+
+        double freshLimit() {
+            return packer == null ? fixed : packer.freshRoom();
+        }
+
+        boolean canBreak() {
+            return packer != null && packer.canBreak();
+        }
+
+        void breakPage() {
+            if (packer != null) {
+                packer.breakPage();
+            }
+        }
+
+        void placed(double height) {
+            if (packer != null) {
+                packer.add(height, false);
+            }
+        }
+
+        Packer.Mark mark() {
+            return packer == null ? null : packer.mark();
+        }
+
+        boolean brokeSince(Packer.Mark mark) {
+            return packer != null && packer.brokeSince(mark);
+        }
+
+        void rewind(Packer.Mark mark) {
+            if (packer != null) {
+                packer.rewind(mark);
+            }
+        }
     }
 
     /**
@@ -141,6 +339,23 @@ public final class MarkdownPrintLayout {
      */
     public static List<Node> paginate(
             org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets, double pw, double ph) {
+        return paginate(ast, baseDir, assets, pw, ph, null);
+    }
+
+    /**
+     * As {@link #paginate(org.commonmark.node.Node, Path, MarkdownPrintAssets, double, double)}, with a
+     * {@code footer} line at the bottom of every page (null for none). The footer's height is taken off the
+     * page before anything is packed, so the content never runs into it.
+     */
+    public static List<Node> paginate(
+            org.commonmark.node.Node ast,
+            Path baseDir,
+            MarkdownPrintAssets assets,
+            double pw,
+            double ph,
+            PageFooter footer) {
+        double pageHeight = ph;
+        ph = footer == null ? ph : PageFooter.bodyHeight(ph); // everything below lays out above the footer
         // Render to native nodes, then pull out the inner ".markdown-preview" VBox of blocks.
         Node wrap = MarkdownRenderer.renderForPrint(ast, baseDir, assets);
         VBox content = (VBox) ((StackPane) wrap).getChildren().get(0);
@@ -160,17 +375,38 @@ public final class MarkdownPrintLayout {
         measureBlockHeights(probe, pw, ph); // applies CSS, which is what resolves padding/spacing
         double pagePadding = probe.getPadding().getTop() + probe.getPadding().getBottom();
         double pageSpacing = probe.getSpacing();
+        double sidePadding =
+                Math.max(probe.getPadding().getLeft(), probe.getPadding().getRight());
         double contentHeight = Math.max(1, ph - pagePadding);
 
+        // Deal the blocks onto pages as they are split: a piece is sized against the room left on the page
+        // it will land on, and the packer is told about it straight away so the next one is too.
+        Packer packer = new Packer(contentHeight, pageSpacing);
+        Flow flow = new Flow(packer);
         List<Node> pieces = new ArrayList<>();
         for (int i = 0; i < blocks.size(); i++) {
-            pieces.addAll(splitToFit(blocks.get(i), heights.get(i), pw, contentHeight));
+            Node block = blocks.get(i);
+            if (isHeading(block)) {
+                pieces.add(block);
+                packer.add(heights.get(i), true);
+            } else {
+                pieces.addAll(split(block, heights.get(i), List.of(), pw, contentHeight, flow, 0));
+            }
         }
+        List<List<Integer>> packed = packer.pages();
         List<Double> pieceHeights = new ArrayList<>();
-        for (Node piece : pieces) {
-            pieceHeights.add(measureOne(piece, pw, ph));
+        if (packer.count() == pieces.size()) {
+            for (int i = 0; i < pieces.size(); i++) {
+                pieceHeights.add(packer.height(i));
+            }
+        } else {
+            // The splitter lost count of its own pieces. Cannot happen as written; if it ever does, measure
+            // what there is and pack that, rather than put a piece on the wrong page.
+            for (Node piece : pieces) {
+                pieceHeights.add(measureOne(piece, pw, ph));
+            }
+            packed = packBlocks(pieceHeights, contentHeight, pageSpacing);
         }
-        List<List<Integer>> packed = packBlocks(pieceHeights, contentHeight, pageSpacing);
         blocks = pieces;
         heights = pieceHeights;
 
@@ -181,7 +417,15 @@ public final class MarkdownPrintLayout {
             pageContent.setMaxWidth(pw);
             pageContent.setPrefWidth(pw);
             for (int i : idxs) {
-                pageContent.getChildren().add(blocks.get(i));
+                Node piece = blocks.get(i);
+                int last = pageContent.getChildren().size() - 1;
+                if (last >= 0 && continues(pageContent.getChildren().get(last), piece)) {
+                    // Two pieces of one list or quote on the same page (the end of an item cut by the last
+                    // page break, then the items after it): one list again, not two with a block's gap between.
+                    ((VBox) pageContent.getChildren().get(last)).getChildren().addAll(((VBox) piece).getChildren());
+                } else {
+                    pageContent.getChildren().add(piece);
+                }
             }
             Node body = pageContent;
             // A single over-tall block: scale it down uniformly to fit the page height.
@@ -198,16 +442,78 @@ public final class MarkdownPrintLayout {
             pageRoot.getStyleClass().addAll(LIGHT_PAGE_CLASSES);
             pageRoot.setStyle("-fx-background-color: white;");
             StackPane.setAlignment(body, javafx.geometry.Pos.TOP_LEFT);
-            pageRoot.setPrefSize(pw, ph);
-            pageRoot.setMinSize(pw, ph);
-            pageRoot.setMaxSize(pw, ph);
-            Scene pageScene = new Scene(pageRoot, pw, ph);
+            if (footer != null) {
+                Node line = footer.line(pages.size() + 1, packed.size(), pw, sidePadding);
+                StackPane.setAlignment(line, javafx.geometry.Pos.BOTTOM_LEFT);
+                pageRoot.getChildren().add(line); // after the body: callers find the body at index 0
+            }
+            pageRoot.setPrefSize(pw, pageHeight);
+            pageRoot.setMinSize(pw, pageHeight);
+            pageRoot.setMaxSize(pw, pageHeight);
+            Scene pageScene = new Scene(pageRoot, pw, pageHeight);
             attachStyles(pageScene);
             pageRoot.applyCss();
             pageRoot.layout();
             pages.add(pageRoot);
         }
         return pages;
+    }
+
+    /** Node-property key naming the block a split piece was cut from (see {@link #cloneShell}). */
+    private static final Object ORIGIN_KEY = new Object();
+
+    /** Whether {@code next} is a further piece of the same stacked block (list, quote) as {@code previous}. */
+    private static boolean continues(Node previous, Node next) {
+        Object origin = previous.getProperties().get(ORIGIN_KEY);
+        return origin != null
+                && origin == next.getProperties().get(ORIGIN_KEY)
+                && previous instanceof VBox
+                && next instanceof VBox
+                && previous.getStyleClass().equals(next.getStyleClass());
+    }
+
+    /** A heading block — the one kind of block that is kept with whatever follows it. */
+    private static boolean isHeading(Node block) {
+        for (String c : block.getStyleClass()) {
+            if (c.length() == 5 && c.startsWith("md-h") && Character.isDigit(c.charAt(4))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The least room worth starting a split block in: about three lines of body text. */
+    static final double MIN_SPLIT_ROOM = 60;
+
+    /** A code block is not cut with fewer lines than this on either side of the page break. */
+    static final int MIN_CODE_LINES = 3;
+
+    /** A table is not cut with fewer body rows than this left under its header on the old page. */
+    static final int MIN_TABLE_ROWS = 2;
+
+    /**
+     * Whether {@code node} is one thing that cannot be continued overleaf — an image, a formula, a rule, a
+     * diagram — as opposed to text (cut at a line) or a stack (a list of items, a quote of paragraphs, a code
+     * block of lines, a table of rows — cut between them). A unit that fits a page is moved to the next page
+     * whole. A wrapper around a single unit is itself a unit.
+     */
+    private static boolean isUnit(Node node) {
+        if (node instanceof GridPane grid) {
+            return !grid.getStyleClass().contains("md-table");
+        }
+        if (node instanceof TextFlow) {
+            return false;
+        }
+        if (!(node instanceof Pane pane) || pane.getChildren().isEmpty()) {
+            return true;
+        }
+        if (pane instanceof HBox row && row.getChildren().size() == 2) {
+            return isUnit(row.getChildren().get(1)); // a list item: its marker beside its content
+        }
+        if (pane.getChildren().size() == 1) {
+            return isUnit(pane.getChildren().get(0));
+        }
+        return !(pane instanceof VBox);
     }
 
     /**
@@ -247,30 +553,50 @@ public final class MarkdownPrintLayout {
      * the budget negative and splitting bailed out on the very items that needed it.
      */
     static List<Node> splitToFit(Node block, double height, double pw, double ph) {
-        return split(block, height, List.of(), pw, ph, 0);
+        return split(block, height, List.of(), pw, ph, Flow.fixed(ph), 0);
     }
 
-    private static List<Node> split(Node block, double height, List<Wrapper> chain, double pw, double ph, int depth) {
+    /**
+     * {@code ph} is a whole page; {@code flow} is what each piece is actually sized against — the room left
+     * on the page it will land on — and is told about every piece the moment it is final
+     * ({@link Flow#placed}), exactly once, in document order.
+     */
+    private static List<Node> split(
+            Node block, double height, List<Wrapper> chain, double pw, double ph, Flow flow, int depth) {
         if (block instanceof GridPane grid && grid.getProperties().containsKey(TABLE_ROWS_KEY)) {
-            return splitTable(grid, chain, pw, ph, depth); // its rows are detached: it has no height to go by
+            return splitTable(grid, height, chain, pw, ph, flow, depth); // rows detached: no height to go by
         }
-        if (!(ph > 0) || height <= ph || depth >= MAX_SPLIT_DEPTH) {
+        if (!(ph > 0) || height <= flow.limit() || depth >= MAX_SPLIT_DEPTH) {
+            flow.placed(height);
             return List.of(block);
+        }
+        if (flow.canBreak()) {
+            if (isUnit(block) && height <= flow.freshLimit()) {
+                flow.breakPage(); // an image, a formula, a rule: it goes to the next page whole
+                flow.placed(height);
+                return List.of(block);
+            }
+            if (flow.limit() < MIN_SPLIT_ROOM) {
+                flow.breakPage(); // too little left to be worth starting in
+                if (height <= flow.limit()) {
+                    flow.placed(height);
+                    return List.of(block);
+                }
+            }
         }
         // A list item is a marker beside its content; splitting it means splitting the content and
         // repeating the row, so the continuation keeps the item's indentation instead of sliding left.
         if (block instanceof HBox row && row.getChildren().size() == 2) {
-            return splitListItem(row, chain, pw, ph, depth);
+            return splitListItem(row, chain, pw, ph, flow, depth);
         }
-        // A plain paragraph is a SINGLE Text run — no inline code or emphasis to split at — so run-level
-        // splitting cannot help it and it would be scaled. Split the string instead.
-        if (block instanceof Text text) {
-            return splitText(text, chain, pw, ph);
+        if (block instanceof TextFlow text && !text.getChildren().isEmpty()) {
+            return splitFlow(text, height, chain, pw, ph, flow);
         }
         if (block instanceof GridPane grid) {
-            return splitTable(grid, chain, pw, ph, depth);
+            return splitTable(grid, height, chain, pw, ph, flow, depth);
         }
         if (!(block instanceof Pane pane) || pane.getChildren().isEmpty()) {
+            flow.placed(height);
             return List.of(block); // atomic: the last-resort scale in paginate() handles it
         }
         List<Wrapper> inner = append(chain, pane, 0);
@@ -279,7 +605,7 @@ public final class MarkdownPrintLayout {
         if (pane.getChildren().size() == 1) {
             Node only = pane.getChildren().get(0);
             pane.getChildren().clear();
-            List<Node> subs = split(only, measureWrapped(only, inner, pw, ph), inner, pw, ph, depth + 1);
+            List<Node> subs = split(only, measureWrapped(only, inner, pw, ph), inner, pw, ph, flow, depth + 1);
             if (subs.size() == 1) {
                 pane.getChildren().add(subs.get(0)); // no progress — hand the original back intact
                 return List.of(pane);
@@ -292,20 +618,53 @@ public final class MarkdownPrintLayout {
         // For a VBox the height of a group is arithmetic (see ownHeights), so measure each child once here
         // and spend no layout at all on the search. Null for every other container, where it is not.
         double[] own = ownHeights(pane, chain, children, pw, ph);
+        boolean codeLines = pane.getStyleClass().contains("md-code-lines");
+        double[] fit = new double[1]; // the measured height of the prefix last taken
         List<Node> out = new ArrayList<>();
         int from = 0;
         while (from < children.size()) {
-            int take = largestPrefixThatFits(pane, chain, children, from, own, pw, ph);
+            int rest = children.size() - from;
+            int take = largestPrefixThatFits(pane, chain, children, from, own, pw, ph, flow.limit(), fit);
+            double firstHeight = take == 0 ? measureWrapped(children.get(from), inner, pw, ph) : 0;
+            if (take < rest && flow.canBreak()) {
+                // Rather than leave a line or two of a listing behind, or cut a paragraph that would fit a
+                // page whole, end the page here and size the piece against the next one.
+                boolean tooFewLines = codeLines && take < MIN_CODE_LINES;
+                boolean wholeUnit = take == 0 && isUnit(children.get(from)) && firstHeight <= flow.freshLimit();
+                if (tooFewLines || wholeUnit) {
+                    flow.breakPage();
+                    continue;
+                }
+            }
             if (take == 0) {
                 // Even one child overflows: recurse into it, then carry on after it.
                 Node child = children.get(from);
-                List<Node> subs = split(child, measureWrapped(child, inner, pw, ph), inner, pw, ph, depth + 1);
+                Packer.Mark before = flow.mark();
+                List<Node> subs = split(child, firstHeight, inner, pw, ph, flow, depth + 1);
+                if (subs.size() == 1 && flow.brokeSince(before)) {
+                    // It was not cut after all: it moved to the next page whole. Take that back and start
+                    // the page here instead, so the children after it join it in one piece rather than
+                    // being sized as if they had the page to themselves.
+                    children.set(from, subs.get(0));
+                    flow.rewind(before);
+                    flow.breakPage();
+                    continue;
+                }
                 out.addAll(wrapEach(subs, pane, pw));
                 from++;
                 continue;
             }
+            if (codeLines && take < rest && rest - take < MIN_CODE_LINES) {
+                // …and do not carry a line or two over either, when the old page can spare them.
+                int fewer = rest - MIN_CODE_LINES;
+                if (fewer >= MIN_CODE_LINES) {
+                    take = fewer;
+                    fit[0] = measurePrefix(pane, chain, children, from, take, pw, ph);
+                }
+            }
             Pane piece = cloneShell(pane, pw);
             piece.getChildren().addAll(children.subList(from, from + take));
+            flow.placed(fit[0]);
             out.add(piece);
             from += take;
         }
@@ -313,52 +672,143 @@ public final class MarkdownPrintLayout {
     }
 
     /**
-     * Splits one over-tall {@code Text} run into several, cut at whitespace so no word is broken.
+     * Continues a paragraph (or a table cell — any {@code TextFlow}) on the next page: each piece is a flow
+     * like the original holding the runs, and the part of one run, that fit the room it is given.
      *
-     * <p>Needed because an ordinary paragraph — no inline code, no emphasis — renders as exactly one run,
-     * and a document of plain prose would otherwise be the one shape still scaled down. The cut point is
-     * found by binary search on the character index and then walked back to the nearest space, each
-     * candidate measured inside the real wrapper chain (so the enclosing {@code TextFlow} wraps it as it
-     * actually will).
+     * <p>The cut is the last word that still fits, found by measuring the candidate <em>as one flow</em> —
+     * whole runs first, then a binary search over the words of the run the page ends in. That makes it the
+     * place the line would have wrapped anyway, so the first piece ends in a full line and the next starts
+     * a new one: on paper the paragraph simply carries on overleaf. Cutting each run separately, as this
+     * once did, put a line break at every run boundary near the cut.
      *
-     * <p>A single word taller than the page cannot be split and is returned as-is, for the last-resort
-     * scale to deal with.
+     * <p>No single line is left behind or carried over: if fewer than two lines would stay on the old page
+     * the paragraph starts on the new one, and if fewer than two would move, and it fits a page, all of it
+     * moves. A flow that cannot be cut at all (one image, one formula) goes to a fresh page whole.
      */
-    private static List<Node> splitText(Text text, List<Wrapper> chain, double pw, double ph) {
-        String all = text.getText();
-        if (all == null || all.isBlank()) {
-            return List.of(text);
-        }
+    private static List<Node> splitFlow(
+            TextFlow block, double height, List<Wrapper> chain, double pw, double ph, Flow flow) {
+        List<Node> runs = new ArrayList<>(block.getChildren());
+        block.getChildren().clear();
+        double oneLine = linesHeight(block, runs, "X", chain, pw, ph);
+        double twoLines = linesHeight(block, runs, "X\nX", chain, pw, ph) - 0.5;
         List<Node> out = new ArrayList<>();
-        int from = 0;
-        while (from < all.length()) {
-            int take = largestTextPrefixThatFits(text, all, from, chain, pw, ph);
-            if (take <= 0) {
-                // Not even one word fits: emit the rest whole rather than loop forever.
-                out.add(textLike(text, all.substring(from)));
+        double[] fit = new double[1];
+        double rest = height; // the height of what is still to be placed
+        double cap = Double.MAX_VALUE; // set to end a piece a line early, so two lines are carried over
+        while (!runs.isEmpty()) {
+            double limit = Math.min(flow.limit(), cap);
+            cap = Double.MAX_VALUE;
+            if (rest <= limit) {
+                out.add(flowOf(block, runs, pw));
+                flow.placed(rest);
                 break;
             }
-            out.add(textLike(text, all.substring(from, from + take)));
-            from += take;
-            while (from < all.length() && all.charAt(from) == ' ') {
-                from++; // the space that became the line break is not carried onto the next piece
+            int take = largestPrefixThatFits(block, chain, runs, 0, null, pw, ph, limit, fit);
+            String head = null;
+            if (take < runs.size() && runs.get(take) instanceof Text run && run.getText() != null) {
+                int chars = wordsThatFit(block, runs.subList(0, take), run, chain, pw, ph, limit, fit);
+                head = chars > 0 ? run.getText().substring(0, chars) : null;
             }
+            boolean nothing = take == 0 && head == null;
+            if ((nothing || fit[0] < twoLines) && flow.canBreak()) {
+                flow.breakPage(); // not even two lines fit here
+                continue;
+            }
+            if (nothing || take == runs.size()) {
+                out.add(flowOf(block, runs, pw)); // cannot be cut and has a page to itself: as it is
+                flow.placed(rest);
+                break;
+            }
+            List<Node> first = new ArrayList<>(runs.subList(0, take));
+            List<Node> after = new ArrayList<>(runs.subList(head == null ? take : take + 1, runs.size()));
+            if (head != null) {
+                Text run = (Text) runs.get(take);
+                first.add(textLike(run, head));
+                String tail = run.getText().substring(head.length()).stripLeading();
+                if (!tail.isEmpty()) {
+                    after.add(0, textLike(run, tail));
+                }
+            } else if (!after.isEmpty() && after.get(0) instanceof Text lead && lead.getText() != null) {
+                after.set(0, textLike(lead, lead.getText().stripLeading())); // the space the line broke at
+            }
+            double firstHeight = fit[0];
+            double afterHeight = after.isEmpty() ? 0 : measureFlow(block, after, chain, pw, ph);
+            if (!after.isEmpty() && afterHeight < twoLines && oneLine > 0) {
+                // One line would be carried over. Leave a line more behind if two still stay; failing
+                // that, and if it fits a page, take the whole paragraph over. Either way the cut is
+                // not made: `runs` still holds the paragraph as it was, spaces and all.
+                double shorter = firstHeight - (twoLines + 0.5 - oneLine) + 0.5;
+                if (shorter >= twoLines && shorter < limit) {
+                    cap = shorter;
+                    continue;
+                }
+                if (flow.canBreak() && rest <= flow.freshLimit()) {
+                    flow.breakPage();
+                    continue;
+                }
+            }
+            out.add(flowOf(block, first, pw));
+            flow.placed(firstHeight);
+            runs = after;
+            rest = afterHeight;
         }
-        return out.size() > 1 ? out : List.of(text);
+        if (out.size() == 1 && out.get(0) instanceof Pane only) {
+            block.getChildren().setAll(new ArrayList<>(only.getChildren())); // uncut: the original, intact
+            return List.of(block);
+        }
+        return out;
     }
 
-    private static int largestTextPrefixThatFits(
-            Text template, String all, int from, List<Wrapper> chain, double pw, double ph) {
+    /** A clone of {@code template} holding {@code runs}. */
+    private static Node flowOf(TextFlow template, List<Node> runs, double pw) {
+        Pane piece = cloneShell(template, pw);
+        piece.getChildren().addAll(runs);
+        return piece;
+    }
+
+    private static double measureFlow(TextFlow template, List<Node> runs, List<Wrapper> chain, double pw, double ph) {
+        return measurePrefix(template, chain, runs, 0, runs.size(), pw, ph);
+    }
+
+    /** The height of {@code template} holding {@code sample} set in its own text; 0 when it has no text. */
+    private static double linesHeight(
+            TextFlow template, List<Node> runs, String sample, List<Wrapper> chain, double pw, double ph) {
+        for (Node run : runs) {
+            if (run instanceof Text text) {
+                return measureFlow(template, List.of(textLike(text, sample)), chain, pw, ph);
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * How many characters of {@code run} — whole words — still fit {@code limit} when it follows {@code lead}
+     * in a clone of {@code template}; 0 when not even its first word does. Leaves the height in {@code fit[0]}.
+     */
+    private static int wordsThatFit(
+            TextFlow template,
+            List<Node> lead,
+            Text run,
+            List<Wrapper> chain,
+            double pw,
+            double ph,
+            double limit,
+            double[] fit) {
+        String all = run.getText();
+        List<Node> candidate = new ArrayList<>(lead);
+        candidate.add(run);
         int lo = 0;
-        int hi = all.length() - from;
+        int hi = all.length() - 1; // the whole run is known not to fit
         while (lo < hi) {
-            int mid = wordBoundary(all, from, (lo + hi + 1) / 2);
+            int mid = wordBoundary(all, (lo + hi + 1) / 2);
             if (mid <= lo) {
                 break; // no boundary left to try between lo and hi
             }
-            double h = measureWrapped(textLike(template, all.substring(from, from + mid)), chain, pw, ph);
-            if (h <= ph) {
+            candidate.set(lead.size(), textLike(run, all.substring(0, mid)));
+            double h = measureFlow(template, candidate, chain, pw, ph);
+            if (h <= limit) {
                 lo = mid;
+                fit[0] = h;
             } else {
                 hi = mid - 1;
             }
@@ -366,17 +816,16 @@ public final class MarkdownPrintLayout {
         return lo;
     }
 
-    /** {@code len} walked back to the end of the last whole word, so a cut never lands inside one. */
-    private static int wordBoundary(String all, int from, int len) {
-        int end = Math.min(from + len, all.length());
-        if (end >= all.length()) {
-            return all.length() - from;
+    /** {@code len} walked back to the end of the last whole word of {@code all}; 0 when there is none. */
+    private static int wordBoundary(String all, int len) {
+        int p = Math.min(len, all.length());
+        if (p >= all.length()) {
+            return all.length();
         }
-        int p = end;
-        while (p > from && all.charAt(p) != ' ') {
+        while (p > 0 && all.charAt(p) != ' ') {
             p--;
         }
-        return p > from ? p - from : len;
+        return p;
     }
 
     /**
@@ -468,7 +917,8 @@ public final class MarkdownPrintLayout {
     }
 
     /**
-     * The largest number of children from {@code from} whose piece still fits {@code ph}; 0 if none do.
+     * The largest number of children from {@code from} whose piece still fits {@code limit}; 0 if none do.
+     * The piece's measured height is left in {@code fit[0]}.
      *
      * <p>With {@code own} heights available the count is arithmetic, and then <b>verified once</b> against a
      * real layout, backing off while it overflows. The arithmetic is a hint, not an oracle: a piece that
@@ -477,14 +927,22 @@ public final class MarkdownPrintLayout {
      * a real layout of the candidate group.
      */
     private static int largestPrefixThatFits(
-            Pane template, List<Wrapper> chain, List<Node> children, int from, double[] own, double pw, double ph) {
+            Pane template,
+            List<Wrapper> chain,
+            List<Node> children,
+            int from,
+            double[] own,
+            double pw,
+            double ph,
+            double limit,
+            double[] fit) {
         int remaining = children.size() - from;
         if (own != null) {
             int lo = 0;
-            while (lo < remaining && stackedHeight(template, own, from, lo + 1) <= ph) {
+            while (lo < remaining && stackedHeight(template, own, from, lo + 1) <= limit) {
                 lo++;
             }
-            while (lo > 0 && measurePrefix(template, chain, children, from, lo, pw, ph) > ph) {
+            while (lo > 0 && (fit[0] = measurePrefix(template, chain, children, from, lo, pw, ph)) > limit) {
                 lo--; // the estimate was optimistic — step back until it really fits
             }
             return lo;
@@ -493,8 +951,10 @@ public final class MarkdownPrintLayout {
         int hi = remaining;
         while (lo < hi) {
             int mid = (lo + hi + 1) / 2;
-            if (measurePrefix(template, chain, children, from, mid, pw, ph) <= ph) {
+            double h = measurePrefix(template, chain, children, from, mid, pw, ph);
+            if (h <= limit) {
                 lo = mid;
+                fit[0] = h;
             } else {
                 hi = mid - 1;
             }
@@ -551,13 +1011,13 @@ public final class MarkdownPrintLayout {
      * Splits a {@code .md-list-item} row: the first piece keeps the real marker, each continuation gets a
      * blank of the marker's width, so the text stays in its column and the bullet is not repeated.
      */
-    private static List<Node> splitListItem(HBox row, List<Wrapper> chain, double pw, double ph, int depth) {
+    private static List<Node> splitListItem(HBox row, List<Wrapper> chain, double pw, double ph, Flow flow, int depth) {
         Node marker = row.getChildren().get(0);
         Node content = row.getChildren().get(1);
         double markerWidth = marker.getLayoutBounds().getWidth();
         row.getChildren().clear();
         List<Wrapper> inner = append(chain, row, markerWidth);
-        List<Node> parts = split(content, measureWrapped(content, inner, pw, ph), inner, pw, ph, depth + 1);
+        List<Node> parts = split(content, measureWrapped(content, inner, pw, ph), inner, pw, ph, flow, depth + 1);
         if (parts.size() == 1) {
             row.getChildren().addAll(marker, parts.get(0)); // nothing gained; put it back as it was
             return List.of(row);
@@ -848,7 +1308,8 @@ public final class MarkdownPrintLayout {
      * <p>A single row taller than the page (one cell holding paragraphs of text) is cut across several rows
      * first ({@link #splitTallRow}), so no text is lost and nothing is scaled.
      */
-    private static List<Node> splitTable(GridPane grid, List<Wrapper> chain, double pw, double ph, int depth) {
+    private static List<Node> splitTable(
+            GridPane grid, double height, List<Wrapper> chain, double pw, double ph, Flow flow, int depth) {
         TableRows table = (TableRows) grid.getProperties().remove(TABLE_ROWS_KEY);
         if (table == null) {
             double full = measureWrapped(grid, chain, pw, ph); // the one layout of the whole table
@@ -866,11 +1327,12 @@ public final class MarkdownPrintLayout {
         double overhead = table.overhead();
         int headerRows = !rows.isEmpty() && isHeaderRow(rows.get(0)) ? 1 : 0;
         if (rows.size() - headerRows < 1) {
+            flow.placed(height);
             return List.of(grid); // nothing but a header: no row boundary to cut at
         }
         double vgap = grid.getVgap();
         double headerHeight = headerRows == 0 ? 0 : heights[0] + vgap;
-        double budget = ph - overhead - headerHeight;
+        double budget = ph - overhead - headerHeight; // what a whole page leaves for body rows
         grid.getChildren().clear();
 
         // Cut any row that cannot fit a page by itself into several that can.
@@ -895,11 +1357,17 @@ public final class MarkdownPrintLayout {
         List<Node> out = new ArrayList<>();
         int from = 0;
         while (from < body.size()) {
+            double limit = flow.limit(); // this piece's share: what is left of the page it starts on
+            double room = limit - overhead - headerHeight;
             int take = 0;
             double used = 0;
-            while (from + take < body.size() && used + bodyHeights.get(from + take) <= budget) {
+            while (from + take < body.size() && used + bodyHeights.get(from + take) <= room) {
                 used += bodyHeights.get(from + take) + vgap;
                 take++;
+            }
+            if (take < Math.min(MIN_TABLE_ROWS, body.size() - from) && flow.canBreak()) {
+                flow.breakPage(); // a header over one row, or over none: start the table on the next page
+                continue;
             }
             take = Math.max(1, take); // a row that still cannot fit goes alone, for the last-resort scale
             GridPane piece = (GridPane) cloneShell(grid, pw);
@@ -910,9 +1378,12 @@ public final class MarkdownPrintLayout {
             for (int i = 0; i < take; i++) {
                 addRow(piece, body.get(from + i), at++);
             }
-            while (take > 1 && measureWrapped(piece, chain, pw, ph) > ph) {
+            double pieceHeight = measureWrapped(piece, chain, pw, ph);
+            while (take > 1 && pieceHeight > limit) {
                 piece.getChildren().removeAll(body.get(from + --take)); // the estimate was optimistic
+                pieceHeight = measureWrapped(piece, chain, pw, ph);
             }
+            flow.placed(pieceHeight);
             out.add(piece);
             from += take;
         }
@@ -951,7 +1422,8 @@ public final class MarkdownPrintLayout {
         for (Node cell : row) {
             List<Wrapper> inColumn = new ArrayList<>(chain);
             inColumn.add(new Wrapper(grid, 0, columnOf(cell)));
-            List<Node> pieces = split(cell, measureWrapped(cell, inColumn, pw, ph), inColumn, pw, ph, depth + 1);
+            List<Node> pieces =
+                    split(cell, measureWrapped(cell, inColumn, pw, ph), inColumn, pw, ph, Flow.fixed(ph), depth + 1);
             for (Node piece : pieces) {
                 GridPane.setColumnIndex(piece, columnOf(cell));
                 if (piece instanceof Region region) {
@@ -1073,6 +1545,8 @@ public final class MarkdownPrintLayout {
             copy = new VBox();
         }
         copy.getStyleClass().setAll(template.getStyleClass());
+        Object origin = template.getProperties().get(ORIGIN_KEY);
+        copy.getProperties().put(ORIGIN_KEY, origin == null ? template : origin);
         copy.setPadding(template.getPadding());
         copy.setMaxWidth(pw);
         copy.setPrefWidth(pw);

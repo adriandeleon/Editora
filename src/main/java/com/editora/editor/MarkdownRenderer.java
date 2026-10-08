@@ -720,7 +720,7 @@ public final class MarkdownRenderer {
                 flow.getChildren().add(styledText(t.getLiteral(), styles));
             }
         } else if (n instanceof Code c) {
-            flow.getChildren().add(inlineCode(c.getLiteral()));
+            addInlineCode(flow, c.getLiteral(), ctx);
         } else if (n instanceof Emphasis) {
             appendInline(n, flow, with(styles, "md-italic"), ctx);
         } else if (n instanceof StrongEmphasis) {
@@ -738,6 +738,11 @@ public final class MarkdownRenderer {
             appendInline(n, flow, with(styles, "md-link"), ctx);
             installLinkTooltip(flow, from, link.getDestination());
             installLinkClick(flow, from, link.getDestination(), ctx.onLinkClick());
+            String target = ctx.print() ? printedLinkTarget(link.getDestination(), linkText(link)) : null;
+            if (target != null) {
+                // Paper cannot be clicked: say where the link goes. One run, so it wraps wherever it must.
+                flow.getChildren().add(styledText(" (" + target + ")", List.of("md-link-url")));
+            }
         } else if (n instanceof org.commonmark.node.Image img) {
             flow.getChildren().add(imageNode(img, ctx));
         } else if (n instanceof SoftLineBreak) {
@@ -746,7 +751,7 @@ public final class MarkdownRenderer {
             flow.getChildren().add(new Text("\n"));
         } else if (n instanceof HtmlInline h) {
             if (!isHtmlComment(h.getLiteral())) {
-                flow.getChildren().add(inlineCode(h.getLiteral())); // skip inline HTML comments
+                addInlineCode(flow, h.getLiteral(), ctx); // skip inline HTML comments
             }
         } else if (n instanceof TaskListItemMarker) {
             // rendered as a CheckBox by renderList — skip here
@@ -761,6 +766,118 @@ public final class MarkdownRenderer {
         Label code = new Label(literal);
         code.getStyleClass().add("md-inline-code");
         return code;
+    }
+
+    /** Inline code no longer than this prints as one pill; longer code is cut into pieces of at most this. */
+    static final int CODE_CHUNK = 16;
+
+    /**
+     * Adds inline code to {@code flow}: one pill in the preview, and in print a row of pieces the line can
+     * break between.
+     *
+     * <p>A {@code Label} inside a {@code TextFlow} is a single box — it cannot wrap — so a command or a path
+     * longer than the line ran straight off the right edge of the paper. The preview scrolls and resizes;
+     * a sheet does neither. The pieces are labels still, each carrying the pill's background, so on one line
+     * they read as the same pill ({@code md-code-first/-mid/-last} square off the inner corners).
+     */
+    private static void addInlineCode(TextFlow flow, String literal, RenderContext ctx) {
+        List<String> chunks = ctx.print() ? codeChunks(literal) : List.of();
+        if (chunks.size() < 2) {
+            flow.getChildren().add(inlineCode(literal));
+            return;
+        }
+        for (int i = 0; i < chunks.size(); i++) {
+            if (i > 0) {
+                // A break opportunity. Without one the row of labels is a single word to the line breaker,
+                // which starts it on a line of its own before cutting it; a zero-width space is not taken
+                // as one, so this is a real space set too small to see (.md-code-break).
+                Text gap = new Text(" ");
+                gap.getStyleClass().add("md-code-break");
+                flow.getChildren().add(gap);
+            }
+            Label part = inlineCode(chunks.get(i));
+            part.getStyleClass()
+                    .add(i == 0 ? "md-code-first" : i == chunks.size() - 1 ? "md-code-last" : "md-code-mid");
+            flow.getChildren().add(part);
+        }
+    }
+
+    /**
+     * Cuts inline code into pieces of at most {@link #CODE_CHUNK} characters for print, preferring to cut
+     * after a space, then after punctuation a reader expects a break at ({@code / - . = ,} …), and only then
+     * mid-word. Code that fits one piece comes back as that one piece. Pure; unit-tested.
+     */
+    static List<String> codeChunks(String literal) {
+        if (literal == null || literal.length() <= CODE_CHUNK) {
+            return List.of(literal == null ? "" : literal);
+        }
+        List<String> out = new ArrayList<>();
+        int from = 0;
+        while (literal.length() - from > CODE_CHUNK) {
+            int cut = -1;
+            int soft = -1;
+            for (int i = from + 1; i <= from + CODE_CHUNK; i++) {
+                char before = literal.charAt(i - 1);
+                if (Character.isWhitespace(before) && !Character.isWhitespace(literal.charAt(i))) {
+                    cut = i;
+                } else if (i - from >= 4 && "/\\-_.,;:=&?+|)]}>".indexOf(before) >= 0) {
+                    soft = i;
+                }
+            }
+            int end = cut > 0 ? cut : soft > 0 ? soft : from + CODE_CHUNK;
+            if (Character.isLowSurrogate(literal.charAt(end)) && Character.isHighSurrogate(literal.charAt(end - 1))) {
+                end--; // never between the two halves of one character
+            }
+            out.add(literal.substring(from, end));
+            from = end;
+        }
+        out.add(literal.substring(from));
+        return out;
+    }
+
+    /** The plain text a link shows: its text and inline-code children, images left out. */
+    private static String linkText(org.commonmark.node.Node node) {
+        StringBuilder sb = new StringBuilder();
+        for (org.commonmark.node.Node c = node.getFirstChild(); c != null; c = c.getNext()) {
+            if (c instanceof org.commonmark.node.Text t) {
+                sb.append(t.getLiteral());
+            } else if (c instanceof Code code) {
+                sb.append(code.getLiteral());
+            } else if (!(c instanceof org.commonmark.node.Image)) {
+                sb.append(linkText(c));
+            }
+        }
+        return sb.toString();
+    }
+
+    /**
+     * What a printed link shows in parentheses after its text so the destination survives on paper, or null
+     * when nothing should be added: the link stays inside the document ({@code #anchor}) or is a relative
+     * file, its text already is the address (an autolink, or {@code [example.org](https://example.org/)}),
+     * or it has no text at all (a linked badge image). {@code mailto:} is shown as the bare address.
+     * Pure; unit-tested.
+     */
+    static String printedLinkTarget(String destination, String text) {
+        if (destination == null || text == null || text.isBlank()) {
+            return null;
+        }
+        String dest = destination.strip();
+        String lower = dest.toLowerCase(java.util.Locale.ROOT);
+        String shown;
+        if (lower.startsWith("mailto:")) {
+            shown = dest.substring("mailto:".length());
+        } else if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            shown = dest;
+        } else {
+            return null;
+        }
+        return shown.isBlank() || bareAddress(shown).equalsIgnoreCase(bareAddress(text)) ? null : shown;
+    }
+
+    /** An address without its scheme and trailing slash, for telling "the text is the URL" apart. */
+    private static String bareAddress(String s) {
+        String t = s.strip().replaceFirst("(?i)^(https?://|mailto:)", "");
+        return t.endsWith("/") ? t.substring(0, t.length() - 1) : t;
     }
 
     /** Splits a text run into literal text + inline math (rendered as small images). */

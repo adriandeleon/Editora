@@ -216,4 +216,42 @@ class MarkdownRendererTest {
         assertEquals("c */", lines.get(3).get(0).text());
         assertEquals(" ", lines.get(4).get(0).text());
     }
+
+    /** Print cuts long inline code into pieces the line can break between — pure. */
+    @Test
+    void longInlineCodeIsCutIntoPiecesForPrint() {
+        assertEquals(java.util.List.of("mvn test"), MarkdownRenderer.codeChunks("mvn test"), "short code is one pill");
+        assertEquals(java.util.List.of(""), MarkdownRenderer.codeChunks(null));
+        String command = "npm install -g @mermaid-js/mermaid-cli --registry=https://registry.example.org/";
+        java.util.List<String> chunks = MarkdownRenderer.codeChunks(command);
+        assertEquals(command, String.join("", chunks), "nothing is lost or added");
+        assertTrue(chunks.size() > 4, "cut into several: " + chunks);
+        for (String chunk : chunks) {
+            assertTrue(chunk.length() <= MarkdownRenderer.CODE_CHUNK, "no piece over the limit: '" + chunk + "'");
+        }
+        assertEquals("npm install -g ", chunks.get(0), "cut after a space where there is one");
+        assertEquals("@mermaid-js/", chunks.get(1), "then after punctuation");
+        java.util.List<String> unbroken = MarkdownRenderer.codeChunks("A".repeat(40));
+        assertEquals(java.util.List.of("A".repeat(16), "A".repeat(16), "A".repeat(8)), unbroken, "then anywhere");
+        String astral = "x".repeat(15) + "\uD83D\uDE00" + "y".repeat(10);
+        for (String chunk : MarkdownRenderer.codeChunks(astral)) {
+            assertFalse(Character.isHighSurrogate(chunk.charAt(chunk.length() - 1)), "a surrogate pair is not cut");
+        }
+    }
+
+    /** What a printed link adds after its text so the address survives on paper — pure. */
+    @Test
+    void aPrintedLinkNamesItsDestinationUnlessTheTextAlreadyDoes() {
+        assertEquals(
+                "https://example.org/docs", MarkdownRenderer.printedLinkTarget("https://example.org/docs", "the docs"));
+        assertEquals("someone@example.org", MarkdownRenderer.printedLinkTarget("mailto:someone@example.org", "write"));
+        assertNull(MarkdownRenderer.printedLinkTarget("#details", "below"), "an in-document anchor");
+        assertNull(MarkdownRenderer.printedLinkTarget("docs/README.md", "a relative file"));
+        assertNull(MarkdownRenderer.printedLinkTarget("https://example.org/x", "https://example.org/x"), "an autolink");
+        assertNull(
+                MarkdownRenderer.printedLinkTarget("https://Example.org/", "example.org"), "the text is the address");
+        assertNull(MarkdownRenderer.printedLinkTarget("mailto:a@b.example", "a@b.example"));
+        assertNull(MarkdownRenderer.printedLinkTarget("https://example.org/badge", " "), "a linked image: no text");
+        assertNull(MarkdownRenderer.printedLinkTarget(null, "x"));
+    }
 }

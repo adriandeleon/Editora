@@ -179,4 +179,82 @@ class PrintLayoutTest {
         org.junit.jupiter.api.Assertions.assertArrayEquals(
                 new int[][] {{0, 0}}, CodePrintLayout.pageStarts(List.of(), 80, 50));
     }
+
+    // --- keep a heading with what follows it ----------------------------------------------------------
+
+    private static List<List<Integer>> pack(List<Double> heights, double page, Integer... headings) {
+        java.util.Set<Integer> kept = java.util.Set.of(headings);
+        return MarkdownPrintLayout.packBlocks(heights, page, 0, kept::contains);
+    }
+
+    /** A heading that would be the last thing on a page goes over with the block that did not fit. */
+    @Test
+    void aHeadingIsNotLeftAtTheFootOfAPage() {
+        // 40 + 40 + heading 10 = 90 of 100; the next block (30) opens page 2 — and takes the heading along.
+        assertEquals(List.of(List.of(0, 1), List.of(2, 3)), pack(List.of(40.0, 40.0, 10.0, 30.0), 100, 2));
+        // without the rule it is stranded
+        assertEquals(
+                List.of(List.of(0, 1, 2), List.of(3)),
+                MarkdownPrintLayout.packBlocks(List.of(40.0, 40.0, 10.0, 30.0), 100, 0));
+        // a run of headings (h1 then h2) moves together
+        assertEquals(List.of(List.of(0), List.of(1, 2, 3)), pack(List.of(70.0, 10.0, 10.0, 30.0), 100, 1, 2));
+    }
+
+    @Test
+    void aHeadingStaysWhereMovingItWouldNotHelp() {
+        // the page holds nothing but the heading: moving it would leave an empty page behind
+        assertEquals(List.of(List.of(0), List.of(1)), pack(List.of(10.0, 95.0), 100, 0));
+        // heading and block do not fit one page together either
+        assertEquals(List.of(List.of(0, 1), List.of(2)), pack(List.of(50.0, 10.0, 95.0), 100, 1));
+        // an over-tall block gets its page to itself (it is scaled): the heading stays behind
+        assertEquals(List.of(List.of(0, 1), List.of(2)), pack(List.of(50.0, 10.0, 300.0), 100, 1));
+    }
+
+    /** The running form the splitter sizes pieces against: room left, room on a new page, a forced break. */
+    @Test
+    void thePackerReportsTheRoomLeftAndTakesBackWhatItWasTold() {
+        MarkdownPrintLayout.Packer packer = new MarkdownPrintLayout.Packer(100, 10);
+        assertEquals(100, packer.room());
+        org.junit.jupiter.api.Assertions.assertFalse(packer.canBreak(), "nothing on the page yet");
+        packer.add(30, false);
+        assertEquals(60, packer.room(), "100 - 30 - the gap before the next block");
+        packer.add(20, true); // a heading
+        assertEquals(30, packer.room());
+        assertEquals(70, packer.freshRoom(), "a new page would start with the heading: 100 - 20 - gap");
+        org.junit.jupiter.api.Assertions.assertTrue(packer.canBreak());
+
+        MarkdownPrintLayout.Packer.Mark mark = packer.mark();
+        packer.breakPage();
+        assertEquals(70, packer.room(), "after a forced break the room is the new page's");
+        packer.add(25, false); // would have fitted the old page; goes to the new one, heading and all
+        assertEquals(List.of(List.of(0), List.of(1, 2)), packer.pages());
+        org.junit.jupiter.api.Assertions.assertTrue(packer.brokeSince(mark));
+
+        packer.rewind(mark);
+        assertEquals(List.of(List.of(0, 1)), packer.pages());
+        assertEquals(30, packer.room());
+        packer.add(25, false);
+        assertEquals(List.of(List.of(0, 1, 2)), packer.pages(), "with no break asked for it fits where it was");
+    }
+
+    // --- printed code ---------------------------------------------------------------------------------
+
+    /** A file that ends in a newline does not print a numbered line with nothing on it. */
+    @Test
+    void theEmptyLineAfterAFinalNewlineIsNotPrinted() {
+        List<List<com.editora.pdf.PdfText.Run>> lines = com.editora.pdf.PdfText.splitIntoLineRuns("a\nb\n", null, 4);
+        assertEquals(3, lines.size(), "the splitter reports the caret's line after the last newline");
+        assertEquals(2, CodePrintLayout.withoutTrailingEmptyLine(lines).size());
+        // …which is what used to cost a last sheet holding only a line number: 2 rows per page, 2 real lines
+        assertEquals(2, CodePrintLayout.pageStarts(lines, 80, 2).length);
+        assertEquals(1, CodePrintLayout.pageStarts(CodePrintLayout.withoutTrailingEmptyLine(lines), 80, 2).length);
+
+        List<List<com.editora.pdf.PdfText.Run>> noNewline = com.editora.pdf.PdfText.splitIntoLineRuns("a\nb", null, 4);
+        assertEquals(noNewline, CodePrintLayout.withoutTrailingEmptyLine(noNewline), "nothing to drop");
+        List<List<com.editora.pdf.PdfText.Run>> blankLines =
+                com.editora.pdf.PdfText.splitIntoLineRuns("a\n\n\n", null, 4);
+        assertEquals(3, CodePrintLayout.withoutTrailingEmptyLine(blankLines).size(), "only the last one goes");
+        List<List<com.editora.pdf.PdfText.Run>> empty = com.editora.pdf.PdfText.splitIntoLineRuns("", null, 4);
+        assertEquals(empty, CodePrintLayout.withoutTrailingEmptyLine(empty), "an empty file keeps its one line");
+    }
 }
