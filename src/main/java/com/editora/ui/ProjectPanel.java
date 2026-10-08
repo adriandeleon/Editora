@@ -734,6 +734,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         }
         syncWatches(); // a newly-created folder that's expanded would need watching
         if (plan.hasExternal()) {
+            mapView.filesChangedOnDisk(); // a Map preview card re-reads a file that was rewritten
             // An external change → refresh Git/Commit stripe, build markers, diffs (#529).
             queuedExternal.addAll(plan.external());
             queuedUnknown |= plan.unknown();
@@ -877,7 +878,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
             return;
         }
-        mapView.hidePreview();
+        mapView.suspendPreviews(); // cards keep their place for the next switch back to the Map
         if (q.isEmpty()) {
             filtering = false;
             PathItem rootItem = new PathItem(root, showHidden, true);
@@ -1442,7 +1443,7 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
     }
 
     /** Injects the window-owned print and PDF handlers for a full Project Map snapshot. */
-    public void setMapOutputActions(Consumer<javafx.scene.image.Image> print, Consumer<javafx.scene.image.Image> pdf) {
+    void setMapOutputActions(Consumer<ProjectMapOutput> print, Consumer<ProjectMapOutput> pdf) {
         mapView.setOutputActions(print, pdf);
     }
 

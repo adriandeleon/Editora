@@ -664,8 +664,9 @@ class ProjectMapViewFxTest {
             entries.add(
                     new ProjectMapModel.Entry(normalizedRoot.resolve("File" + i + ".java"), normalizedRoot, 1, false));
         }
-        AtomicReference<Image> printed = new AtomicReference<>();
-        AtomicReference<Image> exported = new AtomicReference<>();
+        AtomicReference<ProjectMapOutput> printed = new AtomicReference<>();
+        AtomicReference<ProjectMapOutput> exported = new AtomicReference<>();
+        AtomicReference<ProjectMapOutput.Rendered> exportedPages = new AtomicReference<>();
         ProjectMapView mapView =
                 FxTestSupport.callOnFx(() -> new ProjectMapView(path -> {}, path -> false, path -> false));
         try {
@@ -691,8 +692,15 @@ class ProjectMapViewFxTest {
                 FxTestSupport.<Button>field(mapView, "printButton").fire();
                 FxTestSupport.<Button>field(mapView, "exportPdfButton").fire();
 
-                assertTrue(printed.get().getHeight() > liveCanvasHeight, "print must include rows below the viewport");
-                assertTrue(exported.get().getHeight() > liveCanvasHeight, "PDF must include rows below the viewport");
+                // The buttons hand over a deferred job; the receiver renders it for its page (Letter here).
+                ProjectMapOutput.Rendered print = printed.get().render(540, 720);
+                exportedPages.set(exported.get().render(540, 720));
+                assertTrue(
+                        print.pages().getFirst().getHeight() > liveCanvasHeight,
+                        "print must include rows below the viewport");
+                assertTrue(
+                        exportedPages.get().pages().getFirst().getHeight() > liveCanvasHeight,
+                        "PDF must include rows below the viewport");
                 assertEquals(liveZoom, (double) FxTestSupport.field(surface, "zoom"), 0.001);
                 assertEquals(liveOffsetX, (double) FxTestSupport.field(surface, "offsetX"), 0.001);
                 assertEquals(liveOffsetY, (double) FxTestSupport.field(surface, "offsetY"), 0.001);
@@ -705,7 +713,8 @@ class ProjectMapViewFxTest {
             AtomicReference<PdfExportService.Result> result = new AtomicReference<>();
             PdfExportService pdfService = new PdfExportService();
             try {
-                pdfService.exportFxImages(List.of(exported.get()), "letter", pdf, value -> {
+                ProjectMapOutput.Rendered pages = exportedPages.get();
+                pdfService.exportFxPages(pages.pages(), pages.pointsPerPixel(), "letter", false, pdf, value -> {
                     result.set(value);
                     exportedPdf.countDown();
                 });
@@ -1175,50 +1184,40 @@ class ProjectMapViewFxTest {
                     mapView.applyCss();
                     mapView.layout();
                     preview.layout();
-                    assertTrue(preview.getWidth() > 640, "long lines should widen the preview");
-
-                    Object column = columnBoxFor(surface, 1);
-                    switch (flow) {
-                        case LEFT_TO_RIGHT ->
-                            assertTrue(
-                                    edge(column, "x", "width") <= preview.getLayoutX(),
-                                    () -> "the preview must open right of its column: column edge "
-                                            + edge(column, "x", "width")
-                                            + ", preview x "
-                                            + preview.getLayoutX());
-                        case RIGHT_TO_LEFT ->
-                            assertTrue(
-                                    preview.getLayoutX() + preview.getWidth() <= origin(column, "x"),
-                                    () -> "the preview must open left of its column: preview edge "
-                                            + (preview.getLayoutX() + preview.getWidth())
-                                            + ", column x "
-                                            + origin(column, "x"));
-                        case TOP_TO_BOTTOM ->
-                            assertTrue(
-                                    edge(column, "y", "height") <= preview.getLayoutY(),
-                                    () -> "the preview must open below its column: column edge "
-                                            + edge(column, "y", "height")
-                                            + ", preview y "
-                                            + preview.getLayoutY());
-                        case BOTTOM_TO_TOP ->
-                            assertTrue(
-                                    preview.getLayoutY() + preview.getHeight() <= origin(column, "y"),
-                                    () -> "the preview must open above its column: preview edge "
-                                            + (preview.getLayoutY() + preview.getHeight())
-                                            + ", column y "
-                                            + origin(column, "y"));
+                    // The map is no longer panned to make room: beside its column a card takes the room there
+                    // is (never less than its minimum), and only a flow that leaves the full width free lets
+                    // long lines widen it past the default.
+                    if (flow == ProjectMapView.FlowDirection.TOP_TO_BOTTOM
+                            || flow == ProjectMapView.FlowDirection.BOTTOM_TO_TOP) {
+                        assertTrue(preview.getWidth() > 640, "long lines should widen the preview");
+                    } else {
+                        assertTrue(
+                                preview.getWidth() >= ProjectMapPreview.MIN_WIDTH,
+                                () -> "a card beside its column keeps a usable width: " + preview.getWidth());
                     }
 
-                    org.fxmisc.flowless.VirtualizedScrollPane<?> editorScroll =
-                            FxTestSupport.field(preview, "editorScroll");
-                    double contentWidth =
-                            editorScroll.totalWidthEstimateProperty().getValue();
-                    assertTrue(
-                            contentWidth <= editorScroll.getWidth(),
-                            () -> "the initial preview should fit its longest line: "
-                                    + contentWidth
-                                    + " > "
-                                    + editorScroll.getWidth());
+                    // Preferably on the side the flow leaves free, otherwise on the other one: with room on
+                    // either side the card never lies over the column whose row it previews.
+                    Object column = columnBoxFor(surface, 1);
+                    boolean beside = preview.getLayoutX() >= edge(column, "x", "width")
+                            || preview.getLayoutX() + preview.getWidth() <= origin(column, "x")
+                            || preview.getLayoutY() >= edge(column, "y", "height")
+                            || preview.getLayoutY() + preview.getHeight() <= origin(column, "y");
+                    assertTrue(beside, () -> "the preview must open beside its column in " + flow);
+
+                    if (flow == ProjectMapView.FlowDirection.TOP_TO_BOTTOM
+                            || flow == ProjectMapView.FlowDirection.BOTTOM_TO_TOP) {
+                        org.fxmisc.flowless.VirtualizedScrollPane<?> editorScroll =
+                                FxTestSupport.field(preview, "editorScroll");
+                        double contentWidth =
+                                editorScroll.totalWidthEstimateProperty().getValue();
+                        assertTrue(
+                                contentWidth <= editorScroll.getWidth(),
+                                () -> "the initial preview should fit its longest line: "
+                                        + contentWidth
+                                        + " > "
+                                        + editorScroll.getWidth());
+                    }
                 });
             } finally {
                 FxTestSupport.runOnFx(mapView::dispose);
