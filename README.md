@@ -160,6 +160,26 @@ Editora is built with the help of AI coding tools.
 - **Abbreviations** — a text-replacement dictionary: `C-x a e` expands the abbreviation before the caret,
   *Abbrev Mode* expands automatically as you type a terminator, `C-x a g` defines a new one, and Settings →
   Editor → Abbreviations manages the list. Typed case is carried onto the expansion.
+- **Keyboard macros** — record what you do and play it back. *Macro: Start Recording* / *Stop Recording*
+  / *Replay Last* are in the **Tools** menu and the palette (`F3` / `F4` / `C-x e` in the Emacs keymap;
+  the CUA keymap toggles recording with `Ctrl+Shift+R`, the Sublime keymap replays with `Ctrl+Shift+Q`;
+  bind your own in Settings → Keymaps). A red **● REC** in the status bar shows a recording is running —
+  click it to stop, or press `Esc` (`C-g`) to cancel and keep the previous macro.
+  - **What is recorded:** commands, typed text, and the keys that act rather than type — Enter, Tab,
+    Shift+Tab, Backspace, the arrows, Escape. They replay through the same path as the key, so a snippet
+    expanded with Tab, a completion accepted with Enter, a table-cell Tab and typing at several carets all
+    replay as they happened. Keys typed into the find bar, a prompt or a picker are recorded too and
+    replayed into that prompt (`C-s foo Enter Esc` replays as a search). Mouse clicks are not recorded,
+    and a command that opens a blocking dialog (a native file chooser) makes the replay wait there — the
+    status bar says so while you record.
+  - **Replaying:** one replay is one undo step, also with a count (*Macro: Replay Last N Times*, or
+    `C-u 50 C-x e`; up to 10,000). A long replay runs in slices, shows its progress in the status bar and
+    stops on `Esc`.
+  - **Saving:** the last recording is kept (also across restarts) until the next one replaces it; *Macro:
+    Name and Save Last* keeps it under a name. Every saved macro is a palette command (*Macro: ‹name›*)
+    you can bind to a key, and can be run from inside another macro. **Settings → Macros** renames them
+    and edits their steps: commands are picked from a list, keys are captured by pressing them, text keeps
+    its line breaks. Macros are stored in `macros.json` in the config folder.
 - **Auto-fill mode** — automatically break plain-text and Markdown lines at the fill column as you type
   (Emacs `auto-fill-mode`). Prose-only (never wraps code); wrapped lines keep the indent. Off by default;
   Settings → Editor or `view.toggleAutoFill`. Complements `M-q` (fill paragraph).
@@ -993,7 +1013,8 @@ view options, auto-save mode, and keybinding overrides). Session state — colla
 regions and tool-window layout — is stored as JSON in `workspace-state.json`, recent
 files in `recent-files.json`, bookmarks and breakpoints (scoped per project) in `bookmarks.json` /
 `breakpoints.json`, personal notes (also scoped per project) in `notes.json`, and saved SFTP
-connections (metadata only, never a password) in `connections.json`, all alongside it.
+connections (metadata only, never a password) in `connections.json`, and saved keyboard macros in
+`macros.json`, all alongside it.
 
 To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
 line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >
