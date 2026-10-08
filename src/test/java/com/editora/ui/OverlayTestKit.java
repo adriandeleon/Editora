@@ -153,7 +153,9 @@ final class OverlayTestKit {
     static Node picker(Scene scene) {
         Node found = null;
         for (Node card : scene.getRoot().lookupAll(".command-palette")) {
-            if (card.getScene() != null && shownInTree(card)) {
+            if (card.getScene() != null
+                    && shownInTree(card)
+                    && !card.getStyleClass().contains("overlay-form")) {
                 found = card;
             }
         }
@@ -213,6 +215,80 @@ final class OverlayTestKit {
         list.getSelectionModel().select(index);
         javafx.event.Event.fireEvent(
                 input, new KeyEvent(KeyEvent.KEY_PRESSED, "\r", "\r", KeyCode.ENTER, false, false, false, false));
+        return true;
+    }
+
+    /** The in-scene form or prompt card showing in {@code scene}, or {@code null}. Call on the FX thread. */
+    static Node form(Scene scene) {
+        Node found = null;
+        for (Node card : scene.getRoot().lookupAll(".overlay-form")) {
+            if (card.getScene() != null && shownInTree(card)) {
+                found = card;
+            }
+        }
+        return found;
+    }
+
+    /** The title of the open form, or {@code null} when none is open. Call on the FX thread. */
+    static String formTitle(Scene scene) {
+        Node card = form(scene);
+        return card == null ? null : ((javafx.scene.control.Label) card.lookup(".palette-title")).getText();
+    }
+
+    /** The text fields of the open form, top to bottom. Call on the FX thread. */
+    static List<TextField> formFields(Scene scene) {
+        Node card = form(scene);
+        List<TextField> fields = new ArrayList<>();
+        if (card != null) {
+            collect(card, TextField.class, fields);
+        }
+        return fields;
+    }
+
+    /** The check boxes of the open form, top to bottom. Call on the FX thread. */
+    static List<javafx.scene.control.CheckBox> formChecks(Scene scene) {
+        Node card = form(scene);
+        List<javafx.scene.control.CheckBox> checks = new ArrayList<>();
+        if (card != null) {
+            collect(card, javafx.scene.control.CheckBox.class, checks);
+        }
+        return checks;
+    }
+
+    private static <T> void collect(Node node, Class<T> type, List<T> out) {
+        if (type.isInstance(node)) {
+            out.add(type.cast(node));
+        }
+        if (node instanceof javafx.scene.Parent parent) {
+            for (Node child : parent.getChildrenUnmodifiable()) {
+                collect(child, type, out);
+            }
+        }
+    }
+
+    /**
+     * Fills the open form's text fields with {@code texts}, in order ({@code null} leaves a field as it is),
+     * and presses its primary button. Returns false when no form is open. Call on the FX thread.
+     */
+    static boolean submitForm(Scene scene, String... texts) {
+        Node card = form(scene);
+        if (card == null) {
+            return false;
+        }
+        List<TextField> fields = formFields(scene);
+        for (int i = 0; i < texts.length; i++) {
+            if (texts[i] != null) {
+                fields.get(i).setText(texts[i]);
+            }
+        }
+        List<Button> buttons = new ArrayList<>();
+        collect(card, Button.class, buttons);
+        buttons.stream()
+                .filter(button -> button.getStyleClass().contains("accent")
+                        || button.getStyleClass().contains("success"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("the form has no primary button"))
+                .fire();
         return true;
     }
 
