@@ -146,35 +146,41 @@ class CodeLensRenderFxTest {
                     .orElse(null));
             assertNotNull(label, "the lens is a node in the paragraph");
 
-            FxTestSupport.runOnFx(() -> {
-                var bounds = label.localToScene(label.getBoundsInLocal());
-                Point2D inArea = b.getArea().sceneToLocal(bounds.getCenterX(), bounds.getCenterY());
-                Point2D onScreen = b.getArea().localToScreen(inArea);
-                Event.fireEvent(
-                        label,
-                        new MouseEvent(
-                                b.getArea(),
-                                label,
-                                MouseEvent.MOUSE_CLICKED,
-                                inArea.getX(),
-                                inArea.getY(),
-                                onScreen == null ? 0 : onScreen.getX(),
-                                onScreen == null ? 0 : onScreen.getY(),
-                                MouseButton.PRIMARY,
-                                1,
-                                false,
-                                false,
-                                false,
-                                false,
-                                false,
-                                false,
-                                false,
-                                true,
-                                false,
-                                true,
-                                new PickResult(label, inArea.getX(), inArea.getY())));
-            });
-            assertEquals(List.of(1, "run"), clicked);
+            // Anywhere on the label is that line's lens. Its right half is nearer to the start of the next
+            // line than to the end of its own; where the middle falls depends on the platform's text layout.
+            for (double across : new double[] {0.05, 0.5, 0.95}) {
+                clicked.clear();
+                FxTestSupport.runOnFx(() -> {
+                    var bounds = label.localToScene(label.getBoundsInLocal());
+                    Point2D inArea = b.getArea()
+                            .sceneToLocal(bounds.getMinX() + across * bounds.getWidth(), bounds.getCenterY());
+                    Point2D onScreen = b.getArea().localToScreen(inArea);
+                    Event.fireEvent(
+                            label,
+                            new MouseEvent(
+                                    b.getArea(),
+                                    label,
+                                    MouseEvent.MOUSE_CLICKED,
+                                    inArea.getX(),
+                                    inArea.getY(),
+                                    onScreen == null ? 0 : onScreen.getX(),
+                                    onScreen == null ? 0 : onScreen.getY(),
+                                    MouseButton.PRIMARY,
+                                    1,
+                                    false,
+                                    false,
+                                    false,
+                                    false,
+                                    false,
+                                    false,
+                                    false,
+                                    true,
+                                    false,
+                                    true,
+                                    new PickResult(label, inArea.getX(), inArea.getY())));
+                });
+                assertEquals(List.of(1, "run"), clicked, "clicked " + across + " of the way across the lens");
+            }
         } finally {
             FxTestSupport.runOnFx(() -> shown[0].close());
         }
