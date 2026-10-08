@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 jobs:
-  # Fails in seconds — before five build legs and four Native Image builds start — when the tag is not a
+  # Fails in seconds — before five build legs start — when the tag is not a
   # version or does not match the pom. Without it a `v1.2.3` tag pushed from a `1.2.3-SNAPSHOT` pom built
   # and published installers named 1.2.3 whose app reports 1.2.3-SNAPSHOT (and the post-release bump then
   # quietly did nothing). -rc tags are cut from the -SNAPSHOT line and are only checked for their shape; a
@@ -197,6 +197,10 @@ jobs:
   # Failure is visible on the run but never suppresses the established JVM release.
   native-experimental:
     name: Experimental Native Image (${{ matrix.target }})
+    # Disabled for now: in the v0.20.0 release every target failed (linux-x64 ran native-image out of
+    # heap) and macos-arm64 was cancelled at the timeout. Delete this line, and add the job back to the
+    # release job's `needs`, to bring it back.
+    if: false
     needs: preflight
     runs-on: ${{ matrix.os }}
     continue-on-error: true
@@ -339,7 +343,10 @@ jobs:
 
   release:
     name: Release
-    needs: [build, native-experimental]
+    # native-experimental is left out of `needs` while it is disabled. With it in the chain, a cancelled
+    # or skipped Native Image leg also skipped the `bump` job below, so master was not reopened after
+    # v0.19.0 and v0.20.0.
+    needs: build
     if: always() && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
