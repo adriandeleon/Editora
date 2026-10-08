@@ -75,6 +75,27 @@ installing anything outside a JUnit temp dir.
   disabled on Windows.
 - Never trigger an npm/pip/toolchain install step from a test: those run the real package manager.
 
+### Every command is run
+
+`CommandSweepFxTest` builds a real window and runs **every** id in its `CommandRegistry` through
+`CommandRegistry.run`, in five states (a fresh window, an unsaved new buffer, a text file, a Markdown file,
+and a project window on a Git repository). It fails when a command throws, leaves an uncaught exception on
+the FX thread or a worker, starts a program other than `git`, or reaches for the network. A `*.toggle*`
+command runs twice, so both directions are exercised and the setting is back where it was.
+
+- **A new command is covered without touching the test.** The feature under it still needs its own tests;
+  this one covers the binding from the id to the action and the guard in front of it.
+- A command that cannot run headless goes in `EXCLUDED` with a one-line reason. One that ends at a native
+  file chooser — which the Headless platform refuses with an exception — goes in `NATIVE_CHOOSER`: it runs
+  up to the chooser. Both lists fail the test when an entry is stale.
+- Modal dialogs are answered with Cancel/No as they appear, so confirmations are exercised and never
+  accepted. Printing answers "no printer" (`ExportCoordinator.printJobs`): no job reaches a real printer.
+- The sweep window's external tools (`gh`, `rg`, `typst`, `dot`, Maven, npm, …) are pointed at a path that
+  does not exist, so the run is the same on a developer's machine as on CI. A command that needs one of them
+  to do anything is only covered up to its "not installed" guard.
+- The same class checks that every chord of every bundled keymap, and every menu-bar entry, names an id the
+  window really registers (`KeymapsTest`/`MenuBarModelTest` check them against the message keys only).
+
 ### The surefire config that makes it work
 
 In `pom.xml`:

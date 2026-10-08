@@ -8935,13 +8935,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (tab == null) {
             return;
         }
+        EditorBuffer buffer = bufferOf(tab);
+        if (buffer == null) {
+            // The Welcome tab or a viewer: its header has no pin marker to show, and buffer.togglePin reaches
+            // here with whatever tab is selected. Pinning it used to throw after the tab was already pinned.
+            setStatus(tr("status.noFileOpen"));
+            return;
+        }
         if (!pinned.remove(tab)) {
             pinned.add(tab);
         }
         // Either way the tab belongs at the end of its strip's pinned group: last of them once pinned, first
         // after them once unpinned.
         editorArea.moveToPinBoundary(tab, pinned::contains);
-        updateTabMeta(tab, bufferOf(tab));
+        updateTabMeta(tab, buffer);
         setStatus(tr(pinned.contains(tab) ? "status.pinned" : "status.unpinned"));
     }
 

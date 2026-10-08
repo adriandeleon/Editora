@@ -37,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MCP `todo_scan` reported each marker one line down and one column to the right.
 - MCP `find_in_files` searched the project of the window that was focused last instead of the window
   the MCP server belongs to.
+- `Buffer: Toggle Pin` on the Welcome tab (or an image, PDF or hex tab) no longer fails with an internal
+  error after pinning the tab, which left a Welcome tab that Close All skipped. It now says there is no
+  file open.
 
 ## [0.20.0] - 2026-10-08
 
