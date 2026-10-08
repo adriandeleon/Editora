@@ -416,6 +416,42 @@ class DapClientRoutingTest {
         }
     }
 
+    /**
+     * A stdio adapter has one pipe and no port to connect a second session to. Asked for a child session
+     * anyway, the client refuses the request — it used to be lsp4j's "unsupported" for every transport.
+     */
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the bridge to the scripted adapter is a bash script
+    void aStdioSessionAnswersInitializeAndRefusesAChildSession() throws Exception {
+        try (FakeDebugAdapter adapter = new FakeDebugAdapter(true)) {
+            adapter.gotoTargets = true;
+            Process bridge = new ProcessBuilder(
+                            "/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/" + adapter.port() + "; cat <&3 & cat >&3")
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            DapClient client = new DapClient(new Host());
+            try {
+                var capabilities = client.connectStdio(bridge, "debugpy").get(20, TimeUnit.SECONDS);
+                assertEquals(Boolean.TRUE, capabilities.getSupportsGotoTargetsRequest());
+                assertTrue(client.supportsGotoTargets(), "the adapter's capabilities are kept for feature gating");
+                FakeDebugAdapter.Session root = adapter.awaitSession();
+                assertEquals("debugpy", root.initializeArgs.getAdapterID());
+
+                client.launch(Map.of("type", "python", "request", "launch")).get(10, TimeUnit.SECONDS);
+
+                assertThrows(
+                        ExecutionException.class,
+                        () -> root.startDebuggingAnswered.get(10, TimeUnit.SECONDS),
+                        "the request is answered with an error, not left pending");
+                assertEquals(0, client.childCount());
+                assertEquals(1, adapter.sessionCount());
+            } finally {
+                client.dispose();
+                assertTrue(bridge.waitFor(20, TimeUnit.SECONDS), "the adapter process was killed");
+            }
+        }
+    }
+
     @Test
     @DisabledOnOs(OS.WINDOWS) // the stand-in adapter process is /bin/sh
     void aStdioSessionOwnsItsAdapterProcess() throws Exception {

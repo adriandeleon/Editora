@@ -419,9 +419,10 @@ public final class FakeDebugAdapter implements AutoCloseable {
 
         @Override
         public CompletableFuture<ThreadsResponse> threads() {
+            String failure = threadsFailure; // read before the request is announced: a test may clear it then
             record("threads");
-            if (threadsFailure != null) {
-                return refused(threadsFailure);
+            if (failure != null) {
+                return refused(failure);
             }
             List<org.eclipse.lsp4j.debug.Thread> all = new java.util.ArrayList<>();
             all.add(thread(7, "main"));

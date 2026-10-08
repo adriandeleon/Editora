@@ -940,6 +940,137 @@ class DapManagerSessionFxTest {
         });
     }
 
+    // --- a standalone adapter over stdio (a bash bridge to the scripted adapter plays debugpy) -----------
+
+    /**
+     * A stand-in for {@code python}: asked to import debugpy it succeeds, and started as the adapter it
+     * connects its stdin/stdout to the scripted adapter's socket — the stdio transport, end to end, with no
+     * interpreter and no debugpy.
+     */
+    private String standInPython() throws Exception {
+        Path python = dir.resolve("python-stand-in");
+        Files.writeString(
+                python,
+                "#!/bin/bash\nif [ \"$1\" = \"-c\" ]; then exit 0; fi\n" + "exec 3<>/dev/tcp/127.0.0.1/"
+                        + adapter.port() + "\ncat <&3 &\ncat >&3\n");
+        Files.setPosixFilePermissions(python, PosixFilePermissions.fromString("rwxr-xr-x"));
+        return python.toString();
+    }
+
+    /** Debugging on with the stand-in interpreter, and its detection run to the end. */
+    private String pythonDetected() throws Exception {
+        String python = standInPython();
+        CountDownLatch detected = new CountDownLatch(1);
+        Boolean[] found = new Boolean[1];
+        onFx(() -> {
+            dap.configure(true, dir.resolve("no-plugin-here").toString(), true, python, false, "");
+            dap.detectPython(ok -> {
+                found[0] = ok;
+                detected.countDown();
+            });
+        });
+        assertTrue(detected.await(30, TimeUnit.SECONDS), "the probe finished");
+        assertEquals(Boolean.TRUE, found[0], "the interpreter can import debugpy");
+        onFx(() -> assertTrue(dap.isLanguageAvailable("python")));
+        return python;
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in interpreter is a bash script
+    void aPythonFileIsDebuggedThroughItsAdaptersStdinAndStdout() throws Exception {
+        String python = pythonDetected();
+        Path script =
+                Files.writeString(Files.createDirectories(dir.resolve("py")).resolve("app.py"), "x = 1\n");
+        breakpoints =
+                List.of(new DapModels.FileBreakpoints(script, List.of(new DapModels.LineBreakpoint(0, null, null))));
+        onFx(() -> {
+            dap.setProgramArgs(List.of("--verbose", "in put"));
+            dap.setExceptionFilters(List.of("uncaught"));
+            dap.startLaunch(script, "python", noPicker);
+        });
+
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+        assertEquals(List.of(), errors);
+        assertEquals("python", session.launchArgs.get("type"));
+        assertEquals(script.toString(), session.launchArgs.get("program"));
+        assertEquals(script.getParent().toString(), session.launchArgs.get("cwd"));
+        assertEquals(python, session.launchArgs.get("python"), "the debuggee runs on the configured interpreter");
+        assertEquals(List.of("--verbose", "in put"), session.launchArgs.get("args"));
+        assertFalse(
+                Boolean.TRUE.equals(session.initializeArgs.getSupportsStartDebuggingRequest()),
+                "a stdio adapter has no second connection to offer a child session");
+        assertTrue(session.configured.await(10, TimeUnit.SECONDS));
+        assertEquals(script.toString(), session.breakpoints.get(0).getSource().getPath());
+        assertEquals(
+                List.of("uncaught"), List.of(session.exceptionBreakpoints.get(0).getFilters()));
+        awaitEvents("RUNNING", 1);
+        onFx(() -> assertEquals(script, dap.debugFile()));
+
+        stop(session, 7);
+        onFx(dap::stop);
+        assertTrue(session.disconnected.await(10, TimeUnit.SECONDS), "the adapter is told the session is over");
+        assertEquals("INACTIVE", lastState());
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in interpreter is a bash script
+    void aPythonLaunchTheAdapterRefusesEndsTheSessionWithItsMessage() throws Exception {
+        pythonDetected();
+        adapter.launchFailure = "No module named app";
+        Path script = Files.writeString(dir.resolve("app.py"), "x = 1\n");
+
+        onFx(() -> dap.startLaunch(script, "python", noPicker));
+
+        await("the failure", () -> !errors.isEmpty());
+        assertEquals("launch failed: No module named app", errors.get(0));
+        await("the session to end", () -> "INACTIVE".equals(lastState()));
+        onFx(() -> assertFalse(dap.isActive()));
+    }
+
+    @Test
+    @DisabledOnOs(OS.WINDOWS) // the stand-in interpreter is a bash script
+    void anInterpreterThatIsGoneWhenTheSessionStartsIsReported() throws Exception {
+        String python = pythonDetected();
+        Files.delete(Path.of(python)); // uninstalled between the detection and the launch
+        Path script = Files.writeString(dir.resolve("app.py"), "x = 1\n");
+
+        onFx(() -> dap.startLaunch(script, "python", noPicker));
+
+        await("the failure", () -> !errors.isEmpty());
+        assertTrue(errors.get(0).startsWith("Could not start the debugger: "), errors.toString());
+        assertTrue(errors.get(0).contains("python-stand-in"), errors.toString());
+        await("the session to end", () -> "INACTIVE".equals(lastState()));
+        assertEquals(0, adapter.sessionCount());
+    }
+
+    @Test
+    void aJdtlsFileWithNoNameToDeriveAClassFromCannotBeLaunched() throws Exception {
+        Path nameless = dir.resolve("odd/.java");
+        open(nameless, dir.resolve("odd"), "void main() {}\n");
+        replies.put("vscode.java.resolveMainClass", p -> List.of());
+
+        onFx(() -> dap.startLaunch(nameless, noPicker, ""));
+
+        await("the failure", () -> !errors.isEmpty());
+        assertEquals("No main class could be determined for this file.", errors.get(0));
+        await("the session to end", () -> "INACTIVE".equals(lastState()));
+    }
+
+    @Test
+    void aScriptThatCannotBeReadEndsTheLaunchWithWhatWentWrong() throws Exception {
+        Path missing = dir.resolve("scripts/gone");
+        Files.createDirectories(missing.getParent());
+
+        onFx(() ->
+                dap.startCompactShebang(missing, 25, dir.resolve("jdk/bin/java").toString()));
+
+        await("the failure", () -> !errors.isEmpty());
+        assertTrue(errors.get(0).startsWith("Could not compile/launch gone: "), errors.toString());
+        await("the session to end", () -> "INACTIVE".equals(lastState()));
+        assertEquals(0, adapter.sessionCount());
+    }
+
     // --- a loose file is compiled first (a /bin/sh stand-in plays javac) --------------------------------
 
     /** A JDK folder whose {@code javac} is a script: records its arguments, then exits with {@code exit}. */
@@ -998,7 +1129,7 @@ class DapManagerSessionFxTest {
         await("the session to end", () -> "INACTIVE".equals(lastState()));
         assertEquals(0, adapter.sessionCount());
         Path classes = Path.of(Files.readAllLines(dir.resolve("jdk-args.txt")).get(2));
-        assertTrue(Files.notExists(classes), "nothing is left behind in the temp folder");
+        await("the temp folder to be removed: nothing is left behind", () -> Files.notExists(classes));
     }
 
     @Test
