@@ -277,7 +277,7 @@ class GitServiceAnswersFxTest {
             assertFalse(Files.exists(dir.resolve("clone")), "nothing was created");
             CompletableFuture<String> version = new CompletableFuture<>();
             git.version(version::complete);
-            assertEquals("", String.valueOf(async.await(version)).replace("null", ""), "no version to report");
+            assertEquals("", async.await(version), "no version to report");
         }
     }
 
