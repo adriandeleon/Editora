@@ -75,9 +75,7 @@ class SessionRestoreTabHeaderFxTest {
         return FxTestSupport.callOnFx(() -> {
             for (Path file : files) {
                 Tab tab = (Tab) FxTestSupport.invokeWith(fx.controller, "tabForPath", Path.class, file);
-                if (tab == null
-                        || !(tab.getUserData() instanceof com.editora.editor.EditorBuffer b)
-                        || b.isLoading()) {
+                if (tab == null || !(tab.getUserData() instanceof com.editora.editor.EditorBuffer b) || b.isLoading()) {
                     return false;
                 }
             }
