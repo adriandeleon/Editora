@@ -1147,6 +1147,184 @@ class DebugCoordinatorCommandsFxTest {
         assertTrue(shebangArgs.get(shebangArgs.size() - 1).endsWith("tool.java"), shebangArgs.toString());
     }
 
+    // --- what the adapter says about breakpoints, threads and frames ------------------------------------
+
+    private static org.eclipse.lsp4j.debug.Breakpoint answer(
+            Integer id, boolean verified, int line1, String message, boolean failed) {
+        org.eclipse.lsp4j.debug.Breakpoint b = FakeDebugAdapter.Session.breakpoint(id, verified, line1, message);
+        if (failed) {
+            b.setReason(org.eclipse.lsp4j.debug.BreakpointNotVerifiedReason.FAILED);
+        }
+        return b;
+    }
+
+    /** A wired Java tab in front with breakpoints on the given 0-based lines. */
+    private EditorBuffer withBreakpoints(String relative, int... lines) throws Exception {
+        open(relative);
+        EditorBuffer b = active;
+        FxTestSupport.runOnFx(() -> {
+            debug.wireBuffer(b);
+            for (int line : lines) {
+                b.toggleBreakpoint(line);
+            }
+        });
+        return b;
+    }
+
+    @Test
+    void aBreakpointTheAdapterRejectsIsReportedOnceAndOneItMovesFollowsTheAdapter() throws Exception {
+        EditorBuffer b = withBreakpoints("src/main/java/demo/Args.java", 1, 2);
+        mainClasses("demo.Args");
+        // Line 2 has no code: rejected. Line 3 is bound to the next line with code, line 5.
+        adapter.sessionBreakpointAnswer = args -> List.of(
+                answer(1, false, 2, "No executable code found at line 2", true), answer(2, true, 5, null, false));
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        FakeDebugAdapter.Session session = adapter.awaitSession();
+        session.awaitRequest("launch");
+
+        awaitStatus(tr("status.debug.breakpointInvalid", "Args.java:2", "No executable code found at line 2"));
+        awaitStatus(tr("status.debug.breakpointMoved", 3, 5));
+        assertEquals(
+                List.of(1, 4),
+                FxTestSupport.callOnFx(() -> b.getBreakpointManager().snapshot().stream()
+                        .map(Breakpoint::line)
+                        .sorted()
+                        .toList()),
+                "the dot sits where the program will really stop");
+        session.awaitRequests("setBreakpoints", 2); // the move re-sends the file, now at that line
+        FxTestSupport.drainFx();
+        synchronized (log) {
+            assertEquals(
+                    1,
+                    log.stream().filter(e -> e.contains("No executable code")).count(),
+                    "the same rejection is not repeated for every answer: " + log);
+        }
+        assertEquals(
+                com.editora.editor.BreakpointManager.LiveState.VERIFIED,
+                FxTestSupport.callOnFx(() -> b.getBreakpointManager().live(4).state()));
+    }
+
+    @Test
+    void aBreakpointRejectedWithoutAReasonGetsTheGenericOne() throws Exception {
+        withBreakpoints("src/main/java/demo/Args.java", 3);
+        mainClasses("demo.Args");
+        adapter.sessionBreakpointAnswer = args -> List.of(answer(1, false, 4, "", true));
+        FxTestSupport.runOnFx(() -> debug.debugStart());
+        adapter.awaitSession().awaitRequest("launch");
+
+        awaitStatus(tr("status.debug.breakpointInvalid", "Args.java:4", tr("debug.breakpoint.rejected")));
+    }
+
+    @Test
+    void aConditionTheAdapterCannotEvaluateIsFlaggedOnTheBreakpointThatCarriesIt() throws Exception {
+        EditorBuffer b = withBreakpoints("src/main/java/demo/Args.java", 2, 3, 4);
+        FxTestSupport.runOnFx(() -> {
+            b.getBreakpointManager().setCondition(2, "a ==");
+            b.getBreakpointManager().setLogMessage(3, "b is {b +}");
+            b.getBreakpointManager().setCondition(4, "c > 1");
+        });
+        mainClasses("demo.Args");
+        FakeDebugAdapter.Session session = launch();
+        session.awaitRequest("setBreakpoints");
+
+        session.userNotification("ERROR", "Cannot evaluate the condition 'a =='");
+        awaitStatus(tr("status.debug.error", "Cannot evaluate the condition 'a =='"));
+        session.userNotification("WARNING", "Cannot format the log message 'b is {b +}'");
+        awaitStatus(tr("status.debug.error", "Cannot format the log message 'b is {b +}'"));
+
+        List<com.editora.editor.BreakpointManager.LiveState> states = FxTestSupport.callOnFx(() -> List.of(
+                b.getBreakpointManager().live(2).state(),
+                b.getBreakpointManager().live(3).state(),
+                b.getBreakpointManager().live(4).state()));
+        assertEquals(states.get(0), states.get(1), "the condition and the log message are flagged alike");
+        assertFalse(states.get(0) == states.get(2), "the breakpoint whose condition is fine is left alone: " + states);
+        assertTrue(
+                FxTestSupport.callOnFx(() -> b.getBreakpointManager().live(2).tooltip())
+                        .contains("Cannot evaluate the condition 'a =='"),
+                "hovering the breakpoint says what the adapter said");
+    }
+
+    @Test
+    void aStopInCodeWithNoSourceSelectsTheFirstFrameThatHasSomeAndSaysSo() throws Exception {
+        Path file = open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        FakeDebugAdapter.Session session = launch();
+        session.frames = List.of(
+                FakeDebugAdapter.Session.frame(1, "Thread.sleep", null, 1),
+                FakeDebugAdapter.Session.frame(2, "Object.wait", "/jdk/src/java.base/Object.java", 300),
+                FakeDebugAdapter.Session.frame(3, "Args.main", file.toString(), 4));
+
+        session.stop(7, "pause");
+        awaitState("debug.state.suspended");
+        awaitStatus(tr("status.debug.stoppedWithoutSource", "Thread.sleep"));
+        javafx.scene.control.ListView<com.editora.dap.DapModels.StackFrameInfo> stack =
+                FxTestSupport.field(debug.panel(), "stack");
+        assertEquals(2, FxTestSupport.callOnFx(() -> stack.getSelectionModel().getSelectedIndex()));
+
+        // Picking a library frame says there is nothing to show, instead of failing to open a tab.
+        clearLog();
+        FxTestSupport.runOnFx(() -> stack.getSelectionModel().select(1));
+        awaitStatus(tr("status.debug.noSource", "Object.wait"));
+    }
+
+    @Test
+    void pickingAThreadThatIsStillRunningSaysSoAndStaysOnTheStoppedOne() throws Exception {
+        Path file = open("src/main/java/demo/Args.java");
+        mainClasses("demo.Args");
+        FakeDebugAdapter.Session session = launch();
+        session.runningThreads.add(9);
+        stopAt(session, file, 3);
+        javafx.scene.control.ComboBox<com.editora.dap.DapModels.ThreadInfo> threads =
+                FxTestSupport.field(debug.panel(), "threads");
+        await("both threads to be listed", () -> threads.getItems().size() == 2);
+        assertEquals(7, FxTestSupport.callOnFx(() -> threads.getValue().id()));
+
+        clearLog();
+        FxTestSupport.runOnFx(() -> threads.getSelectionModel().select(1)); // worker-9: not suspended
+        awaitStatus(tr("status.debug.threadRunning"));
+        session.awaitRequests("stackTrace", 3); // the stop, the running thread (refused), and back to 7
+        session.awaitDelivered();
+        FxTestSupport.drainFx();
+        assertEquals(7, FxTestSupport.callOnFx(() -> threads.getValue().id()), "the selector shows the stopped thread");
+        assertEquals(7, FxTestSupport.callOnFx(dap::currentThreadId), "and Step is aimed at it again");
+        assertEquals(DapManager.State.SUSPENDED, FxTestSupport.callOnFx(dap::state));
+    }
+
+    @Test
+    void debuggingIsOnlyEffectiveWithTheFeatureTheServerAndTheAdapterAllOn() throws Exception {
+        open("src/main/java/demo/Args.java");
+        FxTestSupport.runOnFx(() -> {
+            assertTrue(debug.debugEffective());
+            host.settings.setLspSupport(false);
+            assertFalse(debug.debugEffective(), "Java debugging runs inside the language server");
+            host.settings.setLspSupport(true);
+            host.settings.setDebugSupport(false);
+            assertFalse(debug.debugEffectiveFor("java"));
+            assertFalse(debug.debugEffectiveFor("python"));
+            host.settings.setDebugSupport(true);
+            assertFalse(debug.debugEffectiveFor("go"), "no adapter for the language");
+            assertTrue(debug.isDebuggableBuffer(active));
+            assertFalse(debug.isDebuggableBuffer(null));
+
+            active = null;
+            debug.debugRunToCursor();
+            debug.debugJumpToLine();
+        });
+
+        assertEquals(List.of(), statuses(), "with no file in front those two have nothing to act on");
+        assertFalse(FxTestSupport.callOnFx(debug::sessionLive));
+    }
+
+    @Test
+    void anAttachWithNoAnchorGoesThroughTheFirstFileTheServerHas() {
+        Path a = Path.of("/proj/src/A.java");
+        Path b = Path.of("/proj/src/B.java");
+
+        assertEquals(b, DebugCoordinator.attachRouting(null, List.of(a, b), null, b::equals));
+        assertNull(DebugCoordinator.attachRouting(null, List.of(a, b), null, p -> false));
+        assertNull(DebugCoordinator.attachRouting(null, List.of(), null, p -> true));
+    }
+
     // --- stored breakpoints follow the file -------------------------------------------------------------
 
     private static Breakpoint at(int line) {

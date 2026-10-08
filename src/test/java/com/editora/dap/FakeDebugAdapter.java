@@ -79,6 +79,14 @@ public final class FakeDebugAdapter implements AutoCloseable {
     /** When set, the {@code launch} of every connection after the first (a child session) is refused with it. */
     public volatile String childLaunchFailure;
 
+    /**
+     * When set (before the client connects), what every new session's {@link Session#breakpointAnswer} starts
+     * as — for the {@code setBreakpoints} a client sends as soon as it is connected, before a test can reach
+     * the session.
+     */
+    public volatile java.util.function.Function<SetBreakpointsArguments, List<org.eclipse.lsp4j.debug.Breakpoint>>
+            sessionBreakpointAnswer;
+
     public FakeDebugAdapter(boolean multiSession) throws IOException {
         this(multiSession, InetAddress.getLoopbackAddress());
     }
@@ -166,6 +174,7 @@ public final class FakeDebugAdapter implements AutoCloseable {
         private Session(Socket socket, boolean first) {
             this.socket = socket;
             this.first = first;
+            this.breakpointAnswer = sessionBreakpointAnswer;
         }
 
         private volatile org.eclipse.lsp4j.jsonrpc.RemoteEndpoint remote;

@@ -390,6 +390,33 @@ class DapManagerSessionFxTest {
     }
 
     @Test
+    void aClasspathReplyThatHoldsNoPathsIsReportedTheSameWayWhateverItsShape() throws Exception {
+        project();
+        List<DapManager.ResolvedLaunch> resolved = new CopyOnWriteArrayList<>();
+        DapManager.MainClassOption app = new DapManager.MainClassOption("App", "proj", null);
+
+        replies.put("vscode.java.resolveClasspath", p -> null);
+        onFx(() -> dap.resolveLaunch(file, app, r -> {
+            resolved.add(r);
+            event("resolved");
+        }));
+        awaitEvents("resolved", 1);
+        replies.put("vscode.java.resolveClasspath", p -> "x".repeat(2_000)); // not a list at all, and long
+        onFx(() -> dap.resolveLaunch(file, app, r -> {
+            resolved.add(r);
+            event("resolved");
+        }));
+        awaitEvents("resolved", 2);
+
+        for (DapManager.ResolvedLaunch r : resolved) {
+            assertFalse(r.ok());
+            assertTrue(r.error().startsWith("Could not resolve the classpath for App"), r.error());
+            assertTrue(r.error().length() < 300, "the reply itself is for the log, not the status bar");
+        }
+        assertFalse(commandNames().contains("vscode.java.resolveJavaExecutable"));
+    }
+
+    @Test
     void aLaunchWithNoMainClassIsRefusedBeforeJdtlsIsAsked() throws Exception {
         project();
         List<DapManager.ResolvedLaunch> resolved = new CopyOnWriteArrayList<>();

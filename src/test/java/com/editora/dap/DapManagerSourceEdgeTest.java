@@ -62,4 +62,37 @@ class DapManagerSourceEdgeTest {
         assertEquals(List.of("/m/mod.jar"), modulePaths);
         assertEquals(List.of("/c/classes"), classPaths);
     }
+
+    @Test
+    void repliesInGsonFormAreReadAndAnythingElseIsNothing() {
+        com.google.gson.JsonObject app = new com.google.gson.JsonObject();
+        app.addProperty("mainClass", "demo.App");
+        app.add("projectName", new JsonArray()); // not a name: left out
+        JsonArray listed = new JsonArray();
+        listed.add(app);
+        listed.add("stray");
+
+        assertEquals(
+                List.of(new DapManager.MainClassOption("demo.App", null, null)), FxlessAccess.parseMainClasses(listed));
+        assertEquals(List.of(), FxlessAccess.parseMainClasses(null));
+        assertEquals(List.of(), FxlessAccess.parseMainClasses(new JsonPrimitive("none")));
+
+        JsonArray onlyModules = new JsonArray();
+        JsonArray modules = new JsonArray();
+        modules.add("/m/one.jar");
+        onlyModules.add(modules);
+        List<String> modulePaths = new ArrayList<>();
+        List<String> classPaths = new ArrayList<>();
+        FxlessAccess.parseClasspath(onlyModules, modulePaths, classPaths);
+        assertEquals(List.of("/m/one.jar"), modulePaths);
+        assertEquals(List.of(), classPaths, "a reply with one list has no class path");
+
+        FxlessAccess.parseClasspath(new JsonArray(), modulePaths, classPaths);
+        FxlessAccess.parseClasspath(new JsonPrimitive("soon"), modulePaths, classPaths);
+        FxlessAccess.parseClasspath(null, modulePaths, classPaths);
+        FxlessAccess.parseClasspath(List.of(), modulePaths, classPaths);
+        FxlessAccess.parseClasspath(List.of("not a list", new JsonPrimitive("nor this")), modulePaths, classPaths);
+        assertEquals(List.of("/m/one.jar"), modulePaths, "nothing more was read from replies that hold no paths");
+        assertEquals(List.of(), classPaths);
+    }
 }
