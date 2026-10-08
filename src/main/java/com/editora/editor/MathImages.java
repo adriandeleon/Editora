@@ -54,16 +54,26 @@ public final class MathImages {
     }
 
     public static Node inlineNode(String latex, double fontSize) {
-        return node(latex, false, fontSize);
+        return node(latex, false, fontSize, dark);
     }
 
     public static Node blockNode(String latex, double fontSize) {
-        return node(latex, true, fontSize);
+        return node(latex, true, fontSize, dark);
     }
 
-    private static Node node(String latex, boolean display, double fontSize) {
+    /** As {@link #inlineNode(String, double)} with an explicit glyph theme — print is light whatever the app is. */
+    public static Node inlineNode(String latex, double fontSize, boolean darkTheme) {
+        return node(latex, false, fontSize, darkTheme);
+    }
+
+    /** As {@link #blockNode(String, double)} with an explicit glyph theme. */
+    public static Node blockNode(String latex, double fontSize, boolean darkTheme) {
+        return node(latex, true, fontSize, darkTheme);
+    }
+
+    private static Node node(String latex, boolean display, double fontSize, boolean dark) {
         try {
-            Image img = render(latex, display, fontSize);
+            Image img = render(latex, display, fontSize, dark);
             ImageView v = new ImageView(img);
             v.getStyleClass().add(display ? "md-math-block" : "md-math-inline");
             v.setPreserveRatio(true);
@@ -91,7 +101,7 @@ public final class MathImages {
         }
     }
 
-    private static Image render(String latex, boolean display, double fontSize) {
+    private static Image render(String latex, boolean display, double fontSize, boolean dark) {
         int px = (int) Math.round(fontSize);
         String key = (dark ? "d" : "l") + (display ? "D" : "I") + px + ":" + latex;
         Image cached = CACHE.get(key);

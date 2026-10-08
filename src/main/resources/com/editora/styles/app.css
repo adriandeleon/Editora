@@ -707,6 +707,9 @@
     -fx-background-radius: 6;
     -fx-line-spacing: 3;
 }
+/* A printed code block is a box of lines rather than one node (MarkdownRenderer.printCodeBlock), so the
+   paginator can cut it between lines; the gap between them is the single-node block's line spacing. */
+.markdown-preview .md-code-lines { -fx-spacing: 3; }
 .markdown-preview .md-list { -fx-spacing: 7; }
 .markdown-preview .md-list-item { -fx-spacing: 8; }
 .markdown-preview .md-list-content { -fx-spacing: 6; }
@@ -725,6 +728,10 @@
     -fx-padding: 4 8 4 8;
 }
 .markdown-preview .md-table-header { -fx-background-color: -color-bg-subtle; }
+/* A printed table with more columns than the page has room for (MarkdownPrintLayout.fitColumns): tighter
+   cells, so the width goes to the text rather than to padding. */
+.markdown-preview .md-table-dense .md-table-cell,
+.markdown-preview .md-table-dense .md-table-header { -fx-padding: 2 3 2 3; }
 .markdown-preview .md-table-header .md-text { -fx-font-weight: bold; }
 
 /* YAML front matter: a muted metadata block at the top of the document. */

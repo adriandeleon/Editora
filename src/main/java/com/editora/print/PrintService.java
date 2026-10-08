@@ -18,6 +18,7 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.text.Font;
 
 import com.editora.editor.GrammarRegistry;
+import com.editora.editor.MarkdownPrintAssets;
 import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.TextMateHighlighter;
 import com.editora.mermaid.Mermaid;
@@ -93,12 +94,12 @@ public final class PrintService {
         });
     }
 
-    /** Prepares {@code markdown} as the rendered preview (block-aware pagination). */
+    /** Prepares {@code markdown} as the rendered preview (block-aware pagination), always in the light theme. */
     public void prepareMarkdown(String markdown, Path baseDir, Consumer<Prepared> onReady) {
         exec.submit(() -> {
             try {
                 org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(markdown);
-                deliver(onReady, new Prepared(layout -> MarkdownPrintLayout.paginate(ast, baseDir, layout), null));
+                deliver(onReady, new Prepared(markdownPaginator(ast, baseDir), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -110,8 +111,25 @@ public final class PrintService {
      * source (the CSV print builds its table node by node, so a cell is never re-parsed as markup).
      */
     public void prepareDocument(org.commonmark.node.Node document, Path baseDir, Consumer<Prepared> onReady) {
-        exec.submit(() -> deliver(
-                onReady, new Prepared(layout -> MarkdownPrintLayout.paginate(document, baseDir, layout), null)));
+        exec.submit(() -> {
+            try {
+                deliver(onReady, new Prepared(markdownPaginator(document, baseDir), null));
+            } catch (Throwable e) {
+                deliver(onReady, new Prepared(null, message(e)));
+            }
+        });
+    }
+
+    /**
+     * The paginator for a parsed document, with its images, Mermaid diagrams and code colours resolved
+     * <b>here</b>, on the prepare thread. Pagination measures every block exactly once, so whatever is not
+     * final by then is wrong on paper: an image still loading measures 0px and overflows its page when it
+     * arrives, and highlighting applied a pulse later never reaches the printer at all.
+     */
+    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir) {
+        MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, baseDir);
+        return layout -> MarkdownPrintLayout.paginate(
+                ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight());
     }
 
     /** Prepares a standalone Mermaid diagram (rendered to PNG via mmdc, scaled to fit one page). */

@@ -194,4 +194,26 @@ class MarkdownRendererTest {
         String shown = MarkdownRenderer.imagePlaceholder("x", "https://h.example/?d=" + "A".repeat(5000));
         assertTrue(shown.length() < 130 && shown.endsWith("…"), "a kilobyte query string is cut: " + shown.length());
     }
+
+    /** Print cuts a code block between lines, so token runs are regrouped by line — pure. */
+    @Test
+    void codeLinesRegroupsRunsByLine() {
+        java.util.List<MarkdownRenderer.Run> runs = java.util.List.of(
+                new MarkdownRenderer.Run("int", java.util.List.of("keyword")),
+                new MarkdownRenderer.Run(" a;\r\n\n/* b\nc */", java.util.List.of("comment")),
+                new MarkdownRenderer.Run("\n", java.util.List.of()));
+        java.util.List<java.util.List<MarkdownRenderer.Run>> lines = MarkdownRenderer.codeLines(runs);
+        assertEquals(5, lines.size(), "four line breaks make five lines");
+        assertEquals(
+                java.util.List.of(
+                        new MarkdownRenderer.Run("int", java.util.List.of("keyword")),
+                        new MarkdownRenderer.Run(" a;", java.util.List.of("comment"))),
+                lines.get(0),
+                "a run is cut at the line break, the CR of a CRLF dropped, its classes kept");
+        assertEquals(" ", lines.get(1).get(0).text(), "an empty line keeps a space so it has a line's height");
+        assertEquals(
+                java.util.List.of("comment"), lines.get(2).get(0).classes(), "a multi-line token colours each line");
+        assertEquals("c */", lines.get(3).get(0).text());
+        assertEquals(" ", lines.get(4).get(0).text());
+    }
 }
