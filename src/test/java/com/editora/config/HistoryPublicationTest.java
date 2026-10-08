@@ -310,6 +310,27 @@ class HistoryPublicationTest {
     }
 
     @Test
+    void aBackupThatAppearsDuringTheSessionIsNoticedByTheNextPublication() throws Exception {
+        SharedConfig config = open();
+        HistoryRevision old = record(config, "/w/a.txt", "recorded before the damage", 1000);
+        publish(config);
+        assertTrue(config.mayCollectHistoryBlobs());
+
+        // Something else leaves the index unreadable; this process's next save cannot merge with it and
+        // keeps the bytes beside the index.
+        Files.writeString(
+                dir.resolve("history/index.json"), "{\"byProject\":{\"\":{\"/w/z.txt\":[{\"sha256\":\"zz\"},");
+        record(config, "/w/b.txt", "the next save", 2000);
+        config.historyService().requestGc();
+        publish(config);
+
+        assertTrue(Files.exists(dir.resolve("history/index.json.corrupt.bak")));
+        assertFalse(config.mayCollectHistoryBlobs(), "a torn copy: everything is kept for its grace period");
+        assertEquals("recorded before the damage", blobs().get(old.sha256()));
+        assertTrue(index().contains(old.sha256()), "and the index is this process's again");
+    }
+
+    @Test
     void backupHashesReadsWhatIsLegibleAndSaysWhenABackupIsNotWhole() throws Exception {
         Path index = Files.createDirectories(dir.resolve("history")).resolve("index.json");
         assertEquals(
