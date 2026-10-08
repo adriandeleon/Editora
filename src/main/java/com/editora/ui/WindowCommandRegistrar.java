@@ -85,6 +85,8 @@ final class WindowCommandRegistrar {
 
         ToolWindow undoHistoryToolWindow();
 
+        ToolWindow fileHistoryToolWindow();
+
         BookmarkCoordinator bookmarkCoordinator();
 
         ToolWindow searchToolWindow();
@@ -2196,7 +2198,15 @@ final class WindowCommandRegistrar {
                         () -> host.github().ifEnabled(() -> host.toolWindows().toggle(host.githubToolWindow()))));
         // History / Log, blame, and stash (Core-trio parity with IntelliJ/VSCode).
         host.registry().register(Command.of("tool.gitLog", () -> host.git().ifEnabled(host.gitWindows()::showGitLog)));
-        host.registry().register(Command.of("tool.fileHistory", host.historyCoordinator()::showActive));
+        // Toggles, as every other tool-window command does. Only the command closes: the Project tree, the tab
+        // menu and Recent Changes go through the coordinator and always end with the window open.
+        host.registry()
+                .register(Command.of(
+                        "tool.fileHistory",
+                        () -> toggleLocalHistory(
+                                host.toolWindows().isOpen(host.fileHistoryToolWindow()),
+                                () -> host.toolWindows().close(host.fileHistoryToolWindow()),
+                                host.historyCoordinator()::showActive)));
         host.registry().register(Command.of("history.putLabel", host.historyCoordinator()::putLabel));
         host.registry().register(Command.of("history.recentChanges", host.historyCoordinator()::showRecentChanges));
         // Deliberately outside the feature-gated "history." prefix: turning Local History off must not gray
@@ -2745,6 +2755,15 @@ final class WindowCommandRegistrar {
     }
 
     /** Branch, push-variant, remote and work-tree commands ({@link GitBranchCoordinator}); all Git-gated. */
+    /**
+     * The {@code tool.fileHistory} command: closes the Local History tool window when it is open, otherwise
+     * shows it for the active file. {@code show} is the coordinator's own entry point, so a window that
+     * cannot be shown (feature off, no local file) still reports why instead of opening empty.
+     */
+    static void toggleLocalHistory(boolean open, Runnable close, Runnable show) {
+        (open ? close : show).run();
+    }
+
     private void registerGitBranchCommands() {
         GitBranchCoordinator branches = host.gitWindows().branches;
         // A work tree opens as a project in its own window, like any other folder.

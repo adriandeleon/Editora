@@ -40,6 +40,12 @@ final class TabContextMenu {
         MenuItem copyPath = LazyContextMenu.item(tr("menu.copyPath"), Icons.copy(), () -> c.copyPath(buffer));
         MenuItem pin = LazyContextMenu.item(tr("menu.pin"), Icons.pin(), () -> c.togglePin(tab));
         MenuItem rename = LazyContextMenu.item(tr("menu.rename"), Icons.edit(), () -> c.renameFile(buffer, tab));
+        // Local History, beside Git's history as in the Project tree: for this tab's file, which it brings
+        // forward (the tool window follows the active buffer).
+        MenuItem localHistory = LazyContextMenu.item(
+                tr("project.menu.localHistory"),
+                Icons.history(),
+                () -> c.historyCoordinator.showForPath(buffer.getPath()));
         // Git submenu — mirrors the Project tree's cell "Git" submenu, acting on this tab's file.
         Menu gitMenu = new Menu(tr("project.menu.git"));
         gitMenu.setGraphic(Icons.git());
@@ -137,6 +143,7 @@ final class TabContextMenu {
                         closeLeft,
                         closeRight,
                         new SeparatorMenuItem(),
+                        localHistory,
                         gitMenu,
                         compareWith,
                         openPatch,
@@ -157,6 +164,9 @@ final class TabContextMenu {
             copyPath.setDisable(!hasPath);
             rename.setDisable(!hasPath);
             compareWith.setDisable(!hasPath); // not a Git action — works on any two files
+            // Local History records saved local files only; greyed out while the feature is off.
+            localHistory.setVisible(localPath);
+            localHistory.setDisable(!c.historyCoordinator.isEnabled());
             // Only shown for a .patch/.diff file — parses the buffer's own (possibly unsaved) text.
             openPatch.setVisible(hasPath
                     && PatchFiles.isPatchFile(buffer.getPath().getFileName().toString()));

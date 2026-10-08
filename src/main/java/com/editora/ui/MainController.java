@@ -318,7 +318,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow githubToolWindow;
 
     /** Local File History: snapshots local files on save/auto-save/external reload (off-thread). */
-    private HistoryCoordinator historyCoordinator;
+    HistoryCoordinator historyCoordinator; // read by TabContextMenu
     /** Gate for programmatic bulk edits in a buffer without undo; installed on every buffer in addBuffer. */
     private NoUndoGuard noUndoGuard;
 
@@ -3654,6 +3654,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public ToolWindow undoHistoryToolWindow() {
             return undoHistoryToolWindow;
+        }
+
+        @Override
+        public ToolWindow fileHistoryToolWindow() {
+            return fileHistoryToolWindow;
         }
 
         @Override
