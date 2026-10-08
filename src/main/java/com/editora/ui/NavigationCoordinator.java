@@ -222,8 +222,9 @@ final class NavigationCoordinator {
                     EditorBuffer b = host.activeBuffer();
                     return new ArrayList<>(host.snippets().forLanguage(b == null ? "global" : b.getLanguage()));
                 },
-                s -> s.prefix() + " — " + s.name(),
-                com.editora.snippet.Snippet::description,
+                com.editora.snippet.SnippetPreview::label,
+                com.editora.snippet.SnippetPreview::detail,
+                s -> s.prefix() + " " + s.name() + " " + s.description(),
                 s -> {
                     EditorBuffer b = host.activeBuffer();
                     if (b != null) {

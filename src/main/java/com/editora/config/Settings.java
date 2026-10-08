@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 112;
+    public static final int SCHEMA_VERSION = 113;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -171,6 +171,8 @@ public class Settings {
     private boolean autocompleteProse = true;
 
     private boolean autocompleteSnippets = true;
+    /** Tab expands the snippet trigger before the caret; off leaves snippets to the popup and the picker. */
+    private boolean snippetTabExpansion = true;
     /** Mermaid keyword + snippet autocomplete in .mmd buffers; on by default but only effective when
      *  Mermaid support is enabled and the tools are detected. */
     private boolean autocompleteMermaid = true;
@@ -1298,6 +1300,14 @@ public class Settings {
 
     public void setAutocompleteSnippets(boolean autocompleteSnippets) {
         this.autocompleteSnippets = autocompleteSnippets;
+    }
+
+    public boolean isSnippetTabExpansion() {
+        return snippetTabExpansion;
+    }
+
+    public void setSnippetTabExpansion(boolean snippetTabExpansion) {
+        this.snippetTabExpansion = snippetTabExpansion;
     }
 
     public boolean isAutocompleteMermaid() {

@@ -120,6 +120,8 @@ public final class StatusBar extends HBox {
     private final Label editorConfig = segment("editorConfig.openActive", tr("statusbar.tip.editorConfig"));
 
     private final Label narrowed = segment("edit.widen", tr("statusbar.tip.narrowed"));
+    /** "Snippet 2/3" while a snippet's tab stops are being filled in; clickable → leave the session. */
+    private final Label snippet = segment("snippets.endSession", tr("statusbar.tip.snippet"));
     /** Read-only ("View mode") indicator; shown only when the active buffer is non-editable. */
     private final Label readOnly = segment("view.toggleReadOnly", tr("statusbar.tip.readOnly"));
     /** Text-zoom percentage (clickable to reset to 100%). */
@@ -188,6 +190,10 @@ public final class StatusBar extends HBox {
         narrowed.setText(tr("statusbar.narrowed"));
         narrowed.setVisible(false);
         narrowed.setManaged(false);
+        // Tab is doing something else while a session runs, so that too is said where the eye checks.
+        snippet.getStyleClass().add("status-snippet");
+        snippet.setVisible(false);
+        snippet.setManaged(false);
 
         editorConfig.getStyleClass().add("status-editorconfig");
         editorConfig.setText(tr("statusbar.editorConfig"));
@@ -268,6 +274,7 @@ public final class StatusBar extends HBox {
                         csvField,
                         language,
                         narrowed,
+                        snippet,
                         editorConfig,
                         formatGroup,
                         size);
@@ -958,6 +965,16 @@ public final class StatusBar extends HBox {
 
     /** Simple UI mode: hide the git / language / tab-size / line-ending / encoding segments (size is kept). */
     /** Shows the narrowing indicator. Deliberately visible in Simple mode too — it is not chrome. */
+    /** Shows "Snippet position/count" while a snippet session runs in the active buffer; a count of 0 hides it. */
+    public void setSnippetSession(int position, int count) {
+        boolean on = count > 0;
+        if (on) {
+            snippet.setText(tr("statusbar.snippet", position, count));
+        }
+        snippet.setVisible(on);
+        snippet.setManaged(on);
+    }
+
     public void setNarrowed(boolean on) {
         narrowed.setVisible(on);
         narrowed.setManaged(on);

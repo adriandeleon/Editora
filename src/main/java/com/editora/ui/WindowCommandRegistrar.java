@@ -337,9 +337,7 @@ final class WindowCommandRegistrar {
 
         void textZoom(int direction);
 
-        void insertSnippetPicker();
-
-        void editUserSnippets();
+        SnippetCoordinator snippetCoordinator();
 
         void editProjectSettings();
 
@@ -1328,17 +1326,23 @@ final class WindowCommandRegistrar {
         host.registry()
                 .register(Command.of(
                         "notes.export", () -> host.notesCoordinator().ifEnabled(host.notesCoordinator()::exportNotes)));
-        host.registry().register(Command.of("snippets.insert", host::insertSnippetPicker));
-        host.registry().register(Command.of("snippets.reload", () -> {
-            host.snippets().reload();
-            // A user file that does not parse loads as "no snippets"; say so rather than claim success.
-            java.util.List<String> unreadable = host.snippets().unreadableUserFiles();
-            host.setStatus(
-                    unreadable.isEmpty()
-                            ? tr("status.snippetsReloaded")
-                            : tr("settings.snippet.reloadUnreadable", String.join(", ", unreadable)));
-        }));
-        host.registry().register(Command.of("snippets.editUser", host::editUserSnippets));
+        host.registry()
+                .register(Command.of(
+                        "snippets.insert", () -> host.snippetCoordinator().showPicker()));
+        // A user file that does not parse loads as "no snippets"; reload says so rather than claim success.
+        host.registry()
+                .register(Command.of(
+                        "snippets.reload", () -> host.snippetCoordinator().reload()));
+        host.registry()
+                .register(Command.of(
+                        "snippets.endSession", () -> host.snippetCoordinator().endSession()));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleSnippetTabExpansion",
+                        () -> host.snippetCoordinator().toggleTabExpansion()));
+        host.registry()
+                .register(Command.of(
+                        "snippets.editUser", () -> host.snippetCoordinator().editUserSnippets()));
         host.registry()
                 .register(Command.of(
                         "snippets.manage", () -> host.settingsWindow().showSnippets(host.stage())));

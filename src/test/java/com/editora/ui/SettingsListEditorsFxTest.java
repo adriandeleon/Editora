@@ -281,6 +281,92 @@ class SettingsListEditorsFxTest {
         }
     }
 
+    /** N6, N9, N14, N19 and the disable switch, through the page's own controls. */
+    @Test
+    void theSnippetsPageEditsABundledSnippetAsOneSnippetFiltersAndNeverWritesABrokenFile() throws Exception {
+        try (var fx = FxWindowFixture.create()) {
+            Path dir = fx.configDir.resolve("snippets");
+            FxTestSupport.runOnFx(() -> {
+                try {
+                    SettingsWindow w = shown(fx);
+                    Region pg = page(w, "SNIPPETS");
+                    SnippetManager manager = FxTestSupport.field(w, "snippetManager");
+                    ListView<?> list =
+                            all(pg, ListView.class, new ArrayList<>()).get(0);
+                    @SuppressWarnings("unchecked")
+                    ComboBox<String> lang = (ComboBox<String>)
+                            all(pg, ComboBox.class, new ArrayList<>()).get(0);
+                    List<TextField> tfs = fields(pg);
+                    TextField filter = tfs.get(0);
+                    TextField prefix = tfs.get(2);
+                    CodeArea body = all(pg, CodeArea.class, new ArrayList<>()).get(0);
+                    Button add = button(pg, tr("settings.snippet.add"));
+                    Button toggle = button(pg, tr("settings.snippet.disable"));
+                    Button save = button(pg, tr("settings.save"));
+                    assertFalse(body.isWrapText(), "a body is code and is not soft-wrapped");
+                    assertTrue(lang.getItems().containsAll(List.of("typst", "typescriptreact", "lua")), "N12");
+
+                    // The filter narrows the list by name or trigger.
+                    lang.setValue("java");
+                    int everything = list.getItems().size();
+                    filter.setText("fori");
+                    assertTrue(list.getItems().size() >= 1 && list.getItems().size() < everything);
+                    list.getSelectionModel().select(0);
+                    assertEquals("fori", prefix.getText());
+
+                    // Changing a bundled snippet's trigger changes that snippet: the old trigger is gone.
+                    prefix.setText("floop, fl");
+                    save.fire();
+                    org.junit.jupiter.api.Assertions.assertNotNull(manager.byPrefix("java", "floop"));
+                    org.junit.jupiter.api.Assertions.assertNotNull(
+                            manager.byPrefix("java", "fl"), "several triggers, comma-separated");
+                    assertNull(manager.byPrefix("java", "fori"), "N6: fori and floop used to both expand");
+
+                    // Switching it off and on again.
+                    toggle.fire();
+                    assertNull(manager.byPrefix("java", "floop"));
+                    assertEquals(tr("settings.snippet.enable"), toggle.getText());
+                    toggle.fire();
+                    org.junit.jupiter.api.Assertions.assertNotNull(manager.byPrefix("java", "floop"));
+
+                    // A second snippet on a trigger another one has is allowed, and said.
+                    filter.clear();
+                    add.fire();
+                    prefix.setText("fl");
+                    save.fire();
+                    javafx.scene.control.Label clash =
+                            all(pg, javafx.scene.control.Label.class, new ArrayList<>()).stream()
+                                    .filter(l -> l.getText().contains("\"fl\""))
+                                    .findFirst()
+                                    .orElse(null);
+                    org.junit.jupiter.api.Assertions.assertNotNull(clash, "N14: a shared trigger is pointed out");
+                    assertTrue(clash.isVisible());
+
+                    // A file that cannot be parsed is never written: Add says so by being disabled.
+                    Files.createDirectories(dir);
+                    Files.writeString(dir.resolve("go.json"), "{ \"X\": { \"prefix\": \"x\" \"body\": 1 }");
+                    manager.reload();
+                    lang.setValue("go");
+                    assertTrue(add.isDisabled(), "N9: Add used to stay enabled and do nothing");
+                    assertTrue(toggle.isDisabled());
+                    javafx.scene.control.Label problem =
+                            all(pg, javafx.scene.control.Label.class, new ArrayList<>()).stream()
+                                    .filter(l -> l.isVisible() && l.getText().contains("go.json"))
+                                    .findFirst()
+                                    .orElse(null);
+                    org.junit.jupiter.api.Assertions.assertNotNull(problem, "the file is named");
+                    assertFalse(problem.getText().contains("java.")
+                            || problem.getText().contains("jackson"));
+                    assertEquals(
+                            "{ \"X\": { \"prefix\": \"x\" \"body\": 1 }", Files.readString(dir.resolve("go.json")));
+                    FxTestSupport.<Stage>field(w, "stage").hide();
+                } catch (Exception e) {
+                    throw new AssertionError(e);
+                }
+            });
+        }
+    }
+
     @Test
     void snippetsKeepDistinctNamesAndAreNeverDroppedByABlankOrUneditedForm() throws Exception {
         try (var fx = FxWindowFixture.create()) {
@@ -297,8 +383,8 @@ class SettingsListEditorsFxTest {
                     ComboBox<String> lang = (ComboBox<String>)
                             all(pg, ComboBox.class, new ArrayList<>()).get(0);
                     List<TextField> tfs = fields(pg);
-                    TextField name = tfs.get(0);
-                    TextField prefix = tfs.get(1);
+                    TextField name = tfs.get(1); // after the list filter
+                    TextField prefix = tfs.get(2);
                     CodeArea body = all(pg, CodeArea.class, new ArrayList<>()).get(0);
                     Button add = button(pg, tr("settings.snippet.add"));
                     Button save = button(pg, tr("settings.save"));
