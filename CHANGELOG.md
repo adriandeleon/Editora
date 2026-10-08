@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   order of the files in the Bookmarks tool window.
 - A Word (`.docx`) export no longer puts an empty paragraph in front of every Mermaid block or display
   formula it has to write as source — which, without `mmdc` installed, was every Mermaid block.
+- Dragging a picture from a browser into a Markdown document no longer inserts an empty link (`![](< >)`)
+  when the drag carries neither pixels nor an address; it reports that the picture could not be inserted.
 - **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
   turned out to be incomplete or not the expected tool was unpacked over the installed version before it
   was checked: the working version was gone, and the half-unpacked folder was then detected as installed,

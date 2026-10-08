@@ -289,6 +289,15 @@ class EditingImagesFxTest {
     }
 
     @Test
+    void aBlankAddressWithNoPixelsInsertsNothing() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        FxTestSupport.runOnFx(() -> editing.insertWebImage(b, null, " "));
+        awaitWebImage();
+        assertEquals("", text(b), "not a link to nowhere");
+        assertEquals(tr("status.markdown.imageFailed", ""), status());
+    }
+
+    @Test
     void aPictureThatCannotBeWrittenIsReported() throws Exception {
         EditorBuffer b = document("notes.md", "");
         Files.writeString(b.getPath().getParent().resolve("assets"), "a file where the folder should be");
