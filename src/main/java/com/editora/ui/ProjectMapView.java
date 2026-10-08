@@ -78,6 +78,7 @@ import static com.editora.i18n.Messages.tr;
  */
 final class ProjectMapView extends VBox {
 
+    /** Code and note cards together: one bound on what floats over the map, however the eight are split. */
     private static final int MAX_OPEN_PREVIEWS = 8;
     /** Selections kept for Back/Forward; the oldest are dropped beyond this. */
     static final int MAX_SELECTION_HISTORY = 100;
@@ -86,6 +87,10 @@ final class ProjectMapView extends VBox {
     private static final int MAX_REVEAL_PINS = 64;
     private static final double LOADING_NOTICE_MILLIS = 200;
     private static final double PREVIEW_CASCADE = 28;
+    /** Quiet time after a state or filesystem notification before open cards are brought up to date. */
+    private static final Duration CARD_REFRESH_DELAY = Duration.millis(250);
+    /** How often a card that mirrors an open buffer looks for edits; nothing else announces a keystroke. */
+    private static final Duration CARD_POLL_INTERVAL = Duration.seconds(1);
 
     enum FlowDirection {
         LEFT_TO_RIGHT,
@@ -118,6 +123,20 @@ final class ProjectMapView extends VBox {
     private final Map<Path, PreviewConnector> previewConnectors = new HashMap<>();
     private final Map<Path, ProjectMapPreview> previews = new LinkedHashMap<>(16, 0.75f, true);
     private final Map<Path, ProjectMapNotePreview> notePreviews = new LinkedHashMap<>(16, 0.75f, true);
+    /** When each open card was last used (pressed, focused, scrolled or opened); the oldest is evicted. */
+    private final Map<Region, Long> cardTouches = new java.util.IdentityHashMap<>();
+
+    private long cardTouchSequence;
+    private final javafx.animation.PauseTransition cardRefresh =
+            new javafx.animation.PauseTransition(CARD_REFRESH_DELAY);
+    private final javafx.animation.PauseTransition cardPoll = new javafx.animation.PauseTransition(CARD_POLL_INTERVAL);
+    /** Rate limit for re-reading cards after content-only disk changes: a log may be rewritten many times a second. */
+    private final javafx.animation.PauseTransition cardDiskRefresh =
+            new javafx.animation.PauseTransition(CARD_POLL_INTERVAL);
+    /** The expansion the cards were last checked against (an identity, replaced by every reload). */
+    private Set<Path> cardsCheckedAgainst;
+
+    private boolean orphanCheckPending;
     private final ExecutorService loader = Executors.newSingleThreadExecutor(r -> {
         Thread thread = new Thread(r, "project-map-loader");
         thread.setDaemon(true);
@@ -185,8 +204,8 @@ final class ProjectMapView extends VBox {
     private Consumer<ProjectMapModel.Entry> onDeleteEntry = entry -> {};
     private Path pendingSelection;
     private Consumer<FlowDirection> onFlowChanged = ignored -> {};
-    private Consumer<Image> onPrint = ignored -> {};
-    private Consumer<Image> onExportPdf = ignored -> {};
+    private Consumer<ProjectMapOutput> onPrint = ignored -> {};
+    private Consumer<ProjectMapOutput> onExportPdf = ignored -> {};
     private ProjectMapPreview.MarkerActions previewMarkerActions;
     private ProjectPanel.MarkerActions notePreviewActions;
     private StackPane canvasHost;
@@ -369,8 +388,8 @@ final class ProjectMapView extends VBox {
             surface.resetViewport();
             zoom.setText(surface.zoomPercent());
         });
-        printButton.setOnAction(event -> snapshotForOutput(onPrint));
-        exportPdfButton.setOnAction(event -> snapshotForOutput(onExportPdf));
+        printButton.setOnAction(event -> onPrint.accept(mapOutput()));
+        exportPdfButton.setOnAction(event -> onExportPdf.accept(mapOutput()));
         surface.setOnZoomChanged(() -> zoom.setText(surface.zoomPercent()));
 
         HBox zoomBar = new HBox(2, zoomOut, zoom, zoomIn, fit, center, reset, printButton, exportPdfButton);
@@ -393,6 +412,15 @@ final class ProjectMapView extends VBox {
             previewConnectorCanvas.setHeight(value.doubleValue());
             constrainPreviews(host.getWidth(), value.doubleValue());
             repaintPreviewConnectors();
+        });
+        cardRefresh.setOnFinished(event -> refreshCards(false));
+        cardDiskRefresh.setOnFinished(event -> refreshCards(false));
+        cardPoll.setOnFinished(event -> refreshCards(true));
+        // Cards survive a switch to the Tree; whatever changed meanwhile is picked up when the Map returns.
+        host.sceneProperty().addListener((obs, old, scene) -> {
+            if (scene != null) {
+                scheduleCardRefresh();
+            }
         });
         return host;
     }
@@ -648,6 +676,7 @@ final class ProjectMapView extends VBox {
 
     void refreshStates() {
         surface.stateChanged();
+        scheduleCardRefresh();
     }
 
     void setMarkerStates(Predicate<Path> bookmarked, Predicate<Path> noted) {
@@ -666,6 +695,7 @@ final class ProjectMapView extends VBox {
 
     void refresh() {
         reload();
+        scheduleCardRefresh();
     }
 
     /**
@@ -794,7 +824,7 @@ final class ProjectMapView extends VBox {
                 factory == null ? null : entry -> entry.isPlaceholder() ? null : factory.apply(entry));
     }
 
-    void setOutputActions(Consumer<Image> print, Consumer<Image> exportPdf) {
+    void setOutputActions(Consumer<ProjectMapOutput> print, Consumer<ProjectMapOutput> exportPdf) {
         onPrint = print == null ? ignored -> {} : print;
         onExportPdf = exportPdf == null ? ignored -> {} : exportPdf;
     }
@@ -803,8 +833,37 @@ final class ProjectMapView extends VBox {
         closeAllPreviews();
     }
 
+    /**
+     * The Map is being swapped for the Tree. Cards stay open where they are for when it returns; only the
+     * work that keeps them current stops, and resumes with one refresh when the Map is shown again.
+     */
+    void suspendPreviews() {
+        cardRefresh.stop();
+        cardPoll.stop();
+        cardDiskRefresh.stop();
+    }
+
+    /**
+     * A file under the root was rewritten on disk. That changes no listing, so no reload follows; it is
+     * only of interest to a preview card showing the file. Checked at most once per
+     * {@link #CARD_POLL_INTERVAL}, after the first change rather than after the last, so a file that never
+     * stops changing is still followed.
+     */
+    void filesChangedOnDisk() {
+        if (disposed
+                || previews.isEmpty()
+                || getScene() == null
+                || cardDiskRefresh.getStatus() == javafx.animation.Animation.Status.RUNNING) {
+            return;
+        }
+        cardDiskRefresh.playFromStart();
+    }
+
     void dispose() {
         disposed = true;
+        cardRefresh.stop();
+        cardPoll.stop();
+        cardDiskRefresh.stop();
         generation.incrementAndGet();
         loader.shutdownNow();
         loadInFlight = false;
@@ -825,11 +884,19 @@ final class ProjectMapView extends VBox {
                 type == null ? ProjectMapModel.TypeFilter.ALL : type));
     }
 
-    private void snapshotForOutput(Consumer<Image> output) {
-        Image image = surface.snapshotContent();
-        if (image != null) {
-            output.accept(image);
-        }
+    /** The complete map as a deferred job: it is rendered only once the receiver knows the page size. */
+    private ProjectMapOutput mapOutput() {
+        return new ProjectMapOutput() {
+            @Override
+            public boolean landscape() {
+                return !disposed && surface.outputIsLandscape();
+            }
+
+            @Override
+            public Rendered render(double pageWidth, double pageHeight) {
+                return disposed ? null : surface.renderOutput(pageWidth, pageHeight);
+            }
+        };
     }
 
     private void setOutputEnabled(boolean enabled) {
@@ -1141,23 +1208,33 @@ final class ProjectMapView extends VBox {
         Path selected = entry.path().toAbsolutePath().normalize();
         ProjectMapPreview preview = previews.get(selected);
         if (preview != null) {
-            preview.toFront();
-            preview.requestFocus();
+            touchCard(preview, true);
+            preview.focusContent();
             return;
-        }
-        ProjectMapPreview.Content content;
-        try {
-            content = previewContent.apply(entry.path());
-        } catch (RuntimeException ignored) {
-            content = null;
         }
         preview = createPreview(selected);
         ProjectMapPreview selectedPreview = preview;
         preview.showFile(
                 entry.path(),
-                content,
-                (width, height, parentWidth, parentHeight) ->
-                        previewPlacement(selectedPreview, entry.path(), width, height, parentWidth, parentHeight));
+                previewContentFor(entry.path()),
+                (width, height, parentWidth, parentHeight) -> previewPlacement(
+                        selectedPreview,
+                        entry.path(),
+                        width,
+                        height,
+                        ProjectMapPreview.MIN_WIDTH,
+                        ProjectMapPreview.MIN_HEIGHT,
+                        parentWidth,
+                        parentHeight));
+        scheduleCardRefresh(); // starts following the buffer when the card mirrors one
+    }
+
+    private ProjectMapPreview.Content previewContentFor(Path path) {
+        try {
+            return previewContent.apply(path);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     private void previewNotes(Path path) {
@@ -1168,40 +1245,56 @@ final class ProjectMapView extends VBox {
         ProjectMapNotePreview existing = notePreviews.get(selected);
         if (existing != null) {
             existing.setVisible(!hideOpenNotes.isSelected());
-            existing.toFront();
-            existing.requestFocus();
+            touchCard(existing, true);
+            existing.focusContent();
             return;
         }
         List<PersonalNote> values = notePreviewActions.personalNotes(selected);
         if (values.isEmpty()) {
             return;
         }
-        if (notePreviews.size() >= MAX_OPEN_PREVIEWS) {
-            closeNotePreview(notePreviews.values().iterator().next());
-        }
+        makeRoomForCard();
         ProjectMapNotePreview preview =
                 new ProjectMapNotePreview((note, body) -> notePreviewActions.updatePersonalNote(selected, note, body));
         preview.setOnClose(() -> closeNotePreview(preview));
-        preview.setOnActivate(() -> touchNotePreview(selected, preview));
+        preview.setOnActivate(() -> touchCard(preview, true));
+        preview.setOnTouch(() -> touchCard(preview, false));
+        preview.setOnEscape(() -> {
+            closeNotePreview(preview);
+            surface.requestFocus();
+        });
+        preview.setOnBlankRejected(() -> onStatus.accept(tr("status.projectMap.noteBlankRestored")));
         installPreviewListeners(preview);
         notePreviews.put(selected, preview);
+        cardTouches.put(preview, ++cardTouchSequence);
         canvasHost.getChildren().add(preview);
-        ProjectMapPreview.Placement placement =
-                previewPlacement(preview, selected, 420, 300, canvasHost.getWidth(), canvasHost.getHeight());
+        ProjectMapPreview.Placement placement = previewPlacement(
+                preview,
+                selected,
+                ProjectMapNotePreview.DEFAULT_WIDTH,
+                ProjectMapNotePreview.DEFAULT_HEIGHT,
+                ProjectMapNotePreview.MIN_WIDTH,
+                ProjectMapNotePreview.MIN_HEIGHT,
+                canvasHost.getWidth(),
+                canvasHost.getHeight());
         preview.showNotes(selected, values, placement);
         updateNotePreviewVisibility();
     }
 
     private ProjectMapPreview createPreview(Path path) {
-        if (previews.size() >= MAX_OPEN_PREVIEWS) {
-            closePreview(previews.values().iterator().next());
-        }
+        makeRoomForCard();
         ProjectMapPreview preview = new ProjectMapPreview(onOpenFile);
         preview.setMarkerActions(previewMarkerActions);
         preview.setOnClose(() -> closePreview(preview));
-        preview.setOnActivate(() -> touchPreview(path, preview));
+        preview.setOnActivate(() -> touchCard(preview, true));
+        preview.setOnTouch(() -> touchCard(preview, false));
+        preview.setOnEscape(() -> {
+            closePreview(preview);
+            surface.requestFocus();
+        });
         installPreviewListeners(preview);
         previews.put(path, preview);
+        cardTouches.put(preview, ++cardTouchSequence);
         canvasHost.getChildren().add(preview);
         return preview;
     }
@@ -1214,22 +1307,49 @@ final class ProjectMapView extends VBox {
         preview.visibleProperty().addListener((obs, old, value) -> repaintPreviewConnectors());
     }
 
+    /** Records use of an open card for eviction, and optionally raises it above the others. */
+    private void touchCard(Region card, boolean raise) {
+        if (!cardTouches.containsKey(card)) {
+            return; // closed meanwhile
+        }
+        cardTouches.put(card, ++cardTouchSequence);
+        if (raise) {
+            card.toFront();
+        }
+    }
+
+    /** Closes the least recently used cards, of either kind, until one more fits under the shared limit. */
+    private void makeRoomForCard() {
+        while (previews.size() + notePreviews.size() >= MAX_OPEN_PREVIEWS) {
+            Region oldest = null;
+            long oldestTouch = Long.MAX_VALUE;
+            for (Map.Entry<Region, Long> touch : cardTouches.entrySet()) {
+                if (touch.getValue() < oldestTouch) {
+                    oldestTouch = touch.getValue();
+                    oldest = touch.getKey();
+                }
+            }
+            if (oldest instanceof ProjectMapPreview code) {
+                closePreview(code);
+            } else if (oldest instanceof ProjectMapNotePreview note) {
+                closeNotePreview(note);
+            } else {
+                return;
+            }
+        }
+    }
+
     private void closeNotePreview(ProjectMapNotePreview preview) {
         if (preview == null) {
             return;
         }
         notePreviews.entrySet().removeIf(entry -> entry.getValue() == preview);
+        cardTouches.remove(preview);
         if (canvasHost != null) {
             canvasHost.getChildren().remove(preview);
         }
         preview.dispose();
         repaintPreviewConnectors();
-    }
-
-    private void touchNotePreview(Path path, ProjectMapNotePreview preview) {
-        if (notePreviews.get(path) == preview) {
-            preview.toFront();
-        }
     }
 
     private void updateNotePreviewVisibility() {
@@ -1243,6 +1363,7 @@ final class ProjectMapView extends VBox {
             return;
         }
         previews.entrySet().removeIf(entry -> entry.getValue() == preview);
+        cardTouches.remove(preview);
         if (canvasHost != null) {
             canvasHost.getChildren().remove(preview);
         }
@@ -1250,14 +1371,11 @@ final class ProjectMapView extends VBox {
         repaintPreviewConnectors();
     }
 
-    private void touchPreview(Path path, ProjectMapPreview preview) {
-        if (previews.get(path) != preview) {
-            return;
-        }
-        preview.toFront();
-    }
-
     private void closeAllPreviews() {
+        cardRefresh.stop();
+        cardPoll.stop();
+        cardDiskRefresh.stop();
+        cardTouches.clear();
         List<ProjectMapPreview> open = List.copyOf(previews.values());
         previews.clear();
         for (ProjectMapPreview preview : open) {
@@ -1290,15 +1408,113 @@ final class ProjectMapView extends VBox {
         closingNotes.forEach(this::closeNotePreview);
     }
 
+    /**
+     * Closes every card whose row is no longer on the map because a folder above it is not expanded any
+     * more — however it was collapsed (its row, its column's close button, history, a search that ended).
+     * A row that is merely filtered out or scrolled away keeps its card.
+     */
+    private void closeOrphanedCards() {
+        orphanCheckPending = false;
+        Set<Path> shown = cardsCheckedAgainst;
+        if (disposed || shown == null || root == null) {
+            return;
+        }
+        List<ProjectMapPreview> closing = previews.entrySet().stream()
+                .filter(entry -> orphaned(entry.getKey(), shown))
+                .map(Map.Entry::getValue)
+                .toList();
+        closing.forEach(this::closePreview);
+        List<ProjectMapNotePreview> closingNotes = notePreviews.entrySet().stream()
+                .filter(entry -> orphaned(entry.getKey(), shown))
+                .map(Map.Entry::getValue)
+                .toList();
+        closingNotes.forEach(this::closeNotePreview);
+    }
+
+    private boolean orphaned(Path path, Set<Path> shown) {
+        if (!path.startsWith(root)) {
+            return false;
+        }
+        for (Path parent = path.getParent(); parent != null && !parent.equals(root); parent = parent.getParent()) {
+            if (!shown.contains(parent)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Asks for {@link #refreshCards} once the notifications that prompted it have settled. */
+    private void scheduleCardRefresh() {
+        if (disposed || getScene() == null || previews.isEmpty() && notePreviews.isEmpty()) {
+            return; // off screen (the Tree is showing): the next time the Map is shown refreshes them
+        }
+        cardRefresh.playFromStart();
+    }
+
+    /**
+     * Brings open cards up to date: code cards with their buffer's text or their file on disk, note cards
+     * with the store. A {@code polled} pass only looks at cards that mirror an open buffer, and keeps
+     * running at {@link #CARD_POLL_INTERVAL} while there is one and the Map is on screen.
+     */
+    private void refreshCards(boolean polled) {
+        if (disposed) {
+            return;
+        }
+        boolean mirrors = false;
+        for (Map.Entry<Path, ProjectMapPreview> entry : List.copyOf(previews.entrySet())) {
+            ProjectMapPreview card = entry.getValue();
+            if (!polled || card.showsOpenBuffer()) {
+                card.refresh(previewContentFor(entry.getKey()));
+            }
+            mirrors |= card.showsOpenBuffer();
+        }
+        if (!polled) {
+            refreshNoteCards();
+        }
+        if (mirrors && getScene() != null) {
+            cardPoll.playFromStart();
+        } else {
+            cardPoll.stop();
+        }
+    }
+
+    private void refreshNoteCards() {
+        boolean enabled = notePreviewActions != null && notePreviewActions.personalNotesEnabled();
+        for (Map.Entry<Path, ProjectMapNotePreview> entry : List.copyOf(notePreviews.entrySet())) {
+            List<PersonalNote> values;
+            try {
+                values = enabled ? notePreviewActions.personalNotes(entry.getKey()) : List.of();
+            } catch (RuntimeException ignored) {
+                continue;
+            }
+            entry.getValue().refreshNotes(values);
+            if (values.isEmpty()) {
+                closeNotePreview(entry.getValue()); // its notes were deleted elsewhere: nothing left to show
+            }
+        }
+    }
+
     private void constrainPreviews(double width, double height) {
         previews.values().forEach(preview -> preview.constrainTo(width, height));
         notePreviews.values().forEach(preview -> preview.constrainTo(width, height));
     }
 
+    /**
+     * The one placement path for code and note cards: beside the row's column when there is room for the
+     * card's minimum size, otherwise over the map inside the panel, then shifted or cascaded clear of the
+     * cards already open. The map itself is never panned to make room.
+     */
     private ProjectMapPreview.Placement previewPlacement(
-            Region preview, Path path, double width, double height, double parentWidth, double parentHeight) {
+            Region preview,
+            Path path,
+            double width,
+            double height,
+            double minimumWidth,
+            double minimumHeight,
+            double parentWidth,
+            double parentHeight) {
         ProjectMapPreview.Placement preferred =
-                surface.previewPlacement(path, width, height, parentWidth, parentHeight);
+                surface.previewPlacement(path, width, height, minimumWidth, minimumHeight, parentWidth, parentHeight);
         if (!overlapsPreview(preview, preferred.x(), preferred.y(), preferred.width(), preferred.height())) {
             return preferred;
         }
@@ -1313,18 +1529,20 @@ final class ProjectMapView extends VBox {
                         ProjectMapPreview.EDGE_MARGIN, parentWidth - preferred.width() - ProjectMapPreview.EDGE_MARGIN);
         double origin = horizontal ? preferred.y() : preferred.x();
         double step = (horizontal ? preferred.height() : preferred.width()) + PREVIEW_CASCADE;
-        for (int ring = 1; ring <= previews.size(); ring++) {
+        int others = previews.size() + notePreviews.size();
+        for (int ring = 1; ring <= others; ring++) {
             for (int sign : new int[] {1, -1}) {
                 double shifted = clampPreview(origin + sign * ring * step, ProjectMapPreview.EDGE_MARGIN, maximum);
                 double x = horizontal ? preferred.x() : shifted;
                 double y = horizontal ? shifted : preferred.y();
                 if (!overlapsPreview(preview, x, y, preferred.width(), preferred.height())) {
-                    return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height());
+                    return new ProjectMapPreview.Placement(
+                            x, y, preferred.width(), preferred.height(), preferred.growLeft());
                 }
             }
         }
 
-        int index = Math.max(1, previews.size() - 1);
+        int index = Math.max(1, others - 1);
         double x = horizontal
                 ? preferred.x()
                 : clampPreview(
@@ -1341,7 +1559,7 @@ final class ProjectMapView extends VBox {
                                 ProjectMapPreview.EDGE_MARGIN,
                                 parentHeight - preferred.height() - ProjectMapPreview.EDGE_MARGIN))
                 : preferred.y();
-        return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height());
+        return new ProjectMapPreview.Placement(x, y, preferred.width(), preferred.height(), preferred.growLeft());
     }
 
     private boolean overlapsPreview(Region candidate, double x, double y, double width, double height) {
@@ -1369,6 +1587,16 @@ final class ProjectMapView extends VBox {
         GraphicsContext g = previewConnectorCanvas.getGraphicsContext2D();
         g.clearRect(0, 0, previewConnectorCanvas.getWidth(), previewConnectorCanvas.getHeight());
         previewConnectors.clear();
+        // Every reload hands the surface a new expansion set: one reference comparison per repaint tells
+        // whether a folder may have been collapsed under an open card.
+        Set<Path> shown = surface.expandedSnapshot;
+        if (shown != cardsCheckedAgainst) {
+            cardsCheckedAgainst = shown;
+            if (!orphanCheckPending && !(previews.isEmpty() && notePreviews.isEmpty())) {
+                orphanCheckPending = true;
+                Platform.runLater(this::closeOrphanedCards); // not from inside a paint or a layout pass
+            }
+        }
         g.setStroke(surface.accentColor());
         g.setGlobalAlpha(0.78);
         g.setLineWidth(1.5);
@@ -1573,17 +1801,35 @@ final class ProjectMapView extends VBox {
         private static final double ICON_RASTER_SCALE = 2;
         private static final double MIN_ZOOM = 0.4;
         private static final double MAX_ZOOM = 2.25;
-        private static final double OUTPUT_RENDER_SCALE = 2.0;
-        private static final double OUTPUT_MARGIN = 24;
-        private static final double MAX_OUTPUT_DIMENSION = 8_192;
-        private static final double MAX_OUTPUT_PIXELS = 12_000_000;
+        /** White space around the map on paper, in world pixels. */
+        private static final double OUTPUT_MARGIN = 12;
+        /**
+         * Prism's default texture cap ({@code prism.maxTextureSize}). A Canvas is backed by one texture of
+         * its size times the highest screen scale, rounded up — whether or not it is in a scene — and one
+         * that would exceed the cap draws nothing. A page is therefore assembled from bounded renders
+         * instead of being painted on one page-sized Canvas.
+         */
+        private static final int OUTPUT_TEXTURE_LIMIT = 4_096;
+        /** Longest side of one off-scene render on a 1x or 2x screen; smaller on a denser one. */
+        private static final int OUTPUT_TILE = 2_048;
+
         private static final double CONNECTOR_VIEWPORT_OVERSCAN = 24;
         /** Trailing part of a folder row that toggles its expansion; the rest of the row selects. */
         private static final double CHEVRON_ZONE = 24;
         /** Zoom levels tried, in order, to bring a hidden column filter back for the {@code /} key. */
         private static final double[] FILTER_ZOOM_STEPS = {0.8, 1.0};
+        /** The same light palette for the row icons, which are styled nodes rasterized through CSS. */
+        private static final String OUTPUT_ICON_STYLE = "-project-folder-color: #0969da; -project-file-color: #59636e;"
+                + " -state-amber: #9a6700; -state-olive: #6e7b25; -state-violet: #8250df;"
+                + " -color-accent-fg: #0969da; -color-success-fg: #1a7f37; -color-danger-fg: #d1242f;"
+                + " -color-fg-muted: #59636e;";
 
-        private final Canvas canvas = new Canvas(1, 1);
+        private final Canvas liveCanvas = new Canvas(1, 1);
+        /** What {@link #paint} draws on: the live Canvas, or an off-scene one while output is rendered. */
+        private Canvas canvas = liveCanvas;
+        /** Non-null only while print/PDF output is rendered: the light colours that replace the theme's. */
+        private Map<Rectangle, Color> outputPalette;
+
         private final Rectangle viewportClip = new Rectangle();
         private final StackPane iconRasterizer = new StackPane();
         private final Rectangle bgProbe = probe("project-map-probe-bg");
@@ -2033,68 +2279,86 @@ final class ProjectMapView extends VBox {
             viewportRepaintTimer.start();
         }
 
-        /**
-         * Renders every laid-out column into one bounded image, independent of the current pan and zoom.
-         * The live Canvas is restored before this method returns, so exporting has no visible navigation
-         * side effects. Interactive controls and the overview are intentionally omitted from printed output.
-         */
-        Image snapshotContent() {
-            repaint();
+        /** World-space bounds of every laid-out column plus the paper margin, or null for an empty map. */
+        private ProjectMapOutputPlan.Box outputBounds() {
             if (entries.isEmpty() || columnBoxes.isEmpty()) {
                 return null;
             }
-            double minWorldX = columnBoxes.stream()
-                    .mapToDouble(box -> (box.x() - offsetX) / zoom)
-                    .min()
-                    .orElse(0);
-            double minWorldY = columnBoxes.stream()
-                    .mapToDouble(box -> (box.y() - offsetY) / zoom)
-                    .min()
-                    .orElse(0);
-            double maxWorldX = columnBoxes.stream()
-                    .mapToDouble(box -> (box.x() + box.width() - offsetX) / zoom)
-                    .max()
-                    .orElse(minWorldX + 1);
-            double maxWorldY = columnBoxes.stream()
-                    .mapToDouble(box -> (box.y() + box.height() - offsetY) / zoom)
-                    .max()
-                    .orElse(minWorldY + 1);
-            double contentWidth = Math.max(1, maxWorldX - minWorldX);
-            double contentHeight = Math.max(1, maxWorldY - minWorldY);
-            double availableDimension = MAX_OUTPUT_DIMENSION - OUTPUT_MARGIN * 2;
-            double outputScale = Math.min(
-                    OUTPUT_RENDER_SCALE,
-                    Math.min(
-                            Math.min(availableDimension / contentWidth, availableDimension / contentHeight),
-                            Math.sqrt(MAX_OUTPUT_PIXELS / (contentWidth * contentHeight))));
-            if (!Double.isFinite(outputScale) || outputScale <= 0) {
+            double minX = Double.POSITIVE_INFINITY;
+            double minY = Double.POSITIVE_INFINITY;
+            double maxX = Double.NEGATIVE_INFINITY;
+            double maxY = Double.NEGATIVE_INFINITY;
+            for (ColumnBox box : columnBoxes) {
+                minX = Math.min(minX, (box.x() - offsetX) / zoom);
+                minY = Math.min(minY, (box.y() - offsetY) / zoom);
+                maxX = Math.max(maxX, (box.x() + box.width() - offsetX) / zoom);
+                maxY = Math.max(maxY, (box.y() + box.height() - offsetY) / zoom);
+            }
+            return new ProjectMapOutputPlan.Box(
+                    minX - OUTPUT_MARGIN,
+                    minY - OUTPUT_MARGIN,
+                    Math.max(1, maxX - minX) + OUTPUT_MARGIN * 2,
+                    Math.max(1, maxY - minY) + OUTPUT_MARGIN * 2);
+        }
+
+        private ProjectMapOutputPlan.Box worldBox(double x, double y, double width, double height) {
+            return new ProjectMapOutputPlan.Box(
+                    (x - offsetX) / zoom, (y - offsetY) / zoom, width / zoom, height / zoom);
+        }
+
+        boolean outputIsLandscape() {
+            repaint();
+            ProjectMapOutputPlan.Box bounds = outputBounds();
+            return bounds != null && bounds.width() > bounds.height();
+        }
+
+        /**
+         * Renders every laid-out column for pages of the given printable size, independent of the current
+         * pan and zoom and always in a light palette. Painting goes to an off-scene Canvas, so the live
+         * Canvas, viewport and hover state are untouched; interactive controls and the overview are left out.
+         */
+        ProjectMapOutput.Rendered renderOutput(double pageWidth, double pageHeight) {
+            repaint();
+            ProjectMapOutputPlan.Box bounds = outputBounds();
+            if (bounds == null) {
                 return null;
             }
-            int outputWidth = Math.max(1, Math.min((int) MAX_OUTPUT_DIMENSION, (int)
-                    Math.ceil(contentWidth * outputScale + OUTPUT_MARGIN * 2)));
-            int outputHeight = Math.max(1, Math.min((int) MAX_OUTPUT_DIMENSION, (int)
-                    Math.ceil(contentHeight * outputScale + OUTPUT_MARGIN * 2)));
+            List<ProjectMapOutputPlan.Box> obstacles = new ArrayList<>(columnBoxes.size() + boxes.size());
+            for (ColumnBox box : columnBoxes) {
+                obstacles.add(worldBox(box.x(), box.y(), box.width(), box.height()));
+            }
+            for (NodeBox box : boxes) {
+                obstacles.add(worldBox(box.x(), box.y(), box.width(), box.height()));
+            }
+            ProjectMapOutputPlan.Plan plan = ProjectMapOutputPlan.plan(bounds, obstacles, pageWidth, pageHeight);
+            if (plan.pages().isEmpty() || !Double.isFinite(plan.renderScale()) || plan.renderScale() <= 0) {
+                return null;
+            }
 
-            double liveCanvasWidth = canvas.getWidth();
-            double liveCanvasHeight = canvas.getHeight();
             double liveZoom = zoom;
             double liveOffsetX = offsetX;
             double liveOffsetY = offsetY;
             Path liveHovered = hovered;
+            Map<IconKey, Image> liveIcons = new HashMap<>(iconImages);
+            String liveIconStyle = iconRasterizer.getStyle();
+            List<Image> pages = new ArrayList<>(plan.pages().size());
             painting = true;
             try {
-                canvas.setWidth(outputWidth);
-                canvas.setHeight(outputHeight);
-                zoom = outputScale;
-                offsetX = OUTPUT_MARGIN - minWorldX * outputScale;
-                offsetY = OUTPUT_MARGIN - minWorldY * outputScale;
+                canvas = new Canvas(1, 1);
+                outputPalette = outputPalette();
+                iconImages.clear();
+                iconRasterizer.setStyle(OUTPUT_ICON_STYLE);
+                zoom = plan.renderScale();
                 hovered = null;
-                paint();
-                WritableImage image = new WritableImage(outputWidth, outputHeight);
-                return canvas.snapshot(new SnapshotParameters(), image);
+                for (ProjectMapOutputPlan.Cell cell : plan.pages()) {
+                    pages.add(renderOutputPage(cell));
+                }
             } finally {
-                canvas.setWidth(liveCanvasWidth);
-                canvas.setHeight(liveCanvasHeight);
+                canvas = liveCanvas;
+                outputPalette = null;
+                iconImages.clear();
+                iconImages.putAll(liveIcons);
+                iconRasterizer.setStyle(liveIconStyle);
                 zoom = liveZoom;
                 offsetX = liveOffsetX;
                 offsetY = liveOffsetY;
@@ -2104,7 +2368,64 @@ final class ProjectMapView extends VBox {
                 } finally {
                     painting = false;
                 }
+                requestLayout();
             }
+            return new ProjectMapOutput.Rendered(List.copyOf(pages), plan.pointsPerPixel(), plan);
+        }
+
+        private static int outputTileSize() {
+            double scale = 1;
+            for (javafx.stage.Screen screen : javafx.stage.Screen.getScreens()) {
+                scale = Math.max(scale, Math.max(screen.getOutputScaleX(), screen.getOutputScaleY()));
+            }
+            return Math.max(256, Math.min(OUTPUT_TILE, (int) (OUTPUT_TEXTURE_LIMIT / Math.ceil(scale))));
+        }
+
+        /** Paints one page's world rectangle at the current (output) zoom, a bounded tile at a time. */
+        private Image renderOutputPage(ProjectMapOutputPlan.Cell cell) {
+            int pageWidth = Math.max(1, (int) Math.ceil(cell.width() * zoom));
+            int pageHeight = Math.max(1, (int) Math.ceil(cell.height() * zoom));
+            WritableImage page = new WritableImage(pageWidth, pageHeight);
+            SnapshotParameters parameters = new SnapshotParameters();
+            int step = outputTileSize();
+            for (int tileY = 0; tileY < pageHeight; tileY += step) {
+                int tileHeight = Math.min(step, pageHeight - tileY);
+                for (int tileX = 0; tileX < pageWidth; tileX += step) {
+                    int tileWidth = Math.min(step, pageWidth - tileX);
+                    canvas.setWidth(tileWidth);
+                    canvas.setHeight(tileHeight);
+                    offsetX = -cell.x() * zoom - tileX;
+                    offsetY = -cell.y() * zoom - tileY;
+                    paint();
+                    if (tileWidth == pageWidth && tileHeight == pageHeight) {
+                        canvas.snapshot(parameters, page);
+                    } else {
+                        WritableImage tile = canvas.snapshot(parameters, null);
+                        page.getPixelWriter()
+                                .setPixels(tileX, tileY, tileWidth, tileHeight, tile.getPixelReader(), 0, 0);
+                    }
+                }
+            }
+            return page;
+        }
+
+        /** Primer Light, whatever the live theme: ink on white is what a printer and a PDF reader expect. */
+        private Map<Rectangle, Color> outputPalette() {
+            Map<Rectangle, Color> palette = new java.util.IdentityHashMap<>();
+            palette.put(bgProbe, Color.WHITE);
+            palette.put(surfaceProbe, Color.web("#f6f8fa"));
+            palette.put(borderProbe, Color.web("#d0d7de"));
+            palette.put(textProbe, Color.web("#1f2328"));
+            palette.put(mutedProbe, Color.web("#59636e"));
+            palette.put(accentProbe, Color.web("#0969da"));
+            palette.put(onAccentProbe, Color.WHITE);
+            palette.put(warningProbe, Color.web("#9a6700"));
+            palette.put(successProbe, Color.web("#1a7f37"));
+            palette.put(folderProbe, Color.web("#0969da"));
+            palette.put(fileProbe, Color.web("#59636e"));
+            palette.put(oliveProbe, Color.web("#6e7b25"));
+            palette.put(violetProbe, Color.web("#8250df"));
+            return palette;
         }
 
         String zoomPercent() {
@@ -2182,8 +2503,11 @@ final class ProjectMapView extends VBox {
 
         @Override
         protected void layoutChildren() {
-            canvas.setWidth(Math.max(1, getWidth()));
-            canvas.setHeight(Math.max(1, getHeight()));
+            if (outputPalette != null) {
+                return; // rasterizing an icon lays the scene out mid-output; renderOutput asks again afterwards
+            }
+            liveCanvas.setWidth(Math.max(1, getWidth()));
+            liveCanvas.setHeight(Math.max(1, getHeight()));
             repaint();
             fitIfPending();
         }
@@ -2672,7 +2996,7 @@ final class ProjectMapView extends VBox {
 
         /** Compact overview for large or manually spread layouts; the bright rectangle is the viewport. */
         private void drawOverview(GraphicsContext g, double viewportWidth, double viewportHeight) {
-            if (columnBoxes.isEmpty()) {
+            if (outputPalette != null || columnBoxes.isEmpty()) {
                 return;
             }
             double minX = columnBoxes.stream().mapToDouble(ColumnBox::x).min().orElse(0);
@@ -3753,8 +4077,19 @@ final class ProjectMapView extends VBox {
                     && entries.stream().anyMatch(entry -> entry.path().equals(path));
         }
 
+        /**
+         * Where a card for {@code path} opens: beside its column on the side the flow leaves free (else the
+         * other side) when at least the card's minimum fits there, otherwise over the map against the
+         * panel edge. Reads the layout only — the viewport is never moved to make room.
+         */
         private ProjectMapPreview.Placement previewPlacement(
-                Path path, double requestedWidth, double requestedHeight, double parentWidth, double parentHeight) {
+                Path path,
+                double requestedWidth,
+                double requestedHeight,
+                double minimumWidth,
+                double minimumHeight,
+                double parentWidth,
+                double parentHeight) {
             NodeBox node = boxes.stream()
                     .filter(box -> box.entry().path().equals(path))
                     .findFirst()
@@ -3765,69 +4100,49 @@ final class ProjectMapView extends VBox {
                             .filter(box -> box.column().id().equals(columnId(node.entry())))
                             .findFirst()
                             .orElse(null);
-            double fullWidth = boundedPreviewSize(
-                    requestedWidth, ProjectMapPreview.MIN_WIDTH, parentWidth - PREVIEW_EDGE_MARGIN * 2);
-            double fullHeight = boundedPreviewSize(
-                    requestedHeight, ProjectMapPreview.MIN_HEIGHT, parentHeight - PREVIEW_EDGE_MARGIN * 2);
+            double fullWidth = boundedPreviewSize(requestedWidth, minimumWidth, parentWidth - PREVIEW_EDGE_MARGIN * 2);
+            double fullHeight =
+                    boundedPreviewSize(requestedHeight, minimumHeight, parentHeight - PREVIEW_EDGE_MARGIN * 2);
+            double farX = Math.max(PREVIEW_EDGE_MARGIN, parentWidth - fullWidth - PREVIEW_EDGE_MARGIN);
+            double farY = Math.max(PREVIEW_EDGE_MARGIN, parentHeight - fullHeight - PREVIEW_EDGE_MARGIN);
             if (node == null || column == null) {
-                return new ProjectMapPreview.Placement(
-                        Math.max(PREVIEW_EDGE_MARGIN, parentWidth - fullWidth - PREVIEW_EDGE_MARGIN),
-                        PREVIEW_EDGE_MARGIN,
-                        fullWidth,
-                        fullHeight);
+                return new ProjectMapPreview.Placement(farX, PREVIEW_EDGE_MARGIN, fullWidth, fullHeight);
             }
 
+            boolean forward =
+                    flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.TOP_TO_BOTTOM;
             if (flowDirection == FlowDirection.LEFT_TO_RIGHT || flowDirection == FlowDirection.RIGHT_TO_LEFT) {
-                double availableWidth = parentWidth - PREVIEW_EDGE_MARGIN * 2 - PREVIEW_COLUMN_GAP - column.width();
-                double width = boundedPreviewSize(requestedWidth, ProjectMapPreview.MIN_WIDTH, availableWidth);
-                double columnX;
-                if (flowDirection == FlowDirection.LEFT_TO_RIGHT) {
-                    double maximum = parentWidth - PREVIEW_EDGE_MARGIN - PREVIEW_COLUMN_GAP - width - column.width();
-                    columnX = clampPreview(column.x(), PREVIEW_EDGE_MARGIN, Math.max(PREVIEW_EDGE_MARGIN, maximum));
-                } else {
-                    double minimum = PREVIEW_EDGE_MARGIN + width + PREVIEW_COLUMN_GAP;
-                    double maximum = parentWidth - PREVIEW_EDGE_MARGIN - column.width();
-                    columnX = clampPreview(column.x(), minimum, Math.max(minimum, maximum));
+                double y = clampPreview(node.y() + node.height() / 2 - fullHeight / 2, PREVIEW_EDGE_MARGIN, farY);
+                double afterX = Math.max(PREVIEW_EDGE_MARGIN, column.x() + column.width() + PREVIEW_COLUMN_GAP);
+                double afterRoom = parentWidth - PREVIEW_EDGE_MARGIN - afterX;
+                double beforeEnd = Math.min(parentWidth - PREVIEW_EDGE_MARGIN, column.x() - PREVIEW_COLUMN_GAP);
+                double beforeRoom = beforeEnd - PREVIEW_EDGE_MARGIN;
+                boolean after =
+                        forward ? afterRoom >= minimumWidth || beforeRoom < minimumWidth : beforeRoom < minimumWidth;
+                double room = after ? afterRoom : beforeRoom;
+                if (room < minimumWidth) {
+                    // No side has room (a tool-window-wide panel): lie over the map rather than shrink to a sliver.
+                    return new ProjectMapPreview.Placement(
+                            forward ? farX : PREVIEW_EDGE_MARGIN, y, fullWidth, fullHeight, !forward);
                 }
-                double shift = columnX - column.x();
-                if (shift != 0) {
-                    offsetX += shift;
-                    repaint();
-                }
-                double x = flowDirection == FlowDirection.LEFT_TO_RIGHT
-                        ? columnX + column.width() + PREVIEW_COLUMN_GAP
-                        : columnX - PREVIEW_COLUMN_GAP - width;
-                double y = clampPreview(
-                        node.y() + node.height() / 2 - fullHeight / 2,
-                        PREVIEW_EDGE_MARGIN,
-                        Math.max(PREVIEW_EDGE_MARGIN, parentHeight - fullHeight - PREVIEW_EDGE_MARGIN));
-                return new ProjectMapPreview.Placement(x, y, width, fullHeight);
+                double width = Math.min(fullWidth, room);
+                return new ProjectMapPreview.Placement(
+                        after ? afterX : beforeEnd - width, y, width, fullHeight, !after);
             }
 
-            double availableHeight = parentHeight - PREVIEW_EDGE_MARGIN * 2 - PREVIEW_COLUMN_GAP - column.height();
-            double height = boundedPreviewSize(requestedHeight, ProjectMapPreview.MIN_HEIGHT, availableHeight);
-            double columnY;
-            if (flowDirection == FlowDirection.TOP_TO_BOTTOM) {
-                double maximum = parentHeight - PREVIEW_EDGE_MARGIN - PREVIEW_COLUMN_GAP - height - column.height();
-                columnY = clampPreview(column.y(), PREVIEW_EDGE_MARGIN, Math.max(PREVIEW_EDGE_MARGIN, maximum));
-            } else {
-                double minimum = PREVIEW_EDGE_MARGIN + height + PREVIEW_COLUMN_GAP;
-                double maximum = parentHeight - PREVIEW_EDGE_MARGIN - column.height();
-                columnY = clampPreview(column.y(), minimum, Math.max(minimum, maximum));
+            double x = clampPreview(node.x() + node.width() / 2 - fullWidth / 2, PREVIEW_EDGE_MARGIN, farX);
+            double afterY = Math.max(PREVIEW_EDGE_MARGIN, column.y() + column.height() + PREVIEW_COLUMN_GAP);
+            double afterRoom = parentHeight - PREVIEW_EDGE_MARGIN - afterY;
+            double beforeEnd = Math.min(parentHeight - PREVIEW_EDGE_MARGIN, column.y() - PREVIEW_COLUMN_GAP);
+            double beforeRoom = beforeEnd - PREVIEW_EDGE_MARGIN;
+            boolean after =
+                    forward ? afterRoom >= minimumHeight || beforeRoom < minimumHeight : beforeRoom < minimumHeight;
+            double room = after ? afterRoom : beforeRoom;
+            if (room < minimumHeight) {
+                return new ProjectMapPreview.Placement(x, forward ? farY : PREVIEW_EDGE_MARGIN, fullWidth, fullHeight);
             }
-            double shift = columnY - column.y();
-            if (shift != 0) {
-                offsetY += shift;
-                repaint();
-            }
-            double x = clampPreview(
-                    node.x() + node.width() / 2 - fullWidth / 2,
-                    PREVIEW_EDGE_MARGIN,
-                    Math.max(PREVIEW_EDGE_MARGIN, parentWidth - fullWidth - PREVIEW_EDGE_MARGIN));
-            double y = flowDirection == FlowDirection.TOP_TO_BOTTOM
-                    ? columnY + column.height() + PREVIEW_COLUMN_GAP
-                    : columnY - PREVIEW_COLUMN_GAP - height;
-            return new ProjectMapPreview.Placement(x, y, fullWidth, height);
+            double height = Math.min(fullHeight, room);
+            return new ProjectMapPreview.Placement(x, after ? afterY : beforeEnd - height, fullWidth, height);
         }
 
         private double boundedPreviewSize(double requested, double minimum, double available) {
@@ -3872,6 +4187,9 @@ final class ProjectMapView extends VBox {
         }
 
         private Color color(Rectangle probe, Color fallback) {
+            if (outputPalette != null) {
+                return outputPalette.getOrDefault(probe, fallback);
+            }
             Paint fill = probe.getFill();
             return fill instanceof Color value ? value : fallback;
         }

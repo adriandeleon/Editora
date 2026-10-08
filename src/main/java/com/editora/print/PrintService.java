@@ -158,24 +158,34 @@ public final class PrintService {
         });
     }
 
-    /** Prepares already-rendered JavaFX images, such as a complete Project Map snapshot, for printing. */
-    public void prepareFxImages(List<Image> sourceImages, Consumer<Prepared> onReady) {
-        exec.submit(() -> {
-            try {
-                List<Image> images = sourceImages == null
-                        ? List.of()
-                        : sourceImages.stream()
-                                .filter(java.util.Objects::nonNull)
-                                .toList();
-                if (images.isEmpty()) {
-                    deliver(onReady, new Prepared(null, "nothing to print"));
-                    return;
-                }
-                deliver(onReady, new Prepared(layout -> imagePages(images, layout), null));
-            } catch (Throwable e) {
-                deliver(onReady, new Prepared(null, message(e)));
+    /**
+     * Page nodes for images that are already cut to pages (the Project Map output): one image per page,
+     * drawn from the top-left corner at {@code pointsPerPixel}. Must run on the FX thread.
+     */
+    public static List<Node> pagedImages(List<Image> images, double pointsPerPixel, PageLayout layout) {
+        double availW = layout.getPrintableWidth();
+        double availH = layout.getPrintableHeight();
+        List<Node> pages = new java.util.ArrayList<>();
+        for (Image img : images == null ? List.<Image>of() : images) {
+            if (img == null || img.getWidth() < 1 || img.getHeight() < 1) {
+                continue;
             }
-        });
+            double scale = Math.min(
+                    pointsPerPixel > 0 ? pointsPerPixel : 1.0,
+                    Math.min(availW / img.getWidth(), availH / img.getHeight()));
+            ImageView iv = new ImageView(img);
+            iv.setPreserveRatio(true);
+            iv.setSmooth(true);
+            iv.setFitWidth(img.getWidth() * scale);
+            StackPane root = new StackPane(iv);
+            StackPane.setAlignment(iv, javafx.geometry.Pos.TOP_LEFT);
+            root.setPrefSize(availW, availH);
+            pages.add(root);
+        }
+        if (pages.isEmpty()) {
+            pages.add(new StackPane());
+        }
+        return pages;
     }
 
     /** Prints each page node, ends the job, and returns the result. Must run on the FX thread. */

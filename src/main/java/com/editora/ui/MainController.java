@@ -9012,7 +9012,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ProjectMapPreview.Content projectMapPreviewContent(Path file) {
         EditorBuffer buffer = bufferOf(tabForPath(file));
         if (buffer == null) {
-            return null;
+            return ProjectMapPreview.Content.closed(editorConfigCharsetFor(file));
         }
         var area = buffer.getArea();
         int length = area.getLength();

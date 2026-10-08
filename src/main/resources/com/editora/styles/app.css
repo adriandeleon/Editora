@@ -1385,6 +1385,15 @@
     -fx-border-width: 0 2 2 0;
     -fx-opacity: 0.72;
 }
+/* Keyboard focus inside a card: global chords still act on the active editor tab, so the card that has
+   focus must be unmistakable. */
+.project-map-preview:focus-within > .project-map-preview-frame {
+    -fx-border-color: -color-accent-emphasis;
+}
+.project-map-preview-missing .project-map-preview-status {
+    -fx-text-fill: -state-amber;
+    -fx-font-weight: bold;
+}
 .project-map-note-preview-frame,
 .project-map-note-preview-scroll,
 .project-map-note-preview-scroll > .viewport,

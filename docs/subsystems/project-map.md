@@ -66,15 +66,40 @@ Floating previews stay at screen scale instead of participating in canvas zoom. 
 its card, each lower corner resizes it, and each editor scrolls independently. Opening another file
 keeps existing cards visible; clicking an already-previewed file focuses its existing card, and each
 close button removes only that card. An accent connector runs from every preview to its source file row
-and follows map pan/zoom plus card movement and resizing. Initial placement tries to avoid other cards
-and cascades them when the viewport cannot fit them without overlap. Up to eight previews remain open,
-with a ninth replacing the least recently focused card to keep editor and loader memory bounded.
+and follows map pan/zoom plus card movement and resizing.
+
+Code previews and note cards are placed by one path (`ProjectMapView.previewPlacement` over
+`MapSurface.previewPlacement`). A card opens beside its row's column — on the side the flow leaves free,
+else on the other — when at least the card's minimum size fits there; otherwise it lies over the map
+against the panel edge, which is the normal case in a tool-window-wide panel. It is then shifted or
+cascaded clear of the cards already open. **Placement never pans the map**, and a card is never smaller
+than its minimum (340 × 220 for code, 300 × 180 for notes) unless the panel itself is. Text that arrives
+after a card was placed only widens it where it stands, by at most 120 columns and never past the panel;
+a card the user moved keeps its position and one the user resized keeps its size.
+
+Up to eight cards remain open, code and note cards together; a ninth replaces the least recently used
+one. Pressing a card, moving keyboard focus into it and scrolling it all count as use. A folder's cards
+close when the folder stops being expanded, however it was collapsed, and all cards close when the root
+changes. Switching to the Tree and back keeps them where they were.
 
 A preview uses current unsaved text when the file is already open; otherwise it reads the file off
-the JavaFX application thread. It is visibly marked read-only, has independent text/image zoom
-controls, and renders common bitmap image formats as well as syntax-highlighted text. Its context menu
-can copy selected code, select all, add a bookmark at the clicked line, or add a Personal Note for the
-selected or clicked lines. The **Open** action promotes the previewed file to a normal editor tab.
+the JavaFX application thread, decoded as the editor would open it (BOM, then the `.editorconfig`
+charset, then UTF-8 with a single-byte fallback instead of U+FFFD) and with `\n` line endings. It is
+visibly marked read-only, has independent text/image zoom controls, and renders common bitmap image
+formats as well as syntax-highlighted text. Its context menu can copy selected code, select all, add a
+bookmark at the clicked line, or add a Personal Note for the selected or clicked lines. The **Open**
+action promotes the previewed file to a normal editor tab.
+
+An open preview is kept current without being moved or re-scrolled: a card that mirrors an open buffer
+looks for edits once a second while the Map is on screen and replaces only the range that changed; any
+other card re-reads its file when the Project watcher reports a change and the file's size or
+modification time differs. A card whose file was deleted or renamed keeps its last text, says the file
+no longer exists, and disables **Open**.
+
+`Escape` in a focused card closes it and returns focus to the map; `Tab` leaves the preview's text.
+Global chords still act on the active editor tab while a card has focus (the app-wide key policy), so a
+focused card has an accent border and its text area's accessible name states the file and that it is
+read-only. Cards cannot be moved or resized from the keyboard.
 
 Context menus use JavaFX auto-hide plus a next-pulse owner-scene press filter. This mirrors the
 other Project menus and ensures a click elsewhere closes the menu even on platforms where the
@@ -82,8 +107,13 @@ native popup grab misses the press.
 
 Files and folders with one or more bookmarks or Personal Notes show compact, independently colored
 indicators in both the Tree and Map. Personal Notes indicators are interactive: they open a separate editable note card attached to the same
-file or folder row by a connector. Note cards and code previews have independent lifecycles. The filter row's
+file or folder row by a connector. A note card and the code preview of the same file open and close
+independently, under the shared limit above. The filter row's
 default-off “Hide all open Personal Notes” toggle temporarily hides those cards without closing them.
+A note card saves an edit on focus loss, Shortcut+Enter or close, comparing against the body the store
+last held. It follows the store: when notes change elsewhere it adopts the new bodies (an edit in
+progress is kept), and it closes when its notes are deleted. A blanked note is not a deletion — its text
+is restored and the status bar says so.
 Marker state is read from an open buffer when available and otherwise from
 the active project's persisted stores, so adding an annotation refreshes both views without opening
 the target file.
@@ -198,11 +228,24 @@ Bezier curve. Nodes use the viewport itself, while the overview summarizes the c
 Continuous pan, zoom, and column-drag events update their state immediately but coalesce Canvas rendering to
 one repaint per JavaFX pulse.
 
-Print and PDF output temporarily render every laid-out column and connector into a bounded snapshot,
-independent of the live viewport. The snapshot preserves the active flow, filters, open branches,
-manual column positions, and theme, but omits interactive column controls and the overview. Rendering
-is capped by dimension and pixel budgets for large projects. The live canvas size, pan, zoom, and
-hover state are restored before print preview or the PDF destination flow continues.
+Print and PDF output render every laid-out column and connector independent of the live viewport. The
+buttons hand the window a deferred `ProjectMapOutput`; nothing is rendered until the page size is known,
+so a cancelled PDF dialog costs nothing and print re-renders for the layout chosen in the print dialog.
+`ProjectMapOutputPlan` (pure) decides the pages: the map goes on one page while a row label stays at
+least 7 pt tall, on a landscape page when it is wider than tall; a larger map keeps that scale and is
+tiled across a grid of pages, cut between columns and rows where a gap is in reach, and pages nothing
+falls on are left out. The status bar says when the map was scaled down or tiled. A per-page dimension
+cap (8,192 px) and a total pixel budget (12 Mpx) remain as a safety net; a map that cannot keep 96 dpi
+inside them is still output, with a warning that small labels may be unreadable.
+
+`MapSurface.renderOutput` paints each page on an off-scene `Canvas` — `paint()` draws on the `canvas`
+field, which points at it for the duration — so the live Canvas, pan, zoom and hover state are never
+touched. A Canvas is backed by one texture of its size times the highest screen scale, and Prism caps a
+texture at 4,096 px by default, so a page is assembled from renders of at most 2,048 px (less on a
+denser screen). Output always uses a light palette (`outputPalette`, plus looked-up colour overrides
+for the rasterized row icons), whatever the live theme; it preserves the active flow, filters, open
+branches and manual column positions, and omits the interactive column controls and the overview. Labels
+are bitmap, so the PDF is not searchable.
 
 Column cards are content-sized rather than uniform. For each branch column, the map measures every
 loaded entry name at the drawing font and reserves enough width for the full label, icon, status
@@ -238,15 +281,20 @@ Responsibilities are split as follows:
   tells the map when it is on screen (`setActive`), forwards the hidden-files setting, and reports in-app
   renames and moves (`pathRenamed`).
 - `ProjectMapView` owns expansion (manual and per-search), row limits, selection history, breadcrumbs,
-  global controls, async reloads, print/PDF snapshot actions, and the bounded collection of floating
-  preview cards.
+  global controls, async reloads, the deferred print/PDF job, and the bounded collection of floating
+  cards: opening, placement, eviction, refresh scheduling, and closing the cards of a folder that is no
+  longer expanded.
 - `ProjectMapModel` is JavaFX-free. It loads bounded snapshots with per-directory facts, maintains
   independent branch expansions, groups entries by owning parent, applies ordering and filters,
   classifies file types, and determines emphasized ancestor paths.
 - `ProjectMapView.MapSurface` owns paint, layout, transforms, hit-testing, pointer/keyboard input,
   column controls, icon snapshots, and accessibility text.
 - `ProjectMapPreview` owns one bounded read-only RichTextFX card, off-thread file loading and syntax
-  highlighting, drag/resize behavior, and promotion to an editor tab.
+  highlighting, in-place refresh, drag/resize behavior, and promotion to an editor tab.
+- `ProjectMapNotePreview` owns one editable Personal Notes card: a text area per note, saving, and
+  adopting the store's notes on refresh.
+- `ProjectMapOutputPlan` is the JavaFX-free page plan for print/PDF; `ExportCoordinator` renders the
+  `ProjectMapOutput` for the PDF page size or the print layout and reports how it was fitted.
 
 The Project tree is the source of truth for file-management actions. `ProjectPanel` injects a
 context-menu factory into the map and calls the same `contextMenuFor(...)` path used by tree cells.
@@ -295,8 +343,11 @@ that a reload does not contain is dropped, together with its selection-history e
 Each open preview owns a daemon `project-map-preview-loader`; the eight-card limit bounds their total
 number. Every loader queue is coalesced so stale work for that card does not accumulate. Closed text
 reads are capped at 1,000,000 bytes, image reads at 20,000,000 bytes, displayed text at 400,000
-characters, and syntax highlighting at 160,000 characters. Per-card generation checks guard both
-loaded text and highlighting results. Binary and failed reads produce explicit preview states.
+characters, and syntax highlighting at 160,000 characters; neither cap splits a multi-byte sequence or
+a surrogate pair. Images are decoded on the loader thread. Per-card generation checks guard both
+loaded text and highlighting results. Binary, failed and missing reads produce explicit preview states.
+Card refreshes are debounced (250 ms after a state or listing notification, at most once a second for
+content-only disk changes and for following an open buffer) and stop while the Map is off screen.
 
 All scene-graph mutation, paint, and control synchronization stays on the JavaFX application thread.
 No paint, hover, or per-keystroke path accesses the filesystem. `dispose()` invalidates generations,
@@ -323,6 +374,12 @@ The focused coverage lives in:
 - `ProjectMapInputFxTest` for keyboard and pointer input: real key events fired through a wired window
   under the Emacs, CUA, VS Code, IntelliJ, and Sublime keymaps, `/` by typed character, the keyboard
   context menu, row keys, Escape, history coalescing, header drags, hover, and wheel and pinch gestures;
+- `ProjectMapOutputPlanTest` for the print/PDF page plan (fit, scale, tiling, cuts, budgets), the paged
+  PDF writer, and preview decoding at the read caps;
+- `ProjectMapCardsFxTest` for whole-map output beyond the viewport in a light palette, deferred PDF
+  rendering, card placement in narrow panels without panning, late-load growth, decoding and CRLF
+  highlighting, buffer/disk refresh and missing files, note-card saving and refresh, Escape/Tab, the
+  shared card limit, closing cards on collapse, and keeping cards across a Tree/Map switch;
 - `ProjectMapViewFxTest` for Tree/Map integration, native icon rasterization, open markers,
   tooltips, single-click expansion, multiple independent previews, shared context menus and dismissal, text-field
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
