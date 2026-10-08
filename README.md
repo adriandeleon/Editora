@@ -506,15 +506,20 @@ Editora is built with the help of AI coding tools.
   highlighting and optional line numbers (always a light theme), the **Markdown** preview as native
   vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
   diagram. Use **File → Export to PDF…** for the file's text or **Export Rendered Preview to PDF…** for
-  its preview (both also in the palette); choose line numbers, syntax highlighting, and page size
-  (Letter / A4) under *Settings → Editor → Export & Print*.
+  its preview (both also in the palette), or **Export Selection to PDF…** from the editor's right-click
+  menu. PDFs have clickable links, bookmarks from the headings and a footer with the document name and
+  page number. Choose line numbers, syntax highlighting, the page footer and the PDF page size (Letter /
+  A4, defaulting to your region's) under *Settings → Editor → Export & Print*. The page size does not
+  apply to Mermaid, Graphviz, PlantUML or Typst PDFs, and the PDFs are not tagged for accessibility.
 - **Export to HTML** — export a Markdown file's rendered preview to a standalone, self-contained `.html`
   file (embedded stylesheet, heading anchors, math rendered as images). Run "Preview: Export to HTML" from
   the palette.
 - **Print** — native printing of code or the rendered Markdown preview, with a print-preview window
-  first (always light, what-you-preview-is-what-prints) with page setup and keyboard page navigation.
-  Use **File → Print…** for the file's text or **Print Rendered Preview…** for its preview (both also in
-  the palette).
+  first (always light, what-you-preview-is-what-prints) with page setup, zoom and keyboard page
+  navigation. Use **File → Print…** for the file's text or **Print Rendered Preview…** for its preview
+  (both also in the palette), or **Print Selection…** from the editor's right-click menu. Image tabs
+  print too. Printing uses the paper chosen in Page Setup; printed links show their address. A CSV
+  prints and exports what its grid shows (filter, sort and header setting).
 - **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a trigger + Tab to
   expand, or pick one with "Snippet: Insert…" (palette, Code menu; `C-c i` in the Emacs keymap) or from
   the completion popup. Triggers needn't be plain words: `#inc` (C/C++ `#include`), `!` (the HTML
