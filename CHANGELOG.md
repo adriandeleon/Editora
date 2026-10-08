@@ -44,6 +44,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   did nothing, because no match was highlighted — and Down first landed on the project's own row, where
   Enter collapsed the result list. The first match is now highlighted when the results arrive, so Enter
   opens it and Down moves on from there.
+- **Project tree: a folder you close and reopen shows what it holds now.** Files added to or removed from
+  a folder while it was closed in the tree did not appear when it was opened again — only after the
+  window lost and regained focus. A reopened folder is now listed again, and a closed one is no longer
+  watched for changes.
 
 ## [0.20.0] - 2026-10-08
 
