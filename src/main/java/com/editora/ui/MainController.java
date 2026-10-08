@@ -2140,10 +2140,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 this::isPathModified,
                 this::hasFileOpen,
                 this::projectMapPreviewContent);
-        projectPanel.setRememberedMapFlow(config.getWorkspaceState().getProjectMapFlow(), flow -> {
-            config.getWorkspaceState().setProjectMapFlow(flow);
-            config.save();
-        });
+        projectPanel.setRememberedMapState(config::getWorkspaceState, config::save);
+        projectPanel.setOpenFiles(() -> editorArea.tabs().stream()
+                .map(MainController::tabPath)
+                .filter(java.util.Objects::nonNull)
+                .toList());
         projectPanel.setPrompt(this::promptText); // in-scene rename prompt
         projectDeletes = new ProjectDeleteCoordinator(
                 path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
@@ -2298,6 +2299,11 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public void updatePersonalNote(Path path, com.editora.config.PersonalNote note, String body) {
                 notesCoordinator.updatePersonalNote(path, note, body);
+            }
+
+            @Override
+            public java.util.Collection<Path> markedPaths() {
+                return ProjectPanel.pathsOf(bookmarkCoordinator.storedKeys(), notesCoordinator.storedKeys());
             }
         });
         bookmarkCoordinator.setOnChanged(projectPanel::refreshMarkers);

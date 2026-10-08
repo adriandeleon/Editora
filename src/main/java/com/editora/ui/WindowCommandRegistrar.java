@@ -406,6 +406,13 @@ final class WindowCommandRegistrar {
                 host.deleteProject();
             }
         }));
+        // The Tree/Map switch of the Project tool window, which this also opens so the change is on screen.
+        host.registry().register(Command.of("project.toggleMapView", () -> {
+            if (host.projectsEnabled()) {
+                host.toolWindows().open(host.projectToolWindow());
+                host.projectPanel().toggleMapView();
+            }
+        }));
         host.registry().register(Command.of("file.save", host::onSave));
         // Palette / keybinding Save As is keyboard-first: prompt for the path in-scene (the toolbar button's
         // FXML onAction still opens the native file chooser).
