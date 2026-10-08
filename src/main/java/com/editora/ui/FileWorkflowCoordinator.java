@@ -527,6 +527,18 @@ final class FileWorkflowCoordinator {
     }
 
     /**
+     * Reloads the PDF viewer tab that shows {@code file}, if this window has one: an export has just replaced
+     * the file, and the viewer keeps the document it read in memory. A text buffer on the file is left to the
+     * external-change check, which knows about unsaved edits.
+     */
+    void reloadViewerTab(Path file) {
+        Tab tab = host.tabForPath(file);
+        if (tab != null && tab.getUserData() instanceof PdfViewerPane pdf) {
+            pdf.reload();
+        }
+    }
+
+    /**
      * True when {@code file} looks like a binary (so it opens in the hex viewer, not as garbage text): reads a
      * small sample and applies the {@link BinarySniff} heuristic. Unreadable ⇒ false (the text path reports the
      * error). Skipped for the huge-file case is unnecessary — only a bounded {@link BinarySniff#SAMPLE_BYTES}

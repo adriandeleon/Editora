@@ -71,6 +71,7 @@ public final class PdfViewerPane implements TabContent {
     private final Label pageLabel = new Label();
     private Button prevButton;
     private Button nextButton;
+    private Node toolbar;
 
     /** Single daemon thread: loads the document + rasterizes pages (PDDocument is not thread-safe). */
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
@@ -129,7 +130,8 @@ public final class PdfViewerPane implements TabContent {
             }
         });
         root.setCenter(scroll);
-        root.setTop(buildToolbar());
+        toolbar = buildToolbar();
+        root.setTop(toolbar);
     }
 
     private Node buildToolbar() {
@@ -173,7 +175,22 @@ public final class PdfViewerPane implements TabContent {
         return b;
     }
 
+    /**
+     * Reads the file again: it was replaced on disk — an export wrote over the PDF this tab shows — and the
+     * viewer holds the old bytes in memory. Stays on the page it was on when the new document has it.
+     */
+    void reload() {
+        if (!disposed) {
+            load(currentPage);
+        }
+    }
+
     private void load() {
+        load(0);
+    }
+
+    /** Loads the document and shows the page at {@code wanted}, or the last page of a shorter document. */
+    private void load(int wanted) {
         long g = renderGen.incrementAndGet();
         exec.submit(() -> {
             try {
@@ -183,20 +200,33 @@ public final class PdfViewerPane implements TabContent {
                     return;
                 }
                 byte[] bytes = Files.readAllBytes(path); // provider-agnostic (local + SFTP)
+                PDDocument previous = document;
                 document = Loader.loadPDF(bytes);
                 renderer = new PDFRenderer(document);
+                if (previous != null) { // a reload: the document it replaces is done with
+                    try {
+                        previous.close();
+                    } catch (java.io.IOException ignored) {
+                        // best-effort close
+                    }
+                }
                 int count = document.getNumberOfPages();
                 if (count <= 0) {
                     postError(tr("pdfviewer.loadFailed"));
                     return;
                 }
-                Image first = renderToImage(0);
+                int show = Math.max(0, Math.min(wanted, count - 1));
+                Image first = renderToImage(show);
                 Platform.runLater(() -> {
                     if (disposed || g != renderGen.get()) {
                         return;
                     }
+                    if (root.getCenter() != scroll) { // an earlier load had failed: bring the viewer back
+                        root.setCenter(scroll);
+                        root.setTop(toolbar);
+                    }
                     pageCount = count;
-                    currentPage = 0;
+                    currentPage = show;
                     applyImage(first);
                     updateControls();
                 });
