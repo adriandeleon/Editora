@@ -48,7 +48,10 @@ public final class AcpClient {
         /** The complete model/mode selector state changed (reader thread). */
         default void onSessionConfig(String sessionId, AcpJson.SessionInfo info) {}
 
-        /** The agent process exited (reader thread). */
+        /**
+         * The agent process exited by itself — it quit or crashed (reader thread). Not called for a process
+         * this client stopped through {@link AcpClient#dispose()}.
+         */
         void onExit(int code);
 
         /**
@@ -92,6 +95,13 @@ public final class AcpClient {
     private volatile Path fsRoot;
 
     private volatile Process process;
+    /**
+     * Set by {@link #dispose()}. The process the editor stopped still ends its output stream, some time
+     * later and on another thread; reported as an exit then, it reached a host that had already moved on —
+     * a new chat showed "(agent exited)", lost its "working" state mid-turn, and could have the session it
+     * had just started taken for the one that ended.
+     */
+    private volatile boolean disposed;
     /**
      * The ordered writer to the agent's stdin. Requests are issued from the FX thread (a prompt, Stop, a
      * model switch), and a direct pipe write blocks for as long as the agent is not reading — an agent busy
@@ -273,7 +283,9 @@ public final class AcpClient {
                         // stream closed — the process exited (or we disposed it).
                     }
                     failPending(new IOException("Agent process exited"));
-                    host.onExit(p.isAlive() ? -1 : p.exitValue());
+                    if (!disposed) {
+                        host.onExit(p.isAlive() ? -1 : p.exitValue());
+                    }
                 },
                 "acp-agent-reader");
         t.setDaemon(true);
@@ -390,6 +402,7 @@ public final class AcpClient {
 
     /** Kills the agent's whole process tree (an npx wrapper must not orphan the real agent). */
     public synchronized void dispose() {
+        disposed = true;
         Process p = process;
         process = null;
         if (p != null) {

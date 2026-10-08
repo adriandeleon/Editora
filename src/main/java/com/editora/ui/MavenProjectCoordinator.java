@@ -491,11 +491,8 @@ final class MavenProjectCoordinator {
         });
     }
 
-    private static String fetchCatalog(String url) throws Exception {
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(15))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+    private String fetchCatalog(String url) throws Exception {
+        HttpClient client = httpClients.apply(Duration.ofSeconds(15));
         HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofMinutes(2))
                 .header("User-Agent", "Editora")
@@ -987,13 +984,16 @@ final class MavenProjectCoordinator {
 
     private java.net.http.HttpClient metadataClient() {
         if (metadataClient == null) {
-            metadataClient = java.net.http.HttpClient.newBuilder()
-                    .connectTimeout(java.time.Duration.ofSeconds(10))
-                    .followRedirects(java.net.http.HttpClient.Redirect.NORMAL)
-                    .build();
+            metadataClient = httpClients.apply(java.time.Duration.ofSeconds(10));
         }
         return metadataClient;
     }
+
+    /** Builds a client with the given connect timeout, for the catalog fetch and the metadata lookups. */
+    private java.util.function.Function<Duration, HttpClient> httpClients = connectTimeout -> HttpClient.newBuilder()
+            .connectTimeout(connectTimeout)
+            .followRedirects(HttpClient.Redirect.NORMAL)
+            .build();
 
     private java.net.http.HttpClient metadataClient;
 
@@ -1048,6 +1048,11 @@ final class MavenProjectCoordinator {
         if (metadataClient != null) {
             metadataClient.shutdownNow();
         }
+    }
+
+    /** Test seam: where the catalog and Maven Central metadata are fetched from, so a test stays off the network. */
+    void setHttpClientsForTest(java.util.function.Supplier<HttpClient> clients) {
+        this.httpClients = connectTimeout -> clients.get();
     }
 
     /** Test seam: replace the subprocess launcher so a test never forks Maven. */

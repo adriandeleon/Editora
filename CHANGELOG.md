@@ -58,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   watched for changes.
 - **Project Map: Escape on a preview card's right-click menu closes only the menu.** It closed the card
   as well.
+- The systemd timer preview described `OnCalendar=*:30` as "Daily at minute 30 past every hour"; it now
+  reads "At minute 30 past every hour".
+- AI Agent: starting a new session, switching agent or resuming a past chat no longer puts
+  "(agent exited)" into the fresh transcript, and the first prompt after it keeps its "Working…" state
+  and Stop button until the reply is complete. The process the editor had just stopped was reported as
+  an agent that quit, which could also discard the session that replaced it.
 
 ## [0.20.0] - 2026-10-08
 
