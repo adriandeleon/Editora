@@ -7,7 +7,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -72,23 +71,32 @@ public class SharedConfig {
     /** True while {@link #retryUnsavedStores} runs, so the saves it calls do not start another round. */
     private boolean retryingUnsavedStores;
 
-    /** Revisions another process added to the Local History index on disk; their bodies must not be collected. */
-    private final Set<String> foreignHistoryHashes = ConcurrentHashMap.newKeySet();
+    /**
+     * The body hashes of revisions that are in the Local History index on disk but not in this process's
+     * memory — another process recorded them. Replaced by every index write that looked at the disk (see
+     * {@link #saveHistory}); their bodies must not be collected.
+     */
+    private volatile Set<String> foreignHistoryHashes = Set.of();
+
+    /** The body hashes listed by the backups kept beside the index ({@link HistoryIndexGuard#backupHashes}). */
+    private volatile Set<String> backupHistoryHashes = Set.of();
+
+    /** The backups {@link #backupHistoryHashes} was read from, to notice one that appears mid-session. */
+    private volatile Set<String> knownHistoryBackups = Set.of();
+
+    /**
+     * When the newest backup that is not a whole index was made, or {@code Long.MIN_VALUE}: nothing is
+     * collected until its grace period is over (see {@link HistoryIndexGuard.BackupHashes}).
+     */
+    private volatile long incompleteHistoryBackupSince = Long.MIN_VALUE;
 
     private final HistoryService historyService;
     /** This process's claim on the config dir ({@code null} until {@link #claimInstance()}). */
     private volatile InstanceLock instanceLock;
 
     private final DocumentWriteSequencer documentWrites = new DocumentWriteSequencer();
-    /** Durable and pending history-index references. GC may delete only outside their union. */
+    /** Orders blob collection against index publications: a collection is queued while this is held. */
     private final Object historyPublicationLock = new Object();
-
-    private long nextHistoryPublication;
-    private long durableHistoryPublication;
-    private Set<String> durableHistoryHashes = Set.of();
-    private Set<String> currentHistoryHashes = Set.of();
-    private final Map<Long, Set<String>> pendingHistoryHashes = new LinkedHashMap<>();
-    private final Map<Long, Consumer<Boolean>> historyPublicationWaiters = new LinkedHashMap<>();
 
     private Settings settings = new Settings();
     /** Global bookmarks (all files/projects), stored in {@code bookmarks.json} — see {@link BookmarkStore}. */
@@ -98,7 +106,7 @@ public class SharedConfig {
     /** Breakpoints (all files/projects), stored in {@code breakpoints.json} — see {@link BreakpointStore}. */
     private BreakpointStore breakpointStore = new BreakpointStore();
     /** Local File History index (all files/projects), in {@code history/index.json} — see {@link HistoryStore}. */
-    private HistoryStore historyStore = new HistoryStore();
+    private volatile HistoryStore historyStore = new HistoryStore();
     /** Saved SFTP connections (metadata only, no secrets), stored in {@code connections.json}. */
     private ConnectionStore connectionStore = new ConnectionStore();
     /** Plugin enable-state (id → enabled), stored in {@code plugins.json} — see {@link PluginStore}. */
@@ -123,8 +131,8 @@ public class SharedConfig {
     private AgentSessionHistory agentSessions;
 
     /**
-     * Whether the Local History index in memory is the one that was written — false when it failed to load, or
-     * while a backup of one that failed is still on disk. Blob GC is refused when false (see
+     * Whether the Local History index in memory can be collected against — false when it was lost, lists
+     * nothing beside stored bodies, or failed to load without a legible copy. Blob GC is refused when false (see
      * {@link #mayCollectHistoryBlobs}); read on the history worker.
      */
     private volatile boolean historyIndexIntact = true;
@@ -162,6 +170,7 @@ public class SharedConfig {
         this.projects.loadProblems().forEach(this::onLoadProblem);
         this.historyService =
                 new HistoryService(new HistoryBlobStore(getHistoryBlobsDir()), this::mayCollectHistoryBlobs);
+        this.historyService.setOnAcknowledged(this::historyLimitsAcknowledged);
     }
 
     // --- more than one process on this config dir ---
@@ -204,12 +213,18 @@ public class SharedConfig {
      * primary skips collection while a secondary is alive (its unreferenced blobs are picked up by the first
      * collection after it exits). Evaluated on the history worker immediately before deleting.
      *
-     * <p>Nor while the index is not the one that was written ({@link HistoryIndexGuard}): the in-memory index
-     * is then missing revisions whose bodies are still on disk, and collecting against it would delete them
-     * all — leaving the kept {@code index.json…bak} pointing at nothing.
+     * <p>Nor while the index cannot be trusted ({@link HistoryIndexGuard}): it was lost, lists nothing beside
+     * stored bodies, or failed to load with no legible copy kept. A copy that <em>was</em> kept
+     * ({@code index.json…bak}) does not stop collection by itself — the bodies it refers to are protected by
+     * hash — except, for a grace period, when it is not a whole index and so cannot say what it once listed.
      */
     boolean mayCollectHistoryBlobs() {
         if (!historyIndexIntact) {
+            return false;
+        }
+        long incompleteSince = incompleteHistoryBackupSince;
+        if (incompleteSince != Long.MIN_VALUE
+                && System.currentTimeMillis() - incompleteSince <= HistoryIndexGuard.INCOMPLETE_BACKUP_GRACE_MILLIS) {
             return false;
         }
         InstanceLock lock = instanceLock;
@@ -527,9 +542,11 @@ public class SharedConfig {
 
     /** Stops app-wide background services after the last window has closed. */
     public boolean shutdown() {
+        // First: the history worker finishes the records still in flight (the save made from the quit prompt)
+        // and hands them over, which queues the index — so the writer has to be running still.
+        historyService.shutdown();
         boolean storesSaved = retryUnsavedStores(); // the last chance for a store whose write failed earlier
         boolean durable = writer.shutdown() && storesSaved;
-        historyService.shutdown();
         InstanceLock lock = instanceLock;
         if (lock != null) {
             lock.close(); // after the last write: the next launch may now be the primary
@@ -1188,15 +1205,27 @@ public class SharedConfig {
         // First, so that "lost" is judged on the index an older build may have set aside.
         ConfigMigrations.restoreSetAsideCopy(index, json, new HistoryStore(), ConfigSchema.HISTORY, problems::add);
         boolean lost = HistoryIndexGuard.lostIndex(index, getHistoryBlobsDir());
+        HistoryStore loaded;
         if (lost && Files.exists(index)) {
             // Zero-length beside stored revision bodies: a write the OS never flushed, not "no history yet".
             problems.add(ConfigMigrations.unreadable(index));
-            historyStore = new HistoryStore();
+            loaded = new HistoryStore();
         } else {
-            historyStore = ConfigMigrations.readVersioned(
+            loaded = ConfigMigrations.readVersioned(
                     index, json, new HistoryStore(), ConfigSchema.HISTORY, problems::add);
         }
-        storeLoaded(index, historyStore);
+        // A list merged from two writers is not newest-first on disk (StoreMerge keeps this process's rows
+        // first); everything that reads one takes row 0 for the newest. Null rows and lists — legal JSON, a
+        // hand edit or damage — were dropped as the store took the lists in.
+        loaded.sortNewestFirst();
+        historyStore = loaded;
+        // What the file holds, as this build writes it: a list that had to be re-ordered is a change this
+        // load made, and the next save writes it.
+        try {
+            sync.loaded(index, json.writeValueAsBytes(loaded.snapshot()));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new UncheckedIOException("Failed to serialize " + index.getFileName(), e);
+        }
         for (ConfigLoadProblem problem : problems) {
             if (problem.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT && alreadyReported(problem.backup())) {
                 continue;
@@ -1205,26 +1234,73 @@ public class SharedConfig {
                 loadProblems.add(problem);
             }
         }
-        // Decided after the read, which is what leaves a backup behind. The backup keeps protecting the
-        // bodies in later sessions, when the index this session writes loads cleanly.
+        // Decided after the read, which is what leaves a backup behind.
+        //
+        // An index that did not load as written (torn, from a newer build, a value of the wrong type) is
+        // missing revisions whose bodies are on disk. Its bytes were kept beside it, and the bodies that copy
+        // refers to are protected by hash for as long as the copy exists (backupHistoryHashes) — in this
+        // session and every later one. Only when a copy could not be kept, or cannot be read for its hashes,
+        // is collection refused outright.
         // An index that was read with a non-UTF-8 byte replaced still lists every revision, so it does not
-        // count; nor does one that was just restored, or a set-aside copy (backupPresent covers that one).
-        boolean readAsWritten = problems.stream()
+        // count; nor does one that was just restored, or a set-aside copy (the backup hashes cover that one).
+        boolean everyLossHasACopy = problems.stream()
                 .allMatch(p -> p.kind() == ConfigLoadProblem.Kind.NOT_UTF8
                         || p.kind() == ConfigLoadProblem.Kind.NEWER_COPY_RESTORED
-                        || p.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT);
+                        || p.kind() == ConfigLoadProblem.Kind.NEWER_COPY_KEPT
+                        || p.backup() != null);
+        boolean backupsReadable = readHistoryBackups(index);
         // An index that lists no revision at all while bodies are stored is not trusted either, however it
-        // came to be that way ("{}", an index rewritten from defaults): collecting against it deletes every
-        // body. Bodies left by a deliberate purge are collected once the index lists a revision again.
-        boolean emptyBesideBodies =
-                HistoryRetention.liveHashes(historyStore.getByProject()).isEmpty()
-                        && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
-        historyIndexIntact = !lost && readAsWritten && !emptyBesideBodies && !HistoryIndexGuard.backupPresent(index);
-        Set<String> loaded = HistoryRetention.liveHashes(historyStore.getByProject());
-        synchronized (historyPublicationLock) {
-            durableHistoryHashes = loaded;
-            currentHistoryHashes = loaded;
-            durableHistoryPublication = ++nextHistoryPublication;
+        // came to be that way ("{}", an index rewritten from defaults, the empty one a failed load leaves):
+        // collecting against it deletes every body. Bodies left by a deliberate purge are collected once the
+        // index lists a revision again.
+        boolean emptyBesideBodies = loaded.ledger().listsNothing() && HistoryIndexGuard.hasBlobs(getHistoryBlobsDir());
+        historyIndexIntact = !lost && everyLossHasACopy && backupsReadable && !emptyBesideBodies;
+        foreignHistoryHashes = Set.of();
+        HistoryStore.Limits limits = loaded.getAcknowledgedLimits();
+        historyService.restoreAcknowledged(
+                limits == null
+                        ? null
+                        : new HistoryRetention.RetentionPolicy(
+                                limits.maxPerFile(), limits.maxAgeMillis(), limits.maxTotalBytesPerProject()));
+    }
+
+    /**
+     * Reads what the backups beside the index protect ({@link HistoryIndexGuard#backupHashes}). Returns false
+     * when a backup cannot be read at all — then nothing may be collected.
+     */
+    private boolean readHistoryBackups(Path index) {
+        Set<String> names = HistoryIndexGuard.backupNames(index);
+        HistoryIndexGuard.BackupHashes backups = HistoryIndexGuard.backupHashes(index);
+        knownHistoryBackups = names == null ? Set.of() : Set.copyOf(names);
+        backupHistoryHashes = backups == null ? Set.of() : Set.copyOf(backups.hashes());
+        incompleteHistoryBackupSince = backups == null ? Long.MIN_VALUE : backups.incompleteSince();
+        return backups != null;
+    }
+
+    /** A backup appeared or went since the hashes were read (a merge that kept the bytes it could not read). */
+    private void refreshHistoryBackups() {
+        Path index = getHistoryFile();
+        Set<String> names = HistoryIndexGuard.backupNames(index);
+        if (names != null && names.equals(knownHistoryBackups)) {
+            return;
+        }
+        if (!readHistoryBackups(index)) {
+            historyIndexIntact = false;
+        }
+    }
+
+    /** The limits in force changed: keep them with the index, for the next start. */
+    private void historyLimitsAcknowledged(HistoryRetention.RetentionPolicy policy) {
+        HistoryStore.Limits limits =
+                new HistoryStore.Limits(policy.maxPerFile(), policy.maxAgeMillis(), policy.maxTotalBytesPerProject());
+        HistoryStore store = historyStore;
+        if (!limits.equals(store.getAcknowledgedLimits())) {
+            store.setAcknowledgedLimits(limits);
+            // With no history at all there is nothing a stricter limit could delete, and no reason to create
+            // an index for the sake of this note: it is written with the first revision.
+            if (!store.ledger().listsNothing() || Files.exists(getHistoryFile())) {
+                saveHistory();
+            }
         }
     }
 
@@ -1233,81 +1309,115 @@ public class SharedConfig {
         saveHistory(null);
     }
 
-    /** Queues the index and reports whether this exact snapshot became durable. */
+    /**
+     * Queues the index and reports whether this exact snapshot became durable.
+     *
+     * <p>Costs what changed since the last call, not the size of the history: the snapshot shares every
+     * project that did not change ({@link HistoryStore#snapshot}), the hashes it refers to are already
+     * counted ({@link HistoryHashLedger}), and serializing happens on the writer thread.
+     */
     public void saveHistory(Consumer<Boolean> completion) {
-        HistoryStore snapshot = new HistoryStore();
-        snapshot.setSchemaVersion(historyStore.getSchemaVersion());
-        Map<String, Map<String, List<HistoryRevision>>> projects = new LinkedHashMap<>();
-        for (var project : historyStore.getByProject().entrySet()) {
-            Map<String, List<HistoryRevision>> files = new LinkedHashMap<>();
-            project.getValue().forEach((path, revisions) -> files.put(path, List.copyOf(revisions)));
-            projects.put(project.getKey(), files);
-        }
-        snapshot.setByProject(projects);
-        Set<String> hashes = HistoryRetention.liveHashes(projects);
-        long publication;
-        synchronized (historyPublicationLock) {
-            publication = ++nextHistoryPublication;
-            currentHistoryHashes = hashes;
-            pendingHistoryHashes.put(publication, hashes);
-            if (completion != null) {
-                historyPublicationWaiters.put(publication, completion);
-            }
-        }
+        HistoryStore store = historyStore;
+        HistoryStore.Snapshot snapshot = store.snapshot();
+        long publication = store.ledger().publish();
+        // Whether this publication's write looked at the file on disk: only then is what this process knows
+        // of the other writers' revisions current. Written and read on the writer thread.
+        boolean[] sawDisk = new boolean[1];
         writer.enqueue(
                 getHistoryFile(),
                 () -> {
                     // Another process's revisions are kept in the index on disk but are not in this process's
                     // memory, so their bodies are protected from this process's collection by hash.
+                    Set<String>[] foreign = newHashSetHolder();
                     boolean written = sync.write(
                             getHistoryFile(),
                             json.writeValueAsBytes(snapshot),
                             ConfigSchema.HISTORY,
-                            merged -> foreignHistoryHashes.addAll(historyHashesIn(merged)));
+                            merged -> foreign[0] = foreignHashes(merged, snapshot));
+                    if (written) {
+                        // Not merged: the file now holds this process's rows and nothing else.
+                        foreignHistoryHashes = foreign[0] == null ? Set.of() : foreign[0];
+                        refreshHistoryBackups();
+                        sawDisk[0] = true;
+                    } else {
+                        // Nothing to persist, so the file was not read. What this process knows of it is
+                        // still current only if nobody else has written it since.
+                        sawDisk[0] = sync.unchangedOnDisk(getHistoryFile());
+                    }
                     return written ? null : ConfigWriter.UNCHANGED;
                 },
-                outcome -> finishHistoryPublication(publication, hashes, outcome));
+                outcome -> finishHistoryPublication(store, publication, outcome, sawDisk, completion));
     }
 
-    private void finishHistoryPublication(long publication, Set<String> hashes, ConfigWriter.WriteOutcome outcome) {
-        Set<String> protectedHashes;
-        Map<Long, Consumer<Boolean>> finished = new LinkedHashMap<>();
+    @SuppressWarnings("unchecked")
+    private static Set<String>[] newHashSetHolder() {
+        return (Set<String>[]) new Set<?>[1];
+    }
+
+    private void finishHistoryPublication(
+            HistoryStore store,
+            long publication,
+            ConfigWriter.WriteOutcome outcome,
+            boolean[] sawDisk,
+            Consumer<Boolean> completion) {
+        boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
         synchronized (historyPublicationLock) {
-            pendingHistoryHashes.remove(publication);
-            if (outcome == ConfigWriter.WriteOutcome.WRITTEN && publication > durableHistoryPublication) {
-                durableHistoryPublication = publication;
-                durableHistoryHashes = hashes;
+            if (durable) {
+                store.ledger().durable(publication);
             }
-            Consumer<Boolean> waiter = historyPublicationWaiters.remove(publication);
-            if (waiter != null) {
-                finished.put(publication, waiter);
-            }
-            protectedHashes = new LinkedHashSet<>(durableHistoryHashes);
-            protectedHashes.addAll(currentHistoryHashes);
-            protectedHashes.addAll(foreignHistoryHashes);
-            pendingHistoryHashes.values().forEach(protectedHashes::addAll);
+            // Collect only behind a publication that looked at the disk. One that was superseded before its
+            // turn or failed — or had nothing to write while the file had changed underneath — has not seen
+            // what another process added to the index since — collecting on its word deleted that process's
+            // revision bodies while the index went on listing them. The request stays pending
+            // (HistoryService.requestGc is only cleared by a collection that is queued) and the next
+            // publication that does write collects.
+            //
             // Queue GC while this live-set snapshot is still current. A durable waiter can start the
             // next publication; running its callback first would let this older GC delete its new blob.
-            historyService.gcIfDue(protectedHashes);
+            if (durable && sawDisk[0] && store == historyStore) {
+                historyService.gcIfDue(() -> protectedHistoryHashes(store));
+            }
         }
-        boolean durable = outcome == ConfigWriter.WriteOutcome.WRITTEN;
-        finished.forEach((ignored, waiter) -> waiter.accept(durable));
+        if (completion != null) {
+            completion.accept(durable);
+        }
     }
 
-    /** Every revision body hash an index tree references ({@code byProject / project / file / [] / sha256}). */
-    private static Set<String> historyHashesIn(JsonNode index) {
-        Set<String> hashes = new LinkedHashSet<>();
-        for (JsonNode project : index.path("byProject")) {
+    /** Every body hash a collection must keep right now. */
+    private Set<String> protectedHistoryHashes(HistoryStore store) {
+        Set<String> hashes = store.ledger().protectedHashes();
+        hashes.addAll(foreignHistoryHashes);
+        hashes.addAll(backupHistoryHashes);
+        return hashes;
+    }
+
+    /**
+     * The body hashes of the rows in {@code merged} — the index as it was just written — that are not this
+     * process's own: {@code merged} is this process's rows plus what only the file on disk had, so a hash
+     * that occurs more often there than in {@code mine} belongs to at least one row of another writer.
+     * (Taking every hash of the merged tree, as before, also pinned this process's own bodies: a purge then
+     * left them on disk until a later session.)
+     */
+    static Set<String> foreignHashes(JsonNode merged, HistoryStore.Snapshot mine) {
+        Map<String, Integer> rows = new java.util.HashMap<>();
+        for (JsonNode project : merged.path("byProject")) {
             for (JsonNode file : project) {
                 for (JsonNode revision : file) {
                     String hash = revision.path("sha256").asText("");
                     if (!hash.isEmpty()) {
-                        hashes.add(hash);
+                        rows.merge(hash, 1, Integer::sum);
                     }
                 }
             }
         }
-        return hashes;
+        for (Map<String, List<HistoryRevision>> project : mine.byProject().values()) {
+            for (List<HistoryRevision> file : project.values()) {
+                for (HistoryRevision revision : file) {
+                    rows.computeIfPresent(revision.sha256(), (hash, count) -> count > 1 ? count - 1 : null);
+                }
+            }
+        }
+        return Set.copyOf(rows.keySet());
     }
 
     /** Migrates bookmarks out of the legacy session files into their per-project buckets, stripping each. */

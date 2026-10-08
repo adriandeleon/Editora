@@ -77,6 +77,45 @@ public final class HistoryMoves {
         return true;
     }
 
+    /**
+     * Moves every file's history from its key to {@code newKeyOf(key)}, in every project's bucket — for
+     * changing what a key <em>is</em> (say, from the path as it was typed to the path with links resolved)
+     * without losing what was recorded under the old spelling. {@code newKeyOf} answers the new key, or
+     * {@code null} / the same key to leave an entry where it is; it must be stable (the new key maps to
+     * itself). When two old keys arrive at one new key, or the new key already has history, the lists are
+     * merged exactly as a rename merges them: every revision is kept, newest first, and only a row that is
+     * identical in both is listed once.
+     *
+     * @return how many entries moved
+     */
+    public static int rekey(
+            Map<String, Map<String, List<HistoryRevision>>> byProject,
+            java.util.function.UnaryOperator<String> newKeyOf) {
+        if (byProject == null || newKeyOf == null) {
+            return 0;
+        }
+        int moved = 0;
+        for (Map<String, List<HistoryRevision>> bucket : byProject.values()) {
+            if (bucket == null || bucket.isEmpty()) {
+                continue;
+            }
+            Map<String, List<HistoryRevision>> arriving = new LinkedHashMap<>();
+            for (var it = bucket.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<String, List<HistoryRevision>> entry = it.next();
+                String key = newKeyOf.apply(entry.getKey());
+                if (key != null && !key.equals(entry.getKey())) {
+                    arriving.merge(key, entry.getValue(), (first, next) -> merged(key, first, next));
+                    it.remove();
+                    moved++;
+                }
+            }
+            for (Map.Entry<String, List<HistoryRevision>> entry : arriving.entrySet()) {
+                bucket.put(entry.getKey(), merged(entry.getKey(), entry.getValue(), bucket.get(entry.getKey())));
+            }
+        }
+        return moved;
+    }
+
     /** {@code key} as it reads after the rename, or null when it is neither {@code oldKey} nor below it. */
     public static String renamed(String key, String oldKey, String newKey, String separator) {
         if (key == null || oldKey == null || newKey == null) {

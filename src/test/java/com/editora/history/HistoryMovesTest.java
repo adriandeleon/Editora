@@ -115,4 +115,39 @@ class HistoryMovesTest {
         assertNull(HistoryMoves.renamed("/p/srcfile", "/p/src", "/p/lib", "/"));
         assertEquals("C:\\lib\\a.txt", HistoryMoves.renamed("C:\\src\\a.txt", "C:\\src", "C:\\lib", "\\"));
     }
+
+    /** A11 (engine half): changing what a key is never drops a revision. */
+    @Test
+    void rekeyingMovesEveryHistoryToItsNewKeyAndMergesWhatMeetsThere() {
+        Map<String, Map<String, List<HistoryRevision>>> index = new LinkedHashMap<>();
+        Map<String, List<HistoryRevision>> bucket = new LinkedHashMap<>();
+        HistoryRevision viaLink2 = new HistoryRevision("/link/a.txt", 20, 1, "s20", HistoryRevision.REASON_SAVE);
+        HistoryRevision viaLink1 = new HistoryRevision("/link/a.txt", 5, 1, "s5", HistoryRevision.REASON_SAVE);
+        HistoryRevision viaOther = new HistoryRevision("/LINK/a.txt", 15, 1, "s15", HistoryRevision.REASON_SAVE);
+        HistoryRevision real = new HistoryRevision("/real/a.txt", 10, 1, "s10", HistoryRevision.REASON_SAVE);
+        HistoryRevision same = new HistoryRevision("/real/a.txt", 5, 1, "s5", HistoryRevision.REASON_SAVE);
+        HistoryRevision other = new HistoryRevision("/real/b.txt", 1, 1, "b", HistoryRevision.REASON_SAVE);
+        bucket.put("/link/a.txt", List.of(viaLink2, viaLink1));
+        bucket.put("/LINK/a.txt", List.of(viaOther));
+        bucket.put("/real/a.txt", List.of(real, same));
+        bucket.put("/real/b.txt", List.of(other));
+        index.put("p", bucket);
+        index.put("empty", new LinkedHashMap<>());
+        index.put("none", null);
+
+        int moved = HistoryMoves.rekey(
+                index, key -> key.equalsIgnoreCase("/link/a.txt") ? "/real/a.txt" : key.endsWith("b.txt") ? null : key);
+
+        assertEquals(2, moved);
+        assertEquals(java.util.Set.of("/real/a.txt", "/real/b.txt"), bucket.keySet());
+        assertEquals(
+                List.of("s20", "s15", "s10", "s5"),
+                bucket.get("/real/a.txt").stream().map(HistoryRevision::sha256).toList(),
+                "all four distinct revisions, newest first; the row both spellings had is listed once");
+        assertTrue(bucket.get("/real/a.txt").stream().allMatch(r -> r.path().equals("/real/a.txt")));
+        assertEquals(List.of(other), bucket.get("/real/b.txt"));
+        assertEquals(0, HistoryMoves.rekey(index, key -> key), "stable: a second pass moves nothing");
+        assertEquals(0, HistoryMoves.rekey(null, key -> key));
+        assertEquals(0, HistoryMoves.rekey(index, null));
+    }
 }

@@ -68,6 +68,11 @@ public final class HistoryService {
     /** The limits the user has agreed to; see {@link #effectivePolicy}. Guarded by {@link #publicationLock}. */
     private RetentionPolicy acknowledgedPolicy;
 
+    private volatile Consumer<RetentionPolicy> onAcknowledged = policy -> {};
+
+    /** Set by {@link #shutdown()}: maintenance still queued (collection, sweep, hardening) is skipped. */
+    private volatile boolean shuttingDown;
+
     public HistoryService(HistoryBlobStore blobs) {
         this(blobs, () -> true, System::nanoTime);
     }
@@ -92,7 +97,11 @@ public final class HistoryService {
         this.blobs = blobs;
         this.gcAllowed = gcAllowed == null ? () -> true : gcAllowed;
         this.nanoClock = nanoClock;
-        exec.submit(blobs::hardenExisting);
+        exec.submit(() -> {
+            if (!shuttingDown) {
+                blobs.hardenExisting();
+            }
+        });
     }
 
     /**
@@ -247,14 +256,51 @@ public final class HistoryService {
     }
 
     private void deliver(SnapshotOutcome outcome, Consumer<SnapshotOutcome> onRecorded) {
-        Platform.runLater(() -> {
+        Delivery delivery = new Delivery(() -> {
             try {
                 onRecorded.accept(outcome);
             } finally {
                 publicationFinished();
             }
         });
+        synchronized (undelivered) {
+            undelivered.add(delivery);
+        }
+        try {
+            Platform.runLater(delivery);
+        } catch (IllegalStateException noToolkit) {
+            // No FX thread to hand it to (the toolkit never started, or is gone): shutdown() delivers it.
+            LOG.log(Level.FINE, "No FX thread for a history record; it is delivered at shutdown", noToolkit);
+        }
     }
+
+    /**
+     * A recorded revision on its way to the FX thread. It runs once, wherever it runs first: normally from
+     * {@code Platform.runLater}, but {@link #shutdown()} runs the ones still waiting itself — once the
+     * application is stopping, the FX thread is the one inside {@code shutdown()} and no posted runnable will
+     * ever be reached.
+     */
+    private final class Delivery implements Runnable {
+        private final Runnable callback;
+        private final java.util.concurrent.atomic.AtomicBoolean done = new java.util.concurrent.atomic.AtomicBoolean();
+
+        Delivery(Runnable callback) {
+            this.callback = callback;
+        }
+
+        @Override
+        public void run() {
+            if (done.compareAndSet(false, true)) {
+                synchronized (undelivered) {
+                    undelivered.remove(this);
+                }
+                callback.run();
+            }
+        }
+    }
+
+    /** Records whose result has not reached the caller yet, oldest first. Guards itself. */
+    private final Set<Delivery> undelivered = new LinkedHashSet<>();
 
     /** One record's revision has reached the index (or failed): release a GC that was waiting for it. */
     private void publicationFinished() {
@@ -319,6 +365,14 @@ public final class HistoryService {
      * run.
      */
     public void gcIfDue(Set<String> live) {
+        gcIfDue(() -> live);
+    }
+
+    /**
+     * As {@link #gcIfDue(Set)}, asking for the live set only when a collection is actually due — building it
+     * is a walk of every hash the index refers to, which a save inside the interval has no use for.
+     */
+    public void gcIfDue(java.util.function.Supplier<Set<String>> live) {
         long now = nanoClock.getAsLong();
         synchronized (publicationLock) {
             if (gcHasRun && !gcRequested && now - lastGcNanos < GC_MIN_INTERVAL_NANOS) {
@@ -328,7 +382,7 @@ public final class HistoryService {
             gcRequested = false;
             lastGcNanos = now;
         }
-        gc(live);
+        gc(live.get());
     }
 
     /**
@@ -342,28 +396,72 @@ public final class HistoryService {
     }
 
     /**
-     * The retention limits in force. The first call of a session adopts {@code configured} (what the settings
-     * file says is what the user last agreed to). After that a configured policy takes effect at once only
+     * The retention limits in force. With no limits on record ({@link #restoreAcknowledged}) the first call
+     * adopts {@code configured}. After that a configured policy takes effect at once only
      * where it is <em>looser</em>: a limit that became stricter stays at its previous value until
      * {@link #acknowledge} — whichever way the setting was changed, tightening a limit deletes revisions, and
      * that needs the user's say-so first (see {@link #previewTightening}).
      */
     public RetentionPolicy effectivePolicy(RetentionPolicy configured) {
+        RetentionPolicy before;
+        RetentionPolicy after;
         synchronized (publicationLock) {
             if (configured == null) {
                 return acknowledgedPolicy;
             }
-            acknowledgedPolicy = acknowledgedPolicy != null && HistoryRetention.tightens(acknowledgedPolicy, configured)
-                    ? HistoryRetention.loosest(acknowledgedPolicy, configured)
+            before = acknowledgedPolicy;
+            acknowledgedPolicy = before != null && HistoryRetention.tightens(before, configured)
+                    ? HistoryRetention.loosest(before, configured)
                     : configured;
-            return acknowledgedPolicy;
+            after = acknowledgedPolicy;
         }
+        if (!after.equals(before)) {
+            onAcknowledged.accept(after);
+        }
+        return after;
     }
 
     /** The user confirmed {@code policy}, stricter limits included: it is now the one in force. */
     public void acknowledge(RetentionPolicy policy) {
+        RetentionPolicy before;
+        synchronized (publicationLock) {
+            before = acknowledgedPolicy;
+            acknowledgedPolicy = policy;
+        }
+        if (policy != null && !policy.equals(before)) {
+            onAcknowledged.accept(policy);
+        }
+    }
+
+    /**
+     * Starts the session from the limits a previous one agreed to ({@code null}: none on record, so the first
+     * {@link #effectivePolicy} adopts what is configured). Without this, "the first call of a session adopts
+     * the configured limits" made a restart the way around the confirmation: a stricter limit that arrived
+     * unconfirmed — a settings sync, an edited {@code settings.json} — was held back while the editor ran and
+     * then applied, and swept, at the next start. Does not notify the listener.
+     */
+    public void restoreAcknowledged(RetentionPolicy policy) {
         synchronized (publicationLock) {
             acknowledgedPolicy = policy;
+        }
+    }
+
+    /**
+     * Told, on the calling thread, each time the limits in force change (adopted, loosened or confirmed), so
+     * the owner of the index can keep them on record for the next start (see {@link #restoreAcknowledged}).
+     */
+    public void setOnAcknowledged(Consumer<RetentionPolicy> listener) {
+        onAcknowledged = listener == null ? policy -> {} : listener;
+    }
+
+    /**
+     * Whether {@code configured} holds a limit stricter than the one in force — one that is waiting for the
+     * user to confirm what it deletes ({@link #previewTightening}, then {@link #acknowledge}). False before
+     * any limits are in force.
+     */
+    public boolean awaitsConfirmation(RetentionPolicy configured) {
+        synchronized (publicationLock) {
+            return acknowledgedPolicy != null && HistoryRetention.tightens(acknowledgedPolicy, configured);
         }
     }
 
@@ -423,10 +521,15 @@ public final class HistoryService {
         try {
             exec.submit(() -> {
                 Map<String, Map<String, List<HistoryRevision>>> evicted;
+                if (shuttingDown) {
+                    releaseSweep(policy);
+                    return;
+                }
                 try {
                     evicted = HistoryRetention.evicted(snapshot, HistoryRetention.sweep(snapshot, policy, now));
                 } catch (RuntimeException failure) {
                     LOG.log(Level.WARNING, "Local history retention sweep failed", failure);
+                    releaseSweep(policy); // not swept: the next claim for these limits tries again
                     return;
                 }
                 Platform.runLater(() -> onEvicted.accept(evicted));
@@ -436,10 +539,21 @@ public final class HistoryService {
         }
     }
 
+    /** Gives back a {@link #claimSweep} whose sweep did not happen. */
+    private void releaseSweep(RetentionPolicy policy) {
+        synchronized (publicationLock) {
+            if (policy != null && policy.equals(sweptPolicy)) {
+                sweptPolicy = null;
+            }
+        }
+    }
+
     private void queueGc(Set<String> snapshot) {
         try {
             exec.submit(() -> {
-                if (gcAllowed.getAsBoolean()) {
+                if (shuttingDown) {
+                    requestGc(); // not done; and nothing is deleted on the way out
+                } else if (gcAllowed.getAsBoolean()) {
                     blobs.deleteUnreferenced(snapshot);
                 } else {
                     requestGc(); // refused, not done: the throttle must not count it, so the next save collects
@@ -450,20 +564,91 @@ public final class HistoryService {
         }
     }
 
-    /** How long {@link #shutdown()} waits for the write it interrupted to let go of the history folder. */
+    /** How long {@link #shutdown()} waits for the records in flight, and then for a write it interrupted. */
     private static final long SHUTDOWN_WAIT_SECONDS = 5;
 
     /**
-     * Stops the worker and waits for it. Queued work is dropped and a blob write in flight is interrupted
-     * (it cleans up its temp file), but it has not <em>finished</em> when {@code shutdownNow} returns — and
-     * the caller's next step assumes it has: the application releases its instance lock ("no more writes
-     * from this process"), a test deletes the folder. Returning early left a window in which the worker was
-     * still creating and moving files there.
+     * Stops the worker, <b>finishing the records that were already submitted</b>, and hands their results to
+     * their callers before returning.
+     *
+     * <p>A record is submitted by a save; the save made from the quit prompt, a label or a pre-delete copy
+     * taken just before quitting is still on the worker — or on its way back to the FX thread — when the
+     * application stops. Stopping the worker with {@code shutdownNow} dropped the queued ones without a word,
+     * and the result of one that did finish was posted to an FX thread that was no longer taking work: the
+     * body was written and the index never heard of it. So:
+     *
+     * <ol>
+     *   <li>queued records run to completion, for at most {@value #SHUTDOWN_WAIT_SECONDS} seconds (queued
+     *       maintenance — collection, sweep — is skipped); a write still running after that is interrupted
+     *       (it cleans up its temp file) and waited for, because the caller's next step assumes no more files
+     *       are created here: the application releases its instance lock, a test deletes the folder;
+     *   <li>results not yet delivered are delivered now — on this thread when it is the FX thread (where
+     *       {@code Application.stop()} runs), otherwise by waiting briefly for the FX thread to get to them.
+     * </ol>
+     *
+     * The caller must therefore still be able to take a revision when it calls this: shut the index writer
+     * down <em>after</em> this returns, not before.
      */
     public void shutdown() {
-        exec.shutdownNow();
+        shuttingDown = true;
+        exec.shutdown();
+        if (!awaitWorker()) {
+            exec.shutdownNow();
+            awaitWorker();
+        }
+        deliverPending();
+    }
+
+    private static boolean onFxThread() {
         try {
-            exec.awaitTermination(SHUTDOWN_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+            return Platform.isFxApplicationThread();
+        } catch (RuntimeException noToolkit) {
+            return false;
+        }
+    }
+
+    private boolean awaitWorker() {
+        try {
+            return exec.awaitTermination(SHUTDOWN_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
+    }
+
+    private void deliverPending() {
+        List<Delivery> pending;
+        synchronized (undelivered) {
+            pending = new ArrayList<>(undelivered);
+        }
+        if (pending.isEmpty()) {
+            return;
+        }
+        if (onFxThread()) {
+            for (Delivery delivery : pending) {
+                try {
+                    delivery.run();
+                } catch (RuntimeException failure) {
+                    LOG.log(Level.WARNING, "A history record could not be handed over at shutdown", failure);
+                }
+            }
+            return;
+        }
+        // Not the FX thread: the results are queued on it already, in order. Wait for it to pass them.
+        java.util.concurrent.CountDownLatch passed = new java.util.concurrent.CountDownLatch(1);
+        try {
+            Platform.runLater(passed::countDown);
+            if (!passed.await(SHUTDOWN_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)) {
+                LOG.warning("History records were still undelivered when the history service stopped");
+            }
+        } catch (IllegalStateException noToolkit) {
+            for (Delivery delivery : pending) { // nothing else will ever run them
+                try {
+                    delivery.run();
+                } catch (RuntimeException failure) {
+                    LOG.log(Level.WARNING, "A history record could not be handed over at shutdown", failure);
+                }
+            }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }

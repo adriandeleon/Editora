@@ -286,12 +286,13 @@ class TwoWritersTest {
 
     private String addRevision(SharedConfig config, String path, String content) {
         String sha = new HistoryBlobStore(dir.resolve("history/blobs")).put(content);
-        config.historyBucket("")
-                .computeIfAbsent(path, k -> new ArrayList<>())
-                .add(
-                        0,
-                        new HistoryRevision(
-                                path, System.nanoTime(), content.length(), sha, HistoryRevision.REASON_SAVE));
+        HistoryRevision revision =
+                new HistoryRevision(path, System.nanoTime(), content.length(), sha, HistoryRevision.REASON_SAVE);
+        config.historyBucket("").merge(path, List.of(revision), (present, added) -> {
+            List<HistoryRevision> out = new ArrayList<>(added); // newest first; a list is replaced, not edited
+            out.addAll(present);
+            return out;
+        });
         return sha;
     }
 

@@ -91,7 +91,7 @@ class HistoryStoreTest {
     }
 
     @Test
-    void aSchemaTwoIndexIsReadByTheMigrationPathAndStampedThree(
+    void aSchemaTwoIndexIsReadByTheMigrationPathAndStampedCurrent(
             @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
         java.nio.file.Path index = dir.resolve("index.json");
         java.nio.file.Files.writeString(
@@ -104,7 +104,7 @@ class HistoryStoreTest {
                 index, mapper, new HistoryStore(), com.editora.config.migration.ConfigSchema.HISTORY, problems::add);
 
         assertEquals(List.of(), problems);
-        assertEquals(3, HistoryStore.SCHEMA_VERSION);
+        assertEquals(4, HistoryStore.SCHEMA_VERSION);
         assertEquals(HistoryStore.SCHEMA_VERSION, read.getSchemaVersion());
         HistoryRevision row = read.bucket("").get("/tmp/a.txt").get(0);
         assertEquals("sha", row.sha256());

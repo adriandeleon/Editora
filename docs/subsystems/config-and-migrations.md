@@ -29,7 +29,7 @@ Two serialization formats, chosen per file:
 | `bookmarks.json` | JSON | `BookmarkStore` | Per-project buckets. |
 | `notes.json` | JSON | `NoteStore` | Per-project buckets. |
 | `breakpoints.json` | JSON | `BreakpointStore` | Per-project buckets. |
-| `history/index.json` + `history/blobs/` | JSON | `HistoryStore` | Local File History; blobs gzip'd. |
+| `history/index.json` + `history/blobs/` | JSON | `HistoryStore` | Local File History; blobs gzip'd. The user's files, not configuration; left out of the export. |
 | `connections.json` | JSON | `ConnectionStore` | SFTP connection metadata, no secrets. |
 | `macros.json` | JSON | `MacroStore` | App-global keyboard macros. |
 | `plugins.json` | JSON | `PluginStore` | Plugin enable-state. |
@@ -95,7 +95,7 @@ Two paths:
 - `enqueue(file, bytes)` — non-blocking and **coalesced per file** (latest bytes win), via `ConfigManager.saveAsync()` → `SharedConfig.enqueueSettings()`. This backs the frequent in-session save (`MainController.requestSave`).
 - `flush()` — blocks until everything queued has landed, via `ConfigManager.save()` → `SharedConfig.flushWrites()`. This is the durable form used by quit (`persistSession`), one-off actions, and `exportConfig()`. `App.start` registers a JVM-shutdown flush.
 
-`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. The three history lists (`recent-files.json`, `search-history.json`, `agent-sessions.json`) are queued on it as well, as an immutable snapshot serialized on the writer thread. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. That GC is throttled (`HistoryService.gcIfDue`, at most once per ten minutes) so a save does not walk the whole blob store; a skipped pass deletes nothing and the next one uses the live set of its own moment, while a purge (`localHistory.purgeFile` / `localHistory.purgeProject`) requests an immediate pass. Retention is applied to the whole index once per start, off the FX thread (`HistoryRetention.sweep`), not only to the file being saved; a file's newest revision, labelled revisions and pre-delete copies are exempt from the ordinary limits but expire after a longer lease (six times the age limit, at least 180 days). Other stores (`bookmarks.json`, `notes.json`, …) and the projects index keep direct synchronous writes (`SharedConfig.writeStore`, `ProjectManager.save`). Those run inside FX event handlers and, for the one-time `bookmarks.json` creation, inside `load()`, so they **never throw**: a failed write is logged and handed to the same `setOnWriteError` handler as a queued one (`ConfigWriter.reportWriteError`), and the change stays in memory.
+`settings.json` and `workspace-state.json` have both async and sync save paths, and **both funnel through the one writer queue**. The three history lists (`recent-files.json`, `search-history.json`, `agent-sessions.json`) are queued on it as well, as an immutable snapshot serialized on the writer thread. Because a single thread keeps writes ordered, a stale async write can never land *after* and clobber a later durable one. Local History's `history/index.json` also uses that queue: it waits for the exact index snapshot to become durable before confirming a destructive file operation. Its blob GC is queued under the publication lock, before durable callbacks can start a newer snapshot; the history worker also queues GC under its publication lock so an older live set cannot overtake a new blob write. The index keeps its own books (`HistoryStore`): the maps it hands out store each file's list as an immutable copy and report every change to a ledger of the body hashes the index refers to (`HistoryHashLedger`: listed now, or dropped since the last index that reached the disk), so a save neither copies the whole index nor walks it for live hashes — the snapshot handed to the writer shares every project that did not change. A list is replaced, never edited in place (`bucket.get(path).add(…)` throws). That GC is throttled (`HistoryService.gcIfDue`, at most once per ten minutes) so a save does not walk the whole blob store; a skipped pass deletes nothing and the next one uses the live set of its own moment, while a purge (`localHistory.purgeFile` / `localHistory.purgeProject`) requests an immediate pass. Retention is applied to the whole index once per start, off the FX thread (`HistoryRetention.sweep`), not only to the file being saved; a file's newest revision, labelled revisions and pre-delete copies are exempt from the ordinary limits but expire after a longer lease (six times the age limit, at least 180 days). The per-project size limit is a soft one, measured as the uncompressed size of the project's *distinct* bodies (rows that share a body count once — `HistoryRetention.storedBytes`, checked per save through `exceedsBudget`); over it, a file above an equal share (`limit / files`) first sheds its own oldest revisions, then the globally-oldest go (`HistoryRetention.enforceProjectBudget`). The limits in force are stored with the index (`acknowledgedLimits`, schema 4) and restored at start, so a stricter limit that arrived without the user's confirmation stays held back across a restart (`HistoryService.awaitsConfirmation`). Revision bodies are synced before they are renamed into place, and at shutdown `SharedConfig` stops the history worker *first* — it finishes the records in flight and hands them over — and only then the writer, so the save made from the quit prompt reaches the index. Other stores (`bookmarks.json`, `notes.json`, …) and the projects index keep direct synchronous writes (`SharedConfig.writeStore`, `ProjectManager.save`). Those run inside FX event handlers and, for the one-time `bookmarks.json` creation, inside `load()`, so they **never throw**: a failed write is logged and handed to the same `setOnWriteError` handler as a queued one (`ConfigWriter.reportWriteError`), and the change stays in memory.
 
 **A failed write is retried, not dropped.** A store is only written when it changes, so a write lost to a full disk or a briefly read-only folder used to stay lost until quit. `ConfigWriter` keeps the latest failed snapshot per file and writes it again after the next write that succeeds and on every `flush()` (so also at quit and at `shutdown()`); `flush()` returns false for as long as a file's latest write is still failed. `SharedConfig` does the same for the synchronous stores, `projects.json` and `dictionary.txt` (`unsavedStores`): they are saved again after the next store write that succeeds, by `flushWrites()` and by `shutdown()`. A dictionary word that could not be appended is now reported like any other failed write.
 
@@ -127,15 +127,19 @@ released by the operating system when the holder dies, so a crash never leaves a
 - Local-history blob GC runs only in the primary, and only while no secondary is alive
   (`mayCollectHistoryBlobs`, asked on the history worker right before deleting). GC deletes every blob
   outside *this* process's index, and another process's revisions are not in it.
-- For the same reason GC never runs against an index that is not the one that was written
-  (`HistoryIndexGuard`): when `history/index.json` did not load cleanly (newer schema, unparseable, a
-  skipped value, blank, or not a JSON object), when it is zero-length or missing — or loads but lists no
-  revision at all — while `history/blobs/` still holds bodies, and — in later sessions too — for as long
-  as an `index.json.v<n>.bak` / `index.json.corrupt.bak` sits beside it (a `.v<n>.bak` this build can read
-  is restored first, see "Coming back from a downgrade").
-  The bodies the backup references are kept until the user restores or deletes that backup. A zero-length
-  index beside stored bodies is reported as unreadable (and copied to `.corrupt.bak`) rather than read as
-  "no history yet".
+- For the same reason GC never runs against an index that cannot be trusted (`HistoryIndexGuard`): when
+  `history/index.json` is zero-length or missing — or loads but lists no revision at all — while
+  `history/blobs/` still holds bodies (a leftover staging file is not a body), or when it did not load
+  cleanly and no legible copy could be kept. A zero-length index beside stored bodies is reported as
+  unreadable (and copied to `.corrupt.bak`) rather than read as "no history yet".
+- An index that did not load cleanly (newer schema, unparseable, a skipped value) is kept beside the new
+  one as `index.json.v<n>.bak` / `index.json.corrupt.bak` (a `.v<n>.bak` this build can read is restored
+  first, see "Coming back from a downgrade"). A backup does **not** switch collection off: the body hashes
+  it lists are read by pattern (`HistoryIndexGuard.backupHashes`, which also reads the rows of a torn file)
+  and protected for as long as the backup is on disk. Only a backup that is *not a whole index* — torn,
+  empty — keeps every body, for 30 days from when it was made (`INCOMPLETE_BACKUP_GRACE_MILLIS`): the rows
+  past the tear are in no index any more, and the body files are the only way back to that text. A backup
+  that cannot be read at all refuses collection.
 
 A config that was never claimed (tests, embedders) counts as its own sole user, and a filesystem that
 refuses locks degrades to "primary, alone".
@@ -146,8 +150,13 @@ cycles cannot interleave. So a setting changed in one editor is no longer revert
 switch, a project created in one stays in `projects.json`, notes, bookmarks, breakpoints, macros,
 abbreviations, sites, recent files and Local History revisions from both survive, and `dictionary.txt` keeps
 the words the other process added when one removes a word. Revisions another process added to the history
-index are not in this process's memory, so their body hashes are remembered (`foreignHistoryHashes`) and
-excluded from this process's blob collection.
+index are not in this process's memory, so the body hashes of exactly those rows are remembered
+(`foreignHistoryHashes`, replaced by every index write that read the file) and excluded from this process's
+blob collection. Collection is queued only behind a publication that looked at the file on disk: one that
+was superseded before its turn, failed, or had nothing to write while the file had changed underneath knows
+nothing of what the other process added since, and leaves the request pending for the next one that writes.
+A list merged from two writers is this process's rows followed by the other's; `loadHistory` puts every list
+back in newest-first order.
 
 What remains: a process does **not load** the other's changes — it shows them after a restart — and when both
 change the *same* setting or entry, the one saved last wins. The one-time notice in a secondary says so.
