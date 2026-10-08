@@ -3,1078 +3,197 @@
 # Editora
 
 [![CI](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/adriandeleon/Editora)](https://github.com/adriandeleon/Editora/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/adriandeleon/Editora)](LICENSE)
 ![Java](https://img.shields.io/badge/Java-25-orange?logo=openjdk&logoColor=white)
 ![JavaFX](https://img.shields.io/badge/JavaFX-27-1e90ff)
 ![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)
 [![Stars](https://img.shields.io/github/stars/adriandeleon/Editora?style=flat)](https://github.com/adriandeleon/Editora/stargazers)
 
-<!-- Uncomment after the first vX.Y.Z release tag:
-[![Release](https://img.shields.io/github/v/release/adriandeleon/Editora)](https://github.com/adriandeleon/Editora/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/adriandeleon/Editora/total)](https://github.com/adriandeleon/Editora/releases)
-[![Release workflow](https://github.com/adriandeleon/Editora/actions/workflows/release.yml/badge.svg)](https://github.com/adriandeleon/Editora/actions/workflows/release.yml)
--->
+A keyboard-driven, cross-platform programmer's text editor built with **JDK 25**, **JavaFX 27**,
+[**RichTextFX**](https://github.com/FXMisc/RichTextFX) and **Maven**. Every action is a registered
+command, reachable from an Emacs-style keymap or a fuzzy command palette.
 
+🌐 **[editora-project.dev](https://editora-project.dev)** — [features](https://editora-project.dev/#features),
+[user docs](https://editora-project.dev/docs/), [screenshots](https://editora-project.dev/screenshots/),
+[every command](https://editora-project.dev/commands/), [keybindings](https://editora-project.dev/keybindings/),
+[plugins](https://editora-project.dev/plugins/), [what's new](https://editora-project.dev/whats-new/),
+[roadmap](https://editora-project.dev/roadmap/) and the [blog](https://editora-project.dev/blog/).
+The site's source is [adriandeleon/editora-website](https://github.com/adriandeleon/editora-website).
 
-A keyboard-driven, cross-platform programmer's text editor built with **JDK 25**,
-**JavaFX 27**, [**RichTextFX**](https://github.com/FXMisc/RichTextFX) and **Maven**. Every action is a registered command, reachable by an
-Emacs-style keymap or a fuzzy command palette.
+[![Editora editing a Java file](https://editora-project.dev/screenshots/editor.jpg)](https://editora-project.dev/screenshots/)
 
 Editora is built with the help of AI coding tools.
 
-🌐 **Website:** [editora-project.dev](https://editora-project.dev) — features, docs, blog, and downloads
-(source: [adriandeleon/editora-website](https://github.com/adriandeleon/editora-website)).
+## Highlights
 
-## Contents
+Each link opens the feature's page on the website; the [user docs](https://editora-project.dev/docs/)
+have the full reference.
 
-- [Features](#features)
-- [Requirements](#requirements)
-- [Build & Run](#build--run)
-- [Contributing](#contributing)
-- [Releases](#releases)
-- [Command line](#command-line)
-- [Configuration](#configuration)
-- [License](#license)
+- **Every action is a command.** Bind it to a key or run it from the fuzzy palette; menus, toolbar
+  and keymaps all dispatch through the same registry.
+  ([command-driven core](https://editora-project.dev/features/command-driven-core))
+- **Five keymaps.** Emacs by default, with chord sequences, the kill ring, rectangles, narrowing and
+  a prefix argument; CUA, Sublime Text, VS Code and IntelliJ IDEA too. Switch live, rebind anything.
+  ([keymaps](https://editora-project.dev/features/keymaps),
+  [Emacs heritage](https://editora-project.dev/features/emacs-heritage))
+- **Navigation that keeps your place.** Search Everywhere over commands, files and symbols; a
+  server-free symbol index for 16 languages; back/forward, recent locations, peek definition, sticky
+  scroll and preview tabs.
+  ([Search Everywhere](https://editora-project.dev/features/search-everywhere),
+  [code navigation](https://editora-project.dev/features/code-navigation))
+- **Code intelligence.** Language servers for 23 languages, auto-detected on `PATH`: diagnostics,
+  go-to, rename, code actions, Java refactorings and code generation, inlay hints and code lenses.
+  Debug Java, Python and Node over DAP; run files and project main classes with saved configurations.
+  ([LSP](https://editora-project.dev/features/lsp),
+  [debugging](https://editora-project.dev/features/debugging),
+  [run configurations](https://editora-project.dev/features/run-configurations))
+- **Git and GitHub through your own CLIs.** Gutter change bars with hunk stage and revert, a Commit
+  window, a Git Log with graph and history search, blame, stashes, patches, branches, remotes and
+  worktrees; pull requests, reviews and CI runs through `gh`.
+  ([Git](https://editora-project.dev/features/git),
+  [GitHub](https://editora-project.dev/features/github))
+- **Diff and merge.** Side-by-side or unified with word-level highlights, directory compare, a
+  three-way resolver for conflicts, and a standalone `--diff-ui` mode.
+  ([diff & merge](https://editora-project.dev/features/diff-merge))
+- **Previews for what you write.** Markdown with GitHub styling, math, lint and PDF/HTML export;
+  Mermaid, Graphviz, PlantUML and Typst; JSON/YAML/TOML/XML trees and OpenAPI docs; SVG, CSV, PDF and
+  images; plain-English readings of crontab, fstab, systemd, SSH config, Dockerfile and GitHub
+  Actions files.
+  ([previews](https://editora-project.dev/features/previews),
+  [Markdown](https://editora-project.dev/features/markdown-preview),
+  [diagrams](https://editora-project.dev/features/diagrams),
+  [Typst](https://editora-project.dev/features/typst))
+- **Editing aids.** TextMate highlighting for 40+ languages, snippets for 30, file templates,
+  EditorConfig, spell checking, multiple cursors, editor groups, auto-close and auto-rename tags,
+  keyboard macros, abbreviations, local file history and crash recovery.
+  ([syntax highlighting](https://editora-project.dev/features/syntax-highlighting),
+  [snippets](https://editora-project.dev/features/snippets),
+  [multiple cursors](https://editora-project.dev/features/multiple-cursors),
+  [macros](https://editora-project.dev/features/macros),
+  [local file history](https://editora-project.dev/features/local-file-history))
+- **Tooling in the window.** Task windows for Maven, Gradle, npm, Cargo and Go; an HTTP client for
+  `.http` files; a server log viewer with follow and filters; HTML live preview; remote files over
+  SFTP; and a Doctor screen that checks every external tool.
+  ([build tools](https://editora-project.dev/features/build-tools),
+  [HTTP client](https://editora-project.dev/features/http-client),
+  [log viewer](https://editora-project.dev/features/log-viewer),
+  [remote files](https://editora-project.dev/features/remote-sftp),
+  [Doctor](https://editora-project.dev/features/doctor))
+- **Extensible.** Plugins from a signed registry, an AI agent over the Agent Client Protocol plus
+  one-shot AI actions, and an embedded MCP server so an agent can drive the editor.
+  ([plugins](https://editora-project.dev/features/plugins),
+  [AI](https://editora-project.dev/features/ai),
+  [MCP](https://editora-project.dev/features/mcp))
+- **Yours to shape.** 26 themes, five bundled coding fonts, Zen, Expert and Simple UI modes,
+  settings sync through a Git repository you own, and an interface in six languages.
+  ([themes & fonts](https://editora-project.dev/features/themes-fonts),
+  [Zen mode](https://editora-project.dev/features/zen-mode),
+  [settings sync](https://editora-project.dev/features/settings-sync),
+  [localized UI](https://editora-project.dev/features/localized-ui))
 
-## Features
+## Install
 
-- **Command-driven core** — every action is a `Command`; bind it to a chord or run it
-  from the M-x command palette, which shows each command's one-line description and opens its online
-  docs with `C-h`.
-- **Search Everywhere** (`M-S-x`; also `Cmd`+`Shift`+`E` on macOS, and `Ctrl`/`Cmd`+`Shift`+`E` in the other keymaps) — one picker over
-  **commands, project files and symbols**, so you type the *name* of the thing instead of first
-  choosing which finder it lives in. `>` narrows to commands, `#` to files, `@` to symbols. Results
-  stay grouped by source rather than interleaved, so the thousands of symbols in a project cannot
-  bury the one command you meant. Opening it with nothing typed lists every command, a command whose
-  feature is switched off is shown grayed with a note about what would enable it, and `C-h` opens the
-  highlighted command's docs — so it can stand in for the palette entirely if you want it to
-  (Settings → Interface → Pickers).
-- **Go to Symbol with no language server** — Editora carries its own symbol scanner, so "where is
-  this declared?" works on a first run and in every language that ships a grammar but has no server
-  installed (16 languages: C, C++, C#, Go, Java, JavaScript/JSX, Kotlin, Lua, PHP, Python, Ruby,
-  Rust, shell, TypeScript/TSX). A running language server is always the better answer and still
-  wins; this is what there is when there isn't one. The index is built **on first use**, not when you
-  open a project, so an install that never asks it anything never pays for it.
-- **Ranked, not just filtered** — every picker scores matches instead of merely testing whether they
-  matched, with the matched characters emboldened. `mcon` finds `MainController`; the best answer
-  leads.
-- **Don't-lose-your-place navigation** — back/forward through your jumps, a **recent locations**
-  picker that shows the *line you were on* rather than just a file and number, **peek definition**
-  in an overlay instead of a jump, **sticky scroll** pinning the enclosing scope above the viewport,
-  and **preview tabs** (italic, single-slot) so browsing doesn't shred the tab strip. Plus
-  **related-file jump** between a test and its subject, a header and its implementation, or a
-  component and its stylesheet.
-- **Keyboard "Jump to…" popups** — fuzzy pickers for recent files (`C-x C-r`), the active file's
-  structure/symbols (`M-g i`), open files/tabs (`C-x b`), and tool windows (`M-g t`) — keyboard-first
-  alternatives to their list/tool-window UIs.
-- **Keyboard file finder** (`C-x C-f`) — Emacs `find-file`-style path popup with prefix
-  autocomplete; type/`Tab` to complete, Enter to descend folders or open (or create) a file. The
-  Open toolbar icon still uses the native OS dialog.
-- **Projects** (on by default; disable in Settings) — VSCode single-folder-workspace style: a root
-  folder + its own saved session (open files, layout, folds), shown as a filterable file tree in the
-  Project tool window with a project switcher in the toolbar. Its Tree/Map switch adds a spatial,
-  Miller-column navigator with per-column filters and hidden-file toggles, Explorer-matched folder-first
-  sorting, content-sized columns that show full names at 100%, movable/pinnable columns, four directional
-  flows, mouse-wheel zoom, breadcrumbs, history,
-  fit/center controls, an overview, editor/Git/bookmark/Personal Note status, metadata tooltips, and the
-  tree's complete right-click menu. Right-click a file in either view to add a first-line bookmark or
-  Personal Note. Clicking a file opens it in a normal editor tab; its dedicated preview icon opens a
-  floating, resizable, read-only text or image preview on the map. Open (`C-x C-p`)/switch (`C-x
-  p`)/close via the palette or toolbar; switching restores that project's files and layout. With no project
-  open, the Project tool window becomes a **"Current Folder"** explorer rooted at the active file's directory,
-  tracking the focused tab.
-- **Keybinding themes** — choose **Emacs** (default), **CUA**, **Sublime Text**, **VSCode**, or
-  **IntelliJ IDEA** in Settings → Keymaps (or the `Keymap: Select…` command); switching is live, no
-  restart, and each theme adapts to macOS (Cmd) vs Windows/Linux (Ctrl). Emacs uses multi-key chord
-  sequences (e.g. `C-x C-s`). (Modal Vim is on the roadmap.)
-- **Configurable shortcuts** — Settings → Keymaps lists every command with its current chord; **record**
-  a new shortcut (multi-key sequences supported), **reset** one to the keymap default, or reset them all.
-  Rebinding warns on conflicts and applies live; overrides persist and layer on top of the active theme.
-  (On macOS, the Option dead keys `Option`+`e`/`i`/`u`/`n`/`` ` `` are intercepted by the OS for
-  accent composition, so a few `M-`-chords like `M-e` aren't reachable by keyboard there — the
-  command palette still works.)
-- **Syntax highlighting** — TextMate grammars (via [tm4e](https://github.com/eclipse/tm4e)) for 40+
-  languages and formats: Java, TypeScript/JavaScript, XML, shell, PowerShell, DOS batch, Python,
-  Groovy, Kotlin, Ruby, PHP, C, C++, Rust, Go, C#, Lua, Markdown, JSON, CSS, HTML, YAML, INI, TOML,
-  SQL, Dockerfile, Terraform/HCL, Mermaid, `.http`, unified diffs (`.diff`/`.patch` — added/removed
-  lines tint green/red), Makefile, justfile, Protocol Buffers (`.proto`), GraphQL, Java
-  `.properties`, `.gitignore`/`.gitattributes`, dotenv, and common Linux/tool config files
-  (systemd units, SSH/Git config, crontab, hosts, fstab, …).
-- **Bundled fonts** — JetBrains Mono (default), Cascadia Code, Fira Code, IBM Plex Mono,
-  and Source Code Pro ship with the app; no system install required.
-- **Editor view options** — 80-column ruler and current-line highlight.
-- **Auto / smart indentation** — Enter keeps the indentation and adds a level after a block opener
-  (per language: braces, `:` for Python/YAML, `do`/`then` for shell, `def`/`class`/`do` for Ruby, open
-  tags for XML/HTML); Enter between a matching pair opens an indented stanza; typing a closing
-  bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred per file, or forced
-  globally via Settings → Editor → "Indent style" (Detect / Spaces / Tabs).
-- **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage them per language in **Settings → Snippets** (or "Snippet: Manage…" in the palette), saved under `<configDir>/snippets/`.
-- **Settings sync** _(Beta)_ — keep snippets, abbreviations, templates and your personal dictionary the same on every computer through a private Git repository you own (**Settings → Sync**; off by default). Changes merge entry by entry, Editora uses your own Git credentials, and automatic syncs never prompt. Preferences, keymaps, macros and themes are not synced.
-- **File templates** — "New File From Template" scaffolds; manage them in **Settings → Templates** (or `Templates: Manage File Templates…`) — the shipped templates are shown read-only and editing one saves a personal override under `<configDir>/templates/`.
-- **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
-  indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
-  round-tripped on read and save), `max_line_length` (drives the column ruler), and on-save
-  `trim_trailing_whitespace` / `insert_final_newline`. On by default; toggle via Settings → Editor or the
-  "View: Toggle EditorConfig" palette command.
-- **Server log viewer** — log files get severity highlighting (FATAL/ERROR/WARN/INFO/DEBUG/TRACE, both inline
-  and as a left-edge bar that works even on huge logs) and a control bar above the text: a **Follow** toggle
-  (`tail -f` — streams new lines, survives log rotation, and only auto-scrolls while you are at the end),
-  a **level floor**, and a **live pattern filter** (a regular expression, or plain text when it isn't a
-  valid one) with a count of the lines shown. Filters work on whole records — a stack trace stays with the
-  line it belongs to — and filtered lines keep their real line numbers. Very large logs open read-only at
-  their **tail**. Recognised by name (`*.log`, rotated `app.log.1`, `access_log`, `syslog`, `catalina.out`)
-  or by content (`server.out`, extensionless files); `Log: View as Log` toggles it for anything else.
-  Detects Logback/Log4j, `java.util.logging`, syslog, nginx, .NET, klog, structured/JSON (including pino's
-  numeric levels), zerolog, and access logs. Logs open in **View mode** (read-only with an "Enable Editing"
-  banner) by default — follow still streams while read-only. On by default (Settings → Editor → Logs,
-  "View: Toggle Log Viewer"); `Log: Toggle Follow` / `Filter by Level` / `Filter by Pattern` / `Focus Filter` /
-  `Clear Filter` / `Next Warning or Error` in the palette.
-- **Word/line-level undo** — undo/redo breaks at word, whitespace, and newline boundaries (and after a typing pause), so one undo removes a word or line rather than a whole typing burst.
-- **Undo History** — an *Undo History* tool window (`M-g u`) lists in-session document checkpoints; double-click or Enter jumps back to any recent state.
-- **Auto Close Tags** — typing the `>` of an HTML/XML open tag inserts the matching closing tag and
-  leaves the caret between them; void elements, self-closing tags, comments/doctypes, and `>` inside
-  attribute strings are left alone. On by default (Settings → Editor; "Toggle Auto Close Tags").
-- **Auto Rename Tag** — editing an HTML/XML tag name renames the paired open/close tag as you type
-  (VS Code behavior); comments, CDATA, quoted attributes, void elements, and `<script>`/`<style>`
-  content are skipped, and a brand-new tag never renames an unrelated one. On by default
-  (Settings → Editor; "Toggle Auto Rename Tag" in the palette).
-- **Auto-close & matching brackets** — typing `([{`/quotes inserts the matching closer (type over it to
-  skip, wrap a selection by typing a bracket/quote around it, Backspace clears an empty pair); the
-  bracket matching the one next to the caret is highlighted. **Go: Matching Bracket** jumps the caret to
-  the mate (press again to jump back; `Ctrl+Shift+\` in the VSCode keymap) and **Select to Bracket**
-  selects the whole pair.
-- **Code folding** — fold chevrons in the gutter, plus **Fold Level 1–7** (collapse everything at a
-  nesting depth, like VSCode's `Ctrl+K Ctrl+1..7`), **Fold / Unfold Recursively** (the region at the caret
-  and everything nested inside it), and **Go to Parent / Next / Previous Fold** (revealing a hidden
-  target). Palette-discoverable and rebindable; collapsed regions are saved with the session, and where a
-  language server is running the regions come from the server rather than brace/indent scanning.
-- **Comment / uncomment** (`M-;`) — toggles a line comment for a single line and a block/region comment
-  for a multi-line selection, using the language's comment syntax (`//`, `#`, `<!-- -->`, `/* */`, `--`, …).
-- **Fill paragraph** (`M-q`) — re-wrap a paragraph (or the selection, with "Fill Region") to a fill column
-  (`C-x f`, default 70), preserving its indentation and an adaptive fill prefix — line comments, Markdown
-  blockquotes (`>`), and Javadoc (`*`) — so code comments and quoted text wrap correctly.
-- **Emacs editing & movement commands** — the full set beyond the basics: backward-kill-word (`M-DEL`),
-  word/region case conversion (`M-u`/`M-l`/`M-c`, `C-x C-u`/`C-x C-l`), join-line (`M-^`), whitespace
-  fixups (`M-\`, `M-SPC`), delete-blank-lines (`C-x C-o`), open-line (`C-o`), kill-whole-line (`C-S-DEL`),
-  zap-to-char (`M-z`), balanced-expression motion (`C-M-f`/`C-M-b`, mark/kill-sexp), defun motion
-  (`C-M-a`/`C-M-e`), and mark-paragraph / mark-whole-buffer. All palette-discoverable and rebindable.
-- **Abbreviations** — a text-replacement dictionary: `C-x a e` expands the abbreviation before the caret,
-  *Abbrev Mode* expands automatically as you type a terminator, `C-x a g` defines a new one, and Settings →
-  Editor → Abbreviations manages the list. Typed case is carried onto the expansion.
-- **Keyboard macros** — record what you do and play it back. *Macro: Start Recording* / *Stop Recording*
-  / *Replay Last* are in the **Tools** menu and the palette (`F3` / `F4` / `C-x e` in the Emacs keymap;
-  the CUA keymap toggles recording with `Ctrl+Shift+R`, the Sublime keymap replays with `Ctrl+Shift+Q`;
-  bind your own in Settings → Keymaps). A red **● REC** in the status bar shows a recording is running —
-  click it to stop, or press `Esc` (`C-g`) to cancel and keep the previous macro.
-  - **What is recorded:** commands, typed text, and the keys that act rather than type — Enter, Tab,
-    Shift+Tab, Backspace, the arrows, Escape. They replay through the same path as the key, so a snippet
-    expanded with Tab, a completion accepted with Enter, a table-cell Tab and typing at several carets all
-    replay as they happened. Keys typed into the find bar, a prompt or a picker are recorded too and
-    replayed into that prompt (`C-s foo Enter Esc` replays as a search). Mouse clicks are not recorded,
-    and a command that opens a blocking dialog (a native file chooser) makes the replay wait there — the
-    status bar says so while you record.
-  - **Replaying:** one replay is one undo step, also with a count (*Macro: Replay Last N Times*, or
-    `C-u 50 C-x e`; up to 10,000). A long replay runs in slices, shows its progress in the status bar and
-    stops on `Esc`.
-  - **Saving:** the last recording is kept (also across restarts) until the next one replaces it; *Macro:
-    Name and Save Last* keeps it under a name. Every saved macro is a palette command (*Macro: ‹name›*)
-    you can bind to a key, and can be run from inside another macro. **Settings → Macros** renames them
-    and edits their steps: commands are picked from a list, keys are captured by pressing them, text keeps
-    its line breaks. Macros are stored in `macros.json` in the config folder.
-- **Auto-fill mode** — automatically break plain-text and Markdown lines at the fill column as you type
-  (Emacs `auto-fill-mode`). Prose-only (never wraps code); wrapped lines keep the indent. Off by default;
-  Settings → Editor or `view.toggleAutoFill`. Complements `M-q` (fill paragraph).
-- **`C-u` prefix argument** — give a command a numeric argument: `C-u 5 C-n` (down five lines), `C-u 3 C-k`
-  (kill three), `C-u 40 -` (forty dashes). Bare `C-u` is 4, `C-u C-u` is 16, or `C-u` then digits; `C-g`
-  cancels. `C-u C-SPC` pops the mark ring. Emacs keymap only.
-- **Occur** (`M-s o`) — list all lines in the buffer matching a regexp and jump to one; **Tabify / Untabify**
-  convert a region between tab and space indentation; **Align Regexp** pads lines so a pattern lines up in a
-  column (aligning `=`/`:` blocks). All palette-discoverable.
-- **Convert indentation** — rewrite the whole file's *leading* indentation between tabs and spaces
-  ("Convert Indentation to Spaces" / "…to Tabs"). In-line alignment and string contents are untouched, and
-  each direction reverses the other.
-- **Subword navigation** — move and delete by camelCase / snake_case parts: `getUserName` steps through
-  `get` → `User` → `Name`, and acronyms split correctly (`HTMLParser` → `HTML` `Parser`). Four palette
-  commands (forward/backward subword, delete subword forward/backward); no default chord, bind them in
-  Settings → Keymaps.
-- **Mark ring** — `C-SPC` records the caret on a per-buffer ring; `C-x C-SPC` pops back to the most recent
-  mark and cycles through older ones on repeat. Marks track their text through edits. Distinct from the
-  automatic jump-history (`nav.back`/`nav.forward`).
-- **Query-replace** (`M-%`, `C-M-%` for regexp) — Emacs replace-with-confirmation: stop on each match and
-  press `y`/`n`/`!`/`.`/`q` to replace, skip, do-all-the-rest, replace-and-stop, or quit. Regexp mode
-  expands `$1` group references. (In the Emacs keymap, `M-%` runs this rather than the find bar's replace.)
-- **Narrowing** (`C-x n …`) — restrict the buffer to the selection (`C-x n n`), the enclosing function
-  (`C-x n d`) or the fold block at the caret (`C-x n f`), and widen with `C-x n w`. Genuinely restricts the
-  buffer rather than just hiding lines, so search, replace and Select All see only the region. A status-bar
-  badge shows the state; saving still writes the whole file.
-- **Rectangles** (`C-x r …`) — the Emacs column-oriented commands: kill/copy/yank a rectangle, delete it,
-  clear it to spaces, open it (shifting text right), replace each line's segment with a string, or number
-  the lines down its left edge. Point and mark define the corners, so a zero-width rectangle is the classic
-  way to prefix a block of lines. Each is a single undo step. Distinct from Alt+drag column selection, which
-  gives you independent cursors instead.
-- **Kill ring** — every kill command feeds a 120-entry ring rather than just deleting: `C-y` yanks the most
-  recent, **`M-y`** (yank-pop) steps back through older entries, and *Edit: Yank from Kill Ring…* picks from
-  it directly. Consecutive kills accumulate into one entry (`C-k C-k C-k` then `C-y` restores all three
-  lines; `M-DEL M-DEL` gives the words back in reading order). Kills also go to the system clipboard, and
-  text copied in another application takes precedence over the ring, so yanking is never stale.
-- **String manipulation** — case-style conversions on the selection or the identifier at the caret
-  (camelCase / PascalCase / snake_case / SCREAMING_SNAKE_CASE / kebab-case / dot.case, a *Cycle Case Style*
-  that steps a token through the styles on repeated presses, swap case) plus whole-line transforms on the
-  selection or whole file (sort ascending/descending — numeric-aware and case-insensitive — sort by length,
-  reverse, shuffle, remove duplicate/empty lines, trim trailing whitespace). All individual palette commands,
-  or one filterable picker: "Edit: String Manipulation…" (`C-c x`).
-- **Menu bar** — the conventional File / Edit / Find / View / Navigate / Code / Run / VCS / Tools / Window /
-  Help layout, built over the same command registry the palette uses, so every entry shows its live
-  keybinding and greys out when its feature is off. Native system menu bar on macOS; hidden in Zen, Expert
-  and Simple modes, and toggleable from Settings → Interface.
-- **Editor groups (two files side by side)** — split the editor area into independent groups, each with its
-  own tabs and its own selection, so a header can sit beside its implementation. *Split Editor Group Right* /
-  *Down* move the current file into a new group, *Move File to Next Editor Group* shifts it along, *Focus
-  Next Editor Group* moves the keyboard between them, and *Merge Editor Groups* puts it all back; emptying a
-  group collapses it. Splits **nest** — a side-by-side pair can hold a stacked pair, for an L-shaped layout —
-  while splitting the same direction twice widens the existing row into three columns instead of building a
-  lopsided chain. **Drag a tab** onto another group to move it, or onto a group's edge to split there, with a
-  highlight showing where it lands; the layout is **saved with the session**. Distinct from *Split Editor*,
-  which shows two views of the **same** file — and the two combine.
-- **Multiple cursors & column selection** — VS Code–style multi-caret editing: add a caret at the next
-  occurrence of the selection / above / below, or **Select All Occurrences** (`Ctrl+Shift+L` in the
-  VSCode/Sublime keymaps) to put one on every occurrence of the selection (or the word at the caret) at
-  once — **Alt+Enter** in the find bar does the same for every match of the current query. Type or edit
-  everywhere at once, `Esc` to collapse; plus Alt-drag column/box selection. The Emacs movement chords
-  (`C-f`/`C-b`/`C-n`/`C-p`/`C-a`/`C-e`/`M-f`/`M-b`) move every caret like the arrow keys do; document,
-  paragraph, sentence and page motions stay on the primary caret. (Powered by a personal RichTextFX fork.)
-- **Copy/cut the current line with no selection** — VS Code's `editor.emptySelectionClipboard`: with
-  nothing selected, Copy grabs the whole current line and Cut removes it (one undoable step). On by default;
-  toggle in Settings → Editor or via "View: Toggle Copy Line When No Selection".
-- **Copy with syntax highlighting** — a copy also puts a colored HTML flavor on the clipboard, so code
-  pasted into Slack, an email, or a document keeps its highlighting instead of arriving as a grey block
-  (a light GitHub-style palette, since pasted code usually lands on a light background). Plain text is
-  always on the clipboard too. On by default (Settings → Editor); a forced *Copy With Syntax Highlighting*
-  command ignores both the setting and the size cap.
-- **Spell checking** — red wavy underlines on misspelled words, with right-click suggestions,
-  Add-to-Dictionary, and Ignore (for the session, in every open file). Plaintext and Markdown are checked
-  in full, HTML and Typst have their text content checked, and source files only their comments and string
-  literals. Toggle everything via "View: Toggle Spell Check", or one file type at a time in Settings →
-  Spell Check → File Types ("Spell Check: Toggle for This File Type"); data and configuration formats
-  (JSON, YAML, TOML, XML, CSV, INI, properties, …) start switched off. Choose a dictionary per file
-  ("Spell Check: Set Language…", or click the language in the status bar; ships English en_US/en_GB,
-  Spanish for Spain and Mexico, and French). From the keyboard: "Spell Check: Next/Previous Misspelling",
-  "Correct Word at Caret…", "Add Word at Caret to Dictionary" and "Ignore Word at Caret". A bundled
-  **technical-terms dictionary** (`config`, `async`, `middleware`, `kubernetes`, …) keeps code-adjacent
-  prose from being flagged — toggle it in Settings → Spell Check (default on). Pure-Java (Apache Lucene
-  Hunspell).
-- **Code intelligence (LSP)** _(Beta)_ — language smarts via the Language Server Protocol, with **23 servers**
-  auto-detected on `PATH` (Java/JDT LS, TypeScript/JavaScript, Python/Pyright, Go, Rust, C/C++/clangd,
-  C#, PHP, Ruby, Kotlin, Lua, Bash, XML, JSON, YAML, HTML, CSS, Dockerfile, SQL, Terraform, TOML,
-  Typst/tinymist, Astro/astro-ls),
-  plus a **Maven-aware `pom.xml` server** (JVM lemminx + lemminx-maven, routed by file name so a `pom.xml`
-  gets dependency/plugin/GAV completion while other XML keeps the fast native lemminx).
-  Inline diagnostics + a Problems tool window (`M-8`) + minimap/scrollbar stripes, go-to-definition
-  (`M-.` — for Java this includes JDK/dependency classes, opened as read-only library source),
-  **go-to-implementation / type-definition / declaration** (the concrete overrides of an interface member,
-  or a variable's type — palette, plus the right-click menu when the server supports them), find
-  references (`M-?`), hover docs (`C-c h`), **signature help** (overloads + active parameter as you
-  type a call), **occurrence highlighting** (rest the caret on a symbol — reads and writes wash
-  differently), **rename symbol** (`F2` in the GUI keymaps — workspace-wide, moves a renamed Java
-  class's file too), **call/type hierarchy** (who-calls-this + super/subtypes in a lazily-expanded
-  tool window), LSP-backed completion with immediate member triggers, local filtering of complete lists,
-  preserved overloads, Enter insertion / Tab replacement, and auto-imports that preserve ongoing typing
-  and selected snippet arguments. Java method completion reuses existing parentheses and opens signature
-  help with overload navigation that stays open across multiline calls. Nested argument snippets resume
-  their outer placeholders; completion and imports undo together even after disjoint continued typing,
-  with later typing kept as separate undo steps.
-  See the [Java editing engineering review](docs/subsystems/java-editing-review.md) for measured
-  behavior, regression coverage, and remaining differences from IntelliJ. Other LSP tools include
-  **Code Actions / quick fixes** (`Ctrl-.` in the VS Code/Sublime/IntelliJ keymaps, or the palette /
-  right-click menu — apply the server's fixes, organize imports, refactorings), **Java code generation**
-  from that same menu (**Generate toString()**, **hashCode()/equals()**, **Constructors**, and
-  **Getters and Setters**, **Delegate Methods** and **Override/Implement Methods** — each opens a checkbox
-  list: Space toggles, Enter generates), the **Java refactorings that need an answer first** (**Move** a
-  class to another package, a nested class, a static member or an instance method; **Extract Interface**;
-  and **Change Signature**, edited as one line where a new parameter is written `type name = value`), and
-  **Format Document** (whole-file reformat via the server, when it advertises formatting — palette or the
-  editor right-click menu), **inlay hints** (the server's parameter-name / inferred-type annotations, drawn
-  in grey italics **inline at the position they describe**, like IntelliJ and VS Code — off by default,
-  Settings → Code Completion; parameter hints that explain nothing are always hidden, and by default the
-  rest appear only on literal arguments), **re-indent as you type**
-  (typing `;`, `}` or Enter snaps the line to the server's own indentation convention — indentation only,
-  never a reformat; off by default, Settings → Code Completion or `view.toggleOnTypeFormatting`),
-  **code lenses** (the server's reference and implementation counts after a declaration; click one to open
-  them — off by default, Settings → Code Completion or `view.toggleCodeLens`), and
-  **server-provided folding + expand/shrink selection** (grammar-accurate where a server offers them — an
-  import block folds as one region — falling back to the built-in heuristics everywhere else).
-  Three Java commands round it out: **Organize Imports** (direct, without the code-action menu),
-  **Copy Fully Qualified Name**, and **Reload Project Configuration** (re-read `pom.xml`/`build.gradle`
-  when a dependency change hasn't been picked up). The **Problems** window has an **Open files / Whole
-  project** selector, with a **Build Project** command that recompiles the Java project and fills it
-  (default unchanged: open files only). Long-running server work
-  (jdtls importing a project, gopls loading packages) drives the status-bar loading bar with the server's
-  own **progress** title and percentage, and external file changes (a `git checkout`, a CLI build) are
-  forwarded to the running servers so their project models don't go stale. Document sync is **incremental**
-  where the server accepts it, and semantic highlighting transfers only what changed where the server
-  supports token deltas. A crashed server is restarted automatically (with a crash-loop cap), and a
-  root's server shuts down a few minutes after its last file closes. Off by default; per-server command +
-  enable in *Settings → LSP*.
-- **Search** — incremental find bar (`C-s`/`C-r`) with regex, case, and whole-word toggles, a match
-  count, and live highlight-all; **Find in Files** (`C-S-f`) across the project + open buffers with
-  include/exclude file globs, query history, regex capture-group replace (`$1`), `.gitignore` exclusion
-  (skips `target/`, `node_modules/`, … by default — Settings → Search), and a results tool
-  window (`M-6`, on the right, with a *ripgrep* badge when that faster `.gitignore`-aware backend is
-  active); and **AceJump** (`M-g j`) — type a character, then a label, to fly the caret to any on-screen
-  occurrence.
-- **Run a file from a gutter ▶** — a green play glyph runs a Java 25 compact-source file
-  (`java <file>`), a Python script (`python3`), or a shell script (`bash`); output streams into a Run
-  tool window (`M-9`) with clickable stack traces, stdin, and per-file program arguments. Java and Python
-  run locally without LSP; shell Run still follows the Bash LSP toggle. The **Default JDK** in Settings →
-  Build Tools → Java controls standalone Java Run and Debug as well as Maven projects. For compact `.java`
-  files and extensionless Java `--source 25+` shebangs, Debug compiles the implicit class with that
-  JDK's `javac`. With LSP enabled,
-  a clicked **Java** frame can be resolved by the language server, so a frame inside a dependency or the
-  JDK opens its source instead of reporting "not found"
-  (filename matching still handles anything the server can't place, and every non-Java trace).
-- **Run & debug a project's `main` class (Maven / Gradle)** — beyond single files, **Run Main Class…** /
-  **Debug Main Class…** pick any main class in the active file's Maven or Gradle project; a ▶ also appears
-  in the gutter beside every `public static void main`, and the editor right-click menu offers
-  *Run '….main()'* / *Debug '….main()'*. Debugging (and the fastest, project-wide Run) goes through the
-  Java language server; without it, Run falls back to the build tool — Maven resolves the classpath
-  (`mvn compile dependency:build-classpath`, running from the reactor root with `-pl <module> -am` in a
-  multi-module build) and Gradle delegates to `run` (or `bootRun` for Spring Boot).
-- **Run configurations** — save a named configuration per project (main class, module, program & VM
-  arguments, environment variables, working directory, before-launch build step, and an optional JDK
-  override) and re-run or debug it
-  from the palette; edit the whole list in the dedicated **Run Configurations** window. A configuration does not choose
-  between running and debugging — the toolbar's two buttons do, and every entry gets both a *Run: &lt;name&gt;*
-  and a *Debug: &lt;name&gt;* command you can bind a key to. In a Gradle project the main class the build declares
-  (`mainClass`, `mainClass.set(…)`, or the legacy `mainClassName`) is pre-filled. The toolbar selector shows
-  where something is launchable — a Maven/Gradle/npm/Cargo/Go build file inside the open project, or a
-  makefile at its root, or any detected build when no project is open — and whenever you have a
-  configuration saved.
-- **Debugging (DAP)** _(Beta)_ — a full debugger for **Java**, **Python** (debugpy), and **JavaScript/Node**
-  (vscode-js-debug): breakpoints (conditional / logpoints), step / resume / pause / run-to-cursor /
-  jump-to-line, call stack, variables, watches and set-value, inline values and a value-hover popup, and
-  an IntelliJ-style Debug tool window (`M-g d`). **Debug via Build Tool** launches a Gradle
-  (`run`/`bootRun --debug-jvm`) or Spring Boot Maven (`spring-boot:run` + a JDWP agent) app under a
-  suspended JVM and attaches when it's listening. A debugged Java program can read its standard input:
-  while it runs, a line typed in the Debug console is sent to it (while it is paused the same field
-  evaluates expressions). Off by default (*Settings → Debugging*); adapters are
-  user-installed (helper scripts provided), and a `jdtls` that already bundles the java-debug plugin is
-  detected as-is.
-- **Read-only / View mode** — toggle a buffer read-only (`C-x C-q` or the palette) to view without
-  editing; typing and edit commands are blocked while everything else keeps working. Files that aren't
-  writable on disk open read-only automatically, and the per-file state is remembered across restarts.
-  A Word-style "View Mode" banner docks above the editor with an **Enable Editing** button (when the
-  file is writable). While read-only, Space pages down and Backspace pages up (pager-style).
-- **Simple UI mode** — a single toggle (toolbar icon, **View: Toggle Simple UI Mode** in the palette,
-  *Settings → Application*, or the `--simple` launch flag) that strips the window to a minimal editing
-  surface: it hides the extra toolbar groups (new-from-template, recent, find-in-files, split, project
-  selector), the tool-window stripe, the breadcrumb,
-  the entire gutter (line numbers + fold chevrons + markers; collapsed regions are unfolded first), the
-  minimap, and most status-bar segments (git, LSP, language, tab size, line endings, encoding), while
-  keeping the tabs, the essential toolbar icons (including **Open**), and the file-size segment. It also **disables the heavier features** — language
-  servers (LSP), debugging, the HTTP client, Git, and multiple cursors / column selection — for a quiet
-  plain editor. Persists across restarts; your saved preferences (line numbers, minimap, breadcrumb, tool
-  stripe, LSP/debug/HTTP/Git and multi-caret enables) are all restored when you turn it off.
-- **Zen & Expert modes** — per-window distraction-free overlays that hide chrome without touching your saved
-  preferences. **Zen** (`C-c z`, floating "Z" to exit) hides everything — toolbar, status bar, tab bar,
-  breadcrumb, tool stripes, line numbers, minimap, ruler. **Expert** (`C-c C-e`, floating "E" to exit) is a
-  lighter version that strips most surrounding window chrome (toolbar, tab bar, breadcrumb, tool stripes,
-  whitespace guides) and **keeps the menu bar and whole editor view** — line numbers, status bar, minimap, ruler and
-  current-line highlight — a focused coding surface that still shows where you are. The two are mutually
-  exclusive; both are also in *Settings → Interface → Modes*, the palette (**View: Toggle Zen/Expert Mode**),
-  and a launch flag (`--zen` / `--expert`).
-- **Text zoom** — scale the editor text on top of the font size (status-bar `− 100% +`, `C-=`/`C--`/`C-0`,
-  Ctrl+mouse-wheel, or the palette); persists across restarts, separate from the font-size setting.
-- **Themes** — 26 switchable AtlantaFX themes: the built-in Primer, Nord, Cupertino and Dracula,
-  plus the community set (Blue, Navy, Army, the Spring/Summer/Fall/Winter seasonal pairs, Autumn,
-  Browny, News and Yacht). Each has a matching editor color theme (syntax + surface) that follows the
-  app theme by default and is independently selectable in Settings; the community themes use an
-  adaptive syntax palette drawn from each theme's own colors.
-- **Markdown preview** — IntelliJ-style 3-mode view (Editor / Editor + Preview / Preview) via a
-  floating control top-right of the editor, rendered natively (CommonMark + GFM: tables, task lists,
-  strikethrough, autolinks, plus **YAML front matter**, **footnotes**, **heading anchors**, and
-  **`++inserted++`** text) with **GitHub-style** output — task-list checkboxes, inline-code pills,
-  underlined h1/h2, and **images** (local and remote). Live-updating and theme-matched; the mode is
-  remembered per file. **Links are clickable** — a hand cursor + click opens the destination in the
-  system default browser. In Split mode the editor and preview scroll together (the pane under the mouse
-  drives the other). Zoom the preview text with its `−`/`+` control or, in Preview mode,
-  **Ctrl + mouse wheel**. The **Structure** tool window shows the document's heading outline, using the
-  active editor theme's syntax styling for item names, parameter types, and return types.
-- **Markdown authoring** — **paste or drag-drop images** into a saved Markdown file (saved into a sibling
-  `assets/` folder with an `![](…)` link inserted), **smart link paste** (paste a URL over a selection to
-  make `[selection](url)`), and **table editing** with **Tab** / **Shift-Tab** to move between cells and
-  **Enter** to add a row (reflowing as you go) — alongside the existing format bar and smart list/heading
-  editing.
-- **Markdown lint** — a markdownlint-style rule set (heading-level increment, hard tabs, trailing
-  whitespace, blank-line runs, heading-marker spacing/indent/trailing-punctuation, headings & fenced code
-  surrounded by blank lines, multiple H1, first-line H1, fenced blocks missing a language, bare URLs,
-  missing final newline, broken reference links) shown as inline squiggles with hover messages, a
-  scrollbar **overview stripe** + minimap ticks, and a **Markdown Lint** tool window. Disable individual
-  rules in Settings (or with `<!-- markdownlint-disable MDxxx -->` comments / a `.markdownlint.json`),
-  and **auto-fix** the mechanical issues with "Markdown Lint: Fix Issues". On by default; toggle with
-  "View: Toggle Markdown Lint".
-- **LaTeX math** — render inline `$…$` and display `$$…$$` math in the preview (and block formulas in PDF
-  export) via the pure-Java **JLaTeXMath**, with GitHub-style delimiter rules so prose dollar amounts are
-  left alone. **On by default** — toggle under *Settings → Editor → Render LaTeX math* or with
-  "View: Toggle Math Rendering".
-- **Mermaid diagrams** — render Mermaid in the preview (standalone `.mmd` files and ` ```mermaid `
-  fenced blocks inside Markdown), export a diagram to **SVG / PNG / PDF**, get live `maid` linting with
-  inline error squiggles, and keyword + snippet autocomplete in `.mmd` files. Uses the external
-  **mmdc** (mermaid-cli) to render/export and **maid** to lint (configure their commands in Settings).
-  **On by default** when the `mmdc` CLI is found (inert otherwise) — toggle under *Settings → Mermaid*.
-  `mmdc` drives a headless Chrome via Puppeteer; if rendering fails with *"Could not find Chrome …"*
-  install it once with `npx puppeteer browsers install chrome-headless-shell` (on Linux a global
-  `npm i -g @mermaid-js/mermaid-cli` sometimes skips Chrome's download). The in-app
-  **Settings → Mermaid → Install…** button (and the `install.mermaidSupport` command) now does this for
-  you — it installs mmdc *and* that Chrome.
-- **Diagram-as-code preview (Graphviz DOT + PlantUML)** — standalone `.dot`/`.gv` and
-  `.puml`/`.plantuml` files get the same 3-mode preview as Markdown/Mermaid, rendered off-thread via the
-  external **`dot`** / **`plantuml`** CLIs (both rasterize to PNG natively — no headless browser) and
-  cached by source hash. Zoom resizes the image; export a diagram to **SVG / PNG / PDF**
-  (`diagram.export`). **On by default** — self-gating on detection, so it's inert until the tool is found
-  (install via your package manager, e.g. `brew install graphviz plantuml`). Toggle + tool paths under
-  *Settings → Languages & Tools → Diagrams*. PlantUML runs with its **`SANDBOX` security profile** (the
-  bundled standard library works; local-file and URL `!include` do not) — start Editora with
-  `PLANTUML_SECURITY_PROFILE` set to choose another.
-- **Typst document preview** — standalone `.typ` files get the same 3-mode preview as Markdown, rendered
-  off-thread via the external **`typst`** CLI as a **multi-page** stack (one image per page). The last good
-  render stays on screen while you edit (no flicker), and a compile error keeps it visible under a small
-  banner. Zoom resizes the pages; export to **PDF** (native single file) / **PNG** / **SVG**
-  (`typst.export`), and print paginates the pages. **On by default** — self-gating on detection, so it's
-  inert until `typst` is found (install via your package manager, e.g. `brew install typst` or
-  `cargo install typst-cli`). Toggle + tool path under *Settings → Languages & Tools → Typst*. Editing has
-  Markdown-style ergonomics — Enter continues a `-`/`+`/`N.` list, and selecting text pops a format bar
-  (bold `*` / emphasis `_` / raw `` ` `` / link / bullet / heading) with matching right-click + palette
-  actions.
-- **Structured-data preview (JSON / YAML / TOML / XML + OpenAPI docs)** — `.json`/`.yaml`/`.toml` files get
-  the same 3-mode preview as Markdown: a collapsible, type-colored **data tree** (rendered off-thread);
-  `.xml` files render a faithful **DOM tree** (tags + attributes + text). A JSON/YAML file recognized as an
-  **OpenAPI 3 / Swagger 2** spec instead renders as **browsable API docs** (endpoints with colored method
-  badges, params, responses, schemas), with a tree ⇄ docs toggle (`structured.toggleView`). **On by
-  default** — *Settings → Editor → Structured data*.
-- **SVG image preview** — `.svg` files stay editable XML but gain a rendered-image preview in the same
-  3-mode view; edit the source and the image re-renders live (rasterized via the bundled JSVG — no external
-  tool). **On by default** — *Settings → Editor → SVG*.
-- **Crontab schedule preview** — a `crontab` / `*.cron` / `cron.d/*` file gets the same 3-mode preview,
-  decoding each schedule into plain English (`30 2 * * 1-5` → "At 02:30, Monday through Friday"), listing
-  the next fire times, handling `@reboot`/`@daily`/… macros, and flagging a malformed line with its field
-  error. **On by default** — *Settings → Editor → Crontab*.
-- **fstab mount preview** — an `/etc/fstab` file gets the same 3-mode preview, decoding each mount line
-  into plain English: the device spec (UUID/LABEL/path/CIFS/NFS), mount point, filesystem, the options
-  (`noatime` → "access times not updated", `nofail`, `uid=`, …), and the fsck/dump columns; malformed
-  lines turn red. **On by default** — *Settings → Editor → fstab*.
-- **systemd unit preview** — a `.service`/`.timer`/`.socket`/… file gets the same 3-mode preview, glossing
-  each directive in plain English; a `.timer`'s `OnCalendar=` is decoded into English + the next trigger
-  times. **On by default** — *Settings → Editor → systemd*.
-- **SSH config preview** — an `~/.ssh/config` / `ssh_config` file gets a one-line connection summary per
-  `Host` block ("Connects to example.com on port 2222 as deploy, via jump host bastion") + option glosses.
-  **On by default** — *Settings → Editor → SSH config*.
-- **Dockerfile preview** — a Dockerfile gets a per-build-stage digest (base image, exposed ports, workdir,
-  user, entrypoint/command, health check, build-step count). **On by default** — *Settings → Editor → Dockerfile*.
-- **GitHub Actions preview** — a workflow YAML (detected by content) renders a plain-English digest — the
-  triggers (with a `schedule:` cron decoded), then each job's runner, `needs`/`if`, and steps. **On by
-  default** — *Settings → Editor → GitHub Actions*.
-- **PDF viewer** — `.pdf` files open in a read-only page viewer (rasterized via the bundled PDFBox) with
-  ◀/▶ page navigation and zoom, instead of the hex viewer. Works for local and remote (SFTP) PDFs.
-- **Build-tool support (Maven, npm, Cargo, Go, Gradle)** — each detected build tool gets its own IntelliJ-style
-  **tasks tool window** (its stripe appears only when the tool's marker file is present): a browsable tree of
-  the tool's goals/scripts/targets with a mini toolbar (Run / Reload / Stop / Run custom…), double-click or
-  Enter to run, streaming to a shared **Output** window with one tab per tool (Maven/npm/Cargo/Go/Gradle),
-  alongside its Git / GitHub / CI tabs. Each tasks window has a **filter box** (focused when the window
-  opens; Down/Enter step into and run the results) and Emacs navigation in the tree — `C-n`/`C-p` to move,
-  `C-f`/`C-b` to expand/collapse a section — like the Bookmarks and Personal Notes windows.
-  The same actions are also a searchable command-palette popup (`<tool>.showActions`):
-  - **Maven** (`pom.xml`) — the standard lifecycle phases, the pom's declared profiles (checkable, composing
-    with a run via `-P`), and each plugin's explicitly-bound goals (`spotless:check`, `jacoco:report`, …),
-    plus a "Run custom…" box. Runs prefer the project's own `./mvnw` wrapper, falling back to `mvn` on PATH.
-    The Build Tools settings page also selects the default JDK used for Maven runs and debugging; Editora
-    discovers standard platform installs and local version-manager JDKs (SDKMAN, asdf, mise, Jabba, and
-    JetBrains), while each project's Run Configuration can override that default.
-  - **npm** (`package.json`) — one entry per `scripts` name (run portably as `<pm> run <name>`) plus common
-    tasks (`install`, `ci`). Uses the detected package manager — npm/yarn/pnpm/bun, from the `packageManager`
-    field or the lockfile.
-  - **Cargo** (`Cargo.toml`) — the standard subcommands (build/run/test/clippy/fmt/…), any `[[bin]]`/
-    `[[example]]` targets (`run --bin X`), and a `--release` toggle that composes into the run.
-  - **Go** (`go.mod`/`go.work`) — the standard subcommands over the whole module (`build ./...`, `test ./...`,
-    `mod tidy`, …).
-  - **Gradle** (`build.gradle[.kts]`) — the common tasks (build/test/assemble/…) plus **Load all tasks…**,
-    which enumerates `gradle tasks` on demand. Prefers the project's own `./gradlew` wrapper, else `gradle`.
+Download the package for your platform from [GitHub Releases](https://github.com/adriandeleon/Editora/releases/latest),
+or use the OS-detected button on the [home page](https://editora-project.dev/#download).
 
-  Discovery parses the marker file directly (no `mvn help:effective-pom` shell-out, no new dependency) so
-  it's instant and offline. **On by default** (each inert until its marker is found) — toggle under
-  *Settings → Languages & Tools → Build Tools*.
-- **Export to PDF** — export the active file as a real, *searchable* PDF: source code with syntax
-  highlighting and optional line numbers (always a light theme), the **Markdown** preview as native
-  vector text (headings, lists, tables, images, embedded diagrams), or a standalone Mermaid `.mmd`
-  diagram. Use **File → Export to PDF…** for the file's text or **Export Rendered Preview to PDF…** for
-  its preview (both also in the palette), or **Export Selection to PDF…** from the editor's right-click
-  menu. PDFs have clickable links, bookmarks from the headings and a footer with the document name and
-  page number. Choose line numbers, syntax highlighting, the page footer, and the PDF page size (Letter /
-  A4, defaulting to your region's), orientation, margins and code font size under *Settings → Editor →
-  Export & Print*. The page size does not
-  apply to Mermaid, Graphviz, PlantUML or Typst PDFs, and the PDFs are not tagged for accessibility.
-- **Export to HTML** — export a Markdown file's rendered preview to a standalone, self-contained `.html`
-  file (embedded stylesheet, heading anchors, math rendered as images). Run "Preview: Export to HTML" from
-  the palette.
-- **Print** — native printing of code or the rendered Markdown preview, with a print-preview window
-  first (always light, what-you-preview-is-what-prints) with page setup, zoom and keyboard page
-  navigation. Use **File → Print…** for the file's text or **Print Rendered Preview…** for its preview
-  (both also in the palette), or **Print Selection…** from the editor's right-click menu. Image tabs
-  print too. Printing uses the paper chosen in Page Setup; printed links show their address. A CSV
-  prints and exports what its grid shows (filter, sort and header setting).
-- **Snippets** — VS Code / TextMate-style templates with interactive tab stops. Type a trigger + Tab to
-  expand, or pick one with "Snippet: Insert…" (palette, Code menu; `C-c i` in the Emacs keymap) or from
-  the completion popup. Triggers needn't be plain words: `#inc` (C/C++ `#include`), `!` (the HTML
-  skeleton), `?xml`, yaml's `---` and two-word ones like `else if` all expand. While a snippet is being
-  filled in, its fields are outlined (the active one tinted, mirrors underlined, a mark where `$0` ends
-  up) and the status bar shows "Snippet 2/3": Tab/Shift-Tab move between fields, Esc leaves, and so does
-  moving the caret out of the fields — Tab then indents again. Auto-pairs, Enter auto-indent and smart
-  Backspace work inside a field. Standard body syntax (`$1`, `${1:default}`, mirrors, choices,
-  transforms, escapes) and the VS Code variables (`TM_*`, `CURRENT_*`, `UUID`, `RANDOM`, `LINE_COMMENT`,
-  `WORKSPACE_NAME`, `RELATIVE_FILEPATH`, …); a `$name` that is not a variable stays as written. Snippets
-  ship for 30 languages — C, C++, C#, CSS, Dockerfile, Go, Groovy, HTML, Java, JavaScript and TypeScript
-  (also used for JSX/TSX), JSON, Kotlin, Lua, Markdown, Mermaid, PHP, PowerShell, Python, Ruby, Rust,
-  shell, SQL, Terraform, TOML, Typst, XML, YAML, batch and INI files — most from the MIT
-  [friendly-snippets](https://github.com/rafamadriz/friendly-snippets) collection. Add your own in
-  `<configDir>/snippets/<language>.json` ("Snippet: Edit User Snippets…"; saving the file reloads it in
-  every window) or in Settings → Snippets, where a bundled snippet can also be edited or switched off.
-  Your snippets win over a plugin's, and a plugin's over the bundled ones. Tab expansion has its own
-  switch (Settings → Snippets, or "View: Toggle Snippet Expansion on Tab"); Tab never expands inside a
-  comment or string, nor in a CSV/TSV file, and the global `date` / `time` snippets are offered in the
-  popup and picker only.
-- **New ▸ &lt;file type&gt;** — right-click a folder in the Project tool window: **New ▸** offers a generic
-  `File…` and `Folder…`, Text and Markdown, then a submenu per family — **Java** (Class, Interface, Record,
-  Enum, Annotation, `package-info.java`), Web, Scripts, Languages, Data &amp; Config, Docs &amp; Diagrams, Build
-  &amp; Ops — about fifty types in all. Name it and it opens, with the caret already in the body. A new Java
-  file gets its **package declaration from the folder it is created in** (`src/main/java/demo` →
-  `package demo;`; only source roots inside the project count), and a qualified name (`text.Slug`) creates
-  the sub-package folder. A known extension in the typed name wins over the type's, so `notes.json` under
-  Text File is JSON while `release-1.2` under Markdown is `release-1.2.md`. Names that cannot be a file on
-  every platform (`CON`, `a?b`, a trailing dot) and Java keywords are refused with the reason. Shell
-  scripts are created executable. Also on the palette as *File: New File of Type…*, which creates in the
-  active file's folder.
-- **File templates** _(Beta)_ — *Template: New File From Template…* (`C-c C-n` in the Emacs keymap) creates a
-  file, or a whole set of files, from a reusable template. A wizard asks for the template's variables — the
-  class, file or package name included — and the new file opens with the caret at `${cursor}`. Nine templates
-  ship: Java Class (with the package of the folder it is created in), Java Compact Source, HTML Page,
-  Markdown Document, Python Script, Shell Script, Zsh Script (both created executable), and the multi-file
-  HTML Page + CSS and Python Project. A multi-file template always asks for its folder, lists any files that
-  are already there before writing anything, and never overwrites one. *Project: New Project From Template…*
-  asks for a project name and a location, creates that folder and opens it as a project. Your own templates
-  are JSON files in `~/.editora/templates/` (they override a plugin's or a bundled template with the same
-  id) — manage them in Settings → Templates, or run *Template: Edit User Templates…* to open one, start a
-  new one, or copy a bundled template to customize. In a template only `${variable}`,
-  `${variable:default}` and `${cursor}` are special; everything else (`$1`, `$HOME`, backslashes) is written
-  as is, and `$${name}` gives a literal `${name}`.
-- **Autocomplete** — appears as you type (and on demand via `C-M-i` / `M-/`). In **code**, a popup of
-  **snippet** completions (accepting expands the snippet with its tab stops; Enter/Tab accept, arrows
-  navigate). In **prose** (plain text / Markdown), inline **"ghost text"** — a single greyed
-  continuation after the caret from the spell dictionary + your personal dictionary; **Tab** accepts.
-  Settings → Editor has a master toggle plus per-source checkboxes (words/prose, snippets). A **language
-  server's** completions expand as snippets too: accepting a Java method selects its first argument with Tab
-  stepping through the rest, and accepting an `import` package selects the `*` ready to type the class over.
-- **Welcome page** — a VSCode-style start panel (New File / Open File / recent files) shown in the editor
-  area when no files are open, instead of a blank Untitled buffer; `--new-file[=name]` opens a fresh buffer
-  instead.
-- **Doctor** — a `flutter doctor`-style health screen (`View: Doctor` in the palette, or from the Welcome
-  page) that checks every external CLI Editora's features use — Git/GitHub CLI, ripgrep, the
-  preview/diagram tools, all enabled language servers, the debug adapters, the Run interpreters, build
-  tools, the AI agent CLI, and the installer prerequisites — with versions, plain-language tips, and
-  one-click **Install…** / **Settings…** fixes. Disabled features show as gray rows and aren't probed.
-- **Recent files** — persistent most-recently-used list.
-- **Image viewer** — opening a raster image (`.png`, `.jpg`/`.jpeg`, `.gif`, `.bmp`) renders the picture in a
-  read-only tab instead of dumping its binary bytes as text, with zoom out/in/fit/actual-size (and Ctrl+wheel
-  zoom). SVG stays editable text.
-- **Hex viewer** — opening a binary file (executable, archive, `.class`, `.pdf`, …) shows a read-only
-  `offset | hex | ASCII` dump instead of garbage text. Binaries are detected by content; large files show
-  their first slice with a truncation note. "View: Open as Hex" force-opens any file's bytes as hex.
-- **File-type icons** — every file shows a glyph for its type (the Java/Python/CSS/… logo, an image,
-  archive, PDF, table, … glyph, or a generic document fallback) everywhere it's listed: editor tabs, the
-  Project tree, the Open-Files / Recent pickers, the Switcher, and the file/folder finders. Monochrome
-  single-path glyphs that track the light/dark theme (Simple Icons + Material Design Icons).
-- **TODO Comment Manager** — `TODO`, `FIXME`, `HACK`, `NOTE`, `XXX` (and your own keywords) are highlighted
-  wherever they appear, and understood in the IntelliJ-style structured form `KEYWORD [tag] (priority) description`
-  — e.g. `// TODO [auth] (high) fix token refresh` — with each part colored (tag underlined; priority by level).
-  The **TODO tool window** (`M-g o`) lists every match with a **Group by** selector (File / Priority / Tag /
-  Keyword), and right-clicking a match edits it in your source: **Mark Done** (→ `DONE`) / Reopen, set the
-  priority, or edit the description — as one undoable edit. Configure the keywords/colors in
-  Settings → Editor → TODO Highlighting.
-- **Bookmarks** — toggle line bookmarks (`C-c m`) with a gutter marker and optional notes; the
-  Bookmarks tool window lists them across all files, `C-c ]`/`C-c [` cycle within a file, and `M-g b`
-  is a cross-file jump picker. Reorder bookmarks (and file groups) in the tool window with Alt+Up/Down,
-  the right-click menu, or drag-and-drop — the jump picker follows the same order. A Project Tree/Map
-  file menu can add a bookmark at line 1 without opening the file, and annotated files show a small badge. Saved in
-  `bookmarks.json`, scoped per project (switching projects shows that project's bookmarks; deleting a
-  project deletes its bookmarks).
-- **Personal Notes** — private annotations attached to a file *without modifying the file* (ideal for
-  read-only, generated, or shared code). Add a note on a word, line, or selection range
-  (`C-c n`, the editor right-click menu, or the gutter glyph); give it a body, tags, and a status
-  (active / resolved / orphaned). Notes follow their content as you edit and re-anchor on reopen by the
-  captured text + context — and by **content hash**, so they survive a file being renamed or moved
-  outside the app (a note that can't be relocated is kept as *orphaned*, never lost). A gutter glyph, a
-  soft in-editor highlight, and a hover tooltip mark each note (toggle via *Settings → Editor → Show note
-  indicators*). The **Personal Notes** tool window (`M-5`) groups them per file with a filter and
-  edit/resolve/delete; `M-g n` jumps across files and notes export to JSON. The Project Tree/Map file menu
-  can add a line-1 note directly, and files with notes show a small badge. Stored per project in
-  `notes.json`. Separate from bookmarks — both coexist in the gutter. **On by default** — toggle
-  under *Settings → Application → Enable Personal Notes*.
-- **Git** — uses your installed `git` (no bundled library). The status bar shows the current branch with
-  ahead/behind counts (click to switch branches); the gutter draws change bars vs `HEAD` (added /
-  modified, and a corner flag where lines were deleted) that stay on their lines while you type, and the same
-  changes are marked down the minimap's edge. **Work on a change where it is**: *Git: Next / Previous Change*
-  steps through the file's changes (`Alt+F5` / `Shift+Alt+F5` in the VS Code keymap, `Ctrl+Alt+Shift+Down` /
-  `Up` in IntelliJ, `C-x v ]` / `C-x v [` in Emacs); clicking a change bar (or *Git: Peek Change at Caret*)
-  opens a card with the old and the new lines and **Revert Hunk** (an undoable edit to the buffer — nothing is
-  written), **Stage Hunk** (saves the file, then stages only that change), **Copy Old Text**, Previous / Next
-  and Open Diff. Editor tabs are tinted by their file's status (modified / added / untracked / renamed /
-  conflicted), in the Project tree's colours; and the **Commit** tool window (`M-4`) lists Staged / Changes / Untracked files with
-  stage, unstage, discard, **Stage All**, and a commit box. The file list is **multi-select** — extend with
-  Shift+Up/Down or Shift/Ctrl-click, then right-click to stage, unstage or discard the whole selection in one
-  `git` call (also *Git: Stage/Unstage Selected Files* and *Git: Stage All Changes* on the palette); **Space**
-  stages or unstages the selected rows, a group header's menu acts on the whole group (Stage All in Group,
-  Unstage All, Discard All), and *Git: Unstage All* / *Git: Discard All Changes…* do the same for everything —
-  the latter after a confirmation that counts the tracked files reset and the untracked files deleted. Staged
-  and changed rows show their `+added −deleted` line counts. It has a **filter box**
-  (focused on open) and Emacs navigation — `C-n`/`C-p` to move, `C-f`/`C-b` to expand a group.
-  **Commit options** sit above the message box: **Amend** (*Git: Amend Last Commit*) names the commit it will
-  replace, puts its message in an empty box, lets you commit with nothing staged to reword it, and warns in
-  place when that commit is already on the upstream (it will need a force push); **Sign off** (`-s`) is
-  remembered per repository for the session; the Commit button's menu has **Commit and Push** (*Git: Commit
-  and Push* — a failed commit pushes nothing); and *Git: Undo Last Commit…* takes the last commit off the
-  branch (`reset --soft HEAD~1`), keeps its changes staged and puts its message back — refused for a merge or
-  a first commit, and confirmed in stronger words when the commit was already pushed. A **length guide** shows
-  the subject's length (amber past 50, red past 72) and counts body lines over 72 — advice, never a block; a
-  dropdown (*Git: Recent Commit Messages…*) brings back one of the last 20 messages used in the repository this
-  session; and a `commit.template` is put in an empty box, its comment lines stripped at commit. Palette/keys cover commit (`C-x g`), stage
-  current file, switch/new branch, fetch/pull/push, and **clone** ("Git: Clone Repository…" clones a
-  repo and opens a file from it — independent of projects; the form also takes a **branch** to check out, a
-  shallow **depth**, and *Also clone submodules*). A rebase or merge pull carries uncommitted changes across
-  (`--autostash`) and says whether they were applied back or kept in the stash. **Fetch automatically**
-  (*Settings → Git*, off by default; *Git: Toggle Fetch Automatically*) fetches the active repository in the
-  background every 10 minutes (configurable): it never prompts for a password, stays out of the way of your
-  own network commands, and only runs in a trusted folder or a repository you have fetched, pulled or pushed
-  in during the session. Fetch prunes remote-tracking branches that were
-  deleted on the server, so a local branch whose upstream is gone is marked as such. The Emacs keymap adds
-  the `vc` chords (`C-x v v` commit, `C-x v P` push, `C-x v +` pull, `C-x v b s` switch branch, `C-x v l` /
-  `C-x v L` file / branch log, `C-x v g` blame); the IntelliJ keymap adds Commit (`Ctrl+K`), Push
-  (`Ctrl+Shift+K`), Update (`Ctrl+T`) and Branches (``Ctrl+Shift+` ``). A **Git Log** tool window (`M-g h`,
-  or *Show File History* on a tab) lists the checked-out branch's commits — a commit graph, short hash, the
-  branches and tags pointing at each commit, subject, author and relative date, one line per commit — and
-  reloads after every Git command. It loads 200 commits at a time and fetches the next page as you scroll
-  (or from *Load More*); a toolbar toggle (*Git Log: Toggle All Branches*) switches to every branch, remote
-  and tag. Select a commit to see its full message, author and e-mail, date, hash, parents (click one to
-  jump to it) and refs above its files. The filter box narrows the loaded rows as you type, and **Enter
-  searches the whole history**: plain words match the commit message, `author:name`, `content:text` (or
-  `-Stext`: commits that add or remove the text), `since:`/`until:` dates and `path:glob` narrow further —
-  the active search is shown in the header with a button to clear it. **Enter** (or a double-click) on a
-  commit opens everything it changed as one multi-file review; select two commits and choose **Compare
-  Selected Commits** to review what differs between them. A file history **follows renames**. In a
-  file-filtered history,
-  double-click a revision's file to compare it with the editable working copy and apply individual lines,
-  hunks, or the whole revision; in the full repository log, double-click keeps the read-only parent-to-commit
-  diff and **Compare with Working Tree** is available from the file menu. Right-click a commit to Copy Hash /
-  Checkout / Reset / Revert / Cherry-Pick / New Branch (the same actions are on the palette as *Git Log: …*;
-  they act on the commit selected in the visible log, and open the log first when it is hidden). Reverting a
-  merge commit asks which parent is the mainline. **Tags**: *New Tag…* on a commit (lightweight, or annotated
-  when you give a message) and *Checkout / Push / Delete* on a tagged one; *Git: New Tag…*, *Push Tag…*,
-  *Delete Tag…* (palette and VCS menu) and *Checkout Tag…* (palette) pick from the repository's tags. **Blame**
-  (`M-g a`) adds a gutter column showing every line's author and commit date, shaded by age, with the
-  commit's summary on hover and its diff on click (toggle in *Settings → Git*, off by default).
-  *Git: Blame — Ignore Whitespace Changes* (`-w`) and *Git: Blame — Detect Moved and Copied Lines* (`-M -C`)
-  are per-window toggles for seeing past reformatting and refactoring commits; a `.git-blame-ignore-revs`
-  file at the repository root (or the file `blame.ignoreRevsFile` names) is used automatically, and a broken
-  one is reported instead of silently emptying the column. *Git: Annotate Previous Revision* opens the file
-  as it was before the commit the caret line is blamed on — read-only, annotated in turn, following
-  renames — so a line can be walked back through its history.
-  **Stashes** (*Git: Stashes…*) lists every stash with its message, branch, age and files (untracked ones
-  included): Enter shows its changes in the multi-file review tab, and the Menu key or a right-click offers
-  Apply, Pop, Drop, Branch from Stash and Copy Name. *Git: Stash Changes…* takes a message and three
-  options — include untracked files, staged changes only (Git 2.35+), keep the index — and saves unsaved
-  buffers first, so the stash holds what is on screen. A stash that applies with conflicts says so, says
-  the stash was kept, and lists the conflicted files. Pop-latest / apply / drop pickers remain on the
-  palette and the VCS menu; the branch dropdown (the actions first, then the branches; each section folds) offers *Stash Changes*
-  and *Unstash…*.
-  **Patches:** *Git: Apply Patch…* applies a `.patch`/`.diff` file, or the active buffer when it is a
-  patch, to the working tree or the index — checked first, so a patch that does not fit changes nothing
-  and git's reason is shown with the offer of a 3-way merge. In a repository a patch file's review tab
-  carries the same *Apply to Working Tree* / *Apply to Index* pair. *Git: Create Patch…* writes the staged
-  changes, the unstaged changes or a commit (`format-patch`) to a file or a new untitled buffer.
-  The same is on a Git Log row (*Create Patch…*). The **VCS menu** keeps the daily actions at its top level
-  (Commit, Commit and Push, Push, Pull, Fetch, Switch Branch, Git Log, Continue / Skip / Abort, Init, Clone)
-  and groups the rest into submenus: Changes, Branches, Remotes & Worktrees, Tags, Stash, Patches, History &
-  Blame and Compare. Git commands that succeed no longer bring the Output console forward — only network
-  commands (to show progress) and failures do, so an action started from the Git Log leaves the log on screen. All off the UI thread; **on by default** but hidden when not in a repo or when `git` isn't on `PATH`.
-  **Branch management** is on each row of the branch dropdown (its `⋯` button, a right-click, or the Menu key)
-  and on the palette: new branch from any branch or tag (with or without switching), rename, merge into the
-  current branch, rebase the current branch onto another, set / unset upstream, compare a branch with the
-  current one (the changed-files review), check out a tag or revision by name, and delete — a local branch
-  with unmerged commits, and a branch on its remote, only after a confirmation that says what is lost. A merge
-  or rebase that stops on conflicts says so and leaves the operation in progress. With several remotes the
-  dropdown groups remote branches by remote. **Push** variants: *Push to…* (another remote or branch name),
-  *Push Tags*, and *Force Push*, which is always `--force-with-lease`; a push the remote rejects because it has
-  newer commits offers *Pull, then Push*, *Force with Lease* or Cancel. *Git: Manage Remotes…* lists the remotes
-  (URLs shown without stored credentials) to add, rename, re-point, fetch, prune or remove them, and *Git:
-  Manage Worktrees…* lists the work trees to add one, open it in a new window, remove or prune.
-- **Diff viewer & merge** — compare files in a dedicated tab: side-by-side or unified, with word-level
-  highlights, curved change ribbons and an overview track, collapsed unchanged context, whitespace/wrap
-  controls, case-insensitive matching, smart or positional changed-line alignment, state-preserving live
-  refresh, and loss-aware CRLF/final-newline handling. Apply a line, hunk,
-  EOF state, or the whole file through the
-  undoable editor path; Git-panel diffs can stage, unstage, or revert individual lines and hunks after a
-  stale-state check. Diff against `HEAD` (`C-x v =`), another commit, any file, clipboard text, or an empty
-  document, and swap the displayed sides without losing the editable local target; review all staged changes
-  or all unstaged/untracked changes from the Commit window or command palette; and open multi-file
-  `.patch`/`.diff` content as one navigable review with per-file status and stats. Recursive directory compare
-  skips `.git` metadata and paths matched by either directory's root `.gitignore`, then opens changed,
-  left-only, and right-only files in the same lazy review surface; a Project-tree folder can
-  also be compared with HEAD, a branch, a tag, or a revision while respecting Git ignores. Huge and binary inputs
-  degrade to bounded line/metadata comparisons. Diffs with a local target can open an editable Result draft
-  that recomputes the comparison while you type and applies as one undoable, explicitly saved editor change;
-  a dirty draft prevents side swapping until it is applied or reset.
-  For conflicted Git files, the resolver reads the actual ancestor/ours/theirs
-  index stages, auto-merges compatible changes, and presents Base/Ours/Theirs choices plus an editable Result;
-  marker-only files retain the same ours/theirs/base/both fallback.
-- **Local file history** — IntelliJ-style snapshots of local files, taken on save, auto-save, and before an
-  external-change reload, independent of any VCS. A **File History** tool window (`M-g l`) lists each revision
-  (date/time, reason, size; the latest tagged *Current*); double-click for a read-only diff against the
-  current file, or restore one (an undoable whole-file replace). Snapshots are deduped by content and stored
-  gzip-compressed under `<configDir>/history/`, pruned by configurable limits (revisions/file, age,
-  size/project). On by default; local-only; off in Simple UI mode.
-- **HTTP client** — open a `.http`/`.rest` file and click the green ▶ next to a request to run it with
-  Editora's **built-in** HTTP client; the response (status, headers, pretty-printed JSON body, timing/
-  size) shows in the file's **preview** — the same Editor/Split/Preview view Markdown and CSV use, so the
-  floating toggle top-right switches between the requests, a side-by-side view, and the response alone.
-  Running a request opens the split for you. The viewer is content-type-highlighted and keeps an in-session
-  history, **Copy as cURL** / **Import cURL**, and Open-in-editor. Close to IntelliJ's HTTP Client: `{{var}}`/
-  `@var` substitution and **dynamic variables** (`{{$random.*}}`, `{{$datetime}}` with date math, `{{$dotenv.X}}`,
-  …), **request chaining** (reference an earlier request's response), **multipart** and external-file bodies,
-  **environment files** (`http-client.env.json` + a `$shared` section) with a picker, **Basic/Digest auth**
-  shorthand, automatic URL encoding, response-to-file redirects, per-request directives, run-whole-file, and
-  saving the response. On by default (*Settings → HTTP Client*).
-- **HTML live preview** — a floating browser icon on any HTML file opens it in a detected desktop
-  browser (Safari, Chrome, Firefox, Edge, or the system default), served over a tiny **loopback** web server
-  so its CSS/JS/images load. The page **reloads live as you type** (unsaved edits included). On by default
-  (*Settings → HTML Preview*); no external tool — it uses the JDK's built-in HTTP server, which answers only
-  the tab it opened (a per-session URL prefix) and will not serve a home directory or drive root.
-- **Remote files (SFTP)** _(Beta)_ — connect to a server over SSH/SFTP (*Remote: Connect to SFTP…*) and edit its
-  files as if they were local: the remote folder mounts in the Project tool window, and open/edit/save go
-  straight over SFTP. Authenticates with your default `~/.ssh` keys, a chosen key file, or a password;
-  saved connections (metadata only — never a password) reconnect via a picker, a **Remote Sites** tool window
-  (`M-g r`), a **Settings → Remote** management page (add/edit/remove sites), or a quick-connect list on the
-  Welcome page — each reopens the connection form pre-filled. Features that need a local process (language
-  servers, debugging, Git, Run, the HTTP client) auto-disable for remote files. Off by default; built on
-  Apache MINA SSHD.
-- **Plugins** — extend Editora without forking it. A plugin is a folder under `<configDir>/plugins/<id>/`
-  with a `plugin.json` manifest plus, optionally, a Java jar and asset dirs. A **Java SPI**
-  (`com.editora.plugin.Plugin`) can add palette commands, keybindings, dockable tool windows, editor
-  right-click items, and status-bar segments; a **declarative manifest** adds keymap bindings, external
-  commands, and `snippets/`/`templates/` dirs — no code. Loaded via a child class loader, so the same jar
-  works in dev and in the packaged installers. **Off by default and full-trust** (no sandbox) — enable it,
-  and each plugin, in *Settings → Plugins*. **Install** by browsing a curated GitHub-hosted registry or from
-  a local `.zip`. Security: the registry `index.json` is verified against a bundled **Ed25519 signature**
-  (*Require signed plugins*, default on, blocks an unsigned/unverified registry); downloads are
-  **SHA-256-verified** over HTTPS with bounded reads; and a **capability-disclosure** confirm (does it run
-  code? which external commands? which keybindings?) is shown before any plugin is enabled. Signing proves
-  *who* published — not a sandbox. See [`docs/plugins.md`](docs/plugins.md), the reference
-  [`examples/example-plugin/`](examples/example-plugin/), and the live registry (every plugin's source +
-  a signed `index.json`) at [adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins).
-- **AI** _(Beta)_ — AI Agent and AI actions live under one **AI** group in Settings, gated by a single
-  master **Enable AI** switch (off by default; palette `view.toggleAiEnabled`) that turns off *every* AI
-  feature at once — agent chat, commit-message generation, explain/rewrite selection, and inline
-  completion — regardless of their own settings below it. Does not affect the MCP server.
-- **AI actions** _(Beta)_ — one-shot AI features using Anthropic, a local OpenAI-compatible server,
-  or **Codex (existing login)**:
-  generate a **commit message** from the staged diff into the Commit window, **explain the selection** in
-  a new Markdown buffer with the provider agent and response model in its footer, or **rewrite the
-  selection** per an instruction as a single undoable edit. Plus
-  **AI inline completion**: after a typing pause, a muted one-line ghost suggestion at the caret — Tab
-  accepts (its own fast model, default `claude-haiku-4-5`). Off by default (Settings → AI Actions); model
-  configurable (Anthropic default `claude-opus-4-8`); Anthropic API key from `ANTHROPIC_API_KEY`
-  or a Settings override.
-  **Local models**: switch the Provider to *Local (OpenAI-compatible)* to run AI actions and inline completion against
-  LM Studio, Ollama, or any local OpenAI-compatible server — configurable endpoint and optional server token.
-  **LM Studio / Bionic** also has a dedicated provider with its own saved endpoint, model and token.
-  Enable Bionic’s **Settings → Local Model API** (or run `lms server start`), enable Editora’s
-  **AI → Enable AI** and **AI Actions**, then choose **LM Studio / Bionic**. Enter the model’s API
-  identifier; the default endpoint is `http://127.0.0.1:1234/v1/chat/completions` (a server URL or `/v1`
-  base also works). A blank completion model uses the main model. Test with **AI: Test Connection**.
-  For agent chat, install the [OpenCode CLI](https://opencode.ai/docs/cli/), enable **AI Agent**, and
-  select **LM Studio / Bionic (OpenCode)**. Editora launches `opencode acp` with that local model’s
-  configuration; set a model identifier first and start a new session after changing it. AI actions
-  can remain disabled when using only the agent. This runs OpenCode with Bionic’s local models;
-  it does not embed Bionic’s own agent or use its cloud subscription.
-  For Codex, install `npm install -g @agentclientprotocol/codex-acp @openai/codex`, run `codex login`,
-  and select **Codex (existing login)** under Settings → AI → AI Actions. It shares the adapter
-  command configured under AI Agent, uses separate text-only sessions, and needs no API key or
-  endpoint. Leave Model blank to use the Codex default. Inline completion requires an API provider.
-  When the selected provider is connected, the editor right-click menu includes an **AI Actions**
-  submenu for Explain Selection and Rewrite Selection.
-- **AI Agent** _(Beta)_ — chat with an embedded coding agent over the
-  [Agent Client Protocol](https://agentclientprotocol.com) (ACP). The default command is
-  `claude-code-acp` (Claude Code's ACP adapter; any ACP agent works via Settings → AI Agent). The
-  agent's file reads see open buffers' unsaved text, and its edits to open files apply as **undoable
-  buffer edits** you review and save; permission requests pop a dialog. Off by default; the agent is a
-  user-installed external tool, never bundled.
-- **MCP server** _(Beta)_ — embed a [Model Context Protocol](https://modelcontextprotocol.io) server in the
-  running editor so an LLM agent (Claude Code, etc.) can observe live editor state, edit files, and drive the
-  command registry. A small **loopback-only** HTTP/JSON-RPC server with **bearer-token auth** exposes fourteen
-  tools — reads (`list_open_files`, `list_tabs`, `read_buffer`, `get_selection`, `get_diagnostics`,
-  `document_symbols`, `git_status`, `todo_scan`, `find_in_files`, `list_commands`), writes (`edit_buffer` — undoable str-replace edits —
-  `save_buffer`), and actions (`open_file`, `execute_command`) — and writes its endpoint to
-  `<configDir>/mcp-endpoint.json` for discovery. `open_file` opens files of the window's project only, and
-  no tool writes the editor's configuration or a repository's `.git/`. A status-bar
-  **MCP** indicator shows when it's running (click to copy the connection command). Off by default and
-  guarded by a security-notice dialog — enable it under *Settings → MCP Server* (or the **Toggle MCP Server**
-  command). No external tool or new dependency (the JDK's built-in `HttpServer`).
-- **Tool windows** — IntelliJ-style dockable panels (Project, Commit, Git Log, File History, Structure, File
-  Information, Bookmarks, Personal Notes, Problems, Search Results, Run, Debug, HTTP Client) — plus any
-  contributed by a plugin.
-- **Settings** — a category sidebar (Appearance, Editor, Tool Windows, Spell Check, Application, …) with a
-  search box, a live font/theme preview, and Reset to Defaults. Changes apply instantly.
-- **Multi-language interface** — run Editora in **English, Italian, Spanish, French, Portuguese, or
-  German**. Pick a language under Settings → Appearance → Language (default *Automatic* follows your
-  system language, falling back to English); the change applies on the next restart.
+- **macOS** — `.dmg` for Apple Silicon (`macos-arm64`) or Intel (`macos-x64`).
+- **Windows** — `.msi` (x64).
+- **Linux** — `.deb`, `.rpm` or `.AppImage` (x64), or a portable `.tar.gz` with an `install.sh`
+  (x64 and arm64). The `.deb` and the tarball add an `editora` command and a menu entry.
+- **Any OS with a JDK 25** — a per-platform fat jar, run with `java -jar`.
 
-## Available plugins
+The native packages bundle their own Java runtime. Installers are currently **unsigned**, so macOS
+Gatekeeper and Windows SmartScreen stop the first launch until you allow it; the Getting Started and
+Troubleshooting pages in the [user docs](https://editora-project.dev/docs/) walk through it.
 
-A curated registry of ready-to-install plugins lives at
-[adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins) (the baked-in default).
-Enable plugins in *Settings → Plugins*, then **Browse plugins…** to install any of these (or *Install from
-file…* for a local `.zip`). Each plugin's full source is in that repo under `plugins/<id>/`.
+On startup Editora checks GitHub at most once a day for a newer release and shows an "Update: X.Y.Z"
+indicator in the status bar when there is one. The check sends no data and can be switched off under
+Settings → Workspace → Updates.
 
-| Plugin | What it does |
-| --- | --- |
-| **Example Plugin** | Reference plugin exercising every extension point (command, keybinding, tool window, editor menu item, status-bar segment, snippet). |
-| **Lorem Ipsum** | Insert a lorem-ipsum paragraph, or replace the selection with one. |
-| **Text Tools** | Transform the selection/document: case convert, sort, unique, reverse, trim trailing, squeeze blank lines. |
-| **Encode Tools** | Encode/decode: Base64, URL, HTML entities, ROT13, hex. |
-| **Hash Tools** | Hash text to a hex digest — MD5 / SHA-1 / SHA-256. |
-| **JSON / XML Tools** | JSON pretty-print / minify and XML pretty-print. |
-| **Slug & Sequence** | Slugify text; number lines; fill a column with `1..N`. |
-| **Box Banner** | Wrap the selection in an ASCII box banner. |
-| **Insert Tools** | Insert a UUID or the current date/time at the caret. |
-| **Markdown TOC** | Insert a table of contents built from the document's headings. |
-| **Format Runner** | Format the active file with an external formatter (prettier/black/gofmt/rustfmt/clang-format). |
-| **Open on GitHub** | Open the active file at the caret line on its remote's web UI. |
-| **Scratchpad** | A persistent scratchpad tool window (auto-saved). |
-| **Regex Tester** | A live regex tester tool window (pattern + flags + match spans/groups). |
-| **Color Picker** | Pick a color and insert it as HEX / `rgb()` / `rgba()`. |
-| **Word Count** | Live word/line/character count + reading time for the active buffer. |
-| **Calculator** | Evaluate arithmetic expressions and insert the result. |
-| **Task Runner** | Run a shell task (`npm`/`make`/…) in the file's directory and stream output. |
+## Build from source
 
-> Plugins run with **full trust** (no sandbox) — only install ones you trust. To build your own, see
-> [`docs/plugins.md`](docs/plugins.md), the reference [`examples/example-plugin/`](examples/example-plugin/),
-> and the source of every plugin above in the
-> [editora-plugins](https://github.com/adriandeleon/editora-plugins) repo.
-
-## Requirements
-
-- JDK 25+
-- Maven 3.9+
-
-## Build & Run
-
-An opt-in [StaticFX / GraalVM experiment](docs/native-image-staticfx.md) adds `-Pnative` and a
-shared editor stress probe. Tagged releases also attempt clearly named experimental Linux x64,
-macOS x64/arm64, and Windows x64 native archives. Read their measured limitations before using one.
-
-A Maven wrapper is included, so no local Maven install is required — use `./mvnw`
-(or `mvnw.cmd` on Windows). Plain `mvn` works too if you have Maven installed.
+Requires JDK 25 or newer. The Maven wrapper is included (`mvnw.cmd` on Windows); plain `mvn` works too.
 
 ```bash
-# Run the app
-./mvnw javafx:run
-
-# Run tests
-./mvnw test
-
-# Build a native app image / installer (DMG on macOS, MSI on Windows, DEB on Linux)
-./mvnw clean -Pdist package
-
-# Build a runnable fat jar, then launch it
-./mvnw -Pfatjar package
-java -jar target/Editora-<version>.jar
+./mvnw javafx:run                 # run the app
+./mvnw test                       # run the tests
+./mvnw -Pfatjar package           # runnable jar: java -jar target/Editora-<version>.jar
+./mvnw clean -Pdist package       # native installer under target/dist/ (DMG, MSI, DEB + RPM)
 ```
 
-The `dist` profile produces a platform installer under `target/dist/`.
-
-On **Linux**, the `.deb` installs the app under `/opt/editora/`, registers it in the application menu
-(with the Editora icon), and adds an **`editora` command on `PATH`** (a `/usr/bin/editora` symlink
-created by the package's maintainer scripts), so you can launch it from the menu or from a terminal
-with arguments — e.g. `editora some/file.java:42` or `editora --new-file=notes.md`. The menu entry and
-command are removed when you uninstall the package. It also makes *Editora Expert Mode* the system-wide
-default for text and source files; the defaults it replaces in `/usr/share/applications/mimeapps.list`
-are remembered and put back on uninstall, and an existing `/usr/bin/editora` that is not Editora's is
-left alone. (The `.rpm` installs under `/opt/editora/` too; run `/opt/editora/bin/Editora` or add your
-own symlink.)
-
-Linux releases also ship a **portable install tarball** (`Editora-<version>-linux-<arch>.tar.gz`, x64 +
-arm64) for systems without `.deb`/`.rpm` (or where you'd rather not use a package manager). It bundles the
-same self-contained app image (its own jlink'd Java runtime — no system Java needed) plus an `install.sh`:
-
-```bash
-tar xzf Editora-<version>-linux-x64.tar.gz && cd editora-x86_64
-./install.sh          # per-user  -> ~/.local/editora  (+ ~/.local/bin/editora)
-sudo ./install.sh     # system    -> /opt/editora       (+ /usr/local/bin/editora)
-./install.sh --uninstall   # remove it again
-```
-
-A system install is owned by root and not group- or world-writable, whoever unpacked the tarball.
-`--prefix DIR` installs into `DIR/editora` instead, and refuses to touch that directory if it already
-holds something that is not an Editora install.
-
-Either way it adds an `editora` command and an application-menu entry (with the Editora icon). You can also
-run it in place without installing: `./Editora/bin/Editora`. Build one locally from an app-image with
-`./mvnw clean -Pdist -DskipTests -Djpackage.type=APP_IMAGE package` then
-`scripts/build-tarball.sh target/dist/Editora target/dist`.
-
-The `fatjar` profile produces a self-contained, runnable `target/Editora-<version>.jar` (no separate
-JavaFX install needed — `java -jar` is enough, on a JDK 25 runtime). It bundles JavaFX's classes and
-native libraries **for the build host's platform only**: a single jar can't be portable because
-JavaFX's macOS/Linux x64 and arm64 native libraries share filenames and would collide. To get a jar
-for another OS/arch, build the profile on that platform (or grab the per-platform jars from a
-[release](#releases)).
-
-On startup the fat jar prints `WARNING: Unsupported JavaFX configuration: classes were loaded from
-'unnamed module …'`. This is harmless and expected: JavaFX notes that it's running from the
-classpath rather than the module path (which is how a fat jar works). The app runs normally, and the
-warning cannot be cleanly suppressed — the native installers launch from the module path and don't
-show it.
-
-## Contributing
-
-Window and buffer responsibilities are mapped in [window coordinators](docs/subsystems/window-coordinators.md).
-Production Java files have a tested 10,000-line ceiling.
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the workflow, and the **developer documentation** in
-[`docs/`](docs/README.md) — architecture, the conventions a change must follow, performance rules, an
-extension cookbook (add a command / LSP server / grammar / tool window / overlay), and build/test/release
-guides. (User-facing docs live in the separate website repo; `docs/` is for contributors.)
-
-All Java is auto-formatted with [Palantir Java Format](https://github.com/palantir/palantir-java-format)
-(a lambda-friendly, 120-column fork of google-java-format), enforced by the
-[Spotless](https://github.com/diffplug/spotless) Maven plugin. **Run `./mvnw spotless:apply` before
-committing** — `spotless:check` is bound to the `verify` phase, so `./mvnw verify`, `./mvnw package`,
-and CI fail on unformatted code (the `javafx:run` / `compile` dev loop is deliberately left untouched).
-The pipeline removes unused imports, formats, then orders imports into three blank-line-separated groups
-(JDK → `javafx` → third-party + `com.editora`, static imports last). Wrap hand-aligned code in
-`// spotless:off` … `// spotless:on` to opt out.
-
-Two conventions the build checks for:
-
-- **Every user-facing string is localized.** Add new keys to all six
-  `src/main/resources/com/editora/i18n/messages[_<lang>].properties` catalogs (English base +
-  `it`/`es`/`fr`/`pt`/`de`); the test suite fails if any locale is missing a key.
-- **Every action is a command.** User-facing features are registered in the command registry so they
-  appear in the command palette (`M-x`); toolbar buttons and keybindings dispatch through commands too.
-
-Tests are mostly pure logic, plus a headless-FX harness for toolkit-bound behavior (TestFX over JavaFX's
-built-in headless platform, available since 26; no display/xvfb) —
-run all with `./mvnw test`, or the pure suite alone with `./mvnw test -DexcludedGroups=fx`. `./mvnw verify`
-also enforces the Spotless check and the JaCoCo per-package coverage floors. See
-[`docs/testing.md`](docs/testing.md).
-
-For **manual** smoke-testing and demos there's a curated, feature-organized sample corpus under
-[`samples/`](samples/README.md) (syntax per language, navigation, folding, markdown, previews, run and
-debug, build tools with tests, http, log, diff, encodings, … — open the relevant file to exercise a
-feature; its README is the manifest). Large perf
-inputs are generated on demand by `java scripts/GenSamples.java` (a JDK 25 compact source file;
-git-ignored output, not committed).
-
-## Releases
-
-Tagged releases publish native installers **and runnable fat jars** to
-[GitHub Releases](https://github.com/adriandeleon/Editora/releases) for Linux (x64 and arm64),
-macOS (x64 and arm64), and Windows (x64). A GitHub Actions matrix builds each installer with `-Pdist`
-and the matching `Editora-<version>-<platform>.jar` with `-Pfatjar` on its own runner, and
-[JReleaser](https://jreleaser.org) assembles the release (config in `jreleaser.yml`). Prefer the
-installer for a normal setup; the fat jar is handy if you already have a JDK 25 and just want
-`java -jar`.
-
-Releases up to 0.19.0 also attempted `Editora-<version>-<target>-native-experimental` archives (`.tar.gz`
-on Linux/macOS, `.zip` on Windows). That job is disabled for now, and 0.20.0 has none. Extract one and run `./run-editora-native` or the Windows
-`run-editora-native.cmd`; its launcher uses separate settings. The native build
-has [measured editing regressions and feature limits](docs/native-image-staticfx.md), so use the
-regular installer for normal work. If its build or smoke test fails, the ordinary release still
-publishes without that experimental asset.
-
-To cut a release: bump `<version>` in `pom.xml`, commit, then push a matching tag:
-
-```bash
-git tag v1.2.3 && git push origin v1.2.3
-```
-
-A `-rcN` suffix (e.g. `v1.2.3-rc1`) is published as a pre-release. Installers are currently
-**unsigned**, so macOS Gatekeeper / Windows SmartScreen will warn on first launch.
-
-**Update notifications:** on startup (at most once a day) Editora checks GitHub for a newer release and shows a
-subtle "Update: X.Y.Z" indicator in the status bar when one is available — click it to open the release page.
-*Check for Updates* in the command palette checks on demand, and the About dialog shows an update link. Automatic
-checks are on by default and can be disabled in Settings → Workspace → Updates (they contact GitHub's API over
-HTTPS and send no data). Pre-releases are ignored — only full releases trigger a notice.
+Keep the `clean` in a `dist` build. The fat jar bundles JavaFX for the build host's platform only,
+and prints a harmless `Unsupported JavaFX configuration` warning on startup because it runs from
+the classpath. The AOT cache, the Linux tarball, the AppImage and the opt-in native-image experiment
+are covered in [`docs/building-and-packaging.md`](docs/building-and-packaging.md) and
+[`docs/native-image-staticfx.md`](docs/native-image-staticfx.md).
 
 ## Command line
 
 ```
 editora [options] [FILE[:LINE[:COLUMN]] ...]
+editora --diff-ui LEFT RIGHT
 
   --config-dir <path>   Use <path> as the config directory (or set EDITORA_CONFIG_DIR)
   --dev                 Dev mode: use ~/.editora-dev (separate from production config)
-  --project[=]<dir>     Open <dir> as a project (only when Projects are enabled; ignored otherwise)
-  --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named, e.g. notes.md)
+  --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
+  --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named)
   --single-window[=project]  Open just one window (the named project, else the no-project window)
-                        instead of restoring all windows; session-only, doesn't change the saved layout
+                        instead of restoring all windows; doesn't change the saved layout
   --no-session          Open only the files given here; don't restore the saved session
+  --new-instance        Start a separate editor process instead of handing this launch
+                        to the one already running with the same config directory
   --diff-ui LEFT RIGHT  Compare two files or directories in a standalone diff window
   --zen                 Start in Zen (distraction-free) mode (session only)
-  --expert              Start in Expert mode: like Zen, but keeps the editor
-                        view (line numbers, status bar) (session only)
+  --expert              Start in Expert mode: like Zen, but keeps the editor view (session only)
   --simple              Start in Simple UI mode (minimal chrome; session only)
   --version, -V         Print the version and exit
   --help, -h            Print help and exit
-
-  FILE                  Open FILE (also FILE:LINE and FILE:LINE:COLUMN to jump)
 ```
 
-File and `--project` arguments are **additive**: your previous session restores as usual, then the
-given file(s) open on top (focused) and the editor jumps to any `LINE:COLUMN`. `--version`/`--help`
-print and exit without opening a window. Works on macOS, Linux, and Windows.
-
-Use `editora --diff-ui path/to/before.java path/to/after.java` as a standalone diff tool, or pass two
-directories for a recursive folder review. It opens an isolated window with only the comparison surface—no
-restored projects, tabs, or editor chrome. Folder scans run off-thread and load per-file editors lazily. The
-full-UI icon at the right of the diff toolbar restores the normal Editora interface in place, keeping the
-comparison open. This launch is never forwarded into an already-running Editora process.
+File and `--project` arguments are additive: the previous session restores, then the given files
+open on top and the caret jumps to any `LINE:COLUMN`. A second launch hands its files to the running
+instance unless `--new-instance` is given. The command-line page in the
+[user docs](https://editora-project.dev/docs/) has the details and the launcher's location per package.
 
 ## Configuration
 
-User preferences live in `~/.editora/settings.json` (font, theme, keymap, tab size,
-view options, auto-save mode, and keybinding overrides). Session state — collapsed fold
-regions and tool-window layout — is stored as JSON in `workspace-state.json`, recent
-files in `recent-files.json`, bookmarks and breakpoints (scoped per project) in `bookmarks.json` /
-`breakpoints.json`, personal notes (also scoped per project) in `notes.json`, and saved SFTP
-connections (metadata only, never a password) in `connections.json`, and saved keyboard macros in
-`macros.json`, all alongside it.
+Preferences live in `~/.editora/settings.json`; session state, recent files, bookmarks, breakpoints,
+personal notes, saved SFTP connections and macros are JSON files beside it. Choose another folder
+with `--config-dir <path>` or `EDITORA_CONFIG_DIR`, or pass `--dev` to run a development instance on
+`~/.editora-dev/` alongside your everyday editor. The configuration page in the
+[user docs](https://editora-project.dev/docs/) lists every file and setting.
 
-Snippets, abbreviations, templates and the personal dictionary can be synced between computers
-through a Git repository: see **Settings → Sync**. Its clone and its backup copies of replaced files
-live in `sync/` inside the config folder.
+## Plugins
 
-To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
-line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >
-`EDITORA_CONFIG_DIR` > `--dev` (`~/.editora-dev/`) > the default `~/.editora/`**. Works on macOS,
-Linux, and Windows.
+A curated, signed registry of ready-to-install plugins lives at
+[adriandeleon/editora-plugins](https://github.com/adriandeleon/editora-plugins); the
+[plugins page](https://editora-project.dev/plugins/) lists them. Enable plugins in Settings → Plugins,
+then **Browse plugins…**. Plugins run with full trust (no sandbox), so install only ones you trust.
+To write your own, start with [`docs/plugins.md`](docs/plugins.md) and
+[`examples/example-plugin/`](examples/example-plugin/).
 
-For running a development instance alongside your everyday editor, pass `--dev` to use a separate
-`~/.editora-dev/` config directory, so the two never share settings or session state. (`--config-dir`
-and `EDITORA_CONFIG_DIR` still take precedence if you also set them.)
+## Contributing
 
-Auto save is off by default; enable it in Settings ("After delay" or "On focus change")
-or cycle the mode with `C-c a`. It only saves files that already have a path.
+[`CONTRIBUTING.md`](CONTRIBUTING.md) has the workflow and the conventions a change must follow; the
+developer documentation in [`docs/`](docs/README.md) covers architecture, performance rules, an
+extension cookbook and the build, test and release guides. Coding agents start at
+[`AGENTS.md`](AGENTS.md). Run `./mvnw spotless:apply` before committing and `./mvnw verify` before
+pushing. A feature-organized sample corpus for manual testing is under [`samples/`](samples/README.md).
+
+User-facing documentation lives in the [website repository](https://github.com/adriandeleon/editora-website),
+not here.
+
+## Releases
+
+A pushed `vX.Y.Z` tag builds native installers and fat jars for Linux (x64, arm64), macOS (x64,
+arm64) and Windows (x64) on a GitHub Actions matrix and publishes them with
+[JReleaser](https://jreleaser.org); a `-rcN` suffix publishes a pre-release. The steps are in
+[`docs/release.md`](docs/release.md).
 
 ## License
 
 [MIT](LICENSE) © 2026 Adrián Arturo De León Saldivar
 
-Editora bundles third-party libraries and TextMate grammars under their own
+Editora bundles third-party libraries, fonts, snippets and TextMate grammars under their own
 licenses. See [NOTICE](NOTICE) for attributions.

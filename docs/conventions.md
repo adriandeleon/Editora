@@ -149,9 +149,11 @@ well-covered pure packages — when you raise a package's coverage, ratchet its 
 
 ## Docs in the same PR
 
-A feature PR updates `CHANGELOG.md`, `README.md`, and `TODO.md` in the same change, not as a
-follow-up. User-facing documentation lives in the separate website repo; **this `docs/` folder
-is for developers**. Keep `AGENTS.md` concise and operational. Put durable explanations in the
+A feature PR updates `CHANGELOG.md` and `TODO.md` in the same change, not as a follow-up.
+User-facing documentation lives in the separate website repo; **this `docs/` folder is for
+developers**. `README.md` is a short landing page that points at the website: it does not carry a
+feature catalog, so change it only when its highlights, install, build, command-line or
+configuration facts change. Keep `AGENTS.md` concise and operational. Put durable explanations in the
 focused guides and preserve established implementation detail in the
 [reference catalogs](reference/README.md).
 

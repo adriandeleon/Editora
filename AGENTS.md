@@ -60,7 +60,10 @@ worktree so branch switches and commits cannot interfere.
 - Check `module-info.java` when reflection, FXML, service loading, or a new dependency crosses JPMS
   boundaries.
 - Run `mvn spotless:apply` after Java edits, then the narrow tests and `mvn verify` when practical.
-- Update `CHANGELOG.md`, `README.md`, `TODO.md`, and contributor docs when the change affects them.
+- Update `CHANGELOG.md`, `TODO.md`, and contributor docs when the change affects them. `README.md` is a
+  short landing page that defers to the website: touch it only when the highlights, install, build,
+  command-line or configuration facts change. User-facing feature documentation goes to the
+  separate website repository.
 - Do not commit generated build output, editor state, credentials, or unrelated user changes.
 
 ## Architecture orientation
