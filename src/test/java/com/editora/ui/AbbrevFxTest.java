@@ -117,6 +117,18 @@ class AbbrevFxTest {
     }
 
     @Test
+    void anAbbreviationWithADashExpandsAsTyped() throws Exception {
+        FxTestSupport.runOnFx(() -> {
+            List<Abbreviation> list = new java.util.ArrayList<>(fx.shared.getAbbreviations());
+            list.add(new Abbreviation(" adl-fn ", "Adrian De Leon")); // as a Settings field can hold it
+            fx.shared.setAbbreviations(list);
+        });
+        EditorBuffer b = open("", true);
+        type(b, "by adl-fn.");
+        assertEquals("by Adrian De Leon.", text(b));
+    }
+
+    @Test
     void abbrevModeOffDoesNotAutoExpand() throws Exception {
         EditorBuffer b = open("", false);
         type(b, "btw ");

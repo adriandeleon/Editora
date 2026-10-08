@@ -833,7 +833,8 @@ public class SharedConfig {
         java.util.Map<String, String> m = new java.util.HashMap<>();
         for (Abbreviation a : getAbbreviations()) {
             if (a.getAbbreviation() != null && !a.getAbbreviation().isBlank()) {
-                m.put(a.getAbbreviation().toLowerCase(java.util.Locale.ROOT), a.getExpansion());
+                // Stripped: Settings stores the field as typed, and a stray space would never match.
+                m.put(a.getAbbreviation().strip().toLowerCase(java.util.Locale.ROOT), a.getExpansion());
             }
         }
         return m;

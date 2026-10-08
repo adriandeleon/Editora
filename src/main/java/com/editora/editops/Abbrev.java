@@ -4,7 +4,7 @@ import java.util.Locale;
 import java.util.Map;
 
 /**
- * A simple abbreviation expander: the word immediately before a point, looked up (case-insensitively) in a
+ * A simple abbreviation expander: the text immediately before a point, looked up (case-insensitively) in a
  * user dictionary and replaced with its expansion. Pure and toolkit-free (mirroring {@link EmacsEdits}); the
  * buffer applies the returned {@link Edit}.
  *
@@ -57,29 +57,38 @@ public final class Abbrev {
     }
 
     /**
-     * The expansion for the word ending at {@code point}, or {@code null} when that word is not an
-     * abbreviation (or the expansion equals the word). {@code table} is keyed by <b>lower-cased</b>
+     * The expansion for the abbreviation ending at {@code point}, or {@code null} when the text there is not
+     * an abbreviation (or the expansion equals it). {@code table} is keyed by <b>lower-cased</b>
      * abbreviation — the caller lower-cases the keys once when building it.
+     *
+     * <p>An abbreviation need not be a single word: {@code adl-fn}, {@code ;sig} and {@code e.g} are looked
+     * up too. Only letters and digits were scanned, so such an entry could be defined and never expanded.
+     * Every start between the preceding whitespace and {@code point} that begins a word or a run of
+     * punctuation is tried, longest first, so {@code adl-fn} wins over a separate {@code fn}.
      */
     public static Edit expand(String text, int point, Map<String, String> table) {
         if (text == null || table == null || table.isEmpty()) {
             return null;
         }
         int end = Math.max(0, Math.min(point, text.length()));
-        int start = wordStart(text, end);
-        if (start == end) {
-            return null;
+        int tokenStart = end;
+        while (tokenStart > 0 && !Character.isWhitespace(text.charAt(tokenStart - 1))) {
+            tokenStart--;
         }
-        String word = text.substring(start, end);
-        String expansion = table.get(word.toLowerCase(Locale.ROOT));
-        if (expansion == null || expansion.isEmpty()) {
-            return null;
+        for (int start = tokenStart; start < end; start++) {
+            if (start > tokenStart && isWordChar(text.charAt(start - 1)) && isWordChar(text.charAt(start))) {
+                continue; // inside a word: an abbreviation never starts there
+            }
+            String word = text.substring(start, end);
+            String expansion = table.get(word.toLowerCase(Locale.ROOT));
+            if (expansion == null || expansion.isEmpty()) {
+                continue;
+            }
+            String replacement = adaptCase(word, expansion);
+            // A no-op (the abbrev maps to itself) expands nothing, rather than falling back to a shorter one.
+            return replacement.equals(word) ? null : new Edit(start, end, replacement);
         }
-        String replacement = adaptCase(word, expansion);
-        if (replacement.equals(word)) {
-            return null; // no-op (e.g. the abbrev maps to itself)
-        }
-        return new Edit(start, end, replacement);
+        return null;
     }
 
     /**

@@ -979,6 +979,9 @@ public class SettingsWindow {
             }
         });
         stage.setScene(scene);
+        // The list-and-form pages commit a field when it loses the focus, and closing the window does not
+        // take the focus away: text typed last (an abbreviation's expansion, a site's host) was dropped.
+        stage.addEventHandler(javafx.stage.WindowEvent.WINDOW_HIDING, e -> root.requestFocus());
         // Floor the window size: the rows wrap, but the list-beside-form pages need MIN_WIDTH.
         stage.setMinWidth(Math.min(MIN_WIDTH, size.getWidth())); // never wider than a small screen allows
         stage.setMinHeight(Math.min(MIN_HEIGHT, size.getHeight()));
