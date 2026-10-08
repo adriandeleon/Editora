@@ -3307,6 +3307,7 @@ public class SettingsWindow {
     private TextField syncBranchField;
     private Button syncConnectButton;
     private Button syncDisconnectButton;
+    private Button syncCreateGithubButton;
     private Button syncNowButton;
     private Button syncAnywayButton;
     private Label syncStateLabel;
@@ -3379,14 +3380,16 @@ public class SettingsWindow {
             }
             refreshSyncControls();
         });
+        syncCreateGithubButton = new Button(tr("settings.sync.createGithub"));
+        syncCreateGithubButton.setOnAction(e -> createSyncRepoOnGithub());
         cardRow(
                 repo,
                 Category.SYNC,
                 settingRow(
                         tr("settings.sync.branch"),
                         tr("settings.sync.branch.desc"),
-                        new HBox(8, syncBranchField, syncConnectButton, syncDisconnectButton)),
-                "sync branch connect disconnect enable turn on off");
+                        new HBox(8, syncBranchField, syncConnectButton, syncDisconnectButton, syncCreateGithubButton)),
+                "sync branch connect disconnect enable turn on off create private repository github gh");
         syncStateLabel = new Label();
         syncStateLabel.setWrapText(true);
         syncStateLabel.setMaxWidth(420);
@@ -3490,6 +3493,9 @@ public class SettingsWindow {
         syncIntervalSpinner.getValueFactory().setValue(settings.getSyncIntervalMinutes());
         syncIntervalSpinner.setDisable(!settings.isSyncAuto());
         refreshSyncControls();
+        if (githubService != null) {
+            githubService.detect(availability -> refreshSyncControls()); // "Create on GitHub" needs a signed-in gh
+        }
     }
 
     /** Shows the service's state: which buttons apply, and the status line. */
@@ -3509,6 +3515,11 @@ public class SettingsWindow {
         syncConnectButton.setDisable(!available || syncConnectMessage != null);
         syncDisconnectButton.setVisible(connected);
         syncDisconnectButton.setManaged(connected);
+        com.editora.github.GitHubService.Availability gh = githubService == null ? null : githubService.availability();
+        boolean canCreate = available && !connected && gh != null && gh.found() && gh.authenticated();
+        syncCreateGithubButton.setVisible(canCreate);
+        syncCreateGithubButton.setManaged(canCreate);
+        syncCreateGithubButton.setDisable(syncConnectMessage != null);
         syncNowButton.setDisable(!available || !connected || syncing);
         boolean needsConfirmation = state != null
                 && state.phase() == SettingsSync.Phase.PROBLEM
@@ -3569,6 +3580,41 @@ public class SettingsWindow {
             config.save();
             settingsSync.connected();
             refreshSyncControls();
+        });
+    }
+
+    /** "Create Private Repository on GitHub…": asks for a name, creates it with gh, then connects to it. */
+    private void createSyncRepoOnGithub() {
+        if (settingsSync == null || githubService == null) {
+            return;
+        }
+        javafx.scene.control.TextInputDialog ask =
+                Dialogs.styled(new javafx.scene.control.TextInputDialog("editora-sync"));
+        ask.initOwner(stage);
+        ask.setTitle(tr("settings.cat.sync"));
+        ask.setHeaderText(tr("dialog.sync.createGithub.header"));
+        ask.setContentText(tr("dialog.sync.createGithub.name"));
+        String name = ask.showAndWait().map(String::strip).orElse("");
+        if (name.isEmpty()) {
+            return;
+        }
+        if (!name.matches("[A-Za-z0-9._-]+")) {
+            syncStateLabel.setText(tr("status.sync.invalidRepositoryName"));
+            return;
+        }
+        syncConnectMessage = tr("sync.state.creating");
+        refreshSyncControls();
+        githubService.createPrivateRepo(name, tr("settings.sync.githubDescription"), created -> {
+            syncConnectMessage = null;
+            if (!created.ok()) {
+                refreshSyncControls();
+                syncStateLabel.setText(tr("status.sync.failed", created.error()));
+                return;
+            }
+            config.getSettings().setSyncRepoUrl(created.url());
+            config.save();
+            syncUrlField.setText(created.url());
+            connectSync();
         });
     }
 

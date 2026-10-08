@@ -109,6 +109,7 @@ Editora is built with the help of AI coding tools.
   bracket/keyword re-aligns the line. Indent unit (tab vs spaces) is inferred per file, or forced
   globally via Settings → Editor → "Indent style" (Detect / Spaces / Tabs).
 - **Snippets** — VS Code/TextMate snippets with tab stops, placeholders, choices, and variables; manage them per language in **Settings → Snippets** (or "Snippet: Manage…" in the palette), saved under `<configDir>/snippets/`.
+- **Settings sync** _(Beta)_ — keep snippets, abbreviations, templates and your personal dictionary the same on every computer through a private Git repository you own (**Settings → Sync**; off by default). Changes merge entry by entry, Editora uses your own Git credentials, and automatic syncs never prompt. Preferences, keymaps, macros and themes are not synced.
 - **File templates** — "New File From Template" scaffolds; manage them in **Settings → Templates** (or `Templates: Manage File Templates…`) — the shipped templates are shown read-only and editing one saves a personal override under `<configDir>/templates/`.
 - **EditorConfig** — honors a project's `.editorconfig` (nearest-directory-wins, walking up to `root`):
   indent style/size and `tab_width`, `end_of_line`, `charset` (utf-8, utf-8-bom, latin1, utf-16le/be —
@@ -1045,6 +1046,10 @@ files in `recent-files.json`, bookmarks and breakpoints (scoped per project) in 
 `breakpoints.json`, personal notes (also scoped per project) in `notes.json`, and saved SFTP
 connections (metadata only, never a password) in `connections.json`, and saved keyboard macros in
 `macros.json`, all alongside it.
+
+Snippets, abbreviations, templates and the personal dictionary can be synced between computers
+through a Git repository: see **Settings → Sync**. Its clone and its backup copies of replaced files
+live in `sync/` inside the config folder.
 
 To use a different config folder, pass `--config-dir <path>` (or `--config-dir=<path>`) on the command
 line, or set the `EDITORA_CONFIG_DIR` environment variable. Precedence is **`--config-dir` >

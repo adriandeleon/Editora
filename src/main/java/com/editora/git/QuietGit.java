@@ -31,6 +31,8 @@ public final class QuietGit {
     private static final List<String> OWN_CONFIG = List.of(
             "-c", "core.autocrlf=false",
             "-c", "core.safecrlf=false",
+            // A link in the repository is checked out as a small text file, never followed to a local file.
+            "-c", "core.symlinks=false",
             "-c", "commit.gpgsign=false",
             "-c", "tag.gpgsign=false",
             "-c", "advice.detachedHead=false");

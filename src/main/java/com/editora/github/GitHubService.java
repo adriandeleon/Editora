@@ -539,6 +539,59 @@ public final class GitHubService {
         });
     }
 
+    /**
+     * A repository {@link #createPrivateRepo} made.
+     *
+     * @param url what to hand git as the remote, or blank when it failed
+     * @param error gh's message when it failed
+     */
+    public record CreatedRepo(boolean ok, String url, String error) {}
+
+    /**
+     * Creates a private repository called {@code name} under the signed-in account
+     * ({@code gh repo create <name> --private}) and posts the URL git should use for it: the SSH form when
+     * the user's {@code gh} is set to the ssh protocol, the HTTPS one otherwise.
+     */
+    public void createPrivateRepo(String name, String description, Consumer<CreatedRepo> onResult) {
+        submitCall(exec, () -> {
+            ProcessRunner.Result created =
+                    gh(null, NETWORK, null, "repo", "create", name, "--private", "--description", description);
+            CreatedRepo repo;
+            if (created.ok()) {
+                ProcessRunner.Result protocol = ghSilent(null, QUICK, null, "config", "get", "git_protocol");
+                String url = remoteUrl(created.out(), protocol.ok() ? protocol.out() : "");
+                repo = url.isEmpty() ? new CreatedRepo(false, "", created.message()) : new CreatedRepo(true, url, "");
+            } else {
+                repo = new CreatedRepo(false, "", created.message());
+            }
+            Platform.runLater(() -> onResult.accept(repo));
+        });
+    }
+
+    private static final java.util.regex.Pattern REPO_WEB_URL = java.util.regex.Pattern.compile(
+            "https://([A-Za-z0-9.-]+)/([A-Za-z0-9._-]+)/([A-Za-z0-9._-]+?)(?:\\.git)?/?\\s*$");
+
+    /**
+     * The git remote for the repository whose web address {@code gh repo create} printed (the last line of
+     * {@code output}): {@code git@host:owner/name.git} for the {@code ssh} protocol, else
+     * {@code https://host/owner/name.git}. Blank when no address is found. Pure.
+     */
+    static String remoteUrl(String output, String protocol) {
+        if (output == null) {
+            return "";
+        }
+        for (String line : output.strip().split("\\R")) {
+            java.util.regex.Matcher m = REPO_WEB_URL.matcher(line.strip());
+            if (m.find()) {
+                String path = m.group(2) + "/" + m.group(3) + ".git";
+                return protocol != null && protocol.strip().equalsIgnoreCase("ssh")
+                        ? "git@" + m.group(1) + ":" + path
+                        : "https://" + m.group(1) + "/" + path;
+            }
+        }
+        return "";
+    }
+
     /** Creates a PR ({@code gh pr create …}); posts the raw result (the created PR URL is on stdout). */
     public void prCreate(Path dir, List<String> ghArgs, Consumer<ProcessRunner.Result> onResult) {
         run(dir, NETWORK, onResult, ghArgs.toArray(new String[0]));

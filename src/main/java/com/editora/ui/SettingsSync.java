@@ -83,6 +83,9 @@ final class SettingsSync {
     private final PauseTransition startup = new PauseTransition(Duration.seconds(STARTUP_DELAY_SECONDS));
     private final List<Runnable> listeners = new ArrayList<>();
     private Timeline timer;
+    /** The interval {@link #timer} runs at; 0 when it is not running. */
+    private int timerMinutes;
+
     private State state = new State(Phase.OFF, null, null);
     private boolean running;
     private boolean again;
@@ -147,16 +150,22 @@ final class SettingsSync {
 
     /** Re-reads the sync settings: starts or stops the timers. Call after any {@code sync*} setting changed. */
     void settingsChanged() {
-        if (timer != null) {
-            timer.stop();
-            timer = null;
-        }
         Settings s = shared.getSettings();
         boolean auto = active() && s.isSyncAuto();
+        int minutes = auto ? s.getSyncIntervalMinutes() : 0;
+        if (minutes != timerMinutes) { // an unrelated settings change must not push the next sync back
+            timerMinutes = minutes;
+            if (timer != null) {
+                timer.stop();
+                timer = null;
+            }
+            if (auto) {
+                timer = new Timeline(new KeyFrame(Duration.minutes(minutes), e -> tick()));
+                timer.setCycleCount(Animation.INDEFINITE);
+                timer.play();
+            }
+        }
         if (auto) {
-            timer = new Timeline(new KeyFrame(Duration.minutes(s.getSyncIntervalMinutes()), e -> tick()));
-            timer.setCycleCount(Animation.INDEFINITE);
-            timer.play();
             if (!startupDone) {
                 startupDone = true;
                 startup.playFromStart();

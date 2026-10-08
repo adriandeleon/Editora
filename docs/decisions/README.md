@@ -20,6 +20,7 @@ rather than rewriting history.
 | [0009](0009-plugins-no-modulelayer.md) | Plugins via a child `URLClassLoader`, no `ModuleLayer` | Accepted |
 | [0010](0010-builtin-headless-test-platform.md) | JavaFX 26 built-in Headless test platform, drop self-built Monocle | Accepted |
 | [0011](0011-json-settings.md) | JSON for global and project settings | Accepted |
+| [0012](0012-settings-sync-git-transport.md) | Settings sync: Git carries the data, Editora merges it | Accepted |
 
 ## Writing a new one
 

@@ -1082,6 +1082,7 @@ public class WindowManager {
     public void broadcastSettingsApplied(MainController origin) {
         settingsRebroadcast.stop(); // every window is about to apply everything, pending changes included
         settingsChangePending = false;
+        settingsSync.settingsChanged(); // e.g. "Reset to defaults" switched sync off
         Settings settings = shared.getSettings();
         for (Holder h : new ArrayList<>(windows)) {
             h.controller.reapplyAfterSharedSettingsChange(settings);

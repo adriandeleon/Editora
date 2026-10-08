@@ -37,6 +37,10 @@ Two serialization formats, chosen per file:
 | `search-history.json` | JSON | `SearchHistory` | Find-in-Files history. One shared instance. |
 | `agent-sessions.json` | JSON | `AgentSessionHistory` | AI Agent chat sessions. One shared instance. |
 | `dictionary.txt` | plain text | (in-memory `Set<String>`) | User spell-check words, one per line. |
+| `abbreviations.json` | JSON | `AbbrevStore` | App-global abbreviations. |
+| `snippets/<language>.json` | JSONC | (`SnippetManager`, per window) | User snippets; unversioned, not a `ConfigSchema` store. |
+| `templates/<id>.json` | JSON | (`TemplateRegistry`, per window) | User templates; unversioned, not a `ConfigSchema` store. |
+| `sync/repo/`, `sync/backups/` | git clone, copies | — | [Settings sync](settings-sync.md): its clone of the user's repository, and copies of files a sync replaced. Not configuration; left out of the export. |
 | `recovery/<session>/<buffer>.rec` | own format | `RecoveryRecord` | Unsaved buffer text for [crash recovery](crash-recovery.md); unversioned, per process. |
 
 On first launch after the format change, `SharedConfig.loadSettings()` converts a legacy
@@ -162,7 +166,7 @@ Every structured config file carries an integer `schemaVersion` field, and its o
 2. The version to **assume when the file has no `schemaVersion` marker** — `1`, the pre-versioning baseline (a bare JSON array is detected as `0` instead, by `ConfigMigrations.versionOf`). `SETTINGS` also carries a small *evidence* table (`versionWithoutMarker`): a key that first appeared in version N proves the file is at least N, so a current-shape file that merely lost its marker resumes after the steps that are not safe to repeat instead of replaying all of them from 1.
 3. An ordered map of **step `Migration`s** keyed by the version they upgrade *from* (`v → v+1`).
 
-For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (107), with an additive identity step for
+For example `SETTINGS` is currently at `Settings.SCHEMA_VERSION` (115), with an additive identity step for
 the Default JDK at `102 → 103` (also used by standalone Java files), `104 → 105` as
 `retireUnusedSettingsKeys`, and an identity step at `105 → 106` for per-keymap key-binding overrides
 (`keybindings`/`keybindingsMac` keep their place and now mean "the active keymap's"; `keymapKeybindings`/
