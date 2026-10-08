@@ -7,6 +7,11 @@ import java.util.List;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.contentstream.operator.Operator;
+import org.apache.pdfbox.contentstream.operator.markedcontent.BeginMarkedContentSequence;
+import org.apache.pdfbox.contentstream.operator.markedcontent.BeginMarkedContentSequenceWithProperties;
+import org.apache.pdfbox.contentstream.operator.markedcontent.EndMarkedContentSequence;
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.pdfparser.PDFStreamParser;
 import org.apache.pdfbox.pdmodel.PDDocument;
@@ -21,11 +26,82 @@ final class PdfProbe {
 
     private PdfProbe() {}
 
-    /** The text of {@code pdf} as extracted in reading order (lines separated by {@code \n}). */
+    /**
+     * A text stripper that knows which glyphs are page furniture: text inside {@code /Artifact} marked
+     * content (the footer, the code PDF's gutter numbers). PDFBox's own stripper does not look at marked
+     * content at all, so the operators are registered here. {@code keep} decides which side is extracted.
+     */
+    private static class Stripper extends PDFTextStripper {
+        private final boolean keepContent;
+        private final boolean keepArtifacts;
+        private final java.util.ArrayDeque<Boolean> open = new java.util.ArrayDeque<>();
+        private int artifacts;
+
+        Stripper(boolean keepContent, boolean keepArtifacts) {
+            this.keepContent = keepContent;
+            this.keepArtifacts = keepArtifacts;
+            addOperator(new BeginMarkedContentSequence(this));
+            addOperator(new BeginMarkedContentSequenceWithProperties(this));
+            addOperator(new EndMarkedContentSequence(this));
+            setLineSeparator("\n");
+        }
+
+        @Override
+        public void beginMarkedContentSequence(COSName tag, COSDictionary properties) {
+            boolean artifact = COSName.ARTIFACT.equals(tag);
+            open.push(artifact);
+            if (artifact) {
+                artifacts++;
+            }
+        }
+
+        @Override
+        public void endMarkedContentSequence() {
+            if (!open.isEmpty() && open.pop()) {
+                artifacts--;
+            }
+        }
+
+        @Override
+        protected void processTextPosition(TextPosition text) {
+            if (artifacts > 0 ? keepArtifacts : keepContent) {
+                super.processTextPosition(text);
+            }
+        }
+    }
+
+    /**
+     * The content text of {@code pdf} in reading order (lines separated by {@code \n}) — what a reader that
+     * honours {@code /Artifact} extracts: no footers, no gutter line numbers.
+     */
     static String text(Path pdf) throws IOException {
+        try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
+            return new Stripper(true, false).getText(doc);
+        }
+    }
+
+    /** Only the page furniture of {@code pdf}: the text inside {@code /Artifact} marked content. */
+    static String artifactText(Path pdf) throws IOException {
+        try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
+            return new Stripper(false, true).getText(doc);
+        }
+    }
+
+    /** Everything a plain extractor (PDFBox's stock stripper, which ignores marked content) returns. */
+    static String rawText(Path pdf) throws IOException {
         try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setLineSeparator("\n");
+            return stripper.getText(doc);
+        }
+    }
+
+    /** The artifact text of one 1-based page. */
+    static String artifactText(Path pdf, int page) throws IOException {
+        try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
+            Stripper stripper = new Stripper(false, true);
+            stripper.setStartPage(page);
+            stripper.setEndPage(page);
             return stripper.getText(doc);
         }
     }
@@ -35,11 +111,11 @@ final class PdfProbe {
         return text(pdf).replaceAll("\\s+", "");
     }
 
-    /** The right edge (in points) of the right-most glyph drawn anywhere in {@code pdf}. */
+    /** The right edge (in points) of the right-most content glyph (not footer or gutter) drawn in {@code pdf}. */
     static float rightmostInk(Path pdf) throws IOException {
         float[] max = {0f};
         try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
-            PDFTextStripper stripper = new PDFTextStripper() {
+            PDFTextStripper stripper = new Stripper(true, false) {
                 @Override
                 protected void writeString(String text, List<TextPosition> positions) throws IOException {
                     for (TextPosition p : positions) {
@@ -57,7 +133,8 @@ final class PdfProbe {
 
     /**
      * One drawn glyph: its 1-based page, text, left and right edge, and baseline — all in points, in PDF
-     * coordinates (y grows upward from the bottom of the page). Invisible text is included.
+     * coordinates (y grows upward from the bottom of the page). Invisible text is included; page furniture
+     * ({@code /Artifact}: footers, gutter numbers) is not.
      */
     record Glyph(int page, String text, float x, float right, float baseline) {}
 
@@ -65,7 +142,7 @@ final class PdfProbe {
     static List<Glyph> glyphs(Path pdf) throws IOException {
         List<Glyph> out = new ArrayList<>();
         try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
-            PDFTextStripper stripper = new PDFTextStripper() {
+            PDFTextStripper stripper = new Stripper(true, false) {
                 @Override
                 protected void writeString(String text, List<TextPosition> positions) throws IOException {
                     for (TextPosition p : positions) {
@@ -179,6 +256,34 @@ final class PdfProbe {
                 }
             }
         }
+    }
+
+    /** Every non-stroking (fill) RGB colour set anywhere in {@code pdf}, as {@code "r,g,b"} in 0–255. */
+    static java.util.Set<String> fillColors(Path pdf) throws IOException {
+        java.util.Set<String> out = new java.util.TreeSet<>();
+        try (PDDocument doc = Loader.loadPDF(pdf.toFile())) {
+            for (int pi = 0; pi < doc.getNumberOfPages(); pi++) {
+                List<Float> operands = new ArrayList<>();
+                for (Object token : new PDFStreamParser(doc.getPage(pi)).parse()) {
+                    if (token instanceof COSNumber n) {
+                        operands.add(n.floatValue());
+                        continue;
+                    }
+                    if (token instanceof Operator op
+                            && (op.getName().equals("rg") || op.getName().equals("sc"))
+                            && operands.size() >= 3) {
+                        int n = operands.size();
+                        out.add(Math.round(operands.get(n - 3) * 255f)
+                                + ","
+                                + Math.round(operands.get(n - 2) * 255f)
+                                + ","
+                                + Math.round(operands.get(n - 1) * 255f));
+                    }
+                    operands.clear();
+                }
+            }
+        }
+        return out;
     }
 
     /** The number of pages in {@code pdf}. */

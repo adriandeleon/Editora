@@ -48,10 +48,10 @@ class CsvPdfContentTest {
     @Test
     void aCellTallerThanAPageIsSplitNotCutOff(@TempDir Path dir) throws Exception {
         StringBuilder cell = new StringBuilder();
-        for (int i = 1; i <= 60; i++) {
+        for (int i = 1; i <= 120; i++) {
             cell.append("note ")
                     .append(i)
-                    .append(" is one of sixty long remarks kept in a single cell end")
+                    .append(" is one of many long remarks kept in a single cell end")
                     .append(i)
                     .append(". ");
         }
@@ -64,7 +64,7 @@ class CsvPdfContentTest {
                 out,
                 List.of());
         String text = PdfProbe.squeezed(out);
-        for (int i = 1; i <= 60; i++) {
+        for (int i = 1; i <= 120; i++) {
             assertTrue(text.contains("cellend" + i + "."), "remark " + i + " is lost");
         }
         assertTrue(text.contains("2short"), "the row after it survives");

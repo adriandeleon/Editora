@@ -29,10 +29,16 @@ public final class PdfExportService {
      * Outcome of an export: {@code ok} plus an error {@code message} on failure. {@code unrendered} is the
      * number of characters no available font could draw (written as {@code ?}) — non-zero means the PDF was
      * produced but is not a faithful copy, and the caller says so instead of a plain "Exported".
+     * {@code failedDiagrams} is the number of Mermaid blocks in a Markdown document whose render failed and
+     * that were written as their source — likewise a PDF that was produced, but not the one asked for.
      */
-    public record Result(boolean ok, String message, int unrendered) {
+    public record Result(boolean ok, String message, int unrendered, int failedDiagrams) {
         public Result(boolean ok, String message) {
-            this(ok, message, 0);
+            this(ok, message, 0, 0);
+        }
+
+        public Result(boolean ok, String message, int unrendered) {
+            this(ok, message, unrendered, 0);
         }
     }
 
@@ -203,6 +209,33 @@ public final class PdfExportService {
             String pageSize,
             Path out,
             Consumer<Result> onResult) {
+        exportCode(
+                text,
+                fileName,
+                highlight,
+                lineNumbers,
+                tabSize,
+                PdfPageSpec.of(pageSize),
+                PdfDocMeta.NONE,
+                out,
+                onResult);
+    }
+
+    /**
+     * As {@link #exportCode(String, String, boolean, boolean, int, String, Path, Consumer)} on the page
+     * {@code page} describes; {@code meta} carries the document name (Title and footer) and the footer's
+     * localised page label.
+     */
+    public void exportCode(
+            String text,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            PdfPageSpec page,
+            PdfDocMeta meta,
+            Path out,
+            Consumer<Result> onResult) {
         submit(onResult, () -> {
             Result result;
             try {
@@ -213,7 +246,7 @@ public final class PdfExportService {
                         spans = TextMateHighlighter.compute(text, grammar);
                     }
                 }
-                int unrendered = CodePdfWriter.write(text, spans, lineNumbers, tabSize, pageSize, out);
+                int unrendered = CodePdfWriter.write(text, spans, lineNumbers, tabSize, page, meta, out);
                 result = new Result(true, "", unrendered);
             } catch (Throwable e) {
                 // Throwable, not Exception: an Error (e.g. a jlink/resource NoClassDefFoundError) on this
@@ -240,7 +273,8 @@ public final class PdfExportService {
             boolean highlight,
             boolean lineNumbers,
             int tabSize,
-            String pageSize,
+            PdfPageSpec page,
+            PdfDocMeta meta,
             Path out,
             Consumer<Result> onResult) {
         submit(onResult, () -> {
@@ -249,7 +283,7 @@ public final class PdfExportService {
                 StyleSpans<Collection<String>> spans =
                         com.editora.print.PrintService.excerptSpans(text, start, end, highlight ? fileName : null);
                 int unrendered = CodePdfWriter.write(
-                        text.substring(start, end), spans, lineNumbers, firstLineNumber, tabSize, pageSize, out);
+                        text.substring(start, end), spans, lineNumbers, firstLineNumber, tabSize, page, meta, out);
                 result = new Result(true, "", unrendered);
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "Code PDF export failed", e);
@@ -271,11 +305,23 @@ public final class PdfExportService {
             java.util.List<String> mmdcCommand,
             Path out,
             Consumer<Result> onResult) {
+        exportMarkdown(markdown, baseDir, PdfPageSpec.of(pageSize), PdfDocMeta.NONE, mmdcCommand, out, onResult);
+    }
+
+    /** As {@link #exportMarkdown(String, Path, String, java.util.List, Path, Consumer)} with a page and metadata. */
+    public void exportMarkdown(
+            String markdown,
+            Path baseDir,
+            PdfPageSpec page,
+            PdfDocMeta meta,
+            java.util.List<String> mmdcCommand,
+            Path out,
+            Consumer<Result> onResult) {
         submit(onResult, () -> {
             Result result;
             try {
-                int unrendered = MarkdownPdfWriter.write(markdown, baseDir, pageSize, mmdcCommand, out);
-                result = new Result(true, "", unrendered);
+                MarkdownPdfWriter.Outcome o = MarkdownPdfWriter.write(markdown, baseDir, page, meta, mmdcCommand, out);
+                result = new Result(true, "", o.unrendered(), o.failedDiagrams());
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "Markdown PDF export failed", e);
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
@@ -291,10 +337,17 @@ public final class PdfExportService {
      */
     public void exportDocument(
             org.commonmark.node.Node document, String pageSize, Path out, Consumer<Result> onResult) {
+        exportDocument(document, PdfPageSpec.of(pageSize), PdfDocMeta.NONE, out, onResult);
+    }
+
+    /** As {@link #exportDocument(org.commonmark.node.Node, String, Path, Consumer)} with a page and metadata. */
+    public void exportDocument(
+            org.commonmark.node.Node document, PdfPageSpec page, PdfDocMeta meta, Path out, Consumer<Result> onResult) {
         submit(onResult, () -> {
             Result result;
             try {
-                result = new Result(true, "", MarkdownPdfWriter.write(document, null, pageSize, null, out));
+                MarkdownPdfWriter.Outcome o = MarkdownPdfWriter.writeData(document, null, page, meta, null, out);
+                result = new Result(true, "", o.unrendered(), o.failedDiagrams());
             } catch (Throwable e) {
                 LOG.log(java.util.logging.Level.SEVERE, "Table PDF export failed", e);
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());

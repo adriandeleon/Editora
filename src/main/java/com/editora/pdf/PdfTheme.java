@@ -16,7 +16,13 @@ public final class PdfTheme {
     public static final Color DEFAULT_FG = hex("#24292f");
 
     public static final Color BACKGROUND = hex("#ffffff");
-    public static final Color LINE_NUMBER = hex("#8c959f");
+    /**
+     * The grey of everything that is not content: gutter line numbers, footers, footnote marks, alt text.
+     * Small type, so it keeps the 4.5:1 contrast against the white page that body text needs (it was
+     * {@code #8c959f}, about 3:1).
+     */
+    public static final Color LINE_NUMBER = hex("#656d76");
+
     public static final Color CODE_BG = hex("#f6f8fa");
     public static final Color RULE = hex("#d0d7de");
 
@@ -70,6 +76,22 @@ public final class PdfTheme {
                 && (styleClasses.contains("comment")
                         || styleClasses.contains("regexp")
                         || styleClasses.contains("italic"));
+    }
+
+    /** The WCAG 2 contrast ratio between two opaque colors (1 = none, 21 = black on white). */
+    public static double contrast(Color a, Color b) {
+        double la = luminance(a);
+        double lb = luminance(b);
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+    }
+
+    private static double luminance(Color c) {
+        return 0.2126 * linear(c.getRed()) + 0.7152 * linear(c.getGreen()) + 0.0722 * linear(c.getBlue());
+    }
+
+    private static double linear(int channel) {
+        double v = channel / 255.0;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
     }
 
     static Color hex(String s) {

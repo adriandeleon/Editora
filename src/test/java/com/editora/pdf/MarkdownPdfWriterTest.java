@@ -303,10 +303,10 @@ class MarkdownPdfWriterTest {
     @Test
     void aTableRowTallerThanAPageSplitsAcrossPagesWithoutLosingText(@TempDir Path dir) throws Exception {
         StringBuilder cell = new StringBuilder();
-        for (int i = 1; i <= 40; i++) {
+        for (int i = 1; i <= 70; i++) {
             cell.append("Sentence number ")
                     .append(i)
-                    .append(" of forty has enough words to wrap in its column, ")
+                    .append(" of seventy has enough words to wrap in its column, ")
                     .append("so that the whole cell is far taller than one page end")
                     .append(i)
                     .append(". ");
@@ -317,8 +317,8 @@ class MarkdownPdfWriterTest {
                         + "|\n| after | y |\n\nTail paragraph.\n");
 
         String text = PdfProbe.squeezed(out);
-        for (int i = 1; i <= 40; i++) {
-            assertTrue(text.contains("Sentencenumber" + i + "offorty"), "sentence " + i + " start is lost");
+        for (int i = 1; i <= 70; i++) {
+            assertTrue(text.contains("Sentencenumber" + i + "ofseventy"), "sentence " + i + " start is lost");
             assertTrue(text.contains("pageend" + i + "."), "sentence " + i + " end is lost");
         }
         assertTrue(text.contains("aftery") && text.contains("Tailparagraph."), "what follows the row survives");

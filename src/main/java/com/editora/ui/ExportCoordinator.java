@@ -153,7 +153,7 @@ final class ExportCoordinator {
         String pageSize = host.settings().getPdfPageSize();
         this.<com.editora.pdf.PdfExportService.Result>staged(
                 f,
-                (out, report) -> pdfService.exportDocument(table, pageSize, out, report),
+                (out, report) -> pdfService.exportDocument(table, pdfPage(), pdfMeta(baseName), out, report),
                 com.editora.pdf.PdfExportService.Result::ok,
                 message -> new com.editora.pdf.PdfExportService.Result(false, message),
                 r -> {
@@ -186,6 +186,18 @@ final class ExportCoordinator {
         return shown.filtered()
                 ? message + " " + tr("status.csv.filteredRows", shown.rows().size(), shown.totalRows())
                 : message;
+    }
+
+    /** The page every text PDF is laid out on: the configured size, with or without the page footer. */
+    private com.editora.pdf.PdfPageSpec pdfPage() {
+        Settings s = host.settings();
+        return com.editora.pdf.PdfPageSpec.of(s.getPdfPageSize()).withFooter(s.isPdfPageFooter());
+    }
+
+    /** The document name (PDF title and footer) and the footer's localised page label. */
+    private static com.editora.pdf.PdfDocMeta pdfMeta(String name) {
+        return new com.editora.pdf.PdfDocMeta(
+                name, com.editora.i18n.Messages.current(), (page, pages) -> tr("pdf.footer.page", page, pages));
     }
 
     /**
@@ -605,8 +617,7 @@ final class ExportCoordinator {
 
     /** An image tab's picture as the one-pixel-per-point page image the raster print and PDF paths take. */
     private static java.util.List<com.editora.pdf.PageImage> pageImage(javafx.scene.image.Image image) {
-        return java.util.List.of(
-                com.editora.pdf.PageImage.of(com.editora.editor.PreviewImageLoader.imageToPng(image)));
+        return java.util.List.of(com.editora.pdf.PageImage.of(com.editora.editor.PreviewImageLoader.imageToPng(image)));
     }
 
     // --- the selection only -------------------------------------------------------------------------------
@@ -697,7 +708,8 @@ final class ExportCoordinator {
                         s.isPdfSyntaxHighlighting(),
                         s.isPdfLineNumbers(),
                         s.getTabSize(),
-                        s.getPdfPageSize(),
+                        pdfPage(),
+                        pdfMeta(bufferBaseName(b)),
                         out,
                         report));
     }
@@ -751,7 +763,8 @@ final class ExportCoordinator {
                         s.isPdfSyntaxHighlighting(),
                         s.isPdfLineNumbers(),
                         s.getTabSize(),
-                        s.getPdfPageSize(),
+                        pdfPage(),
+                        pdfMeta(bufferBaseName(b)),
                         out,
                         report));
     }
@@ -825,7 +838,14 @@ final class ExportCoordinator {
         if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            pdfService.exportMarkdown(b.getContent(), baseDir, pageSize, mermaid.mmdcCommandOrNull(), out, report);
+            pdfService.exportMarkdown(
+                    b.getContent(),
+                    baseDir,
+                    pdfPage(),
+                    pdfMeta(bufferBaseName(b)),
+                    mermaid.mmdcCommandOrNull(),
+                    out,
+                    report);
         } else if (b.isDiagram()) { // Mermaid (.mmd) — CLI render to PDF
             mermaid.exportDiagram(
                     b.getContent(),
@@ -1049,12 +1069,15 @@ final class ExportCoordinator {
         }
         if (r.ok()) {
             lastExported = f.toPath();
-            // HOOK(C14): when PdfExportService.Result gains the "diagrams not rendered" count, report it here.
-            // Characters no installed font could draw were written as "?": say so rather than a bare "Exported".
-            host.setStatus(
-                    r.unrendered() > 0
-                            ? tr("status.pdf.exportedUnrendered", f.toString(), r.unrendered())
-                            : tr("status.pdf.exported", f.toString()));
+            // Characters no installed font could draw were written as "?", and a Mermaid block that failed to
+            // render went out as its source: say so rather than a bare "Exported".
+            if (r.unrendered() > 0) {
+                host.setStatus(tr("status.pdf.exportedUnrendered", f.toString(), r.unrendered()));
+            } else if (r.failedDiagrams() > 0) {
+                host.setStatus(tr("status.pdf.exportedDiagramsFailed", f.toString(), r.failedDiagrams()));
+            } else {
+                host.setStatus(tr("status.pdf.exported", f.toString()));
+            }
         } else {
             String msg = failureDetail(r.message());
             host.setStatus(tr("status.pdf.exportFailed", msg));
