@@ -3,6 +3,8 @@ package com.editora.ui;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 import javafx.scene.control.Tab;
@@ -45,14 +47,28 @@ class TrustBoundaryWiringFxTest {
         }
     }
 
+    /**
+     * Opens {@code file} and returns once its text has landed. openPath only makes the tab; the file is read
+     * on a worker and the open finishes on the FX thread later, where it also says "Opened …" in the status
+     * bar — over whatever a test that did not wait for it had put there in the meantime.
+     */
     private EditorBuffer open(Path file) throws Exception {
-        FxTestSupport.runOnFx(() -> FxTestSupport.call(
-                FxTestSupport.field(fx.controller, "fileWorkflows"), "openPath", new Class[] {Path.class}, file));
+        FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        FxTestSupport.runOnFx(() -> workflows.openPath(file));
         EditorBuffer buffer = FxTestSupport.callOnFx(
                 () -> (EditorBuffer) FxTestSupport.call(fx.controller, "activeBuffer", new Class[] {}));
         assertNotNull(buffer);
         assertEquals(file, FxTestSupport.callOnFx(buffer::getPath));
+        awaitLoaded(buffer);
         return buffer;
+    }
+
+    /** Returns once the asynchronous open of {@code buffer} has finished on the FX thread. */
+    private void awaitLoaded(EditorBuffer buffer) throws Exception {
+        FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        CountDownLatch loaded = new CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> workflows.afterBufferLoad(buffer, loaded::countDown));
+        assertTrue(loaded.await(30, TimeUnit.SECONDS), "the open of " + buffer.getPath() + " never finished");
     }
 
     private Tab tabFor(Path file) throws Exception {
@@ -83,7 +99,10 @@ class TrustBoundaryWiringFxTest {
 
         click(buffer, "next.md#intro");
 
-        assertNotNull(tabFor(next), "the relative link resolved against README.md's folder and opened as a tab");
+        Tab opened = tabFor(next);
+        assertNotNull(opened, "the relative link resolved against README.md's folder and opened as a tab");
+        // The link's own open is still reading: let it finish while next.md exists, not into the next test.
+        awaitLoaded((EditorBuffer) opened.getUserData());
     }
 
     @Test

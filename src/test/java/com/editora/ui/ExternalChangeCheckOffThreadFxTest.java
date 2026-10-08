@@ -33,16 +33,24 @@ class ExternalChangeCheckOffThreadFxTest {
         FxTestSupport.bootToolkit();
     }
 
-    private static EditorBuffer load(FxWindowFixture fx, Path file) throws Exception {
+    /**
+     * Opens {@code file} in a selected tab and waits for the check that selecting it starts. That check asks
+     * the disk on a worker like any other; left running, it would see whatever the test writes next — an
+     * {@code .editorconfig}, say — and apply it to the still-open tab before the check under test has begun.
+     */
+    private static EditorBuffer load(AsyncTestScope async, FxWindowFixture fx, Path file) throws Exception {
         FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
-        return FxTestSupport.callOnFx(() -> {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(file);
-            workflows.loadInto(buffer, file);
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer loaded = new EditorBuffer();
+            loaded.setPath(file);
+            workflows.loadInto(loaded, file);
             FxTestSupport.call(
-                    fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
-            return buffer;
+                    fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, loaded, true);
+            return loaded;
         });
+        java.util.Set<EditorBuffer> pending = FxTestSupport.field(workflows, "verifyingExternalChange");
+        SaveGuardsFxTest.awaitOnFx(async, "the tab-switch check to settle", pending::isEmpty);
+        return buffer;
     }
 
     @Test
@@ -50,7 +58,7 @@ class ExternalChangeCheckOffThreadFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("a.txt"), "text\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
             assertNull(
                     FxTestSupport.callOnFx(() -> buffer.getEditorConfigProps().maxLineLength()));
@@ -99,7 +107,7 @@ class ExternalChangeCheckOffThreadFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("b.txt"), "text\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
             Files.writeString(dir.resolve(".editorconfig"), "root = true\n[*]\nmax_line_length = 97\n");
             Files.writeString(file, "changed by someone else\n");

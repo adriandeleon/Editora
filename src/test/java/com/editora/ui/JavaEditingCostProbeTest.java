@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 import javafx.scene.Scene;
 import javafx.scene.layout.StackPane;
@@ -10,6 +11,7 @@ import com.editora.editor.EditorBuffer;
 import com.editora.lsp.LspTestHooks;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
@@ -24,7 +26,9 @@ class JavaEditingCostProbeTest {
         }
     }
 
+    // Measures documents up to 4 MB, each many times over: not bounded by the suite's default.
     @Test
+    @Timeout(value = 2, unit = TimeUnit.HOURS)
     void largeDocumentCosts() throws Exception {
         assumeTrue(Boolean.getBoolean("lsp.java.cost.probe"));
         FxTestSupport.bootToolkit();

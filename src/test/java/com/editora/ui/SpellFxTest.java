@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
@@ -150,6 +152,18 @@ class SpellFxTest {
         return items;
     }
 
+    /**
+     * Returns once the suggestion search the last menu started has finished and its rows are in the menu.
+     * The searches run one at a time on a single worker, so a task queued behind the search ends after it —
+     * and after the search has posted its rows to the FX thread, which the drain then lets through.
+     */
+    private static void awaitSuggestions() throws Exception {
+        java.lang.reflect.Field worker = BufferSpell.class.getDeclaredField("SUGGESTER");
+        worker.setAccessible(true);
+        ((ExecutorService) worker.get(null)).submit(() -> {}).get(30, TimeUnit.SECONDS);
+        FxTestSupport.drainFx();
+    }
+
     private static MenuItem item(List<MenuItem> items, String text) {
         return items.stream().filter(i -> text.equals(i.getText())).findFirst().orElse(null);
     }
@@ -287,7 +301,7 @@ class SpellFxTest {
         EditorBuffer txt = open("menu.txt", "we recieve it untill then\n");
         ObservableList<MenuItem> menu = FXCollections.observableArrayList();
         FxTestSupport.runOnFx(() -> menuAt(txt, "recieve", menu));
-        settle(); // a slow search fills the placeholder row after the menu is built
+        awaitSuggestions(); // a slow search fills the placeholder row after the menu is built
         MenuItem receive = FxTestSupport.callOnFx(() -> item(menu, "receive"));
         assertNotNull(receive, "the suggestion is in the menu");
         assertFalse(receive.isDisable());
@@ -298,13 +312,13 @@ class SpellFxTest {
                 "the placeholder is gone once the suggestions are in");
 
         FxTestSupport.runOnFx(() -> menuAt(txt, "untill", menu));
-        settle();
+        awaitSuggestions();
         assertNotNull(FxTestSupport.callOnFx(() -> item(menu, "until")));
         assertNull(FxTestSupport.callOnFx(() -> item(menu, "until l")), "no split-word junk");
 
         FxTestSupport.runOnFx(() -> txt.setViewMode(true));
         FxTestSupport.runOnFx(() -> menuAt(txt, "recieve", menu));
-        settle();
+        awaitSuggestions();
         MenuItem readOnly = FxTestSupport.callOnFx(() -> item(menu, "receive"));
         assertNotNull(readOnly);
         assertTrue(readOnly.isDisable(), "a suggestion cannot be applied to a read-only buffer, and says so");
@@ -313,7 +327,7 @@ class SpellFxTest {
 
         FxTestSupport.runOnFx(() -> txt.setViewMode(false));
         FxTestSupport.runOnFx(() -> menuAt(txt, "recieve", menu));
-        settle();
+        awaitSuggestions();
         MenuItem again = FxTestSupport.callOnFx(() -> item(menu, "receive"));
         FxTestSupport.runOnFx(again::fire);
         assertTrue(FxTestSupport.callOnFx(() -> txt.getArea().getText()).startsWith("we receive it"));
@@ -586,41 +600,30 @@ class SpellFxTest {
         assertEquals(afterFirstVisit, wordsMeasured(ov), "a repaint of laid-out paragraphs asks the layout nothing");
 
         // The remembered positions are the ones a fresh measurement gives.
-        FxTestSupport.runOnFx(() -> {
-            setPaintLog(ov, log);
-            FxTestSupport.invoke(ov, "redraw");
-        });
-        List<double[]> cached = new ArrayList<>(log);
-        log.clear();
+        FxTestSupport.runOnFx(() -> setPaintLog(ov, log));
+        Paints first = rememberedAndFresh(ov, log);
+        assertSamePaint(first.remembered(), first.fresh());
         long freshNanos = FxTestSupport.callOnFx(() -> {
             long total = 0;
             for (int i = 0; i < 20; i++) {
                 FxTestSupport.invoke(ov, "invalidateGeometry");
-                log.clear();
                 long t0 = System.nanoTime();
                 FxTestSupport.invoke(ov, "redraw");
                 total += System.nanoTime() - t0;
             }
             return total / 20;
         });
-        assertSamePaint(cached, new ArrayList<>(log));
-        System.out.println("[spell-perf] dense viewport redraw (" + cached.size() + " squiggles): measured "
-                + freshNanos / 1000 + " µs, remembered " + cachedNanos / 1000 + " µs");
+        System.out.println(
+                "[spell-perf] dense viewport redraw (" + first.remembered().size() + " squiggles): measured "
+                        + freshNanos / 1000 + " µs, remembered " + cachedNanos / 1000 + " µs");
 
         // Scroll away and back: the lines that stayed laid out are not measured again, and they are painted
         // where they now are.
         FxTestSupport.runOnFx(() -> txt.getArea().showParagraphAtTop(43));
         settle();
-        log.clear();
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(ov, "redraw"));
-        List<double[]> scrolled = new ArrayList<>(log);
-        FxTestSupport.runOnFx(() -> {
-            FxTestSupport.invoke(ov, "invalidateGeometry");
-            log.clear();
-            FxTestSupport.invoke(ov, "redraw");
-        });
-        assertSamePaint(scrolled, new ArrayList<>(log));
-        assertFalse(scrolled.isEmpty());
+        Paints scrolled = rememberedAndFresh(ov, log);
+        assertSamePaint(scrolled.remembered(), scrolled.fresh());
+        assertFalse(scrolled.remembered().isEmpty());
 
         // A different wrap width or font moves the words: both are measured afresh and still agree.
         FxTestSupport.runOnFx(() -> {
@@ -628,15 +631,8 @@ class SpellFxTest {
             txt.setFont("Monospaced", 19);
         });
         settle();
-        log.clear();
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(ov, "redraw"));
-        List<double[]> restyled = new ArrayList<>(log);
-        FxTestSupport.runOnFx(() -> {
-            FxTestSupport.invoke(ov, "invalidateGeometry");
-            log.clear();
-            FxTestSupport.invoke(ov, "redraw");
-        });
-        assertSamePaint(restyled, new ArrayList<>(log));
+        Paints restyled = rememberedAndFresh(ov, log);
+        assertSamePaint(restyled.remembered(), restyled.fresh());
 
         // Something that moves the text inside every paragraph's box without changing the paragraphs or the
         // overlay's width — here the line-number gutter going away — is noticed on the next frame.
@@ -648,16 +644,9 @@ class SpellFxTest {
         FxTestSupport.runOnFx(() -> FxTestSupport.invoke(ov, "redraw"));
         FxTestSupport.runOnFx(() -> txt.setLineNumbersVisible(false));
         settle();
-        log.clear();
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(ov, "redraw"));
-        List<double[]> shifted = new ArrayList<>(log);
-        FxTestSupport.runOnFx(() -> {
-            FxTestSupport.invoke(ov, "invalidateGeometry");
-            log.clear();
-            FxTestSupport.invoke(ov, "redraw");
-        });
-        assertSamePaint(shifted, new ArrayList<>(log));
-        assertFalse(shifted.isEmpty());
+        Paints shifted = rememberedAndFresh(ov, log);
+        assertSamePaint(shifted.remembered(), shifted.fresh());
+        assertFalse(shifted.remembered().isEmpty());
         FxTestSupport.runOnFx(() -> setPaintLog(ov, null));
     }
 
@@ -712,6 +701,29 @@ class SpellFxTest {
         } catch (ReflectiveOperationException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** One viewport painted twice: from the remembered positions, then from a fresh measurement. */
+    private record Paints(List<double[]> remembered, List<double[]> fresh) {}
+
+    /**
+     * Paints from what the overlay remembers and again after it has forgotten, in a single FX turn, and
+     * returns both. The turn matters twice over. No pulse comes between the two paints, so no layout pass
+     * does either and they are paints of the same viewport — a just-enabled word wrap is still re-measuring
+     * for many pulses. And the paint log is read here, on the thread that writes it: forgetting the geometry
+     * also queues a repaint of its own, which runs as soon as the turn ends and logs every squiggle a second
+     * time — into a list the test thread used to be copying at that moment.
+     */
+    private static Paints rememberedAndFresh(Object overlay, List<double[]> log) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            log.clear();
+            FxTestSupport.invoke(overlay, "redraw");
+            List<double[]> remembered = new ArrayList<>(log);
+            FxTestSupport.invoke(overlay, "invalidateGeometry");
+            log.clear();
+            FxTestSupport.invoke(overlay, "redraw");
+            return new Paints(remembered, new ArrayList<>(log));
+        });
     }
 
     private static void assertSamePaint(List<double[]> expected, List<double[]> actual) {
