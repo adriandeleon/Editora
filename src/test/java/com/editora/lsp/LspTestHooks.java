@@ -52,6 +52,18 @@ public final class LspTestHooks {
         manager.sessionForTest(file).simulateServerDeathForTest();
     }
 
+    /** Plays a server's {@code workspace/…/refresh} request of {@code kind} for {@code file}'s session. */
+    public static void refresh(LspManager manager, java.nio.file.Path file, String kind) {
+        LanguageServerSession session = manager.sessionForTest(file);
+        switch (kind) {
+            case "diagnostics" -> session.refreshDiagnostics();
+            case "semanticTokens" -> session.refreshSemanticTokens();
+            case "inlayHints" -> session.refreshInlayHints();
+            case "foldingRanges" -> session.refreshFoldingRanges();
+            default -> throw new IllegalArgumentException("not a refresh a server can ask for: " + kind);
+        }
+    }
+
     /** Plays a server's {@code $/progress} begin (a title) or end (a null title) for {@code file}'s session. */
     public static void progress(LspManager manager, java.nio.file.Path file, String beginTitle) {
         org.eclipse.lsp4j.WorkDoneProgressNotification value;
