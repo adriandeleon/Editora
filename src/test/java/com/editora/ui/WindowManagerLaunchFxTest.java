@@ -641,4 +641,212 @@ class WindowManagerLaunchFxTest {
             });
         }
     }
+
+    // --- windows as such -------------------------------------------------------------------------
+
+    private static Stage stageOf(Launched app, String key) throws Exception {
+        return FxTestSupport.callOnFx(() -> {
+            for (Object holder : FxTestSupport.<List<?>>field(app.wm, "windows")) {
+                if (key.equals(FxTestSupport.call(holder, "key", new Class<?>[] {}))) {
+                    return (Stage) FxTestSupport.call(holder, "stage", new Class<?>[] {});
+                }
+            }
+            return null;
+        });
+    }
+
+    @Test
+    void aWindowComesBackAtTheSizeAndPlaceItsSessionRecorded() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        Files.writeString(
+                config.resolve("workspace-state.json"),
+                "{\"schemaVersion\":1,\"windowX\":40,\"windowY\":30,\"windowWidth\":900,\"windowHeight\":640}");
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+
+        Stage stage = stageOf(app, "");
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(900, stage.getWidth(), 0.5);
+            assertEquals(640, stage.getHeight(), 0.5);
+            if (!javafx.stage.Screen.getScreensForRectangle(40, 30, 900, 640).isEmpty()) {
+                assertEquals(40, stage.getX(), 0.5);
+                assertEquals(30, stage.getY(), 0.5);
+            }
+            assertFalse(stage.isMaximized());
+        });
+    }
+
+    @Test
+    void aWindowThatWasMaximizedComesBackMaximized() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        Files.writeString(
+                config.resolve("workspace-state.json"),
+                "{\"schemaVersion\":1,\"windowWidth\":0,\"windowHeight\":0,\"windowMaximized\":true}");
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+        Stage stage = stageOf(app, "");
+        assertTrue(FxTestSupport.callOnFx(stage::isMaximized));
+    }
+
+    @Test
+    void aSecondWindowDoesNotOpenExactlyOnTopOfTheFirst() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+        Stage first = stageOf(app, "");
+        Stage[] more = new Stage[2];
+        FxTestSupport.runOnFx(() -> {
+            first.setX(100);
+            first.setY(80);
+            small(first);
+            more[0] = app.wm.newWindow();
+            small(more[0]);
+            more[0].setX(100);
+            more[0].setY(80);
+            FxTestSupport.call(app.wm, "cascadeIfOverlapping", new Class<?>[] {Stage.class}, more[0]);
+            assertFalse(
+                    more[0].getX() == first.getX() && more[0].getY() == first.getY(),
+                    "it is nudged so both title bars can be seen");
+
+            assertEquals(more[0].getX() - first.getX(), more[0].getY() - first.getY(), 0.5, "down and right alike");
+
+            more[1] = app.wm.newWindow();
+            small(more[1]);
+            more[1].setX(100);
+            more[1].setY(80);
+            FxTestSupport.call(app.wm, "cascadeIfOverlapping", new Class<?>[] {Stage.class}, more[1]);
+            assertFalse(
+                    more[1].getX() == more[0].getX() && more[1].getY() == more[0].getY(), "nor on top of the second");
+
+            // A maximized window covers the screen on purpose: it is left where it is.
+            more[1].setMaximized(true);
+            double x = more[1].getX();
+            FxTestSupport.call(app.wm, "cascadeIfOverlapping", new Class<?>[] {Stage.class}, more[1]);
+            assertEquals(x, more[1].getX(), 0.5);
+        });
+        assertEquals(3, app.keys().size());
+        assertTrue(app.keys().stream().skip(1).allMatch(WindowKeys::isUntitled));
+    }
+
+    @Test
+    void ctrlAndTheWheelZoomTheTextOfTheWindowUnderThePointer() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+        Stage stage = stageOf(app, "");
+        FxTestSupport.runOnFx(() -> {
+            app.shared.getSettings().setFontZoom(1.0);
+            javafx.scene.Node root = stage.getScene().getRoot();
+            javafx.event.Event.fireEvent(root, wheel(40, true));
+            assertEquals(1.1, app.shared.getSettings().getFontZoom(), 1e-9);
+            javafx.event.Event.fireEvent(root, wheel(-40, true));
+            assertEquals(1.0, app.shared.getSettings().getFontZoom(), 1e-9);
+            javafx.event.Event.fireEvent(root, wheel(40, false)); // a plain wheel scrolls; it is not a zoom
+            javafx.event.Event.fireEvent(root, wheel(0, true)); // nor is a horizontal-only gesture
+            assertEquals(1.0, app.shared.getSettings().getFontZoom(), 1e-9);
+        });
+    }
+
+    /** Small enough that a cascade step stays on the (small) headless screen. */
+    private static void small(Stage stage) {
+        stage.setWidth(320);
+        stage.setHeight(240);
+    }
+
+    private static javafx.scene.input.ScrollEvent wheel(double deltaY, boolean control) {
+        return new javafx.scene.input.ScrollEvent(
+                javafx.scene.input.ScrollEvent.SCROLL,
+                10,
+                10,
+                10,
+                10,
+                false,
+                control,
+                false,
+                false,
+                false,
+                false,
+                0,
+                deltaY,
+                0,
+                deltaY,
+                javafx.scene.input.ScrollEvent.HorizontalTextScrollUnits.NONE,
+                0,
+                javafx.scene.input.ScrollEvent.VerticalTextScrollUnits.NONE,
+                0,
+                0,
+                null);
+    }
+
+    @Test
+    void aSettingsFileThatCouldNotBeSavedBeforeAnyWindowExistedIsReportedByTheFirstWindow() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        app = new Launched(config, shared -> {});
+        FxTestSupport.runOnFx(() -> FxTestSupport.invokeWith(
+                app.wm, "notifyConfigWriteError", Path.class, config.resolve("settings.json")));
+        app.launch(null, List.of(), null);
+        FxTestSupport.drainFx(); // the report is deferred past the startup messages
+        MainController global = app.window("");
+        String expected = com.editora.i18n.Messages.tr("status.config.saveFailed", "settings.json");
+        SettingsRig.awaitFx("the report", () -> {
+            StatusBar status = FxTestSupport.field(global, "statusBar");
+            return expected.equals(FxTestSupport.<javafx.scene.control.Label>field(status, "echo")
+                    .getText());
+        });
+
+        // With a window open, a later failure is said at once.
+        FxTestSupport.runOnFx(() -> {
+            global.setStatus("");
+            FxTestSupport.invokeWith(app.wm, "notifyConfigWriteError", Path.class, config.resolve("notes.json"));
+            StatusBar status = FxTestSupport.field(global, "statusBar");
+            assertEquals(
+                    com.editora.i18n.Messages.tr("status.config.saveFailed", "notes.json"),
+                    FxTestSupport.<javafx.scene.control.Label>field(status, "echo")
+                            .getText());
+        });
+    }
+
+    @Test
+    void aLaunchHandedOverWhileNoWindowIsOpenOpensTheNoProjectWindowForIt() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        Path file = Files.writeString(tmp.resolve("after-close.txt"), lines(3));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+        FxTestSupport.runOnFx(() -> assertTrue(app.wm.requestClose(app.windowNow(""))));
+        FxTestSupport.drainFx();
+        assertEquals(List.of(), app.keys());
+        assertFalse(FxTestSupport.callOnFx(app.wm::anyWindowFocused));
+
+        FxTestSupport.runOnFx(() -> app.wm.presentForExternalLaunch());
+        assertEquals(List.of(""), app.keys(), "the launcher clicked with everything closed: a window again");
+
+        FxTestSupport.runOnFx(() -> assertTrue(app.wm.requestClose(app.windowNow(""))));
+        FxTestSupport.drainFx();
+        FxTestSupport.runOnFx(() -> app.wm.openExternalFiles(List.of(new MainController.OpenTarget(file, 2, 1))));
+        assertEquals(List.of(""), app.keys());
+        awaitOpenAt(app.window(""), file, 1);
+    }
+
+    @Test
+    void quittingWithUnsavedTextCanBeCancelledAndEveryWindowStays() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+        FxTestSupport.runOnFx(() -> {
+            app.wm.newWindow();
+            MainController global = app.windowNow("");
+            EditorBuffer dirty = new EditorBuffer();
+            FxTestSupport.call(global, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, dirty, true);
+            dirty.getArea().appendText("not saved\n");
+
+            boolean[] quit = new boolean[1];
+            List<SettingsRig.Shown> asked = SettingsRig.answering(
+                    javafx.scene.control.ButtonBar.ButtonData.CANCEL_CLOSE,
+                    () -> quit[0] = app.wm.confirmCloseAllWindows());
+            assertEquals(1, asked.size(), "the window with unsaved text asks");
+            assertFalse(quit[0], "Cancel calls the quit off");
+            assertEquals(2, FxTestSupport.<List<?>>field(app.wm, "windows").size(), "nothing was disposed");
+            assertEquals("not saved\n", dirty.getContent());
+        });
+    }
 }

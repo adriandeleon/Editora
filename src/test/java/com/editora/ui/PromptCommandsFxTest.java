@@ -87,12 +87,12 @@ class PromptCommandsFxTest {
                         settings::getPluginRegistryUrl,
                         "https://plugins.example.org/index.json"));
         prompts.put("diagram.setDotCommand", new Text("/opt/dot", settings::getDotPath, "/opt/dot"));
-        prompts.put("diagram.setPlantumlCommand", new Text("/opt/plantuml", settings::getPlantumlPath, "/opt/plantuml"));
+        prompts.put(
+                "diagram.setPlantumlCommand", new Text("/opt/plantuml", settings::getPlantumlPath, "/opt/plantuml"));
         prompts.put("typst.setCommand", new Text("/opt/typst", settings::getTypstPath, "/opt/typst"));
         prompts.put("agent.setCommand", new Text("/opt/claude-acp", settings::getAgentCommand, "/opt/claude-acp"));
         prompts.put("agent.setLmstudioCommand", new Text("/opt/lms", settings::getLmstudioAgentCommand, "/opt/lms"));
-        prompts.put(
-                "ai.setModel", new Text("model-x", () -> settings.getAiModelFor(provider()), "model-x"));
+        prompts.put("ai.setModel", new Text("model-x", () -> settings.getAiModelFor(provider()), "model-x"));
         prompts.put(
                 "ai.setCompletionModel",
                 new Text("small-x", () -> settings.getAiCompletionModelFor(provider()), "small-x"));
@@ -112,9 +112,7 @@ class PromptCommandsFxTest {
                 Text prompt = e.getValue();
                 run(command);
                 assertEquals(
-                        before.get(i),
-                        OverlayDriver.promptText(controller),
-                        command + " opens on the value in force");
+                        before.get(i), OverlayDriver.promptText(controller), command + " opens on the value in force");
                 OverlayDriver.answer(controller, prompt.answer());
                 assertFalse(OverlayDriver.showing(controller), command);
                 assertEquals(prompt.expected(), prompt.read().get(), command);
@@ -128,7 +126,8 @@ class PromptCommandsFxTest {
                 i++;
             }
             // Each answer went to its own setting: the earlier ones were not overwritten by the later.
-            prompts.forEach((command, prompt) -> assertEquals(prompt.expected(), prompt.read().get(), command));
+            prompts.forEach((command, prompt) ->
+                    assertEquals(prompt.expected(), prompt.read().get(), command));
         });
     }
 
@@ -187,7 +186,9 @@ class PromptCommandsFxTest {
 
             GitPullMode last = GitPullMode.values()[GitPullMode.values().length - 1];
             run("git.setPullMode");
-            assertEquals(GitPullMode.values().length, OverlayDriver.choices(controller).size());
+            assertEquals(
+                    GitPullMode.values().length,
+                    OverlayDriver.choices(controller).size());
             OverlayDriver.pick(controller, last.id());
             assertEquals(last.id(), settings.getGitPullMode());
         });
