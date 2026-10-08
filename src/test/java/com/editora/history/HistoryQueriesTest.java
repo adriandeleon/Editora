@@ -34,6 +34,17 @@ class HistoryQueriesTest {
     }
 
     @Test
+    void matchesTheReasonAsTheListShowsIt() {
+        HistoryRevision r = rev("/a.txt", 1, HistoryRevision.REASON_AUTOSAVE, "");
+        assertFalse(HistoryQueries.matches(r, "sauvegarde"), "the stored identifier is not what is displayed");
+        assertTrue(HistoryQueries.matches(r, "Sauvegarde", "Sauvegarde automatique"));
+        assertTrue(HistoryQueries.matches(r, "autosave", "Sauvegarde automatique"), "the identifier still matches");
+        assertFalse(HistoryQueries.matches(r, "externe", "Sauvegarde automatique"));
+        assertTrue(HistoryQueries.matches(r, " ", null));
+        assertFalse(HistoryQueries.matches(null, "x", "x"));
+    }
+
+    @Test
     void matchesNullRevisionWithNonBlankQueryIsFalse() {
         assertFalse(HistoryQueries.matches(null, "x"));
     }
