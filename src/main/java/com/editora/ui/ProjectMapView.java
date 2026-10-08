@@ -2050,6 +2050,12 @@ final class ProjectMapView extends VBox {
             if (selectedBox == null || !selectedBox.entry().path().equals(selected)) {
                 return;
             }
+            if (selectedBox.entry().depth() == 0) {
+                // Nothing chosen yet: show where the project starts, as the first view does.
+                panToColumnStart(
+                        pan, new ProjectMapModel.ColumnId(1, selectedBox.entry().path()));
+                return;
+            }
             ColumnBox column = columnBox(columnId(selectedBox.entry()));
             if (column == null) {
                 return;
@@ -2324,6 +2330,14 @@ final class ProjectMapView extends VBox {
 
             List<ProjectMapModel.Column> columns =
                     ProjectMapModel.columnsById(entries, columnQueries, columnShowHidden);
+            // Column widths allow for the checkbox label, so it is measured before they are computed (it
+            // changes once, when the controls are first styled).
+            for (ColumnControls controls : columnControls.values()) {
+                if (controls.showHidden().getContentDisplay() != ContentDisplay.GRAPHIC_ONLY) {
+                    showHiddenLabelWidth(controls.showHidden());
+                    break;
+                }
+            }
             Map<ProjectMapModel.ColumnId, Double> nodeWidths = new HashMap<>();
             for (ProjectMapModel.Column column : columns) {
                 nodeWidths.put(column.id(), nodeWidthFor(column));

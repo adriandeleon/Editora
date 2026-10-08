@@ -386,26 +386,32 @@ class ProjectMapLayoutFxTest {
         for (int i = 0; i < 60; i++) {
             entries.add(file(project.resolve(String.format("File%02d.java", i)), project, 1));
         }
-        Region surface = show(520, 480);
-        setEntries(surface, entries, Set.of(project));
-        settle();
-        for (int i = 0; i < 60; i++) {
-            Path target = project.resolve(String.format("File%02d.java", i));
-            FxTestSupport.runOnFx(() -> {
-                FxTestSupport.call(surface, "select", new Class<?>[] {Path.class}, target);
-                FxTestSupport.invoke(surface, "repaint");
-                Object row = boxFor(surface, target);
-                double reserved = FxTestSupport.field(surface, "reservedBottom");
-                assertTrue(reserved > 20);
-                assertTrue(origin(row, "y") >= 0, target.getFileName() + " is cut at the top");
-                assertTrue(
-                        edge(row, "y", "height") <= surface.getHeight() - reserved + 0.5,
-                        target.getFileName() + " sits under the zoom bar");
-                Object overview = FxTestSupport.field(surface, "overviewBox");
-                if (overview != null) {
+        // At 470 px the column reaches under the overview; at 760 px only the zoom bar is in its way.
+        for (double width : new double[] {470, 760}) {
+            Region surface = show(width, 480);
+            setEntries(surface, entries, Set.of(project));
+            settle();
+            boolean[] overviewInTheWay = new boolean[1];
+            for (int i = 0; i < 60; i++) {
+                Path target = project.resolve(String.format("File%02d.java", i));
+                FxTestSupport.runOnFx(() -> {
+                    FxTestSupport.call(surface, "select", new Class<?>[] {Path.class}, target);
+                    FxTestSupport.invoke(surface, "repaint");
+                    Object row = boxFor(surface, target);
+                    double reserved = FxTestSupport.field(surface, "reservedBottom");
+                    assertTrue(reserved > 20);
+                    assertTrue(origin(row, "y") >= 0, target.getFileName() + " is cut at the top");
+                    assertTrue(
+                            edge(row, "y", "height") <= surface.getHeight() - reserved + 0.5,
+                            target.getFileName() + " sits under the zoom bar at " + width);
+                    Object overview = FxTestSupport.field(surface, "overviewBox");
+                    assertNotNull(overview, "sixty rows overflow the canvas");
                     assertFalse(overlaps(row, overview), target.getFileName() + " sits under the overview");
-                }
-            });
+                    overviewInTheWay[0] |= edge(row, "x", "width") > origin(overview, "x");
+                });
+            }
+            assertEquals(width < 600, overviewInTheWay[0], "the fixture covers both obstacles");
+            FxTestSupport.runOnFx(mapView::dispose);
         }
     }
 
