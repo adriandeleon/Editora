@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(mvn *)"
+      "Bash(mvn *)",
+      "Bash(gh pr merge *)"
     ]
   }
 }
