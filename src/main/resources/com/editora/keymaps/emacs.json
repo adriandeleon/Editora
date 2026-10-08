@@ -61,6 +61,7 @@
   "C-r": "find.showBackward",
   "C-S-f": "search.inFiles",
   "M-S-5": "edit.queryReplace",
+  "M-S-4": "spell.correctWord",
   "C-M-S-5": "edit.queryReplaceRegexp",
   "C-w": "edit.cut",
   "M-w": "edit.copy",

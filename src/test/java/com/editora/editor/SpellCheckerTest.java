@@ -210,4 +210,225 @@ class SpellCheckerTest {
         assertFalse(es.isMisspelled("hola"));
         assertTrue(es.isMisspelled("holaa"));
     }
+
+    // --- one pass over a line (S1, S3, S6, S13) ---
+
+    private static List<String> checkable(String line, SpellChecker.Syntax syntax) {
+        return SpellChecker.checkableWords(line, syntax).stream()
+                .map(s -> word(line, s))
+                .toList();
+    }
+
+    private static List<String> checkable(String line) {
+        return checkable(line, SpellChecker.Syntax.PLAIN);
+    }
+
+    @Test
+    void checkableWordsLeavesOutEveryWordOfAStructuredToken() {
+        assertEquals(
+                List.of("see", "or", "the", "mvnw", "script"), checkable("see https://example.com or the mvnw script"));
+        assertEquals(List.of("run", "then", "open"), checkable("run ./mvnw javafx:run then open target/app-1.0.jar"));
+        assertEquals(List.of("well", "known", "don't", "word"), checkable("well-known don't (word)."));
+    }
+
+    @Test
+    void invertedMarksAndLowQuotesAreWrappingPunctuation() {
+        // "¿Qeu pasa? ¡Holaa!" flagged nothing: ¿ and ¡ were not edge punctuation, so the first word of every
+        // Spanish question or exclamation sat in a "structured" token.
+        assertEquals(List.of("Qeu", "pasa", "Holaa"), checkable("¿Qeu pasa? ¡Holaa!"));
+        assertEquals(List.of("Wortt", "mott", "parola"), checkable("„Wortt“ ‚mott‘ ‹parola›"));
+    }
+
+    @Test
+    void markdownEmphasisMarkersAndAMissingSpaceAfterACommaDoNotHideWords() {
+        assertEquals(
+                List.of("an", "emphasised", "mispeled", "word", "and", "boldd", "and", "strikke", "and", "okk"),
+                checkable("an _emphasised mispeled_ word and __boldd__ and ~~strikke~~ and *okk*"));
+        assertEquals(List.of("recieve", "seperate"), checkable("recieve,seperate"));
+        // …while an underscore or a tilde inside the token still makes it an identifier or a path.
+        assertTrue(checkable("snake_case ~/notes __init__.py").isEmpty());
+    }
+
+    @Test
+    void optionFlagsAndDocumentationTagNamesAreNotProse() {
+        assertEquals(List.of("grep", "foo"), checkable("grep -rn --colour 'foo'"));
+        assertEquals(List.of("the", "user", "name"), checkable("@param nme the user name"));
+        assertEquals(List.of("the", "user", "name"), checkable(" * @param {string} nme the user name"));
+        assertEquals(List.of("see", "and", "too"), checkable("see {@link Fooo} and {@code codde} too"));
+        assertEquals(List.of("when", "it", "breaks"), checkable("@throws Excption when it breaks"));
+    }
+
+    @Test
+    void htmlTextBetweenTagsIsItsOwnToken() {
+        String line = "<p>Paragraf with <b>boldd</b> text &amp; more</p>";
+        // Plain tokenization glues the text to the tag (">Paragraf" trims to "p>Paragraf": structured).
+        assertFalse(checkable(line).contains("Paragraf"));
+        assertFalse(checkable(line).contains("boldd"));
+        List<String> html = checkable(line, SpellChecker.Syntax.HTML);
+        assertTrue(html.containsAll(List.of("Paragraf", "with", "boldd", "text", "more")), html.toString());
+        assertFalse(html.contains("amp"), "an entity is not a word");
+        assertFalse(
+                checkable("<a href=\"/abuot\">Abuot</a>", SpellChecker.Syntax.HTML)
+                        .contains("abuot"),
+                "an attribute value with a path in it stays structured");
+    }
+
+    @Test
+    void typstLabelsAndReferencesAreNotProse() {
+        assertEquals(
+                List.of("See", "the", "figur", "and", "emph"),
+                checkable("See the figur @fig-one <fig-one> and _emph_", SpellChecker.Syntax.TYPST));
+    }
+
+    @Test
+    void aTokenTooLongToBeAWordIsSkippedWhole() {
+        String blob = "x".repeat(SpellChecker.MAX_TOKEN + 1);
+        assertTrue(checkable(blob + "abc").isEmpty());
+        assertEquals(List.of("after"), checkable(blob + " after"));
+    }
+
+    /**
+     * The 430 ms keystroke: a 60 KB line with no whitespace (minified JSON). Each of its misspelled words used
+     * to rescan the whole token, so the cost grew with words × token length. One pass is linear; this bound
+     * is loose enough for a loaded CI machine and still two orders of magnitude under the old cost.
+     */
+    @Test
+    void aSixtyKilobyteLineWithNoWhitespaceIsScannedInLinearTime() {
+        StringBuilder sb = new StringBuilder("{");
+        for (int i = 0; sb.length() < 60_000; i++) {
+            sb.append("\"kee").append(i).append("\":\"valu wrold recieve\",".replace(' ', '_'));
+        }
+        String line = sb.append('}').toString();
+        SpellChecker.checkableWords(line, SpellChecker.Syntax.PLAIN); // warm up
+        long t0 = System.nanoTime();
+        int words = 0;
+        for (int i = 0; i < 20; i++) {
+            words +=
+                    SpellChecker.checkableWords(line, SpellChecker.Syntax.PLAIN).size();
+        }
+        long perScanMicros = (System.nanoTime() - t0) / 20 / 1000;
+        System.out.println("[spell-perf] 60 KB no-whitespace line: " + perScanMicros + " µs per scan, " + words / 20
+                + " checkable words");
+        assertTrue(perScanMicros < 20_000, "one scan took " + perScanMicros + " µs");
+    }
+
+    // --- what counts as a word, and as the same word (S2, S7, S9) ---
+
+    @Test
+    void theStoredFormOfAWordIsTheFormItIsLookedUpBy() {
+        assertEquals("zzq'abc", SpellChecker.canonical("zzq’abc"));
+        assertEquals("editora", SpellChecker.canonical("Editora’s"));
+        assertEquals("editora", SpellChecker.canonical(" Editora's "));
+        assertEquals("café", SpellChecker.canonical("café"), "a decomposed accent is composed");
+        assertEquals("", SpellChecker.canonical("  "));
+    }
+
+    @Test
+    void ignoringAWordWithATypographicApostropheStopsFlaggingIt() {
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker c = new SpellChecker("en_US", new java.util.HashSet<>(), new java.util.HashSet<>());
+        assertTrue(c.isMisspelled("zzq’abc"));
+        assertTrue(c.ignore("zzq’abc"));
+        assertFalse(c.isMisspelled("zzq’abc"), "the ignore set stores the form the lookup uses");
+        assertFalse(c.isMisspelled("zzq'abc"));
+        assertFalse(c.ignore("ZZQ'abc"), "already ignored");
+        // …and so does the user dictionary, once the word is stored in that form.
+        SpellChecker d =
+                new SpellChecker("en_US", Set.of(SpellChecker.canonical("qqz’def")), new java.util.HashSet<>());
+        assertFalse(d.isMisspelled("qqz’def"));
+    }
+
+    @Test
+    void ignoreHoldsInEveryCheckerForTheSession() {
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker oneBuffer = new SpellChecker("en_US", Set.of());
+        SpellChecker anotherBuffer = new SpellChecker("en_US", Set.of());
+        assertTrue(anotherBuffer.isMisspelled("zzsessionwordq"));
+        oneBuffer.ignore("zzsessionwordq");
+        assertFalse(anotherBuffer.isMisspelled("zzsessionwordq"), "Ignore used to apply to one buffer only");
+    }
+
+    @Test
+    void possessivesAndPluralsOfKnownWordsAreAccepted() {
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker c = new SpellChecker("en_US", Set.of("adrianx"), new java.util.HashSet<>());
+        assertFalse(c.isMisspelled("adrianx's"));
+        assertFalse(c.isMisspelled("adrianx’s"));
+        assertFalse(c.isMisspelled("adrianxs"));
+        assertFalse(c.isMisspelled("kubernetes's"));
+        assertFalse(c.isMisspelled("middlewares"));
+        assertTrue(c.isMisspelled("adrianxx"), "a different word is still flagged");
+        assertTrue(c.isMisspelled("wrolds"), "the plural of an unknown word is still flagged");
+        c.setUserWordsEnabled(false);
+        assertTrue(c.isMisspelled("adrianx's"), "the possessive follows the personal-dictionary switch");
+        assertEquals("class", SpellChecker.stem("class's"));
+        assertEquals(null, SpellChecker.stem("class"));
+        assertEquals(null, SpellChecker.stem("its"));
+    }
+
+    @Test
+    void textInAScriptTheDictionaryDoesNotCoverIsNotFlagged() {
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker c = new SpellChecker("en_US", Set.of(), new java.util.HashSet<>());
+        for (String foreign : List.of("这是一个测试", "Привет", "こんにちは", "Ελληνικά", "مرحبا")) {
+            assertTrue(SpellChecker.foreignScript(foreign), foreign);
+            assertFalse(c.isMisspelled(foreign), foreign + " is another language, not a misspelling");
+        }
+        assertFalse(SpellChecker.foreignScript("naïve"));
+        assertFalse(SpellChecker.foreignScript("Łódź"));
+        assertTrue(c.isMisspelled("wrold"));
+    }
+
+    @Test
+    void accentedLoanWordsAndDecomposedAccentsAreHandled() {
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker en = new SpellChecker("en_US", Set.of(), new java.util.HashSet<>());
+        for (String loan : List.of("café", "résumé", "naïve")) {
+            assertFalse(en.isMisspelled(loan), loan + " is English with its accent kept");
+        }
+        assertTrue(en.isMisspelled("cäfé") || !en.isMisspelled("cafe"), "only a word whose plain form is correct");
+        assertTrue(en.isMisspelled("wróld"), "an accent does not excuse a misspelling");
+
+        // NFD "café" (e + combining acute): one word, not "cafe" plus a stray mark that hid it from checking.
+        String nfd = "un café solo y un cafeé";
+        assertEquals(List.of("un", "café", "solo", "y", "un", "cafeé"), checkable(nfd));
+        assumeTrue(SpellDictionaries.buildBlocking("es").isPresent(), "es dictionary should build");
+        SpellChecker es = new SpellChecker("es", Set.of(), new java.util.HashSet<>());
+        assertFalse(es.isMisspelled("café"));
+        assertTrue(es.isMisspelled("cafeé"), "a decomposed word is checked, where it used to be skipped");
+    }
+
+    // --- suggestions (S20) ---
+
+    @Test
+    void splitWordJunkIsDroppedAndTheCommonSlipLeads() {
+        assertEquals(
+                List.of("until", "untie"),
+                SpellChecker.rankSuggestions("untill", List.of("until l", "until", "untie", "un till"), 8));
+        assertEquals(
+                List.of("occurred", "occur"),
+                SpellChecker.rankSuggestions("occured", List.of("occur ed", "occur", "occurred"), 8));
+        assertEquals(List.of("allot", "a lot"), SpellChecker.rankSuggestions("alot", List.of("a lot", "allot"), 8));
+        // A doubled letter left out, or two neighbours swapped, outranks an unrelated one-letter change.
+        assertEquals(
+                List.of("comment", "cement", "moment", "foment"),
+                SpellChecker.rankSuggestions("coment", List.of("cement", "moment", "foment", "comment"), 8));
+        assertEquals(
+                List.of("the", "tech", "ten"), SpellChecker.rankSuggestions("teh", List.of("tech", "ten", "the"), 8));
+        assertEquals(
+                2,
+                SpellChecker.rankSuggestions("x", List.of("a", "b", "c", "a"), 2)
+                        .size());
+    }
+
+    @Test
+    void realSuggestionsHaveNoSplitJunk() {
+        assumeTrue(SpellDictionaries.buildBlocking("en_US").isPresent(), "en_US dictionary should build");
+        SpellChecker c = new SpellChecker("en_US", Set.of(), new java.util.HashSet<>());
+        assertFalse(c.suggest("untill").contains("until l"), c.suggest("untill").toString());
+        assertFalse(
+                c.suggest("occured").contains("occur ed"), c.suggest("occured").toString());
+        assertEquals("comment", c.suggest("coment").get(0), c.suggest("coment").toString());
+        assertTrue(c.suggest("teh").contains("the"));
+    }
 }

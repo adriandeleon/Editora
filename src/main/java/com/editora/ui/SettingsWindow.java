@@ -249,6 +249,10 @@ public class SettingsWindow {
     private ComboBox<String> spellLanguageCombo;
     /** The Personal Dictionary list on the Spell Check page; refreshed from {@code dictionary.txt} on show. */
     private ListView<String> dictionaryList;
+    /** The add field of the Personal Dictionary editor; what is typed in it also narrows the list. */
+    private TextField dictionaryInput;
+    /** The Spell Check page's per-file-type tick list ({@code Settings.spellDisabledLanguages}). */
+    private SpellFileTypesEditor spellFileTypes;
     /** "Enable personal dictionary" checkbox (Settings.personalDictionary). */
     private CheckBox dictEnableCheck;
     /** "Enable technical dictionary" checkbox (Settings.technicalDictionary). */
@@ -3075,10 +3079,21 @@ public class SettingsWindow {
                 main,
                 Category.SPELL_CHECK,
                 tr("settings.language"),
-                null,
+                tr("settings.spell.languageNote"),
                 spellLanguageCombo,
-                "spell language dictionary english spanish french");
-        // The two dictionary-file links, grouped together near the top (out of the checkbox/list flow).
+                "spell language dictionary english spanish french default per file override");
+        Card types = card(p, tr("settings.spell.fileTypes.title"));
+        spellFileTypes = new SpellFileTypesEditor(config::getSettings, this::apply);
+        Label typesNote = new Label(tr("settings.spell.fileTypes.note"));
+        typesNote.getStyleClass().add("settings-hint");
+        typesNote.setWrapText(true);
+        cardRow(
+                types,
+                Category.SPELL_CHECK,
+                new VBox(6, typesNote, spellFileTypes),
+                "spell file types languages per language json yaml toml xml csv markdown html typst code comments");
+        // The dictionaries get a card of their own: both switches, both file links, then the word list.
+        Card dict = card(p, tr("settings.dict.title"));
         Hyperlink techLink = new Hyperlink(tr("settings.dict.openTechnical"));
         techLink.setTooltip(new Tooltip(tr("settings.dict.openTechnicalTip")));
         techLink.setOnAction(e -> {
@@ -3095,18 +3110,11 @@ public class SettingsWindow {
         });
         HBox dictLinks = new HBox(16, techLink, personalLink);
         dictLinks.setAlignment(Pos.CENTER_LEFT);
-        cardRow(
-                main,
-                Category.SPELL_CHECK,
-                dictLinks,
-                "dictionary open technical personal file dictionary.txt bundled terms");
-
-        Card dict = card(p, tr("settings.dict.title"));
         checkRow(
                 dict,
                 Category.SPELL_CHECK,
                 techDictEnableCheck,
-                null,
+                tr("settings.dict.technicalNote"),
                 "technical dictionary terms programming code config async kubernetes enable on off");
         checkRow(
                 dict,
@@ -3114,6 +3122,11 @@ public class SettingsWindow {
                 dictEnableCheck,
                 tr("settings.dict.note"),
                 "personal dictionary enable on off honor words dictionary.txt file location global");
+        cardRow(
+                dict,
+                Category.SPELL_CHECK,
+                dictLinks,
+                "dictionary open technical personal file dictionary.txt bundled terms");
         cardRow(dict, Category.SPELL_CHECK, dictionaryEditor(), "personal dictionary words add remove custom ignore");
         return p;
     }
@@ -3126,16 +3139,29 @@ public class SettingsWindow {
         refreshDictionaryList();
 
         TextField input = new TextField();
+        dictionaryInput = input;
         input.setPromptText(tr("settings.dict.prompt"));
+        input.setAccessibleText(tr("settings.dict.prompt"));
         HBox.setHgrow(input, Priority.ALWAYS);
+        // The list has no search of its own: what is being typed narrows it, which also shows at once
+        // whether the word is already there. Filtering only — nothing is stored until Add.
+        input.textProperty().addListener((o, was, now) -> refreshDictionaryList());
         Button add = new Button(tr("settings.dict.add"));
         Runnable doAdd = () -> {
-            String w = input.getText().strip().toLowerCase(java.util.Locale.ROOT);
-            if (!w.isEmpty()) {
-                config.addUserWord(w);
+            // One entry per word, in the form the checker looks words up by. A phrase used to be stored
+            // whole ("foo bar"), which no single word can ever match.
+            String last = null;
+            for (String part : input.getText().strip().split("\\s+")) {
+                String w = com.editora.editor.SpellChecker.canonical(part);
+                if (!w.isEmpty()) {
+                    config.addUserWord(w);
+                    last = w;
+                }
+            }
+            if (last != null) {
                 input.clear();
                 refreshDictionaryList();
-                dictionaryList.getSelectionModel().select(w);
+                dictionaryList.getSelectionModel().select(last);
                 apply(); // live-apply like every other control here: re-runs the spell overlays' caches
             }
             input.requestFocus();
@@ -3168,11 +3194,29 @@ public class SettingsWindow {
             return;
         }
         java.util.List<String> words = new java.util.ArrayList<>(config.getUserDictionary());
+        String typed = dictionaryInput == null || dictionaryInput.getText() == null
+                ? ""
+                : dictionaryInput.getText().strip().toLowerCase(java.util.Locale.ROOT);
+        if (!typed.isEmpty() && typed.indexOf(' ') < 0) {
+            words.removeIf(w -> !w.contains(typed));
+        }
         java.util.Collections.sort(words);
         String sel = dictionaryList.getSelectionModel().getSelectedItem();
         dictionaryList.getItems().setAll(words);
         if (sel != null && words.contains(sel)) {
             dictionaryList.getSelectionModel().select(sel);
+        }
+    }
+
+    /** Re-reads the Personal Dictionary list: a word was added, ignored or reloaded while the page is open. */
+    public void syncDictionaryList() {
+        refreshDictionaryList();
+    }
+
+    /** Re-syncs the file-type ticks after {@code spell.toggleForLanguage} (or another window) changed them. */
+    public void syncSpellFileTypes() {
+        if (spellFileTypes != null) {
+            spellFileTypes.sync();
         }
     }
 
@@ -7799,6 +7843,7 @@ public class SettingsWindow {
             techDictEnableCheck.setSelected(settings.isTechnicalDictionary());
             spellLanguageCombo.setValue(settings.getSpellLanguage());
             spellLanguageCombo.setDisable(!settings.isSpellCheck());
+            syncSpellFileTypes();
             menuBarCheck.setSelected(settings.isShowMenuBar());
             toolbarCheck.setSelected(settings.isShowToolbar());
             statusBarCheck.setSelected(settings.isShowStatusBar());
@@ -8762,14 +8807,7 @@ public class SettingsWindow {
     }
 
     private static String spellLanguageName(String id) {
-        return switch (id) {
-            case "en_US" -> tr("spell.lang.en_US");
-            case "en_GB" -> tr("spell.lang.en_GB");
-            case "es" -> tr("spell.lang.es");
-            case "es_MX" -> tr("spell.lang.es_MX");
-            case "fr" -> tr("spell.lang.fr");
-            default -> id;
-        };
+        return SpellCoordinator.languageName(id);
     }
 
     /** Friendly label for an inlay-hint filter mode ({@code literals}/{@code all}); shared with the palette picker. */

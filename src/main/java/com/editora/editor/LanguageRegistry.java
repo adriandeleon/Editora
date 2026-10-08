@@ -195,4 +195,9 @@ public final class LanguageRegistry {
     public static String plaintext() {
         return PLAINTEXT;
     }
+
+    /** Every language name an extension maps to (not the file-name rules of {@link ConfigFileType}). */
+    public static java.util.Set<String> names() {
+        return new java.util.TreeSet<>(BY_EXTENSION.values());
+    }
 }
