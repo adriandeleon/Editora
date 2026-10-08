@@ -99,6 +99,16 @@ class WindowManagerLaunchFxTest {
             });
         }
 
+        /** As {@link #window}, for a caller already on the FX thread. */
+        MainController windowNow(String key) {
+            for (Object holder : FxTestSupport.<List<?>>field(wm, "windows")) {
+                if (key.equals(FxTestSupport.call(holder, "key", new Class<?>[] {}))) {
+                    return (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});
+                }
+            }
+            return null;
+        }
+
         void step() throws Exception {
             FxTestSupport.runOnFx(() -> scheduled.remove().run());
         }
@@ -442,5 +452,193 @@ class WindowManagerLaunchFxTest {
             }
             return false;
         });
+    }
+
+    // --- a launch forwarded by a second `editora` process (App.openForwardedLaunch) ----------------
+
+    /** What the single-instance listener does with the arguments another process handed over. */
+    private static void forwarded(Launched app, String... args) throws Exception {
+        java.lang.reflect.Method apply = com.editora.App.class.getDeclaredMethod(
+                "openForwardedLaunch", WindowManager.class, SharedConfig.class, List.class);
+        apply.setAccessible(true);
+        FxTestSupport.runOnFx(() -> {
+            try {
+                apply.invoke(null, app.wm, app.shared, List.of(args));
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError(e);
+            }
+        });
+    }
+
+    @Test
+    void aForwardedLaunchWithNothingToOpenOnlyBringsTheEditorForward() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+
+        forwarded(app);
+        forwarded(app, "--zen");
+        assertEquals(List.of(""), app.keys(), "no window is opened for a launch that names no file");
+        assertFalse(
+                FxTestSupport.callOnFx(() -> (Boolean) FxTestSupport.call(
+                        FxTestSupport.field(app.window(""), "chrome"), "zenActive", new Class<?>[] {})),
+                "and the window the user is in keeps its mode");
+    }
+
+    @Test
+    void aForwardedFileGetsAWindowOfItsOwnInTheModeTheLaunchAskedFor() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        Path file = Files.writeString(tmp.resolve("forwarded.txt"), lines(5));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+
+        forwarded(app, "--expert", file + ":3");
+
+        List<String> keys = app.keys();
+        assertEquals(2, keys.size());
+        MainController opened = app.window(keys.get(1));
+        awaitOpenAt(opened, file, 2);
+        FxTestSupport.runOnFx(() -> {
+            Object chrome = FxTestSupport.field(opened, "chrome");
+            assertTrue((Boolean) FxTestSupport.call(chrome, "expertActive", new Class<?>[] {}));
+            assertNull(bufferFor(app.windowNow(""), file), "the window the user was in is left alone");
+        });
+    }
+
+    @Test
+    void aForwardedProjectLaunchOpensThatProjectsWindowWithItsFiles() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        Path root = Files.createDirectories(tmp.resolve("zeta"));
+        Path file = Files.writeString(root.resolve("in-project.txt"), lines(6));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+
+        forwarded(app, "--project=" + root, file + ":4");
+
+        Project zeta = FxTestSupport.callOnFx(() -> app.shared.projects().list().stream()
+                .filter(p -> p.name().equals("zeta"))
+                .findFirst()
+                .orElseThrow());
+        assertEquals(List.of("", zeta.id()), app.keys());
+        awaitOpenAt(app.window(zeta.id()), file, 3);
+
+        forwarded(app, "--project", root.toString()); // again, with no file: its window, and nothing new
+        assertEquals(List.of("", zeta.id()), app.keys());
+    }
+
+    @Test
+    void aForwardedProjectOptionIsIgnoredWhileProjectsAreSwitchedOff() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        Path root = Files.createDirectories(tmp.resolve("eta"));
+        Path file = Files.writeString(root.resolve("just-a-file.txt"), lines(2));
+        app = new Launched(config, shared -> shared.getSettings().setProjectSupport(false));
+        app.launch(null, List.of(), null);
+
+        forwarded(app, "--project=" + root, file.toString());
+
+        assertTrue(FxTestSupport.callOnFx(() -> app.shared.projects().list().isEmpty()), "no project is created");
+        List<String> keys = app.keys();
+        assertEquals(2, keys.size());
+        assertTrue(WindowKeys.isUntitled(keys.get(1)), "the file opens as any forwarded file does");
+        SettingsRig.awaitFx("the file to open", () -> bufferFor(app.windowNow(keys.get(1)), file) != null);
+    }
+
+    @Test
+    void everyWindowsSceneGetsTheUiFontStylesheetOnceIncludingASceneSetLater() throws Exception {
+        java.lang.reflect.Method hook =
+                com.editora.App.class.getDeclaredMethod("hookWindowFont", javafx.stage.Window.class);
+        hook.setAccessible(true);
+        String css = com.editora.App.class.getResource("styles/ui-font.css").toExternalForm();
+        FxTestSupport.runOnFx(() -> {
+            try {
+                Stage stage = new Stage();
+                javafx.scene.Scene first = new javafx.scene.Scene(new javafx.scene.layout.Pane());
+                stage.setScene(first);
+                hook.invoke(null, stage);
+                hook.invoke(null, stage); // a window seen twice still has the sheet once
+                assertEquals(
+                        1, first.getStylesheets().stream().filter(css::equals).count());
+
+                javafx.scene.Scene second = new javafx.scene.Scene(new javafx.scene.layout.Pane());
+                stage.setScene(second);
+                assertEquals(
+                        1, second.getStylesheets().stream().filter(css::equals).count());
+                stage.setScene(null); // a window between scenes has nothing to style
+                hook.invoke(null, (Object) null);
+            } catch (ReflectiveOperationException e) {
+                throw new AssertionError(e);
+            }
+        });
+    }
+
+    /**
+     * Finder's "Open With" arrives as a Glass open-files event, not on the command line. The handler that
+     * routes it is installed over the toolkit's own here — and the toolkit's is put back afterwards.
+     */
+    @Test
+    void filesTheOsHandsOverAsAnEventOpenLikeCommandLineFilesWithTheirLine() throws Exception {
+        Path config = Files.createDirectories(tmp.resolve("config"));
+        Path file = Files.writeString(tmp.resolve("from-finder.txt"), lines(6));
+        Path plain = Files.writeString(tmp.resolve("plain.txt"), lines(2));
+        app = new Launched(config, shared -> {});
+        app.launch(null, List.of(), null);
+        MainController global = app.window("");
+
+        Class<?> glassClass = Class.forName("com.sun.glass.ui.Application");
+        Class<?> handlerClass = Class.forName("com.sun.glass.ui.Application$EventHandler");
+        Object glass = FxTestSupport.callOnFx(
+                () -> glassClass.getMethod("GetApplication").invoke(null));
+        org.junit.jupiter.api.Assumptions.assumeTrue(glass != null, "no Glass application in this toolkit");
+        Object original = FxTestSupport.callOnFx(
+                () -> glassClass.getMethod("getEventHandler").invoke(glass));
+        java.lang.reflect.Method install =
+                Class.forName("com.editora.MacOpenFiles").getDeclaredMethod("install", WindowManager.class);
+        install.setAccessible(true);
+        try {
+            Object installed = FxTestSupport.callOnFx(() -> {
+                install.invoke(null, app.wm);
+                return glassClass.getMethod("getEventHandler").invoke(glass);
+            });
+            assertTrue(installed != original, "the open-files handler wraps the toolkit's own");
+            java.lang.reflect.Method openFiles =
+                    installed.getClass().getMethod("handleOpenFilesAction", glassClass, long.class, String[].class);
+            openFiles.setAccessible(true);
+
+            FxTestSupport.runOnFx(() -> {
+                try {
+                    openFiles.invoke(installed, glass, 0L, (Object) null);
+                    openFiles.invoke(installed, glass, 0L, (Object) new String[0]);
+                    openFiles.invoke(installed, glass, 0L, (Object) new String[] {null, "   "});
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
+            });
+            FxTestSupport.drainFx();
+            assertEquals(
+                    0,
+                    FxTestSupport.callOnFx(() -> FxTestSupport.<EditorArea>field(global, "editorArea").tabs().stream()
+                            .filter(t -> t.getUserData() instanceof EditorBuffer)
+                            .count()),
+                    "an event that names no file opens nothing");
+
+            FxTestSupport.runOnFx(() -> {
+                try {
+                    openFiles.invoke(installed, glass, 0L, (Object) new String[] {file + ":4", null, plain.toString()});
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
+            });
+            awaitOpenAt(global, file, 3);
+            SettingsRig.awaitFx("plain.txt to open", () -> bufferFor(global, plain) != null);
+            assertEquals(List.of(""), app.keys(), "into the window the user is in, as Finder always did");
+        } finally {
+            FxTestSupport.runOnFx(() -> {
+                try {
+                    glassClass.getMethod("setEventHandler", handlerClass).invoke(glass, original);
+                } catch (ReflectiveOperationException e) {
+                    throw new AssertionError(e);
+                }
+            });
+        }
     }
 }
