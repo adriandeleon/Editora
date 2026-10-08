@@ -519,7 +519,12 @@ class DebugUiFlowFxTest {
                 new Class[] {EditorBuffer.class, Path.class},
                 b,
                 d));
-        await("Save As never finished", () -> Files.exists(d) && d.equals(b.getPath()) && !b.isDirty());
+        // The buffer was never dirty and the file is on disk before the save is acknowledged: until the
+        // coordinator has settled the request, closing the tab asks "Save changes?" and nobody answers.
+        FileWorkflowCoordinator workflows = FxTestSupport.field(fx.controller, "fileWorkflows");
+        await(
+                "Save As never finished",
+                () -> Files.exists(d) && d.equals(b.getPath()) && !b.isDirty() && !workflows.hasPendingSave(b));
         assertEquals(List.of(1, 3), storedLines(d), "the copy has them");
         assertEquals(List.of(1, 3), storedLines(c), "and the original, still on disk, keeps its own");
 
