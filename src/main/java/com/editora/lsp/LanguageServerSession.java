@@ -1175,8 +1175,15 @@ final class LanguageServerSession implements LanguageClient {
         if (n instanceof org.eclipse.lsp4j.WorkDoneProgressBegin begin) {
             onStatus.accept("Progress", progressText(begin.getTitle(), begin.getMessage(), begin.getPercentage()));
         } else if (n instanceof org.eclipse.lsp4j.WorkDoneProgressEnd end) {
-            onStatus.accept("ProgressEnd", end.getMessage()); // null message ⇒ just stop the bar
+            onStatus.accept("ProgressEnd", endText(end.getMessage())); // null message ⇒ just stop the bar
         }
+    }
+
+    /** Pure: the echo-area text for a progress End, or null to just stop the bar. A bare percentage is
+     *  dropped: jdtls formats every status as {@code "N% subtask"}, so a job that ends without a subtask
+     *  (and without using up its work) would leave e.g. "50%" in the echo area with nothing to replace it. */
+    static String endText(String message) {
+        return message == null || message.isBlank() || message.strip().matches("\\d+%") ? null : message.strip();
     }
 
     /** Pure: the echo-area text for a progress Begin — title, plus the message and/or percentage. */
@@ -2119,7 +2126,7 @@ final class LanguageServerSession implements LanguageClient {
         String id = report.id == null ? String.valueOf(report.task) : report.id;
         if (report.complete) {
             if (jdtProgressIds.remove(id)) {
-                onStatus.accept("ProgressEnd", report.status);
+                onStatus.accept("ProgressEnd", endText(report.status));
             }
             return;
         }

@@ -386,6 +386,19 @@ public final class GitHubService {
         }
     }
 
+    /**
+     * The logins {@code gh} has on {@code host}, the active one first ({@link GhAuthStatus#logins}), asked on
+     * the calling thread. Empty when gh is missing, too old to say, or has no account there.
+     */
+    public static List<String> logins(List<String> command, String host, Duration timeout) {
+        try {
+            ProcessRunner.Result json = run(command, null, timeout, null, "auth", "status", "--json", "hosts");
+            return json.timedOut() ? List.of() : GhAuthStatus.logins(json.out(), host);
+        } catch (RuntimeException notLaunchable) {
+            return List.of();
+        }
+    }
+
     private static AuthState authState(GhAuthStatus.State state) {
         return switch (state) {
             case SIGNED_IN -> AuthState.SIGNED_IN;

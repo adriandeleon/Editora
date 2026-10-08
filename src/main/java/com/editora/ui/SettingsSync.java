@@ -31,7 +31,9 @@ import javafx.util.Duration;
 import com.editora.config.Settings;
 import com.editora.config.SharedConfig;
 import com.editora.git.QuietGit;
+import com.editora.github.GitHubService;
 import com.editora.sync.FileSyncTarget;
+import com.editora.sync.SyncAccount;
 import com.editora.sync.SyncCategory;
 import com.editora.sync.SyncEngine;
 import com.editora.sync.SyncReport;
@@ -55,6 +57,7 @@ final class SettingsSync {
 
     static final int DIRTY_DELAY_SECONDS = 30;
     private static final int STARTUP_DELAY_SECONDS = 5;
+    private static final java.time.Duration GH_TIMEOUT = java.time.Duration.ofSeconds(15);
 
     enum Phase {
         /** Not connected (or this is not the primary instance). */
@@ -93,6 +96,13 @@ final class SettingsSync {
     private boolean applying;
     /** The failure already reported, so an automatic run that fails the same way every interval says it once. */
     private SyncReport.Status reportedFailure;
+
+    /** The GitHub CLI account the last run signed in as ({@link SyncAccount}); blank when it used git's own. */
+    private String account = "";
+    /** Whether this session has already looked for an account that can read the repository. */
+    private boolean accountSearched;
+    /** The last run could not reach the repository: the next one looks at the account again. */
+    private boolean remoteFailed;
 
     private boolean startupDone;
     /** This computer's name for commit messages; looked up off the FX thread (it can be a DNS query). */
@@ -231,9 +241,21 @@ final class SettingsSync {
         return out;
     }
 
-    private SyncEngine engine(String url, String branch, boolean interactive) {
-        QuietGit git = new QuietGit(syncDir().resolve("repo"), interactive);
+    private SyncEngine engine(String url, String branch, QuietGit git) {
         return new SyncEngine(git, url, branch, new LiveTarget(), machine);
+    }
+
+    private QuietGit git(boolean interactive) {
+        return new QuietGit(syncDir().resolve("repo"), interactive);
+    }
+
+    /**
+     * The GitHub CLI account sync signs in as on this computer, so that switching the active account
+     * ({@code gh auth switch}) does not lock sync out of its repository; blank when sync uses git's own
+     * sign-in.
+     */
+    String account() {
+        return account;
     }
 
     private void request(boolean userAsked, boolean allowLargeRemoval) {
@@ -248,17 +270,28 @@ final class SettingsSync {
         dirty.stop();
         setState(new State(Phase.SYNCING, state.report(), state.at()));
         Settings s = shared.getSettings();
-        SyncEngine engine = engine(s.getSyncRepoUrl(), s.getSyncBranch(), userAsked);
+        String url = s.getSyncRepoUrl();
+        String branch = s.getSyncBranch();
+        QuietGit git = git(userAsked);
+        List<String> gh = GitHubService.commandTokens(s.getGhPath());
+        boolean verify = remoteFailed;
+        boolean search = remoteFailed || !accountSearched;
+        accountSearched = true;
         Set<SyncCategory> categories = categories();
         BackgroundTasks.Handle task = windows.startSyncTask(tr("sync.task"));
         worker.execute(() -> {
-            SyncReport report = engine.run(categories, allowLargeRemoval);
-            Platform.runLater(() -> finished(report, userAsked, task));
+            String login = SyncAccount.choose(
+                    git, gh, url, host -> GitHubService.logins(gh, host, GH_TIMEOUT), verify, search);
+            QuietGit signedIn = git.with(SyncAccount.credentialConfig(gh, SyncAccount.httpsHost(url), login));
+            SyncReport report = engine(url, branch, signedIn).run(categories, allowLargeRemoval);
+            Platform.runLater(() -> finished(report, login, userAsked, task));
         });
     }
 
-    private void finished(SyncReport report, boolean userAsked, BackgroundTasks.Handle task) {
+    private void finished(SyncReport report, String login, boolean userAsked, BackgroundTasks.Handle task) {
         running = false;
+        remoteFailed =
+                report.status() == SyncReport.Status.FETCH_FAILED || report.status() == SyncReport.Status.PUSH_FAILED;
         if (task != null) {
             task.done();
         }
@@ -267,6 +300,7 @@ final class SettingsSync {
             setState(new State(Phase.OFF, null, null));
             return;
         }
+        account = login;
         // "The files changed while I was syncing" is not a problem to show: the change itself scheduled a run.
         boolean busy = report.status() == SyncReport.Status.LOCAL_BUSY;
         boolean problem = !report.ok() && !busy;
@@ -303,7 +337,7 @@ final class SettingsSync {
      * credential helper.
      */
     void preview(String url, String branch, Consumer<SyncReport> onPreview) {
-        SyncEngine engine = engine(url, branch, true);
+        SyncEngine engine = engine(url, branch, git(true));
         Set<SyncCategory> categories = categories();
         BackgroundTasks.Handle task = windows.startSyncTask(tr("sync.task"));
         Path configDir = shared.getConfigDir();
@@ -342,6 +376,8 @@ final class SettingsSync {
     /** Sync was just switched on in the settings: runs the first sync. */
     void connected() {
         startupDone = true; // the run below is the startup run
+        accountSearched = false;
+        remoteFailed = false;
         settingsChanged();
         request(true, false);
     }
@@ -351,6 +387,7 @@ final class SettingsSync {
      * repository stays; connecting again starts as a first sync, which keeps everything on both sides.
      */
     void disconnected() {
+        account = "";
         settingsChanged();
         Path repo = syncDir().resolve("repo");
         worker.execute(() -> {

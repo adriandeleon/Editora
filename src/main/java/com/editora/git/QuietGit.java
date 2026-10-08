@@ -39,11 +39,30 @@ public final class QuietGit {
 
     private final Path dir;
     private final boolean interactive;
+    private final List<String> extraConfig;
     private Map<String, String> env;
 
     public QuietGit(Path dir, boolean interactive) {
+        this(dir, interactive, List.of());
+    }
+
+    private QuietGit(Path dir, boolean interactive, List<String> extraConfig) {
         this.dir = dir;
         this.interactive = interactive;
+        this.extraConfig = List.copyOf(extraConfig);
+    }
+
+    /**
+     * The same runner with {@code config} ({@code -c key=value} pairs) added to every command, after
+     * everything else, so it outranks the user's configuration.
+     */
+    public QuietGit with(List<String> config) {
+        return config.isEmpty() ? this : new QuietGit(dir, interactive, config);
+    }
+
+    /** The same runner, but one that never asks for anything. */
+    public QuietGit silent() {
+        return interactive ? new QuietGit(dir, false, extraConfig) : this;
     }
 
     public Path dir() {
@@ -69,17 +88,18 @@ public final class QuietGit {
     }
 
     private ProcessRunner.Result run(Duration timeout, String... args) {
-        return ProcessRunner.run(dir, timeout, argv(interactive, args), env());
+        return ProcessRunner.run(dir, timeout, argv(interactive, extraConfig, args), env());
     }
 
     /** The whole command line; pure, for tests. */
-    static List<String> argv(boolean interactive, String... args) {
+    static List<String> argv(boolean interactive, List<String> extraConfig, String... args) {
         List<String> argv = new ArrayList<>(GitService.command());
         argv.addAll(GitSafety.BACKGROUND_CONFIG);
         argv.addAll(OWN_CONFIG);
         if (!interactive) {
             argv.addAll(GitSafety.AUTO_FETCH_CONFIG);
         }
+        argv.addAll(extraConfig);
         argv.addAll(List.of(args));
         return argv;
     }

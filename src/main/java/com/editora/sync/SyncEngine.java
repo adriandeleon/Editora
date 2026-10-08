@@ -249,7 +249,9 @@ public final class SyncEngine {
         if (!Files.exists(clone.resolve(".git"))) {
             must(git.run("init", "--quiet"));
         }
-        ProcessRunner.Result current = git.run("remote", "get-url", "origin");
+        // The URL as it was stored: "remote get-url" would apply the user's url.<base>.insteadOf rewriting, and
+        // a rewritten URL never equals the configured one.
+        ProcessRunner.Result current = git.run("config", "--local", "--get", "remote.origin.url");
         if (!current.ok()) {
             must(git.run("remote", "add", "origin", url));
         } else if (!current.out().strip().equals(url)) {
@@ -259,6 +261,7 @@ public final class SyncEngine {
             if (exists(BASE_REF)) {
                 must(git.run("update-ref", "-d", BASE_REF));
             }
+            git.run("config", "--local", "--unset", SyncAccount.KEY); // nor does the account that could read it
         }
     }
 
