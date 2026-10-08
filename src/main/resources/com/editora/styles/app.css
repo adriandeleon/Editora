@@ -3792,6 +3792,11 @@
 .merge-base { -fx-control-inner-background: rgba(139, 148, 158, 0.12); }
 .merge-chosen { -fx-text-fill: -color-success-fg; -fx-font-size: 11px; }
 .merge-result-box { -fx-background-color: -color-bg-default; }
+/* References preview runs: same scheme as the Structure signature runs above. */
+.references-panel .reference-code {
+    -fx-fill: -color-fg-default;
+}
+
 .merge-result-label { -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
 .merge-result { -fx-border-color: -color-border-muted; -fx-border-radius: 3; }
 

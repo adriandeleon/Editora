@@ -3100,10 +3100,35 @@ final class LspCoordinator {
         List<ReferencesPanel.Reference> refs = new java.util.ArrayList<>(targets.size());
         for (int i = 0; i < targets.size(); i++) {
             LspManager.Target t = targets.get(i);
-            refs.add(new ReferencesPanel.Reference(t.file(), t.line(), t.character(), previews.get(i)));
+            refs.add(new ReferencesPanel.Reference(
+                    t.file(), t.line(), t.character(), previews.get(i), previewRuns(t, previews.get(i))));
         }
         referencesPanel.setReferences(refs);
         ops.openReferencesWindow();
+    }
+
+    /**
+     * The syntax-styled runs of a reference's preview, read from the open buffer's own highlighting so the
+     * row is colored as the editor colors that line. Empty (a plain preview) when the file has no open tab or
+     * the view's line is not the document's line (a narrowed buffer, a filtered log).
+     */
+    private List<ReferencesPanel.Run> previewRuns(LspManager.Target t, String preview) {
+        EditorBuffer buffer = preview.isEmpty() ? null : ops.bufferForPath(t.file());
+        if (buffer == null) {
+            return List.of();
+        }
+        try {
+            CodeArea area = buffer.getArea();
+            if (t.line() >= area.getParagraphs().size()) {
+                return List.of();
+            }
+            String line = area.getParagraph(t.line()).getText();
+            return line.strip().equals(preview)
+                    ? ReferencesPanel.previewRuns(line, area.getStyleSpans(t.line()))
+                    : List.of();
+        } catch (RuntimeException e) {
+            return List.of(); // the document changed under us; a plain preview is safe
+        }
     }
 
     private static final String[] NO_LINES = new String[0];

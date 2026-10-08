@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The References tool window colors its code previews like the editor.** Each reference's line is shown
+  with the same syntax highlighting, in the active editor color theme, as the file's open tab. A reference
+  in a file with no open tab still shows its position only.
+
 ### Security
 
 - **MCP `open_file` is confined to the window's project.** A client could name any absolute path, have
