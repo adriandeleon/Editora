@@ -387,7 +387,12 @@ final class ExportCoordinator {
             noPrinter(() -> csvExportPdf(csvText, active == null ? null : bufferBaseName(active)));
             return;
         }
-        preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
+        preparePrint(() -> printService.prepareDocument(
+                table,
+                null,
+                host.activeBuffer() == null ? null : bufferBaseName(host.activeBuffer()),
+                host.settings().isPdfPageFooter(),
+                prepared -> openPrintPreview(job, prepared)));
         if (shown.filtered()) { // say that the preview about to open is not the whole file
             host.setStatus(withRowCount(tr("status.print.preparing"), shown));
         }
@@ -679,6 +684,8 @@ final class ExportCoordinator {
                 s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(),
                 s.getTabSize(),
+                bufferBaseName(host.activeBuffer()),
+                s.isPdfPageFooter(),
                 prepared -> openPrintPreview(job, prepared)));
     }
 
@@ -1168,6 +1175,10 @@ final class ExportCoordinator {
             host.setStatus(tr("status.noFileOpen"));
             return;
         }
+        if (b.getContent().isBlank()) {
+            host.setStatus(tr("status.print.nothing")); // a blank sheet is not worth a preview or a job
+            return;
+        }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
             noPrinter(this::exportCodePdf);
@@ -1180,6 +1191,8 @@ final class ExportCoordinator {
                 s.isPdfSyntaxHighlighting(),
                 s.isPdfLineNumbers(),
                 s.getTabSize(),
+                bufferBaseName(b),
+                s.isPdfPageFooter(),
                 prepared -> openPrintPreview(job, prepared)));
     }
 
@@ -1229,6 +1242,10 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.noPreview"));
             return;
         }
+        if (b.getContent().isBlank()) {
+            host.setStatus(tr("status.print.nothing")); // a blank sheet is not worth a preview or a job
+            return;
+        }
         if (previewUnparsable(b)) {
             host.setStatus(tr("status.print.cannotPrintUnparsed"));
             return;
@@ -1248,7 +1265,8 @@ final class ExportCoordinator {
         if (b.isMarkdown()) {
             java.nio.file.Path baseDir =
                     b.getPath() == null ? null : b.getPath().getParent();
-            printService.prepareMarkdown(b.getContent(), baseDir, open);
+            printService.prepareMarkdown(
+                    b.getContent(), baseDir, bufferBaseName(b), host.settings().isPdfPageFooter(), open);
         } else if (b.isDiagram()) { // Mermaid — CLI render
             // Light, like every other printed kind: the app theme must not reach white paper.
             printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), false, open);

@@ -8,6 +8,8 @@ import javafx.geometry.Pos;
 import javafx.print.PageLayout;
 import javafx.scene.Node;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
@@ -82,7 +84,7 @@ public final class CodePrintLayout {
      */
     public static PrintService.Pages pages(
             List<List<PdfText.Run>> lines, PageLayout layout, boolean lineNumbers, Font mono) {
-        return pages(lines, layout, lineNumbers, mono, 1);
+        return pages(lines, layout.getPrintableWidth(), layout.getPrintableHeight(), lineNumbers, mono, null, 1);
     }
 
     /**
@@ -91,13 +93,43 @@ public final class CodePrintLayout {
      */
     public static PrintService.Pages pages(
             List<List<PdfText.Run>> lines, PageLayout layout, boolean lineNumbers, Font mono, int firstLineNumber) {
+        return pages(
+                lines,
+                layout.getPrintableWidth(),
+                layout.getPrintableHeight(),
+                lineNumbers,
+                mono,
+                null,
+                firstLineNumber);
+    }
+
+    /**
+     * As {@link #pages(List, PageLayout, boolean, Font)} for a printable area given in points, with a
+     * {@code footer} line under the code on every page (null for none). With a footer a page holds as many
+     * lines as fit above it and is a {@code pw×ph} box; without one it is the bare column of rows it always
+     * was. The page count the footer shows is the number of page starts, so the pages stay lazy.
+     */
+    public static PrintService.Pages pages(
+            List<List<PdfText.Run>> lines, double pw, double ph, boolean lineNumbers, Font mono, PageFooter footer) {
+        return pages(lines, pw, ph, lineNumbers, mono, footer, 1);
+    }
+
+    /** The footer form for an excerpt whose gutter counts from {@code firstLineNumber}. */
+    public static PrintService.Pages pages(
+            List<List<PdfText.Run>> lines,
+            double pw,
+            double ph,
+            boolean lineNumbers,
+            Font mono,
+            PageFooter footer,
+            int firstLineNumber) {
         double charW = charWidth(mono);
         double lineH = Math.ceil(mono.getSize() * LINE_SPACING);
         int digits = Integer.toString(firstLineNumber - 1 + Math.max(1, lines.size()))
                 .length();
         double gutterW = lineNumbers ? digits * charW + GUTTER_GAP : 0;
-        int cols = columns(layout.getPrintableWidth() - gutterW, charW);
-        int perPage = linesPerPage(layout.getPrintableHeight(), lineH);
+        int cols = columns(pw - gutterW, charW);
+        int perPage = linesPerPage(footer == null ? ph : PageFooter.bodyHeight(ph), lineH);
         int[][] starts = pageStarts(lines, cols, perPage);
         return new PrintService.Pages() {
             @Override
@@ -118,7 +150,16 @@ public final class CodePrintLayout {
                     }
                     firstVisual = 0;
                 }
-                return page;
+                if (footer == null) {
+                    return page;
+                }
+                Region gap = new Region();
+                VBox.setVgrow(gap, Priority.ALWAYS);
+                VBox sheet = new VBox(page, gap, footer.line(index + 1, starts.length, pw));
+                sheet.setMinSize(pw, ph);
+                sheet.setPrefSize(pw, ph);
+                sheet.setMaxSize(pw, ph);
+                return sheet;
             }
         };
     }
@@ -128,6 +169,24 @@ public final class CodePrintLayout {
      * lines per page, a source line wrapped at {@code cols} counting as several. Always at least one page,
      * so an empty document still previews and prints a blank sheet. Pure.
      */
+    /**
+     * {@code lines} without the empty last line a file that ends in a newline splits into. An editor shows
+     * that line because the caret can sit on it; on paper it is a line number beside nothing, and when the
+     * file's last real line is the last one on a page it costs a whole sheet holding just that number.
+     * A file that is nothing but that one empty line is left alone. Pure.
+     */
+    public static List<List<PdfText.Run>> withoutTrailingEmptyLine(List<List<PdfText.Run>> lines) {
+        if (lines.size() < 2) {
+            return lines;
+        }
+        for (PdfText.Run run : lines.get(lines.size() - 1)) {
+            if (!run.text().isEmpty()) {
+                return lines;
+            }
+        }
+        return lines.subList(0, lines.size() - 1);
+    }
+
     static int[][] pageStarts(List<List<PdfText.Run>> lines, int cols, int perPage) {
         List<int[]> starts = new ArrayList<>();
         int onPage = perPage; // "full", so the first visual line opens page 1

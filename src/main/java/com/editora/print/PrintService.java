@@ -135,6 +135,24 @@ public final class PrintService {
             boolean lineNumbers,
             int tabSize,
             Consumer<Prepared> onReady) {
+        prepareCode(text, fileName, highlight, lineNumbers, tabSize, null, false, onReady);
+    }
+
+    /**
+     * As {@link #prepareCode(String, String, boolean, boolean, int, Consumer)}; with {@code footer} every
+     * page ends in a line naming {@code documentName} and its place in the job ({@link PageFooter}), and
+     * holds the lines that fit above it.
+     */
+    public void prepareCode(
+            String text,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
                 StyleSpans<Collection<String>> spans = null;
@@ -144,8 +162,9 @@ public final class PrintService {
                         spans = TextMateHighlighter.compute(text, grammar);
                     }
                 }
-                List<List<PdfText.Run>> lines = PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize));
-                deliver(onReady, new Prepared(codePaginator(lines, lineNumbers), null));
+                List<List<PdfText.Run>> lines = CodePrintLayout.withoutTrailingEmptyLine(
+                        PdfText.splitIntoLineRuns(text, spans, Math.max(1, tabSize)));
+                deliver(onReady, new Prepared(codePaginator(lines, lineNumbers, pageFooter), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -168,36 +187,30 @@ public final class PrintService {
             boolean lineNumbers,
             int tabSize,
             Consumer<Prepared> onReady) {
+        prepareCodeLines(
+                text, start, end, firstLineNumber, fileName, highlight, lineNumbers, tabSize, null, false, onReady);
+    }
+
+    /** As the shorter form, with the page footer {@link #prepareCode} takes. */
+    public void prepareCodeLines(
+            String text,
+            int start,
+            int end,
+            int firstLineNumber,
+            String fileName,
+            boolean highlight,
+            boolean lineNumbers,
+            int tabSize,
+            String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
                 StyleSpans<Collection<String>> spans = excerptSpans(text, start, end, highlight ? fileName : null);
                 List<List<PdfText.Run>> lines =
                         PdfText.splitIntoLineRuns(text.substring(start, end), spans, Math.max(1, tabSize));
-                deliver(
-                        onReady,
-                        new Prepared(
-                                new Paginator() {
-                                    @Override
-                                    public List<Node> paginate(PageLayout layout) {
-                                        Pages pages = pages(layout);
-                                        List<Node> all = new java.util.ArrayList<>(pages.count());
-                                        for (int i = 0; i < pages.count(); i++) {
-                                            all.add(pages.get(i));
-                                        }
-                                        return all;
-                                    }
-
-                                    @Override
-                                    public Pages pages(PageLayout layout) {
-                                        return CodePrintLayout.pages(
-                                                lines,
-                                                layout,
-                                                lineNumbers,
-                                                Font.font(MONO_FAMILY, CodePrintLayout.FONT_SIZE),
-                                                firstLineNumber);
-                                    }
-                                },
-                                null));
+                deliver(onReady, new Prepared(codePaginator(lines, lineNumbers, pageFooter, firstLineNumber), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -219,10 +232,17 @@ public final class PrintService {
 
     /** Prepares {@code markdown} as the rendered preview (block-aware pagination), always in the light theme. */
     public void prepareMarkdown(String markdown, Path baseDir, Consumer<Prepared> onReady) {
+        prepareMarkdown(markdown, baseDir, null, false, onReady);
+    }
+
+    /** As {@link #prepareMarkdown(String, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
+    public void prepareMarkdown(
+            String markdown, Path baseDir, String documentName, boolean footer, Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
                 org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(markdown);
-                deliver(onReady, new Prepared(markdownPaginator(ast, baseDir), null));
+                deliver(onReady, new Prepared(markdownPaginator(ast, baseDir, pageFooter), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -234,9 +254,20 @@ public final class PrintService {
      * source (the CSV print builds its table node by node, so a cell is never re-parsed as markup).
      */
     public void prepareDocument(org.commonmark.node.Node document, Path baseDir, Consumer<Prepared> onReady) {
+        prepareDocument(document, baseDir, null, false, onReady);
+    }
+
+    /** As {@link #prepareDocument(org.commonmark.node.Node, Path, Consumer)}; with {@code footer} every page ends in a {@link PageFooter}. */
+    public void prepareDocument(
+            org.commonmark.node.Node document,
+            Path baseDir,
+            String documentName,
+            boolean footer,
+            Consumer<Prepared> onReady) {
+        PageFooter pageFooter = PageFooter.of(documentName, footer);
         exec.submit(() -> {
             try {
-                deliver(onReady, new Prepared(markdownPaginator(document, baseDir), null));
+                deliver(onReady, new Prepared(markdownPaginator(document, baseDir, pageFooter), null));
             } catch (Throwable e) {
                 deliver(onReady, new Prepared(null, message(e)));
             }
@@ -249,10 +280,10 @@ public final class PrintService {
      * final by then is wrong on paper: an image still loading measures 0px and overflows its page when it
      * arrives, and highlighting applied a pulse later never reaches the printer at all.
      */
-    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir) {
+    private static Paginator markdownPaginator(org.commonmark.node.Node ast, Path baseDir, PageFooter footer) {
         MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, baseDir);
         return layout -> MarkdownPrintLayout.paginate(
-                ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight());
+                ast, baseDir, assets, layout.getPrintableWidth(), layout.getPrintableHeight(), footer);
     }
 
     /** Prepares a standalone Mermaid diagram (rendered to PNG via mmdc, scaled to fit one page). */
@@ -386,16 +417,34 @@ public final class PrintService {
     }
 
     /** A code paginator whose {@link Paginator#pages} builds each page only when it is asked for. */
-    private static Paginator codePaginator(List<List<PdfText.Run>> lines, boolean lineNumbers) {
+    private static Paginator codePaginator(List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer) {
+        return codePaginator(lines, lineNumbers, footer, 1);
+    }
+
+    /** The code paginator for an excerpt whose gutter counts from {@code firstLineNumber}. */
+    private static Paginator codePaginator(
+            List<List<PdfText.Run>> lines, boolean lineNumbers, PageFooter footer, int firstLineNumber) {
         return new Paginator() {
             @Override
             public List<Node> paginate(PageLayout layout) {
-                return CodePrintLayout.paginate(lines, layout, lineNumbers, font());
+                Pages pages = pages(layout);
+                List<Node> all = new java.util.ArrayList<>(pages.count());
+                for (int i = 0; i < pages.count(); i++) {
+                    all.add(pages.get(i));
+                }
+                return all;
             }
 
             @Override
             public Pages pages(PageLayout layout) {
-                return CodePrintLayout.pages(lines, layout, lineNumbers, font());
+                return CodePrintLayout.pages(
+                        lines,
+                        layout.getPrintableWidth(),
+                        layout.getPrintableHeight(),
+                        lineNumbers,
+                        font(),
+                        footer,
+                        firstLineNumber);
             }
 
             private Font font() {
