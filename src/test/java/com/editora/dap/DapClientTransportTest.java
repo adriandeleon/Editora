@@ -105,6 +105,10 @@ class DapClientTransportTest {
             client.connect(adapter.port(), "test").get(10, TimeUnit.SECONDS);
             client.launch(Map.of("type", "test", "request", "launch")).get(10, TimeUnit.SECONDS);
             FakeDebugAdapter.Session session = adapter.awaitSession();
+            // The handshake is not over when launch() answers: the adapter sends `initialized` on its own
+            // thread and the client replies with configurationDone from its reader thread. Counted before
+            // that reply lands, it would turn up among the requests below.
+            session.awaitRequest("configurationDone");
             int before = session.requests.size();
 
             List<CompletableFuture<?>> sent = new ArrayList<>();
