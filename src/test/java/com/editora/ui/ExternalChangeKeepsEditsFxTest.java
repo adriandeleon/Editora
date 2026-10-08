@@ -52,7 +52,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("dirty.txt"), "on disk\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FxTestSupport.runOnFx(() -> buffer.getArea().insertText(0, "my unsaved edit "));
             rewrite(file, "changed by another program\n");
 
@@ -79,7 +79,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("clean.txt"), "on disk\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             rewrite(file, "changed by another program\n");
 
             Pressed pressed = pressEnterInNextDialog(async);
@@ -98,7 +98,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("chosen.txt"), "on disk\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FxTestSupport.runOnFx(() -> buffer.getArea().insertText(0, "discard me "));
             rewrite(file, "changed by another program\n");
 
@@ -119,7 +119,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("gone.txt"), "the only copy lives in the editor\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FileWorkflowCoordinator workflows = workflows(fx);
             Files.delete(file);
 
@@ -142,7 +142,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("removed.txt"), "removed on purpose\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FileWorkflowCoordinator workflows = workflows(fx);
             Files.delete(file);
             FxTestSupport.runOnFx(workflows::checkExternalChanges);
@@ -162,7 +162,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("back.txt"), "same bytes\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FileWorkflowCoordinator workflows = workflows(fx);
             Path aside = dir.resolve("back.txt.aside");
             Files.move(file, aside);
@@ -183,7 +183,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("edited.txt"), "same bytes\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             FileWorkflowCoordinator workflows = workflows(fx);
             Path aside = dir.resolve("edited.txt.aside");
             Files.move(file, aside);
@@ -206,7 +206,7 @@ class ExternalChangeKeepsEditsFxTest {
         try (AsyncTestScope async = new AsyncTestScope()) {
             FxWindowFixture fx = async.own(FxWindowFixture.create());
             Path file = Files.writeString(dir.resolve("branch-only.txt"), "on this branch\n");
-            EditorBuffer buffer = load(fx, file);
+            EditorBuffer buffer = load(async, fx, file);
             Files.delete(file);
 
             FxTestSupport.runOnFx(fx.controller::reloadAllFromDiskSilently);
@@ -304,15 +304,23 @@ class ExternalChangeKeepsEditsFxTest {
         return FxTestSupport.field(fx.controller, "fileWorkflows");
     }
 
-    private static EditorBuffer load(FxWindowFixture fx, Path file) throws Exception {
+    /**
+     * Opens {@code file} in a selected tab and waits for the check that selecting it starts. That check asks
+     * the disk on a worker like any other; left running, it would see the change the test makes next and
+     * raise the external-change prompt itself — a second prompt beside the one under test, which nobody
+     * answers.
+     */
+    private static EditorBuffer load(AsyncTestScope async, FxWindowFixture fx, Path file) throws Exception {
         FileWorkflowCoordinator workflows = workflows(fx);
-        return FxTestSupport.callOnFx(() -> {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(file);
-            workflows.loadInto(buffer, file);
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer loaded = new EditorBuffer();
+            loaded.setPath(file);
+            workflows.loadInto(loaded, file);
             FxTestSupport.call(
-                    fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, buffer, true);
-            return buffer;
+                    fx.controller, "addBuffer", new Class<?>[] {EditorBuffer.class, boolean.class}, loaded, true);
+            return loaded;
         });
+        SaveGuardsFxTest.awaitOnFx(async, "the tab-switch check to settle", () -> settled(workflows));
+        return buffer;
     }
 }
