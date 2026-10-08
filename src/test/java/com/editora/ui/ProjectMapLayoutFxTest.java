@@ -640,9 +640,11 @@ class ProjectMapLayoutFxTest {
             int[] dot = markBounds(shot, boxFor(surface, unsaved), fill);
             int[] letter = markBounds(shot, boxFor(surface, changed), fill);
             assertTrue(dot[0] > 0 && letter[0] > 0, "both rows carry a mark");
+            // A bold capital's cap height equals the dot's diameter under some platforms' fonts, so the
+            // height may tie; the ink never does.
             assertTrue(
-                    letter[1] > dot[1] && letter[0] > dot[0],
-                    "the Git letter is taller and has more ink than the unsaved dot: letter "
+                    letter[1] >= dot[1] && letter[0] > dot[0],
+                    "the Git letter is at least as tall and has more ink than the unsaved dot: letter "
                             + java.util.Arrays.toString(letter) + ", dot " + java.util.Arrays.toString(dot));
         });
     }
