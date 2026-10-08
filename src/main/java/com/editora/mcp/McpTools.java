@@ -83,12 +83,17 @@ final class McpTools {
                 obj().set("id", strProp("The command id, e.g. \"file.save\".")),
                 "id"));
         ObjectNode openProps = obj();
-        openProps.set("path", strProp("Absolute path of the file to open."));
+        openProps.set(
+                "path",
+                strProp("Absolute path of the file to open: inside the window's project folder, or already"
+                        + " open in the editor."));
         openProps.set("line", intProp("Optional 1-based line to move the caret to."));
         openProps.set("col", intProp("Optional 1-based column (used only with 'line')."));
         tools.add(toolReq(
                 "open_file",
-                "Open a file in the editor, optionally moving the caret to a line/column.",
+                "Open a file of the window's project in the editor (or select one that is already open),"
+                        + " optionally moving the caret to a line/column. A file outside the project folder is"
+                        + " refused; the user has to open it.",
                 openProps,
                 "path"));
         ObjectNode editProps = obj();
@@ -295,10 +300,10 @@ final class McpTools {
         if (path == null) {
             return errorResult("open_file requires a 'path'.");
         }
-        boolean opened = bridge.openFile(path, intArg(args, "line"), intArg(args, "col"));
-        return opened
+        String error = bridge.openFile(path, intArg(args, "line"), intArg(args, "col"));
+        return error == null
                 ? textResult(m.createObjectNode().put("opened", true).put("path", path))
-                : errorResult("No such file: " + path);
+                : errorResult(error);
     }
 
     private ObjectNode editBufferResult(JsonNode args) {

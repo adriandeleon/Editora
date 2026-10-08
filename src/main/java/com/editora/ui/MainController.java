@@ -386,7 +386,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public boolean openFile(String path, int line, int col) {
+    public String openFile(String path, int line, int col) {
         return mcpBridge.openFile(path, line, col);
     }
 
@@ -5011,6 +5011,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public Path canonicalPath(Path p) {
             return MainController.this.canonicalPath(p);
+        }
+
+        @Override
+        public Path configDirectory() {
+            return config.getConfigDir();
         }
     });
 

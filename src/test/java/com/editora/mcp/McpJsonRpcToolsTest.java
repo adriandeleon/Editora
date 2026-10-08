@@ -37,7 +37,7 @@ class McpJsonRpcToolsTest {
         List<SearchMatch> matches = List.of();
         List<CommandInfo> commands = List.of();
         boolean commandRuns = true;
-        boolean opens = true;
+        String openError;
         String editError;
         String saveError;
         Selection selection;
@@ -93,9 +93,9 @@ class McpJsonRpcToolsTest {
         }
 
         @Override
-        public boolean openFile(String path, int line, int col) {
+        public String openFile(String path, int line, int col) {
             record("openFile " + path + " " + line + ":" + col);
-            return opens;
+            return openError;
         }
 
         @Override
@@ -554,9 +554,11 @@ class McpJsonRpcToolsTest {
                 List.of("openFile /work/a.java 12:3", "openFile /work/a.java 0:0", "openFile /work/../etc/passwd 0:0"),
                 bridge.calls);
 
-        bridge.opens = false;
-        JsonNode refused = call("open_file", "{\"path\":\"/work/missing.txt\"}").get("result");
+        bridge.openError = "Refused: /etc/passwd is outside the project folder /work.";
+        JsonNode refused = call("open_file", "{\"path\":\"/etc/passwd\"}").get("result");
         assertTrue(refused.get("isError").asBoolean(), "a file the editor did not open is not reported as opened");
+        assertEquals(bridge.openError, text(refused), "and the client is told why");
+        bridge.openError = null;
 
         bridge.calls.clear();
         for (String arguments : new String[] {

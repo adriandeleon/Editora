@@ -274,12 +274,12 @@ class WindowMcpBridgeFxTest {
             Path file = Files.writeString(window.root.resolve("three.txt"), "one\ntwo\nthree\n");
             Path missing = window.root.resolve("missing.txt");
 
-            assertFalse(window.mcp.openFile(missing.toString(), 1, 1));
+            assertEquals("No such file: " + missing, window.mcp.openFile(missing.toString(), 1, 1));
             assertFalse(Files.exists(missing), "a file that does not exist is not created by opening it");
             assertTrue(window.mcp.listOpenFiles().stream()
                     .noneMatch(open -> missing.toString().equals(open.path())));
 
-            assertTrue(window.mcp.openFile(file.toString(), 3, 2));
+            assertNull(window.mcp.openFile(file.toString(), 3, 2));
             EditorBuffer buffer = awaitLoaded(async, window, file);
             SaveGuardsFxTest.awaitOnFx(
                     async,
@@ -291,7 +291,7 @@ class WindowMcpBridgeFxTest {
             assertEquals(2, at.caretCol());
 
             // Asking again selects the tab that is there; it does not open a second one.
-            assertTrue(window.mcp.openFile(file.toString(), 0, 0));
+            assertNull(window.mcp.openFile(file.toString(), 0, 0));
             async.awaitFx();
             assertEquals(
                     1,

@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **MCP `open_file` is confined to the window's project.** A client could name any absolute path, have
+  the editor open it, and then read it with `read_buffer` or rewrite it with `edit_buffer` and
+  `save_buffer` — a private key, a shell profile, the editor's own settings. `open_file` now opens a
+  file only when it is inside the project folder of the window that answers (a link that leads out of
+  the project counts as outside) or already open there; a window with no project opens nothing new for
+  a client. `edit_buffer` and `save_buffer` refuse a buffer in the editor's configuration directory or
+  in version-control metadata (`.git/` and the like), as the ACP agent's file channel already did.
+  Files you open yourself stay readable and editable for the client, and `execute_command` still runs
+  any command.
+
+### Fixed
+
+- MCP `todo_scan` reported each marker one line down and one column to the right.
+- MCP `find_in_files` searched the project of the window that was focused last instead of the window
+  the MCP server belongs to.
+
 ## [0.20.0] - 2026-10-08
 
 ### Added

@@ -78,11 +78,11 @@ class McpToolsTest {
         }
 
         @Override
-        public boolean openFile(String path, int line, int col) {
+        public String openFile(String path, int line, int col) {
             openedPath = path;
             openedLine = line;
             openedCol = col;
-            return openFileResult;
+            return openFileResult ? null : "No such file: " + path;
         }
 
         @Override

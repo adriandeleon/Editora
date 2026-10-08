@@ -86,9 +86,12 @@ public interface McpBridge {
     /** Runs the command with {@code id} on the FX thread; false when no such command exists. */
     boolean executeCommand(String id);
 
-    /** Opens {@code path} in the editor and, when {@code line > 0}, moves the caret to the 1-based
-     *  {@code line}/{@code col}; false when the file doesn't exist. */
-    boolean openFile(String path, int line, int col);
+    /**
+     * Opens {@code path} in the editor and, when {@code line > 0}, moves the caret to the 1-based
+     * {@code line}/{@code col}. Returns null when the file is open, else a human-readable error: the file
+     * does not exist, or it is one this client may not bring into the editor (outside the window's project).
+     */
+    String openFile(String path, int line, int col);
 
     /**
      * Replaces {@code oldText} — never null or empty — in the open buffer for {@code path} (or the active

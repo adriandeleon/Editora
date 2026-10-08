@@ -51,6 +51,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
         Path tabPath(Tab tab);
 
         Path canonicalPath(Path p);
+
+        /** The editor's configuration directory, which no MCP write may land in. */
+        Path configDirectory();
     }
 
     private final Host host;
@@ -203,10 +206,18 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     }
 
     @Override
-    public boolean openFile(String path, int line, int col) {
+    public String openFile(String path, int line, int col) {
         Path file = Path.of(path);
+        // What the window has, read on the FX thread; the containment check itself resolves links on disk
+        // and stays here, on the MCP worker.
+        record Scope(Path root, boolean alreadyOpen) {}
+        Scope scope = mcpOnFx(() -> new Scope(host.projectRoot(), tabShowing(file)));
+        String refusal = McpAccess.openRefusal(scope.root(), file, scope.alreadyOpen());
+        if (refusal != null) {
+            return refusal; // before the existence check: "no such file" would say what is on the disk
+        }
         if (!java.nio.file.Files.exists(file)) {
-            return false;
+            return "No such file: " + path;
         }
         return mcpOnFx(() -> {
             host.fileWorkflows().openPath(file);
@@ -214,7 +225,7 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (line > 0 && openBufferForPath(file.toString()) != null) {
                 host.sessions().gotoInFile(file, line, Math.max(col, 1));
             }
-            return true;
+            return null;
         });
     }
 
@@ -231,6 +242,10 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             }
             if (!b.isEditable()) {
                 return "Buffer is read-only.";
+            }
+            String protectedFile = McpAccess.writeRefusal(host.configDirectory(), b.getPath());
+            if (protectedFile != null) {
+                return protectedFile;
             }
             String replacement = newText == null ? "" : newText;
             // read_buffer serves the whole file, so the match is made against the whole file — also when the
@@ -280,6 +295,10 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (!b.isEditable()) {
                 return "Buffer is read-only.";
             }
+            String protectedFile = McpAccess.writeRefusal(host.configDirectory(), b.getPath());
+            if (protectedFile != null) {
+                return protectedFile;
+            }
             // The client sends the whole text as it believes it to be. What was typed since its read_buffer —
             // or unsaved text it never read — would be replaced without notice.
             String stale = served.check(b, b.getContent(), b.isDirty())
@@ -318,6 +337,10 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             if (b.getPath() == null) {
                 // save() would open a Save-As dialog — never pop UI from an agent call.
                 return "Untitled buffer has no file path; Save As must be done in the editor.";
+            }
+            String protectedFile = McpAccess.writeRefusal(host.configDirectory(), b.getPath());
+            if (protectedFile != null) {
+                return protectedFile; // also for text the user typed there: theirs to save, not the client's
             }
             return host.fileWorkflows().saveReportingOutcome(b);
         });
@@ -506,6 +529,18 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             return "doctor";
         }
         return "other";
+    }
+
+    /** Whether a tab of this window — an editor or a viewer — shows {@code file}. FX thread. */
+    private boolean tabShowing(Path file) {
+        Path key = host.canonicalPath(file);
+        for (Tab tab : host.editorArea().tabs()) {
+            Path shown = host.tabPath(tab);
+            if (shown != null && com.editora.config.PathKeys.samePath(host.canonicalPath(shown), key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Finds the open buffer whose file matches {@code path} (by canonical path), or null. */
