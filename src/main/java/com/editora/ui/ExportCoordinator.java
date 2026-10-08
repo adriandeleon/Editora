@@ -46,6 +46,24 @@ final class ExportCoordinator {
     };
     /** Where a print result goes; tests replace it so a failure does not open a modal alert. */
     Consumer<com.editora.print.PrintService.Result> printReporter = r -> reportPrint(r);
+    /** Shows the "no printer" dialog and returns the button chosen; tests answer without showing it. */
+    java.util.function.Function<Alert, java.util.Optional<javafx.scene.control.ButtonType>> noPrinterPrompt =
+            Alert::showAndWait;
+    /** The size and zoom this window's Print Preview had last time (this session only). */
+    private final PrintPreview.Memory previewMemory = new PrintPreview.Memory();
+
+    /** Staged exports whose result has not arrived; {@link #shutdown} removes their staging directories. */
+    private final java.util.Set<com.editora.io.StagedExport> pendingStages = new java.util.LinkedHashSet<>();
+    /** The window is closing: a late export result is dropped, not committed or reported. */
+    private boolean shutDown;
+    /** PDF exports started through {@link #stagedPdf} that have not reported yet (running + queued). */
+    private int pdfExportsPending;
+    /** The status-bar entry of the running PDF exports, re-labelled as pages are written; null when idle. */
+    private AutoCloseable pdfExportTask;
+    /** The file this window last exported successfully, for {@code file.openLastExport}; null before any. */
+    private Path lastExported;
+    /** Told the path of every export that has replaced its destination; the window reloads a viewer tab on it. */
+    Consumer<Path> exported = path -> {};
 
     ExportCoordinator(
             CoordinatorHost host,
@@ -83,12 +101,24 @@ final class ExportCoordinator {
         registry.register(Command.of("editor.print", this::printCode));
         registry.register(Command.of("preview.print", this::printPreview));
         registry.register(Command.of("markwhen.exportJson", this::exportMarkwhenJson));
+        registry.register(Command.of("file.openLastExport", this::openLastExport));
+        registry.register(Command.of("file.cancelPdfExport", this::cancelPdfExports));
     }
 
+    /**
+     * Stops the output services and removes the staging directory of every export still running or queued:
+     * closing the window drops those exports, and their {@code .editora-export-<n>/} folders used to stay
+     * beside the destination. A result that still arrives afterwards is ignored (see {@link #staged}).
+     */
     void shutdown() {
+        shutDown = true;
         pdfService.shutdown();
         officeService.shutdown();
         printService.shutdown();
+        for (com.editora.io.StagedExport stage : java.util.List.copyOf(pendingStages)) {
+            stage.close();
+        }
+        endPdfExportTask();
     }
 
     /**
@@ -135,12 +165,20 @@ final class ExportCoordinator {
             report.accept(failure.apply(e.getMessage() == null ? e.toString() : e.getMessage()));
             return;
         }
+        pendingStages.add(stage);
         try {
             export.accept(stage.path(), result -> {
+                pendingStages.remove(stage);
+                if (shutDown) { // the window closed meanwhile: nothing is replaced and nobody is left to tell
+                    stage.close(); // again — the writer may have still been at work when shutdown() cleaned up
+                    return;
+                }
                 R outcome = result;
+                boolean committed = false;
                 if (ok.test(result)) {
                     try {
                         stage.commit();
+                        committed = true;
                     } catch (java.io.IOException e) {
                         outcome = failure.apply(e.getMessage() == null ? e.toString() : e.getMessage());
                     }
@@ -148,8 +186,12 @@ final class ExportCoordinator {
                     stage.close();
                 }
                 report.accept(outcome);
+                if (committed) {
+                    exported.accept(f.toPath()); // a viewer tab open on the replaced file shows the new one
+                }
             });
         } catch (RuntimeException e) {
+            pendingStages.remove(stage);
             stage.close();
             throw e;
         }
@@ -161,12 +203,97 @@ final class ExportCoordinator {
             java.util.function.BiConsumer<
                             java.nio.file.Path, java.util.function.Consumer<com.editora.pdf.PdfExportService.Result>>
                     export) {
-        this.<com.editora.pdf.PdfExportService.Result>staged(
-                f,
-                export,
-                com.editora.pdf.PdfExportService.Result::ok,
-                message -> new com.editora.pdf.PdfExportService.Result(false, message),
-                r -> reportPdf(r, f));
+        beginPdfExport();
+        try {
+            this.<com.editora.pdf.PdfExportService.Result>staged(
+                    f,
+                    export,
+                    com.editora.pdf.PdfExportService.Result::ok,
+                    message -> new com.editora.pdf.PdfExportService.Result(false, message),
+                    r -> {
+                        endPdfExport();
+                        reportPdf(r, f);
+                    });
+        } catch (RuntimeException | Error e) {
+            endPdfExport(); // never submitted: no result will come to count it off
+            throw e;
+        }
+    }
+
+    /**
+     * Counts a PDF export in. The exports of a window run one at a time, so one that finds another still
+     * unfinished says that it is queued (over the caller's "Exporting…"); the first puts the export in the
+     * status bar's background-work indicator, which then follows the pages being written.
+     */
+    private void beginPdfExport() {
+        if (pdfExportsPending++ > 0) {
+            host.setStatus(tr("status.pdf.queued", pdfExportsPending - 1));
+            return;
+        }
+        pdfService.onProgress(pages -> labelPdfExportTask(tr("status.pdf.exportingPage", pages)));
+        labelPdfExportTask(tr("status.pdf.exporting"));
+    }
+
+    private void endPdfExport() {
+        if (pdfExportsPending > 0 && --pdfExportsPending == 0) {
+            endPdfExportTask();
+        } else if (pdfExportsPending > 0) {
+            labelPdfExportTask(tr("status.pdf.exporting")); // the next one starts: its page count is not this one's
+        }
+    }
+
+    /** Shows {@code label} as this window's running PDF export (a task's label is fixed, so it is replaced). */
+    private void labelPdfExportTask(String label) {
+        if (shutDown || pdfExportsPending == 0) {
+            return; // a progress report that arrived after the last result
+        }
+        endPdfExportTask();
+        pdfExportTask = host.startBackgroundTask(label);
+    }
+
+    private void endPdfExportTask() {
+        AutoCloseable task = pdfExportTask;
+        pdfExportTask = null;
+        if (task != null) {
+            try {
+                task.close();
+            } catch (Exception ignored) {
+                // a status-bar entry that will not close is not worth failing an export over
+            }
+        }
+    }
+
+    /**
+     * Cancels this window's PDF exports — the one being written and any queued behind it ({@code
+     * file.cancelPdfExport}). Each then reports "cancelled" through {@link #reportPdf}; its staging file is
+     * dropped and the destination keeps what it had.
+     */
+    void cancelPdfExports() {
+        if (pdfExportsPending == 0 || !pdfService.cancelAll()) {
+            host.setStatus(tr("status.pdf.nothingToCancel"));
+        }
+    }
+
+    /**
+     * Opens the file this window exported last ({@code file.openLastExport}): a PDF or a text format in a
+     * tab, an office document — which Editora cannot show — in the application the system opens it with.
+     */
+    void openLastExport() {
+        Path file = lastExported;
+        if (file == null) {
+            host.setStatus(tr("status.export.none"));
+            return;
+        }
+        if (!java.nio.file.Files.isRegularFile(file)) {
+            host.setStatus(tr("status.export.gone", file.toString()));
+            return;
+        }
+        String name = file.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+        if (name.endsWith(".docx") || name.endsWith(".odt") || name.endsWith(".xlsx") || name.endsWith(".ods")) {
+            host.openExternalUrl(file.toUri().toString());
+        } else {
+            openPath.accept(file);
+        }
     }
 
     /** {@link #staged} for the office service: reports through {@link #reportOffice}. */
@@ -196,7 +323,8 @@ final class ExportCoordinator {
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            EditorBuffer active = host.activeBuffer();
+            noPrinter(() -> csvExportPdf(csvText, active == null ? null : bufferBaseName(active)));
             return;
         }
         preparePrint(() -> printService.prepareDocument(table, null, prepared -> openPrintPreview(job, prepared)));
@@ -245,7 +373,7 @@ final class ExportCoordinator {
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            noPrinter(() -> exportProjectMapPdf(image, null));
             return;
         }
         if (output.landscape()) {
@@ -621,7 +749,13 @@ final class ExportCoordinator {
 
     /** Reports a PDF export result: status + (on failure) an error dialog. */
     private void reportPdf(com.editora.pdf.PdfExportService.Result r, java.io.File f) {
+        if (com.editora.pdf.PdfExportService.cancelled(r)) {
+            host.setStatus(tr("status.pdf.cancelled")); // asked for: no error dialog
+            return;
+        }
         if (r.ok()) {
+            lastExported = f.toPath();
+            // HOOK(C14): when PdfExportService.Result gains the "diagrams not rendered" count, report it here.
             // Characters no installed font could draw were written as "?": say so rather than a bare "Exported".
             host.setStatus(
                     r.unrendered() > 0
@@ -694,6 +828,7 @@ final class ExportCoordinator {
     /** Reports an office export result: status + (on failure) an error dialog. */
     private void reportOffice(com.editora.office.OfficeExportService.Result r, java.io.File f) {
         if (r.ok()) {
+            lastExported = f.toPath();
             host.setStatus(tr("status.office.exported", f.toString()));
         } else {
             String msg = failureDetail(r.message());
@@ -718,7 +853,7 @@ final class ExportCoordinator {
         }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            noPrinter(this::exportCodePdf);
             return;
         }
         Settings s = host.settings();
@@ -781,16 +916,16 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.cannotPrintUnparsed"));
             return;
         }
-        javafx.print.PrinterJob job = javafx.print.PrinterJob.createPrinterJob();
+        PrintPreview.Job job = printJobs.get();
         if (job == null) {
-            host.setStatus(tr("status.print.noPrinter"));
+            noPrinter(this::exportPreviewPdf);
             return;
         }
         preparePrint(() -> preparePreviewPrint(b, job));
     }
 
     /** Starts the preparation for {@code b}'s kind of preview; every branch ends in {@link #openPrintPreview}. */
-    private void preparePreviewPrint(EditorBuffer b, javafx.print.PrinterJob job) {
+    private void preparePreviewPrint(EditorBuffer b, PrintPreview.Job job) {
         java.util.function.Consumer<com.editora.print.PrintService.Prepared> open =
                 prepared -> openPrintPreview(job, prepared);
         if (b.isMarkdown()) {
@@ -831,7 +966,7 @@ final class ExportCoordinator {
 
     /** Prints a DOT/PlantUML diagram by rendering it to a temporary PNG via its CLI, then paginating the image
      *  (there's no native-vector print path for the diagram tools, unlike Markdown). */
-    private void printDiagramViaImage(EditorBuffer b, javafx.print.PrinterJob job) {
+    private void printDiagramViaImage(EditorBuffer b, PrintPreview.Job job) {
         java.nio.file.Path tmp;
         try {
             tmp = java.nio.file.Files.createTempFile("editora-diagram", ".png");
@@ -859,25 +994,52 @@ final class ExportCoordinator {
                 });
     }
 
-    /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
-    private void openPrintPreview(javafx.print.PrinterJob job, com.editora.print.PrintService.Prepared prepared) {
-        openPrintPreview(PrintPreview.Job.of(job), prepared);
+    /**
+     * There is no printer to print to: says so in the status bar, as before, and in a dialog that offers the
+     * way out — {@code exportPdf}, the Export to PDF command for what was being printed. (Ctrl+P used to
+     * look like it did nothing: the status line was the only sign.)
+     */
+    private void noPrinter(Runnable exportPdf) {
+        host.setStatus(tr("status.print.noPrinter"));
+        Alert alert = noPrinterAlert();
+        javafx.scene.control.ButtonType export = alert.getButtonTypes().get(0);
+        if (noPrinterPrompt.apply(alert).filter(export::equals).isPresent()) {
+            exportPdf.run();
+        }
+    }
+
+    /** The "No printer is available" dialog: Export to PDF… (its first button) or Cancel. */
+    Alert noPrinterAlert() {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.initOwner(host.window());
+        alert.setTitle(tr("dialog.print.title"));
+        alert.setHeaderText(tr("dialog.print.noPrinter.header"));
+        alert.setContentText(tr("dialog.print.noPrinter.content"));
+        alert.getButtonTypes()
+                .setAll(
+                        new javafx.scene.control.ButtonType(
+                                tr("dialog.print.noPrinter.exportPdf"),
+                                javafx.scene.control.ButtonBar.ButtonData.OK_DONE),
+                        javafx.scene.control.ButtonType.CANCEL);
+        return Dialogs.styled(alert);
     }
 
     /**
-     * {@link #openPrintPreview(javafx.print.PrinterJob, com.editora.print.PrintService.Prepared)} on the
-     * preview's own job type. Every way out clears the busy state: a preparation error, a failure to
-     * paginate or open (any {@code Throwable} — the pagination runs the whole layout engine here, and an
-     * escaped error used to leave "Preparing print preview…" in the status bar with no dialog), and the
-     * preview's result and cancel callbacks.
+     * Opens the Print Preview window for a prepared document, or reports a preparation failure. Every way
+     * out clears the busy state: a preparation error, a failure to paginate or open (any {@code Throwable} —
+     * the pagination runs the whole layout engine here, and an escaped error used to leave "Preparing print
+     * preview…" in the status bar with no dialog), and the preview's result and cancel callbacks. A job that
+     * does not reach an open preview is cancelled here; one that does is the preview's to end or cancel.
      */
     void openPrintPreview(PrintPreview.Job job, com.editora.print.PrintService.Prepared prepared) {
         printPreparing = false;
         if (openPreview != null) { // a request that was already on its way when the first preview opened
+            cancelQuietly(job);
             openPreview.toFront();
             return;
         }
         if (!prepared.ok()) {
+            cancelQuietly(job);
             printReporter.accept(new com.editora.print.PrintService.Result(false, prepared.error()));
             return;
         }
@@ -894,13 +1056,24 @@ final class ExportCoordinator {
                     () -> {
                         openPreview = null;
                         host.setStatus(tr("status.print.cancelled"));
-                    });
+                    },
+                    previewMemory);
             openPreview = preview;
             preview.show();
         } catch (Throwable t) {
             openPreview = null;
+            cancelQuietly(job); // the preview never took the job over
             printReporter.accept(new com.editora.print.PrintService.Result(
                     false, t.getMessage() == null ? t.toString() : t.getMessage()));
+        }
+    }
+
+    /** Cancels a printer job that will not be used; a job that cannot even do that is simply dropped. */
+    private static void cancelQuietly(PrintPreview.Job job) {
+        try {
+            job.cancel();
+        } catch (Throwable ignored) {
+            // the reason the job is being dropped is what gets reported
         }
     }
 

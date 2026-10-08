@@ -854,6 +854,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             BackgroundTasks.Task t = backgroundTasks.current();
             statusBar.setBackgroundTasks(t == null ? null : t.label(), backgroundTasks.count());
         });
+        exports.exported = fileWorkflows::reloadViewerTab; // an export over an open PDF refreshes its tab
         setupMruTracking();
         windowCommands.registerCommands();
         recovery.registerCommands(registry);

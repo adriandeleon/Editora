@@ -43,6 +43,154 @@ public final class PdfExportService {
     });
 
     /**
+     * One submitted export: whether it was cancelled, and how many pages its writer has started. The worker
+     * thread carries the ticket of the export it is running ({@link #CURRENT}), which is how the writers —
+     * static methods that know nothing of this service — report a page and hear a cancel.
+     */
+    private final class Ticket {
+        volatile boolean cancelled;
+
+        PdfExportService owner() {
+            return PdfExportService.this;
+        }
+
+        int pages;
+        long lastReported;
+    }
+
+    private static final ThreadLocal<Ticket> CURRENT = new ThreadLocal<>();
+    /** The message of a cancelled export's {@link Result}; compared by identity in {@link #cancelled(Result)}. */
+    @SuppressWarnings("StringOperationCanBeSimplified")
+    private static final String CANCELLED = new String("cancelled");
+    /** Least time between two progress reports of one export, in ms. */
+    private static final long PROGRESS_INTERVAL_MS = 500;
+
+    /** Submitted exports that have not delivered a result yet, the running one first. */
+    private final java.util.Queue<Ticket> outstanding = new java.util.concurrent.ConcurrentLinkedQueue<>();
+
+    private volatile boolean shutdown;
+    private volatile java.util.function.IntConsumer progress = pages -> {};
+
+    /** Whether {@code result} is that of an export stopped by {@link #cancelAll()} or {@link #shutdown()}. */
+    public static boolean cancelled(Result result) {
+        return result != null && result.message() == CANCELLED; // identity: no real message is this object
+    }
+
+    /**
+     * Whether {@code failure} is an export being abandoned — cancelled, or its thread interrupted by a
+     * shutdown — rather than something wrong with the document or its fonts. The writers ask before they
+     * retry with fewer fonts: an interrupt closes the font file being read, which looks like a bad font.
+     */
+    static boolean abandoned(Throwable failure) {
+        if (Thread.currentThread().isInterrupted()) {
+            return true;
+        }
+        for (Throwable t = failure; t != null; t = t.getCause()) {
+            if (t instanceof java.util.concurrent.CancellationException
+                    || t instanceof java.io.InterruptedIOException
+                    || t instanceof java.nio.channels.ClosedByInterruptException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Called by a writer each time it starts a page. Counts the page for the progress listener and stops a
+     * cancelled export here, between pages, by throwing — nothing has been written to the output yet (the
+     * writers save the document last). A no-op outside an export of this service (a writer called directly).
+     */
+    static void pageStarted() {
+        Ticket ticket = CURRENT.get();
+        if (ticket != null) {
+            ticket.owner().pageStarted(ticket);
+        }
+    }
+
+    private void pageStarted(Ticket ticket) {
+        if (ticket.cancelled || shutdown) {
+            throw new java.util.concurrent.CancellationException("export cancelled");
+        }
+        int pages = ++ticket.pages;
+        long now = System.nanoTime() / 1_000_000;
+        if (now - ticket.lastReported >= PROGRESS_INTERVAL_MS) {
+            ticket.lastReported = now;
+            java.util.function.IntConsumer listener = progress;
+            Platform.runLater(() -> {
+                if (outstanding.peek() == ticket && !ticket.cancelled && !shutdown) { // still the running one
+                    listener.accept(pages);
+                }
+            });
+        }
+    }
+
+    /** Sets who hears, on the FX thread and at most twice a second, how many pages the running export has. */
+    public void onProgress(java.util.function.IntConsumer pagesStarted) {
+        progress = pagesStarted == null ? pages -> {} : pagesStarted;
+    }
+
+    /** The number of exports submitted and not finished: the running one and those queued behind it. */
+    public int pending() {
+        return outstanding.size();
+    }
+
+    /**
+     * Cancels the running export and every queued one; each reports a {@link #cancelled(Result) cancelled}
+     * result. The running writer stops at its next page — a stage that produces no pages (tokenizing a large
+     * file, an external diagram tool) finishes first. Returns whether there was anything to cancel.
+     */
+    public boolean cancelAll() {
+        boolean any = false;
+        for (Ticket ticket : outstanding) {
+            ticket.cancelled = true;
+            any = true;
+        }
+        return any;
+    }
+
+    /**
+     * Runs {@code task} — one export, which ends in {@link #deliver} — on the export thread under a ticket.
+     * An export cancelled while it was queued never starts.
+     */
+    private void submit(Consumer<Result> onResult, Runnable task) {
+        Ticket ticket = new Ticket();
+        outstanding.add(ticket);
+        try {
+            exec.submit(() -> {
+                CURRENT.set(ticket);
+                try {
+                    if (ticket.cancelled || shutdown) {
+                        deliver(new Result(false, CANCELLED), onResult);
+                    } else {
+                        task.run();
+                    }
+                } finally {
+                    CURRENT.remove();
+                    outstanding.remove(ticket); // also when the task died without delivering
+                }
+            });
+        } catch (RuntimeException rejected) { // shut down: nothing will run or report
+            outstanding.remove(ticket);
+            throw rejected;
+        }
+    }
+
+    /**
+     * Posts an export's result to the FX thread. A cancelled or shut-down export reports that and nothing
+     * else: whatever its writer returned was produced while being stopped — an interrupted font read turns
+     * into "characters could not be rendered" — and must not be taken for a finished PDF.
+     */
+    private void deliver(Result result, Consumer<Result> onResult) {
+        Ticket ticket = CURRENT.get();
+        boolean stopped = shutdown || (ticket != null && ticket.cancelled);
+        Result delivered = stopped ? new Result(false, CANCELLED) : result;
+        if (ticket != null) {
+            outstanding.remove(ticket);
+        }
+        Platform.runLater(() -> onResult.accept(delivered));
+    }
+
+    /**
      * Exports {@code text} as a code PDF. Highlighting (when {@code highlight}) is computed from the
      * grammar for {@code fileName}; a file with no bundled grammar exports as plain text.
      */
@@ -55,7 +203,7 @@ public final class PdfExportService {
             String pageSize,
             Path out,
             Consumer<Result> onResult) {
-        exec.submit(() -> {
+        submit(onResult, () -> {
             Result result;
             try {
                 StyleSpans<Collection<String>> spans = null;
@@ -74,7 +222,7 @@ public final class PdfExportService {
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;
-            Platform.runLater(() -> onResult.accept(r));
+            deliver(r, onResult);
         });
     }
 
@@ -89,7 +237,7 @@ public final class PdfExportService {
             java.util.List<String> mmdcCommand,
             Path out,
             Consumer<Result> onResult) {
-        exec.submit(() -> {
+        submit(onResult, () -> {
             Result result;
             try {
                 int unrendered = MarkdownPdfWriter.write(markdown, baseDir, pageSize, mmdcCommand, out);
@@ -99,7 +247,7 @@ public final class PdfExportService {
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;
-            Platform.runLater(() -> onResult.accept(r));
+            deliver(r, onResult);
         });
     }
 
@@ -109,7 +257,7 @@ public final class PdfExportService {
      */
     public void exportDocument(
             org.commonmark.node.Node document, String pageSize, Path out, Consumer<Result> onResult) {
-        exec.submit(() -> {
+        submit(onResult, () -> {
             Result result;
             try {
                 result = new Result(true, "", MarkdownPdfWriter.write(document, null, pageSize, null, out));
@@ -118,7 +266,7 @@ public final class PdfExportService {
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;
-            Platform.runLater(() -> onResult.accept(r));
+            deliver(r, onResult);
         });
     }
 
@@ -129,7 +277,7 @@ public final class PdfExportService {
      * the FX thread.
      */
     public void exportImages(java.util.List<byte[]> pngImages, String pageSize, Path out, Consumer<Result> onResult) {
-        exec.submit(() -> {
+        submit(onResult, () -> {
             Result result;
             try {
                 java.util.List<java.awt.image.BufferedImage> imgs = new java.util.ArrayList<>();
@@ -153,7 +301,7 @@ public final class PdfExportService {
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result r = result;
-            Platform.runLater(() -> onResult.accept(r));
+            deliver(r, onResult);
         });
     }
 
@@ -168,7 +316,7 @@ public final class PdfExportService {
             boolean landscape,
             Path out,
             Consumer<Result> onResult) {
-        exec.submit(() -> {
+        submit(onResult, () -> {
             Result result;
             try {
                 java.util.List<java.awt.image.BufferedImage> converted = new java.util.ArrayList<>();
@@ -188,7 +336,7 @@ public final class PdfExportService {
                 result = new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
             }
             Result delivered = result;
-            Platform.runLater(() -> onResult.accept(delivered));
+            deliver(delivered, onResult);
         });
     }
 
@@ -209,8 +357,13 @@ public final class PdfExportService {
         return buffered;
     }
 
-    /** Stops the background export thread (called when the owning window closes). */
+    /**
+     * Stops the background export thread (called when the owning window closes). Queued exports never run
+     * and the running one is interrupted; whatever it still delivers is a cancelled result.
+     */
     public void shutdown() {
+        shutdown = true;
         exec.shutdownNow();
+        outstanding.clear();
     }
 }

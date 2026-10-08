@@ -63,7 +63,7 @@ public final class CodePdfWriter {
         try {
             return render(text, spans, lineNumbers, tabSize, pageSizeKey, out, fallbackFonts);
         } catch (IOException | RuntimeException e) {
-            if (fallbackFonts.isEmpty()) {
+            if (fallbackFonts.isEmpty() || PdfExportService.abandoned(e)) { // a cancel is not a bad font
                 throw e;
             }
             // A system font PDFBox turns out unable to embed must not cost the export: retry with the bundled
@@ -182,6 +182,7 @@ public final class CodePdfWriter {
             this.size = size;
             this.page = new PDPage(size);
             doc.addPage(page);
+            PdfExportService.pageStarted(); // progress, and where a cancelled export stops
             this.cs = new PDPageContentStream(doc, page);
             this.y = topY - FONT_SIZE;
         }

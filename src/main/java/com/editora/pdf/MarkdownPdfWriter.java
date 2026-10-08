@@ -106,7 +106,7 @@ public final class MarkdownPdfWriter {
         try {
             return render(ast, baseDir, pageSizeKey, mmdcCommand, out, fallbackFonts);
         } catch (IOException | RuntimeException e) {
-            if (fallbackFonts.isEmpty()) {
+            if (fallbackFonts.isEmpty() || PdfExportService.abandoned(e)) { // a cancel is not a bad font
                 throw e;
             }
             // An arbitrary system font is the one input here that is not under our control: if PDFBox cannot
@@ -227,6 +227,7 @@ public final class MarkdownPdfWriter {
             }
             page = new PDPage(size);
             doc.addPage(page);
+            PdfExportService.pageStarted(); // progress, and where a cancelled export stops
             cs = new PDPageContentStream(doc, page);
             y = size.getHeight() - MARGIN;
             for (Bar bar : bars) {
