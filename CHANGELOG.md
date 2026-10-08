@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a folder while it was closed in the tree did not appear when it was opened again — only after the
   window lost and regained focus. A reopened folder is now listed again, and a closed one is no longer
   watched for changes.
+- **Project Map: Escape on a preview card's right-click menu closes only the menu.** It closed the card
+  as well.
 
 ## [0.20.0] - 2026-10-08
 
