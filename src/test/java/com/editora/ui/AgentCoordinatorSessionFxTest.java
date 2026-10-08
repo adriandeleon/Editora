@@ -56,6 +56,9 @@ class AgentCoordinatorSessionFxTest {
 
     private static final long WAIT_SECONDS = 30;
 
+    /** What the transcript listener reports when the agent's reply starts to arrive. */
+    private static final String STREAMING = "\u0000streaming";
+
     @BeforeAll
     static void bootToolkit() throws Exception {
         FxTestSupport.bootToolkit();
@@ -177,7 +180,7 @@ class AgentCoordinatorSessionFxTest {
             assertEquals(List.of(), rig.transcript());
 
             rig.send("long job #hang");
-            rig.awaitRemembered(1); // the session exists and the prompt is on its way
+            rig.awaitReplyStarted(); // the agent has the prompt, so a cancel now is for this turn
             assertEquals(tr("agent.running"), rig.label("status"));
             FxTestSupport.runOnFx(rig.coordinator::stopTurn);
             rig.awaitIdle();
@@ -217,11 +220,12 @@ class AgentCoordinatorSessionFxTest {
 
             // While a turn runs the same button stops it, and so does Esc in the field.
             assertEquals(tr("agent.send"), FxTestSupport.callOnFx(send::getText));
+            rig.lines.clear();
             FxTestSupport.runOnFx(() -> {
                 input.setText("#hang one");
                 send.fire();
             });
-            rig.awaitRemembered(2);
+            rig.awaitReplyStarted();
             assertEquals(tr("agent.stop"), FxTestSupport.callOnFx(send::getText));
             FxTestSupport.runOnFx(() -> {
                 input.setText("ignored while busy");
@@ -233,11 +237,12 @@ class AgentCoordinatorSessionFxTest {
             assertEquals(tr("agent.turnCancelled"), rig.lastLine());
             assertEquals(tr("agent.send"), FxTestSupport.callOnFx(send::getText));
 
+            rig.lines.clear();
             FxTestSupport.runOnFx(() -> {
                 input.setText("#hang two");
                 send.fire();
             });
-            rig.awaitRemembered(3);
+            rig.awaitReplyStarted();
             rig.idle.clear();
             FxTestSupport.runOnFx(() -> rig.key(input, KeyCode.ESCAPE, false));
             rig.awaitIdle();
@@ -794,7 +799,6 @@ class AgentCoordinatorSessionFxTest {
     private static final class Ops implements AgentCoordinator.Ops {
         final Path root;
         final List<Remembered> remembered = new java.util.concurrent.CopyOnWriteArrayList<>();
-        final BlockingQueue<Remembered> rememberedEvents = new LinkedBlockingQueue<>();
         final ObservableList<AgentSessionHistory.Entry> history = FXCollections.observableArrayList();
         final AtomicInteger toggles = new AtomicInteger();
         final AtomicInteger closed = new AtomicInteger();
@@ -855,9 +859,7 @@ class AgentCoordinatorSessionFxTest {
 
         @Override
         public void rememberSession(String sessionId, String cwd, String label, long updatedAt, String agentId) {
-            Remembered r = new Remembered(sessionId, cwd, label, agentId);
-            remembered.add(r);
-            rememberedEvents.add(r);
+            remembered.add(new Remembered(sessionId, cwd, label, agentId));
         }
 
         @Override
@@ -894,9 +896,8 @@ class AgentCoordinatorSessionFxTest {
                 box.getChildren().addListener((ListChangeListener<Node>) change -> {
                     while (change.next()) {
                         for (Node added : change.getAddedSubList()) {
-                            if (added instanceof Label label) {
-                                lines.add(label.getText());
-                            }
+                            // A plain line, or the start of a message the agent is streaming.
+                            lines.add(added instanceof Label label ? label.getText() : STREAMING);
                         }
                     }
                 });
@@ -925,6 +926,7 @@ class AgentCoordinatorSessionFxTest {
         /** Starts a turn without waiting for it. */
         void send(String text) throws Exception {
             idle.clear();
+            lines.clear();
             FxTestSupport.runOnFx(() -> coordinator.sendPrompt(text));
         }
 
@@ -939,10 +941,9 @@ class AgentCoordinatorSessionFxTest {
             FxTestSupport.drainFx();
         }
 
-        void awaitRemembered(int count) throws Exception {
-            while (ops.remembered.size() < count) {
-                assertNotNull(ops.rememberedEvents.poll(WAIT_SECONDS, TimeUnit.SECONDS), "no session was recorded");
-            }
+        /** Waits until the agent's reply has started to arrive: the turn is under way on its side. */
+        void awaitReplyStarted() throws Exception {
+            awaitLine(STREAMING::equals);
         }
 
         /** The first plain transcript line matching {@code wanted}, waiting for it to be appended. */
