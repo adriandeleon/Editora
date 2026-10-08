@@ -469,8 +469,8 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
                 com.editora.todo.TodoComment c = m.parsed();
                 out.add(new TodoItem(
                         file,
-                        m.line() + 1,
-                        m.col() + 1,
+                        m.line(), // a TodoMatch is 1-based already, unlike an LSP position
+                        m.col(),
                         c == null ? m.patternName() : c.keyword(),
                         c == null ? null : c.tag(),
                         c == null ? null : c.priority(),

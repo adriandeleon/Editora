@@ -533,6 +533,49 @@ class WindowMcpBridgeFxTest {
     }
 
     @Test
+    void todoScanFindsMarkersOnDiskAndInUnsavedTextAndNothingWhenTheFeatureIsOff() throws Exception {
+        try (AsyncTestScope async = new AsyncTestScope()) {
+            Window window = projectWindow(async, "todos");
+            Path onDisk = Files.writeString(
+                    window.root.resolve("Work.java"),
+                    "class Work {\n    // TODO [auth] (high) token refresh races on logout\n}\n");
+            Path edited = Files.writeString(window.root.resolve("notes.txt"), "plain\n");
+            Files.writeString(work.resolve("outside.txt"), "TODO outside the project\n");
+            EditorBuffer buffer = open(async, window, edited);
+            FxTestSupport.runOnFx(() -> buffer.getArea().appendText("FIXME: typed, not saved\n"));
+
+            List<McpBridge.TodoItem> todos = window.mcp.todoScan();
+
+            assertEquals(2, todos.size(), todos.toString());
+            McpBridge.TodoItem disk = todos.stream()
+                    .filter(todo -> todo.file().equals(onDisk.toString()))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(2, disk.line(), "the line the marker is on, counted from 1");
+            assertEquals(8, disk.col(), "the column the keyword starts at, counted from 1");
+            assertEquals("TODO", disk.keyword());
+            assertEquals("auth", disk.tag());
+            assertEquals("high", disk.priority());
+            assertEquals("    // TODO [auth] (high) token refresh races on logout", disk.text());
+            McpBridge.TodoItem unsaved = todos.stream()
+                    .filter(todo -> todo.file().equals(edited.toString()))
+                    .findFirst()
+                    .orElseThrow();
+            assertEquals(2, unsaved.line());
+            assertEquals(1, unsaved.col());
+            assertEquals("FIXME", unsaved.keyword());
+            assertNull(unsaved.tag());
+            assertNull(unsaved.priority());
+            assertEquals("plain\n", Files.readString(edited));
+
+            FxTestSupport.runOnFx(() -> FxTestSupport.<ConfigManager>field(window.controller, "config")
+                    .getSettings()
+                    .setTodoHighlight(false));
+            assertEquals(List.of(), window.mcp.todoScan(), "switched off in Settings");
+        }
+    }
+
+    @Test
     void gitStatusReportsTheBranchAndEachChangedFileOfTheProjectRepository() throws Exception {
         Assumptions.assumeTrue(gitAvailable(), "git is not installed");
         try (AsyncTestScope async = new AsyncTestScope()) {
