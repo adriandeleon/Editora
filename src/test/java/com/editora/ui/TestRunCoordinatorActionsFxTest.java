@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
@@ -79,6 +80,7 @@ class TestRunCoordinatorActionsFxTest {
     private final List<String> statuses = new ArrayList<>();
     private final List<String> calls = new ArrayList<>();
     private boolean debugAvailable;
+    private long reportWritten; // the modification time given to the last report: each run's is later
     private Settings settings;
     private TestRunCoordinator coordinator;
     private Stage stage;
@@ -174,7 +176,13 @@ class TestRunCoordinatorActionsFxTest {
                 coordinator.onTestRunStart(BuildTool.GRADLE, dir, task, List.of("--offline"), List.of("gradle"))));
         settle(); // the pre-run snapshot of the reports folder has been taken
         Path reports = Files.createDirectories(dir.resolve("build/test-results/test"));
-        Files.writeString(reports.resolve("TEST-com.x.FooTest.xml"), REPORT);
+        Path report = Files.writeString(reports.resolve("TEST-com.x.FooTest.xml"), REPORT);
+        // The coordinator tells this run's report from a leftover by its modification time, and a real
+        // build takes seconds to write one. Two runs of this harness can land in the same tick of the
+        // file system's clock; the second report then looked untouched and the run came up empty.
+        reportWritten = Math.max(
+                reportWritten + 2_000, Files.getLastModifiedTime(report).toMillis());
+        Files.setLastModifiedTime(report, FileTime.fromMillis(reportWritten));
         FxTestSupport.runOnFx(() -> coordinator.onTestExit(1));
         settle();
         calls.clear();
