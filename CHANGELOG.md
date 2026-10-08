@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Project Map: a command `Project: Toggle Tree / Map View` (no default key), a "?" popover listing the
+  mouse and keyboard controls, and an options (⋯) menu holding Keep current zoom, Focus new column, Hide
+  all open Personal Notes, Print… and PDF…. Tree/Map and the two navigation options are remembered per
+  workspace (workspace-state schema 13).
 - GitHub tool window: a row under the toolbar shows the repository's URL (click to open it on GitHub,
   right-click to copy), the branch checked out, and the GitHub account `gh` is signed in with. It replaces
   the `owner/name` label in the toolbar. The account needs gh 2.81 or newer.
@@ -114,6 +118,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Project Map, changed behaviour: clicking an open folder selects it and brings its column into view
+  (collapse with the row's chevron or the column's ×); Escape closes open cards, then clears the search,
+  then returns to the editor (Ctrl/Cmd+0 and the Fit button still fit); the default flow is Left → Right
+  for workspaces with no stored flow; columns follow the Project "show hidden files" setting and the
+  per-column checkbox is now "Show hidden"; at most eight cards are open in total, previews and notes
+  together.
 - GitHub: the tool window names the repository `gh` resolved, filters pull requests and issues by state
   (open, closed, merged, all) and "Mine", offers "load more" instead of stopping at 50 (30 for runs),
   and shows a spinner while `gh` is working. Row menus open with the Menu key, and the segment buttons
@@ -209,6 +219,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Project Map review fixes** (62 findings: keys, layout, loading, cards, Print/PDF).
+  - Print… and PDF… output the whole map. Previously only the part visible on screen was painted and the
+    rest of the page was blank. Output uses a light palette whatever the theme, a landscape page when the
+    map is wider than tall, and is split across pages when one page would make labels smaller than 7 pt;
+    the status bar says when the map was scaled or split. The PDF is rendered only after a destination
+    is chosen.
+  - Alt+Left / Alt+Right (history), Ctrl/Cmd+0 (Fit) and Ctrl-N / Ctrl-P (siblings) reach the map in
+    every keymap instead of doing nothing, resetting text zoom, or opening New File / Print / Find File.
+    Ctrl-N / Ctrl-P also work from the Project search field in the GUI keymaps.
+  - Large folders no longer truncate silently. Each column shows up to 300 rows with a "+N more…" row
+    that loads the next chunk, headers read "shown/total", the status bar says when the 1,200-item limit
+    is reached, and empty or unreadable folders open a column that says so.
+  - `/` works on keyboards where the slash is a shifted key and on the numpad, no longer types a "/"
+    into the column filter, and zooms in to reveal a filter hidden by low zoom. F2 renames and Delete
+    deletes the selected entry as in the Project tree; the Menu key / Shift+F10 open the selected row's
+    menu at that row. Page Up / Page Down stop at the ends of a column; Enter in a column filter selects
+    the first match, and a selection hidden by a filter is no longer opened.
+  - The first view opens at 100% with the root and the start of the first column in view. Fit anchors on
+    the selected path when it cannot show everything, the map never shrinks itself below 85%, opening a
+    large folder shows its header, first rows and parent row, and columns at different depths can no
+    longer overlap.
+  - The toolbar fits the tool window in every language: filters wrap, the zoom bar is icons with a
+    fixed percentage, breadcrumbs collapse their middle, and the Tree/Map switch no longer truncates.
+  - Clearer rows: focus ring and on-accent icon on the selected row, a chevron on every folder, a Git
+    letter versus an unsaved dot, a preview (eye) affordance with a tooltip, tooltips and accessible
+    names on the controls, contrast fixes in both Editora themes, "No files match" and per-column
+    "No matches" messages. Column headers collapse when their controls are hidden, and the zoom bar and
+    overview no longer cover a keyboard-selected row.
+  - The map reloads when you switch to it and after in-app file changes during a search, and no longer
+    loads for windows that never show it. Switching Map → Tree keeps the tree's expansion and selection.
+    Reveal, Back/Forward and breadcrumb jumps no longer collapse other open branches. A search always
+    loads and selects its first match and reports "showing N of M matches"; closing a search-opened
+    column works, and clearing the search restores exactly the folders you had open.
+  - Open / Modified / Bookmarks / Personal Notes chips highlight collapsed folders that contain
+    matches; folder bookmarks and folder Personal Notes are shown; the Type filter classifies files
+    through the editor's language registry.
+  - Preview and note cards keep a usable size in a narrow panel and no longer pan the map when they open
+    or when a large file finishes loading. Previews decode files the way the editor does (`.editorconfig`
+    charset, no replacement characters for Latin-1 files), highlight CRLF files, follow edits in an open tab and changes on
+    disk, and say when the file no longer exists. Note cards no longer drop an edit that returns to the
+    original text, follow notes changed elsewhere, and restore a blanked note. Escape closes a focused
+    card; Tab leaves the preview text. Cards close when their folder is collapsed and stay open across
+    a Tree/Map switch.
+  - Header drags stop at the parent column and no longer activate the row under the release; middle-drag
+    pans from anywhere; hover no longer goes stale; horizontal touchpad scrolling pans, scroll inertia
+    no longer zooms, pinch zooms (untested on real devices). History is bounded and treats a run of
+    arrow-key moves as one step.
+  - Project tree and Map: names that differ only by case sort deterministically.
 - Tabs restored from the last session no longer keep the muted italic read-only title for files that
   are editable. The title was drawn while the file was still loading and never redrawn afterwards.
 - Abbreviations that contain punctuation now expand: `adl-fn`, `;sig`, `e.g`. Only letters and digits were
