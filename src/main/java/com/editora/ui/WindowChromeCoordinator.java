@@ -352,6 +352,14 @@ final class WindowChromeCoordinator {
         host.navigation().folderFinder.setOverlayHost(host.overlayHost());
         host.switcher().setOverlayHost(host.overlayHost());
         host.gitWindows().branchPopup.setOverlayHost(host.overlayHost());
+        // The dropdown's folded sections belong to the workspace, like the tool-window layout.
+        host.gitWindows()
+                .branchPopup
+                .setCollapsedSections(host.config().getWorkspaceState().getCollapsedBranchSections());
+        host.gitWindows()
+                .branchPopup
+                .setOnCollapsedSectionsChanged(keys ->
+                        host.config().getWorkspaceState().setCollapsedBranchSections(new java.util.ArrayList<>(keys)));
         host.statusBar().setOverlayHost(host.overlayHost());
         host.buildCoordinators().forEach(c -> c.setOverlayHost(host.overlayHost()));
     }

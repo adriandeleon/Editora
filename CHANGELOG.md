@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The branch dropdown's sections fold, and it is larger.** A click on the *Actions*, *Local* or
+  *Remote* header (or Enter, or ←/→, with the header selected) collapses that section to its header, which
+  then shows how many rows it hides; the choice is remembered with the workspace. A search still looks
+  inside a collapsed section. The dropdown is wider and taller, the actions are listed above the branches,
+  and it opens with the current branch selected.
+
 - **The References tool window colors its code previews like the editor.** Each reference's line is shown
   with the same syntax highlighting, in the active editor color theme, as the file's open tab. A reference
   in a file with no open tab still shows its position only.

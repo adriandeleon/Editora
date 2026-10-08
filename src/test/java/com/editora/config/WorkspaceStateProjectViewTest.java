@@ -67,4 +67,22 @@ class WorkspaceStateProjectViewTest {
         state.setProjectViewMode(null);
         assertEquals(WorkspaceState.PROJECT_VIEW_TREE, state.getProjectViewMode());
     }
+
+    /** Schema v14: the branch dropdown's folded sections. */
+    @Test
+    void theFoldedBranchSectionsSurviveARestartAndAnOlderFileHasNone(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("workspace-state.json"), "{\"schemaVersion\":13,\"debugWatches\":[\"kept\"]}");
+        ConfigManager first = new ConfigManager(dir);
+        first.load();
+        assertEquals(java.util.List.of(), first.getWorkspaceState().getCollapsedBranchSections());
+        assertEquals(java.util.List.of("kept"), first.getWorkspaceState().getDebugWatches());
+        first.getWorkspaceState().setCollapsedBranchSections(new java.util.ArrayList<>(java.util.List.of("remote")));
+        first.save();
+
+        ConfigManager reopened = new ConfigManager(dir);
+        reopened.load();
+
+        assertEquals(java.util.List.of("remote"), reopened.getWorkspaceState().getCollapsedBranchSections());
+        assertEquals(WorkspaceState.SCHEMA_VERSION, reopened.getWorkspaceState().getSchemaVersion());
+    }
 }

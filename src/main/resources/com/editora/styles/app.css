@@ -544,6 +544,16 @@
     -fx-opacity: 1;
     -fx-padding: 4 0 1 0;
 }
+/* A header folds its section: the chevron and the hidden-row count read as part of the muted label. */
+.branch-popup-header .label {
+    -fx-text-fill: -color-fg-muted;
+}
+.branch-popup-header .branch-popup-chevron .toolbar-icon {
+    -fx-fill: -color-fg-muted;
+}
+.branch-popup-header .branch-popup-count {
+    -fx-font-weight: normal;
+}
 .branch-current {
     -fx-text-fill: -color-accent-fg;
     -fx-font-weight: bold;

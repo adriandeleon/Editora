@@ -37,8 +37,11 @@ public class WorkspaceState {
      * (the Project panel's Tree/Map choice and the Map's two navigation options). Additive, with defaults that
      * are what every window did before (Tree, both options on), so the migration is identity. The same step
      * changed the default of {@code projectMapFlow} to left-to-right; a file that already stores a flow keeps it.
+     *
+     * <p>v13 → v14 added {@code collapsedBranchSections} (the branch dropdown's folded sections). Additive;
+     * empty means every section open, as before.
      */
-    public static final int SCHEMA_VERSION = 13;
+    public static final int SCHEMA_VERSION = 14;
 
     /** {@link #getProjectViewMode()} values. */
     public static final String PROJECT_VIEW_TREE = "TREE";
@@ -132,6 +135,8 @@ public class WorkspaceState {
     private boolean projectMapKeepZoom = true;
     /** Project Map "Focus new column". Additive in v13; on by default. */
     private boolean projectMapFocusNewColumn = true;
+    /** Branch dropdown sections shown folded ("local", "remote", "remote:<name>", "actions"). Additive in v14. */
+    private List<String> collapsedBranchSections = new ArrayList<>();
     /** The active HTTP Client environment name (for {@code .http} {@code {{var}}} resolution), or "". */
     private String httpEnvironment = "";
 
@@ -394,6 +399,14 @@ public class WorkspaceState {
 
     public void setReadOnlyFiles(List<String> readOnlyFiles) {
         this.readOnlyFiles = readOnlyFiles == null ? new ArrayList<>() : readOnlyFiles;
+    }
+
+    public List<String> getCollapsedBranchSections() {
+        return collapsedBranchSections;
+    }
+
+    public void setCollapsedBranchSections(List<String> collapsedBranchSections) {
+        this.collapsedBranchSections = collapsedBranchSections == null ? new ArrayList<>() : collapsedBranchSections;
     }
 
     public List<String> getDebugWatches() {
