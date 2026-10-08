@@ -95,6 +95,39 @@ public final class AcpFsGuard {
         }
     }
 
+    /**
+     * Whether {@code target} is, or lies under, a version-control metadata entry <em>anywhere</em> on its
+     * path — for a channel that is not confined to one folder (the MCP bridge writes through whatever buffer
+     * the user has open). By the name used and by where that name really leads, as above.
+     */
+    public static boolean isVcsMetadata(Path target) {
+        if (target == null) {
+            return false;
+        }
+        Path spelled = target.toAbsolutePath().normalize();
+        if (hasVcsMetadataName(spelled)) {
+            return true;
+        }
+        try {
+            return hasVcsMetadataName(PathContainment.realOrNearest(spelled));
+        } catch (IOException | RuntimeException e) {
+            return true; // cannot be vouched for
+        }
+    }
+
+    /** Whether one of {@code path}'s own name elements is a version-control metadata name. No I/O. */
+    public static boolean hasVcsMetadataName(Path path) {
+        if (path == null) {
+            return false;
+        }
+        for (Path part : path) {
+            if (VCS_METADATA.contains(part.toString().toLowerCase(java.util.Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean hasVcsComponent(Path root, Path target) {
         if (!target.startsWith(root)) {
             return false;

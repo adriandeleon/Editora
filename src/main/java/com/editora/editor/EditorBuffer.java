@@ -2798,7 +2798,11 @@ public class EditorBuffer implements TabContent {
             }
             for (javafx.scene.Node n = e.getPickResult().getIntersectedNode(); n != null && n != a; n = n.getParent()) {
                 if (n.getStyleClass().contains(CODE_LENS_STYLE)) {
-                    int offset = a.hit(e.getX(), e.getY()).getInsertionIndex();
+                    // The character under the pointer, not the insertion point beside it: a lens follows the
+                    // end of its line, and the insertion point nearest its right half is the start of the
+                    // next line — that half of the label ran the lenses of the line below, or nothing.
+                    var hit = a.hit(e.getX(), e.getY());
+                    int offset = hit.getCharacterIndex().orElse(hit.getInsertionIndex());
                     int line = a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
                             .getMajor();
                     e.consume();

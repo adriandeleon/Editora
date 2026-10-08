@@ -38,10 +38,44 @@ class PathKeysTest {
     }
 
     @Test
-    void canonicalFallsBackToNormalizeForMissingFile(@TempDir Path tmp) {
-        // A not-yet-on-disk path (e.g. an unsaved buffer) can't be realpath'd; fall back to normalize().
+    void aMissingFileIsKeyedUnderTheRealPathOfTheFolderItWouldBeIn(@TempDir Path tmp) throws IOException {
+        // A path that is not on disk (a Save As target before its first write) can't be realpath'd. Its folder
+        // can: the temp dir itself is reached through a link on macOS (/var -> /private/var).
         Path missing = tmp.resolve("nope/../ghost.java");
-        assertEquals(missing.toAbsolutePath().normalize(), PathKeys.canonical(missing));
+        assertEquals(tmp.toRealPath().resolve("ghost.java"), PathKeys.canonical(missing));
+        assertEquals(
+                tmp.toRealPath().resolve("no/such/folder/ghost.java"),
+                PathKeys.canonical(tmp.resolve("no/such/folder/ghost.java")),
+                "the nearest folder that exists is the one resolved");
+    }
+
+    @Test
+    void aFileHasTheSameKeyBeforeItIsCreatedAndAfter(@TempDir Path tmp) throws IOException {
+        // Save As keys the buffer's notes by the new path before the file is written, and looks them up
+        // afterwards. Through a linked folder the two used to be different spellings.
+        Path realDir = Files.createDirectory(tmp.resolve("real"));
+        Path link;
+        try {
+            link = Files.createSymbolicLink(tmp.resolve("link"), realDir);
+        } catch (IOException | UnsupportedOperationException e) {
+            assumeTrue(false, "symlinks not supported on this platform/filesystem");
+            return;
+        }
+        Path target = link.resolve("copy.txt");
+        String before = PathKeys.canonicalKey(target);
+        Files.writeString(target, "x");
+        assertEquals(before, PathKeys.canonicalKey(target));
+        assertEquals(realDir.toRealPath().resolve("copy.txt").toString(), before);
+
+        Files.delete(target);
+        assertEquals(before, PathKeys.canonicalKey(target), "and the key it had is still its key once deleted");
+    }
+
+    @Test
+    void anotherSpellingOfAnExistingFileIsThatFile(@TempDir Path tmp) throws IOException {
+        // "missing/../a.txt" is not a path the OS resolves, but what it names is on disk.
+        Path file = Files.writeString(tmp.resolve("a.txt"), "x");
+        assertEquals(PathKeys.canonical(file), PathKeys.canonical(tmp.resolve("missing/../a.txt")));
     }
 
     @Test
@@ -155,28 +189,26 @@ class PathKeysTest {
     }
 
     /**
-     * The not-exists fallback must NEVER be cached: a Save-As target resolves normalized before it exists,
-     * and once created its real form can differ (macOS /tmp → /private/tmp). A cached fallback would
-     * re-introduce the #470 identity mismatch that silently dropped diagnostics.
+     * The not-exists fallback must NEVER be cached: what a path names can change when it is created — the
+     * new file may itself be a link. A cached fallback would re-introduce the #470 identity mismatch that
+     * silently dropped diagnostics.
      */
     @Test
     void theNotExistsFallbackIsNotCached(@TempDir Path dir) throws Exception {
         PathKeys.invalidateCanonicalCache();
         Path realDir = Files.createDirectory(dir.resolve("realdir"));
-        Path link = dir.resolve("link");
+        Path realFile = Files.writeString(realDir.resolve("file.txt"), "x");
+        Path link = dir.resolve("link.txt");
+        // Not created yet -> the fallback: the name inside its folder's real path.
+        Path before = PathKeys.canonical(link);
+        assertEquals(dir.toRealPath().resolve("link.txt"), before);
         try {
-            Files.createSymbolicLink(link, realDir);
+            Files.createSymbolicLink(link, realFile);
         } catch (UnsupportedOperationException | java.io.IOException e) {
             return; // platform without symlink support — nothing to prove here
         }
-        Path throughLink = link.resolve("file.txt");
-        // Not created yet → fallback (normalized, symlink NOT resolved).
-        Path before = PathKeys.canonical(throughLink);
-        assertEquals(throughLink.toAbsolutePath().normalize(), before);
-        // Now create it — canonical must re-resolve through the symlink, proving no stale cache entry.
-        Files.writeString(realDir.resolve("file.txt"), "x");
-        Path after = PathKeys.canonical(throughLink);
-        assertEquals(realDir.toRealPath().resolve("file.txt"), after, "created file resolves through the link");
+        // Now it exists, as a link — canonical must resolve it, proving no stale cache entry.
+        assertEquals(realFile.toRealPath(), PathKeys.canonical(link), "the created link resolves to its target");
     }
 
     @Test

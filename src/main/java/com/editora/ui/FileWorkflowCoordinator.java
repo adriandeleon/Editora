@@ -262,6 +262,23 @@ final class FileWorkflowCoordinator {
     /** The privileged write ({@code pkexec}/{@code osascript}). Package-visible replacement for tests. */
     volatile ElevatedWriter elevatedWriter = this::runElevatedWrite;
 
+    /** Starts the elevation tool: its availability probe, and the privileged copy itself. */
+    @FunctionalInterface
+    interface ElevationProcess {
+
+        com.editora.process.ProcessRunner.Result run(java.time.Duration timeout, List<String> argv);
+    }
+
+    /**
+     * The one place {@code pkexec}/{@code osascript} is launched from. Replaced by tests, which must never
+     * raise the operating system's password prompt.
+     */
+    volatile ElevationProcess elevationProcess =
+            (timeout, argv) -> com.editora.process.ProcessRunner.run(null, timeout, argv);
+
+    /** Where Save As writes: the native file chooser's answer, null when it is cancelled. Replaced by tests. */
+    volatile java.util.function.Function<EditorBuffer, Path> saveAsTargetChooser = this::chooseSaveAsTarget;
+
     /** Test seam for holding an actual write worker while proving the FX thread remains responsive. */
     volatile Runnable beforeDocumentWriteForTest;
 
@@ -1214,6 +1231,8 @@ final class FileWorkflowCoordinator {
         alert.getButtonTypes().setAll(reload, keep);
         if (buffer.isDirty()) {
             ExternalChangePrompt.keepIsTheKeyboardDefault(alert, reload, keep);
+        } else {
+            ExternalChangePrompt.reloadIsTheKeyboardDefault(alert, reload);
         }
         if (alert.showAndWait().filter(b -> b == reload).isPresent()) {
             reloadFromDisk(tab, buffer);
@@ -1432,8 +1451,8 @@ final class FileWorkflowCoordinator {
                         () -> {
                             boolean ok;
                             try {
-                                ok = com.editora.process.ProcessRunner.run(
-                                                        null,
+                                ok = elevationProcess
+                                                .run(
                                                         java.time.Duration.ofSeconds(5),
                                                         List.of(com.editora.process.ElevatedSave.PKEXEC, "--version"))
                                                 .exit()
@@ -1620,8 +1639,7 @@ final class FileWorkflowCoordinator {
                 // Non-POSIX filesystem: the temp file keeps default permissions.
             }
             Files.write(tmp, bytes);
-            var result = com.editora.process.ProcessRunner.run(
-                    null,
+            var result = elevationProcess.run(
                     java.time.Duration.ofMinutes(2),
                     com.editora.process.ElevatedSave.elevatedArgv(
                             System.getProperty("os.name"), com.editora.process.ElevatedSave.PKEXEC, tmp, target));
@@ -1690,6 +1708,14 @@ final class FileWorkflowCoordinator {
         if (refuseUnsavable(buffer)) {
             return false;
         }
+        Path file = saveAsTargetChooser.apply(buffer);
+        if (file == null) {
+            return false;
+        }
+        return applySaveAsTarget(buffer, file, synchronous);
+    }
+
+    private Path chooseSaveAsTarget(EditorBuffer buffer) {
         // A remote buffer may be saved as a LOCAL file (the chooser only offers those): with its connection
         // gone that is the one way left to keep the text. A new remote destination is still not offered.
         FileChooser chooser = new FileChooser();
@@ -1699,11 +1725,7 @@ final class FileWorkflowCoordinator {
         } else if (com.editora.vfs.Vfs.isRemote(buffer.getPath())) {
             chooser.setInitialFileName(String.valueOf(buffer.getPath().getFileName()));
         }
-        Path file = host.pathOf(chooser.showSaveDialog(host.stage()));
-        if (file == null) {
-            return false;
-        }
-        return applySaveAsTarget(buffer, file, synchronous);
+        return host.pathOf(chooser.showSaveDialog(host.stage()));
     }
 
     /** Points {@code buffer} at {@code file}, refreshes its previews/tab/breadcrumb, and writes it. */

@@ -65,8 +65,42 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
 
+      # Tests guarded by a tool on the PATH skip, they do not fail, when the tool is missing. ripgrep
+      # backs Find and Replace in Files; without it those tests would be silently skipped here.
+      - name: Install ripgrep
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ripgrep
+          rg --version
+
       - name: Build and test
         run: ./mvnw -B --no-transfer-progress -Dmaven.compiler.release=${{ matrix.java }} -Dspotless.check.skip=true verify
+
+      # A skip that is not on the allow-list means the runner lost something a test needs.
+      - name: Check for unexpected skipped tests
+        run: python3 scripts/check_skips.py target/surefire-reports scripts/expected-skips-linux.txt
+
+      - name: Summarise coverage
+        if: matrix.java == '25'
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import csv
+          rows = list(csv.DictReader(open("target/site/jacoco/jacoco.csv")))
+          def ratio(kind):
+              covered = sum(int(r[kind + "_COVERED"]) for r in rows)
+              missed = sum(int(r[kind + "_MISSED"]) for r in rows)
+              return 100.0 * covered / (covered + missed)
+          print("### Coverage")
+          print(f"Lines {ratio('LINE'):.1f}% · branches {ratio('BRANCH'):.1f}%")
+          PY
+
+      - name: Upload coverage report
+        if: matrix.java == '25'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: jacoco-report
+          path: target/site/jacoco
+          retention-days: 14
 
   # Windows and macOS installers ship from every release, but until this job existed no test ever ran on
   # either: both were only compiled and packaged at tag time. This runs the PURE suite there (everything
@@ -106,6 +140,31 @@ jobs:
   # The release and packaging scripts have their own unit tests (the release-asset manifest, the tarball
   # installer, the .deb maintainer scripts run against a scratch root, the pinned-download check). They are
   # Python `unittest` files beside the scripts; nothing else runs them.
+  # The headless Glass platform ships inside JavaFX, so the FX suite can run on macOS without a display.
+  # The pure lane above reaches under half the code; this one covers the rest on a second operating
+  # system. It has never run before, so it starts advisory: make it blocking once it has stayed green.
+  fx-tests:
+    name: FX tests (macos-15)
+    runs-on: macos-15
+    timeout-minutes: 45
+    continue-on-error: true
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+
+      - name: Test (FX suite)
+        run: ./mvnw -B --no-transfer-progress -Dgroups=fx test
+
   scripts:
     name: Release & packaging scripts
     runs-on: ubuntu-latest

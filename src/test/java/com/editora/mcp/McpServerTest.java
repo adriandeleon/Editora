@@ -59,8 +59,8 @@ class McpServerTest {
         }
 
         @Override
-        public boolean openFile(String path, int line, int col) {
-            return "/tmp/a.java".equals(path);
+        public String openFile(String path, int line, int col) {
+            return "/tmp/a.java".equals(path) ? null : "No such file: " + path;
         }
 
         @Override

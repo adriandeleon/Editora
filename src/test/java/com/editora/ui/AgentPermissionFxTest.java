@@ -66,7 +66,10 @@ class AgentPermissionFxTest {
             assertFalse(answer.isDone(), "nothing typed or clicked as the dialog appeared may answer it");
 
             clock.addAndGet(AgentCoordinator.PERMISSION_GRACE_NANOS + 1);
-            press(pane, KeyCode.ENTER); // a deliberate key now acts — on the focused, rejecting choice
+            // A deliberate key now acts — on the focused, rejecting choice. Space, because that is the key
+            // that presses a focused button everywhere: on macOS Enter only ever reaches a default button,
+            // and this dialog has none on purpose.
+            press(pane, KeyCode.SPACE);
             assertEquals("reject", answer.get(10, TimeUnit.SECONDS));
         }
     }
