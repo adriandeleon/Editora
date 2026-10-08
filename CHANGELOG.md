@@ -48,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Scrolling a file with code lenses on no longer leaves the language server counting references for the
   lines scrolled away from: a superseded code-lens request now cancels the `codeLens/resolve` requests it
   had started (with jdtls, a reference search each).
+- **Project filter: Enter opens the first match.** After typing in the Project tool window's filter, Enter
+  did nothing, because no match was highlighted — and Down first landed on the project's own row, where
+  Enter collapsed the result list. The first match is now highlighted when the results arrive, so Enter
+  opens it and Down moves on from there.
+- **Project tree: a folder you close and reopen shows what it holds now.** Files added to or removed from
+  a folder while it was closed in the tree did not appear when it was opened again — only after the
+  window lost and regained focus. A reopened folder is now listed again, and a closed one is no longer
+  watched for changes.
+- **Project Map: Escape on a preview card's right-click menu closes only the menu.** It closed the card
+  as well.
 
 ## [0.20.0] - 2026-10-08
 
