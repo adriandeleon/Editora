@@ -732,7 +732,12 @@ final class WindowSessionCoordinator {
         host.previews().restoreMarkdownMode(buffer);
         // The tab was selected while it was still a non-editable loading shell. Refresh after the
         // restored file's real View mode has been applied so the status segment cannot retain that
-        // temporary "Read-Only" state for an editable buffer.
+        // temporary "Read-Only" state for an editable buffer. The tab header was rendered from that shell
+        // too, so it needs the same refresh or every restored tab keeps the muted/italic read-only title.
+        Tab tab = host.tabForBuffer(buffer);
+        if (tab != null) {
+            host.updateTabMeta(tab, buffer);
+        }
         host.refreshStatusBar();
         // The tab was set up before content loaded; its real tier is known now. Only the visible tab starts
         // its server here — a restored background tab still waits for its first show.
@@ -740,7 +745,6 @@ final class WindowSessionCoordinator {
         CodeArea area = buffer.getArea();
         int caret = Math.max(0, Math.min(f.getCaret(), area.getLength()));
         area.moveTo(caret);
-        Tab tab = host.tabForBuffer(buffer);
         if (DeferredTabContent.isDeferred(tab)) {
             // Restored in the background: there is no viewport to position until its editor is attached.
             DeferredTabContent.whenShown(tab, () -> scrollRestoredCaretWhenLaidOut(buffer));
