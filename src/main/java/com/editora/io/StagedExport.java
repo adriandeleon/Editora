@@ -96,12 +96,12 @@ public final class StagedExport implements AutoCloseable {
         }
     }
 
-    /** Drops the staging file and its directory; the destination is untouched. Safe to call repeatedly. */
+    /**
+     * Drops the staging file and its directory; the destination is untouched. Safe to call repeatedly — a
+     * later call removes what a writer that was still running during the first one has left since.
+     */
     @Override
     public void close() {
-        if (finished) {
-            return;
-        }
         finished = true;
         deleteTree(stagingDir);
     }

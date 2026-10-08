@@ -31,10 +31,16 @@ class ExportCoordinatorPrintFxTest {
     private static final class Host extends CoordinatorHostStub {
         final com.editora.config.Settings settings = new com.editora.config.Settings();
         final List<String> statuses = new ArrayList<>();
+        com.editora.editor.EditorBuffer active;
 
         @Override
         public com.editora.config.Settings settings() {
             return settings;
+        }
+
+        @Override
+        public com.editora.editor.EditorBuffer activeBuffer() {
+            return active;
         }
 
         @Override
@@ -47,19 +53,32 @@ class ExportCoordinatorPrintFxTest {
     private final List<PrintService.Result> reported = new ArrayList<>();
     private int jobsCreated;
     private ExportCoordinator exports;
+    /** Every fake job handed out, in order. */
+    private final List<PrintPreviewFxTest.FakeJob> jobs = new ArrayList<>();
+    /** The "no printer" dialogs the coordinator built — recorded, never shown. */
+    private final List<javafx.scene.control.Alert> noPrinterDialogs = new ArrayList<>();
+    /** Which button of a "no printer" dialog the test presses: 0 = Export to PDF…, 1 = Cancel. */
+    private int noPrinterAnswer = 1;
+    /** The file names the Save dialog of an export was opened with (it is then "cancelled"). */
+    private final List<String> saveDialogs = new ArrayList<>();
 
     private void create() throws Exception {
         FxTestSupport.runOnFx(() -> {
-            exports = new ExportCoordinator(host, null, null, null, path -> {});
+            exports = new ExportCoordinator(host, null, null, null, path -> {}, chooser -> {
+                saveDialogs.add(chooser.getInitialFileName());
+                return null;
+            });
             exports.printJobs = () -> {
                 jobsCreated++;
-                try {
-                    return new PrintPreviewFxTest.FakeJob(PrintPreviewFxTest.letter());
-                } catch (Exception e) {
-                    throw new IllegalStateException(e);
-                }
+                PrintPreviewFxTest.FakeJob job = new PrintPreviewFxTest.FakeJob(silently(PrintPreviewFxTest::letter));
+                jobs.add(job);
+                return job;
             };
             exports.printReporter = reported::add;
+            exports.noPrinterPrompt = alert -> {
+                noPrinterDialogs.add(alert);
+                return java.util.Optional.of(alert.getButtonTypes().get(noPrinterAnswer));
+            };
         });
     }
 
@@ -217,6 +236,154 @@ class ExportCoordinatorPrintFxTest {
                         tr("status.print.noPrinter"),
                         tr("status.print.noPrinter")),
                 host.statuses);
+    }
+
+    // --- no printer: a dialog that offers Export to PDF (A11) ---
+
+    @Test
+    void withNoPrinterADialogOffersExportToPdf() throws Exception {
+        create();
+        FxTestSupport.runOnFx(() -> {
+            exports.printJobs = () -> null;
+            exports.csvPrint(CSV);
+        });
+        assertEquals(1, noPrinterDialogs.size(), "Ctrl+P must not look like it did nothing");
+        javafx.scene.control.Alert dialog = noPrinterDialogs.get(0);
+        FxTestSupport.runOnFx(() -> {
+            assertEquals(tr("dialog.print.noPrinter.header"), dialog.getHeaderText());
+            assertEquals(tr("dialog.print.noPrinter.content"), dialog.getContentText());
+            assertEquals(
+                    List.of(tr("dialog.print.noPrinter.exportPdf"), javafx.scene.control.ButtonType.CANCEL.getText()),
+                    dialog.getButtonTypes().stream()
+                            .map(javafx.scene.control.ButtonType::getText)
+                            .toList());
+            assertTrue(
+                    dialog.getDialogPane().getStylesheets().stream().anyMatch(u -> u.endsWith("app.css")),
+                    "styled like the other dialogs");
+            assertFalse(dialog.isShowing(), "the test never shows it");
+        });
+        assertEquals(List.of(tr("status.print.noPrinter")), host.statuses, "the status line still says so");
+        assertEquals(List.of(), saveDialogs, "Cancel exports nothing");
+        assertFalse(preparing());
+    }
+
+    @Test
+    void theDialogsExportButtonRunsTheExportOfWhatWasBeingPrinted() throws Exception {
+        create();
+        noPrinterAnswer = 0; // Export to PDF…
+        FxTestSupport.runOnFx(() -> {
+            exports.printJobs = () -> null;
+            com.editora.editor.EditorBuffer code = new com.editora.editor.EditorBuffer();
+            code.setDisplayName("Main.java");
+            code.setContent("class Main {}\n");
+            host.active = code;
+            exports.printCode(); // → editor.exportPdf
+            assertEquals(List.of("Main.pdf"), saveDialogs);
+
+            com.editora.editor.EditorBuffer markdown = new com.editora.editor.EditorBuffer();
+            markdown.setDisplayName("notes.md");
+            markdown.setContent("# Notes\n");
+            host.active = markdown;
+            exports.printPreview(); // → preview.exportPdf
+            assertEquals(List.of("Main.pdf", "notes.pdf"), saveDialogs);
+
+            com.editora.editor.EditorBuffer csv = new com.editora.editor.EditorBuffer();
+            csv.setDisplayName("table.csv");
+            csv.setContent(CSV);
+            host.active = csv;
+            exports.csvPrint(CSV); // → the CSV table export, named after the file
+            assertEquals(List.of("Main.pdf", "notes.pdf", "table.pdf"), saveDialogs);
+
+            host.active = null;
+            exports.printProjectMap(new javafx.scene.image.WritableImage(10, 10)); // → the Project Map export
+            assertEquals(4, saveDialogs.size());
+        });
+        assertEquals(4, noPrinterDialogs.size());
+        assertEquals(0, jobsCreated);
+        assertFalse(preparing());
+    }
+
+    // --- a job that is not used is cancelled (A18) ---
+
+    @Test
+    void aJobWhosePreparationFailedIsCancelled() throws Exception {
+        create();
+        PrintPreviewFxTest.FakeJob job = new PrintPreviewFxTest.FakeJob(silently(PrintPreviewFxTest::letter));
+        FxTestSupport.runOnFx(() -> exports.openPrintPreview(job, new PrintService.Prepared(null, "mmdc failed")));
+        assertEquals(1, job.cancelled);
+        assertEquals(1, reported.size());
+    }
+
+    @Test
+    void aJobWhosePreviewCouldNotOpenIsCancelled() throws Exception {
+        create();
+        PrintPreviewFxTest.FakeJob job = new PrintPreviewFxTest.FakeJob(silently(PrintPreviewFxTest::letter));
+        PrintService.Paginator exploding = layout -> {
+            throw new IllegalStateException("layout failed");
+        };
+        FxTestSupport.runOnFx(() -> exports.openPrintPreview(job, new PrintService.Prepared(exploding, null)));
+        assertEquals(1, job.cancelled);
+        assertEquals("layout failed", reported.get(0).message());
+    }
+
+    @Test
+    void theJobOfASecondPreviewThatIsNotOpenedIsCancelledAndTheFirstOneIsNot() throws Exception {
+        create();
+        FxTestSupport.runOnFx(() -> exports.csvPrint(CSV));
+        awaitPreviews(1);
+        PrintPreviewFxTest.FakeJob late = new PrintPreviewFxTest.FakeJob(silently(PrintPreviewFxTest::letter));
+        FxTestSupport.runOnFx(() -> exports.openPrintPreview(
+                late, new PrintService.Prepared(new PrintPreviewFxTest.FakePaginator(1), null)));
+        awaitPreviews(1);
+        assertEquals(1, late.cancelled, "the request that lost the race gives its job back");
+        assertEquals(0, jobs.get(0).cancelled, "the open preview keeps its job");
+
+        PrintPreview first = openPreview();
+        FxTestSupport.runOnFx(() ->
+                FxTestSupport.<javafx.scene.control.Button>field(first, "close").fire());
+        awaitPreviews(0);
+        assertEquals(1, jobs.get(0).cancelled, "Close cancels it");
+    }
+
+    @Test
+    void aPrintedJobIsEndedAndNeverCancelled() throws Exception {
+        create();
+        FxTestSupport.runOnFx(() -> exports.csvPrint(CSV));
+        awaitPreviews(1);
+        PrintPreview first = openPreview();
+        FxTestSupport.runOnFx(() ->
+                FxTestSupport.<javafx.scene.control.Button>field(first, "print").fire());
+        awaitPreviews(0);
+        assertEquals(1, jobs.get(0).ended);
+        assertEquals(0, jobs.get(0).cancelled);
+    }
+
+    // --- the preview's size and zoom are this window's for the session (A13) ---
+
+    @Test
+    void theNextPreviewOfTheWindowOpensAtTheSizeAndZoomOfTheLast() throws Exception {
+        create();
+        FxTestSupport.runOnFx(() -> exports.csvPrint(CSV));
+        awaitPreviews(1);
+        PrintPreview first = openPreview();
+        FxTestSupport.runOnFx(() -> {
+            Stage stage = FxTestSupport.field(first, "stage");
+            stage.setWidth(650);
+            stage.setHeight(510);
+            first.setZoom(PrintZoom.Setting.percent(1.5));
+            FxTestSupport.<javafx.scene.control.Button>field(first, "close").fire();
+        });
+        awaitPreviews(0);
+
+        FxTestSupport.runOnFx(() -> exports.csvPrint(CSV));
+        awaitPreviews(1);
+        PrintPreview second = openPreview();
+        FxTestSupport.runOnFx(() -> {
+            Stage stage = FxTestSupport.field(second, "stage");
+            assertEquals(650, stage.getWidth(), 0.5);
+            assertEquals(510, stage.getHeight(), 0.5);
+            assertEquals(PrintZoom.Setting.percent(1.5), second.zoomSetting());
+        });
     }
 
     private interface Throwing<T> {

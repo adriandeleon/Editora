@@ -164,7 +164,9 @@ class ExportCoordinatorFxTest {
                                 "preview.exportOdt",
                                 "editor.print",
                                 "preview.print",
-                                "markwhen.exportJson"),
+                                "markwhen.exportJson",
+                                "file.openLastExport",
+                                "file.cancelPdfExport"),
                         registry.all().stream().map(Command::id).toList());
                 List<String> statuses = List.of(
                         "status.noFileOpen",
@@ -176,7 +178,9 @@ class ExportCoordinatorFxTest {
                         "status.office.notMarkdown",
                         "status.noFileOpen",
                         "status.print.noPreview",
-                        "status.markwhen.notMarkwhen");
+                        "status.markwhen.notMarkwhen",
+                        "status.export.none",
+                        "status.pdf.nothingToCancel");
                 int i = 0;
                 for (Command command : registry.all()) {
                     assertTrue(registry.run(command.id()));
