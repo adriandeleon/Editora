@@ -2,6 +2,7 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -9,14 +10,20 @@ import java.util.Locale;
 import java.util.Map;
 
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.control.ContentDisplay;
 import javafx.scene.control.Label;
 import javafx.scene.control.TreeCell;
 import javafx.scene.control.TreeItem;
 import javafx.scene.control.TreeView;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
+import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
+import javafx.scene.text.Text;
+
+import org.fxmisc.richtext.model.StyleSpan;
 
 import static com.editora.i18n.Messages.tr;
 
@@ -33,8 +40,23 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
         void open(Path file, int line, int col);
     }
 
-    /** One reference occurrence: a file + 0-based line/col + a one-line preview ({@code ""} when unavailable). */
-    public record Reference(Path file, int line, int col, String preview) {}
+    /**
+     * One reference occurrence: a file + 0-based line/col + a one-line preview ({@code ""} when unavailable).
+     * {@code runs} is the same preview cut into syntax-styled pieces (see {@link #previewRuns}); empty when
+     * the line's highlighting is unknown, and the preview then shows as plain text.
+     */
+    public record Reference(Path file, int line, int col, String preview, List<Run> runs) {
+        public Reference {
+            runs = runs == null ? List.of() : List.copyOf(runs);
+        }
+
+        public Reference(Path file, int line, int col, String preview) {
+            this(file, line, col, preview, List.of());
+        }
+    }
+
+    /** A piece of a preview and the editor syntax classes ({@code keyword}, {@code string}, …) it carries. */
+    public record Run(String text, List<String> styles) {}
 
     /** A tree row: a <b>file header</b> ({@code ref == null}) or a <b>reference</b> ({@code ref != null}). */
     private record Row(Path file, Reference ref) {}
@@ -157,6 +179,92 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * Cuts {@code line} (a whole source line) into the runs of its stripped preview, styled by {@code spans}
+     * — the editor's own style spans for that line, so the preview is colored exactly as the editor colors
+     * it. Only syntax classes are kept; editor-state classes (a matched brace, a diagnostic) are dropped.
+     * Returns an empty list when there is nothing to style. Pure; unit-tested.
+     */
+    static List<Run> previewRuns(String line, Iterable<StyleSpan<Collection<String>>> spans) {
+        if (line == null || spans == null) {
+            return List.of();
+        }
+        int from = 0;
+        int to = line.length();
+        while (from < to && Character.isWhitespace(line.charAt(from))) {
+            from++;
+        }
+        while (to > from && Character.isWhitespace(line.charAt(to - 1))) {
+            to--;
+        }
+        List<Run> runs = new ArrayList<>();
+        int pos = 0;
+        for (StyleSpan<Collection<String>> span : spans) {
+            int start = Math.max(pos, from);
+            pos += span.getLength();
+            int end = Math.min(pos, to);
+            if (end > start) {
+                addRun(runs, line.substring(start, end), syntaxStyles(span.getStyle()));
+            }
+        }
+        if (runs.isEmpty()) {
+            return List.of();
+        }
+        if (Math.max(pos, from) < to) {
+            addRun(runs, line.substring(Math.max(pos, from), to), List.of());
+        }
+        return List.copyOf(runs);
+    }
+
+    private static void addRun(List<Run> runs, String text, List<String> styles) {
+        if (!runs.isEmpty() && runs.getLast().styles().equals(styles)) {
+            Run previous = runs.removeLast();
+            runs.add(new Run(previous.text() + text, styles));
+        } else {
+            runs.add(new Run(text, styles));
+        }
+    }
+
+    private static List<String> syntaxStyles(Collection<String> styles) {
+        if (styles == null || styles.isEmpty()) {
+            return List.of();
+        }
+        return styles.stream().filter(ReferencesPanel::isSyntaxStyle).toList();
+    }
+
+    private static boolean isSyntaxStyle(String style) {
+        if (style == null) {
+            return false;
+        }
+        if (style.startsWith("sem-") || style.startsWith("bracket-depth-")) {
+            return true;
+        }
+        return switch (style) {
+            case "annotation",
+                    "attribute",
+                    "bold",
+                    "code",
+                    "comment",
+                    "constant",
+                    "escape",
+                    "function",
+                    "heading",
+                    "italic",
+                    "keyword",
+                    "link",
+                    "number",
+                    "operator",
+                    "property",
+                    "punct",
+                    "regexp",
+                    "string",
+                    "tag",
+                    "type",
+                    "variable" -> true;
+            default -> false;
+        };
+    }
+
     @Override
     public void focusFirstItem() {
         tree.requestFocus();
@@ -165,12 +273,13 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
         }
     }
 
-    /** Renders a file header (name + count) or a reference (line + preview). */
+    /** Renders a file header (name + count) or a reference (line + syntax-colored preview). */
     private static final class RowCell extends TreeCell<Row> {
         @Override
         protected void updateItem(Row row, boolean empty) {
             super.updateItem(row, empty);
             getStyleClass().removeAll("search-file-row");
+            setContentDisplay(ContentDisplay.LEFT);
             if (empty || row == null) {
                 setText(null);
                 setGraphic(null);
@@ -178,9 +287,17 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
             }
             if (row.ref() != null) {
                 Reference r = row.ref();
+                String position = (r.line() + 1) + ":" + (r.col() + 1);
                 String preview = r.preview() == null ? "" : r.preview().strip();
-                setText((r.line() + 1) + ":" + (r.col() + 1) + (preview.isEmpty() ? "" : "  " + preview));
-                setGraphic(null);
+                if (preview.isEmpty() || r.runs().isEmpty()) {
+                    setText(position + (preview.isEmpty() ? "" : "  " + preview));
+                    setGraphic(null);
+                } else {
+                    // The position stays the cell's text; the code follows it as the graphic.
+                    setText(position + "  ");
+                    setGraphic(code(r.runs()));
+                    setContentDisplay(ContentDisplay.RIGHT);
+                }
             } else {
                 int count =
                         getTreeItem() == null ? 0 : getTreeItem().getChildren().size();
@@ -188,6 +305,20 @@ public final class ReferencesPanel extends VBox implements ToolWindowContent {
                 setGraphic(FileIcons.forFileName(String.valueOf(row.file().getFileName())));
                 getStyleClass().add("search-file-row");
             }
+        }
+
+        private static HBox code(List<Run> runs) {
+            HBox box = new HBox();
+            box.setAlignment(Pos.CENTER_LEFT);
+            for (Run run : runs) {
+                Text text = new Text(run.text());
+                // `text` + the syntax classes are what syntax.css and every editor theme target, so the
+                // preview follows the editor color theme with no rules of its own.
+                text.getStyleClass().addAll("reference-code", "text");
+                text.getStyleClass().addAll(run.styles());
+                box.getChildren().add(text);
+            }
+            return box;
         }
     }
 }
