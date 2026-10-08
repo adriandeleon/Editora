@@ -148,7 +148,10 @@ class DocumentOnDiskFxTest {
 
             assertEquals("zero\none\n", Files.readString(file));
             assertFalse(FxTestSupport.callOnFx(buffer::isDirty));
-            assertEquals(tr("status.savedInPlace", com.editora.config.PathDisplay.of(file)), echo(fx));
+            // The echo line shows a message up to its cap; the path alone can be longer than that (the
+            // temp dir on macOS is), so compare with what the line shows of this message.
+            assertEquals(
+                    StatusBar.echoLine(tr("status.savedInPlace", com.editora.config.PathDisplay.of(file))), echo(fx));
         } finally {
             Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x"));
         }

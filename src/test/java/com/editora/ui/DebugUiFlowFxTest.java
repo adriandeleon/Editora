@@ -992,6 +992,10 @@ class DebugUiFlowFxTest {
         FxTestSupport.drainFx();
         return FxTestSupport.callOnFx(() -> {
             b.getNode().applyCss();
+            // The marks are ordered by where they are, so they have to be where they belong: a gutter that
+            // was just redrawn has its rows placed by the next layout pass, and until a pulse brings one
+            // every mark sits at the same height and the order is that of their glyphs' sizes.
+            b.getNode().layout();
             List<Node> marks = new ArrayList<>(b.getNode().lookupAll(".breakpoint-marker"));
             marks.sort(java.util.Comparator.comparingDouble(
                     n -> n.localToScene(n.getBoundsInLocal()).getMinY()));

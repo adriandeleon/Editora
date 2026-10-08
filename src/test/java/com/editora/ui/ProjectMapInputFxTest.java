@@ -830,10 +830,12 @@ class ProjectMapInputFxTest {
             }
             KeyEvent back = pressWith(w.surface(), KeyCode.LEFT, false, true, false);
             assertTrue(back.isConsumed());
-            // An Alt chord the map did not claim is the dispatcher's to swallow, as everywhere else.
+            // An Alt chord the map did not claim is the dispatcher's to swallow, as everywhere else — where
+            // there is a native menu to keep it from. macOS has no Alt menu mode (Option is Meta there, and
+            // types characters), so the dispatcher leaves an unbound Option chord alone: plainAltActive.
             Path before = selected(w.surface());
             KeyEvent other = pressWith(w.surface(), KeyCode.F9, false, true, false);
-            assertTrue(other.isConsumed());
+            assertEquals(!KeymapManager.isMac(), other.isConsumed());
             assertEquals(before, selected(w.surface()), "and it never reached the map");
 
             // With the keyboard in a column filter the map claims nothing.
