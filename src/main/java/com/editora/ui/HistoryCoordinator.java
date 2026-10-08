@@ -1357,19 +1357,13 @@ final class HistoryCoordinator {
         return found;
     }
 
-    /** Opens the Local File History tool window for the active file. */
+    /** Opens the Local History tool window for the active file, leaving a folder listing if one is up. */
     void showActive() {
         if (!isEnabled()) {
-            host.setStatus(tr("status.history.disabled"));
+            host.setStatus(disabledStatus());
             return;
         }
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || b.getPath() == null || !host.isLocalBuffer(b)) {
-            host.setStatus(tr("status.history.noFile"));
-            return;
-        }
-        refresh();
-        ops.openToolWindow();
+        openForActive();
     }
 
     /**
