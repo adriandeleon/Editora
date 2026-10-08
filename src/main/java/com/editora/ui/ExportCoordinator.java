@@ -655,6 +655,10 @@ final class ExportCoordinator {
             host.setStatus(tr("status.noFileOpen"));
             return;
         }
+        if (b.getContent().isBlank()) {
+            host.setStatus(tr("status.print.nothing")); // a blank sheet is not worth a preview or a job
+            return;
+        }
         PrintPreview.Job job = printJobs.get();
         if (job == null) {
             host.setStatus(tr("status.print.noPrinter"));
@@ -716,6 +720,10 @@ final class ExportCoordinator {
         }
         if (b == null || !b.hasExportablePreview()) {
             host.setStatus(tr("status.print.noPreview"));
+            return;
+        }
+        if (b.getContent().isBlank()) {
+            host.setStatus(tr("status.print.nothing")); // a blank sheet is not worth a preview or a job
             return;
         }
         if (previewUnparsable(b)) {
