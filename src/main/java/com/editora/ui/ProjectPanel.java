@@ -44,6 +44,7 @@ import javafx.scene.input.MouseButton;
 import javafx.scene.input.TransferMode;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
@@ -563,6 +564,10 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
         });
         HBox viewModes = new HBox(treeMode, mapModeButton);
         viewModes.getStyleClass().add("project-view-modes");
+        // The search field gives way in a narrow panel; the switch never truncates to "Tr… M…".
+        treeMode.setMinWidth(Region.USE_PREF_SIZE);
+        mapModeButton.setMinWidth(Region.USE_PREF_SIZE);
+        viewModes.setMinWidth(Region.USE_PREF_SIZE);
 
         HBox.setHgrow(filterField, Priority.ALWAYS);
         filterBar.getStyleClass().add("project-filter-bar");

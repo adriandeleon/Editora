@@ -104,7 +104,8 @@ class ProjectMapCardsFxTest {
                 AtomicReference<ProjectMapOutput> job = new AtomicReference<>();
                 map.view.setOutputActions(job::set, ignored -> {});
                 FxTestSupport.call(map.view, "setOutputEnabled", new Class<?>[] {boolean.class}, true);
-                FxTestSupport.<Button>field(map.view, "printButton").fire();
+                FxTestSupport.<javafx.scene.control.MenuItem>field(map.view, "printButton")
+                        .fire();
                 // A page large enough for the whole map: one image, at one point per map pixel.
                 ProjectMapOutput.Rendered rendered = job.get().render(20_000, 20_000);
 
@@ -163,7 +164,8 @@ class ProjectMapCardsFxTest {
                 AtomicReference<ProjectMapOutput> job = new AtomicReference<>();
                 map.view.setOutputActions(ignored -> {}, job::set);
                 FxTestSupport.call(map.view, "setOutputEnabled", new Class<?>[] {boolean.class}, true);
-                FxTestSupport.<Button>field(map.view, "exportPdfButton").fire();
+                FxTestSupport.<javafx.scene.control.MenuItem>field(map.view, "exportPdfButton")
+                        .fire();
                 assertFalse(job.get().landscape(), "one tall column belongs on a portrait page");
                 ProjectMapOutput.Rendered rendered = job.get().render(540, 720);
 
@@ -222,7 +224,8 @@ class ProjectMapCardsFxTest {
                 AtomicReference<ProjectMapOutput> job = new AtomicReference<>();
                 map.view.setOutputActions(ignored -> {}, job::set);
                 FxTestSupport.call(map.view, "setOutputEnabled", new Class<?>[] {boolean.class}, true);
-                FxTestSupport.<Button>field(map.view, "exportPdfButton").fire();
+                FxTestSupport.<javafx.scene.control.MenuItem>field(map.view, "exportPdfButton")
+                        .fire();
                 ProjectMapOutput counting = new ProjectMapOutput() {
                     @Override
                     public boolean landscape() {

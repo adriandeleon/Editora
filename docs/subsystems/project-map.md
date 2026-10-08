@@ -31,10 +31,11 @@ Every non-root column has one meaningful parent, but several parents may own ind
 the same depth. This keeps parallel work visible without merging unrelated subtrees into one dense
 column.
 
-The default flow is right to left. The flow selector also supports left to right, top to bottom, and
-bottom to top. It changes column placement, connector direction, and the meaning of the arrow
-keys together. Changing flow clears manual column offsets and locks, then fits the new layout. The
-last selected flow is stored in workspace state and restored when the editor is reopened.
+The default flow is left to right (`ProjectMapView.DEFAULT_FLOW`), the direction the breadcrumb and
+the Tree read in. The flow selector also supports right to left, top to bottom, and bottom to top. It
+changes column placement, connector direction, and the meaning of the arrow keys together. Changing
+flow clears manual column offsets and locks, then auto-fits the new layout. The last selected flow is
+stored in workspace state and restored when the editor is reopened.
 
 ## Interaction reference
 
@@ -58,8 +59,9 @@ last selected flow is stored in workspace state and restored when the editor is 
 | Drag a column header | Move that column independently unless it is locked; it stops at its parent column |
 | Click a column lock | Prevent or allow accidental header dragging |
 | Click a column close button | Close that branch and all of its descendant columns |
-| Click **Print…** | Open the standard print preview for the complete map layout |
-| Click **PDF…** | Export the complete map layout using the configured PDF page size |
+| Options (⋯) menu → **Print…** | Open the standard print preview for the complete map layout |
+| Options (⋯) menu → **PDF…** | Export the complete map layout using the configured PDF page size |
+| Click **?** | Show the mouse and keyboard model in a popover |
 | Click the overview | Recenter the canvas around that content position |
 
 Floating previews stay at screen scale instead of participating in canvas zoom. Each title bar moves
@@ -108,12 +110,14 @@ native popup grab misses the press.
 Files and folders with one or more bookmarks or Personal Notes show compact, independently colored
 indicators in both the Tree and Map. Personal Notes indicators are interactive: they open a separate editable note card attached to the same
 file or folder row by a connector. A note card and the code preview of the same file open and close
-independently, under the shared limit above. The filter row's
-default-off “Hide all open Personal Notes” toggle temporarily hides those cards without closing them.
+independently, under the shared limit above. The options
+menu's default-off “Hide all open Personal Notes” item temporarily hides those cards without closing them.
 A note card saves an edit on focus loss, Shortcut+Enter or close, comparing against the body the store
 last held. It follows the store: when notes change elsewhere it adopts the new bodies (an edit in
 progress is kept), and it closes when its notes are deleted. A blanked note is not a deletion — its text
 is restored and the status bar says so.
+A note card is styled from the theme's warning (amber) tokens, so it is a pale sheet on light themes and a
+dark amber one on dark themes.
 Marker state is read from an open buffer when available and otherwise from
 the active project's persisted stores, so adding an annotation refreshes both views without opening
 the target file.
@@ -162,14 +166,32 @@ Selection history holds at most 100 entries. A run of sibling moves is one entry
 where the run started rather than retracing each row. Closing a column moves the selection to that
 column's folder only when the selection was inside the closed branch.
 
-The bottom-left controls provide zoom out, the current percentage, zoom in, Fit, Center selection,
-and Reset. Reset restores 100% zoom and clears manual column positions and locks. Initial content is
-automatically fitted once the surface has usable dimensions.
+The bottom-left zoom bar is icon buttons (each with a tooltip and accessible name) around the current
+percentage: zoom out, zoom in, Fit, Center selection, and Reset. Manual zoom runs from 40% to 225%.
 
-The filter row also has default-on **Keep current zoom** and **Focus new column** options, remembered per
-workspace.
-Opening a folder therefore preserves the user's scale while centering the newly created column. Either
-effect can be disabled independently; disabling zoom preservation restores fit-to-content on expansion.
+- The **first view** of a project opens at 100% with the root column and the start of the first column in
+  view (a small project that fits is centred instead). It steps down, never below 85%, only when that is
+  what shows both columns.
+- **Fit** (the button or Shortcut + `0`) scales and centres the whole map when that is possible at 40% or
+  more. When the floor is hit it anchors on the selected path instead: the selected row, its column
+  header, and as many of the columns leading to it as the view holds.
+- **Auto-fit** (changing flow, or opening a folder with Keep current zoom off) does the same with 85% as
+  its floor, so the map never shrinks to an unreadable thumbnail by itself.
+- **Reset** restores 100%, clears manual column positions and locks, and returns to the first view.
+
+Reveal, Fit and the first view reserve the strip the zoom bar covers, and a revealed row is also lifted
+clear of the overview.
+
+The options (⋯) menu in the navigation row holds the default-on **Keep current zoom** and **Focus new
+column** options, remembered per workspace (`isKeepZoom()` / `isFocusNewColumn()` and their setters on the view). Opening a
+folder therefore preserves the user's scale and brings the new column in from its start: the whole card
+when it fits beside the row that opened it, otherwise its header and first rows together with that row.
+Either effect can be disabled independently; disabling zoom preservation restores auto-fit on expansion.
+
+The filter row holds only filters and wraps instead of truncating; the selectors show their value alone
+("Source", "Left → Right") and carry the "Type:" / "Flow:" form as tooltip and accessible name. Breadcrumbs
+that do not fit collapse their middle into one "…" (whose tooltip lists the hidden folders) and keep the
+root and the last two crumbs.
 
 ## Filters, ordering, and state
 
@@ -209,13 +231,26 @@ expanded branches. Re-running the same query after an in-app file change reloads
 selection alone. A column filter removes unmatched rows and their now-unreachable descendants so the
 remaining geometry is still a valid hierarchy.
 
+When a query or chip is active and no loaded row matches, a "No files match" message (with the query)
+appears over the canvas once that state has lasted 300 ms — a global query first fades what is loaded and
+only then opens the folders that hold its matches. The viewport is not moved. A column whose own filter
+matches nothing keeps one row of space for a "No matches" line.
+
 Rows use `ProjectPathOrder`: directories first, then case-insensitive names with a deterministic
 case-sensitive tie-break. This is the same ordering contract as the traditional Project explorer.
 
-Canvas nodes reuse `FileIcons.forProjectItem`, rasterized and cached per file kind and status. A file
-already open in an editor tab has an accent rail and emphasized label. Modified and Git states add
-their corresponding visual status. Tooltips show the full normalized path, type, file size,
-modification time, and relevant open, unsaved, or Git status from the loaded snapshot; hover does no
+Canvas nodes reuse `FileIcons.forProjectItem`, rasterized and cached per file kind and status (plus an
+on-accent variant, style class `project-map-icon-on-accent`, for the focused selection). A file already
+open in an editor tab has an accent rail and an accent-coloured label. Unsaved changes are a filled dot
+and a Git state is the status letter the Project tree uses, so the two differ in shape as well as hue.
+Every folder row ends in a chevron that points along the flow; an expanded folder's sits in a filled
+disc. `chevronZone(NodeBox)` / `chevronHit(NodeBox, x)` give the strip that takes the collapse/expand
+click, as `previewHit` does for the eye that opens a file's preview.
+
+The selected row is filled with the accent and ringed only while the surface has keyboard focus; without
+focus (and in Print/PDF output) it is a tinted row. Tooltips show the full normalized path, type, file
+size (binary units), modification time, and relevant open, unsaved, or Git status from the loaded
+snapshot — preceded, over the eye, a chevron or a note badge, by what a click there does. Hover does no
 filesystem work.
 
 ## Layout and rendering
@@ -244,21 +279,38 @@ touched. A Canvas is backed by one texture of its size times the highest screen 
 texture at 4,096 px by default, so a page is assembled from renders of at most 2,048 px (less on a
 denser screen). Output always uses a light palette (`outputPalette`, plus looked-up colour overrides
 for the rasterized row icons), whatever the live theme; it preserves the active flow, filters, open
-branches and manual column positions, and omits the interactive column controls and the overview. Labels
+branches and manual column positions, and omits the interactive column controls, the overview, focus and hover;
+`outputPaint` is set while it paints, which also collapses every header to its title line. Labels
 are bitmap, so the PDF is not searchable.
 
 Column cards are content-sized rather than uniform. For each branch column, the map measures every
 loaded entry name at the drawing font and reserves enough width for the full label, icon, status
 marks, directory arrow, and padding. The minimum node width is 164 pixels. Measuring the underlying
 loaded entries—not only the currently filtered rows—keeps widths stable when a filter or Hidden
-checkbox is toggled. New columns open beyond their actual parent card in the selected flow direction,
-try to center on the item that opened them, and are packed along the perpendicular axis so parallel
-branches never overlap.
+checkbox is toggled. In a language whose checkbox label is long, branch columns are widened so the header
+row still holds the filter, the labelled checkbox and the lock at 100%.
+
+Along the flow, every depth has a band of its own: a column starts beyond its parent card and beyond the
+widest card of the parent's depth, so columns at different depths cannot overlap (manual offsets are kept
+out of the band, so dragging one column does not move other branches). Across the flow, a column is
+centred on the row that opened it while it is short and hangs from that row once it is long
+(`MAX_COLUMN_LEAD`), so its header, its first rows and its parent row can be on screen together. Columns
+of one depth are then packed along the perpendicular axis so parallel branches never overlap. In the two
+vertical flows a connector stops at the card's edge above (or leaves from the card's edge below) the row
+instead of crossing the header.
 
 Column filters, hidden-file checkboxes, lock buttons, and close buttons are ordinary child controls
-positioned over the painted column headers after each layout. Detail controls are hidden when zoom
-leaves too little header space and return when space is available. They are not drawn into the
-canvas, which preserves native text editing, focus traversal, and accessibility.
+positioned over the painted column headers after each layout. As zoom takes header space away, the
+checkbox first drops its label (it keeps its tooltip and accessible name) and the filter takes a shorter
+prompt; when the detail controls no longer fit at all they are hidden and the header collapses to its
+title line, so the rows move up instead of leaving an empty band. They return when space is available.
+The header title is elided, and the count gives way first, rather than the two colliding at low zoom.
+Controls that would reach into the overview are hidden too: they are children above the canvas and would
+paint over it and take its clicks. The controls are not drawn into the canvas, which preserves native
+text editing, focus traversal, and accessibility.
+
+The overview appears only while some content is off-screen, sits beside the zoom bar (it is left out when
+the surface is too narrow for both), and clamps its viewport rectangle to its frame.
 
 ## Architecture and data flow
 
@@ -384,7 +436,11 @@ The focused coverage lives in:
   tooltips, single-click expansion, multiple independent previews, shared context menus and dismissal, text-field
   key ownership, content-sized columns, hidden toggles, directional layouts and arrow semantics,
   complete-map output snapshots and live viewport restoration,
-  movable/locked columns, overview navigation, and wheel zoom.
+  movable/locked columns, overview navigation, and wheel zoom;
+- `ProjectMapLayoutFxTest` for the first view, Fit and auto-fit anchoring, opening long folders, depth
+  bands, header collapse, reserved areas, empty states, row painting (selection, focus ring, chevrons,
+  status marks, contrast), the toolbar at tool-window widths in all six languages, breadcrumbs, the help
+  popover, and accessible names.
 
 When extending the map:
 

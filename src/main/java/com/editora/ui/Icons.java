@@ -798,6 +798,32 @@ final class Icons {
         return line("M3 8.6l3.2 3.2L13 4.6");
     }
 
+    /** UI Kit line "minus" — zoom out on the Project Map's zoom bar (the pair of {@link #plus()}). */
+    static Node minus() {
+        return line("M3.4 8h9.2");
+    }
+
+    /** Four inward-facing corners — "fit everything in view" on the Project Map's zoom bar. */
+    static Node fitView() {
+        return line("M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10");
+    }
+
+    /** A crosshair — "centre the selection" on the Project Map's zoom bar. */
+    static Node centerView() {
+        return line("M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3M6 8a2 2 0 1 0 4 0a2 2 0 1 0-4 0");
+    }
+
+    /** A counter-clockwise arrow — "reset the view" on the Project Map's zoom bar. */
+    static Node resetView() {
+        return line("M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3.2 2.6v2.5h2.5");
+    }
+
+    /** Three dots — an overflow ("more options") menu button. */
+    static Node more() {
+        return line("M2.7 8a.8.8 0 1 0 1.6 0a.8.8 0 1 0-1.6 0M7.2 8a.8.8 0 1 0 1.6 0a.8.8 0 1 0-1.6 0"
+                + "M11.7 8a.8.8 0 1 0 1.6 0a.8.8 0 1 0-1.6 0");
+    }
+
     /** Material "remove" (minus) — "Unstage" git context-menu item. */
     static Node remove() {
         return of("M19 13H5v-2h14v2z");

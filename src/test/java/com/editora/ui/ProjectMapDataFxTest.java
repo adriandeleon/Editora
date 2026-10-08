@@ -282,8 +282,8 @@ class ProjectMapDataFxTest {
 
                 assertTrue(panel.isMapMode(), "the workspace last showed the Map");
                 assertSame(mapView, panel.getChildren().getLast());
-                assertFalse(
-                        FxTestSupport.<CheckBox>field(mapView, "keepZoomOnOpen").isSelected());
+                assertFalse(FxTestSupport.<javafx.scene.control.CheckMenuItem>field(mapView, "keepZoomOnOpen")
+                        .isSelected());
                 assertFalse((boolean) FxTestSupport.field(surface, "keepZoomOnColumnOpen"));
                 assertTrue((boolean) FxTestSupport.field(surface, "focusNewColumn"));
                 assertEquals(0, saves.get(), "restoring is not a change");
@@ -296,9 +296,11 @@ class ProjectMapDataFxTest {
                 panel.toggleMapView();
                 assertEquals(WorkspaceState.PROJECT_VIEW_MAP, state.getProjectViewMode());
 
-                FxTestSupport.<CheckBox>field(mapView, "focusNewColumn").setSelected(false);
+                FxTestSupport.<javafx.scene.control.CheckMenuItem>field(mapView, "focusNewColumn")
+                        .setSelected(false);
                 assertFalse(state.isProjectMapFocusNewColumn());
-                FxTestSupport.<CheckBox>field(mapView, "keepZoomOnOpen").setSelected(true);
+                FxTestSupport.<javafx.scene.control.CheckMenuItem>field(mapView, "keepZoomOnOpen")
+                        .setSelected(true);
                 assertTrue(state.isProjectMapKeepZoom());
 
                 assertTrue(
