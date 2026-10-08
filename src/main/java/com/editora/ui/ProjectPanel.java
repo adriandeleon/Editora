@@ -1012,6 +1012,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         rootItem.getChildren().add(new PathItem(match, includeHidden, false));
                     }
                     tree.setRoot(rootItem);
+                    if (!rootItem.getChildren().isEmpty()) {
+                        // Highlight the first match. Enter in the filter field opens the highlighted row: with
+                        // none it did nothing, and Down first landed on the project's own row.
+                        tree.getSelectionModel().select(rootItem.getChildren().get(0));
+                    }
                 });
             });
         }
