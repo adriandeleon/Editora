@@ -720,7 +720,11 @@ final class ExportCoordinator {
             host.setStatus(tr("status.print.noPrinter"));
             return;
         }
-        host.setStatus(tr("status.print.preparing"));
+        preparePrint(() -> preparePreviewPrint(b, job));
+    }
+
+    /** Starts the preparation for {@code b}'s kind of preview; every branch ends in {@link #openPrintPreview}. */
+    private void preparePreviewPrint(EditorBuffer b, javafx.print.PrinterJob job) {
         java.util.function.Consumer<com.editora.print.PrintService.Prepared> open =
                 prepared -> openPrintPreview(job, prepared);
         if (b.isMarkdown()) {
