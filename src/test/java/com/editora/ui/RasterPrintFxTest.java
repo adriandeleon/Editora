@@ -33,8 +33,8 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * The image pipeline print and PDF share, where it meets the toolkit: printed image pages (density, no
- * enlarging, tiling), the Project Map's density, and the truncation notice of a capped tree. No printer is
- * involved: pages are built for a printable area given in points.
+ * enlarging, tiling), the Project Map's density, the truncation notice of a capped tree, and the diagram
+ * print's temp file. No printer is involved: pages are built for a printable area given in points.
  */
 @Tag("fx")
 class RasterPrintFxTest {
@@ -221,5 +221,21 @@ class RasterPrintFxTest {
         } finally {
             FxTestSupport.runOnFx(() -> exports[0].shutdown());
         }
+    }
+
+    /** The DOT/PlantUML print renders to a temp PNG: it is removed whether the render worked or not. */
+    @Test
+    void theDiagramPrintTempFileIsDeletedOnEveryPath() throws Exception {
+        Path rendered = Files.write(temp.resolve("ok.png"), new byte[] {1, 2, 3});
+        assertArrayEquals(new byte[] {1, 2, 3}, ExportCoordinator.takeRenderedPng(rendered, true));
+        assertFalse(Files.exists(rendered), "after a successful read");
+
+        Path failed = Files.write(temp.resolve("failed.png"), new byte[0]); // createTempFile left it empty
+        assertNull(ExportCoordinator.takeRenderedPng(failed, false));
+        assertFalse(Files.exists(failed), "after a failed render — this one used to stay behind");
+
+        Path unreadable = Files.createDirectory(temp.resolve("dir.png")); // reading it throws
+        assertThrows(java.io.IOException.class, () -> ExportCoordinator.takeRenderedPng(unreadable, true));
+        assertFalse(Files.exists(unreadable), "after a failed read — so did this one");
     }
 }

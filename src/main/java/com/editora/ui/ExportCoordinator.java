@@ -798,24 +798,50 @@ final class ExportCoordinator {
             openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
             return;
         }
-        diagram.exportToPath(
-                b.diagramKind(),
-                b.getContent(),
-                tmp,
-                false,
-                r -> { // light: this is for paper
-                    if (!r.ok()) {
-                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
-                        return;
-                    }
-                    try {
-                        byte[] png = java.nio.file.Files.readAllBytes(tmp);
-                        java.nio.file.Files.deleteIfExists(tmp);
+        try {
+            diagram.exportToPath(
+                    b.diagramKind(),
+                    b.getContent(),
+                    tmp,
+                    false,
+                    r -> { // light: this is for paper
+                        byte[] png = null;
+                        String error = r.message();
+                        try {
+                            png = takeRenderedPng(tmp, r.ok());
+                        } catch (java.io.IOException e) {
+                            error = e.getMessage() == null ? e.toString() : e.getMessage();
+                        }
+                        if (png == null) {
+                            openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, error));
+                            return;
+                        }
                         printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
-                    } catch (java.io.IOException e) {
-                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-                    }
-                });
+                    });
+        } catch (RuntimeException | Error e) {
+            deleteQuietly(tmp); // the render never started: its callback will not run
+            throw e;
+        }
+    }
+
+    /**
+     * The PNG a diagram render left at {@code tmp} — {@code null} when it did not render — deleting the
+     * temp file on every path: a failed render and a failed read leave nothing behind either.
+     */
+    static byte[] takeRenderedPng(java.nio.file.Path tmp, boolean rendered) throws java.io.IOException {
+        try {
+            return rendered ? java.nio.file.Files.readAllBytes(tmp) : null;
+        } finally {
+            deleteQuietly(tmp);
+        }
+    }
+
+    private static void deleteQuietly(java.nio.file.Path file) {
+        try {
+            java.nio.file.Files.deleteIfExists(file);
+        } catch (java.io.IOException | RuntimeException e) {
+            // a temp file the system will clear; nothing the user can act on
+        }
     }
 
     /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
