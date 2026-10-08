@@ -140,6 +140,39 @@ final class WindowRig implements AutoCloseable {
         FxTestSupport.invoke(picker, "chooseSelected");
     }
 
+    /**
+     * Arms an answer for the next dialog whose header is {@code header}: the button labelled
+     * {@code buttonText} is pressed as soon as the dialog is up. A modal dialog blocks its caller, so this
+     * comes before the action that opens it; the returned latch says the dialog did appear.
+     */
+    java.util.concurrent.CountDownLatch answer(String header, String buttonText) throws Exception {
+        java.util.concurrent.CountDownLatch pressed = new java.util.concurrent.CountDownLatch(1);
+        javafx.animation.AnimationTimer timer = new javafx.animation.AnimationTimer() {
+            @Override
+            public void handle(long now) {
+                for (javafx.stage.Window window : List.copyOf(javafx.stage.Window.getWindows())) {
+                    if (pressed.getCount() == 0
+                            || window.getScene() == null
+                            || !(window.getScene().getRoot() instanceof javafx.scene.control.DialogPane pane)
+                            || !header.equals(pane.getHeaderText())) {
+                        continue;
+                    }
+                    pane.getButtonTypes().stream()
+                            .filter(type -> buttonText.equals(type.getText()))
+                            .findFirst()
+                            .ifPresent(type -> {
+                                pressed.countDown();
+                                stop();
+                                ((javafx.scene.control.Button) pane.lookupButton(type)).fire();
+                            });
+                }
+            }
+        };
+        FxTestSupport.runOnFx(timer::start);
+        async.onClose(() -> FxTestSupport.runOnFx(timer::stop));
+        return pressed;
+    }
+
     @Override
     public void close() throws Exception {
         async.close();
