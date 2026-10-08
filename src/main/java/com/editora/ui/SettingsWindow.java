@@ -3167,7 +3167,7 @@ public class SettingsWindow {
                 history,
                 Category.WORKSPACE,
                 tr("settings.history.maxAgeDays"),
-                null,
+                tr("settings.history.maxAgeDays.note"),
                 historyMaxAgeSpinner,
                 "local history max age days retention prune");
         controlRow(

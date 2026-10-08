@@ -29,7 +29,7 @@ Two serialization formats, chosen per file:
 | `bookmarks.json` | JSON | `BookmarkStore` | Per-project buckets. |
 | `notes.json` | JSON | `NoteStore` | Per-project buckets. |
 | `breakpoints.json` | JSON | `BreakpointStore` | Per-project buckets. |
-| `history/index.json` + `history/blobs/` | JSON | `HistoryStore` | Local File History; blobs gzip'd. The user's files, not configuration; left out of the export. |
+| `history/index.json` + `history/blobs/` | JSON | `HistoryStore` | Local History; blobs gzip'd. The user's files, not configuration; left out of the export. |
 | `connections.json` | JSON | `ConnectionStore` | SFTP connection metadata, no secrets. |
 | `macros.json` | JSON | `MacroStore` | App-global keyboard macros. |
 | `plugins.json` | JSON | `PluginStore` | Plugin enable-state. |
@@ -211,7 +211,7 @@ If a file's stored `schemaVersion` is **newer** than this build supports (the us
 
 **Coming back from a downgrade** (step 0 of the read path, `ConfigMigrations.restoreSetAsideCopy`): before a store is read, a `<name>.v<n>.bak` whose `n` this build supports is looked for beside it. When the file left in its place is absent, empty, or holds nothing but defaults (ignoring its version stamp and `ConfigSchema.selfMaintainedKeys()` — update-check bookkeeping, the projects index's window set), the copy is moved back and the user is told (`ConfigLoadProblem.Kind.NEWER_COPY_RESTORED`). When that file has been changed since, there are two sets of data and no way to choose: the file in use is loaded, the copy stays, and the user is told once where it is (`NEWER_COPY_KEPT`; `reported-backups.txt` remembers what has been said). Without this, running an older build once left every store at defaults for good — nothing ever read a `.bak` again.
 
-That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`) — session files and `projects.json` included. The same applies to an unparseable file that could not be copied aside. The Local File History index is the one exception — it is reported but still written, because its publication protocol must keep running; its revision bodies are protected instead by refusing blob GC (see the instance-lock section above).
+That guarantee holds when the backup itself fails (a read-only directory, or every backup name already taken): the problem is reported with no backup path, `ConfigLoadProblem.mustNotOverwrite()` is true, and `SharedConfig` then refuses to write that file for the rest of the session (`isWriteProtected`) — session files and `projects.json` included. The same applies to an unparseable file that could not be copied aside. The Local History index is the one exception — it is reported but still written, because its publication protocol must keep running; its revision bodies are protected instead by refusing blob GC (see the instance-lock section above).
 
 ### Worked examples
 

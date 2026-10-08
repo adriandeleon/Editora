@@ -26,6 +26,8 @@
   "Cmd-S-r": "macro.toggleRecording",
   "Cmd-S-e": "search.everywhere",
   "Cmd-,": "view.settings",
+  "C-Cmd-h": "tool.fileHistory",
+  "C-Cmd-S-h": "git.fileHistory",
   "C-Cmd-f": "window.fullScreen",
   "Cmd-=": "view.textZoomIn",
   "Cmd-S-=": "view.textZoomIn",

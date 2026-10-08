@@ -38,6 +38,8 @@
   "M-Cmd-]": "view.unfold",
   "Cmd-k Cmd-0": "view.unfoldAll",
   "Cmd-,": "view.settings",
+  "C-Cmd-h": "tool.fileHistory",
+  "C-Cmd-S-h": "git.fileHistory",
   "C-Cmd-f": "window.fullScreen",
   "Cmd-=": "view.textZoomIn",
   "Cmd-S-=": "view.textZoomIn",
