@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PDF orientation, margins and code font size** (Settings → Editor → Export & Print): Portrait or
+  Landscape; Normal, Narrow (0.5 in) or Wide (1 in) margins; 7–12 pt for source code. Orientation and
+  margins apply to source-text, selection, Markdown and CSV PDFs, the font size to source text only.
+  Image, tree, Project Map and tool-rendered PDFs and printing are not affected. Settings schema 117;
+  existing installations keep the page they had.
 - **Page footer** on printed pages and exported PDFs: the document name and "Page n of N". On by
   default; turn it off under Settings → Editor → Export & Print or with
   `View: Toggle Page Footer in Print and PDF`.

@@ -343,7 +343,16 @@ class PrintEntryPointsFxTest {
             Path out = dir.resolve("map.pdf");
             FxTestSupport.runOnFx(() -> exports(fx.controller).chooseDestination = chooser -> out.toFile());
             run(fx.controller, "projectMap.exportPdf");
-            awaitFile(out);
+            for (int i = 0; i < 300 && !Files.exists(out); i++) {
+                Thread.sleep(50);
+            }
+            FxTestSupport.drainFx();
+            StatusBar bar = FxTestSupport.field(fx.controller, "statusBar");
+            List<String> said =
+                    FxTestSupport.callOnFx(() -> FxTestSupport.<MessageLog>field(bar, "messageLog").entries().stream()
+                            .map(e -> e.text())
+                            .toList());
+            assertTrue(Files.exists(out), "the export should have written " + out + "; the status bar said " + said);
         } finally {
             fx.dispose();
         }

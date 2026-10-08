@@ -56,6 +56,7 @@ class ExportCoordinatorEmptyPrintFxTest {
                     jobs[0]++;
                     return null;
                 };
+                exports[0].noPrinterPrompt = alert -> java.util.Optional.empty(); // never show the modal dialog
                 for (String[] file :
                         new String[][] {{"Empty.java", ""}, {"blank.txt", " \n\t\n"}, {"notes.md", "\n  \n"}}) {
                     EditorBuffer b = new EditorBuffer();

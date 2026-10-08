@@ -508,8 +508,9 @@ Editora is built with the help of AI coding tools.
   diagram. Use **File → Export to PDF…** for the file's text or **Export Rendered Preview to PDF…** for
   its preview (both also in the palette), or **Export Selection to PDF…** from the editor's right-click
   menu. PDFs have clickable links, bookmarks from the headings and a footer with the document name and
-  page number. Choose line numbers, syntax highlighting, the page footer and the PDF page size (Letter /
-  A4, defaulting to your region's) under *Settings → Editor → Export & Print*. The page size does not
+  page number. Choose line numbers, syntax highlighting, the page footer, and the PDF page size (Letter /
+  A4, defaulting to your region's), orientation, margins and code font size under *Settings → Editor →
+  Export & Print*. The page size does not
   apply to Mermaid, Graphviz, PlantUML or Typst PDFs, and the PDFs are not tagged for accessibility.
 - **Export to HTML** — export a Markdown file's rendered preview to a standalone, self-contained `.html`
   file (embedded stylesheet, heading anchors, math rendered as images). Run "Preview: Export to HTML" from
