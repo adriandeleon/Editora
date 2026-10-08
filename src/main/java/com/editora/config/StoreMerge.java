@@ -31,13 +31,13 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  *       and takes this process's value, the one the user just set here.
  * </ul>
  */
-final class StoreMerge {
+public final class StoreMerge {
 
     private StoreMerge() {}
 
     /** How the entries of the array at a given path are identified, or that the array is one opaque value. */
     @FunctionalInterface
-    interface Keys {
+    public interface Keys {
         /**
          * The fields that identify an entry of the array at {@code path} (object keys from the root; an empty
          * list means "the entry's own value", for arrays of strings), or {@code null} when the array has no
@@ -50,7 +50,7 @@ final class StoreMerge {
     }
 
     /** The entry identities of {@code schema}'s arrays; {@link Keys#NONE} for a store with none. */
-    static Keys keysFor(ConfigSchema schema) {
+    public static Keys keysFor(ConfigSchema schema) {
         if (schema == null) {
             return Keys.NONE;
         }
@@ -78,7 +78,7 @@ final class StoreMerge {
     }
 
     /** Merges three trees; any of them may be {@code null} (absent). Returns {@code null} for "absent". */
-    static JsonNode merge(JsonNode base, JsonNode mine, JsonNode theirs, Keys keys) {
+    public static JsonNode merge(JsonNode base, JsonNode mine, JsonNode theirs, Keys keys) {
         return merge(base, mine, theirs, keys == null ? Keys.NONE : keys, new ArrayList<>());
     }
 

@@ -52,7 +52,7 @@ public class Settings {
     }
 
     /** Current on-disk schema version of {@code settings.json}; bump when the format changes (+ a migration). */
-    public static final int SCHEMA_VERSION = 114;
+    public static final int SCHEMA_VERSION = 115;
 
     private int schemaVersion = SCHEMA_VERSION;
 
@@ -315,6 +315,26 @@ public class Settings {
     private boolean gitAutoFetch = false;
     /** Minutes between automatic fetches; at least 1. */
     private int gitAutoFetchMinutes = 10;
+    /**
+     * Settings sync: keeps snippets, abbreviations, templates and the personal dictionary in step with the
+     * Git repository at {@link #syncRepoUrl}. Off by default. Every {@code sync*} key describes <em>this</em>
+     * installation's connection and is never itself synced.
+     */
+    private boolean syncEnabled = false;
+    /** The repository settings sync pushes to and fetches from; blank = not set up. */
+    private String syncRepoUrl = "";
+    /** The branch of {@link #syncRepoUrl} that holds the data. */
+    private String syncBranch = "main";
+    /** Which kinds of data are synced; all four by default. */
+    private boolean syncSnippets = true;
+
+    private boolean syncAbbreviations = true;
+    private boolean syncTemplates = true;
+    private boolean syncDictionary = true;
+    /** Sync on startup, shortly after a local change, and every {@link #syncIntervalMinutes} minutes. */
+    private boolean syncAuto = true;
+    /** Minutes between automatic syncs; at least 1. */
+    private int syncIntervalMinutes = 15;
     /** Inline git blame: off by default — when Git is on, paints a GitLens-style annotation
      *  ("author, N days ago • summary") after the caret line. */
     private boolean gitBlameInline = false;
@@ -1761,6 +1781,78 @@ public class Settings {
 
     public void setGitAutoFetchMinutes(int gitAutoFetchMinutes) {
         this.gitAutoFetchMinutes = Math.max(1, Math.min(MAX_GIT_AUTO_FETCH_MINUTES, gitAutoFetchMinutes));
+    }
+
+    public boolean isSyncEnabled() {
+        return syncEnabled;
+    }
+
+    public void setSyncEnabled(boolean syncEnabled) {
+        this.syncEnabled = syncEnabled;
+    }
+
+    public String getSyncRepoUrl() {
+        return syncRepoUrl;
+    }
+
+    public void setSyncRepoUrl(String syncRepoUrl) {
+        this.syncRepoUrl = syncRepoUrl == null ? "" : syncRepoUrl.strip();
+    }
+
+    public String getSyncBranch() {
+        return syncBranch;
+    }
+
+    public void setSyncBranch(String syncBranch) {
+        this.syncBranch = syncBranch == null || syncBranch.isBlank() ? "main" : syncBranch.strip();
+    }
+
+    public boolean isSyncSnippets() {
+        return syncSnippets;
+    }
+
+    public void setSyncSnippets(boolean syncSnippets) {
+        this.syncSnippets = syncSnippets;
+    }
+
+    public boolean isSyncAbbreviations() {
+        return syncAbbreviations;
+    }
+
+    public void setSyncAbbreviations(boolean syncAbbreviations) {
+        this.syncAbbreviations = syncAbbreviations;
+    }
+
+    public boolean isSyncTemplates() {
+        return syncTemplates;
+    }
+
+    public void setSyncTemplates(boolean syncTemplates) {
+        this.syncTemplates = syncTemplates;
+    }
+
+    public boolean isSyncDictionary() {
+        return syncDictionary;
+    }
+
+    public void setSyncDictionary(boolean syncDictionary) {
+        this.syncDictionary = syncDictionary;
+    }
+
+    public boolean isSyncAuto() {
+        return syncAuto;
+    }
+
+    public void setSyncAuto(boolean syncAuto) {
+        this.syncAuto = syncAuto;
+    }
+
+    public int getSyncIntervalMinutes() {
+        return syncIntervalMinutes;
+    }
+
+    public void setSyncIntervalMinutes(int syncIntervalMinutes) {
+        this.syncIntervalMinutes = Math.max(1, Math.min(MAX_GIT_AUTO_FETCH_MINUTES, syncIntervalMinutes));
     }
 
     /** A day: beyond that "automatically" means nothing. */

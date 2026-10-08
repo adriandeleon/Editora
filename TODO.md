@@ -1653,3 +1653,12 @@ A backlog of planned features and improvements. Unordered within each section.
 
 ## Packaging
 - [ ] Sign native installers
+
+## Settings sync follow-up
+
+- [x] Sync snippets, abbreviations, templates and the personal dictionary through a Git repository;
+      see [settings sync](docs/subsystems/settings-sync.md).
+- [ ] Sync preferences, keymaps, macros and themes (needs a machine-local key list and API-key stripping).
+- [ ] A per-entry conflict picker, and restoring an entry from the repository history.
+- [ ] Sync on quit, bounded so a slow remote cannot hold the exit.
+- [ ] Import a configuration zip.

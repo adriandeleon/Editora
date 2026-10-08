@@ -849,6 +849,16 @@ public class SharedConfig {
         abbrevStore = read(getAbbreviationsFile(), new AbbrevStore(), ConfigSchema.ABBREVIATIONS);
     }
 
+    /**
+     * Re-reads {@code abbreviations.json} after something other than this process's own save replaced it
+     * (settings sync), and tells the windows. The buffers hold their own copy of the map; the caller
+     * re-applies the settings to refresh those.
+     */
+    public void reloadAbbreviations() {
+        loadAbbreviations();
+        onStoreChanged.run();
+    }
+
     public void saveAbbreviations() {
         writeStore(getAbbreviationsFile(), abbrevStore, ConfigSchema.ABBREVIATIONS, this::rewriteAbbreviations);
         onStoreChanged.run();
@@ -1024,7 +1034,7 @@ public class SharedConfig {
      * as the ASCII one the spell checker looks words up by. A word stored as typed ({@code zzq’abc}) was
      * written to the file and never matched.
      */
-    static String dictionaryForm(String word) {
+    public static String dictionaryForm(String word) {
         return word.strip().replace('’', '\'').replace('‘', '\'').toLowerCase(java.util.Locale.ROOT);
     }
 
