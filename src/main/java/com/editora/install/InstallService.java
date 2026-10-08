@@ -68,8 +68,24 @@ public final class InstallService {
     });
 
     /** Built by the first download, not with the service (a {@code MainController} field initializer). */
-    private final com.editora.io.LazyHttpClient client =
-            com.editora.io.LazyHttpClient.following(Duration.ofSeconds(20));
+    private final com.editora.io.LazyHttpClient client;
+
+    /** The cap one download is held to ({@link #MAX_DOWNLOAD_BYTES} in production). */
+    private final long maxDownloadBytes;
+
+    public InstallService() {
+        this(com.editora.io.LazyHttpClient.following(Duration.ofSeconds(20)), MAX_DOWNLOAD_BYTES);
+    }
+
+    /**
+     * Test seam: the client the downloads go through and the size one download may reach, so a test can
+     * answer the catalog's URLs from a loopback server and reach the cap with a small body. The URL rules in
+     * {@link #download} are not part of the seam — they apply to every instance.
+     */
+    InstallService(com.editora.io.LazyHttpClient client, long maxDownloadBytes) {
+        this.client = client;
+        this.maxDownloadBytes = maxDownloadBytes;
+    }
 
     /** Probes which {@link Prereq}s are present on the augmented PATH, off-thread; posts the set on FX. */
     public void detectPrereqs(Consumer<Set<Prereq>> onResult) {
@@ -114,24 +130,32 @@ public final class InstallService {
      */
     public void install(List<Step> steps, Path configDir, Consumer<String> onStepStart, Consumer<Result> onResult) {
         exec.submit(() -> {
-            try {
-                String installedCommand = null;
-                for (Step s : steps) {
-                    Platform.runLater(() -> onStepStart.accept(s.id()));
-                    String cmd = runStep(s, configDir);
-                    if (cmd != null) {
-                        installedCommand = cmd;
-                    }
-                }
-                String resolved = installedCommand;
-                Platform.runLater(() -> onResult.accept(new Result(true, "", resolved)));
-            } catch (InstallException e) {
-                Platform.runLater(() -> onResult.accept(new Result(false, e.getMessage())));
-            } catch (Exception e) {
-                String msg = e.getMessage() == null ? e.toString() : e.getMessage();
-                Platform.runLater(() -> onResult.accept(new Result(false, msg)));
-            }
+            Result result = installSync(steps, configDir, id -> Platform.runLater(() -> onStepStart.accept(id)));
+            Platform.runLater(() -> onResult.accept(result));
         });
+    }
+
+    /**
+     * Runs {@code steps} on the calling thread and returns the outcome — what {@link #install} does on its
+     * worker, without the FX hand-off. {@code onStepStart} is called on this thread. Never throws: a failed
+     * step ends the run with a not-ok {@link Result} carrying its message.
+     */
+    Result installSync(List<Step> steps, Path configDir, Consumer<String> onStepStart) {
+        try {
+            String installedCommand = null;
+            for (Step s : steps) {
+                onStepStart.accept(s.id());
+                String cmd = runStep(s, configDir);
+                if (cmd != null) {
+                    installedCommand = cmd;
+                }
+            }
+            return new Result(true, "", installedCommand);
+        } catch (InstallException e) {
+            return new Result(false, e.getMessage());
+        } catch (Exception e) {
+            return new Result(false, e.getMessage() == null ? e.toString() : e.getMessage());
+        }
     }
 
     /** Stops the worker (window dispose). */
@@ -408,7 +432,7 @@ public final class InstallService {
             throw new InstallException("HTTP " + resp.statusCode() + " for " + url);
         }
         try (InputStream in = resp.body()) {
-            return PluginRegistry.readCapped(in, MAX_DOWNLOAD_BYTES);
+            return PluginRegistry.readCapped(in, maxDownloadBytes);
         }
     }
 
