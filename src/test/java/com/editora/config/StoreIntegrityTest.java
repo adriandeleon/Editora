@@ -216,7 +216,7 @@ class StoreIntegrityTest {
         config.load();
         try {
             assertEquals("MY NOTE", config.getNotes().get("/x/a.txt").get(0).body());
-            assertNotNull(config.getMacroStore().find("mine"));
+            assertNotNull(config.getMacroStore().findByName("mine"));
             assertEquals(1, config.projects().list().size());
             assertTrue(config.projects().isOpen("p-1"));
             assertTrue(config.projects().loadedIntact());

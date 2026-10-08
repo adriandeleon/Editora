@@ -38,18 +38,77 @@ clear stale `macro.run.*` commands on rename/delete), `get(id)` looks up, and `a
 every command (the palette and keybinding editor populate from this).
 
 `run(id)` executes the command and then notifies the **execution listener** — a single
-`Consumer<String>` installed via `setExecutionListener`. It fires *after* the command runs, so
-a control command like `macro.startRecording` has already flipped state before the notification
-arrives. `MainController.setKeyDispatcher` wires it to the macro coordinator:
+`Consumer<String>` installed via `setExecutionListener`. It fires *after* the command runs, and only for
+the outermost run (a command that delegates to another reports what the user invoked). Its counterpart
+`setStartListener` fires just *before* an outermost command runs. `MainController` wires both to the macro
+coordinator:
 
 ```java
+registry.setStartListener(macroCoordinator::onCommandStart);
 registry.setExecutionListener(macroCoordinator::onCommand);
 ```
 
-`MacroService.onCommand` ignores `macro.*` ids and `palette.show` (so recording the act of
-recording, or opening the palette to invoke a command, isn't captured), and short-circuits when
-not recording or while replaying — see
-[`macro/MacroService.java`](../../src/main/java/com/editora/macro/MacroService.java).
+Also around every outermost run: `setRunScope` (reveal the caret after an edit) and `setBoundaryHook`
+(close the undo group on both sides, so a command's edit is its own undo step).
+
+## Keyboard macros
+
+[`ui/MacroCoordinator.java`](../../src/main/java/com/editora/ui/MacroCoordinator.java) owns recording and
+replay for a window; the pure model is in [`macro/`](../../src/main/java/com/editora/macro).
+
+**A macro is a list of steps** (`MacroStep`): a `command` (an id), `text` (typed characters) or a `key`
+(a `MacroKey` token such as `BACK_SPACE`, `S-TAB`, `C-LEFT`). A text or key step also carries its *target*:
+the document (the default) or `prompt` — whatever else had the keyboard focus (the find bar, an overlay
+prompt, a picker, a tool window).
+
+**Recording** has three sources, in event order:
+
+- *Commands* — the execution listener. `MacroService.onCommand` skips the `macro.*` commands and
+  `palette.show`, and skips a command that ran as the **consequence of a recorded key** (Enter in a picker
+  running the picked command): replaying the key runs it again, so recording both would run it twice. The
+  window opens at a recorded key/text step and closes at the next real key press or mouse press. A saved
+  macro's own `macro.run.<id>` *is* a step; the coordinator records it when the run starts.
+- *Text and keys* — the `KeyDispatcher`, through [`MacroCapture`](../../src/main/java/com/editora/command/MacroCapture.java).
+  It reports typed text (`KEY_TYPED`, input-method commits, and a `C-u N x` self-insert) and every key press
+  it leaves to the focused control: an *action key* (`KeyDispatcher.isActionKey` — Enter, Tab, Escape,
+  Backspace, Delete, Insert, the arrows, Home/End, Page Up/Down, or any key with Ctrl/Cmd) and a bound chord
+  it hands to the focus owner (`C-n` in a list). Enter and Tab are recorded as **keys**, never as the
+  control characters they also deliver — a tab character cannot tell Tab from Shift+Tab or replay a snippet
+  expansion. The coordinator classifies the event target: the active editor, a prompt, or — for a subtree
+  marked `editora.macroOpaque` (the command palette) — nothing, because what happens there ends in a command
+  that is recorded instead.
+- The start listener is how a **blocking dialog** is noticed: a `runLater` posted before the command only
+  runs while the command is still on the stack if the command is spinning a nested event loop (a native
+  file chooser, an `Alert`). The keys typed there never reach the window, so recording warns at once.
+
+Escape that reaches the scene unconsumed with the focus in the editor cancels the recording, as does the
+`edit.cancel` command when it has nothing else to dismiss. A cancelled or empty recording leaves the
+previous macro in place.
+
+**Replay** delivers each step the way it arrived: a command through `registry.run`, text and keys as real
+`KEY_TYPED` / `KEY_PRESSED` events — so the editor's key filters (snippet Tab, table navigation, auto-indent,
+auto-close, completion accept, multiple carets) see exactly what they saw live. A document step is fired at
+the active buffer's focused area; a prompt step at the scene's focus owner. While it fires an event the
+coordinator reports `MacroCapture.SYNTHETIC` and the dispatcher ignores the event completely (dispatching it
+could run a command; even examining it cleared the flag that swallows the replay chord's own character).
+
+The loop (`MacroCoordinator.Run`) is driven by the `MacroPlayer` cursor — a stack of frames, so a
+`macro.run.<id>` step pushes that macro and the outer one resumes afterwards; a macro already on the stack
+(a cycle) or a depth over `MacroPlayer.MAX_DEPTH` stops the replay with an error. Before a text/key step the
+loop asks `MacroReplay.readiness`: a prompt step waits until the focus has left the editor (and is inside
+the overlay card, when one is up — a card takes the focus one turn after it is shown); a document step
+waits while an overlay covers the editor. Waiting, and using up the time slice, both yield with
+`Platform.runLater`; otherwise the replay is synchronous. Between slices the coordinator reports
+`MacroCapture.REPLAYING`: the dispatcher swallows real keys and turns Escape / the cancel chord into
+`cancelReplay()`. The whole replay — every pass, every slice — is one undo step
+(`EditorBuffer.beginUndoSpan`, which folds the changes into a single history entry; see
+`CompletionUndoFactory.RebasableQueue#beginSpan`).
+
+**Storage** is `macros.json` (`MacroStore`, schema v2): macros are keyed by a stable `id`, which is what
+`macro.run.<id>` and a key binding use — a rename keeps it, and `MacroIds` gives names in any script a
+distinct one. `lastId` names the entry that holds the most recent recording until it is given a name (shown
+under the localized "unnamed macro" label); "replay last" falls back to it in a new window or after a
+restart.
 
 ## KeymapManager
 
@@ -216,11 +275,15 @@ macOS is never text.
 it to capture a chord in the Settings scene (which has no global dispatcher). It returns tokens in
 the canonical `C- M- Cmd- S-` order.
 
-### The typed-char listener
+### The macro capture hook
 
-`setTypedListener(Consumer<Character>)` installs a hook fed each genuine, non-consumed typed
-character. The macro recorder uses it to capture typed text interleaved with command invocations.
-`isRecordableChar` filters to printable characters plus tab/newline/carriage-return.
+`setMacroCapture(MacroCapture)` connects the dispatcher to the macro coordinator. The idle path costs one
+call, `mode()`, per key event. While recording, the dispatcher reports typed text (`isRecordableText`:
+printable characters only) and the key presses it leaves to the focused control (`isActionKey`, and bound
+chords handed to a focus owner), each with the event target. While a replay fires its own key events the
+mode is `SYNTHETIC` and `handle` / `handleTyped` / `handleReleased` return before touching any state;
+between the slices of a long replay it is `REPLAYING` and real keys are consumed, Escape and the cancel
+chord becoming `cancelReplay()`. See [Keyboard macros](#keyboard-macros).
 
 ### `editora.ownsKeys`, text fields, and the editor-context carve-out
 

@@ -812,6 +812,10 @@ public class SharedConfig {
     private void loadMacros() {
         // Read even when absent: a copy an older build set aside may be waiting to be restored.
         macroStore = read(getMacrosFile(), new MacroStore(), ConfigSchema.MACROS);
+        if (macroStore == null) {
+            macroStore = new MacroStore();
+        }
+        macroStore.sanitize(); // a hand-edited file may hold a null list or null entries
     }
 
     public void saveMacros() {

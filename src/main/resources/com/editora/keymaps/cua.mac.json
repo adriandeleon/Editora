@@ -23,6 +23,7 @@
   "Cmd-S-f": "search.inFiles",
   "Cmd-l": "nav.goToLine",
   "Cmd-S-p": "palette.show",
+  "Cmd-S-r": "macro.toggleRecording",
   "Cmd-S-e": "search.everywhere",
   "Cmd-,": "view.settings",
   "C-Cmd-f": "window.fullScreen",

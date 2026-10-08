@@ -26,6 +26,29 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
     private Subscription capture;
     private boolean closed;
 
+    /**
+     * Makes every edit applied until the returned action runs one undo step (and one redo step) — see
+     * {@link CompletionUndoFactory.RebasableQueue#beginSpan}. Edits may span several event-loop turns. A call
+     * made while a span is open joins that span.
+     */
+    private Runnable beginSpan() {
+        if (closed || queue.spanOpen() || delegate.isPerformingAction()) return () -> {};
+        delegate.preventMerge(); // the span's first edit must not merge into the entry before it
+        queue.beginSpan();
+        return () -> {
+            queue.endSpan();
+            delegate.preventMerge(); // nor the next edit into the span
+        };
+    }
+
+    static Runnable beginSpan(CodeArea first, CodeArea second) {
+        var ends = new ArrayList<Runnable>();
+        for (CodeArea area : views(first, second)) {
+            if (area.getUndoManager() instanceof CompletionUndoManager<?> manager) ends.add(manager.beginSpan());
+        }
+        return () -> ends.forEach(Runnable::run);
+    }
+
     private static final class Group<C> {
         final List<C> changes = new ArrayList<>();
         boolean valid = true;
@@ -314,6 +337,7 @@ final class CompletionUndoManager<C> implements UndoManager<C> {
         if (closed) return; // shared by a split's two views, each of which closes it
         closed = true;
         end();
+        queue.endSpan();
         groups.clear();
         joins.clear();
         delegate.close();

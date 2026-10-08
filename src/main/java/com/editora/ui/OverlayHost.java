@@ -89,6 +89,11 @@ public final class OverlayHost {
         });
     }
 
+    /** Whether {@code node} is part of the card this host is showing (or of its backdrop). */
+    public boolean contains(Node node) {
+        return isInOverlay(node);
+    }
+
     private boolean isInOverlay(Node node) {
         for (Node n = node; n != null; n = n.getParent()) {
             if (n == overlayRoot) {

@@ -340,14 +340,10 @@ public class SettingsWindow {
 
     private Runnable reloadTemplates;
 
-    /** Working copies for the Macros master-detail page. */
-    private final javafx.collections.ObservableList<com.editora.macro.Macro> macroItems =
-            javafx.collections.FXCollections.observableArrayList();
-
-    private final javafx.collections.ObservableList<com.editora.macro.MacroStep> macroStepItems =
-            javafx.collections.FXCollections.observableArrayList();
-    private boolean loadingMacro = false;
-    private String macroOriginalName; // the saved name of the selected macro (to detect rename)
+    /** The Macros page's editor (see {@link MacroSettingsPane}); null until that page is built. */
+    private MacroSettingsPane macroPane;
+    /** The Macros page's note, which names the chords of the live keymap. */
+    private Label macroNote;
     /** Re-registers the {@code macro.run.*} commands across windows after a Macros-page edit. */
     private Runnable onMacrosChanged = () -> {};
     /** Hooks used by the separate Run Configurations window; kept here as the window-service owner. */
@@ -2097,8 +2093,9 @@ public class SettingsWindow {
     /** {@link #refreshShortcuts()}, then moves keyboard focus to {@code focusId}'s row (rebuilding drops it). */
     private void refreshShortcuts(String focusId) {
         refreshChordChips();
-        if (refreshMacroKeybinding != null) {
-            refreshMacroKeybinding.run();
+        if (macroPane != null) {
+            macroPane.refreshKeybinding();
+            macroNote.setText(macroNoteText());
         }
         if (shortcutListBox == null || shortcutActions == null) {
             return;
@@ -2321,264 +2318,74 @@ public class SettingsWindow {
     }
 
     /** Re-reads the Macros page's list from the store — called after a macro changes from outside this
-     *  window (e.g. a recording auto-saves "unnamed macro" on F4), so an already-open Settings window
-     *  reflects it live instead of only on the next time the page is built. Harmless if never opened —
-     *  {@link #macroItems} is a plain field, not lazily created with the page. */
+     *  window (e.g. a recording that was just stopped), so an already-open Settings window reflects it live
+     *  instead of only on the next time the page is built. Harmless if the page was never opened. */
     public void refreshMacrosList() {
-        macroItems.setAll(config.getMacroStore().macros);
+        if (macroPane != null) {
+            macroPane.refresh();
+        }
     }
 
     private VBox macrosPage() {
         VBox p = page(tr("settings.cat.macros"));
         Card mainCard = card(p, null);
+        macroPane = new MacroSettingsPane(new MacroSettingsPane.Host() {
+            @Override
+            public ConfigManager config() {
+                return config;
+            }
+
+            @Override
+            public ShortcutActions shortcuts() {
+                return shortcutActions;
+            }
+
+            @Override
+            public void macrosChanged() {
+                onMacrosChanged.run();
+            }
+
+            @Override
+            public boolean rebind(String commandId, String chord) {
+                return rebindWithConflictCheck(commandId, chord);
+            }
+
+            @Override
+            public void shortcutsChanged() {
+                refreshShortcuts();
+            }
+        });
         cardRow(
                 mainCard,
                 Category.MACROS,
-                macrosEditor(),
-                "macros keyboard record replay steps rename delete keybinding command text");
-        Label note = note(tr("settings.macro.note"));
-        note.setWrapText(true);
-        note.setMaxWidth(460);
-        cardRow(mainCard, Category.MACROS, note, "macros record f3 f4 replay keybinding save");
+                macroPane,
+                "macros keyboard record replay steps rename delete keybinding command text key");
+        macroNote = note(macroNoteText());
+        macroNote.setWrapText(true);
+        macroNote.setMaxWidth(460);
+        cardRow(mainCard, Category.MACROS, macroNote, "macros record start stop replay keybinding save cancel");
         return p;
     }
 
-    /** Master-detail editor for saved keyboard macros: list on the left, a name/keybinding/steps form on the right. */
-    private javafx.scene.Node macrosEditor() {
-        macroItems.setAll(config.getMacroStore().macros);
-
-        ListView<com.editora.macro.Macro> list = new ListView<>(macroItems);
-        list.setPrefSize(220, 420);
-        Label noMacros = note(tr("settings.macro.empty"));
-        noMacros.setWrapText(true);
-        noMacros.setTextAlignment(javafx.scene.text.TextAlignment.CENTER);
-        noMacros.setMaxWidth(190);
-        list.setPlaceholder(noMacros);
-        list.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.macro.Macro m, boolean empty) {
-                super.updateItem(m, empty);
-                setText(empty || m == null ? null : m.name() + "  (" + m.steps().size() + ")");
-            }
-        });
-
-        TextField name = new TextField();
-        HBox keybinding = new HBox(8);
-        keybinding.setAlignment(Pos.CENTER_LEFT);
-
-        ListView<com.editora.macro.MacroStep> steps = new ListView<>(macroStepItems);
-        steps.setPrefHeight(180);
-        steps.setCellFactory(lv -> new ListCell<>() {
-            @Override
-            protected void updateItem(com.editora.macro.MacroStep s, boolean empty) {
-                super.updateItem(s, empty);
-                setText(empty || s == null ? null : macroStepLabel(s));
-            }
-        });
-        Label stepKind = new Label();
-        stepKind.setMinWidth(Region.USE_PREF_SIZE);
-        TextField stepValue = new TextField();
-        HBox.setHgrow(stepValue, Priority.ALWAYS);
-        stepValue.setDisable(true);
-        Runnable commitStep = () -> {
-            int i = steps.getSelectionModel().getSelectedIndex();
-            com.editora.macro.MacroStep cur = steps.getSelectionModel().getSelectedItem();
-            if (i < 0 || cur == null || loadingMacro) {
-                return;
-            }
-            macroStepItems.set(i, new com.editora.macro.MacroStep(cur.kind(), stepValue.getText()));
-        };
-        stepValue.setOnAction(e -> commitStep.run());
-        stepValue.focusedProperty().addListener((o, was, now) -> {
-            if (!now) {
-                commitStep.run();
-            }
-        });
-        steps.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingMacro = true;
-            try {
-                stepValue.setDisable(now == null);
-                stepKind.setText(
-                        now == null
-                                ? ""
-                                : tr(now.isCommand() ? "settings.macro.kind.command" : "settings.macro.kind.text"));
-                stepValue.setText(now == null ? "" : now.value());
-            } finally {
-                loadingMacro = false;
-            }
-        });
-
-        Button stepUp = new Button("▲");
-        Button stepDown = new Button("▼");
-        nameReorderButtons(stepUp, stepDown);
-        stepUp.getStyleClass().addAll("flat", "reorder-button");
-        stepDown.getStyleClass().addAll("flat", "reorder-button");
-        stepUp.setOnAction(e -> moveStep(steps, -1));
-        stepDown.setOnAction(e -> moveStep(steps, 1));
-        Button stepRemove = new Button(tr("settings.macro.removeStep"));
-        stepRemove.setOnAction(e -> {
-            int i = steps.getSelectionModel().getSelectedIndex();
-            if (i >= 0) {
-                macroStepItems.remove(i);
-            }
-        });
-        Button addCmd = new Button(tr("settings.macro.addCommand"));
-        addCmd.setOnAction(e -> {
-            macroStepItems.add(com.editora.macro.MacroStep.command(""));
-            steps.getSelectionModel().selectLast();
-            stepValue.requestFocus();
-        });
-        Button addText = new Button(tr("settings.macro.addText"));
-        addText.setOnAction(e -> {
-            macroStepItems.add(com.editora.macro.MacroStep.text(""));
-            steps.getSelectionModel().selectLast();
-            stepValue.requestFocus();
-        });
-        // Wraps: the five German buttons are wider than the form at the window's minimum width.
-        WrapRow stepButtons = new WrapRow(6, 6, addCmd, addText, new HBox(6, stepUp, stepDown), stepRemove);
-
-        javafx.scene.layout.GridPane form = new javafx.scene.layout.GridPane();
-        form.setHgap(8);
-        form.setVgap(6);
-        formRow(form, 0, tr("settings.macro.name"), name);
-        formRow(form, 1, tr("settings.macro.keybinding"), keybinding);
-        Label stepsLabel = new Label(tr("settings.macro.steps"));
-        stepsLabel.getStyleClass().add("settings-section");
-        VBox stepEditor = new VBox(6, stepsLabel, steps, new HBox(8, stepKind, stepValue), stepButtons);
-        VBox.setVgrow(steps, Priority.ALWAYS);
-        form.setDisable(true);
-        // No macro selected, no steps to edit: Add Command used to add a step that belonged to nothing.
-        stepEditor.disableProperty().bind(form.disabledProperty());
-        HBox.setHgrow(form, Priority.ALWAYS);
-
-        // Repopulates the inline keybinding row for the selected macro's command id.
-        java.util.function.Consumer<com.editora.macro.Macro> rebuildKeybinding = m -> {
-            keybinding.getChildren().clear();
-            if (m == null) {
-                return;
-            }
-            String cmdId = com.editora.macro.MacroService.commandIdFor(m.name());
-            String chord = currentChordFor(cmdId);
-            boolean bound = chord != null && !chord.isBlank();
-            Label chordLbl = new Label(bound ? chord : tr("settings.shortcuts.unbound"));
-            chordLbl.getStyleClass().add(bound ? "shortcut-chord" : "shortcut-unbound");
-            chordLbl.setMinWidth(150);
-            Button record = new Button(tr("settings.shortcuts.record"));
-            Button clear = new Button(tr("settings.shortcuts.reset"));
-            clear.setOnAction(e -> {
-                if (shortcutActions != null) {
-                    shortcutActions.reset(cmdId);
-                }
-                rebuildKeybindingFor(keybinding, m, steps);
-                refreshShortcuts();
-            });
-            record.setOnAction(e -> startMacroCapture(keybinding, cmdId, m, steps));
-            keybinding.getChildren().addAll(chordLbl, record, clear);
-        };
-        macroKeybindingRebuilders.put(keybinding, rebuildKeybinding);
-        // The row shows a chord of the live keymap, like the Keymaps list: a keymap switch or a rebind made
-        // elsewhere changes it. Left alone while the user is recording a chord in it.
-        refreshMacroKeybinding = () -> {
-            boolean recording = !keybinding.getChildren().isEmpty()
-                    && keybinding.getChildren().get(0) instanceof TextField;
-            if (!recording) {
-                rebuildKeybinding.accept(list.getSelectionModel().getSelectedItem());
-            }
-        };
-
-        list.getSelectionModel().selectedItemProperty().addListener((o, was, now) -> {
-            loadingMacro = true;
-            try {
-                form.setDisable(now == null);
-                macroOriginalName = now == null ? null : now.name();
-                name.setText(now == null ? "" : now.name());
-                macroStepItems.setAll(now == null ? java.util.List.of() : now.steps());
-                rebuildKeybinding.accept(now);
-            } finally {
-                loadingMacro = false;
-            }
-        });
-
-        Button save = new Button(tr("settings.save"));
-        save.getStyleClass().add("success");
-        save.disableProperty().bind(form.disabledProperty());
-        save.setOnAction(e -> saveMacro(list, name.getText()));
-        Button delete = new Button(tr("settings.macro.delete"));
-        delete.disableProperty()
-                .bind(list.getSelectionModel().selectedItemProperty().isNull());
-        delete.setOnAction(e -> deleteMacro(list));
-        HBox formButtons = new HBox(8, delete, spacer(), save);
-        formButtons.setAlignment(Pos.CENTER_LEFT);
-
-        VBox right = new VBox(8, form, stepEditor, formButtons);
-        VBox.setVgrow(stepEditor, Priority.ALWAYS);
-        HBox.setHgrow(right, Priority.ALWAYS);
-        VBox left = new VBox(6, list);
-        keepWidth(left);
-        VBox.setVgrow(list, Priority.ALWAYS);
-
-        if (!macroItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
-        HBox box = new HBox(12, left, right);
-        box.setAlignment(Pos.TOP_LEFT);
-        return box;
+    /**
+     * How to record, in the chords of the keymap in use. The note used to say "F3 (start) and F4 (stop)",
+     * which only the Emacs keymap binds — in CUA and Sublime F3 is Find Next.
+     */
+    private String macroNoteText() {
+        return tr(
+                "settings.macro.note",
+                macroCommandHint("macro.startRecording"),
+                macroCommandHint("macro.stopRecording"),
+                macroCommandHint("macro.replayLast"));
     }
 
-    /** Re-reads the Macros page's key-binding row from the live keymap (set once that page is built). */
-    private Runnable refreshMacroKeybinding;
-
-    /** Maps a keybinding HBox to its rebuilder so {@code reset}/capture can repopulate it. */
-    private final java.util.Map<HBox, java.util.function.Consumer<com.editora.macro.Macro>> macroKeybindingRebuilders =
-            new java.util.HashMap<>();
-
-    private void rebuildKeybindingFor(
-            HBox keybinding, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
-        var rebuilder = macroKeybindingRebuilders.get(keybinding);
-        if (rebuilder != null) {
-            rebuilder.accept(m);
-        }
-    }
-
-    /** Swaps the keybinding row into a live chord-capture field, mirroring the Keymaps recorder. */
-    private void startMacroCapture(
-            HBox keybinding, String commandId, com.editora.macro.Macro m, ListView<com.editora.macro.MacroStep> steps) {
-        keybinding.getChildren().clear();
-        Runnable done = () -> {
-            rebuildKeybindingFor(keybinding, m, steps);
-            refreshShortcuts(); // the Keymaps list and the chord chips show this binding too
-        };
-        java.util.function.Consumer<String> commit = seq -> {
-            rebindWithConflictCheck(commandId, seq);
-            done.run();
-        };
-        TextField capture = ShortcutCapture.field(commit, done);
-        Button save = new Button(tr("settings.shortcuts.save"));
-        save.getStyleClass().add("success");
-        save.setOnAction(e -> commit.accept(capture.getText()));
-        Button cancel = new Button(tr("settings.shortcuts.cancel"));
-        cancel.setOnAction(e -> done.run());
-        keybinding.getChildren().addAll(capture, save, cancel);
-        javafx.application.Platform.runLater(capture::requestFocus);
-    }
-
-    private static void moveStep(ListView<com.editora.macro.MacroStep> steps, int delta) {
-        int i = steps.getSelectionModel().getSelectedIndex();
-        int j = i + delta;
-        if (i < 0 || j < 0 || j >= steps.getItems().size()) {
-            return;
-        }
-        com.editora.macro.MacroStep s = steps.getItems().remove(i);
-        steps.getItems().add(j, s);
-        steps.getSelectionModel().select(j);
-    }
-
-    private static String macroStepLabel(com.editora.macro.MacroStep s) {
-        if (s.isCommand()) {
-            return "⌘  " + (s.value() == null || s.value().isBlank() ? "…" : s.value());
-        }
-        String v = s.value() == null ? "" : s.value().replace("\n", "\\n").replace("\t", "\\t");
-        return "✎  \"" + v + "\"";
+    /** A command by title with its chord, or with the fact that it has none. */
+    private String macroCommandHint(String commandId) {
+        String title = tr("command." + commandId);
+        String chord = currentChordFor(commandId);
+        return chord == null || chord.isBlank()
+                ? tr("settings.macro.note.unbound", title)
+                : tr("settings.macro.note.bound", title, chord);
     }
 
     private String currentChordFor(String commandId) {
@@ -2598,92 +2405,6 @@ public class SettingsWindow {
         a.initOwner(stage);
         a.setHeaderText(null);
         a.showAndWait();
-    }
-
-    /** True when {@code name} would take a {@code macro.run.<slug>} id another saved macro already uses. */
-    private static boolean macroSlugTaken(com.editora.config.MacroStore store, String name) {
-        String id = com.editora.macro.MacroService.commandIdFor(name);
-        for (com.editora.macro.Macro m : store.macros) {
-            if (!m.name().equals(name)
-                    && com.editora.macro.MacroService.commandIdFor(m.name()).equals(id)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void saveMacro(ListView<com.editora.macro.Macro> list, String rawName) {
-        String newName = rawName == null ? "" : rawName.trim();
-        if (newName.isEmpty() || macroOriginalName == null) {
-            return;
-        }
-        com.editora.config.MacroStore store = config.getMacroStore();
-        boolean renamed = !macroOriginalName.equals(newName);
-        if (renamed && store.find(newName) != null) {
-            macroWarn(tr("settings.macro.nameExists", newName));
-            return;
-        }
-        // Distinct names can slug to one macro.run.<id> ("my macro" / "my-macro"; any symbol-only name ->
-        // "macro"). The store keys by name but commands key by slug, so the second registration silently
-        // shadowed the first — the older macro became unreachable by command or keybinding.
-        String oldId = com.editora.macro.MacroService.commandIdFor(macroOriginalName);
-        String newId = com.editora.macro.MacroService.commandIdFor(newName);
-        if (renamed && !newId.equals(oldId) && macroSlugTaken(store, newName)) {
-            macroWarn(tr("settings.macro.idExists", newName));
-            return;
-        }
-        String oldChord = renamed ? currentChordFor(oldId) : null;
-        com.editora.macro.Macro updated =
-                new com.editora.macro.Macro(newName, new java.util.ArrayList<>(macroStepItems));
-        if (renamed) {
-            store.remove(macroOriginalName);
-        }
-        store.put(updated);
-        config.saveMacros();
-        onMacrosChanged.run(); // re-register macro.run.* (incl. the renamed id) in every window
-        // Carry the keybinding across only when the command id actually changed. A rename that keeps the
-        // slug ("build" -> "Build") leaves oldId == newId, and resetting after rebinding stripped the chord
-        // we had just re-added — a macro.run.* id has no base default to fall back to, so it went unbound.
-        if (renamed && !newId.equals(oldId) && oldChord != null && !oldChord.isBlank() && shortcutActions != null) {
-            shortcutActions.reset(oldId); // drop the old id's override BEFORE binding the new one
-            shortcutActions.rebind(newId, oldChord);
-        }
-        macroItems.setAll(store.macros);
-        for (com.editora.macro.Macro m : macroItems) {
-            if (m.name().equals(newName)) {
-                list.getSelectionModel().select(m);
-                break;
-            }
-        }
-    }
-
-    private void deleteMacro(ListView<com.editora.macro.Macro> list) {
-        com.editora.macro.Macro sel = list.getSelectionModel().getSelectedItem();
-        if (sel == null) {
-            return;
-        }
-        Alert confirm = Dialogs.styled(new Alert(
-                Alert.AlertType.CONFIRMATION,
-                tr("settings.macro.deleteConfirm", sel.name()),
-                ButtonType.OK,
-                ButtonType.CANCEL));
-        confirm.initOwner(stage);
-        confirm.setTitle(tr("settings.macro.deleteConfirmTitle"));
-        confirm.setHeaderText(null);
-        if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
-            return;
-        }
-        com.editora.config.MacroStore store = config.getMacroStore();
-        if (shortcutActions != null) {
-            shortcutActions.reset(com.editora.macro.MacroService.commandIdFor(sel.name())); // drop its keybinding
-        }
-        store.remove(sel.name());
-        config.saveMacros();
-        onMacrosChanged.run();
-        macroItems.setAll(store.macros);
-        if (!macroItems.isEmpty()) {
-            list.getSelectionModel().select(0);
-        }
     }
 
     private VBox editorPage() {

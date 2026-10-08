@@ -4825,7 +4825,7 @@ public class EditorBuffer implements TabContent {
         // Enter-with-indent and an auto-closed pair place their own caret once this returns (after the
         // indent, between the pair), so for those it is read back then rather than predicted now.
         boolean oneChar = c.getInserted().length() == 1;
-        javafx.application.Platform.runLater(
+        caretFixes.defer(
                 () -> a.moveTo(Math.clamp((oneChar ? caret : a.getCaretPosition()) + delta, 0, a.getLength())));
     }
 
@@ -4883,7 +4883,14 @@ public class EditorBuffer implements TabContent {
         // plainTextChanges, and RichTextFX re-applies that insertion's own caret position once our
         // subscriber returns — which would strand the caret inside the inserted prefix (delta > 0) and send
         // the next characters to the wrong place. Deferring makes our position the last one to win.
-        javafx.application.Platform.runLater(() -> a.moveTo(Math.min(restored, a.getLength())));
+        caretFixes.defer(() -> a.moveTo(Math.min(restored, a.getLength())));
+    }
+
+    private final DeferredFixes caretFixes = new DeferredFixes();
+
+    /** Applies pending caret fix-ups now (see {@link DeferredFixes}); a macro replay calls it after each key. */
+    public void flushDeferredCaretFixes() {
+        caretFixes.flush();
     }
 
     /** Per-column "rainbow" coloring for CSV/TSV buffers (replaces the source.csv grammar highlighting). */
@@ -9508,6 +9515,11 @@ public class EditorBuffer implements TabContent {
         if (!largeFile) {
             area.getUndoManager().preventMerge();
         }
+    }
+
+    /** Makes every edit until the returned action runs ONE undo/redo step (a macro replay), in both views. */
+    public Runnable beginUndoSpan() {
+        return largeFile ? () -> {} : CompletionUndoManager.beginSpan(area, area2);
     }
 
     /** The accessible portion — the narrowed region, or the whole document when not narrowed. */
