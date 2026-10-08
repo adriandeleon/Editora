@@ -226,12 +226,16 @@ class InstallCoordinatorFxTest {
         assumeTrue(onPath("java"), "the Maven pom.xml server needs java on PATH");
         try (AsyncTestScope scope = new AsyncTestScope()) {
             Rig rig = new Rig(scope, "busy");
+            CountDownLatch downloading = new CountDownLatch(1);
             CountDownLatch release = new CountDownLatch(1);
             scope.onClose(release::countDown);
-            rig.web.serveWhenReleased(InstallCatalog.LEMMINX_MAVEN_ZIP_URL, mavenBundle("1"), release);
+            rig.web.serveWhenReleased(InstallCatalog.LEMMINX_MAVEN_ZIP_URL, mavenBundle("1"), downloading, release);
 
             rig.installServer("maven-pom");
-            rig.step(); // prerequisites checked; the install is now waiting on its download
+            // Not rig.step(): the worker is about to be held by the download, and a barrier task queued
+            // behind it would wait just as long.
+            scope.await(downloading, "the install to reach its download");
+            scope.awaitFx();
 
             rig.installServer("maven-pom");
             assertEquals(List.of(false), rig.outcomes, "the second request is answered at once");

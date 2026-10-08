@@ -112,9 +112,15 @@ public final class LoopbackDownloads implements AutoCloseable {
         return this;
     }
 
-    /** Answers {@code url} with 200 and {@code body}, but only once {@code release} has been counted down. */
-    public LoopbackDownloads serveWhenReleased(String url, byte[] body, CountDownLatch release) {
+    /**
+     * Answers {@code url} with 200 and {@code body}, but only once {@code release} has been counted down.
+     * {@code arrived} is counted down when the request comes in, so a test can wait until the caller is
+     * really in the middle of its download.
+     */
+    public LoopbackDownloads serveWhenReleased(
+            String url, byte[] body, CountDownLatch arrived, CountDownLatch release) {
         routes.put(url, exchange -> {
+            arrived.countDown();
             try {
                 if (!release.await(30, TimeUnit.SECONDS)) {
                     respond(exchange, 504, new byte[0]);
