@@ -30,12 +30,12 @@
         "description": "Add header level 6"
     },
     "Links": {
-        "prefix": ["l", "link"],
+        "prefix": "link",
         "body": ["[${1:text}](${2:url}) ${0}"],
         "description": "Add links"
     },
     "URLS": {
-        "prefix": ["u", "url"],
+        "prefix": "url",
         "body": ["<${1}> ${0}"],
         "description": "Add urls"
     },
@@ -50,12 +50,12 @@
         "description": "Insert strikethrough"
     },
     "Insert bold text": {
-        "prefix": ["bold", "b"],
+        "prefix": "bold",
         "body": "**${1}** $0",
         "description": "Insert bold text"
     },
     "Insert italic text": {
-        "prefix": ["i", "italic"],
+        "prefix": "italic",
         "body": "*${1}* $0",
         "description": "Insert italic text"
     },
@@ -388,12 +388,12 @@
         "description": "Create a superscript."
     },
     "Insert Note": {
-        "prefix": ["note", "n"],
+        "prefix": "note",
         "body": "> [!NOTE]\n> ",
         "description": "Insert Note"
     },
     "Insert Tip": {
-        "prefix": ["tip", "t"],
+        "prefix": "tip",
         "body": "> [!TIP]\n> ",
         "description": "Insert Tip"
     },
@@ -403,12 +403,12 @@
         "description": "Insert Important"
     },
     "Insert Warning": {
-        "prefix": ["warning", "w"],
+        "prefix": "warning",
         "body": "> [!WARNING]\n> ",
         "description": "Insert Warning"
     },
     "Insert Caution": {
-        "prefix": ["caution", "c"],
+        "prefix": "caution",
         "body": "> [!CAUTION]\n> ",
         "description": "Insert Caution"
     }

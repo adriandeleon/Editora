@@ -71,9 +71,14 @@ class SnippetSessionMirrorUndoFxTest {
             area.undo();
             // The fix: ONE undo reverts the primary AND its mirror together — not the old half-reverted "x = ;".
             assertEquals(" = ;", area.getText(), "one undo reverts the field and its mirror together");
-            // Undo ends the session cleanly (the document is fully reverted, just no longer tracked) rather than
-            // leaving it in a half-consistent state.
-            assertFalse(session.isActive(), "undo ends the session cleanly");
+            // The session follows the undo instead of ending (N4): ending it left the caret behind the last
+            // mirror, where the next Tab indented mid-expression. The field is tracked where it was, so the
+            // next character still lands in both occurrences.
+            assertTrue(session.isActive(), "undoing an edit made in a field keeps the session");
+            session.settle(); // what the end of the event turn does: the caret goes back into the field
+            assertEquals(0, area.getCaretPosition(), "the caret is back in the (empty) field, not after the mirror");
+            assertTrue(session.replaceInActiveField(area.getCaretPosition(), area.getCaretPosition(), "y"));
+            assertEquals("y = y;", area.getText(), "the ranges survived the undo");
             return true;
         });
         assertTrue(ok);

@@ -1,0 +1,463 @@
+{
+  "PHP tag": {
+    "prefix": "php",
+    "body": [
+      "<?php",
+      "",
+      "$0"
+    ],
+    "description": "Opening PHP tag"
+  },
+  "Strict types": {
+    "prefix": "strict",
+    "body": [
+      "<?php",
+      "",
+      "declare(strict_types=1);",
+      "",
+      "$0"
+    ],
+    "description": "File header with strict types"
+  },
+  "Echo": {
+    "prefix": "echo",
+    "body": [
+      "echo ${1:\"text\"};$0"
+    ],
+    "description": "Echo a value"
+  },
+  "Var dump": {
+    "prefix": "vd",
+    "body": [
+      "var_dump(\\$${1:value});$0"
+    ],
+    "description": "Dump a variable"
+  },
+  "Print r": {
+    "prefix": "pr",
+    "body": [
+      "print_r(\\$${1:value});$0"
+    ],
+    "description": "Print a variable in readable form"
+  },
+  "Dump and die": {
+    "prefix": "dd",
+    "body": [
+      "var_dump(\\$${1:value});",
+      "exit;$0"
+    ],
+    "description": "Dump a variable and stop"
+  },
+  "If": {
+    "prefix": "if",
+    "body": [
+      "if (${1:condition}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If statement"
+  },
+  "If Else": {
+    "prefix": "ifelse",
+    "body": [
+      "if (${1:condition}) {",
+      "\t$2",
+      "} else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "If-else statement"
+  },
+  "Else If": {
+    "prefix": "elseif",
+    "body": [
+      "elseif (${1:condition}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Elseif block"
+  },
+  "Else": {
+    "prefix": "else",
+    "body": [
+      "else {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Else block"
+  },
+  "Switch": {
+    "prefix": "switch",
+    "body": [
+      "switch (\\$${1:value}) {",
+      "\tcase ${2:'value'}:",
+      "\t\t$0",
+      "\t\tbreak;",
+      "",
+      "\tdefault:",
+      "\t\tbreak;",
+      "}"
+    ],
+    "description": "Switch statement"
+  },
+  "Match": {
+    "prefix": "match",
+    "body": [
+      "\\$${1:result} = match (\\$${2:value}) {",
+      "\t${3:'value'} => ${4:'result'},",
+      "\tdefault => ${0:null},",
+      "};"
+    ],
+    "description": "Match expression"
+  },
+  "For": {
+    "prefix": "for",
+    "body": [
+      "for (\\$${1:i} = 0; \\$${1:i} < ${2:count}; \\$${1:i}++) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "For loop"
+  },
+  "Foreach": {
+    "prefix": "foreach",
+    "body": [
+      "foreach (\\$${1:items} as \\$${2:item}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Foreach loop over values"
+  },
+  "Foreach key value": {
+    "prefix": "foreachk",
+    "body": [
+      "foreach (\\$${1:items} as \\$${2:key} => \\$${3:value}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Foreach loop over keys and values"
+  },
+  "While": {
+    "prefix": "while",
+    "body": [
+      "while (${1:condition}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "While loop"
+  },
+  "Do While": {
+    "prefix": "dowhile",
+    "body": [
+      "do {",
+      "\t$0",
+      "} while (${1:condition});"
+    ],
+    "description": "Do-while loop"
+  },
+  "Try Catch": {
+    "prefix": "try",
+    "body": [
+      "try {",
+      "\t$0",
+      "} catch (${1:\\\\Throwable} \\$${2:e}) {",
+      "\t",
+      "}"
+    ],
+    "description": "Try-catch block"
+  },
+  "Try Catch Finally": {
+    "prefix": "tryf",
+    "body": [
+      "try {",
+      "\t$0",
+      "} catch (${1:\\\\Throwable} \\$${2:e}) {",
+      "\t",
+      "} finally {",
+      "\t",
+      "}"
+    ],
+    "description": "Try-catch-finally block"
+  },
+  "Throw": {
+    "prefix": "throw",
+    "body": [
+      "throw new ${1:\\\\RuntimeException}(${2:'message'});$0"
+    ],
+    "description": "Throw an exception"
+  },
+  "Function": {
+    "prefix": "function",
+    "body": [
+      "function ${1:name}(${2:\\$param}): ${3:void}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Function declaration"
+  },
+  "Arrow function": {
+    "prefix": "fn",
+    "body": [
+      "fn (${1:\\$item}) => ${0:\\$item}"
+    ],
+    "description": "Arrow function"
+  },
+  "Closure": {
+    "prefix": "closure",
+    "body": [
+      "function (${1:\\$param}) use (${2:\\$captured}) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Anonymous function with captured variables"
+  },
+  "Namespace": {
+    "prefix": "namespace",
+    "body": [
+      "namespace ${1:App};$0"
+    ],
+    "description": "Namespace declaration"
+  },
+  "Use": {
+    "prefix": "use",
+    "body": [
+      "use ${1:Vendor\\\\Package\\\\ClassName};$0"
+    ],
+    "description": "Import a class"
+  },
+  "Class": {
+    "prefix": "class",
+    "body": [
+      "class ${1:${TM_FILENAME_BASE:ClassName}}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Class declaration"
+  },
+  "Final class": {
+    "prefix": "fclass",
+    "body": [
+      "final class ${1:${TM_FILENAME_BASE:ClassName}}",
+      "{",
+      "\tpublic function __construct(",
+      "\t\tprivate readonly ${2:Type} \\$${3:dependency},",
+      "\t) {",
+      "\t}",
+      "",
+      "\t$0",
+      "}"
+    ],
+    "description": "Final class with constructor promotion"
+  },
+  "Interface": {
+    "prefix": "interface",
+    "body": [
+      "interface ${1:${TM_FILENAME_BASE:Name}}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Interface declaration"
+  },
+  "Trait": {
+    "prefix": "trait",
+    "body": [
+      "trait ${1:${TM_FILENAME_BASE:Name}}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Trait declaration"
+  },
+  "Enum": {
+    "prefix": "enum",
+    "body": [
+      "enum ${1:${TM_FILENAME_BASE:Name}}: ${2:string}",
+      "{",
+      "\tcase ${3:First} = ${4:'first'};$0",
+      "}"
+    ],
+    "description": "Backed enum"
+  },
+  "Constructor": {
+    "prefix": "construct",
+    "body": [
+      "public function __construct(${1:\\$param})",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Constructor"
+  },
+  "Public method": {
+    "prefix": "pubf",
+    "body": [
+      "public function ${1:name}(${2:\\$param}): ${3:void}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Public method"
+  },
+  "Private method": {
+    "prefix": "prif",
+    "body": [
+      "private function ${1:name}(${2:\\$param}): ${3:void}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Private method"
+  },
+  "Protected method": {
+    "prefix": "prof",
+    "body": [
+      "protected function ${1:name}(${2:\\$param}): ${3:void}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Protected method"
+  },
+  "Static method": {
+    "prefix": "pubsf",
+    "body": [
+      "public static function ${1:name}(${2:\\$param}): ${3:void}",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "Public static method"
+  },
+  "Property": {
+    "prefix": "prop",
+    "body": [
+      "private ${1:string} \\$${2:name};$0"
+    ],
+    "description": "Typed property"
+  },
+  "Constant": {
+    "prefix": "const",
+    "body": [
+      "public const ${1:NAME} = ${2:'value'};$0"
+    ],
+    "description": "Class constant"
+  },
+  "Getter": {
+    "prefix": "getter",
+    "body": [
+      "public function get${1:Name}(): ${2:string}",
+      "{",
+      "\treturn \\$this->${3:name};",
+      "}$0"
+    ],
+    "description": "Getter method"
+  },
+  "Setter": {
+    "prefix": "setter",
+    "body": [
+      "public function set${1:Name}(${2:string} \\$${3:name}): void",
+      "{",
+      "\t\\$this->${3:name} = \\$${3:name};",
+      "}$0"
+    ],
+    "description": "Setter method"
+  },
+  "This": {
+    "prefix": "this",
+    "body": [
+      "\\$this->$0"
+    ],
+    "description": "Reference to the current object"
+  },
+  "Array": {
+    "prefix": "arr",
+    "body": [
+      "\\$${1:items} = [",
+      "\t${2:'key'} => ${3:'value'},$0",
+      "];"
+    ],
+    "description": "Array literal"
+  },
+  "Array map": {
+    "prefix": "amap",
+    "body": [
+      "array_map(fn (\\$${1:item}) => ${0:\\$item}, \\$${2:items})"
+    ],
+    "description": "Map over an array"
+  },
+  "Array filter": {
+    "prefix": "afilter",
+    "body": [
+      "array_filter(\\$${1:items}, fn (\\$${2:item}) => ${0:true})"
+    ],
+    "description": "Filter an array"
+  },
+  "Require once": {
+    "prefix": "req",
+    "body": [
+      "require_once ${1:__DIR__ . '/vendor/autoload.php'};$0"
+    ],
+    "description": "Require a file once"
+  },
+  "Isset": {
+    "prefix": "isset",
+    "body": [
+      "if (isset(\\$${1:value})) {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Guard on isset"
+  },
+  "Null coalesce": {
+    "prefix": "nc",
+    "body": [
+      "\\$${1:value} ?? ${0:default}"
+    ],
+    "description": "Null-coalescing expression"
+  },
+  "Sprintf": {
+    "prefix": "sprintf",
+    "body": [
+      "sprintf('${1:%s}', ${2:\\$value})"
+    ],
+    "description": "Formatted string"
+  },
+  "PHPDoc": {
+    "prefix": "doc",
+    "body": [
+      "/**",
+      " * ${1:Description.}",
+      " *",
+      " * @param ${2:type} \\$${3:name}",
+      " * @return ${4:type}",
+      " */"
+    ],
+    "description": "PHPDoc block"
+  },
+  "PHPUnit test class": {
+    "prefix": "testclass",
+    "body": [
+      "final class ${1:${TM_FILENAME_BASE:ExampleTest}} extends TestCase",
+      "{",
+      "\tpublic function test${2:Something}(): void",
+      "\t{",
+      "\t\t$0",
+      "\t}",
+      "}"
+    ],
+    "description": "PHPUnit test case class"
+  },
+  "PHPUnit test": {
+    "prefix": "test",
+    "body": [
+      "public function test${1:Something}(): void",
+      "{",
+      "\t$0",
+      "}"
+    ],
+    "description": "PHPUnit test method"
+  }
+}
