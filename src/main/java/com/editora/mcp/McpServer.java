@@ -199,7 +199,8 @@ public final class McpServer {
      * Writes the endpoint + bearer token for a local MCP client to read.
      *
      * <p>The token is the <b>only</b> thing standing between a local process and full control of the editor
-     * (the tool surface can run any registered command and read/write any file), so the file must be
+     * (the tool surface can run any registered command and read and write the open and project files), so the
+     * file must be
      * owner-only. Jackson's default write left it at the umask — 0644 in practice — inside a 0755 config dir,
      * i.e. readable by every other local account (on macOS every standard user's primary group is `staff`,
      * so `~` being 0750 doesn't stop it; on Linux `/home/user` is commonly 0755). The rest of the auth design

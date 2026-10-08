@@ -80,6 +80,14 @@ each of them keeps to these rules:
   not absolute. MCP rejects an empty or relative `path`. Nothing is ever resolved against the
   editor's own working directory. `AcpFsGuard` also refuses writes into the configuration
   directory and into version-control metadata (`.git/`, `.hg/`, …).
+- **MCP stays with the project and the open files.** `open_file` is the one MCP tool that has the
+  editor fetch a file by path. `McpAccess` opens it only when it is canonically inside the
+  window's project folder (`PathContainment`, so a link out of the project is outside) or
+  already open in the window; a window with no project opens nothing new. Everything else MCP
+  reads or writes is a buffer the user or that rule put there. `edit_buffer` and `save_buffer`
+  refuse a buffer whose file is in the configuration directory or in version-control metadata,
+  wherever it is and whoever opened it. `execute_command` is not confined: it runs any
+  registered command, as the enable-MCP notice says.
 - **A buffer is written through the buffer.** If any window has the file open, the write is an
   undoable whole-document edit of that buffer and nothing reaches the disk until the user
   saves.
