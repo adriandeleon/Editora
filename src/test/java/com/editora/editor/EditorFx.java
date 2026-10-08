@@ -128,6 +128,58 @@ final class EditorFx {
         drain();
     }
 
+    /**
+     * Blocks until {@code done} holds, re-checking it (on the FX thread) each time the observable {@code target}
+     * supplies is invalidated. Returns at once when it already holds.
+     */
+    static void awaitUntil(Supplier<Observable> target, java.util.function.BooleanSupplier done) throws Exception {
+        CountDownLatch reached = new CountDownLatch(1);
+        onFx(() -> {
+            if (done.getAsBoolean()) {
+                reached.countDown();
+                return;
+            }
+            Observable observable = target.get();
+            observable.addListener(new InvalidationListener() {
+                @Override
+                public void invalidated(Observable o) {
+                    if (done.getAsBoolean()) {
+                        o.removeListener(this);
+                        reached.countDown();
+                    }
+                }
+            });
+        });
+        if (!reached.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("the awaited state was never reached");
+        }
+        drain();
+    }
+
+    /**
+     * Occupies {@code threads} workers of {@code pool} until the returned action is run, so that work
+     * submitted meanwhile queues up behind them in a known order.
+     */
+    static Runnable holdPool(java.util.concurrent.ExecutorService pool, int threads) throws Exception {
+        CountDownLatch started = new CountDownLatch(threads);
+        CountDownLatch release = new CountDownLatch(1);
+        for (int i = 0; i < threads; i++) {
+            pool.submit(() -> {
+                started.countDown();
+                try {
+                    release.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+        }
+        if (!started.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+            release.countDown();
+            throw new IllegalStateException("the pool never became free");
+        }
+        return release::countDown;
+    }
+
     /** Shows {@code buffer} in its own stage (so hit-testing, popups and focus have a window). FX thread. */
     static Stage show(EditorBuffer buffer, double width, double height) {
         Stage stage = new Stage();
@@ -170,6 +222,16 @@ final class EditorFx {
             }
         }
         throw new IllegalArgumentException("no field " + name);
+    }
+
+    static void setStaticField(Class<?> type, String name, Object value) {
+        try {
+            Field f = type.getDeclaredField(name);
+            f.setAccessible(true);
+            f.set(null, value);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     /** Marks {@code node} as (not) under the mouse — there is no pointer to move in the headless toolkit. */
