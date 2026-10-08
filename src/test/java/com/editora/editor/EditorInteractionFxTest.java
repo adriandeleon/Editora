@@ -804,15 +804,19 @@ class EditorInteractionFxTest {
             ref[0] = buffer;
         });
         EditorFx.drain();
-        // Paging moves the caret by the viewport's height, so it moves nowhere until the area has laid its
-        // lines out. Wait for that instead of assuming one drained pulse was enough.
-        EditorFx.awaitUntil(
-                () -> ref[0].getArea().getVisibleParagraphs(),
-                () -> ref[0].getArea().getVisibleParagraphs().size() > 3);
         EditorFx.onFx(() -> {
             EditorBuffer buffer = ref[0];
             CodeArea area = buffer.getArea();
+            // Filling the buffer left the view at the end of the text with the caret back on line 0, out of
+            // sight. A page is measured from the caret's place on screen, so with no caret on screen Space
+            // only scrolls; and at the last screenful it jumps to the end of the text instead, which is what
+            // this test used to mistake for a page (and only where the last line happened to be fully
+            // visible, which depends on the line height of whichever user-agent stylesheet is in force).
+            area.showParagraphAtTop(0);
             buffer.getNode().layout();
+            assertEquals(0, area.firstVisibleParToAllParIndex(), "the view starts at the top, on the caret");
+            int screenful = area.getVisibleParagraphs().size();
+            assertTrue(screenful > 3 && screenful < 40, "a 300px view shows some lines, not all 400: " + screenful);
             area.fireEvent(EditorFx.pressed(KeyCode.SPACE, false, false));
             assertEquals(0, area.getCurrentParagraph(), "an editable buffer does not page on Space");
 
@@ -820,7 +824,9 @@ class EditorInteractionFxTest {
             assertFalse(buffer.isEditable());
             area.fireEvent(EditorFx.pressed(KeyCode.SPACE, false, false));
             int afterSpace = area.getCurrentParagraph();
-            assertTrue(afterSpace > 3, "Space pages down, was line " + afterSpace);
+            assertTrue(
+                    Math.abs(afterSpace - screenful) <= 1,
+                    "Space pages down one screenful of " + screenful + " lines, was line " + afterSpace);
             area.fireEvent(EditorFx.pressed(KeyCode.SPACE, false, true)); // Ctrl-Space is the keymap's
             area.fireEvent(EditorFx.pressed(KeyCode.A, false, false));
             assertEquals(afterSpace, area.getCurrentParagraph());
