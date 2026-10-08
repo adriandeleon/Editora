@@ -150,59 +150,66 @@ package, and per class where a package is too large for its own number to protec
 `jacoco-check` execution in `pom.xml` is the source of truth; `BuildHygieneTest` fails when the
 table below and the pom disagree.
 
-Measured on 2026-10-08 the full suite covers 83.5% of lines and 71.0% of branches. The pure suite
-alone (`-DexcludedGroups=fx`) covers about 42%, which is all the Windows lane exercises.
+Measured on 2026-10-08 the full suite covers 93.4% of lines, 92.9% of methods and 81.9% of branches.
+The build as a whole may not fall below **0.90 lines, 0.90 methods and 0.79 branches**. The pure suite
+alone (`-DexcludedGroups=fx`) covers under half of that, which is all the Windows lane exercises.
 
 | Package | Floor | Measured |
 |---|---|---|
+| `cron` | 0.96 | 99.7% |
+| `systemd` | 0.96 | 99.6% |
 | `csv` | 0.95 | 98.2% |
+| `diff` | 0.94 | 97.5% |
 | `editops` | 0.94 | 97.1% |
-| `mcp` | 0.93 | 96.1% |
+| `config` | 0.93 | 96.3% |
+| `mcp` | 0.93 | 96.3% |
+| `office` | 0.93 | 96.8% |
+| `run` | 0.93 | 96.4% |
 | `template` | 0.93 | 96.1% |
-| `diff` | 0.92 | 95.4% |
+| `test` | 0.93 | 96.1% |
+| `todo` | 0.93 | 96.2% |
+| `agent` | 0.92 | 95.5% |
+| `completion` | 0.92 | 95.2% |
+| `config.migration` | 0.92 | 95.1% |
+| `git` | 0.92 | 95.9% |
+| `github` | 0.92 | 95.7% |
 | `logviewer` | 0.92 | 95.5% |
-| `todo` | 0.92 | 95.6% |
-| `config` | 0.91 | 94.6% |
-| `config.migration` | 0.91 | 94.9% |
-| `git` | 0.91 | 94.7% |
-| `github` | 0.91 | 94.3% |
+| `lsp` | 0.92 | 95.4% |
+| `editor` | 0.91 | 94.2% |
+| `editorconfig` | 0.91 | 94.0% |
+| `http` | 0.91 | 94.6% |
 | `index` | 0.91 | 94.4% |
-| `markdown` | 0.91 | 94.6% |
-| `agent` | 0.90 | 93.2% |
-| `editorconfig` | 0.90 | 93.8% |
-| `pdf` | 0.90 | 93.2% |
-| `command` | 0.89 | 92.3% |
-| `completion` | 0.89 | 92.3% |
+| `markdown` | 0.91 | 95.0% |
+| `search` | 0.91 | 94.4% |
+| `build` | 0.90 | 93.1% |
+| `command` | 0.90 | 93.7% |
+| `pdf` | 0.90 | 93.6% |
 | `install` | 0.89 | 92.6% |
 | `sync` | 0.89 | 92.1% |
-| `test` | 0.89 | 92.7% |
-| `run` | 0.88 | 91.0% |
-| `search` | 0.88 | 91.8% |
+| `ui` | 0.89 | 92.8% |
+| `maven` | 0.88 | 91.9% |
+| `plugin` | 0.88 | 91.9% |
 | `snippet` | 0.88 | 91.5% |
-| `maven` | 0.87 | 90.4% |
-| `plugin` | 0.87 | 90.7% |
-| `build` | 0.86 | 89.6% |
-| `process` | 0.86 | 89.6% |
+| `dap` | 0.87 | 90.9% |
+| `print` | 0.87 | 90.0% |
+| `process` | 0.86 | 89.4% |
+| `recovery` | 0.86 | 89.0% |
 | `history` | 0.85 | 89.0% |
-| `print` | 0.84 | 87.4% |
-| `recovery` | 0.84 | 88.0% |
-| `ai` | 0.83 | 86.9% |
-| `cron` | 0.83 | 86.7% |
-| `editor` | 0.83 | 86.7% |
-| `http` | 0.83 | 86.3% |
-| `io` | 0.81 | 84.3% |
+| `io` | 0.84 | 87.4% |
+| `ai` | 0.83 | 86.7% |
 | `web` | 0.80 | 83.8% |
-| `lsp` | 0.79 | 82.7% |
-| `ui` | 0.75 | 78.5% |
-| `ui.LspCoordinator` (class) | 0.59 | 62.5% |
-| `ui.WindowCommandRegistrar` (class) | 0.93 | 96.3% |
+| `ui.LspCoordinator` (class) | 0.90 | 93.8% |
+| `ui.WindowCommandRegistrar` (class) | 0.95 | 98.7% |
 
 - Each floor sits **three points below** the measured level — a regression net, not a target. **When
   you raise a package's coverage, ratchet its floor up.**
-- Every package of 300 lines or more that measures 80% or better has a floor, and so does the FX-bound
-  half of the codebase. Left out on purpose: the entry point, and the diagram, Typst and Mermaid
-  packages, whose tests need tools the CI runner does not install. Packages under 80% (the DAP client,
-  the office writers, systemd) get a floor once tests bring them up.
+- Every package of 300 lines or more that measures 80% or better has a floor. Left out on purpose: the
+  entry point, and the diagram, Typst and Mermaid packages, whose tests need tools the CI runner does
+  not install.
+- Branch coverage is the counter with room left. What remains is mostly the null/absent halves of
+  compound conditions, stale-reply guards, and failure arms with no boundary to inject the failure at.
+  Lines that cannot run in a test at all are native file choosers and drag-and-drop, real printing,
+  OS-specific code, and anything that would start an external program.
 - The command-registrar class floor is held up by `CommandSweepFxTest`. If it drops, the sweep has
   stopped reaching commands.
 

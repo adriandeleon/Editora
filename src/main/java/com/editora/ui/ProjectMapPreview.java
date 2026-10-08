@@ -295,7 +295,8 @@ final class ProjectMapPreview extends StackPane {
             return;
         }
         if (event.getCode() == KeyCode.ESCAPE && !event.isShiftDown()) {
-            if (editorContextMenu.isShowing()) {
+            if (editorContextMenu.isShowing() || menuDismissedByThisKey) {
+                menuDismissedByThisKey = false;
                 editorContextMenu.hide();
             } else {
                 onEscape.run();
@@ -523,8 +524,21 @@ final class ProjectMapPreview extends StackPane {
         setVisible(false);
     }
 
+    /**
+     * The context menu closed during the event now being delivered. An open popup is handed Escape before
+     * this card's own key filter and hides itself, so the filter never finds the menu showing — and used to
+     * close the card as well.
+     */
+    private boolean menuDismissedByThisKey;
+
     private void installEditorContextMenu() {
         editorContextMenu.getStyleClass().add("editor-context-menu");
+        editorContextMenu.showingProperty().addListener((obs, was, showing) -> {
+            if (!showing) {
+                menuDismissedByThisKey = true;
+                Platform.runLater(() -> menuDismissedByThisKey = false); // only for the rest of this event
+            }
+        });
         editor.setOnContextMenuRequested(this::showEditorContextMenu);
         editor.addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
             if (event.getButton() == MouseButton.PRIMARY && editorContextMenu.isShowing()) {

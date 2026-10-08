@@ -528,10 +528,46 @@
                             <!-- Floors are a regression net, three points below the measured coverage (not a
                                  target). Raise them again whenever a package's real coverage climbs. -->
                             <rules>
+                                <!-- The whole build: lines and methods may not fall below 90%. Branches were
+                                     measured at 81.9% on 2026-10-08 and get the same three-point net. -->
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>METHOD</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.90</minimum>
+                                        </limit>
+                                        <limit>
+                                            <counter>BRANCH</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.79</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
                                 <!-- PACKAGE floors, grouped by value. Every package of 300+ lines that measures
                                      80% or better is listed, three points under its measured line coverage
                                      (2026-10-08). Left out on purpose: the entry point (com.editora), and
                                      diagram / typst / mermaid, whose tests need tools the CI runner lacks. -->
+                                <rule>
+                                    <element>PACKAGE</element>
+                                    <includes>
+                                        <include>com.editora.cron</include>
+                                        <include>com.editora.systemd</include>
+                                    </includes>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>0.96</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
@@ -548,6 +584,7 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
+                                        <include>com.editora.diff</include>
                                         <include>com.editora.editops</include>
                                     </includes>
                                     <limits>
@@ -561,8 +598,13 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
+                                        <include>com.editora.config</include>
                                         <include>com.editora.mcp</include>
+                                        <include>com.editora.office</include>
+                                        <include>com.editora.run</include>
                                         <include>com.editora.template</include>
+                                        <include>com.editora.test</include>
+                                        <include>com.editora.todo</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -575,9 +617,13 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.diff</include>
+                                        <include>com.editora.agent</include>
+                                        <include>com.editora.completion</include>
+                                        <include>com.editora.config.migration</include>
+                                        <include>com.editora.git</include>
+                                        <include>com.editora.github</include>
                                         <include>com.editora.logviewer</include>
-                                        <include>com.editora.todo</include>
+                                        <include>com.editora.lsp</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -590,12 +636,12 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.config</include>
-                                        <include>com.editora.config.migration</include>
-                                        <include>com.editora.git</include>
-                                        <include>com.editora.github</include>
+                                        <include>com.editora.editor</include>
+                                        <include>com.editora.editorconfig</include>
+                                        <include>com.editora.http</include>
                                         <include>com.editora.index</include>
                                         <include>com.editora.markdown</include>
+                                        <include>com.editora.search</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -608,8 +654,8 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.agent</include>
-                                        <include>com.editora.editorconfig</include>
+                                        <include>com.editora.build</include>
+                                        <include>com.editora.command</include>
                                         <include>com.editora.pdf</include>
                                     </includes>
                                     <limits>
@@ -623,11 +669,9 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.command</include>
-                                        <include>com.editora.completion</include>
                                         <include>com.editora.install</include>
                                         <include>com.editora.sync</include>
-                                        <include>com.editora.test</include>
+                                        <include>com.editora.ui</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -640,8 +684,8 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.run</include>
-                                        <include>com.editora.search</include>
+                                        <include>com.editora.maven</include>
+                                        <include>com.editora.plugin</include>
                                         <include>com.editora.snippet</include>
                                     </includes>
                                     <limits>
@@ -655,8 +699,8 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.maven</include>
-                                        <include>com.editora.plugin</include>
+                                        <include>com.editora.dap</include>
+                                        <include>com.editora.print</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -669,8 +713,8 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.build</include>
                                         <include>com.editora.process</include>
+                                        <include>com.editora.recovery</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -696,8 +740,7 @@
                                 <rule>
                                     <element>PACKAGE</element>
                                     <includes>
-                                        <include>com.editora.print</include>
-                                        <include>com.editora.recovery</include>
+                                        <include>com.editora.io</include>
                                     </includes>
                                     <limits>
                                         <limit>
@@ -711,28 +754,12 @@
                                     <element>PACKAGE</element>
                                     <includes>
                                         <include>com.editora.ai</include>
-                                        <include>com.editora.cron</include>
-                                        <include>com.editora.editor</include>
-                                        <include>com.editora.http</include>
                                     </includes>
                                     <limits>
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
                                             <minimum>0.83</minimum>
-                                        </limit>
-                                    </limits>
-                                </rule>
-                                <rule>
-                                    <element>PACKAGE</element>
-                                    <includes>
-                                        <include>com.editora.io</include>
-                                    </includes>
-                                    <limits>
-                                        <limit>
-                                            <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.81</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
@@ -746,34 +773,6 @@
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
                                             <minimum>0.80</minimum>
-                                        </limit>
-                                    </limits>
-                                </rule>
-                                <rule>
-                                    <element>PACKAGE</element>
-                                    <includes>
-                                        <include>com.editora.lsp</include>
-                                    </includes>
-                                    <limits>
-                                        <limit>
-                                            <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.79</minimum>
-                                        </limit>
-                                    </limits>
-                                </rule>
-                                <!-- com.editora.ui (78.5%) is below the 80% line but is half the codebase, so it
-                                     gets a floor too. -->
-                                <rule>
-                                    <element>PACKAGE</element>
-                                    <includes>
-                                        <include>com.editora.ui</include>
-                                    </includes>
-                                    <limits>
-                                        <limit>
-                                            <counter>LINE</counter>
-                                            <value>COVEREDRATIO</value>
-                                            <minimum>0.75</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
@@ -791,7 +790,7 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.59</minimum>
+                                            <minimum>0.90</minimum>
                                         </limit>
                                     </limits>
                                 </rule>
@@ -804,7 +803,7 @@
                                         <limit>
                                             <counter>LINE</counter>
                                             <value>COVEREDRATIO</value>
-                                            <minimum>0.93</minimum>
+                                            <minimum>0.95</minimum>
                                         </limit>
                                     </limits>
                                 </rule>

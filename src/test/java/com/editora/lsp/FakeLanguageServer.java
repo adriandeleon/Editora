@@ -169,6 +169,12 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<Either<SemanticTokens, org.eclipse.lsp4j.SemanticTokensDelta>> semanticTokensFullDelta(
             org.eclipse.lsp4j.SemanticTokensDeltaParams params) {
         semanticDeltas.add(params);
+        if (failEverything) {
+            return failed();
+        }
+        if (semanticDeltaResponse != null) {
+            return answer(semanticDeltaResponse);
+        }
         return answer(semanticTokensResponse == null ? null : Either.forLeft(semanticTokensResponse));
     }
 
@@ -179,13 +185,20 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public final List<Raw> rawNotifications = new ArrayList<>();
     /** The value a raw request answers with (null unless a test sets it). */
     public Object rawResponse;
+    /** When set, answers each raw request per method instead of the canned value above. */
+    public volatile java.util.function.Function<Raw, Object> rawHandler;
 
     /** Installs this fake as the session's raw sink, so custom requests/notifications are recorded. */
     public LanguageServerSession.RawSink rawSink() {
         return new LanguageServerSession.RawSink() {
             @Override
             public CompletableFuture<Object> request(String method, Object params) {
-                rawRequests.add(new Raw(method, params));
+                Raw raw = new Raw(method, params);
+                rawRequests.add(raw);
+                var handler = rawHandler;
+                if (handler != null && !failEverything) {
+                    return CompletableFuture.completedFuture(handler.apply(raw));
+                }
                 return failEverything ? failed() : CompletableFuture.completedFuture(rawResponse);
             }
 
@@ -307,19 +320,22 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     @Override
     public CompletableFuture<Hover> hover(HoverParams params) {
         hovers.add(params);
-        return hoverFuture != null ? hoverFuture : CompletableFuture.completedFuture(null);
+        if (hoverFuture != null) {
+            return hoverFuture;
+        }
+        return failEverything ? failed() : CompletableFuture.completedFuture(hoverResponse);
     }
 
     @Override
     public CompletableFuture<List<? extends DocumentHighlight>> documentHighlight(DocumentHighlightParams params) {
         highlights.add(params);
-        return answer(List.of());
+        return failEverything ? failed() : answer(highlightResponse);
     }
 
     @Override
     public CompletableFuture<List<Either<Command, CodeAction>>> codeAction(CodeActionParams params) {
         codeActions.add(params);
-        return CompletableFuture.completedFuture(List.of());
+        return failEverything ? failed() : CompletableFuture.completedFuture(codeActionResponse);
     }
 
     @Override
@@ -332,6 +348,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<Either<List<? extends Location>, List<? extends LocationLink>>> definition(
             DefinitionParams params) {
         definitions.add(params);
+        if (definitionLinksResponse != null && !failEverything) {
+            return CompletableFuture.completedFuture(Either.forRight(definitionLinksResponse));
+        }
         return failEverything ? failed() : CompletableFuture.completedFuture(Either.forLeft(definitionResponse));
     }
 
@@ -414,6 +433,102 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
         return CompletableFuture.completedFuture(formattingResponse);
     }
 
+    // --- hierarchies, resolves and the other answers a coordinator flow needs --------------------------
+
+    public List<Either<Command, CodeAction>> codeActionResponse = List.of();
+    public List<DocumentHighlight> highlightResponse = List.of();
+    public Hover hoverResponse;
+    /** When set, {@code textDocument/definition} answers in the {@code LocationLink} shape instead. */
+    public List<LocationLink> definitionLinksResponse;
+    /** When set, {@code workspace/symbol} answers in the older {@code SymbolInformation} shape instead. */
+    public List<SymbolInformation> symbolInformationResponse;
+    /** When set, {@code semanticTokens/full/delta} answers with it rather than with a full set. */
+    public Either<SemanticTokens, org.eclipse.lsp4j.SemanticTokensDelta> semanticDeltaResponse;
+
+    public final List<CodeAction> resolvedCodeActions = new ArrayList<>();
+    /** What {@code codeAction/resolve} answers with; identity (the unresolved action) when null. */
+    public volatile java.util.function.UnaryOperator<CodeAction> codeActionResolver;
+
+    @Override
+    public CompletableFuture<CodeAction> resolveCodeAction(CodeAction unresolved) {
+        resolvedCodeActions.add(unresolved);
+        if (failEverything) {
+            return failed();
+        }
+        var resolver = codeActionResolver;
+        return CompletableFuture.completedFuture(resolver == null ? unresolved : resolver.apply(unresolved));
+    }
+
+    public final List<CompletionItem> resolvedCompletions = new ArrayList<>();
+    /** What {@code completionItem/resolve} answers with; identity (the unresolved item) when null. */
+    public volatile java.util.function.UnaryOperator<CompletionItem> completionResolver;
+
+    @Override
+    public CompletableFuture<CompletionItem> resolveCompletionItem(CompletionItem unresolved) {
+        resolvedCompletions.add(unresolved);
+        if (failEverything) {
+            return failed();
+        }
+        var resolver = completionResolver;
+        return CompletableFuture.completedFuture(resolver == null ? unresolved : resolver.apply(unresolved));
+    }
+
+    public final List<org.eclipse.lsp4j.CallHierarchyPrepareParams> callHierarchyPrepares = new ArrayList<>();
+    public final List<org.eclipse.lsp4j.CallHierarchyItem> incomingCallRequests = new ArrayList<>();
+    public final List<org.eclipse.lsp4j.CallHierarchyItem> outgoingCallRequests = new ArrayList<>();
+    public List<org.eclipse.lsp4j.CallHierarchyItem> callHierarchyResponse = List.of();
+    public List<org.eclipse.lsp4j.CallHierarchyIncomingCall> incomingCallsResponse = List.of();
+    public List<org.eclipse.lsp4j.CallHierarchyOutgoingCall> outgoingCallsResponse = List.of();
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyItem>> prepareCallHierarchy(
+            org.eclipse.lsp4j.CallHierarchyPrepareParams params) {
+        callHierarchyPrepares.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(callHierarchyResponse);
+    }
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyIncomingCall>> callHierarchyIncomingCalls(
+            org.eclipse.lsp4j.CallHierarchyIncomingCallsParams params) {
+        incomingCallRequests.add(params.getItem());
+        return failEverything ? failed() : CompletableFuture.completedFuture(incomingCallsResponse);
+    }
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.CallHierarchyOutgoingCall>> callHierarchyOutgoingCalls(
+            org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams params) {
+        outgoingCallRequests.add(params.getItem());
+        return failEverything ? failed() : CompletableFuture.completedFuture(outgoingCallsResponse);
+    }
+
+    public final List<org.eclipse.lsp4j.TypeHierarchyPrepareParams> typeHierarchyPrepares = new ArrayList<>();
+    public final List<org.eclipse.lsp4j.TypeHierarchyItem> supertypeRequests = new ArrayList<>();
+    public final List<org.eclipse.lsp4j.TypeHierarchyItem> subtypeRequests = new ArrayList<>();
+    public List<org.eclipse.lsp4j.TypeHierarchyItem> typeHierarchyResponse = List.of();
+    public List<org.eclipse.lsp4j.TypeHierarchyItem> supertypesResponse = List.of();
+    public List<org.eclipse.lsp4j.TypeHierarchyItem> subtypesResponse = List.of();
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> prepareTypeHierarchy(
+            org.eclipse.lsp4j.TypeHierarchyPrepareParams params) {
+        typeHierarchyPrepares.add(params);
+        return failEverything ? failed() : CompletableFuture.completedFuture(typeHierarchyResponse);
+    }
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> typeHierarchySupertypes(
+            org.eclipse.lsp4j.TypeHierarchySupertypesParams params) {
+        supertypeRequests.add(params.getItem());
+        return failEverything ? failed() : CompletableFuture.completedFuture(supertypesResponse);
+    }
+
+    @Override
+    public CompletableFuture<List<org.eclipse.lsp4j.TypeHierarchyItem>> typeHierarchySubtypes(
+            org.eclipse.lsp4j.TypeHierarchySubtypesParams params) {
+        subtypeRequests.add(params.getItem());
+        return failEverything ? failed() : CompletableFuture.completedFuture(subtypesResponse);
+    }
+
     // --- WorkspaceService --------------------------------------------------------------------------
 
     @Override
@@ -430,6 +545,9 @@ public final class FakeLanguageServer implements LanguageServer, TextDocumentSer
     public CompletableFuture<Either<List<? extends SymbolInformation>, List<? extends WorkspaceSymbol>>> symbol(
             WorkspaceSymbolParams params) {
         workspaceSymbols.add(params);
+        if (symbolInformationResponse != null && !failEverything) {
+            return CompletableFuture.completedFuture(Either.forLeft(symbolInformationResponse));
+        }
         return failEverything ? failed() : CompletableFuture.completedFuture(Either.forRight(workspaceSymbolResponse));
     }
 

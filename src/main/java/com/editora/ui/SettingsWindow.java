@@ -816,8 +816,17 @@ public class SettingsWindow {
                 onInstallServer.accept(serverId);
             }
         });
-        installButtons.put(serverId, b);
+        installButtons.put(serverInstallKey(serverId), b);
         return b;
+    }
+
+    /**
+     * The key a language server's Install button is tracked under. Not the bare server id: the Typst page's
+     * button for the {@code typst} CLI is tracked as {@code typst} too, and sharing the key left one of the two
+     * buttons out of the map — it never showed "Installed", and the other showed whichever probe came last.
+     */
+    private static String serverInstallKey(String serverId) {
+        return "server:" + serverId;
     }
 
     /** Reflects a tool's detected state on its Install button: disabled + "Installed" when present. */
@@ -2241,7 +2250,9 @@ public class SettingsWindow {
                 List<Node> all = shortcutListBox.getChildren();
                 int target =
                         switch (e.getCode()) {
-                            case UP -> all.indexOf(row) - 1;
+                            // On the first row Up stays put, as Down does on the last one: left to the
+                            // toolkit it moved the focus out of the list, to the filter field above it.
+                            case UP -> Math.max(0, all.indexOf(row) - 1);
                             case DOWN -> all.indexOf(row) + 1;
                             case HOME -> 0;
                             case END -> all.size() - 1;
@@ -6598,7 +6609,7 @@ public class SettingsWindow {
                 status.getStyleClass()
                         .setAll("settings-git-status", found ? "settings-git-found" : "settings-git-missing");
                 status.setText(tr(statusKey, found ? tr("settings.lsp.found") : tr("settings.lsp.notFound")));
-                updateInstallButton(langKey != null ? langKey : srv.id(), found);
+                updateInstallButton(langKey != null ? langKey : serverInstallKey(srv.id()), found);
             });
         }
     }

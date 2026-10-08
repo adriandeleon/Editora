@@ -467,15 +467,27 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
             }
         });
         // Expanding/collapsing a folder changes which directories we need to watch.
-        tree.addEventHandler(TreeItem.<Path>branchExpandedEvent(), e -> {
+        javafx.event.EventHandler<TreeItem.TreeModificationEvent<Path>> onExpanded = e -> {
             // A folder that was listed, collapsed (so no longer watched) and is opened again may have changed
             // meanwhile: look again, in the background, keeping the rows that are still right.
             if (e.getTreeItem() instanceof PathItem item) {
                 item.refresh();
             }
             syncWatches();
+        };
+        javafx.event.EventHandler<TreeItem.TreeModificationEvent<Path>> onCollapsed = e -> syncWatches();
+        // On the root item, not on the TreeView: a TreeItem's events travel up its parent items and stop at
+        // the root — they never reach the control, where these two handlers used to sit unheard.
+        tree.rootProperty().addListener((obs, old, now) -> {
+            if (old != null) {
+                old.removeEventHandler(TreeItem.<Path>branchExpandedEvent(), onExpanded);
+                old.removeEventHandler(TreeItem.<Path>branchCollapsedEvent(), onCollapsed);
+            }
+            if (now != null) {
+                now.addEventHandler(TreeItem.<Path>branchExpandedEvent(), onExpanded);
+                now.addEventHandler(TreeItem.<Path>branchCollapsedEvent(), onCollapsed);
+            }
         });
-        tree.addEventHandler(TreeItem.<Path>branchCollapsedEvent(), e -> syncWatches());
         // A coalesced filesystem-change event re-scans the tree (preserving expansion + selection) — unless
         // we just made the change ourselves (in-app rename/delete already updated the tree instantly).
         watchDebounce.setOnFinished(e -> applyWatchChanges());
@@ -1037,6 +1049,11 @@ public class ProjectPanel extends VBox implements ToolWindowContent {
                         rootItem.getChildren().add(new PathItem(match, includeHidden, false));
                     }
                     tree.setRoot(rootItem);
+                    if (!rootItem.getChildren().isEmpty()) {
+                        // Highlight the first match. Enter in the filter field opens the highlighted row: with
+                        // none it did nothing, and Down first landed on the project's own row.
+                        tree.getSelectionModel().select(rootItem.getChildren().get(0));
+                    }
                 });
             });
         }

@@ -294,7 +294,8 @@ public final class SystemdCalendar {
         String qualifiers = dayPhrase();
         if (qualifiers.isEmpty()) {
             // Fully daily → "Daily at HH:MM" reads better than "At HH:MM".
-            if (time.startsWith("At ")) {
+            // Not for "At minute 30 past every hour": that fires every hour, and "Daily" would deny it.
+            if (time.startsWith("At ") && !hour.coversAll()) {
                 return "Daily " + Character.toLowerCase(time.charAt(0)) + time.substring(1);
             }
             return time;
