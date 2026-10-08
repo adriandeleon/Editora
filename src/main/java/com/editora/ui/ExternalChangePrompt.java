@@ -27,4 +27,15 @@ final class ExternalChangePrompt {
         keepButton.requestFocus();
         alert.setOnShown(shown -> keepButton.requestFocus());
     }
+
+    /**
+     * For a buffer without edits nothing is lost by reloading, so Enter reloads. Where Enter fires the button
+     * that has the focus (Windows, Linux) the first button already was that; on macOS Enter only ever reaches
+     * the default button — a focused one answers to Space — and with none the prompt ignored the key.
+     */
+    static void reloadIsTheKeyboardDefault(Alert alert, ButtonType reload) {
+        if (alert.getDialogPane().lookupButton(reload) instanceof Button reloadButton) {
+            reloadButton.setDefaultButton(true);
+        }
+    }
 }
