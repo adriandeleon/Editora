@@ -219,33 +219,82 @@ public final class MermaidImages {
             if (superseded(surfaceKey, gen)) {
                 return; // a newer pulse for this surface has arrived — skip the ~4 s Chromium spawn (#458)
             }
-            Mermaid.Render r = Mermaid.renderPng(exe, source, useDark);
-            Cached result;
-            if (r.ok()) {
-                javafx.scene.image.Image img =
-                        new javafx.scene.image.Image(new java.io.ByteArrayInputStream(r.image()));
-                if (img.isError() || img.getWidth() <= 0) {
-                    result = new Cached(null, Messages.tr("mermaid.renderFailed"));
-                } else {
-                    // PNG is rendered at RENDER_SCALE×; display at logical (CSS-pixel) width.
-                    result =
-                            new Cached(new PreviewImageLoader.Loaded(img, img.getWidth() / Mermaid.RENDER_SCALE), null);
-                }
-            } else if (useMaid) {
-                // On a render failure, prefer maid's precise line/column diagnostics over mmdc's raw error —
-                // but only when maid is actually installed. Unconditionally, every failed render spawned the
-                // default `npx -y @probelabs/maid` (~6.5 s, and `-y` may hit the npm registry): a Markdown
-                // file with five fences and no mmdc spent ~30 s in npx to learn nothing.
-                result = new Cached(null, diagnose(maidExe, source, r.error()));
-            } else {
-                result = new Cached(null, r.error());
-            }
+            Cached result = renderNow(exe, maidExe, useMaid, source, useDark);
             store(key, result, surfaceKey);
             Platform.runLater(() -> applyCached(host, result, sizer));
             if (surfaceKey != null) {
                 LATEST.remove(surfaceKey, gen); // this render was the latest: nothing left to supersede
             }
         });
+    }
+
+    /** Runs mmdc for {@code source} on the calling thread and turns the outcome into a cache entry. */
+    private static Cached renderNow(
+            List<String> exe, List<String> maidExe, boolean useMaid, String source, boolean useDark) {
+        Mermaid.Render r = Mermaid.renderPng(exe, source, useDark);
+        if (r.ok()) {
+            javafx.scene.image.Image img = new javafx.scene.image.Image(new java.io.ByteArrayInputStream(r.image()));
+            if (img.isError() || img.getWidth() <= 0) {
+                return new Cached(null, Messages.tr("mermaid.renderFailed"));
+            }
+            // PNG is rendered at RENDER_SCALE×; display at logical (CSS-pixel) width.
+            return new Cached(new PreviewImageLoader.Loaded(img, img.getWidth() / Mermaid.RENDER_SCALE), null);
+        }
+        if (useMaid) {
+            // On a render failure, prefer maid's precise line/column diagnostics over mmdc's raw error —
+            // but only when maid is actually installed. Unconditionally, every failed render spawned the
+            // default `npx -y @probelabs/maid` (~6.5 s, and `-y` may hit the npm registry): a Markdown
+            // file with five fences and no mmdc spent ~30 s in npx to learn nothing.
+            return new Cached(null, diagnose(maidExe, source, r.error()));
+        }
+        return new Cached(null, r.error());
+    }
+
+    /**
+     * Renders every one of {@code sources} with the <b>light</b> theme and waits for them — for print, which
+     * is on white paper whatever the app theme is and has to know each diagram's size before it paginates.
+     * Shares the cache with the preview (a light-theme preview has usually rendered them already). Blocks for
+     * up to mmdc's own timeout per diagram; call off the FX thread.
+     */
+    static Map<String, Cached> renderAllLight(java.util.Collection<String> sources) {
+        List<String> exe = mmdc;
+        List<String> maidExe = maid;
+        boolean useMaid = maidAvailable;
+        Map<String, java.util.concurrent.Future<Cached>> running = new java.util.LinkedHashMap<>();
+        for (String source : sources) {
+            running.computeIfAbsent(
+                    source,
+                    src -> EXEC.submit(() -> {
+                        String key = key(src, false);
+                        Cached hit = CACHE.get(key);
+                        if (hit != null && !hit.expired()) {
+                            return hit;
+                        }
+                        Cached result = renderNow(exe, maidExe, useMaid, src, false);
+                        store(key, result, null);
+                        return result;
+                    }));
+        }
+        Map<String, Cached> out = new java.util.HashMap<>();
+        for (Map.Entry<String, java.util.concurrent.Future<Cached>> e : running.entrySet()) {
+            try {
+                out.put(e.getKey(), e.getValue().get());
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                break;
+            } catch (java.util.concurrent.ExecutionException ex) {
+                out.put(e.getKey(), new Cached(null, String.valueOf(ex.getCause())));
+            }
+        }
+        return out;
+    }
+
+    /** A node showing an already finished render — the synchronous counterpart of {@link #node}, for print. */
+    static Node printNode(Cached render, java.util.function.DoubleUnaryOperator sizer) {
+        StackPane host = new StackPane();
+        host.getStyleClass().add("md-mermaid");
+        applyCached(host, render == null ? new Cached(null, null) : render, sizer);
+        return host;
     }
 
     private static void applyCached(StackPane host, Cached c, java.util.function.DoubleUnaryOperator sizer) {

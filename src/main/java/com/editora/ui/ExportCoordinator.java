@@ -728,7 +728,8 @@ final class ExportCoordinator {
                     b.getPath() == null ? null : b.getPath().getParent();
             printService.prepareMarkdown(b.getContent(), baseDir, open);
         } else if (b.isDiagram()) { // Mermaid — CLI render
-            printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), host.appThemeDark(), open);
+            // Light, like every other printed kind: the app theme must not reach white paper.
+            printService.prepareMermaid(b.getContent(), mermaid.mmdcCommandOrNull(), false, open);
         } else if (b.isRenderedDiagram()) { // Graphviz DOT / PlantUML — CLI render to a temp PNG, then paginate
             printDiagramViaImage(b, job);
         } else if (b.isSvg()) { // rasterize the SVG source, paginate as image pages
@@ -768,19 +769,24 @@ final class ExportCoordinator {
             openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
             return;
         }
-        diagram.exportToPath(b.diagramKind(), b.getContent(), tmp, r -> {
-            if (!r.ok()) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
-                return;
-            }
-            try {
-                byte[] png = java.nio.file.Files.readAllBytes(tmp);
-                java.nio.file.Files.deleteIfExists(tmp);
-                printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
-            } catch (java.io.IOException e) {
-                openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
-            }
-        });
+        diagram.exportToPath(
+                b.diagramKind(),
+                b.getContent(),
+                tmp,
+                false,
+                r -> { // light: this is for paper
+                    if (!r.ok()) {
+                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, r.message()));
+                        return;
+                    }
+                    try {
+                        byte[] png = java.nio.file.Files.readAllBytes(tmp);
+                        java.nio.file.Files.deleteIfExists(tmp);
+                        printService.prepareImages(java.util.List.of(png), prepared -> openPrintPreview(job, prepared));
+                    } catch (java.io.IOException e) {
+                        openPrintPreview(job, new com.editora.print.PrintService.Prepared(null, e.getMessage()));
+                    }
+                });
     }
 
     /** Opens the Print Preview window for a prepared document, or reports a preparation failure. */
