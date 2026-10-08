@@ -225,6 +225,16 @@ diagnostics, …) follows one discipline:
 See the recipe in [extending.md](extending.md#add-a-canvas-overlay), and `SpellCheckOverlay` /
 `MarkdownLintOverlay` as references.
 
+An overlay that marks many spans per line should not ask RichTextFX where each one is on every frame:
+`getCharacterBoundsOnScreen` is the expensive call, and scrolling moves a paragraph without changing its
+layout. `SpellCheckOverlay` keeps each paragraph's squiggle positions relative to the paragraph's own box
+(`getParagraphBoundsOnScreen`, one lookup per paragraph per frame), keyed by the paragraph object — which
+RichTextFX replaces on any edit or restyle of that line — and re-measures only when the box size, the wrap
+width, the font or the tab size changes. Measured on a viewport with 182 squiggles: 2.5–5.9 ms per repaint
+before, 0.14–0.5 ms after. The same overlay bounds its work per line: a line over 16 KiB is not checked,
+one line gets at most 250 squiggles, and a line is cut into tokens once (`SpellChecker.checkableWords`)
+rather than once per misspelled word.
+
 ## Packaged-runtime tuning
 
 The dist `<javaOptions>` (mirrored into `javafx:run` so dev == prod) pin heap and GC:
