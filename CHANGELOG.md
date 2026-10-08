@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Setting a bookmark mnemonic in a narrowed buffer no longer deletes the project's bookmarks.** The
+  bookmark could not be found in the store while the buffer was narrowed, and the store was then emptied.
+  The command is now refused until the buffer is widened. Setting a mnemonic also no longer shuffles the
+  order of the files in the Bookmarks tool window.
 - A Word (`.docx`) export no longer puts an empty paragraph in front of every Mermaid block or display
   formula it has to write as source — which, without `mmdc` installed, was every Mermaid block.
 - **Installing a language server or debug adapter no longer leaves a broken one behind.** A download that
