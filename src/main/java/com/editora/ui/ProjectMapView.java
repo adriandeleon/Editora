@@ -129,6 +129,7 @@ final class ProjectMapView extends VBox {
     private final Label noMatchesLabel = new Label();
     private final PauseTransition noMatchesDelay = new PauseTransition(NO_MATCHES_DELAY);
     private Popup helpPopup;
+    private long helpHiddenAt;
     private final MapSurface surface = new MapSurface();
     private final Canvas previewConnectorCanvas = new Canvas(1, 1);
     private final Map<Path, PreviewConnector> previewConnectors = new HashMap<>();
@@ -440,11 +441,16 @@ final class ProjectMapView extends VBox {
             helpPopup.hide();
             return;
         }
+        // Pressing the button while the popover is open auto-hides it first; that press must not reopen it.
+        if (System.nanoTime() - helpHiddenAt < 250_000_000L) {
+            return;
+        }
         if (helpPopup == null) {
             helpPopup = new Popup();
             helpPopup.setAutoHide(true);
             helpPopup.setHideOnEscape(true);
             helpPopup.getContent().add(buildHelp());
+            helpPopup.setOnHidden(event -> helpHiddenAt = System.nanoTime());
         }
         javafx.geometry.Bounds bounds = anchor.localToScreen(anchor.getBoundsInLocal());
         if (bounds != null) {
@@ -1895,8 +1901,14 @@ final class ProjectMapView extends VBox {
          * side effects. Interactive controls and the overview are intentionally omitted from printed output.
          */
         Image snapshotContent() {
+            // Headers collapse when their controls do not fit, so the live layout depends on the zoom. With
+            // outputPaint set they are always collapsed (there are no controls in the image): the layout
+            // measured here is then the one painted below at the output scale.
+            outputPaint = true;
             repaint();
             if (entries.isEmpty() || columnBoxes.isEmpty()) {
+                outputPaint = false;
+                repaint();
                 return null;
             }
             double minWorldX = columnBoxes.stream()
@@ -1955,6 +1967,7 @@ final class ProjectMapView extends VBox {
                 offsetX = liveOffsetX;
                 offsetY = liveOffsetY;
                 hovered = liveHovered;
+                outputPaint = false;
                 try {
                     paint();
                 } finally {
