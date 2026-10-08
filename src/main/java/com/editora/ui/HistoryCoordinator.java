@@ -963,7 +963,7 @@ final class HistoryCoordinator {
             return;
         }
         String initial = revision.label() == null ? "" : revision.label();
-        host.promptText(tr("history.label.title"), tr("history.label.prompt"), initial, name -> {
+        host.promptText(tr("history.label.editTitle"), tr("history.label.prompt"), initial, name -> {
             String label = name == null ? "" : name.strip();
             if (label.equals(initial)) {
                 return; // unchanged
