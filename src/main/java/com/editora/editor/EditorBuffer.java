@@ -2790,27 +2790,72 @@ public class EditorBuffer implements TabContent {
         }
     }
 
-    /** A click on a code lens runs its action instead of placing the caret. */
+    private static final javafx.css.PseudoClass LENS_HOVER = javafx.css.PseudoClass.getPseudoClass("lens-hover");
+
+    /** The lens label under the pointer, lit and given the hand cursor; null when there is none. */
+    private Node hoveredLens;
+
+    private javafx.scene.Cursor cursorBeforeLens;
+
+    /**
+     * A click on a code lens runs its action instead of placing the caret. The area's inlay labels are
+     * mouse-transparent, so the pointer never picks one: the lens is found by its bounds, and the hover
+     * look and hand cursor a pick would have given it are set here.
+     */
     private void installCodeLensClick(CodeArea a) {
         a.addEventFilter(MouseEvent.MOUSE_CLICKED, e -> {
-            if (e.getButton() != javafx.scene.input.MouseButton.PRIMARY || codeLensByLine.isEmpty()) {
+            if (e.getButton() != MouseButton.PRIMARY || !e.isStillSincePress() || lensAt(a, e) == null) {
                 return;
             }
-            for (javafx.scene.Node n = e.getPickResult().getIntersectedNode(); n != null && n != a; n = n.getParent()) {
-                if (n.getStyleClass().contains(CODE_LENS_STYLE)) {
-                    // The character under the pointer, not the insertion point beside it: a lens follows the
-                    // end of its line, and the insertion point nearest its right half is the start of the
-                    // next line — that half of the label ran the lenses of the line below, or nothing.
-                    var hit = a.hit(e.getX(), e.getY());
-                    int offset = hit.getCharacterIndex().orElse(hit.getInsertionIndex());
-                    int line = a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
-                            .getMajor();
-                    e.consume();
-                    activateCodeLens(line);
-                    return;
-                }
-            }
+            e.consume();
+            activateCodeLens(lensLineAt(a, e));
         });
+        a.addEventFilter(MouseEvent.MOUSE_MOVED, e -> hoverLens(a, lensAt(a, e)));
+        a.addEventFilter(MouseEvent.MOUSE_EXITED, e -> hoverLens(a, null));
+    }
+
+    /**
+     * The line whose lens is under the pointer. The character under it, not the insertion point beside
+     * it: a lens follows the end of its line, and the insertion point nearest its right half is the start
+     * of the next line — that half of the label ran the lenses of the line below, or nothing.
+     */
+    private static int lensLineAt(CodeArea a, MouseEvent e) {
+        var hit = a.hit(e.getX(), e.getY());
+        int offset = hit.getCharacterIndex().orElse(hit.getInsertionIndex());
+        return a.offsetToPosition(offset, org.fxmisc.richtext.model.TwoDimensional.Bias.Backward)
+                .getMajor();
+    }
+
+    /** The lens label the pointer is over, or null. Looks for one only on a line that has lenses. */
+    private Node lensAt(CodeArea a, MouseEvent e) {
+        if (codeLensByLine.isEmpty() || !codeLensByLine.containsKey(lensLineAt(a, e))) {
+            return null;
+        }
+        for (Node n : a.lookupAll("." + CODE_LENS_STYLE)) {
+            // Not the gap that sets the lens apart from the code: a click there places the caret.
+            javafx.geometry.Point2D at = n.sceneToLocal(e.getSceneX(), e.getSceneY());
+            double gap = n instanceof Region r ? r.snappedLeftInset() : 0;
+            if (at.getX() >= gap && n.contains(at)) {
+                return n;
+            }
+        }
+        return null;
+    }
+
+    private void hoverLens(CodeArea a, Node lens) {
+        if (lens == hoveredLens) {
+            return;
+        }
+        if (hoveredLens != null) {
+            hoveredLens.pseudoClassStateChanged(LENS_HOVER, false);
+            a.setCursor(cursorBeforeLens);
+        }
+        if (lens != null) {
+            lens.pseudoClassStateChanged(LENS_HOVER, true);
+            cursorBeforeLens = a.getCursor();
+            a.setCursor(javafx.scene.Cursor.HAND);
+        }
+        hoveredLens = lens;
     }
 
     private void refreshInlayAreas() {

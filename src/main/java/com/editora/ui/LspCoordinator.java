@@ -1638,7 +1638,7 @@ final class LspCoordinator {
         if (span.kind() == LspManager.CodeLensKind.IMPLEMENTATIONS) {
             gotoImplementation();
         } else {
-            findReferences();
+            findReferences(true);
         }
     }
 
@@ -2939,6 +2939,15 @@ final class LspCoordinator {
     }
 
     void findReferences() {
+        findReferences(false);
+    }
+
+    /**
+     * Find References at the caret. The command jumps straight to a lone reference and only reports that
+     * there are none; a code lens ({@code listAlways}) is a click on a count, so it always opens the
+     * References tool window on what was counted — one row, or the empty list behind "0 references".
+     */
+    private void findReferences(boolean listAlways) {
         EditorBuffer b = activeLspBuffer();
         if (b == null) {
             return;
@@ -2950,6 +2959,10 @@ final class LspCoordinator {
         lspManager.changeDocument(path, b.text()); // sync latest text before the request
         lspManager.references(path, area.getCurrentParagraph(), area.getCaretColumn(), targets -> {
             if (!navigationRequestCurrent(b, path, version, generation)) {
+                return;
+            }
+            if (listAlways) {
+                showInReferencesWindow(targets);
                 return;
             }
             if (targets.isEmpty()) {

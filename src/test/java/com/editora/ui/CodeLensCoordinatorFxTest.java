@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import javafx.scene.control.TreeView;
+
 import com.editora.config.Settings;
 import com.editora.editor.EditorBuffer;
 import com.editora.lsp.FakeLanguageServer;
@@ -14,6 +16,7 @@ import com.editora.lsp.LspManager;
 import com.editora.lsp.LspTestHooks;
 import org.eclipse.lsp4j.CodeLens;
 import org.eclipse.lsp4j.CodeLensOptions;
+import org.eclipse.lsp4j.Location;
 import org.eclipse.lsp4j.Position;
 import org.eclipse.lsp4j.Range;
 import org.junit.jupiter.api.AfterEach;
@@ -47,6 +50,22 @@ class CodeLensCoordinatorFxTest {
     private LspCoordinator coordinator;
     private FakeHost host;
     private List<FakeLanguageServer> fakes;
+    private CountingOps ops;
+
+    private static final class CountingOps extends LspOpsStub {
+        int referencesWindowOpened;
+        int jumps;
+
+        @Override
+        public void openReferencesWindow() {
+            referencesWindowOpened++;
+        }
+
+        @Override
+        public void openAndGoto(Path file, int line0, int col0) {
+            jumps++;
+        }
+    }
 
     private static final class FakeHost extends CoordinatorHostStub {
         final Settings settings = new Settings();
@@ -81,7 +100,8 @@ class CodeLensCoordinatorFxTest {
         host.settings.setSemanticHighlight(false);
         host.settings.setCodeLens(true);
         FxTestSupport.runOnFx(() -> {
-            coordinator = new LspCoordinator(host, manager, new LspOpsStub());
+            ops = new CountingOps();
+            coordinator = new LspCoordinator(host, manager, ops);
             coordinator.setServerAvailableForTest("java", true);
         });
     }
@@ -194,5 +214,56 @@ class CodeLensCoordinatorFxTest {
         FxTestSupport.drainFx();
 
         assertEquals(new Position(2, 9), fake.references.get(0).getPosition());
+    }
+
+    private int rowsInReferencesWindow() throws Exception {
+        return FxTestSupport.callOnFx(() -> FxTestSupport.<TreeView<?>>field(coordinator.referencesPanel(), "tree")
+                .getExpandedItemCount());
+    }
+
+    @Test
+    void aLensOnOneReferenceOpensTheReferencesWindowInsteadOfJumping() throws Exception {
+        EditorBuffer b = open();
+        FakeLanguageServer fake = fakes.get(0);
+        fake.codeLensResponse = List.of(unresolved(1, 9, 1));
+        fake.referenceResponse = List.of(new Location(
+                root.resolve("A.java").toUri().toString(), new Range(new Position(2, 4), new Position(2, 7))));
+        request(b);
+
+        FxTestSupport.runOnFx(() -> b.activateCodeLens(1));
+        FxTestSupport.drainFx();
+
+        assertEquals(1, ops.referencesWindowOpened);
+        assertEquals(0, ops.jumps);
+        assertEquals(2, rowsInReferencesWindow(), "the file header and its one reference");
+    }
+
+    @Test
+    void aLensOnNoReferencesOpensTheReferencesWindowEmpty() throws Exception {
+        EditorBuffer b = open();
+        fakes.get(0).codeLensResponse = List.of(unresolved(1, 9, 0));
+        request(b);
+
+        FxTestSupport.runOnFx(() -> b.activateCodeLens(1));
+        FxTestSupport.drainFx();
+
+        assertEquals(1, ops.referencesWindowOpened);
+        assertEquals(0, rowsInReferencesWindow());
+    }
+
+    @Test
+    void theFindReferencesCommandStillJumpsToALoneReference() throws Exception {
+        EditorBuffer b = open();
+        fakes.get(0).referenceResponse = List.of(new Location(
+                root.resolve("A.java").toUri().toString(), new Range(new Position(2, 4), new Position(2, 7))));
+
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().moveTo(1, 9);
+            coordinator.findReferences();
+        });
+        FxTestSupport.drainFx();
+
+        assertEquals(0, ops.referencesWindowOpened);
+        assertEquals(1, ops.jumps);
     }
 }

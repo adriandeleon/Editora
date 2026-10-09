@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **A click on a code lens works, and a references lens always opens the References tool window.** A
+  lens ("3 references") did not react to the mouse at all: no hand cursor, no highlight, and a click only
+  placed the caret. It now lights up under the pointer and a click opens what it counts. A references
+  lens opens the References tool window with its first row selected — also for a single reference and
+  for "0 references", which shows the empty list. The *Find References* command is unchanged: it still
+  jumps straight to a lone reference.
+
 - **Local History and Git history have their own names.** The tool window that lists a file's saved
   revisions is now **Local History** everywhere (tool window, commands, Settings, status messages), and
   Git's per-file log is **Show Git History**, headed "Git history: name". Both are bound in every bundled
