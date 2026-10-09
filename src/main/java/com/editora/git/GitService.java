@@ -344,6 +344,13 @@ public final class GitService {
     private final Map<String, CachedRoot> rootCache = new ConcurrentHashMap<>();
 
     /**
+     * Most directories either root cache remembers. A long session that opens files all over the disk asks
+     * about a different directory each time; past this the cache starts over, which costs one {@code rev-parse}
+     * per directory asked about again rather than an entry per directory ever asked about.
+     */
+    static final int MAX_CACHED_DIRECTORIES = 1024;
+
+    /**
      * How long "not a repository" is believed for a directory. Long enough that a burst of refreshes in a
      * plain folder costs one {@code rev-parse}, short enough that a {@code git init} or clone made in a
      * terminal is seen by the refresh that runs when the window regains focus.
@@ -1107,6 +1114,26 @@ public final class GitService {
             blameCache.put(key.source(), new CachedBlame(key, lines));
         }
         return lines;
+    }
+
+    /**
+     * Drops the cached blame of {@code file}: its last tab closed, and per-line records of a file nobody is
+     * looking at are not worth keeping until seven other files push them out.
+     */
+    public void forgetBlame(Path file) {
+        if (file == null) {
+            return;
+        }
+        synchronized (blameCache) {
+            blameCache.remove(file.toAbsolutePath().toString());
+        }
+    }
+
+    /** Files whose blame is cached (tests). */
+    public int cachedBlameCountForTest() {
+        synchronized (blameCache) {
+            return blameCache.size();
+        }
     }
 
     private List<BlameParser.BlameLine> cachedBlame(String source, BlameKey key) {
@@ -2952,9 +2979,15 @@ public final class GitService {
             }
         }
         if (root != null) {
+            if (rootCache.size() >= MAX_CACHED_DIRECTORIES) {
+                rootCache.clear();
+            }
             rootCache.put(key, new CachedRoot(root, gitMarkers(dir, root)));
             negativeRoots.remove(key);
             return new RootLookup(root, "");
+        }
+        if (negativeRoots.size() >= MAX_CACHED_DIRECTORIES) {
+            negativeRoots.clear();
         }
         if (isNotARepository(r)) {
             // Only git's own "not a repository", and only briefly: the folder can become one at any time

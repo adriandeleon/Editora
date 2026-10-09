@@ -146,7 +146,10 @@ class WholeDocumentReplaceFxTest {
                 for (int i = 0; i < 12; i++) {
                     buffer.replaceWholeDocument(i % 2 == 0 ? b : a);
                 }
-                assertEquals(8, undo.historyEntries());
+                // Exactly 8 fill the budget; the same budget is shared app-wide (UndoQueueBudget), so a step
+                // of another live document in this JVM can cost this one its oldest step too.
+                int kept = undo.historyEntries();
+                assertTrue(kept == 8 || kept == 7, "steps kept: " + kept);
                 assertTrue(undo.historyChars() <= CompletionUndoFactory.RETAINED_CHARS);
 
                 int undone = 0;
@@ -154,9 +157,10 @@ class WholeDocumentReplaceFxTest {
                     buffer.getArea().undo();
                     undone++;
                 }
-                assertEquals(8, undone, "the evicted steps are simply no longer undoable");
-                assertEquals(a, buffer.getArea().getText(), "eight steps back from 'a' is 'a' again");
-                for (int i = 0; i < 8; i++) {
+                assertEquals(kept, undone, "the evicted steps are simply no longer undoable");
+                assertEquals(
+                        kept % 2 == 0 ? a : b, buffer.getArea().getText(), "an even number of steps back is 'a' again");
+                for (int i = 0; i < kept; i++) {
                     assertTrue(buffer.getArea().isRedoAvailable());
                     buffer.getArea().redo();
                 }

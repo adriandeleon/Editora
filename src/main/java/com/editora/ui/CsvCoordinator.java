@@ -50,8 +50,12 @@ final class CsvCoordinator {
     private final Map<EditorBuffer, CsvGridPanel> panels = new IdentityHashMap<>();
     /** Delimiter last used to build each buffer's grid — maps a clicked field back to a caret offset. */
     private final Map<EditorBuffer, Character> delimiters = new IdentityHashMap<>();
-    /** The whole-document text each buffer's grid was last built from — what a cell edit is checked against. */
-    private final Map<EditorBuffer, String> builtFrom = new IdentityHashMap<>();
+    /**
+     * The {@link EditorBuffer#docVersion() document version} each buffer's grid was last built from — what a
+     * cell edit is checked against. The version, not the text: a copy of every open CSV's whole text per grid
+     * was the price of the equality check, and an unchanged version means an unchanged text.
+     */
+    private final Map<EditorBuffer, Long> builtVersion = new IdentityHashMap<>();
 
     CsvCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
@@ -104,7 +108,7 @@ final class CsvCoordinator {
             buffer.setCsvPreviewRefresh(null);
             panels.remove(buffer);
             delimiters.remove(buffer);
-            builtFrom.remove(buffer);
+            builtVersion.remove(buffer);
         }
     }
 
@@ -138,7 +142,7 @@ final class CsvCoordinator {
     void onBufferClosed(EditorBuffer closed) {
         if (closed != null && panels.remove(closed) != null) {
             delimiters.remove(closed);
-            builtFrom.remove(closed);
+            builtVersion.remove(closed);
         }
     }
 
@@ -151,14 +155,14 @@ final class CsvCoordinator {
             return;
         }
         if (!buffer.isCsv() || !isEnabled()) {
-            builtFrom.remove(buffer);
+            builtVersion.remove(buffer);
             panel.setEditable(false, null);
             panel.setData(List.of());
             return;
         }
         String text = buffer.getContent();
         if (text.length() > MAX_PREVIEW_CHARS) {
-            builtFrom.remove(buffer);
+            builtVersion.remove(buffer);
             panel.setEditable(false, null);
             panel.setData(List.of()); // too large — the placeholder shows the empty message
             host.setStatus(com.editora.i18n.Messages.tr("status.csv.gridTooLarge"));
@@ -166,7 +170,7 @@ final class CsvCoordinator {
         }
         char delimiter = CsvParser.detectDelimiter(text);
         delimiters.put(buffer, delimiter);
-        builtFrom.put(buffer, text);
+        builtVersion.put(buffer, buffer.docVersion());
         List<List<String>> rows = CsvParser.parse(text, delimiter);
         // In-place editing is safe only when each parsed row maps 1:1 to a physical line — i.e. no quoted
         // multi-line field merged two lines — and the buffer is writable. Otherwise the grid stays read-only.
@@ -196,11 +200,13 @@ final class CsvCoordinator {
         int line = dataRow < 0 ? 0 : (panel.isHeaderRow() ? dataRow + 1 : dataRow);
         String content = buffer.getContent();
         int[] span = CsvCellEdit.lineSpan(content, line);
-        String shown = CsvCellEdit.lineText(builtFrom.get(buffer), line);
-        if (span == null || shown == null || !shown.equals(content.substring(span[0], span[1]))) {
+        // The grid shows the document as of the version it was built from; a later edit (or a narrowing, which
+        // is itself a change) means its rows may no longer be the document's lines.
+        if (span == null || !builtFromCurrent(buffer)) {
             refuseCellEdit(buffer, "status.csv.cannotEditChangedRow");
             return;
         }
+        String shown = content.substring(span[0], span[1]);
         String newLine = CsvCellEdit.replaceField(shown, delimiter, field, value);
         if (newLine.equals(shown)) {
             return; // no-op (e.g. re-committing the same value)
@@ -213,8 +219,8 @@ final class CsvCoordinator {
             return;
         }
         area.replaceText(start, end, newLine); // undoable; marks the buffer dirty
-        // Until the debounced re-parse runs, the grid's other rows are still checked against the right text.
-        builtFrom.put(buffer, buffer.getContent());
+        // Until the debounced re-parse runs, the grid's other rows are still the document's other lines.
+        builtVersion.put(buffer, buffer.docVersion());
     }
 
     /** Says why a cell edit was not written and puts the grid back in step with the document. */
@@ -280,10 +286,16 @@ final class CsvCoordinator {
         if (text.length() > MAX_PREVIEW_CHARS) {
             return null;
         }
-        if (!text.equals(builtFrom.get(b))) {
+        if (!builtFromCurrent(b)) {
             rebuild(b);
         }
         return panel.shown();
+    }
+
+    /** Whether {@code buffer}'s grid was built from the document as it is now. */
+    private boolean builtFromCurrent(EditorBuffer buffer) {
+        Long built = builtVersion.get(buffer);
+        return built != null && built == buffer.docVersion();
     }
 
     /** Exposed for the FX test harness (asserting a per-buffer grid was injected). */

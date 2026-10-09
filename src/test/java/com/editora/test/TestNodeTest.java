@@ -60,4 +60,20 @@ class TestNodeTest {
         assertEquals(1, root.failedLeaves().size());
         assertEquals("b", root.failedLeaves().get(0).id());
     }
+
+    @Test
+    void theTextANodeHoldsIsBounded() {
+        TestNode n = leaf("chatty", TestStatus.FAILED);
+        String huge = "o".repeat(OutputCap.MAX_CHARS * 3);
+        n.setStdout(huge);
+        n.setStderr(huge);
+        n.setFailureMessage(huge);
+        n.setStackTrace(huge);
+        for (String kept : new String[] {n.stdout(), n.stderr(), n.failureMessage(), n.stackTrace()}) {
+            assertTrue(kept.length() < OutputCap.MAX_CHARS + 200, "kept " + kept.length());
+            assertTrue(kept.contains(OutputCap.note(huge.length() - OutputCap.MAX_CHARS)));
+        }
+        n.setStdout("short");
+        assertEquals("short", n.stdout());
+    }
 }

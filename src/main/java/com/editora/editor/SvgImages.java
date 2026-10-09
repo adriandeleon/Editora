@@ -42,9 +42,19 @@ import com.github.weisj.jsvg.view.ViewBox;
  */
 public final class SvgImages {
 
-    private record Cached(SVGDocument document, double width, double height, String error) {}
+    record Cached(SVGDocument document, double width, double height, String error, int sourceChars) {
 
-    /** Cap on cached parsed SVGs (bounded LRU; a document is plain heap, unlike the images this replaced). */
+        /** Estimated heap the parsed document holds (nodes, attributes, path data), per character of source. */
+        long weight() {
+            return document == null ? 0 : ImageCacheBudget.svgFootprint(sourceChars);
+        }
+    }
+
+    /**
+     * Cap on cached parsed SVGs (bounded LRU; a document is plain heap, unlike the images this replaced). The
+     * count is the first line; {@link ImageCacheBudget#SVG_BUDGET_BYTES} then bounds the heap, since one
+     * document can be a few bytes or a multi-megabyte map.
+     */
     private static final int MAX_CACHED = 48;
 
     private static final Map<String, Cached> CACHE =
@@ -84,23 +94,41 @@ public final class SvgImages {
         host.getChildren().setAll(placeholder(Messages.tr("svg.rendering")));
         EXEC.submit(() -> {
             SVGDocument doc = PreviewImageLoader.parseSvg(source.getBytes(StandardCharsets.UTF_8));
-            Cached result = cachedFor(doc);
-            CACHE.put(key, result);
+            Cached result = cachedFor(doc, source.length());
+            remember(key, result);
             Platform.runLater(() -> applyCached(host, result, sizer));
         });
     }
 
+    /** Caches {@code result}, then trims the cache to its byte budget (the newest entry is always kept). */
+    static void remember(String key, Cached result) {
+        synchronized (CACHE) {
+            CACHE.put(key, result);
+            ImageCacheBudget.trim(CACHE, Cached::weight, ImageCacheBudget.SVG_BUDGET_BYTES);
+        }
+    }
+
+    /** Entries cached (tests). */
+    static int cachedCount() {
+        return CACHE.size();
+    }
+
+    /** Whether an entry remembered under {@code key} is still cached (tests). */
+    static boolean isCachedKey(String key) {
+        return CACHE.containsKey(key);
+    }
+
     /** A parsed document plus the size to draw it at, or the error to show instead. */
-    private static Cached cachedFor(SVGDocument doc) {
+    static Cached cachedFor(SVGDocument doc, int sourceChars) {
         if (doc == null) {
-            return new Cached(null, 0, 0, Messages.tr("svg.renderFailed"));
+            return new Cached(null, 0, 0, Messages.tr("svg.renderFailed"), sourceChars);
         }
         // An SVG need not declare a size; fall back to the same defaults the rasterizer used so a
         // dimensionless document still gets a sane box rather than collapsing to nothing.
         var size = doc.size();
         double w = size.width > 0 ? size.width : DEFAULT_WIDTH;
         double h = size.height > 0 ? size.height : DEFAULT_HEIGHT;
-        return new Cached(doc, w, h, null);
+        return new Cached(doc, w, h, null, sourceChars);
     }
 
     /** Fallbacks for an SVG that declares no intrinsic size (mirrors the rasterizer's). */

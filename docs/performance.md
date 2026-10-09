@@ -52,7 +52,10 @@ listings for Find File and the breadcrumb (`DirectoryListing`).
 
 Console output is a special case of "don't flood FX": `process/OutputPump` delivers each drain inside an
 `OutputBatch`, `ui/ConsoleAppender` applies a drain as one append, one style application and one trim, and
-drains start at least 16 ms apart. Pipe and socket writes to language servers, debug adapters and the ACP
+drains start at least 16 ms apart. Text that is kept rather than shown is bounded the same way: a test's
+captured output, failure message and stack trace keep their head and tail around a note of the cut
+(`test/OutputCap`, 200,000 chars), and the agent transcript holds at most 200,000 chars per entry and
+1,000,000 in all, oldest entries first (`AgentPanel`). Pipe and socket writes to language servers, debug adapters and the ACP
 agent all go through `AsyncPipeWriter`, never the FX thread.
 
 ### 2. Debounce and coalesce
@@ -155,6 +158,16 @@ the first text snapshot (`DocumentSnapshots.seed`), so a freshly loaded tab hold
 load of 5 MB or more that will not fit the free heap takes the capped read-only path instead
 (`LoadHeapGuard`: about 15× the file size plus a 128 MB margin).
 
+The saved baseline — what the modified flag compares the document with — is a `SavedBaseline`: the saved
+text's length and `TextFingerprint` (SHA-256 of its chars, computed by the read worker at load and by the
+save worker at save), plus the text itself only while it is still the snapshot. Once a dirty buffer's edits
+settle the baseline is sealed and the text let go, so a modified tab holds no second copy of its document;
+a later edit back to the saved length is compared by hashing the snapshot. The per-keystroke gate is
+unchanged: a different length (or line ending) decides without reading the text, and a dirty buffer at the
+saved length is compared at the settle, not per edit. A save acknowledges what the worker wrote by document
+version, length and fingerprint (`FileWorkflowCoordinator.CommittedSave` keeps neither the bytes nor the
+text); on an unchanged document the current snapshot is shared as the new baseline.
+
 Apply the large/heavy/read-only profile before that insertion so disabled features and undo history never
 observe the initial document change. Shape matters as well as byte and line counts: a paragraph at **64 KiB
 or wider** enters the long-line safety profile, which forces wrapping off, uses the large-file feature
@@ -180,8 +193,10 @@ bounds the cache to one current String per buffer and avoids repeating the same 
 independently debounced consumers after an edit settles.
 
 Undo is bounded by text as well as by count: the queue holds 300 entries and 64 M characters
-(`BudgetedChangeQueue`), and Undo History checkpoints share an app-wide 64 M-character budget
-(`UndoHistoryBudget`). An undoable whole-document rewrite must go through
+(`BudgetedChangeQueue`), the queues of all documents together share the same 64 M-character budget
+(`UndoQueueBudget`: the least recently edited document gives up its oldest steps first, and no document is
+taken below its newest one), and Undo History checkpoints share an app-wide 64 M-character budget
+(`UndoHistoryBudget`). A closed tab forgets its queue at once. An undoable whole-document rewrite must go through
 `EditorBuffer.replaceWholeDocument` / `replaceVisibleText`, which record only the differing span — never
 `area.replaceText(wholeText)`. Every RichTextFX area outside `EditorBuffer` must be built through
 `ui/AreaUndo.none(...)` (read-only: no history) or `AreaUndo.bounded(...)`; the default undo manager is
@@ -209,7 +224,8 @@ let GPU-backed resources grow with the number of open files:
   a render — unless the document, colours, tab size or column size changed while the tab was hidden.
   Nothing GPU-backed is retained for a hidden tab.
 - Image caches are count- and byte-bounded through `ImageCacheBudget` (Mermaid and Typst included), not
-  unbounded maps — each entry pins an `Image` (a texture). Live-preview renders are kept one per surface
+  unbounded maps — each entry pins an `Image` (a texture). The parsed-SVG cache (`SvgImages`) is heap, not
+  texture, and is weighed the same way, by an estimate from its source size. Live-preview renders are kept one per surface
   and released when the buffer is disposed (`PreviewSurfaces`).
 - Every per-buffer Canvas overlay implements `TabSurface`; `EditorBuffer.setRenderingActive` releases them
   all for a background tab, and an overlay with nothing to draw holds a 1×1 canvas (`CanvasGuards.fit` /

@@ -141,6 +141,13 @@ class GitSlowStatusAndBlameFxTest {
             assertFalse(committed.get(2).hash().startsWith("0000000"), "the third line now belongs to a commit");
             call(async, "and again", blame);
             assertEquals(3, service.blameRunsForTest());
+
+            // The file's last tab closes: its per-line records go, and the next request runs git again.
+            assertEquals(1, service.cachedBlameCountForTest());
+            service.forgetBlame(file);
+            assertEquals(0, service.cachedBlameCountForTest());
+            assertEquals(3, call(async, "blame after forgetting", blame).size());
+            assertEquals(4, service.blameRunsForTest());
         }
     }
 }

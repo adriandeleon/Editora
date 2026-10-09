@@ -23,18 +23,37 @@ import org.fxmisc.richtext.model.StyledSegment;
  * @param lineEnding the {@link LineEndings} label of the file's dominant line ending
  * @param mixedLineEndings whether the file used more than one kind of line ending
  * @param document the prepared paragraphs, or null to let the area split {@link #text} itself
+ * @param textFingerprint the {@link TextFingerprint} of {@link #text}, or null when not computed ahead; the
+ *     saved baseline keeps it once the buffer is edited, and computes it then if it was not supplied
  */
 public record InitialDocument(
         String text,
         String lineEnding,
         boolean mixedLineEndings,
-        ReadOnlyStyledDocument<Collection<String>, String, Collection<String>> document) {
+        ReadOnlyStyledDocument<Collection<String>, String, Collection<String>> document,
+        String textFingerprint) {
 
     /** A paragraph wider than this is installed as several style segments (see {@link #segmented}). */
     private static final int LONG_LINE_SEGMENT_CHARS = 4 * 1024;
 
     private static final Collection<String> LONG_LINE_SEGMENT_A = List.of("long-line-segment-a");
     private static final Collection<String> LONG_LINE_SEGMENT_B = List.of("long-line-segment-b");
+
+    /** A load without its fingerprint computed ahead. */
+    public InitialDocument(
+            String text,
+            String lineEnding,
+            boolean mixedLineEndings,
+            ReadOnlyStyledDocument<Collection<String>, String, Collection<String>> document) {
+        this(text, lineEnding, mixedLineEndings, document, null);
+    }
+
+    /** This load with its text's fingerprint computed — on the read worker, where this is meant to be called. */
+    public InitialDocument fingerprinted() {
+        return textFingerprint != null
+                ? this
+                : new InitialDocument(text, lineEnding, mixedLineEndings, document, TextFingerprint.of(text));
+    }
 
     /** Normalises {@code content} only; the area splits it into paragraphs when it is installed. */
     static InitialDocument ofText(String content) {
