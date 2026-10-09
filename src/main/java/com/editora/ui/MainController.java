@@ -318,7 +318,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow githubToolWindow;
 
     /** Local File History: snapshots local files on save/auto-save/external reload (off-thread). */
-    private HistoryCoordinator historyCoordinator;
+    HistoryCoordinator historyCoordinator; // read by TabContextMenu
     /** Gate for programmatic bulk edits in a buffer without undo; installed on every buffer in addBuffer. */
     private NoUndoGuard noUndoGuard;
 
@@ -2826,33 +2826,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private HistoryCoordinator.Ops historyOps() {
-        return new HistoryCoordinator.Ops() {
-            @Override
-            public java.util.Map<String, java.util.List<com.editora.config.HistoryRevision>> historyMap() {
-                return config.getHistory();
-            }
-
-            @Override
-            public java.util.Map<String, java.util.Map<String, java.util.List<com.editora.config.HistoryRevision>>>
-                    historyByProject() {
-                return config.getHistoryByProject();
-            }
-
-            @Override
-            public void saveHistory() {
-                config.saveHistory();
-            }
-
-            @Override
-            public void saveHistory(java.util.function.Consumer<Boolean> completion) {
-                config.saveHistory(completion);
-            }
-
-            @Override
-            public java.nio.file.Path blobsDir() {
-                return config.getHistoryBlobsDir();
-            }
-
+        return new HistoryConfigOps(config) {
             @Override
             public void setToolWindowAvailable(boolean available) {
                 toolWindows.setAvailable(fileHistoryToolWindow, available);
@@ -2877,7 +2851,31 @@ public class MainController implements com.editora.mcp.McpBridge {
             public String currentTextOf(java.nio.file.Path file) {
                 return gitWindows.currentTextOf(file);
             }
+
+            @Override
+            public EditorBuffer openBufferFor(java.nio.file.Path file) {
+                return bufferOf(tabForPath(file));
+            }
+
+            @Override
+            public void historyChanged() {
+                if (windowManager != null) {
+                    windowManager.localHistoryChanged(MainController.this);
+                }
+            }
+
+            @Override
+            public java.nio.file.Path projectRoot() {
+                return windowProject != null && projectsEnabled() ? Path.of(windowProject.root()) : null;
+            }
         };
+    }
+
+    /** Local History's index changed in another window: this window's panel shows it as it is now. */
+    void localHistoryChanged() {
+        if (historyCoordinator != null) {
+            historyCoordinator.refresh();
+        }
     }
 
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
@@ -3654,6 +3652,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public ToolWindow undoHistoryToolWindow() {
             return undoHistoryToolWindow;
+        }
+
+        @Override
+        public ToolWindow fileHistoryToolWindow() {
+            return fileHistoryToolWindow;
         }
 
         @Override
@@ -6569,7 +6572,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                             file -> bufferOf(tabForPath(file)),
                             fileWorkflows.loadingBuffers::contains,
                             (file, content, completion) ->
-                                    historyCoordinator.recordDurably(file, content, "replace-in-files", completion),
+                                    historyCoordinator.recordBeforeReplace(file, content, completion),
                             file -> config.shared().documentWrites().begin(file)),
                     new SearchCoordinator.Persistence(
                             query -> config.shared().searchHistory().add(query),

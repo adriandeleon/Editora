@@ -38,6 +38,8 @@
   "C-S-]": "view.unfold",
   "C-k C-0": "view.unfoldAll",
   "C-,": "view.settings",
+  "M-S-h": "tool.fileHistory",
+  "C-M-S-h": "git.fileHistory",
   "f11": "window.fullScreen",
   "C-=": "view.textZoomIn",
   "C-S-=": "view.textZoomIn",

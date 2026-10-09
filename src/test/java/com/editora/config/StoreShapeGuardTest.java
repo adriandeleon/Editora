@@ -72,7 +72,7 @@ class StoreShapeGuardTest {
         PINNED.put(ConfigSchema.NOTES, "2:f89de7207bb41420");
         PINNED.put(ConfigSchema.CONNECTIONS, "1:308f177f817c47fe");
         PINNED.put(ConfigSchema.PLUGINS, "1:44ba1632b30d33b8");
-        PINNED.put(ConfigSchema.HISTORY, "3:d48f2b71de7c05ee");
+        PINNED.put(ConfigSchema.HISTORY, "4:808e4a3b0917d64e");
         PINNED.put(ConfigSchema.SEARCH_HISTORY, "1:5b92e22ca7e96bc2");
         PINNED.put(ConfigSchema.AGENT_SESSIONS, "2:3d4af4d26bc417e4");
         PINNED.put(ConfigSchema.MACROS, "2:659c0d0ea97b3b12");

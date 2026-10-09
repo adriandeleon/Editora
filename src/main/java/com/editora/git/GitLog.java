@@ -135,6 +135,20 @@ public final class GitLog {
             return new Page(List.of(), false, Map.of(), error == null || error.isBlank() ? "git log failed" : error);
         }
 
+        /**
+         * The commits of this page whose hash is in {@code hashes}, in this page's order — a file history
+         * narrowed to the commits a search found. Nothing follows it: the search was run over everything.
+         */
+        public Page keep(java.util.Set<String> hashes) {
+            List<Entry> kept = new ArrayList<>();
+            for (Entry entry : entries) {
+                if (hashes.contains(entry.hash())) {
+                    kept.add(entry);
+                }
+            }
+            return new Page(kept, false, followed, error);
+        }
+
         /** This page without its first {@code n} commits (the overlap a continuation page is anchored with). */
         public Page drop(int n) {
             return new Page(entries.subList(Math.min(n, entries.size()), entries.size()), truncated, followed, error);
@@ -144,13 +158,20 @@ public final class GitLog {
     /**
      * What one page of the log is asked for: every branch, remote and tag ({@code allBranches}) or the
      * checked-out branch; one file's history, followed across renames ({@code file}, absolute; null for the
-     * repository); a history search ({@code query}, never null); and the window {@code skip … skip + max}.
+     * repository); a history search ({@code query}, never null); the commits touching any of a set of
+     * literal repository-relative paths ({@code paths}, without rename following — how a file history is
+     * searched, see {@link #followedPaths}); and the window {@code skip … skip + max}.
      */
-    public record Request(boolean allBranches, Path file, GitLogQuery query, int skip, int max) {
+    public record Request(boolean allBranches, Path file, GitLogQuery query, List<String> paths, int skip, int max) {
         public Request {
             query = query == null ? GitLogQuery.NONE : query;
+            paths = paths == null ? List.of() : List.copyOf(paths);
             skip = Math.max(0, skip);
             max = Math.max(1, max);
+        }
+
+        public Request(boolean allBranches, Path file, GitLogQuery query, int skip, int max) {
+            this(allBranches, file, query, List.of(), skip, max);
         }
 
         /** Whether the rows are parsed with {@link #parseFollow} rather than {@link #parse}. */
@@ -163,8 +184,48 @@ public final class GitLog {
          * what a graph can be drawn for. A file history or a search lists a subset.
          */
         public boolean graphable() {
-            return file == null && query.isEmpty();
+            return file == null && paths.isEmpty() && query.isEmpty();
         }
+    }
+
+    /**
+     * Every name the followed file has had in {@code page} — its path in each commit and the path it was
+     * renamed from — in first-seen order.
+     *
+     * <p>A file history cannot be searched with {@code --follow}: git learns the old name only when it diffs
+     * the commit that renamed the file, and {@code --grep}, {@code --author} and the date limits drop that
+     * commit before the diff, so every commit under the old name is silently lost. The search is run over
+     * these paths instead (a {@link Request} with {@code paths}) and its hashes are kept from the unsearched
+     * history ({@link Page#keep}).
+     */
+    public static List<String> followedPaths(Page page) {
+        java.util.LinkedHashSet<String> paths = new java.util.LinkedHashSet<>();
+        for (Entry entry : page.entries()) {
+            GitService.CommitFile file = page.followed().get(entry.hash());
+            if (file != null) {
+                paths.add(file.path());
+                if (file.origPath() != null && !file.origPath().isBlank()) {
+                    paths.add(file.origPath());
+                }
+            }
+        }
+        return List.copyOf(paths);
+    }
+
+    /**
+     * Whether {@code page} — a file history asked for again from the top, {@code loaded} rows deeper — still
+     * begins with the rows on screen: its row {@code loaded - 1} is the last loaded commit. The rows after
+     * it are then the next page ({@link Page#drop}).
+     *
+     * <p>A file history is not paged with {@code --skip}: under {@code --follow} git filters by path when it
+     * prints, so {@code --skip} counts every commit walked, touching the file or not, and the "next page"
+     * began somewhere inside the rows already loaded.
+     */
+    public static boolean continuesFromTop(Page page, int loaded, String lastLoadedHash) {
+        return page.error().isEmpty()
+                && loaded > 0
+                && page.entries().size() >= loaded
+                && page.entries().get(loaded - 1).hash().equals(lastLoadedHash);
     }
 
     /**
@@ -186,7 +247,7 @@ public final class GitLog {
     public static List<String> logArgs(Request request) {
         GitLogQuery query = request.query();
         List<String> args = new ArrayList<>();
-        if (request.file() != null) {
+        if (request.file() != null || !request.paths().isEmpty()) {
             args.add(GitSafety.LITERAL_PATHSPECS);
         }
         args.addAll(List.of("log", "--no-color", "--decorate=full", "--date=short", "--date-order"));
@@ -208,6 +269,9 @@ public final class GitLog {
         if (request.file() != null) {
             args.add("--");
             args.add(request.file().toAbsolutePath().toString());
+        } else if (!request.paths().isEmpty()) {
+            args.add("--");
+            args.addAll(request.paths()); // literal, relative to the repository root git runs in
         } else if (!query.paths().isEmpty()) {
             args.add("--");
             args.addAll(query.pathspecs());

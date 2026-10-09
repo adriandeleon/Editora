@@ -30,6 +30,8 @@
   "Cmd-1": "tool.project",
   "Cmd-7": "tool.structure",
   "Cmd-9": "tool.gitLog",
+  "C-Cmd-h": "tool.fileHistory",
+  "C-Cmd-S-h": "git.fileHistory",
   "Cmd-k": "tool.commit",
   "Cmd-S-k": "git.push",
   "Cmd-t": "git.pull",

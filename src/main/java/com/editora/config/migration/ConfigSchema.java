@@ -272,7 +272,12 @@ public enum ConfigSchema {
     PLUGINS(PluginStore.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 added the per-revision label (additive; absent rows default to "").
     // v2 → v3 added charset/bom/lineEnding on pre-delete revisions (additive; absent ⇒ unknown, restore as before).
-    HISTORY(HistoryStore.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity)),
+    // v3 → v4 added acknowledgedLimits, the retention limits the user last agreed to (additive; absent ⇒ the
+    // first session adopts the configured limits, as every session did before).
+    HISTORY(
+            HistoryStore.SCHEMA_VERSION,
+            1,
+            Map.of(1, ConfigMigrations::identity, 2, ConfigMigrations::identity, 3, ConfigMigrations::identity)),
     SEARCH_HISTORY(SearchHistory.SCHEMA_VERSION, 1, Map.of()),
     // v1 → v2 backfilled agentId ("claude") on every session predating multi-agent support.
     AGENT_SESSIONS(AgentSessionHistory.SCHEMA_VERSION, 1, Map.of(1, ConfigMigrations::addDefaultAgentIdToSessions)),

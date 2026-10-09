@@ -7,6 +7,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -55,5 +56,39 @@ class MenuBarIconsTest {
     void anUnknownCommandIsSimplyUnmapped() {
         assertTrue(MenuBarIcons.forCommand("no.such.command") == null);
         assertTrue(MenuBarIcons.forCommand("") == null);
+    }
+
+    /**
+     * Git's history of a file wears the Git Log glyph in the menu bar, as it does in the tab and Project-tree
+     * menus; the clock is Local History's. They used to share the clock.
+     */
+    @Test
+    void gitHistoryAndLocalHistoryDoNotShareAnIcon() {
+        assertEquals(shape(Icons.gitLog()), shape(MenuBarIcons.forCommand("git.fileHistory")));
+        assertEquals(shape(Icons.history()), shape(MenuBarIcons.forCommand("tool.fileHistory")));
+        assertFalse(shape(Icons.gitLog()).equals(shape(Icons.history())));
+    }
+
+    /** The path data of an icon node, wherever in the node it is kept. */
+    private static String shape(javafx.scene.Node icon) {
+        StringBuilder out = new StringBuilder();
+        collect(icon, out);
+        assertFalse(out.isEmpty(), "no path data found in " + icon);
+        return out.toString();
+    }
+
+    private static void collect(javafx.scene.Node node, StringBuilder out) {
+        if (node instanceof javafx.scene.shape.SVGPath path) {
+            out.append(path.getContent());
+        }
+        if (node instanceof javafx.scene.layout.Region region
+                && region.getShape() instanceof javafx.scene.shape.SVGPath path) {
+            out.append(path.getContent());
+        }
+        if (node instanceof javafx.scene.Parent parent) {
+            for (javafx.scene.Node child : parent.getChildrenUnmodifiable()) {
+                collect(child, out);
+            }
+        }
     }
 }

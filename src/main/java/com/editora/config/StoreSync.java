@@ -175,6 +175,23 @@ final class StoreSync {
     }
 
     /**
+     * Whether {@code file} still holds exactly what this process last read from or wrote to it — no other
+     * writer has touched it since. For a caller whose {@link #write} had nothing to persist (and so did not
+     * look at the file) and that needs to know whether its picture of the file is still current.
+     */
+    boolean unchangedOnDisk(Path file) {
+        JVM_LOCK.lock();
+        try {
+            State state = states.get(file);
+            return state != null && Arrays.equals(hash(readIfPresent(file)), state.diskHash);
+        } catch (IOException unreadable) {
+            return false;
+        } finally {
+            JVM_LOCK.unlock();
+        }
+    }
+
+    /**
      * The tree to write in place of {@code mine}, or {@code null} when {@code mine} itself is right: the other
      * writer changed nothing this process cares about, or left something that cannot be read (kept aside).
      */
