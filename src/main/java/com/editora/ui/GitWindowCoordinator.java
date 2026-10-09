@@ -1288,8 +1288,8 @@ final class GitWindowCoordinator {
             gitLogFilter = null;
             gitLogSearch = ""; // a search of the previous repository's history
             gitLogListing = null;
-            if (host.gitLogPanel() != null) {
-                host.gitLogPanel().setLog(List.of(), null);
+            if (host.gitLogToolWindow() != null && host.gitLogToolWindow().contentIfBuilt() != null) {
+                host.gitLogPanel().setLog(List.of(), null); // a panel not built yet has nothing to clear
             }
         }
         if (root != null

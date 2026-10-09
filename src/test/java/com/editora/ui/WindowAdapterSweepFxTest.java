@@ -193,13 +193,15 @@ class WindowAdapterSweepFxTest {
                             || !m.getReturnType().isAssignableFrom(field.getType())) {
                         continue;
                     }
+                    Object actual = new Call(adapter.getKey(), m, adapter.getValue() + "." + m.getName()).invoke();
+                    // Read the field after the call: a tool-window panel is built by its first use, which may
+                    // be this very adapter (the field was null before it, and is that panel after it).
                     Object expected;
                     try {
                         expected = field.get(controller);
                     } catch (IllegalAccessException e) {
                         throw new AssertionError(e);
                     }
-                    Object actual = new Call(adapter.getKey(), m, adapter.getValue() + "." + m.getName()).invoke();
                     assertSame(expected, actual, adapter.getValue() + "." + m.getName() + "()");
                     checked++;
                 }

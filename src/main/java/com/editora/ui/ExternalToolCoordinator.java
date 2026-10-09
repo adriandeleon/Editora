@@ -43,7 +43,12 @@ final class ExternalToolCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final ExternalToolService service = new ExternalToolService();
-    private final ExternalToolPanel panel = new ExternalToolPanel();
+    /** The console panel, built on its first use (normally the tool window's first open). */
+    private ExternalToolPanel panel;
+    /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
+    private String outputFontFamily;
+
+    private int outputFontSize;
     private CommandRegistry registry;
     /** The last external tool run, for {@code externalTool.rerunLast}. */
     /** Name of the last tool run — re-resolved on rerun, so a deleted/edited tool can't be re-run stale. */
@@ -52,12 +57,27 @@ final class ExternalToolCoordinator {
     ExternalToolCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
-        panel.setOnLink(ops::onOutputLink); // double-clicked path in output → jump
     }
 
     /** The console panel — used as the External Tools tool window's content (owned by {@code MainController}). */
     ExternalToolPanel panel() {
+        if (panel == null) {
+            panel = new ExternalToolPanel();
+            panel.setOnLink(ops::onOutputLink); // double-clicked path in output → jump
+            if (outputFontFamily != null) {
+                panel.setOutputFont(outputFontFamily, outputFontSize);
+            }
+        }
         return panel;
+    }
+
+    /** Matches the console font to the editor font; remembered for a panel not built yet. */
+    void setOutputFont(String family, int size) {
+        outputFontFamily = family;
+        outputFontSize = size;
+        if (panel != null) {
+            panel.setOutputFont(family, size);
+        }
     }
 
     /** External Tools are disabled in Simple UI mode (mirrors the other heavy features). */
@@ -69,7 +89,7 @@ final class ExternalToolCoordinator {
     void registerCommands(CommandRegistry registry) {
         this.registry = registry;
         registry.register(Command.of("externalTool.run", this::runPicker));
-        registry.register(Command.of("externalTool.clearOutput", panel::clearConsole));
+        registry.register(Command.of("externalTool.clearOutput", () -> panel().clearConsole()));
         registry.register(Command.of("externalTool.rerunLast", this::rerunLast));
         registerToolCommands();
     }
@@ -265,7 +285,7 @@ final class ExternalToolCoordinator {
     private void applyResult(ExternalTool tool, ToolInvocation inv, ProcessRunner.Result r, Launch launch) {
         if (tool.getOutput() == ExternalTool.OutputTarget.CONSOLE) {
             ops.openConsole();
-            panel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
+            panel().show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
             host.setStatus(
                     r.ok()
                             ? tr("status.externalTool.done", tool.getName())
@@ -275,7 +295,7 @@ final class ExternalToolCoordinator {
         // Text-target modes: apply stdout only on success; otherwise surface the error in the console.
         if (!r.ok()) {
             ops.openConsole();
-            panel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
+            panel().show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
             host.setStatus(tr("status.externalTool.failed", tool.getName(), r.message()));
             return;
         }
@@ -285,7 +305,7 @@ final class ExternalToolCoordinator {
             // make the loss permanent. Refuse, and put what there is in the console with the reason.
             String message = tr("status.externalTool.outputTruncated", tool.getName());
             ops.openConsole();
-            panel.show(tool.getName(), inv.displayCommand(), r.out(), message + "\n" + r.err(), r.exit());
+            panel().show(tool.getName(), inv.displayCommand(), r.out(), message + "\n" + r.err(), r.exit());
             host.setError(message);
             return;
         }
@@ -305,7 +325,7 @@ final class ExternalToolCoordinator {
             // The file changed while the tool ran — its stdout was computed from text that no longer exists,
             // so applying it would silently revert the edits made meanwhile.
             ops.openConsole();
-            panel.show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
+            panel().show(tool.getName(), inv.displayCommand(), r.out(), r.err(), r.exit());
             host.setStatus(tr("status.externalTool.bufferChanged", tool.getName()));
             return;
         }

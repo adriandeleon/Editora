@@ -83,9 +83,7 @@ final class PreviewCoordinator {
                 b.setMarkdownLintEnabled(on);
             }
         }
-        if (host.markdownLintToolWindow() != null
-                && host.markdownLintPanel() != null
-                && host.toolWindows().isOpen(host.markdownLintToolWindow())) {
+        if (host.markdownLintToolWindow() != null && host.toolWindows().isOpen(host.markdownLintToolWindow())) {
             runMarkdownLintScan();
         }
     }

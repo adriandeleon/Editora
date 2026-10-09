@@ -119,7 +119,11 @@ final class FileWorkflowCoordinator {
 
         FileBreadcrumb breadcrumb();
 
+        /** The Project panel if it has been built (its window opened), else {@code null}. */
         ProjectPanel projectPanel();
+
+        /** What the Project tree is (or will be) rooted at; {@code null} outside a project with no folder. */
+        Path projectRoot();
 
         HistoryCoordinator historyCoordinator();
 
@@ -1817,7 +1821,7 @@ final class FileWorkflowCoordinator {
         if (p != null && com.editora.vfs.Vfs.isLocal(p) && p.getParent() != null) {
             return p.getParent();
         }
-        Path root = host.projectPanel() == null ? null : host.projectPanel().getRoot();
+        Path root = host.projectRoot();
         if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
             return root;
         }

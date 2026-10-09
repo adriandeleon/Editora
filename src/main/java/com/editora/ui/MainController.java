@@ -213,7 +213,13 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private com.editora.completion.CompletionEngine completion;
 
+    /** The Project panel; null until {@link #projectPanel()} builds it. */
     private ProjectPanel projectPanel;
+    /** What the Project tree is rooted at (null: the placeholder), applied to the panel when it is built. */
+    private Path projectRoot;
+    /** The last Git status pushed to the Project tree, applied to the panel when it is built. */
+    private java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> projectGitStatus;
+
     private ProjectDeleteCoordinator projectDeletes;
     private ProjectManager projects;
     /** The multi-window coordinator (null in single-window/test use); set right after {@link #init}. */
@@ -237,7 +243,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow bookmarksToolWindow;
     private ToolWindow notesToolWindow;
     private ToolWindow fileInfoToolWindow;
+    /** The File Information / Undo History / Structure panels; each null until its accessor builds it. */
     private FileInformationPanel fileInfoPanel;
+
     private ToolWindow undoHistoryToolWindow;
     private UndoHistoryPanel undoHistoryPanel;
     private StructurePanel structurePanel;
@@ -307,12 +315,20 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  (after the LSP/Debug coordinators it re-detects through). See {@link InstallCoordinator}. */
     private InstallCoordinator installCoordinator;
 
+    /** The Commit panel; null until {@link #gitPanel()} builds it. The state it shows is tracked below. */
     private GitPanel gitPanel;
+
+    private com.editora.git.GitStatus lastGitStatus;
+    private com.editora.git.GitOperation lastGitOperation;
+    private String lastGitRefusal;
+    private boolean gitAiAvailable;
     private ToolWindow commitToolWindow;
+    /** The Git Log panel; null until {@link #gitLogPanel()} builds it. */
     private GitLogPanel gitLogPanel;
+
     private GitLogPanel.Actions gitLogOps; // reused by the git.log.* palette commands (act on the selected commit)
     private ToolWindow gitLogToolWindow;
-    /** GitHub PR/issue tool window; available only inside a GitHub repo. */
+    /** GitHub PR/issue tool window; available only inside a GitHub repo. Null until {@link #githubPanel()}. */
     private GitHubPanel githubPanel;
 
     private ToolWindow githubToolWindow;
@@ -1215,7 +1231,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
         recovery.attach(windowManager == null ? null : windowManager.recovery());
-        projectPanel.setRoot(project == null ? null : Path.of(project.root()));
+        setProjectRoot(project == null ? null : Path.of(project.root()));
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
         searchCoordinator
                 .refreshScope(); // Find-in-Files scope label reflects this window's project (or current folder)
@@ -1249,11 +1265,307 @@ public class MainController implements com.editora.mcp.McpBridge {
         Path dir = (path != null && com.editora.vfs.Vfs.isLocal(path))
                 ? path.toAbsolutePath().getParent()
                 : null;
-        if (!com.editora.config.PathKeys.samePath(projectPanel.getRoot(), dir)) {
-            projectPanel.setRoot(dir); // null => placeholder (unsaved/Welcome tab); rebuilds only on change
+        if (!com.editora.config.PathKeys.samePath(projectRoot(), dir)) {
+            setProjectRoot(dir); // null => placeholder (unsaved/Welcome tab); rebuilds only on change
         }
         if (projectToolWindow != null) {
             projectToolWindow.setTitle(tr(dir != null ? "toolwindow.currentFolder" : "toolwindow.project"));
+        }
+    }
+
+    /** The Structure panel, built on its first use; it attaches the active buffer as it is built. */
+    private StructurePanel structurePanel() {
+        if (structurePanel == null) {
+            structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
+            EditorBuffer active = activeBuffer();
+            structurePanel.attach(active);
+            lspCoordinator.requestStructureSymbols(active); // the LSP outline, when the server offers one
+        }
+        return structurePanel;
+    }
+
+    /** The File Information panel, built on its first use; it attaches the active buffer as it is built. */
+    private FileInformationPanel fileInfoPanel() {
+        if (fileInfoPanel == null) {
+            fileInfoPanel = new FileInformationPanel();
+            fileInfoPanel.attach(activeBuffer());
+        }
+        return fileInfoPanel;
+    }
+
+    /** The Undo History panel, built on its first use; it attaches the active buffer as it is built. */
+    private UndoHistoryPanel undoHistoryPanel() {
+        if (undoHistoryPanel == null) {
+            undoHistoryPanel = new UndoHistoryPanel();
+            undoHistoryPanel.attach(activeBuffer());
+        }
+        return undoHistoryPanel;
+    }
+
+    /** The Commit panel, built on its first use with the Git state the window has seen so far. */
+    private GitPanel gitPanel() {
+        if (gitPanel == null) {
+            GitPanel panel = new GitPanel(new GitPanelActions(git, diffCoordinator, fileWorkflows));
+            panel.setOnClone(git::cloneRepo);
+            panel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
+            if (lastGitStatus != null) {
+                panel.setStatus(lastGitStatus);
+            }
+            if (lastGitOperation != null) {
+                panel.setOperation(lastGitOperation);
+            }
+            if (lastGitRefusal != null) {
+                panel.setRefusal(lastGitRefusal);
+            }
+            panel.setAiAvailable(gitAiAvailable);
+            gitPanel = panel;
+        }
+        return gitPanel;
+    }
+
+    /** The Git Log panel, built on its first use (the window's open loads the history into it). */
+    private GitLogPanel gitLogPanel() {
+        if (gitLogPanel == null) {
+            gitLogPanel = new GitLogPanel(gitLogOps);
+        }
+        return gitLogPanel;
+    }
+
+    /** The GitHub panel, built on its first use (the window's open fetches its list). */
+    private GitHubPanel githubPanel() {
+        if (githubPanel == null) {
+            githubPanel = new GitHubPanel(gitWindows.githubActions());
+        }
+        return githubPanel;
+    }
+
+    /** The Markdown Lint panel, built on its first use (the window's open runs the scan that fills it). */
+    private MarkdownLintPanel markdownLintPanel() {
+        if (markdownLintPanel == null) {
+            markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
+                @Override
+                public void open(java.nio.file.Path file, int line, int col) {
+                    fileWorkflows.openPath(file);
+                    Platform.runLater(() -> sessions.gotoInFile(file, line, col));
+                }
+
+                @Override
+                public void refresh() {
+                    previews.runMarkdownLintScan();
+                }
+            });
+        }
+        return markdownLintPanel;
+    }
+
+    /**
+     * The Project panel, built on its first use — the tool window's first open, or a reveal into it. Until
+     * then the state it would show is tracked here (the root, the Git status, the active file, the settings)
+     * and applied when it is built; refreshes that reach a panel not built yet are dropped, since the build
+     * reads everything afresh.
+     */
+    private ProjectPanel projectPanel() {
+        if (projectPanel != null) {
+            return projectPanel;
+        }
+        ProjectPanel panel = new ProjectPanel(
+                fileWorkflows::openPath,
+                this::onProjectFileRenamed,
+                this::onProjectTreeFileDeleted,
+                this::isPathModified,
+                this::hasFileOpen,
+                this::projectMapPreviewContent);
+        panel.setRememberedMapState(config::getWorkspaceState, config::save);
+        panel.setOpenFiles(() -> editorArea.tabs().stream()
+                .map(MainController::tabPath)
+                .filter(java.util.Objects::nonNull)
+                .toList());
+        panel.setPrompt(this::promptText); // in-scene rename prompt
+        panel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
+        panel.setDeletePreparation(projectDeletes);
+        panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
+        panel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
+        panel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
+        panel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
+        panel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
+        panel.setMapOutputActions(
+                exports::printProjectMap, image -> exports.exportProjectMapPdf(image, projectMapBaseName()));
+        // An external program (a terminal `git`, another editor, a build) changed files under the repo while
+        // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
+        // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
+        panel.setOnExternalChanges((changes, complete) -> {
+            com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
+            indexCoordinator.onExternalChanges(changes, complete);
+            git.refresh();
+            refreshBuildTools();
+            diffCoordinator.refreshOpenDiffs();
+        });
+        // Forward the watcher's raw events to the language servers (didChangeWatchedFiles) so a git
+        // checkout / CLI build / external editor doesn't leave their project models stale (#677).
+        panel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
+        panel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        panel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        panel.setFileActions(new ProjectPanel.FileActions() {
+            @Override
+            public boolean localHistoryEnabled() {
+                return MainController.this.localHistoryEnabled();
+            }
+
+            @Override
+            public void showLocalHistory(Path file) {
+                historyCoordinator.showForPath(file);
+            }
+
+            @Override
+            public GitPathScope gitScope(Path path) {
+                return git.scopeOf(path);
+            }
+
+            @Override
+            public void gitShowFileHistory(Path file) {
+                git.activatingRepositoryOf(file, () -> gitWindows.gitFileHistoryForPath(file));
+            }
+
+            @Override
+            public void gitCompareWithHead(Path file) {
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsHead(file));
+            }
+
+            @Override
+            public void gitCompareWithBranch(Path file) {
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsBranch(file));
+            }
+
+            @Override
+            public void gitCompareWithTag(Path file) {
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsTag(file));
+            }
+
+            @Override
+            public void gitCompareWithRevision(Path file) {
+                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsCommit(file));
+            }
+
+            @Override
+            public void gitAnnotate(Path file) {
+                git.ifEnabled(() -> {
+                    fileWorkflows.openPath(file);
+                    git.annotateActive();
+                });
+            }
+
+            @Override
+            public void gitStage(Path file) {
+                git.ifEnabled(() -> git.gitStagePath(file));
+            }
+
+            @Override
+            public void gitUnstage(Path file) {
+                git.ifEnabled(() -> git.gitUnstagePath(file));
+            }
+
+            @Override
+            public void gitRevert(Path file) {
+                git.ifEnabled(() -> git.gitRevertPath(file));
+            }
+
+            @Override
+            public void gitAddToGitignore(Path file) {
+                git.ifEnabled(() -> git.addToGitignore(file));
+            }
+        });
+        panel.setMarkerActions(new ProjectPanel.MarkerActions() {
+            @Override
+            public boolean personalNotesEnabled() {
+                return notesCoordinator.isEnabled();
+            }
+
+            @Override
+            public boolean hasBookmarks(Path file) {
+                return bookmarkCoordinator.hasBookmarks(file);
+            }
+
+            @Override
+            public boolean hasPersonalNotes(Path file) {
+                return notesCoordinator.hasPersonalNotes(file);
+            }
+
+            @Override
+            public String personalNotesTooltip(Path path) {
+                return notesCoordinator.personalNotesTooltip(path);
+            }
+
+            @Override
+            public void addBookmark(Path file) {
+                bookmarkCoordinator.addBookmark(file);
+            }
+
+            @Override
+            public void addBookmark(Path file, int line) {
+                bookmarkCoordinator.addBookmark(file, line);
+            }
+
+            @Override
+            public void addPersonalNote(Path file) {
+                notesCoordinator.addPersonalNote(file);
+            }
+
+            @Override
+            public void addPersonalNote(Path file, com.editora.editor.NoteDraft draft) {
+                notesCoordinator.addPersonalNote(file, draft);
+            }
+
+            @Override
+            public java.util.List<com.editora.config.PersonalNote> personalNotes(Path path) {
+                java.util.List<com.editora.config.PersonalNote> notes = notesCoordinator.notesFor(path);
+                return notes == null ? java.util.List.of() : java.util.List.copyOf(notes);
+            }
+
+            @Override
+            public void updatePersonalNote(Path path, com.editora.config.PersonalNote note, String body) {
+                notesCoordinator.updatePersonalNote(path, note, body);
+            }
+
+            @Override
+            public java.util.Collection<Path> markedPaths() {
+                return ProjectPanel.pathsOf(bookmarkCoordinator.storedKeys(), notesCoordinator.storedKeys());
+            }
+        });
+        panel.setShowHidden(config.getSettings().isProjectShowHidden());
+        panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
+        if (projectGitStatus != null) {
+            panel.setGitStatus(projectGitStatus);
+        }
+        panel.setRoot(projectRoot);
+        EditorBuffer selected = activeBuffer();
+        panel.setActiveFile(selected == null ? null : selected.getPath());
+        projectPanel = panel;
+        return panel;
+    }
+
+    /** What the Project tree is rooted at: the built panel's own root, else the one recorded for its build. */
+    private Path projectRoot() {
+        return projectPanel != null ? projectPanel.getRoot() : projectRoot;
+    }
+
+    /** Points the Project tree at {@code root} ({@code null}: the placeholder), now or when the panel is built. */
+    private void setProjectRoot(Path root) {
+        projectRoot = root;
+        if (projectPanel != null) {
+            projectPanel.setRoot(root);
+        }
+    }
+
+    /** Re-lists the Project tree if it exists; an unbuilt one lists afresh when built. */
+    private void refreshProjectTreeIfBuilt() {
+        if (projectPanel != null) {
+            projectPanel.refreshTree();
+        }
+    }
+
+    private void refreshProjectMarkersIfBuilt() {
+        if (projectPanel != null) {
+            projectPanel.refreshMarkers();
         }
     }
 
@@ -1367,7 +1679,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> externalToolCoordinator.shutdown(), // the external-tool worker thread
                 () -> httpClient.shutdown(), // the http-client worker thread
                 () -> remoteCoordinator.shutdown(), // SFTP sessions + the SSH client (and un-pin the Vfs hooks)
-                () -> projectPanel.dispose()); // stop the project tree's filesystem watcher + its daemon thread
+                () -> {
+                    if (projectPanel != null) {
+                        projectPanel.dispose(); // stop the project tree's filesystem watcher + its daemon thread
+                    }
+                });
     }
 
     /**
@@ -1518,9 +1834,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Shows/hides all project UI per the "Enable projects" setting: toolbar icon + combo, tool window. */
     private void applyProjectSupport() {
-        projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()); // hidden-files toggle (init + apply)
-        projectPanel.setRespectGitignore(
-                config.getSettings().isSearchRespectGitignore()); // skip .gitignore'd files in the filter search
+        if (projectPanel != null) { // else applied when the panel is built
+            projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()); // hidden-files toggle
+            projectPanel.setRespectGitignore(
+                    config.getSettings().isSearchRespectGitignore()); // skip .gitignore'd files in the filter search
+        }
         boolean on = projectsEnabled();
         // Turning projects off just hides the project chrome — each window keeps editing its open files
         // (windows no longer share one session that could be "stranded"). On the next launch with projects
@@ -1857,7 +2175,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (projectToolWindow != null) {
                 toolWindows.open(projectToolWindow, false);
             }
-            projectPanel.revealPathInTree(file);
+            projectPanel().revealPathInTree(file);
             return;
         }
         fileWorkflows.openThen(file, () -> navigateToLine(navigation.areaLine(activeBuffer(), line)));
@@ -1971,9 +2289,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // A restored background tab defers its language server until it's actually looked at.
                 lspCoordinator.onBufferShown(buffer);
             }
-            fileInfoPanel.attach(buffer);
-            structurePanel.attach(buffer);
-            undoHistoryPanel.attach(buffer);
+            // A panel not built yet attaches the active buffer when it is (see the accessors).
+            if (fileInfoPanel != null) {
+                fileInfoPanel.attach(buffer);
+            }
+            if (structurePanel != null) {
+                structurePanel.attach(buffer);
+            }
+            if (undoHistoryPanel != null) {
+                undoHistoryPanel.attach(buffer);
+            }
             lspCoordinator.requestStructureSymbols(
                     buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
@@ -2151,20 +2476,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 ? ExtendedWindow.header(menuBar.node(), stage)
                                 : menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
-        projectPanel = new ProjectPanel(
-                fileWorkflows::openPath,
-                this::onProjectFileRenamed,
-                this::onProjectTreeFileDeleted,
-                this::isPathModified,
-                this::hasFileOpen,
-                this::projectMapPreviewContent);
-        projectPanel.setRememberedMapState(config::getWorkspaceState, config::save);
-        projectPanel.setOpenFiles(() -> editorArea.tabs().stream()
-                .map(MainController::tabPath)
-                .filter(java.util.Objects::nonNull)
-                .toList());
-        projectPanel.setPrompt(this::promptText); // in-scene rename prompt
-        projectPanel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
         projectDeletes = new ProjectDeleteCoordinator(
                 path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
                 buffer -> ownerOf(buffer).revealBufferLocal(buffer),
@@ -2173,219 +2484,76 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows::invalidatePendingWrite,
                 (path, completion) -> historyCoordinator.captureBeforeDeleteDurably(path, completion),
                 this::setStatus);
-        projectPanel.setDeletePreparation(projectDeletes);
-        projectPanel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
-        projectPanel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
-        projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
-        projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
-        projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
         exports.activeTabContent =
                 () -> tabPath(activeTab()) == null ? null : activeTab().getUserData();
-        projectPanel.setMapOutputActions(
-                exports::printProjectMap, image -> exports.exportProjectMapPdf(image, projectMapBaseName()));
-        // An external program (a terminal `git`, another editor, a build) changed files under the repo while
-        // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
-        // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
-        projectPanel.setOnExternalChanges((changes, complete) -> {
-            com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
-            indexCoordinator.onExternalChanges(changes, complete);
-            git.refresh();
-            refreshBuildTools();
-            diffCoordinator.refreshOpenDiffs();
-        });
-        // Forward the watcher's raw events to the language servers (didChangeWatchedFiles) so a git
-        // checkout / CLI build / external editor doesn't leave their project models stale (#677).
-        projectPanel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
-        projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
-        projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
         breadcrumb.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         breadcrumb.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
-        projectPanel.setFileActions(new ProjectPanel.FileActions() {
-            @Override
-            public boolean localHistoryEnabled() {
-                return MainController.this.localHistoryEnabled();
-            }
-
-            @Override
-            public void showLocalHistory(Path file) {
-                historyCoordinator.showForPath(file);
-            }
-
-            @Override
-            public GitPathScope gitScope(Path path) {
-                return git.scopeOf(path);
-            }
-
-            @Override
-            public void gitShowFileHistory(Path file) {
-                git.activatingRepositoryOf(file, () -> gitWindows.gitFileHistoryForPath(file));
-            }
-
-            @Override
-            public void gitCompareWithHead(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsHead(file));
-            }
-
-            @Override
-            public void gitCompareWithBranch(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsBranch(file));
-            }
-
-            @Override
-            public void gitCompareWithTag(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsTag(file));
-            }
-
-            @Override
-            public void gitCompareWithRevision(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsCommit(file));
-            }
-
-            @Override
-            public void gitAnnotate(Path file) {
-                git.ifEnabled(() -> {
-                    fileWorkflows.openPath(file);
-                    git.annotateActive();
-                });
-            }
-
-            @Override
-            public void gitStage(Path file) {
-                git.ifEnabled(() -> git.gitStagePath(file));
-            }
-
-            @Override
-            public void gitUnstage(Path file) {
-                git.ifEnabled(() -> git.gitUnstagePath(file));
-            }
-
-            @Override
-            public void gitRevert(Path file) {
-                git.ifEnabled(() -> git.gitRevertPath(file));
-            }
-
-            @Override
-            public void gitAddToGitignore(Path file) {
-                git.ifEnabled(() -> git.addToGitignore(file));
-            }
-        });
-        projectPanel.setMarkerActions(new ProjectPanel.MarkerActions() {
-            @Override
-            public boolean personalNotesEnabled() {
-                return notesCoordinator.isEnabled();
-            }
-
-            @Override
-            public boolean hasBookmarks(Path file) {
-                return bookmarkCoordinator.hasBookmarks(file);
-            }
-
-            @Override
-            public boolean hasPersonalNotes(Path file) {
-                return notesCoordinator.hasPersonalNotes(file);
-            }
-
-            @Override
-            public String personalNotesTooltip(Path path) {
-                return notesCoordinator.personalNotesTooltip(path);
-            }
-
-            @Override
-            public void addBookmark(Path file) {
-                bookmarkCoordinator.addBookmark(file);
-            }
-
-            @Override
-            public void addBookmark(Path file, int line) {
-                bookmarkCoordinator.addBookmark(file, line);
-            }
-
-            @Override
-            public void addPersonalNote(Path file) {
-                notesCoordinator.addPersonalNote(file);
-            }
-
-            @Override
-            public void addPersonalNote(Path file, com.editora.editor.NoteDraft draft) {
-                notesCoordinator.addPersonalNote(file, draft);
-            }
-
-            @Override
-            public java.util.List<com.editora.config.PersonalNote> personalNotes(Path path) {
-                java.util.List<com.editora.config.PersonalNote> notes = notesCoordinator.notesFor(path);
-                return notes == null ? java.util.List.of() : java.util.List.copyOf(notes);
-            }
-
-            @Override
-            public void updatePersonalNote(Path path, com.editora.config.PersonalNote note, String body) {
-                notesCoordinator.updatePersonalNote(path, note, body);
-            }
-
-            @Override
-            public java.util.Collection<Path> markedPaths() {
-                return ProjectPanel.pathsOf(bookmarkCoordinator.storedKeys(), notesCoordinator.storedKeys());
-            }
-        });
-        bookmarkCoordinator.setOnChanged(projectPanel::refreshMarkers);
-        notesCoordinator.setOnChanged(projectPanel::refreshMarkers);
+        bookmarkCoordinator.setOnChanged(this::refreshProjectMarkersIfBuilt);
+        notesCoordinator.setOnChanged(this::refreshProjectMarkersIfBuilt);
+        // Every tool window below hands ToolWindow a supplier: the panel is built on the window's first open
+        // (ToolWindow.getContent), or by the first caller that needs it — never before first paint for a
+        // window that is closed. restore() opens the saved-open windows, which builds exactly those.
         projectToolWindow = new ToolWindow(
                 "project",
                 tr("toolwindow.project"),
                 ToolWindow.Side.RIGHT,
                 Icons::project,
-                projectPanel,
+                this::projectPanel,
                 "tool.project");
-        structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
         structureToolWindow = new ToolWindow(
                 "structure",
                 tr("toolwindow.structure"),
                 ToolWindow.Side.RIGHT,
                 Icons::structure,
-                structurePanel,
+                this::structurePanel,
                 "tool.structure");
         bookmarksToolWindow = new ToolWindow(
                 "bookmarks",
                 tr("toolwindow.bookmarks"),
                 ToolWindow.Side.RIGHT,
                 Icons::bookmark,
-                bookmarkCoordinator.panel(),
+                bookmarkCoordinator::panel,
                 "tool.bookmarks");
         notesToolWindow = new ToolWindow(
                 "notes",
                 tr("toolwindow.notes"),
                 ToolWindow.Side.RIGHT,
                 Icons::notes,
-                notesCoordinator.panel(),
+                notesCoordinator::panel,
                 "tool.notes");
-        fileInfoPanel = new FileInformationPanel();
         fileInfoToolWindow = new ToolWindow(
                 "file-information",
                 tr("toolwindow.file-information"),
                 ToolWindow.Side.RIGHT,
                 Icons::about,
-                fileInfoPanel,
+                this::fileInfoPanel,
                 "tool.fileInformation");
-        undoHistoryPanel = new UndoHistoryPanel();
         undoHistoryToolWindow = new ToolWindow(
                 "undoHistory",
                 tr("toolwindow.undoHistory"),
                 ToolWindow.Side.RIGHT,
                 Icons::history,
-                undoHistoryPanel,
+                this::undoHistoryPanel,
                 "tool.undoHistory");
-        gitPanel = new GitPanel(new GitPanelActions(git, diffCoordinator, fileWorkflows));
-        gitPanel.setOnClone(git::cloneRepo);
-        gitPanel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
         commitToolWindow = new ToolWindow(
-                "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
-        gitLogPanel = new GitLogPanel(gitLogOps = gitWindows.gitLogActions());
+                "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, this::gitPanel, "tool.commit");
+        gitLogOps = gitWindows.gitLogActions();
         gitWindows.listenTo(git);
         gitLogToolWindow = new ToolWindow(
-                "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
-        githubPanel = new GitHubPanel(gitWindows.githubActions());
+                "gitLog",
+                tr("toolwindow.gitLog"),
+                ToolWindow.Side.BOTTOM,
+                Icons::gitLog,
+                this::gitLogPanel,
+                "tool.gitLog");
         githubToolWindow = new ToolWindow(
-                "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
+                "github",
+                tr("toolwindow.github"),
+                ToolWindow.Side.BOTTOM,
+                Icons::github,
+                this::githubPanel,
+                "tool.github");
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
         noUndoGuard = new NoUndoGuard(historyCoordinator::recordSafetyCopy, coordinatorHost::setStatus);
         git.attachWindow(diffCoordinator, buffer -> addBuffer(buffer, true)); // stash review, patches, revision tabs
@@ -2394,7 +2562,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tr("toolwindow.fileHistory"),
                 ToolWindow.Side.BOTTOM,
                 Icons::history,
-                historyCoordinator.panel(),
+                historyCoordinator::panel,
                 "tool.fileHistory");
         searchToolWindow = new ToolWindow(
                 "search",
@@ -2403,57 +2571,45 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // The same glyph as the toolbar's Find in Files button — one feature, one mark. The plain
                 // magnifier this used belongs to the in-file find bar, which is a different thing.
                 Icons::findInFiles,
-                searchCoordinator.panel(),
+                searchCoordinator::panel,
                 "tool.search");
         todoToolWindow = new ToolWindow(
                 "todo",
                 tr("toolwindow.todo"),
                 ToolWindow.Side.BOTTOM,
                 Icons::todo,
-                todoCoordinator.panel(),
+                todoCoordinator::panel,
                 "tool.todo");
-        markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
-            @Override
-            public void open(java.nio.file.Path file, int line, int col) {
-                fileWorkflows.openPath(file);
-                Platform.runLater(() -> sessions.gotoInFile(file, line, col));
-            }
-
-            @Override
-            public void refresh() {
-                previews.runMarkdownLintScan();
-            }
-        });
         markdownLintToolWindow = new ToolWindow(
                 "markdownLint",
                 tr("toolwindow.markdownLint"),
                 ToolWindow.Side.BOTTOM,
                 Icons::warning,
-                markdownLintPanel,
+                this::markdownLintPanel,
                 "tool.markdownLint");
         problemsToolWindow = new ToolWindow(
                 "problems",
                 tr("toolwindow.problems"),
                 ToolWindow.Side.BOTTOM,
                 Icons::problems,
-                lspCoordinator.problemsPanel(),
+                lspCoordinator::problemsPanel,
                 "tool.problems");
         referencesToolWindow = new ToolWindow(
                 "references",
                 tr("toolwindow.references"),
                 ToolWindow.Side.BOTTOM,
                 Icons::find,
-                lspCoordinator.referencesPanel(),
+                lspCoordinator::referencesPanel,
                 "tool.references");
         hierarchyToolWindow = new ToolWindow(
                 "hierarchy",
                 tr("toolwindow.hierarchy"),
                 ToolWindow.Side.BOTTOM,
                 Icons::structure,
-                lspCoordinator.hierarchyPanel(),
+                lspCoordinator::hierarchyPanel,
                 "tool.hierarchy");
         runToolWindow = new ToolWindow(
-                "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator.panel(), "tool.run");
+                "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator::panel, "tool.run");
         debugCoordinator = new DebugCoordinator(
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
@@ -2555,14 +2711,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tr("toolwindow.debug"),
                 ToolWindow.Side.BOTTOM,
                 Icons::debug,
-                debugCoordinator.panel(),
+                debugCoordinator::panel,
                 "tool.debug");
         externalToolToolWindow = new ToolWindow(
                 "externalTool",
                 tr("toolwindow.externalTools"),
                 ToolWindow.Side.BOTTOM,
                 Icons::tools,
-                externalToolCoordinator.panel(),
+                externalToolCoordinator::panel,
                 "tool.externalTools");
         for (BuildCoordinator c : buildCoordinators) {
             BuildTool tool = c.tool();
@@ -2597,7 +2753,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tr("toolwindow.testResults"),
                 ToolWindow.Side.BOTTOM,
                 Icons::testResults,
-                testRunCoordinator.panel(),
+                testRunCoordinator::panel,
                 "tool.testResults");
         // Mirror a recognized `test` run of any build tool into the Test Results window.
         buildCoordinators.forEach(c -> c.setTestRunHook(testRunCoordinator));
@@ -2649,14 +2805,14 @@ public class MainController implements com.editora.mcp.McpBridge {
                 tr("toolwindow.remote"),
                 ToolWindow.Side.RIGHT,
                 Icons::remote,
-                remoteCoordinator.panel(),
+                remoteCoordinator::panel,
                 "tool.remote");
         agentToolWindow = new ToolWindow(
                 "agent",
                 tr("toolwindow.agent"),
                 ToolWindow.Side.RIGHT,
                 Icons::agent,
-                agentCoordinator.panel(),
+                agentCoordinator::panel,
                 "tool.agent");
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
@@ -2784,7 +2940,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void setProjectRoot(Path root) {
-                projectPanel.setRoot(root);
+                MainController.this.setProjectRoot(root);
             }
 
             @Override
@@ -2844,7 +3000,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void refreshProjectTree() {
-                projectPanel.refreshTree();
+                refreshProjectTreeIfBuilt();
             }
 
             @Override
@@ -3751,7 +3907,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitHubPanel githubPanel() {
-            return githubPanel;
+            return MainController.this.githubPanel();
         }
 
         @Override
@@ -4403,7 +4559,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public StructurePanel structurePanel() {
-            return structurePanel;
+            return MainController.this.structurePanel(); // the structure palette reads the outline: build it
         }
 
         @Override
@@ -4565,7 +4721,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public MarkdownLintPanel markdownLintPanel() {
-            return markdownLintPanel;
+            return MainController.this.markdownLintPanel();
         }
 
         @Override
@@ -4658,7 +4814,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitPanel gitPanel() {
-            return gitPanel;
+            return MainController.this.gitPanel();
         }
 
         @Override
@@ -4668,7 +4824,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitLogPanel gitLogPanel() {
-            return gitLogPanel;
+            return MainController.this.gitLogPanel();
         }
 
         @Override
@@ -4683,7 +4839,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitHubPanel githubPanel() {
-            return githubPanel;
+            return MainController.this.githubPanel();
         }
 
         @Override
@@ -5046,7 +5202,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public ProjectPanel projectPanel() {
-            return projectPanel;
+            return projectPanel; // null until the Project window first opens: callers read, never build
+        }
+
+        @Override
+        public Path projectRoot() {
+            return MainController.this.projectRoot();
         }
 
         @Override
@@ -5273,8 +5434,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public ProjectPanel projectPanel() {
-            return projectPanel;
+        public void setProjectRoot(Path root) {
+            MainController.this.setProjectRoot(root);
         }
 
         @Override
@@ -5753,28 +5914,38 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setGitPanelStatus(com.editora.git.GitStatus status) {
-            gitPanel.setStatus(status);
+            lastGitStatus = status; // a panel not built yet shows it when it is
+            if (gitPanel != null) {
+                gitPanel.setStatus(status);
+            }
         }
 
         @Override
         public void setGitOperation(com.editora.git.GitOperation operation, int conflicts) {
             statusBar.setGitOperation(operation);
-            gitPanel.setOperation(operation);
+            lastGitOperation = operation;
+            if (gitPanel != null) {
+                gitPanel.setOperation(operation);
+            }
         }
 
         @Override
         public void setGitRefusal(String reason) {
             statusBar.setGitRefusal(reason);
-            gitPanel.setRefusal(reason);
+            lastGitRefusal = reason;
+            if (gitPanel != null) {
+                gitPanel.setRefusal(reason);
+            }
         }
 
         @Override
         public boolean commitFromPanel() {
-            return gitPanel.commitNow();
+            return gitPanel().commitNow();
         }
 
         @Override
         public void setProjectGitStatus(java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> byPath) {
+            projectGitStatus = byPath; // a panel not built yet shows it when it is
             if (projectPanel != null) {
                 projectPanel.setGitStatus(byPath);
             }
@@ -5830,7 +6001,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void focusCommitMessage() {
-            Platform.runLater(gitPanel::focusCommitMessage);
+            Platform.runLater(() -> gitPanel().focusCommitMessage());
         }
 
         @Override
@@ -7105,7 +7276,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void refreshProjectTree() {
-            projectPanel.refreshTree();
+            refreshProjectTreeIfBuilt();
         }
 
         @Override
@@ -7155,13 +7326,13 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setCommitMessage(String message) {
-            gitPanel.setCommitMessage(message);
+            gitPanel().setCommitMessage(message);
         }
 
         @Override
         public void openCommitWindow() {
             toolWindows.open(commitToolWindow, true);
-            gitPanel.focusCommitMessage();
+            gitPanel().focusCommitMessage();
         }
 
         @Override
@@ -7171,7 +7342,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setCommitAiAvailable(boolean available) {
-            gitPanel.setAiAvailable(available);
+            gitAiAvailable = available; // a panel not built yet shows it when it is
+            if (gitPanel != null) {
+                gitPanel.setAiAvailable(available);
+            }
         }
     });
 
@@ -8257,7 +8431,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (activeBuffer() == buffer
                     && markdownLintToolWindow != null
                     && toolWindows.isOpen(markdownLintToolWindow)) {
-                markdownLintPanel.setResults(buffer.getPath(), diags);
+                markdownLintPanel().setResults(buffer.getPath(), diags);
             }
         }));
         buffer.setMarkdownLintEnabled(previews.markdownLintEnabled());
@@ -9709,8 +9883,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private String projectMapBaseName() {
-        Path projectRoot = projectPanel == null ? null : projectPanel.getRoot();
-        Path name = projectRoot == null ? null : projectRoot.getFileName();
+        Path root = projectRoot();
+        Path name = root == null ? null : root.getFileName();
         return (name == null ? "project" : name.toString()) + "-map";
     }
 

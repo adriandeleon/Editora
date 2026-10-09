@@ -80,7 +80,9 @@ final class RemoteCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final RemoteConnectionsPanel panel;
+    /** The Remote Sites panel, built on its first use (the tool window's first open). */
+    private RemoteConnectionsPanel panel;
+
     private RemoteFileSystems remoteFs; // lazily created on first remote use
     private String activeRemoteAuthority; // the connection backing the mounted remote root
 
@@ -93,26 +95,28 @@ final class RemoteCoordinator {
         this.host = host;
         this.ops = ops;
         this.remoteFs = remoteFs;
-        this.panel = new RemoteConnectionsPanel(ops::connections, new RemoteConnectionsPanel.Actions() {
-            @Override
-            public void connect(RemoteConnection c) {
-                RemoteCoordinator.this.connect(c);
-            }
-
-            @Override
-            public void remove(RemoteConnection c) {
-                ops.removeConnection(c.id());
-            }
-
-            @Override
-            public void newConnection() {
-                RemoteCoordinator.this.connect();
-            }
-        });
     }
 
     /** The Remote Sites tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     RemoteConnectionsPanel panel() {
+        if (panel == null) {
+            panel = new RemoteConnectionsPanel(ops::connections, new RemoteConnectionsPanel.Actions() {
+                @Override
+                public void connect(RemoteConnection c) {
+                    RemoteCoordinator.this.connect(c);
+                }
+
+                @Override
+                public void remove(RemoteConnection c) {
+                    ops.removeConnection(c.id());
+                }
+
+                @Override
+                public void newConnection() {
+                    RemoteCoordinator.this.connect();
+                }
+            });
+        }
         return panel;
     }
 
@@ -123,7 +127,9 @@ final class RemoteCoordinator {
 
     /** Re-fetches the saved-connection list shown in the panel (e.g. before opening the tool window). */
     void refreshPanel() {
-        panel.refresh();
+        if (panel != null) {
+            panel.refresh(); // an unbuilt panel lists the saved connections when it is built
+        }
     }
 
     /** How long a host-key question may sit unanswered before the connection is refused. */
@@ -342,7 +348,7 @@ final class RemoteCoordinator {
             remoteFs.disconnect(previous);
         }
         ops.putConnection(conn); // remember the connection (metadata only — no secret) for next time
-        panel.refresh(); // surface the just-used site at the top of the list
+        refreshPanel(); // surface the just-used site at the top of the list
         rebindOpenBuffers(conn.id());
         ops.setProjectRoot(root);
         ops.openProjectToolWindow();
