@@ -21,7 +21,9 @@ fat jar, and packaging.
 2. **Make the change**, following the conventions below.
 3. **`mvn spotless:apply`**, then **`mvn verify`** (runs all tests + the Spotless check + the
    JaCoCo coverage floors).
-4. **Update docs in the same PR**: `CHANGELOG.md`, `README.md`, `TODO.md`.
+4. **Update docs in the same PR**: `CHANGELOG.md`, `TODO.md`, and the user docs in the
+   [website repository](https://github.com/adriandeleon/editora-website). `README.md` is a short
+   landing page; change it only when its install, build, command-line or configuration facts change.
 5. Open a PR against `master`.
 
 ## The conventions that get PRs bounced
