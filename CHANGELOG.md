@@ -73,6 +73,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`editora --help` described `--no-session` with `--single-window`'s second line.** The "instead of
+  restoring all windows; doesn't change the saved layout" continuation now sits under `--single-window`,
+  the option it explains, as the README already had it.
+
 - **Local History could lose revisions without saying so.** A second Editora's revision content could be
   deleted by the first after it exited; revisions recorded just before quitting never reached the index; a
   revision list merged from two processes was trimmed from the wrong end; and a save whose revision could

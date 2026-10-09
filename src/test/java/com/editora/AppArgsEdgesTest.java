@@ -141,4 +141,35 @@ class AppArgsEdgesTest {
             }
         }
     }
+
+    @Test
+    void theSingleWindowEntryKeepsItsContinuationLine() {
+        // The "instead of restoring all windows" line explains --single-window; it once sat under --no-session,
+        // which made that option read as if it rewrote the saved layout.
+        Messages.init("en");
+        List<String> lines = App.helpText().lines().toList();
+        int singleWindow = indexOfOption(lines, "--single-window");
+        int noSession = indexOfOption(lines, "--no-session");
+        assertEquals(singleWindow + 1, indexOfLineContaining(lines, "instead of restoring all windows"));
+        assertEquals(singleWindow + 2, noSession, "--no-session follows --single-window and its continuation");
+        assertTrue(lines.get(noSession + 1).trim().startsWith("--"), "--no-session has no continuation line");
+    }
+
+    private static int indexOfOption(List<String> lines, String option) {
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).trim().startsWith(option)) {
+                return i;
+            }
+        }
+        throw new AssertionError(option + " is documented in --help");
+    }
+
+    private static int indexOfLineContaining(List<String> lines, String text) {
+        for (int i = 0; i < lines.size(); i++) {
+            if (lines.get(i).contains(text)) {
+                return i;
+            }
+        }
+        throw new AssertionError(text + " appears in --help");
+    }
 }
