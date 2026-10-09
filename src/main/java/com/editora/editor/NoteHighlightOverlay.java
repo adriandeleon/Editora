@@ -1,6 +1,7 @@
 package com.editora.editor;
 
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
 import javafx.application.Platform;
@@ -32,6 +33,15 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
     private Supplier<List<int[]>> spans = List::of;
+    /**
+     * Whether {@link #spans} has anything to paint, asked before a redraw is even queued. The overlay is
+     * active for every buffer (the feature is on by default) but almost no buffer has a note: without this
+     * gate each edit, scroll and layout queued a runLater that did the visible-paragraph lookups only to
+     * find the span list empty. With it the overlay is inert — no runLater, no viewport call — until the
+     * note manager positions a note, the way {@link TodoHighlightOverlay} is off until it has marks.
+     */
+    private BooleanSupplier hasSpans = () -> true;
+
     private boolean active;
     /**
      * False while this overlay's tab is in the background. A backgrounded tab keeps a full
@@ -66,6 +76,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     public NoteHighlightOverlay follower(CodeArea view) {
         NoteHighlightOverlay second = new NoteHighlightOverlay(view);
         second.spans = spans;
+        second.hasSpans = hasSpans;
         second.setRenderingActive(rendering);
         second.setActive(active);
         follower = second;
@@ -73,10 +84,16 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
     }
 
     void setSpans(Supplier<List<int[]>> spans) {
+        setSpans(spans, () -> true);
+    }
+
+    /** As {@link #setSpans(Supplier)}, with a cheap "is there anything" test asked before any redraw is queued. */
+    void setSpans(Supplier<List<int[]>> spans, BooleanSupplier hasSpans) {
         if (follower != null) {
-            follower.setSpans(spans);
+            follower.setSpans(spans, hasSpans);
         }
         this.spans = spans == null ? List::of : spans;
+        this.hasSpans = hasSpans == null ? () -> true : hasSpans;
         scheduleRedraw();
     }
 
@@ -140,6 +157,10 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
         if (!active || !rendering || redrawPending) {
             return;
         }
+        if (!hasSpans.getAsBoolean()) {
+            releaseCanvas(); // nothing to paint (the last note went away): drop the texture, queue nothing
+            return;
+        }
         redrawPending = true;
         Platform.runLater(() -> {
             redrawPending = false;
@@ -174,6 +195,11 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
             releaseCanvas();
             return;
         }
+        List<int[]> all = spans.get();
+        if (all.isEmpty()) {
+            releaseCanvas(); // decided before any viewport lookup
+            return;
+        }
         try {
             int firstVisible = area.firstVisibleParToAllParIndex();
             int lastVisible = area.lastVisibleParToAllParIndex();
@@ -185,7 +211,7 @@ final class NoteHighlightOverlay extends Region implements SecondaryPane.Followe
             int lastOffset = area.getAbsolutePosition(
                     lastVis, area.getParagraph(lastVis).getText().length());
             List<int[]> visible = new java.util.ArrayList<>();
-            for (int[] span : spans.get()) {
+            for (int[] span : all) {
                 if (span[1] < firstOffset || span[0] > lastOffset) {
                     continue;
                 }

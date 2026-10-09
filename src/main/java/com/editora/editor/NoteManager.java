@@ -154,6 +154,22 @@ public final class NoteManager implements LineMarks.Carrier {
         return tracked.isEmpty();
     }
 
+    /**
+     * Whether {@link #activeSpans()} would be non-empty — the highlight overlay's gate, asked on every edit,
+     * scroll and layout of every buffer, so it is one field read for the common buffer without notes.
+     */
+    public boolean hasActiveSpans() {
+        if (tracked.isEmpty()) {
+            return false;
+        }
+        for (Tracked t : tracked.values()) {
+            if (t.positioned() && t.note.status() != NoteStatus.ORPHANED) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** {@code [start,end]} offset spans of non-orphaned, positioned notes (for the highlight overlay). */
     public List<int[]> activeSpans() {
         List<int[]> out = new ArrayList<>();

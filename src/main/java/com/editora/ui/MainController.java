@@ -8041,11 +8041,31 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean hasBuffer = buffer != null;
         boolean editable = hasBuffer && buffer.isEditable();
         boolean hasSelection = area != null && area.getSelection().getLength() > 0;
-        saveButton.setDisable(!hasBuffer || !buffer.isDirty());
+        // The dirty PROPERTY, not isDirty(): the exact answer can compare the whole document (a dirty buffer edited
+        // back to its saved length), deferred to the 150 ms settle on purpose; the property's listener re-runs this.
+        saveButton.setDisable(!hasBuffer || !buffer.dirtyProperty().get());
         undoButton.setDisable(area == null || !area.isUndoAvailable());
         redoButton.setDisable(area == null || !area.isRedoAvailable());
         cutButton.setDisable(!hasSelection || !editable);
         copyButton.setDisable(!hasSelection);
+    }
+
+    private boolean editStateRefreshPending; // a refreshEditState is queued (edits and selection moves arrive per key)
+
+    /**
+     * Coalesces {@link #refreshEditState} to one per event-loop turn (the contract's pending-flag shape): a typed
+     * character fires a text change and a selection change, each of which used to re-evaluate five toolbar
+     * buttons inside the keystroke. The refresh reads the active buffer when it runs, so it describes the tab shown.
+     */
+    private void scheduleEditStateRefresh() {
+        if (editStateRefreshPending) {
+            return;
+        }
+        editStateRefreshPending = true;
+        Platform.runLater(() -> {
+            editStateRefreshPending = false;
+            refreshEditState();
+        });
     }
 
     /**
@@ -8287,13 +8307,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows.autoSaveIdleTimer.playFromStart();
             }
             if (buffer == activeBuffer()) {
-                refreshEditState(); // edits change undo/redo (and dirty) availability
+                scheduleEditStateRefresh(); // edits change undo/redo (and dirty) availability
             }
         });
         // Selection changes toggle cut/copy enablement (no clipboard read here — that's refreshPasteState).
         buffer.onSelectionChanged(() -> {
             if (buffer == activeBuffer()) {
-                refreshEditState(); // of the split pane in use
+                scheduleEditStateRefresh(); // of the split pane in use
             }
         });
         installTabMenu(tab, buffer);
