@@ -38,6 +38,20 @@ final class ImageCacheBudget {
     /** Formulas are small; this is a backstop, not a working limit. */
     static final long MATH_BUDGET_BYTES = 32L * 1024 * 1024;
 
+    /** Parsed SVG documents ({@link SvgImages}): plain heap, weighed by {@link #svgFootprint}. */
+    static final long SVG_BUDGET_BYTES = 32L * 1024 * 1024;
+
+    /**
+     * Heap a parsed SVG DOM holds per character of its source, estimated: element and attribute objects,
+     * parsed path data and the strings in between come to several times the text they were read from.
+     */
+    static final long SVG_BYTES_PER_SOURCE_CHAR = 8;
+
+    /** Estimated resident cost of a parsed SVG of {@code sourceChars} characters of source. */
+    static long svgFootprint(int sourceChars) {
+        return Math.max(0, sourceChars) * SVG_BYTES_PER_SOURCE_CHAR;
+    }
+
     private ImageCacheBudget() {}
 
     /**

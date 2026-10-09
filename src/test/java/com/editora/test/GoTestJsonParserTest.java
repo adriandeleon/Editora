@@ -156,4 +156,26 @@ class GoTestJsonParserTest {
             TestTreeBuilder.merge(root, s);
         }
     }
+
+    @Test
+    void aTestThatPrintsByTheMegabyteKeepsTheHeadAndTheTailOfItsOutput() {
+        GoTestJsonParser p = new GoTestJsonParser();
+        TestNode root = TestNode.root();
+        feed(root, p, "{\"Action\":\"run\",\"Package\":\"ex/pkg\",\"Test\":\"TestLoud\"}");
+        String line = "x".repeat(990) + " %05d\\n";
+        for (int i = 0; i < 1000; i++) { // about 1 MB
+            feed(
+                    root,
+                    p,
+                    "{\"Action\":\"output\",\"Package\":\"ex/pkg\",\"Test\":\"TestLoud\",\"Output\":\""
+                            + line.formatted(i) + "\"}");
+        }
+        feed(root, p, "{\"Action\":\"fail\",\"Package\":\"ex/pkg\",\"Test\":\"TestLoud\",\"Elapsed\":1}");
+        TestNode loud = root.childById("ex/pkg").childById("ex/pkg#TestLoud");
+        String kept = loud.failureMessage();
+        assertTrue(kept.length() < OutputCap.MAX_CHARS + 200, "kept " + kept.length());
+        assertTrue(kept.startsWith("x".repeat(990) + " 00000\n"), "the head survives");
+        assertTrue(kept.endsWith(" 00999\n"), "and so does the tail");
+        assertTrue(kept.contains("output.charactersCut") || kept.contains("characters cut"), "with a note");
+    }
 }

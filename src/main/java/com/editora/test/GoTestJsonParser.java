@@ -38,9 +38,10 @@ public final class GoTestJsonParser implements TestResultParser {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    private final Map<String, StringBuilder> output = new HashMap<>(); // testId -> accumulated output
-    private final Map<String, StringBuilder> packageOutput = new HashMap<>(); // package -> package-level output
-    private final Map<String, StringBuilder> buildOutput = new HashMap<>(); // ImportPath -> compiler output
+    // Each capture is bounded (OutputCap): a chatty test keeps the head and the tail of what it printed.
+    private final Map<String, OutputCap.Accumulator> output = new HashMap<>(); // testId -> accumulated output
+    private final Map<String, OutputCap.Accumulator> packageOutput = new HashMap<>(); // package -> package-level output
+    private final Map<String, OutputCap.Accumulator> buildOutput = new HashMap<>(); // ImportPath -> compiler output
     private final Map<String, Set<String>> running = new HashMap<>(); // package -> tests started, not yet settled
     private final Set<String> failedPackages = new HashSet<>(); // packages that have a failed test leaf
 
@@ -63,7 +64,7 @@ public final class GoTestJsonParser implements TestResultParser {
             String importPath = text(event, "ImportPath");
             if (importPath != null) {
                 buildOutput
-                        .computeIfAbsent(importPath, k -> new StringBuilder())
+                        .computeIfAbsent(importPath, k -> new OutputCap.Accumulator())
                         .append(textOrEmpty(event, "Output"));
             }
             return List.of();
@@ -83,7 +84,7 @@ public final class GoTestJsonParser implements TestResultParser {
                 return List.of(suite(pkg, ParsedTest.of(pkg, test, TestStatus.RUNNING, 0)));
             }
             case "output" -> {
-                output.computeIfAbsent(id, k -> new StringBuilder()).append(textOrEmpty(event, "Output"));
+                output.computeIfAbsent(id, k -> new OutputCap.Accumulator()).append(textOrEmpty(event, "Output"));
                 return List.of();
             }
             case "pass", "fail", "skip" -> {
@@ -118,7 +119,9 @@ public final class GoTestJsonParser implements TestResultParser {
     private List<ParsedSuite> onPackageEvent(String action, String pkg, JsonNode event) {
         switch (action) {
             case "output" -> {
-                packageOutput.computeIfAbsent(pkg, k -> new StringBuilder()).append(textOrEmpty(event, "Output"));
+                packageOutput
+                        .computeIfAbsent(pkg, k -> new OutputCap.Accumulator())
+                        .append(textOrEmpty(event, "Output"));
                 return List.of();
             }
             case "fail" -> {
@@ -190,12 +193,12 @@ public final class GoTestJsonParser implements TestResultParser {
         return new ParsedSuite(pkg, List.of(test));
     }
 
-    private static String drain(Map<String, StringBuilder> from, String key) {
-        StringBuilder sb = from.remove(key);
-        if (sb == null || sb.isEmpty()) {
+    private static String drain(Map<String, OutputCap.Accumulator> from, String key) {
+        OutputCap.Accumulator captured = from.remove(key);
+        if (captured == null || captured.isEmpty()) {
             return null;
         }
-        return sb.toString();
+        return captured.toString();
     }
 
     private static String join(String first, String second) {
