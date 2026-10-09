@@ -24,6 +24,9 @@ final class BudgetedChangeQueue<C> implements ChangeQueue<C> {
     private final int capacity;
     private final long budget;
     private final ToLongFunction<? super C> cost;
+    /** The budget shared with every other document's queue, or null for a queue bounded on its own only. */
+    private final UndoQueueBudget shared;
+
     private final ArrayList<Entry<C>> entries = new ArrayList<>();
     /** Number of entries before the position: undo walks down from here, redo up. */
     private int position;
@@ -32,6 +35,8 @@ final class BudgetedChangeQueue<C> implements ChangeQueue<C> {
     private long revision;
     /** Revision of the (no longer held) change before entry 0 — what position 0 is identified by. */
     private long zeroRevision;
+    /** The shared budget's stamp of the last push; larger is more recent. */
+    private long lastActive;
 
     /**
      * @param capacity most entries kept
@@ -39,12 +44,21 @@ final class BudgetedChangeQueue<C> implements ChangeQueue<C> {
      * @param cost the text an entry retains (removed plus inserted characters)
      */
     BudgetedChangeQueue(int capacity, long budget, ToLongFunction<? super C> cost) {
+        this(capacity, budget, cost, null);
+    }
+
+    /**
+     * As above, also counted against {@code shared}, which may evict this queue's oldest undo entries when the
+     * queues of every document together exceed it (see {@link UndoQueueBudget}).
+     */
+    BudgetedChangeQueue(int capacity, long budget, ToLongFunction<? super C> cost, UndoQueueBudget shared) {
         if (capacity <= 0) {
             throw new IllegalArgumentException("capacity must be positive");
         }
         this.capacity = capacity;
         this.budget = budget;
         this.cost = cost;
+        this.shared = shared;
     }
 
     @Override
@@ -104,11 +118,34 @@ final class BudgetedChangeQueue<C> implements ChangeQueue<C> {
         position = entries.size();
         // Oldest first; the newest entry stays whatever it costs, so the last edit can always be undone.
         while (entries.size() > 1 && (entries.size() > capacity || retained > budget)) {
-            Entry<C> evicted = entries.removeFirst();
-            retained -= evicted.cost();
-            zeroRevision = evicted.revision();
-            position--;
+            evictOldest();
         }
+        if (shared != null) {
+            lastActive = shared.tick();
+            shared.pushed(this); // then the app-wide cap, which takes from the least recently edited documents
+        }
+    }
+
+    /**
+     * Drops the oldest entry — an undo entry, so the position moves down with it — and returns the cost it
+     * released. The caller makes sure there is one to drop ({@link #canGiveUpAnUndoEntry}).
+     */
+    long evictOldest() {
+        Entry<C> evicted = entries.removeFirst();
+        retained -= evicted.cost();
+        zeroRevision = evicted.revision();
+        position--;
+        return evicted.cost();
+    }
+
+    /** Whether the shared budget may take this queue's oldest entry: it keeps at least one undo step. */
+    boolean canGiveUpAnUndoEntry() {
+        return position > 1;
+    }
+
+    /** The shared budget's stamp of the last push (larger is more recent). */
+    long lastActive() {
+        return lastActive;
     }
 
     @Override

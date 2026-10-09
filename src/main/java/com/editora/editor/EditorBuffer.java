@@ -5370,6 +5370,9 @@ public class EditorBuffer implements TabContent {
         // largest thing hanging off it -- up to MAX whole-document snapshots -- and releasing them at the
         // moment the tab closes returns that memory now rather than at the next collection.
         undoHistory.clear();
+        // The undo queue too: its removed-and-inserted text counts against the app-wide UndoQueueBudget until
+        // it is forgotten, and a closed tab should give the budget back now, not when the queue is collected.
+        area.getUndoManager().forgetHistory();
         documentSnapshots.invalidate();
         PreviewSurfaces.release(path, this); // rendered Mermaid/Typst pages only this document could show
         if (settledEditSub != null) {
