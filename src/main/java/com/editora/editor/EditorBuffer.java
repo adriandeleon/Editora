@@ -6932,7 +6932,8 @@ public class EditorBuffer implements TabContent {
     /** Captures a LINE note anchor for a specific line, independent of the current selection/caret. */
     public NoteDraft captureLineNoteDraft(int requestedLine) {
         int line = Math.max(0, Math.min(requestedLine, area.getParagraphs().size() - 1));
-        String doc = area.getText();
+        String doc =
+                documentTextSnapshot(); // the area's text (the narrowed region when narrowed), one copy per version
         String lineText = area.getParagraph(line).getText();
         int lineLen = lineText.length();
         // Capture surrounding context for a LINE note too (like WORD/RANGE): the lines a LINE note lands on
@@ -7066,7 +7067,7 @@ public class EditorBuffer implements TabContent {
         if (todoMatcher == null || !todoEnabled || largeFile) {
             return false;
         }
-        java.util.List<TodoMark> marks = todoMatcher.match(area.getText());
+        java.util.List<TodoMark> marks = todoMatcher.match(documentTextSnapshot());
         if (marks.isEmpty()) {
             return false;
         }
@@ -9307,7 +9308,7 @@ public class EditorBuffer implements TabContent {
         if (isNarrowed()) {
             widenInternal(); // re-narrow from the whole document: narrowing does not nest, as in Emacs
         }
-        String full = area.getText();
+        String full = documentTextSnapshot(); // widened just above, so this is the whole document
         int s = Math.max(0, Math.min(start + base, full.length()));
         int e = Math.max(0, Math.min(end + base, full.length()));
         if (s >= e) {
@@ -9342,7 +9343,7 @@ public class EditorBuffer implements TabContent {
 
     private void widenInternal() {
         String prefix = narrowPrefix;
-        String visible = area.getText();
+        String visible = documentTextSnapshot(); // the region the area holds while narrowed
         String suffix = narrowSuffix;
         int caret = area.getCaretPosition();
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();

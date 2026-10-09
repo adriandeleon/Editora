@@ -1042,6 +1042,22 @@ final class HistoryCoordinator {
      */
     private final Map<String, Long> lastSavedStamps = new java.util.concurrent.ConcurrentHashMap<>();
 
+    /**
+     * The last tab of {@code file} closed: its stamp goes, or the map grows by one entry per path ever saved in
+     * the window. If the file is opened and saved again, that save records what it replaces as a baseline
+     * revision — which the history worker drops when it equals the newest revision, as our own last save does.
+     */
+    void pathClosed(Path file) {
+        if (file != null) {
+            lastSavedStamps.remove(historyKey(file));
+        }
+    }
+
+    /** Paths with a recorded last-save stamp (tests). */
+    int savedStampCount() {
+        return lastSavedStamps.size();
+    }
+
     private static long stamp(byte[] bytes) {
         java.util.zip.CRC32 crc = new java.util.zip.CRC32();
         crc.update(bytes, 0, bytes.length);

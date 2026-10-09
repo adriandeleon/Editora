@@ -2054,6 +2054,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                             csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
                             httpClient.onBufferClosed(closed); // drop this buffer's HTTP response panel
                             recovery.untrack(closed); // closed by choice: its recovery copy goes with it
+                            if (closed.getPath() != null && tabForPath(closed.getPath()) == null) {
+                                git.service().forgetBlame(closed.getPath()); // per-line records of a closed file
+                                historyCoordinator.pathClosed(closed.getPath());
+                            }
                             closed.dispose();
                         } else {
                             // Tab.setOnClosed only fires for a click on the ✕ — never for a programmatic

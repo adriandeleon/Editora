@@ -746,8 +746,18 @@ final class GitHubCoordinator {
         }
     }
 
+    /** Most working directories whose repository is remembered; the least recently shown goes first. */
+    static final int MAX_REPO_INFOS = 32;
+
     /** The repository {@code gh} resolved, per working directory — one {@code gh repo view} each. */
-    private final java.util.Map<Path, com.editora.github.RepoViewParser.RepoInfo> repoInfos = new java.util.HashMap<>();
+    private final java.util.Map<Path, com.editora.github.RepoViewParser.RepoInfo> repoInfos =
+            new java.util.LinkedHashMap<>(16, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(
+                        java.util.Map.Entry<Path, com.editora.github.RepoViewParser.RepoInfo> eldest) {
+                    return size() > MAX_REPO_INFOS;
+                }
+            };
 
     /** Where the tool window's context row is told what to show (see {@link #panelContext}). */
     private Consumer<GitHubPanel.Context> contextSink;
