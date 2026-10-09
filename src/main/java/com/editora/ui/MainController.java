@@ -2826,33 +2826,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private HistoryCoordinator.Ops historyOps() {
-        return new HistoryCoordinator.Ops() {
-            @Override
-            public java.util.Map<String, java.util.List<com.editora.config.HistoryRevision>> historyMap() {
-                return config.getHistory();
-            }
-
-            @Override
-            public java.util.Map<String, java.util.Map<String, java.util.List<com.editora.config.HistoryRevision>>>
-                    historyByProject() {
-                return config.getHistoryByProject();
-            }
-
-            @Override
-            public void saveHistory() {
-                config.saveHistory();
-            }
-
-            @Override
-            public void saveHistory(java.util.function.Consumer<Boolean> completion) {
-                config.saveHistory(completion);
-            }
-
-            @Override
-            public java.nio.file.Path blobsDir() {
-                return config.getHistoryBlobsDir();
-            }
-
+        return new HistoryConfigOps(config) {
             @Override
             public void setToolWindowAvailable(boolean available) {
                 toolWindows.setAvailable(fileHistoryToolWindow, available);
@@ -2893,11 +2867,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             @Override
             public java.nio.file.Path projectRoot() {
                 return windowProject != null && projectsEnabled() ? Path.of(windowProject.root()) : null;
-            }
-
-            @Override
-            public boolean canCollectNow() {
-                return config.shared().canCollectHistoryBlobs();
             }
         };
     }
