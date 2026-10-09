@@ -86,6 +86,41 @@ public record GitLogQuery(
         return new GitLogQuery(message, authors, content, since, until, paths);
     }
 
+    /** This search without its {@code path:} terms — what is left of it in a file history, which has one path. */
+    public GitLogQuery withoutPaths() {
+        return paths.isEmpty() ? this : new GitLogQuery(message, authors, content, since, until, List.of());
+    }
+
+    /**
+     * {@code text} without its {@code path:} / {@code file:} terms, the other terms as they were typed
+     * (quotes kept). A file history ignores those terms, so the header must not show them as searched for.
+     */
+    public static String withoutPathTerms(String text) {
+        if (text == null) {
+            return "";
+        }
+        StringBuilder kept = new StringBuilder();
+        int start = -1;
+        boolean quoted = false;
+        for (int i = 0; i <= text.length(); i++) {
+            char c = i < text.length() ? text.charAt(i) : ' ';
+            if (c == '"') {
+                quoted = !quoted;
+            }
+            boolean blank = i == text.length() || ((c < 0x20 || c == 0x7f || c == ' ') && !quoted);
+            if (!blank) {
+                start = start < 0 ? i : start;
+            } else if (start >= 0) {
+                String raw = text.substring(start, i);
+                if (parse(raw).paths().isEmpty()) {
+                    kept.append(kept.isEmpty() ? "" : " ").append(raw);
+                }
+                start = -1;
+            }
+        }
+        return kept.toString();
+    }
+
     /**
      * Splits on blanks outside double quotes and drops the quotes: {@code author:"Ada L" fix} is the two
      * terms {@code author:Ada L} and {@code fix}. An unclosed quote runs to the end of the text. Control

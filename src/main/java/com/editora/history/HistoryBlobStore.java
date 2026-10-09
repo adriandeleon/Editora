@@ -5,10 +5,13 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.MessageDigest;
@@ -33,10 +36,25 @@ public final class HistoryBlobStore {
     private static final Set<PosixFilePermission> OWNER_FILE = PosixFilePermissions.fromString("rw-------");
     private static final Set<PosixFilePermission> OWNER_DIRECTORY = PosixFilePermissions.fromString("rwx------");
 
+    /** A staging file older than this was left by a write that died; a younger one may still be in flight. */
+    static final long STALE_STAGING_MILLIS = 10 * 60_000L;
+
+    /** Makes a written body durable before it is moved into place; a seam so a test can observe the order. */
+    @FunctionalInterface
+    interface Forcer {
+        void force(FileChannel channel, Path staging) throws IOException;
+    }
+
     private final Path blobsDir;
+    private final Forcer forcer;
 
     public HistoryBlobStore(Path blobsDir) {
+        this(blobsDir, (channel, staging) -> channel.force(true));
+    }
+
+    HistoryBlobStore(Path blobsDir, Forcer forcer) {
         this.blobsDir = blobsDir;
+        this.forcer = forcer;
     }
 
     /** Lower-case hex sha256 of {@code content}'s UTF-8 bytes. Pure. */
@@ -77,10 +95,18 @@ public final class HistoryBlobStore {
             harden(blobsDir, OWNER_DIRECTORY);
             harden(file.getParent(), OWNER_DIRECTORY);
             byte[] gz = gzip(content);
-            // Write to a temp file then move, so a crash mid-write can't leave a truncated blob.
+            // Write to a temp file then move, so a crash mid-write can't leave a truncated blob — and sync it
+            // first. The index that will reference this body is synced when it is written; without the same
+            // here a power cut could leave a durable index row pointing at an empty or half-written file.
             Path tmp = createOwnerOnlyTemp(file);
             try {
-                Files.write(tmp, gz);
+                try (FileChannel channel = FileChannel.open(tmp, StandardOpenOption.WRITE)) {
+                    ByteBuffer bytes = ByteBuffer.wrap(gz);
+                    while (bytes.hasRemaining()) {
+                        channel.write(bytes);
+                    }
+                    forcer.force(channel, tmp);
+                }
                 try {
                     Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
                 } catch (IOException atomicUnsupported) {
@@ -108,8 +134,17 @@ public final class HistoryBlobStore {
         }
     }
 
-    /** Deletes every stored blob whose sha is not in {@code live} (garbage collection). Best-effort. */
+    /**
+     * Deletes every stored blob whose sha is not in {@code live} (garbage collection). Best-effort. Also
+     * clears what a killed write left behind — a staging file older than {@link #STALE_STAGING_MILLIS} — and
+     * shard folders that hold nothing any more; neither was ever removed, and a stray file among the bodies
+     * reads as "bodies are stored" to the index guard.
+     */
     public void deleteUnreferenced(Set<String> live) {
+        deleteUnreferenced(live, System.currentTimeMillis());
+    }
+
+    void deleteUnreferenced(Set<String> live, long now) {
         if (!Files.isDirectory(blobsDir)) {
             return;
         }
@@ -120,7 +155,8 @@ public final class HistoryBlobStore {
                 try (Stream<Path> files = Files.list(shard)) {
                     files.forEach(f -> {
                         String name = f.getFileName().toString();
-                        if (!name.endsWith(SUFFIX)) {
+                        if (!isBodyFileName(name)) {
+                            deleteIfStaleStaging(f, name, now);
                             return;
                         }
                         String sha = name.substring(0, name.length() - SUFFIX.length());
@@ -135,11 +171,34 @@ public final class HistoryBlobStore {
                         }
                     });
                 } catch (IOException ignored) {
-                    // unreadable shard: skip
+                    return; // unreadable shard: skip
+                }
+                try {
+                    Files.delete(shard); // only succeeds when nothing is left in it
+                } catch (IOException notEmpty) {
+                    // still in use
                 }
             });
         } catch (IOException ignored) {
             // unreadable blobs dir: nothing to GC
+        }
+    }
+
+    /** Whether {@code name} is a body file ({@code <sha>.txt.gz}) rather than a staging file or a stray. */
+    public static boolean isBodyFileName(String name) {
+        return name != null && name.endsWith(SUFFIX) && !name.startsWith(".");
+    }
+
+    private static void deleteIfStaleStaging(Path file, String name, long now) {
+        if (!name.startsWith(".") || !name.endsWith(".tmp")) {
+            return; // not ours: leave it
+        }
+        try {
+            if (now - Files.getLastModifiedTime(file).toMillis() > STALE_STAGING_MILLIS) {
+                Files.deleteIfExists(file);
+            }
+        } catch (IOException ignored) {
+            // it lingers until the next collection
         }
     }
 

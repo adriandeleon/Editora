@@ -3,8 +3,11 @@ package com.editora.config;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+
+import com.editora.history.HistoryBlobStore;
 
 /**
  * Decides whether the Local History index on disk can be trusted as the complete list of live revisions.
@@ -56,6 +59,103 @@ final class HistoryIndexGuard {
         }
     }
 
+    /** A {@code "sha256":"…"} member, wherever it stands — in a whole index or in what is left of a torn one. */
+    private static final Pattern HASH_MEMBER = Pattern.compile("\"sha256\"\\s*:\\s*\"([^\"\\\\]+)\"");
+
+    /**
+     * The names of the index backups beside {@code index} (see {@link #backupPresent}), or {@code null} when
+     * the folder cannot be listed.
+     */
+    static Set<String> backupNames(Path index) {
+        Path dir = index.getParent();
+        if (dir == null || !Files.isDirectory(dir)) {
+            return Set.of();
+        }
+        String name = index.getFileName().toString();
+        try (Stream<Path> siblings = Files.list(dir)) {
+            return siblings.map(p -> p.getFileName().toString())
+                    .filter(n -> n.startsWith(name)
+                            && BACKUP_SUFFIX.matcher(n.substring(name.length())).matches())
+                    .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** For how long a backup that is not a whole index keeps every body safe (see {@link BackupHashes}). */
+    static final long INCOMPLETE_BACKUP_GRACE_MILLIS = 30L * 86_400_000L;
+
+    /**
+     * What the backups beside the index say a collection must keep.
+     *
+     * @param hashes every body hash a backup refers to
+     * @param incompleteSince the modification time (epoch millis) of the newest backup that is <em>not a whole
+     *     index</em> — torn, empty, unrecognisable — or {@code Long.MIN_VALUE} when every backup is whole. Rows
+     *     past the tear are gone, so their bodies are in no index and no backup: the only way back to that
+     *     text is the body files themselves. They are all kept for
+     *     {@link #INCOMPLETE_BACKUP_GRACE_MILLIS} after such a backup was made — time to notice and recover —
+     *     and collected normally after that.
+     */
+    record BackupHashes(Set<String> hashes, long incompleteSince) {
+
+        /** Whether collection may run at {@code now}: no incomplete backup, or its grace period is over. */
+        boolean allowsCollection(long now) {
+            return incompleteSince == Long.MIN_VALUE || now - incompleteSince > INCOMPLETE_BACKUP_GRACE_MILLIS;
+        }
+    }
+
+    /**
+     * The body hashes the backups beside {@code index} refer to — what a collection has to keep for as long
+     * as those backups are on disk — or {@code null} when a backup cannot be read at all, and nothing may be
+     * collected.
+     *
+     * <p>A backup is an index that did not load: torn by a crash, written by a newer build, holding a value of
+     * the wrong type. Its rows are still legible for the one thing needed here, so the hashes are read by
+     * pattern rather than by parsing — half an index yields the hashes of every row that made it to disk.
+     * Refusing all collection while any backup existed kept those bodies safe too, but for good: one damaged
+     * write, and no limit freed disk space and no purge removed content in any later session.
+     */
+    static BackupHashes backupHashes(Path index) {
+        Set<String> names = backupNames(index);
+        if (names == null) {
+            return null;
+        }
+        Set<String> hashes = new java.util.HashSet<>();
+        long incompleteSince = Long.MIN_VALUE;
+        for (String name : names) {
+            Path backup = index.resolveSibling(name);
+            String text;
+            long modified;
+            try {
+                text = new String(Files.readAllBytes(backup), java.nio.charset.StandardCharsets.UTF_8);
+                modified = Files.getLastModifiedTime(backup).toMillis();
+            } catch (IOException | RuntimeException unreadable) {
+                return null;
+            }
+            java.util.regex.Matcher member = HASH_MEMBER.matcher(text);
+            while (member.find()) {
+                hashes.add(member.group(1));
+            }
+            if (!isWholeObject(text)) {
+                incompleteSince = Math.max(incompleteSince, modified);
+            }
+        }
+        return new BackupHashes(hashes, incompleteSince);
+    }
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper JSON =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /** Whether {@code text} is one complete JSON object — an index of some version, all of it. */
+    private static boolean isWholeObject(String text) {
+        try {
+            com.fasterxml.jackson.databind.JsonNode tree = JSON.readTree(text);
+            return tree != null && tree.isObject();
+        } catch (IOException | RuntimeException torn) {
+            return false;
+        }
+    }
+
     /** Whether at least one revision body is stored under {@code blobsDir} (one level of shard directories). */
     static boolean hasBlobs(Path blobsDir) {
         if (!Files.isDirectory(blobsDir)) {
@@ -68,9 +168,11 @@ final class HistoryIndexGuard {
         }
     }
 
+    /** A body, not a staging file a killed write left behind: that one is no evidence of lost history. */
     private static boolean hasFile(Path shard) {
         try (Stream<Path> files = Files.list(shard)) {
-            return files.anyMatch(Files::isRegularFile);
+            return files.anyMatch(f -> Files.isRegularFile(f)
+                    && HistoryBlobStore.isBodyFileName(f.getFileName().toString()));
         } catch (IOException e) {
             return true;
         }

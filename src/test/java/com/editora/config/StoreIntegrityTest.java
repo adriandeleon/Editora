@@ -112,8 +112,10 @@ class StoreIntegrityTest {
             String sha = blobs.put(content);
             hashes.add(sha);
             first.historyBucket("")
-                    .computeIfAbsent("/x/f.txt", k -> new ArrayList<>())
-                    .add(new HistoryRevision("/x/f.txt", i, content.length(), sha, "SAVE"));
+                    .merge(
+                            "/x/f.txt",
+                            List.of(new HistoryRevision("/x/f.txt", i, content.length(), sha, "SAVE")),
+                            StoreIntegrityTest::appended);
         }
         first.saveHistory();
         assertTrue(first.flushWrites());
@@ -130,8 +132,10 @@ class StoreIntegrityTest {
             // …and it stays that way after the session writes an index of its own.
             String content = "new save\n";
             second.historyBucket("")
-                    .computeIfAbsent("/x/g.txt", k -> new ArrayList<>())
-                    .add(new HistoryRevision("/x/g.txt", 9, content.length(), blobs.put(content), "SAVE"));
+                    .merge(
+                            "/x/g.txt",
+                            List.of(new HistoryRevision("/x/g.txt", 9, content.length(), blobs.put(content), "SAVE")),
+                            StoreIntegrityTest::appended);
             second.historyService().requestGc();
             second.saveHistory();
             assertTrue(second.flushWrites());
@@ -428,5 +432,12 @@ class StoreIntegrityTest {
         } finally {
             config.shared().shutdown();
         }
+    }
+
+    /** A file's list is replaced, never edited in place (see {@link HistoryStore}). */
+    private static List<HistoryRevision> appended(List<HistoryRevision> present, List<HistoryRevision> more) {
+        List<HistoryRevision> out = new ArrayList<>(present);
+        out.addAll(more);
+        return out;
     }
 }

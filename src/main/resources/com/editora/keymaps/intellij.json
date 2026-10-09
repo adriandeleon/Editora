@@ -30,6 +30,8 @@
   "M-1": "tool.project",
   "M-7": "tool.structure",
   "M-9": "tool.gitLog",
+  "M-S-h": "tool.fileHistory",
+  "C-M-S-h": "git.fileHistory",
   "M-0": "tool.commit",
   "C-k": "tool.commit",
   "C-S-k": "git.push",

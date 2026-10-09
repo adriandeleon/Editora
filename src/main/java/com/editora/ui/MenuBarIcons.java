@@ -148,7 +148,10 @@ final class MenuBarIcons {
         add("tool.gitLog", Icons::gitLog);
         add("git.log.search", Icons::find);
         add("git.log.toggleAllBranches", Icons::git);
-        add("git.fileHistory", Icons::history);
+        // The Git Log glyph, as in the tab and Project-tree menus: the clock is Local History's.
+        add("git.fileHistory", Icons::gitLog);
+        add("tool.fileHistory", Icons::history);
+        add("history.recentChanges", Icons::recent);
         add("diff.vsHead", Icons::diff);
         add("diff.vsBranch", Icons::diff);
         add("diff.vsTag", Icons::diff);

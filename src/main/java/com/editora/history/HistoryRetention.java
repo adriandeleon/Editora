@@ -18,8 +18,11 @@ import com.editora.config.HistoryRevision;
  *   <li>{@link #isDuplicate} — skip a snapshot whose content matches the newest existing revision.
  *   <li>{@link #prune} — per-file caps: drop revisions older than a max age (the newest always
  *       survives), then keep only the newest N.
- *   <li>{@link #enforceProjectBudget} — across a whole project bucket, evict the globally-oldest
- *       revisions until the total uncompressed size is within budget.
+ *   <li>{@link #enforceProjectBudget} — across a whole project bucket: a file above its fair share sheds
+ *       its own oldest revisions, then the globally-oldest go, until the uncompressed size of the distinct
+ *       bodies is within budget.
+ *   <li>{@link #fold} — how a just-recorded revision joins a file's list (repeat skipped, auto-saves
+ *       coalesced).
  *   <li>{@link #sweep} — the whole policy over every project, including files that are never saved again.
  *   <li>{@link #liveHashes} — all sha256 hashes still referenced by any revision (for blob GC).
  * </ul>
@@ -119,11 +122,25 @@ public final class HistoryRetention {
     }
 
     /**
-     * Enforces a per-project total-size cap across every file's revisions: if the summed
-     * {@code sizeBytes} exceeds {@code maxTotalBytes}, evicts the globally-oldest revisions (across all
-     * files) until within budget, dropping any file entry that becomes empty. The newest revision of each
-     * file is preserved so no file loses its entire history. Returns a new bucket map; the input is not
-     * mutated. A non-positive budget means "unbounded" (returned unchanged-but-copied).
+     * Enforces the per-project size limit across every file's revisions. The size of a project is what its
+     * revision bodies take <em>uncompressed</em>, each distinct body (by {@code sha256}) counted once however
+     * many rows share it — bodies are stored by content hash, so a Save As copy or a repeated label of the
+     * same text costs nothing more on disk and must not count against the limit.
+     *
+     * <p>When the project is over its limit, revisions are evicted in two steps until it fits:
+     *
+     * <ol>
+     *   <li><b>Fair share.</b> A file whose own revisions take more than an equal share of the limit
+     *       ({@code maxTotalBytes / files}) gives up its own oldest revisions first, the largest such file
+     *       first. One large file saved a few times therefore cannot push every other file's history out.
+     *   <li><b>Oldest first.</b> If the project is still over, the globally-oldest revisions go, across all
+     *       files.
+     * </ol>
+     *
+     * Never evicted by either step: a file's newest revision (so no file loses its whole history) and a
+     * {@linkplain #isProtected protected} revision. The limit is therefore a soft one — a project of many
+     * files with one revision each, or of many labelled revisions, stays above it. Returns a new bucket map;
+     * the input is not mutated. A non-positive limit means "unbounded" (returned unchanged-but-copied).
      */
     public static Map<String, List<HistoryRevision>> enforceProjectBudget(
             Map<String, List<HistoryRevision>> bucket, long maxTotalBytes) {
@@ -131,42 +148,130 @@ public final class HistoryRetention {
         if (bucket == null) {
             return out;
         }
-        long total = 0;
         for (Map.Entry<String, List<HistoryRevision>> e : bucket.entrySet()) {
-            List<HistoryRevision> copy = new ArrayList<>(e.getValue());
-            out.put(e.getKey(), copy);
-            for (HistoryRevision r : copy) {
+            if (e.getValue() != null) {
+                out.put(e.getKey(), new ArrayList<>(e.getValue()));
+            }
+        }
+        if (maxTotalBytes <= 0 || !exceedsBudget(out, maxTotalBytes)) {
+            return out;
+        }
+        Usage project = new Usage();
+        List<FileUse> files = new ArrayList<>(out.size());
+        for (List<HistoryRevision> list : out.values()) {
+            FileUse file = new FileUse(list, files.size());
+            for (HistoryRevision r : list) {
+                project.add(r);
+                file.own.add(r);
+            }
+            files.add(file);
+        }
+        capLargeFiles(files, project, maxTotalBytes);
+        evictOldest(files, project, maxTotalBytes);
+        return out;
+    }
+
+    /** Distinct bodies and their summed size: a body shared by several rows counts once. */
+    private static final class Usage {
+        private final Map<String, Integer> rows = new java.util.HashMap<>();
+        private long total;
+
+        void add(HistoryRevision r) {
+            if (r.sha256().isEmpty() || rows.merge(r.sha256(), 1, Integer::sum) == 1) {
                 total += r.sizeBytes();
             }
         }
-        if (maxTotalBytes <= 0 || total <= maxTotalBytes) {
-            return out;
+
+        void remove(HistoryRevision r) {
+            if (r.sha256().isEmpty()) {
+                total -= r.sizeBytes();
+            } else if (rows.merge(r.sha256(), -1, Integer::sum) == 0) {
+                rows.remove(r.sha256());
+                total -= r.sizeBytes();
+            }
         }
-        // Drop the oldest evictable revision (not a file's last surviving one) until in budget. Each file
-        // offers one candidate at a time — its oldest unprotected row — through a queue ordered by age, so an
-        // eviction costs a queue step rather than another pass over every file of the project.
-        record Candidate(long timestamp, int fileOrder, List<HistoryRevision> list, int index) {}
+    }
+
+    /** One file's list during an eviction: what it takes on its own, and where its next candidate is. */
+    private static final class FileUse {
+        private final List<HistoryRevision> list;
+        private final int order;
+        private final Usage own = new Usage();
+        /** The index to look for the next evictable row at or before; rows after it were looked at. */
+        private int cursor;
+
+        FileUse(List<HistoryRevision> list, int order) {
+            this.list = list;
+            this.order = order;
+            this.cursor = list.size() - 1;
+        }
+
+        /** Removes and returns this file's oldest evictable row, or null when it has none left. */
+        HistoryRevision evictOldest(Usage project) {
+            int index = oldestEvictable(list, cursor);
+            if (index < 1) {
+                cursor = 0;
+                return null;
+            }
+            HistoryRevision gone = list.remove(index);
+            cursor = index - 1; // newest-first: the rows before this one kept their positions
+            own.remove(gone);
+            project.remove(gone);
+            return gone;
+        }
+
+        /** The timestamp of the row {@link #evictOldest} would remove next, or null. */
+        Long nextTimestamp() {
+            int index = oldestEvictable(list, cursor);
+            return index < 1 ? null : list.get(index).timestamp();
+        }
+    }
+
+    /** Step one of {@link #enforceProjectBudget}: files above an equal share shed their own oldest rows. */
+    private static void capLargeFiles(List<FileUse> files, Usage project, long maxTotalBytes) {
+        if (files.size() < 2) {
+            return; // a single file's share is the whole limit: step two is the same thing
+        }
+        long share = maxTotalBytes / files.size();
+        java.util.PriorityQueue<FileUse> largest = new java.util.PriorityQueue<>(
+                java.util.Comparator.comparingLong((FileUse f) -> -f.own.total).thenComparingInt(f -> f.order));
+        for (FileUse file : files) {
+            if (file.own.total > share) {
+                largest.add(file);
+            }
+        }
+        while (project.total > maxTotalBytes && !largest.isEmpty()) {
+            FileUse file = largest.poll();
+            if (file.own.total <= share) {
+                continue;
+            }
+            if (file.evictOldest(project) != null) {
+                largest.add(file); // re-ranked by what it takes now
+            }
+        }
+    }
+
+    /** Step two of {@link #enforceProjectBudget}: the globally-oldest evictable rows, one queue step each. */
+    private static void evictOldest(List<FileUse> files, Usage project, long maxTotalBytes) {
+        // Each file offers one candidate at a time — its oldest unprotected row — through a queue ordered by
+        // age, so an eviction costs a queue step rather than another pass over every file of the project.
+        record Candidate(long timestamp, FileUse file) {}
         java.util.PriorityQueue<Candidate> oldest = new java.util.PriorityQueue<>(
-                java.util.Comparator.comparingLong(Candidate::timestamp).thenComparingInt(Candidate::fileOrder));
-        int order = 0;
-        for (List<HistoryRevision> list : out.values()) {
-            int idx = oldestEvictable(list, list.size() - 1);
-            if (idx >= 1) {
-                oldest.add(new Candidate(list.get(idx).timestamp(), order, list, idx));
-            }
-            order++;
-        }
-        while (total > maxTotalBytes && !oldest.isEmpty()) {
-            Candidate victim = oldest.poll();
-            total -= victim.list().remove(victim.index()).sizeBytes();
-            // Rows are newest-first and candidates are taken from the old end, so the rows before this one
-            // kept their positions: the file's next candidate is the nearest unprotected row above it.
-            int next = oldestEvictable(victim.list(), victim.index() - 1);
-            if (next >= 1) {
-                oldest.add(new Candidate(victim.list().get(next).timestamp(), victim.fileOrder(), victim.list(), next));
+                java.util.Comparator.comparingLong(Candidate::timestamp).thenComparingInt(c -> c.file().order));
+        for (FileUse file : files) {
+            Long timestamp = file.nextTimestamp();
+            if (timestamp != null) {
+                oldest.add(new Candidate(timestamp, file));
             }
         }
-        return out;
+        while (project.total > maxTotalBytes && !oldest.isEmpty()) {
+            FileUse file = oldest.poll().file();
+            file.evictOldest(project);
+            Long next = file.nextTimestamp();
+            if (next != null) {
+                oldest.add(new Candidate(next, file));
+            }
+        }
     }
 
     /**
@@ -183,17 +288,117 @@ public final class HistoryRetention {
         return -1;
     }
 
-    /** The summed {@code sizeBytes} of every revision in {@code bucket}; allocates nothing. */
+    /**
+     * What {@code bucket} takes: the summed uncompressed {@code sizeBytes} of its <em>distinct</em> revision
+     * bodies. Rows that share a body (the same {@code sha256}) are one body on disk and count once. This is
+     * the number the per-project size limit is compared with, and the one to show a user. It hashes every
+     * row; for the check made after each save use {@link #exceedsBudget}.
+     */
+    public static long storedBytes(Map<String, List<HistoryRevision>> bucket) {
+        Usage usage = new Usage();
+        if (bucket != null) {
+            for (List<HistoryRevision> list : bucket.values()) {
+                if (list != null) {
+                    for (int i = 0, n = list.size(); i < n; i++) {
+                        usage.add(list.get(i));
+                    }
+                }
+            }
+        }
+        return usage.total;
+    }
+
+    /**
+     * The summed {@code sizeBytes} of every <em>row</em> in {@code bucket}; allocates nothing. An upper bound
+     * of {@link #storedBytes} — equal to it unless rows share a body — and so a cheap first answer to "can
+     * this bucket be over its limit at all?".
+     */
     public static long totalBytes(Map<String, List<HistoryRevision>> bucket) {
         long total = 0;
         if (bucket != null) {
             for (List<HistoryRevision> list : bucket.values()) {
-                for (int i = 0, n = list.size(); i < n; i++) {
-                    total += list.get(i).sizeBytes();
+                if (list != null) {
+                    for (int i = 0, n = list.size(); i < n; i++) {
+                        total += list.get(i).sizeBytes();
+                    }
                 }
             }
         }
         return total;
+    }
+
+    /**
+     * Whether {@code bucket} takes more than {@code maxTotalBytes} (see {@link #storedBytes}); false for a
+     * non-positive limit. The check made after every recorded save, so it first sums the rows as they are —
+     * an upper bound that allocates nothing — and only counts distinct bodies when that sum is over.
+     */
+    public static boolean exceedsBudget(Map<String, List<HistoryRevision>> bucket, long maxTotalBytes) {
+        if (maxTotalBytes <= 0 || bucket == null) {
+            return false;
+        }
+        return totalBytes(bucket) > maxTotalBytes && storedBytes(bucket) > maxTotalBytes;
+    }
+
+    /** How close together automatic saves are folded into one revision (see {@link #replacesNewestAutosave}). */
+    public static final long AUTOSAVE_COALESCE_MILLIS = 5 * 60_000L;
+
+    /**
+     * True when {@code rev} would only repeat the newest revision of {@code current}: an automatic revision
+     * (not a label, not a pre-delete copy) with the body the newest row already has. The recording worker
+     * makes the same check against the list as it was when the record was <em>submitted</em>; two records of
+     * one text submitted back to back both pass it, so the caller repeats it here, against the list as it is
+     * when the revision is folded in.
+     */
+    public static boolean repeatsNewest(List<HistoryRevision> current, HistoryRevision rev) {
+        return rev != null && !isProtected(rev) && isDuplicate(current, rev.sha256());
+    }
+
+    /**
+     * True when the auto-saved {@code rev} should <em>replace</em> the newest row of {@code current} instead
+     * of being added before it. With auto-save on, every pause in typing is a revision, and fifty of them —
+     * the default per-file cap — are a few minutes of work that push every earlier revision out.
+     *
+     * <p>The newest row is replaced when it is itself an unlabelled auto-save and {@code rev} was captured
+     * less than {@code windowMillis} after the row <em>before</em> it. That older row is the anchor: measuring
+     * from the row being replaced would restart the window with every auto-save and keep a single row for a
+     * whole afternoon. So a run of auto-saves leaves one revision per window, plus the latest. A manual save,
+     * a label or any other kind of revision is never replaced and never replaces.
+     */
+    public static boolean replacesNewestAutosave(
+            List<HistoryRevision> current, HistoryRevision rev, long windowMillis) {
+        if (windowMillis <= 0 || rev == null || current == null || current.size() < 2 || !isPlainAutosave(rev)) {
+            return false;
+        }
+        HistoryRevision newest = current.get(0);
+        long sinceAnchor = rev.timestamp() - current.get(1).timestamp();
+        return isPlainAutosave(newest)
+                && rev.timestamp() >= newest.timestamp()
+                && sinceAnchor >= 0
+                && sinceAnchor < windowMillis;
+    }
+
+    private static boolean isPlainAutosave(HistoryRevision r) {
+        return r != null && HistoryRevision.REASON_AUTOSAVE.equals(r.reason()) && !isProtected(r);
+    }
+
+    /**
+     * {@code current} (newest-first) with the just-recorded {@code rev} folded in: {@code current} itself —
+     * the same instance, so the caller can tell nothing changed — when {@code rev} {@linkplain #repeatsNewest
+     * repeats the newest row}; a list in which {@code rev} took the newest row's place when it is an auto-save
+     * that {@linkplain #replacesNewestAutosave coalesces} with it; otherwise {@code rev} followed by
+     * {@code current}. The input is not mutated.
+     */
+    public static List<HistoryRevision> fold(
+            List<HistoryRevision> current, HistoryRevision rev, long autosaveWindowMillis) {
+        List<HistoryRevision> present = current == null ? List.of() : current;
+        if (rev == null || repeatsNewest(present, rev)) {
+            return present;
+        }
+        boolean replace = replacesNewestAutosave(present, rev, autosaveWindowMillis);
+        List<HistoryRevision> out = new ArrayList<>(present.size() + 1);
+        out.add(rev);
+        out.addAll(replace ? present.subList(1, present.size()) : present);
+        return out;
     }
 
     /**
@@ -345,7 +550,7 @@ public final class HistoryRetention {
                     continue;
                 }
                 for (HistoryRevision r : list) {
-                    if (r.sha256() != null && !r.sha256().isEmpty()) {
+                    if (r != null && !r.sha256().isEmpty()) {
                         live.add(r.sha256());
                     }
                 }

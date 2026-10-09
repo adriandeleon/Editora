@@ -16,6 +16,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for "0 references", which shows the empty list. The *Find References* command is unchanged: it still
   jumps straight to a lone reference.
 
+- **Local History and Git history have their own names.** The tool window that lists a file's saved
+  revisions is now **Local History** everywhere (tool window, commands, Settings, status messages), and
+  Git's per-file log is **Show Git History**, headed "Git history: name". Both are bound in every bundled
+  keymap, the menu bar has a *VCS ▸ Local History* submenu (Show, Put Label, Recent Changes), a tab's menu
+  offers *Show Local History*, and the tool-window command closes the window when it is open.
+
+- **The Local History panel was reworked.** Rows are compact (label first, short time, day captions; size
+  and full date in the tooltip) and read correctly to a screen reader. The newest revision is tagged
+  *Current* only when it equals the editor's text, *Latest* otherwise, and the diff follows edits made in
+  the editor. Row actions work from the keyboard (Menu key / Shift+F10, Enter, F2 for the label, F5 to
+  reload; Tab leaves the diff, Escape returns to the editor). The button is *Restore*; it asks first only
+  when the buffer has unsaved edits. The filter matches the words the rows show. A folder's history shows
+  a diff for the selected revision, stays up while files are restored, strikes deleted files through and
+  can delete one file's history.
+
+- **What Local History records.** A large file no longer pushes other files' history out: over the
+  project's size limit, a file above its fair share loses its own older revisions first. Auto-saves a few
+  minutes apart collapse into one revision, an unchanged save no longer adds a duplicate, the content a
+  file had before its first save is listed as *Before first save*, and the copy taken before Replace in
+  Files has its own name. The size limit counts content shared by several revisions once, and its wording
+  says what it measures: per project, uncompressed, never evicting the newest revision of a file, labelled
+  revisions or copies taken before a delete.
+
+- **A file's Local History is the same in every window**, whichever project's window recorded it, and a
+  second window's panel follows saves, labels and deletions made in the first.
+
+- **Export Configuration leaves Local History out.** The archive no longer contains the text of every
+  file revision.
+
+- **In a Git file history, Enter opens what the commit changed in that file.** The row menu starts with
+  Show Diff and Compare with Working Tree; reviewing the whole commit is still there. The header is a chip
+  whose ✕ (or Escape) returns to the branch log.
+
 - **The branch dropdown's sections fold, and it is larger.** A click on the *Actions*, *Local* or
   *Remote* header (or Enter, or ←/→, with the header selected) collapses that section to its header, which
   then shows how many rows it hides; the choice is remembered with the workspace. A search still looks
@@ -39,6 +72,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any command.
 
 ### Fixed
+
+- **Local History could lose revisions without saying so.** A second Editora's revision content could be
+  deleted by the first after it exited; revisions recorded just before quitting never reached the index; a
+  revision list merged from two processes was trimmed from the wrong end; and a save whose revision could
+  not be stored still reported a plain "Saved". The index now tolerates damaged entries that used to stop
+  the editor from starting, a kept backup of the index no longer turns disk clean-up off for good, and
+  deleting a file's history says when other files hold the same content or when it cannot be removed from
+  disk yet.
+
+- **Restoring from Local History.** Restoring a file that is open goes into its tab as an undoable edit
+  instead of rewriting the disk underneath it; the copy of what a restore replaces is stored before the
+  file is touched; each kind of failure has its own message instead of "Could not read the snapshot"; and
+  Recent Changes opens the revision that was picked, including for a deleted file. A stale diff no longer
+  appears under another file's name or after a filter hides the selected revision.
+
+- **A Git file history stopped at its first 200 commits** whenever other commits lay between the file's
+  own; Load More now continues. Searching a file history finds commits from before a rename, a `path:`
+  term is reported as ignored, a deleted file's rows open the commit's change, and an untracked file or a
+  shallow clone says so.
+
+- **Git Log in a window without a project.** Opening a diff from the log no longer closes the log and
+  drops the repository, and *Show Git History* from a background tab's menu lists that file's own
+  repository instead of the active one.
 
 - **Settings sync keeps working when you switch GitHub accounts.** With a personal and a work account in
   the GitHub CLI, sync failed for as long as the account that cannot read the sync repository was the

@@ -181,4 +181,71 @@ class GitLogQueryTest {
         assertFalse(new GitLog.Request(false, Path.of("a"), null, 0, 10).graphable(), "a file history is a subset");
         assertFalse(new GitLog.Request(false, null, GitLogQuery.parse("fix"), 0, 10).graphable(), "so is a search");
     }
+
+    @Test
+    void aFileHistoryIsSearchedOverEveryNameTheFileHasHad() {
+        GitLog.Entry newest = new GitLog.Entry("c3", "c3", "edit", "Ada", "2026-01-03");
+        GitLog.Entry rename = new GitLog.Entry("c2", "c2", "rename", "Ada", "2026-01-02");
+        GitLog.Entry oldest = new GitLog.Entry("c1", "c1", "add", "Bob", "2026-01-01");
+        GitLog.Page history = new GitLog.Page(
+                List.of(newest, rename, oldest),
+                true,
+                java.util.Map.of(
+                        "c3", new GitService.CommitFile('M', "new [name].txt", null),
+                        "c2", new GitService.CommitFile('R', "new [name].txt", "old.txt"),
+                        "c1", new GitService.CommitFile('A', "old.txt", null)),
+                "");
+
+        List<String> paths = GitLog.followedPaths(history);
+        assertEquals(List.of("new [name].txt", "old.txt"), paths, "each name once, newest first");
+
+        List<String> args =
+                GitLog.logArgs(new GitLog.Request(true, null, GitLogQuery.parse("four author:Bob"), paths, 0, 50));
+        assertEquals(GitSafety.LITERAL_PATHSPECS, args.get(0), "a file name is never a glob");
+        assertFalse(args.contains("--follow"), "--follow loses the commits before a rename when it is searched");
+        assertTrue(args.containsAll(List.of("--all", "--grep=four", "--author=Bob", GitLog.FORMAT)));
+        assertEquals(List.of("--", "new [name].txt", "old.txt"), args.subList(args.size() - 3, args.size()));
+        assertFalse(new GitLog.Request(false, null, null, paths, 0, 10).graphable(), "a subset of the commits");
+
+        GitLog.Page kept = history.keep(java.util.Set.of("c1", "c3", "elsewhere"));
+        assertEquals(List.of(newest, oldest), kept.entries(), "the history's own rows, in its order");
+        assertFalse(kept.truncated(), "the search covered everything: nothing follows");
+        assertEquals("old.txt", kept.followed().get("c1").path(), "the path in each commit is still known");
+    }
+
+    @Test
+    void aDeeperFileHistoryMustStillBeginWithTheLoadedRows() {
+        List<GitLog.Entry> rows = new java.util.ArrayList<>();
+        for (int i = 5; i >= 1; i--) {
+            rows.add(new GitLog.Entry("h" + i, "h" + i, "commit " + i, "Ada", "2026-01-0" + i));
+        }
+        GitLog.Page deeper = new GitLog.Page(rows, false);
+
+        assertTrue(GitLog.continuesFromTop(deeper, 3, "h3"), "row 3 is the last loaded commit");
+        assertEquals(
+                List.of("commit 2", "commit 1"),
+                deeper.drop(3).entries().stream().map(GitLog.Entry::subject).toList());
+        assertFalse(GitLog.continuesFromTop(deeper, 3, "h4"), "the history moved under the loaded rows");
+        assertFalse(GitLog.continuesFromTop(deeper, 6, "h1"), "fewer rows than were loaded");
+        assertFalse(GitLog.continuesFromTop(deeper, 0, "h5"));
+        assertFalse(GitLog.continuesFromTop(GitLog.Page.failed("boom"), 1, "h5"));
+    }
+
+    @Test
+    void pathTermsAreTakenOutOfAFileHistorySearch() {
+        assertEquals(
+                "four author:\"Ada L\"", GitLogQuery.withoutPathTerms("path:src/** four  file:x author:\"Ada L\""));
+        assertEquals("", GitLogQuery.withoutPathTerms("path:\"a b\""));
+        assertEquals("", GitLogQuery.withoutPathTerms(null));
+        assertEquals("path: fix", GitLogQuery.withoutPathTerms("path: fix"), "an empty key is message text");
+        assertEquals("since:yesterday -S x", GitLogQuery.withoutPathTerms("since:yesterday -S x"));
+
+        GitLogQuery query = GitLogQuery.parse("fix path:a author:Ada");
+        assertEquals(List.of(), query.withoutPaths().paths());
+        assertEquals(query.message(), query.withoutPaths().message());
+        assertEquals(query.authors(), query.withoutPaths().authors());
+        assertTrue(GitLogQuery.parse("path:a").withoutPaths().isEmpty());
+        GitLogQuery plain = GitLogQuery.parse("fix");
+        assertTrue(plain == plain.withoutPaths());
+    }
 }

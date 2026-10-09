@@ -44,7 +44,7 @@ prototype platform's input/rendering limitations don't apply.
   resource.
 - Persistence tests should hold work at a real commit boundary and assert the surviving bytes and editor
   state, rather than merely checking that an exception was thrown. The save-ordering, atomic-write, Replace
-  in Files, and Local File History restore tests use the app-wide document-write sequencer and injected I/O
+  in Files, and Local History restore tests use the app-wide document-write sequencer and injected I/O
   boundaries to cover stale completion, concurrent changes, and failed replacement without timing sleeps.
 
 - A question a save puts to the user is answered through its real dialog, every way it can be answered

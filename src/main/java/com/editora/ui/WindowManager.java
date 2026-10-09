@@ -1176,6 +1176,37 @@ public class WindowManager {
         });
     }
 
+    private boolean localHistoryBroadcastQueued;
+    /** The one window whose changes the queued broadcast carries; {@code null} once a second one made some. */
+    private MainController localHistoryOrigin;
+
+    /**
+     * Local History's index is one shared object, and each window's panel lists a file from it. A window that
+     * changed it (a save recorded, a label, a purge, a rename, the retention sweep) refreshes its own panel;
+     * the others went on showing rows that were no longer there — or not the newest — until their tab was
+     * switched. Refreshes them, once per pulse.
+     */
+    void localHistoryChanged(MainController origin) {
+        if (localHistoryBroadcastQueued) {
+            if (origin != localHistoryOrigin) {
+                localHistoryOrigin = null;
+            }
+            return;
+        }
+        localHistoryBroadcastQueued = true;
+        localHistoryOrigin = origin;
+        javafx.application.Platform.runLater(() -> {
+            MainController changedBy = localHistoryOrigin;
+            localHistoryBroadcastQueued = false;
+            localHistoryOrigin = null;
+            for (Holder h : new ArrayList<>(windows)) {
+                if (h.controller() != changedBy && h.stage().isShowing()) {
+                    h.controller().localHistoryChanged();
+                }
+            }
+        });
+    }
+
     /** Re-registers the synthetic {@code macro.run.*} commands in every window after the saved set changed. */
     public void broadcastMacrosChanged() {
         for (Holder h : new ArrayList<>(windows)) {

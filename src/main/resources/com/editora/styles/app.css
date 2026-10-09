@@ -3832,10 +3832,37 @@
 .history-panel .history-filter {
     -fx-font-size: 11px;
 }
-/* Folder-history mode: a deleted file's row is struck through + muted. */
-.history-panel .tree-cell.history-deleted-file {
-    -fx-strikethrough: true;
+/* Local History rows. The theme's list cell is 3em high whatever it holds, which showed one and a half
+   revisions in a docked tool window; these are text-height rows (the cell sizes itself to its content, so
+   the first row of a day is taller by its caption). */
+.history-panel .history-list .list-cell {
+    -fx-padding: 2 6 2 4;
+}
+.history-panel .history-row-reason {
     -fx-text-fill: -color-fg-muted;
+}
+/* "Current" / "Latest" on a revision, "deleted" on a folder-history file. */
+.history-panel .history-row-tag {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-padding: 0 5 0 5;
+    -fx-background-color: -color-bg-subtle;
+    -fx-background-radius: 8;
+}
+/* The day a run of revisions belongs to, above the first of them. */
+.history-panel .history-day {
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-padding: 3 0 0 0;
+}
+/* Folder-history mode: a deleted file's name is struck through + muted. The strike-through is a property
+   of the text node, so it is set there: on the cell it never reached the name. */
+.history-panel .history-deleted-file {
+    -fx-text-fill: -color-fg-muted;
+}
+.history-panel .history-deleted-file .text {
+    -fx-strikethrough: true;
 }
 .search-backend-badge {
     -fx-font-size: 10px;
@@ -3982,9 +4009,6 @@
 }
 .history-window-header {
     -fx-font-weight: bold;
-}
-.history-window-count {
-    -fx-text-fill: -color-fg-muted;
 }
 
 /* Read-only image viewer (ui/ImageViewerPane) — raster images render instead of showing bytes. */

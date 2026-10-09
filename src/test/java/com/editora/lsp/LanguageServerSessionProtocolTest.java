@@ -78,6 +78,25 @@ class LanguageServerSessionProtocolTest {
     }
 
     @Test
+    void aJdtProgressEndCarryingOnlyAPercentageStopsTheBarWithoutText() {
+        List<String> statuses = new ArrayList<>();
+        var spec = new LspServerRegistry.ServerSpec("java", List.of("jdtls"), List.of());
+        var s = new LanguageServerSession(spec, Path.of("/tmp"), d -> {}, (type, message) -> {
+            statuses.add(type + ":" + message);
+        });
+        var report = new LanguageServerSession.LanguageProgressReport();
+        report.task = "Building";
+        report.totalWork = 2;
+        report.workDone = 1;
+        s.languageProgressReport(report);
+        report.complete = true;
+        report.status = "50% "; // jdtls: "%.0f%% %s" with no subtask
+        s.languageProgressReport(report);
+
+        assertEquals(List.of("Progress:Building (50%)", "ProgressEnd:null"), statuses);
+    }
+
+    @Test
     void dynamicRegistrationUpdatesAndRemovesEffectiveCapabilities() {
         var s = session(caps());
         List<String> refreshed = new ArrayList<>();
