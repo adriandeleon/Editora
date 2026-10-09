@@ -36,8 +36,11 @@ public record InitialDocument(
     private static final Collection<String> LONG_LINE_SEGMENT_A = List.of("long-line-segment-a");
     private static final Collection<String> LONG_LINE_SEGMENT_B = List.of("long-line-segment-b");
 
-    /** Normalises {@code content} only; the area splits it into paragraphs when it is installed. */
-    static InitialDocument ofText(String content) {
+    /**
+     * Normalises {@code content} only — the line-ending scans, off the FX thread when called from a read
+     * worker; the area splits it into paragraphs when it is installed, or a reload rewrites just what differs.
+     */
+    public static InitialDocument ofText(String content) {
         return new InitialDocument(
                 LineEndings.toLf(content), LineEndings.dominant(content), LineEndings.mixed(content), null);
     }

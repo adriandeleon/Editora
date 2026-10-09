@@ -7558,13 +7558,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
     private EditorBuffer openBufferFor(Path target) {
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.getPath() != null && pathKey(b.getPath()).equals(pathKey(target))) {
-                return b;
-            }
-        }
-        return null;
+        return OpenBufferLifecycle.bufferForPath(editorArea, MainController::bufferOf, target);
     }
 
     /** Open buffers in this window whose path is exactly {@code target} or a descendant of it. */
@@ -7576,58 +7570,78 @@ public class MainController implements com.editora.mcp.McpBridge {
         return OpenBufferLifecycle.atOrUnder(editorArea, MainController::bufferOf, target);
     }
 
-    /** Opens {@code target} (assumed not already open — callers check {@link #openBufferFor} first) as a
-     *  new, unfocused background tab. Used when something other than the user opens a file the editor
-     *  doesn't have a tab for yet (a diff's compare-with-local target, an AI agent's newly-written file). */
+    /**
+     * Opens {@code target} (assumed not already open — callers check {@link #openBufferFor} first) as a new,
+     * unfocused background tab, reading the file on the calling (FX) thread. Only for the two callers that must
+     * answer synchronously (a merge pane's save-before-close, the workspace-edit transaction's fallback for a
+     * tab closed mid-transaction); everything else goes through {@link #openBackgroundBufferAsync}.
+     */
     private EditorBuffer openBackgroundBuffer(Path target) {
         try {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(target);
-            fileWorkflows.loadInto(buffer, target);
-            return attachBackground(buffer);
+            FileWorkflowCoordinator.PreparedLoad load =
+                    fileWorkflows.prepareLoad(target, false).preparedFor(buffer);
+            fileWorkflows.applyPreparedLoad(buffer, load);
+            fileWorkflows.notePerfContentLoaded(buffer);
+            return attachBackground(buffer, load.editorConfig());
         } catch (IOException e) {
             return null;
         }
     }
 
-    /** Adds a loaded {@code buffer} as an unfocused tab with its stored per-file state, like any other open:
-     *  without the marks the next mark change would persist over them, and callers gate on the read-only pin. */
-    private EditorBuffer attachBackground(EditorBuffer buffer) {
-        Tab tab = addBuffer(buffer, false); // background: keep the caller's current tab focused
+    /**
+     * Adds a loaded {@code buffer} as an unfocused tab with its stored per-file state, like any other open:
+     * without the marks the next mark change would persist over them, and callers gate on the read-only pin.
+     * {@code editorConfig} is the load's resolved {@code .editorconfig} result: no ancestor walk on FX again.
+     */
+    private EditorBuffer attachBackground(
+            EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+        Tab tab = addBuffer(buffer, false, editorConfig); // background: keep the caller's current tab focused
         restorePerFileState(buffer);
         previews.restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
         return buffer;
     }
 
-    /** Workspace edits may touch unopened files. Decode them on the normal file-load executor and only
-     *  create/attach the RichTextFX buffer on the FX thread. */
+    /**
+     * Workspace edits, diff applies and agent writes may touch unopened files. The buffer is created here (on
+     * FX) so the load worker can read, decode and split the file into its paragraphs, as {@code openPath} does;
+     * the FX thread is left with the document swap and the tab. The shell is disposed when the read fails, the
+     * file is binary, or the file was opened by other means while the read ran.
+     */
     private void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
         EditorBuffer existing = openBufferFor(target);
         if (existing != null) {
             done.accept(existing);
             return;
         }
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setPath(target);
         fileWorkflows.fileLoadExecutor.execute(() -> {
             try {
-                FileWorkflowCoordinator.PreparedLoad load = fileWorkflows.prepareLoad(target, false);
+                FileWorkflowCoordinator.PreparedLoad load =
+                        fileWorkflows.prepareLoad(target, false).preparedFor(buffer);
                 Platform.runLater(() -> {
                     if (sessionClosed || load.binary()) { // never attach a buffer to a disposed window
+                        buffer.dispose();
                         done.accept(null);
                         return;
                     }
                     EditorBuffer openedWhileLoading = openBufferFor(target);
                     if (openedWhileLoading != null) {
+                        buffer.dispose();
                         done.accept(openedWhileLoading);
                         return;
                     }
-                    EditorBuffer buffer = new EditorBuffer();
-                    buffer.setPath(target);
                     fileWorkflows.applyPreparedLoad(buffer, load);
-                    done.accept(attachBackground(buffer));
+                    done.accept(attachBackground(buffer, load.editorConfig()));
                 });
             } catch (IOException | RuntimeException e) {
-                Platform.runLater(() -> done.accept(null));
+                Platform.runLater(() -> {
+                    buffer.dispose();
+                    done.accept(null);
+                });
             }
         });
     }
@@ -8164,10 +8178,18 @@ public class MainController implements com.editora.mcp.McpBridge {
      * document insertion.
      */
     private Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
+        return addBuffer(
+                buffer, select, resolvePathSettings ? null : com.editora.editorconfig.EditorConfigProperties.EMPTY);
+    }
+
+    /** Adds a tab with the file's {@code .editorconfig} result in hand ({@code null}: resolve it here, an
+     *  ancestor-directory walk on FX). A load prepared on the worker passes its result: one walk, off FX. */
+    private Tab addBuffer(
+            EditorBuffer buffer, boolean select, com.editora.editorconfig.EditorConfigProperties editorConfig) {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
         editorSettings.spell().wire(buffer);
-        editorSettings.applyViewSettings(buffer, resolvePathSettings);
+        editorSettings.applyViewSettings(buffer, editorConfig);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
@@ -9061,14 +9083,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private Tab tabForPath(Path file) {
-        String target = pathKey(file);
-        for (Tab tab : editorArea.tabs()) {
-            Path p = tabPath(tab); // buffer path, else an image-viewer tab's path
-            if (p != null && pathKey(p).equals(target)) {
-                return tab;
-            }
-        }
-        return null;
+        return OpenBufferLifecycle.tabForPath(editorArea, MainController::tabPath, file); // buffer or viewer path
     }
 
     /** The file backing {@code tab} (a buffer / image viewer / hex viewer path), or {@code null} for none. */

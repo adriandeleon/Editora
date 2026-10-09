@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 /**
  * Regression for #547: the File Information panel used to re-count words (an O(n) whole-document scan) on every
@@ -31,31 +30,33 @@ class FileInfoHotpathFxTest {
 
     @Test
     void caretMoveUpdatesPositionButNotTheWordCount() throws Exception {
-        String[] result = FxTestSupport.callOnFx(() -> {
-            FileInformationPanel panel = new FileInformationPanel();
+        FileInformationPanel panel = new FileInformationPanel();
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
             new Scene(new StackPane(panel), 300, 400); // panel now has a scene → visible() == true
+            EditorBuffer b = new EditorBuffer();
+            b.getArea().replaceText("one two three four\nfive six\n");
+            panel.attach(b);
+            return b;
+        });
+        // A word count is present after attach — counted on a worker thread, so it lands a turn later.
+        FileInformationPanelFxTest.awaitValue(panel, "words", "6");
 
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.getArea().replaceText("one two three four\nfive six\n");
-            panel.attach(buffer);
-
+        String[] result = FxTestSupport.callOnFx(() -> {
             TextField words = FxTestSupport.field(panel, "wordsValue");
             TextField line = FxTestSupport.field(panel, "lineValue");
-
-            // A word count is present after attach.
-            String wordsAfterAttach = words.getText();
-
             // Poison the word field, then move the caret only (no edit). The caret path must not touch it.
             words.setText("SENTINEL");
             buffer.getArea().moveTo(0); // fires caretPositionProperty → refreshCaret
-            String wordsAfterCaret = words.getText();
-            String lineAfterCaret = line.getText();
-            return new String[] {wordsAfterAttach, wordsAfterCaret, lineAfterCaret};
+            return new String[] {words.getText(), line.getText()};
         });
-
-        assertNotEquals("–", result[0], "attach computed a word count");
-        assertEquals("SENTINEL", result[1], "a pure caret move must not recompute the word total");
-        assertEquals("1", result[2], "the caret line still updates on a caret move");
+        Thread.sleep(100); // long enough for a count the caret move wrongly started to have landed
+        assertEquals(
+                "SENTINEL",
+                FxTestSupport.callOnFx(() ->
+                        FxTestSupport.<TextField>field(panel, "wordsValue").getText()),
+                "a pure caret move must not recompute the word total");
+        assertEquals("SENTINEL", result[0]);
+        assertEquals("1", result[1], "the caret line still updates on a caret move");
     }
 
     @Test

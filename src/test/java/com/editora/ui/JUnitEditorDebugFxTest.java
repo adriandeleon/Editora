@@ -36,18 +36,28 @@ class JUnitEditorDebugFxTest {
     @Test
     void contextMenuDebugsTheJUnitMethodAtTheCaret(@TempDir Path dir) throws Exception {
         AtomicReference<JavaTestScanner.TestTarget> debugged = new AtomicReference<>();
-        FxTestSupport.runOnFx(() -> {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(dir.resolve("CalculatorTest.java"));
-            buffer.setTestGutterEnabled(true);
-            buffer.setContent("""
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(dir.resolve("CalculatorTest.java"));
+            b.setTestGutterEnabled(true);
+            b.setContent("""
                     class CalculatorTest {
                         @org.junit.jupiter.api.Test
                         void addsNumbers() {
                         }
                     }
                     """);
-            buffer.setTestDebugHandler(debugged::set);
+            b.setTestDebugHandler(debugged::set);
+            return b;
+        });
+        // The load's scan for test methods runs off the FX thread; the menu offers Debug once it has landed.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (FxTestSupport.callOnFx(
+                () -> ((java.util.Map<?, ?>) FxTestSupport.field(buffer, "testLines")).isEmpty())) {
+            assertTrue(System.nanoTime() < deadline, "the load's test scan never landed");
+            Thread.sleep(10);
+        }
+        FxTestSupport.runOnFx(() -> {
             CodeArea area = FxTestSupport.field(buffer, "area");
             area.moveTo(2, 8);
 
