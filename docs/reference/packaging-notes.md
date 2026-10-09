@@ -35,8 +35,10 @@ methods, exposed as `GenericStyledArea.inlayFactoryProperty()` (an `IntFunction`
 (`Unsupported class file major version 69`). This bites only once `build.gradle` itself changes, because a
 warm script cache hides it until then:
 `JAVA_HOME=~/.sdkman/candidates/java/21.0.2-open ./gradlew :richtextfx:jar`.
-To update the fork: rebuild it, copy the new `richtextfx-<version>.{jar,pom}` into `m2-repo/`, bump
-`<richtextfx.version>`. RichTextFX and its transitive deps (`reactfx`, `flowless`, `undofx`, `wellbehavedfx`)
+To update the fork: rebuild it, copy the new `richtextfx-<version>.{jar,pom}` into `m2-repo/`, write each
+file's SHA-256 beside it (`<file>.sha256`), delete the previous version's directory and bump
+`<richtextfx.version>` (`BuildHygieneTest` checks all three; the full recipe is in
+[dependencies.md](../dependencies.md#richtextfx--a-personal-fork-m2-repo)). RichTextFX and its transitive deps (`reactfx`, `flowless`, `undofx`, `wellbehavedfx`)
 are **automatic modules**, which `jlink` cannot link. The `moditect-maven-plugin` in
 the `dist` profile injects explicit `module-info` descriptors into them. If you bump
 RichTextFX or add a dep it uses, you may need to adjust those descriptors' `requires`
