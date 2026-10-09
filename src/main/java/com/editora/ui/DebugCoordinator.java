@@ -233,6 +233,7 @@ final class DebugCoordinator {
             if (consoleFontFamily != null) {
                 built.setConsoleFont(consoleFontFamily, consoleFontSize);
             }
+            built.setState(dapManager.state()); // a session may already be running (the window opened mid-session)
             debugPanel = built;
         }
         return debugPanel;
@@ -899,20 +900,27 @@ final class DebugCoordinator {
         return new DapManager.Listener() {
             @Override
             public void onState(DapManager.State state) {
+                // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
+                // starts in that state by itself, so there is nothing to show and no reason to build it now.
+                boolean show = debugPanel != null || state != DapManager.State.INACTIVE;
                 if (state == DapManager.State.STARTING) {
                     if (!consoleStarted) {
                         panel().clearConsole(); // each launch starts with its own output
                     }
                     consoleStarted = false;
                 }
-                panel().setRestartBlocked(restartAvailable() ? null : tr("status.debug.cannotRestartAttached"));
-                panel().setState(state);
+                if (show) {
+                    panel().setRestartBlocked(restartAvailable() ? null : tr("status.debug.cannotRestartAttached"));
+                    panel().setState(state);
+                }
                 if (state == DapManager.State.STARTING) {
                     nameSession(sessionLabel); // ending the replaced session cleared it
                 }
                 if (state != DapManager.State.SUSPENDED) {
                     shownFrame = null;
-                    panel().setStopReason(null);
+                    if (show) {
+                        panel().setStopReason(null);
+                    }
                 }
                 updateDebugStatus(state);
                 if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
