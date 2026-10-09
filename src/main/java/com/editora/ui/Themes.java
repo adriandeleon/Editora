@@ -177,6 +177,20 @@ public final class Themes {
         return url != null ? url.toExternalForm() : sheet;
     }
 
+    /**
+     * The precompiled binary form of a bundled {@code .css} resource path, or {@code null} when none is
+     * bundled. The build writes a {@code .bss} beside each stylesheet ({@code scripts/css2bss.java}); JavaFX
+     * finds it by itself when the {@code .css} is named, so this is informational — nothing loads it by
+     * this name — and a user theme (a {@code file:} URL) has none.
+     */
+    static String binaryStylesheetFor(String cssPath) {
+        if (cssPath == null || !cssPath.endsWith(".css") || hasUrlScheme(cssPath)) {
+            return null;
+        }
+        String bss = cssPath.substring(0, cssPath.length() - 4) + ".bss";
+        return Themes.class.getResource(bss) != null ? bss : null;
+    }
+
     private static boolean hasUrlScheme(String s) {
         return s.startsWith("jar:")
                 || s.startsWith("file:")
@@ -228,7 +242,7 @@ public final class Themes {
 
         @Override
         public String getUserAgentStylesheetBSS() {
-            return null; // no precompiled binary variant is bundled; JavaFX compiles the CSS at load
+            return binaryStylesheetFor(path);
         }
 
         @Override
