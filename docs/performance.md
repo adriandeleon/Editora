@@ -86,6 +86,13 @@ either. The Git change stripe holds an `int[]` of `{line, count, kind}` triples 
 for a new one only after `gitMarksChanged()` (new bars, or an edit that moved lines); a scroll re-blits the
 cached content image and draws from the array it has, allocating nothing.
 
+The minimap's *content* render (the one that ends in `canvas.snapshot()`, a forced full-scene layout) is
+paced on top of its 200 ms typing-pause debounce: above 2,000 lines two edit-driven renders are at least
+`lines / 10` ms apart, capped at 2 s (`MinimapPacing`), and the render after the last pause always runs.
+Before it clears anything, a render plans the runs it would draw (`MinimapRows.RunList`) and compares them
+with the plan behind the cached image; a pause that moved no run — a letter typed inside a word, a
+style-only change that still ended a succession — skips the draw and the snapshot.
+
 ### 3. Work incrementally, and only on what's visible
 
 - Highlighting re-tokenizes only the **edited range**: from the first edited line, on the stored grammar
@@ -105,6 +112,10 @@ cached content image and draws from the array it has, allocating nothing.
   overlay built off the FX thread.
 - Overlays iterate just the **visible paragraphs**
   (`firstVisibleParToAllParIndex … lastVisibleParToAllParIndex`) and skip folded lines.
+- The minimap draws one row per **pixel row**, not per line, once lines are less than a pixel tall
+  (`MinimapRows`): the longest of the lines sharing a row stands for it, so a render reads one length per
+  line and fetches, scans and draws text only per row of the column. Rows a whole pixel or taller are still
+  drawn per line, which is at most a column's height of them.
 - Avoid O(document) work on an edit or a scroll.
 - **Never** call `getCharacterBoundsOnScreen` synchronously inside a layout/viewport event.
 - **Never** ask `getCharacterBoundsOnScreen` for an **empty** range — it allocates a blinking
@@ -191,8 +202,12 @@ JavaFX's Prism texture pool has a fixed ceiling (default 512 MB); exhausting it 
 render thread NPE on a null texture — a black window, seen only in the packaged build. So don't
 let GPU-backed resources grow with the number of open files:
 
-- A background (non-selected) tab drops its minimap snapshot via
-  `EditorBuffer.setRenderingActive(false)`.
+- A background (non-selected) tab drops its minimap snapshot and shrinks the minimap canvas to 1×1 via
+  `EditorBuffer.setRenderingActive(false)`. The snapshot's *pixels* are copied to the CPU first
+  (`MinimapRetention`: at most 16 tabs and `ImageCacheBudget.MINIMAP_BUDGET_BYTES`, least recently
+  shown out first), so switching back writes them into a fresh image and re-blits — a texture upload, not
+  a render — unless the document, colours, tab size or column size changed while the tab was hidden.
+  Nothing GPU-backed is retained for a hidden tab.
 - Image caches are count- and byte-bounded through `ImageCacheBudget` (Mermaid and Typst included), not
   unbounded maps — each entry pins an `Image` (a texture). Live-preview renders are kept one per surface
   and released when the buffer is disposed (`PreviewSurfaces`).

@@ -5367,6 +5367,7 @@ public class EditorBuffer implements TabContent {
         undoHistory.clear();
         documentSnapshots.invalidate();
         PreviewSurfaces.release(path, this); // rendered Mermaid/Typst pages only this document could show
+        minimap.dispose(); // its retained content pixels (MinimapRetention) and its split follower's
         if (settledEditSub != null) {
             settledEditSub.unsubscribe();
             settledEditSub = null;
