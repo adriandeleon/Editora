@@ -394,7 +394,7 @@ class GitFileHistoryFxTest {
             window.fileHistory(repo.root.resolve("journal.txt"));
             window.select("rename to journal");
 
-            ContextMenu menu = FxTestSupport.callOnFx(() -> {
+            java.util.concurrent.Callable<ContextMenu> rowMenu = () -> FxTestSupport.callOnFx(() -> {
                 ListView<GitLog.Entry> commits = FxTestSupport.field(window.panel, "commits");
                 GitLog.Entry row = commits.getSelectionModel().getSelectedItem();
                 commits.applyCss();
@@ -409,6 +409,14 @@ class GitFileHistoryFxTest {
                 }
                 return null;
             });
+            // The cells are made by a layout pass; under a loaded machine the first look can come before it.
+            ContextMenu found = rowMenu.call();
+            for (int i = 0; found == null && i < 50; i++) {
+                Thread.sleep(100);
+                FxTestSupport.drainFx();
+                found = rowMenu.call();
+            }
+            ContextMenu menu = found;
             assertNotNull(menu, "the selected row has a cell");
             List<String> labels =
                     menu.getItems().stream().map(MenuItem::getText).toList();
