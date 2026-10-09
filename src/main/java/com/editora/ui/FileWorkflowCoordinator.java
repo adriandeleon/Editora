@@ -743,6 +743,38 @@ final class FileWorkflowCoordinator {
                     buffer.prepareInitialContent(content, longLine));
         }
 
+        /**
+         * This load with its line endings resolved on the read worker but no paragraphs built: what an
+         * in-place reload needs, which rewrites only the span that differs ({@link EditorBuffer#reloadContent})
+         * and so never splits the text into paragraphs at all.
+         */
+        PreparedLoad normalised() {
+            if (content == null || document != null) {
+                return this;
+            }
+            return new PreparedLoad(
+                    file,
+                    content,
+                    size,
+                    mtime,
+                    lines,
+                    maxLineLength,
+                    charset,
+                    editorConfig,
+                    binary,
+                    large,
+                    heavy,
+                    longLine,
+                    truncated,
+                    log,
+                    logOffset,
+                    tail,
+                    sourceBytes,
+                    declaredCharset,
+                    fingerprint,
+                    com.editora.editor.InitialDocument.ofText(content));
+        }
+
         /** The declared charset could not decode the file, so {@link #charset} is a lossless stand-in. */
         boolean charsetAssumed() {
             return declaredCharset != null && !declaredCharset.equals(charset);
@@ -953,6 +985,15 @@ final class FileWorkflowCoordinator {
 
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
+        return applyPreparedLoad(buffer, load, false);
+    }
+
+    /**
+     * As {@link #applyPreparedLoad(EditorBuffer, PreparedLoad)}; {@code inPlace} is a reload into a buffer that
+     * already shows the file, which rewrites only the span that differs instead of swapping the whole document
+     * — unless the load needs the segmented or capped profile, which only a whole-document install provides.
+     */
+    String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load, boolean inPlace) {
         buffer.setDiskSnapshot(load.mtime(), load.size(), load.fingerprint());
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
@@ -978,7 +1019,9 @@ final class FileWorkflowCoordinator {
             // Also back to editable: a reload of a file that is no longer huge used to stay read-only.
             buffer.setReadOnly(load.truncated());
         }
-        if (load.document() != null) {
+        if (inPlace && load.document() != null && !load.longLine() && !load.truncated()) {
+            buffer.reloadContent(load.document());
+        } else if (load.document() != null) {
             buffer.setInitialContent(load.document());
         } else {
             buffer.setInitialContent(load.content(), load.longLine());
@@ -1318,7 +1361,9 @@ final class FileWorkflowCoordinator {
                 if (hook != null) {
                     hook.run();
                 }
-                PreparedLoad load = prepareLoad(file, false);
+                PreparedLoad read = prepareLoad(file, false);
+                // The differing-span rewrite needs no paragraphs; the segmented/capped profiles need them all.
+                PreparedLoad load = read.longLine() || read.truncated() ? read.preparedFor(buffer) : read.normalised();
                 Platform.runLater(() -> {
                     boolean applied = false;
                     try {
@@ -1350,12 +1395,12 @@ final class FileWorkflowCoordinator {
 
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
     private void applyPreparedReload(Tab tab, EditorBuffer buffer, PreparedLoad load) {
-        // The whole document is about to be replaced, which resets the viewport and clears the folds: keep
-        // the user's place (caret line/column, scroll position, collapsed folds) rather than the caret alone.
+        // Only the span that differs is rewritten, but a change above the viewport still moves it and a fold
+        // inside the span is lost: keep the user's place (caret line/column, scroll position, collapsed folds).
         ReloadViewState view = ReloadViewState.capture(buffer);
         host.historyCoordinator()
                 .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
-        String note = applyPreparedLoad(buffer, load);
+        String note = applyPreparedLoad(buffer, load, true);
         notePerfContentLoaded(buffer);
         buffer.markClean();
         view.restore();

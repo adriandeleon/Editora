@@ -18,6 +18,39 @@ final class OpenBufferLifecycle {
 
     private OpenBufferLifecycle() {}
 
+    /**
+     * The tab whose file is {@code target} (canonical-path match), or null. The key — a stat per path
+     * component for a local file — is computed on first use, so a window without a file-backed tab (the
+     * start of a {@code --no-session} launch) never touches the filesystem.
+     */
+    static Tab tabForPath(EditorArea editorArea, Function<Tab, Path> pathOf, Path target) {
+        String key = null;
+        for (Tab tab : editorArea.tabs()) {
+            Path path = pathOf.apply(tab);
+            if (path != null) {
+                if (key == null) {
+                    key = com.editora.config.PathKeys.key(target);
+                }
+                if (com.editora.config.PathKeys.key(path).equals(key)) {
+                    return tab;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** As {@link #tabForPath}, for the buffers only: the open buffer for {@code target}, or null. */
+    static EditorBuffer bufferForPath(EditorArea editorArea, Function<Tab, EditorBuffer> bufferOf, Path target) {
+        Tab tab = tabForPath(
+                editorArea,
+                t -> {
+                    EditorBuffer b = bufferOf.apply(t);
+                    return b == null ? null : b.getPath();
+                },
+                target);
+        return tab == null ? null : bufferOf.apply(tab);
+    }
+
     static List<EditorBuffer> atOrUnder(EditorArea editorArea, Function<Tab, EditorBuffer> bufferOf, Path target) {
         if (target == null) {
             return List.of();

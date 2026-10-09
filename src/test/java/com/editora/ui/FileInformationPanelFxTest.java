@@ -36,6 +36,28 @@ class FileInformationPanelFxTest {
         FxTestSupport.bootToolkit();
     }
 
+    /**
+     * The disk facts and the word count are read and counted on a worker thread and land on a later FX turn:
+     * polls {@code field} of the rig's panel until it shows {@code expected}.
+     */
+    private static void awaitValue(Rig r, String field, String expected) throws Exception {
+        awaitValue(r.panel, field, expected);
+    }
+
+    static void awaitValue(FileInformationPanel panel, String field, String expected) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        String seen;
+        while (true) {
+            seen = FxTestSupport.callOnFx(
+                    () -> FxTestSupport.<TextField>field(panel, field + "Value").getText());
+            if (expected.equals(seen)) {
+                return;
+            }
+            assertTrue(System.nanoTime() < deadline, field + " never showed " + expected + " (last: " + seen + ")");
+            Thread.sleep(10);
+        }
+    }
+
     /** A panel in a shown stage (so it refreshes) and a buffer to attach. */
     private static final class Rig {
         final FileInformationPanel panel = new FileInformationPanel();
@@ -92,12 +114,15 @@ class FileInformationPanelFxTest {
 
     @Test
     void anUnsavedBufferHasCountsAndACaretButNoDiskFacts() throws Exception {
+        Rig r = FxTestSupport.callOnFx(() -> {
+            Rig rig = new Rig();
+            rig.buffer.setContent("Alpha beta\ngamma, delta!\n");
+            rig.buffer.getArea().moveTo(0);
+            rig.panel.attach(rig.buffer);
+            return rig;
+        });
+        awaitValue(r, "words", "4");
         FxTestSupport.runOnFx(() -> {
-            Rig r = new Rig();
-            r.buffer.setContent("Alpha beta\ngamma, delta!\n");
-            r.buffer.getArea().moveTo(0);
-            r.panel.attach(r.buffer);
-
             assertEquals(tr("common.untitled"), r.value("fullPath"));
             assertEquals(DASH, r.value("created"));
             assertEquals(DASH, r.value("modified"));
@@ -200,30 +225,41 @@ class FileInformationPanelFxTest {
         Path small = Files.writeString(dir.resolve("Small.java"), "class Small {}\n");
         Path medium = Files.write(dir.resolve("medium.bin"), new byte[5000]);
         Path large = Files.write(dir.resolve("large.bin"), new byte[3 * 1024 * 1024 / 2]);
+        Rig r = FxTestSupport.callOnFx(() -> {
+            Rig rig = new Rig();
+            rig.buffer.setPath(small);
+            rig.buffer.setContent("class Small {}\n");
+            rig.panel.attach(rig.buffer);
+            assertEquals(small.toString(), rig.value("fullPath"), "the path is known at once");
+            assertEquals("Java", rig.value("mode"), "the language, capitalised");
+            return rig;
+        });
+        awaitValue(r, "size", "15 bytes"); // the disk facts arrive from the read worker
         FxTestSupport.runOnFx(() -> {
-            Rig r = new Rig();
-            r.buffer.setPath(small);
-            r.buffer.setContent("class Small {}\n");
-            r.panel.attach(r.buffer);
-
-            assertEquals(small.toString(), r.value("fullPath"));
-            assertEquals("15 bytes", r.value("size"));
             assertTrue(r.value("modified").matches(".*\\d.*"), "a real time: " + r.value("modified"));
             assertFalse(DASH.equals(r.value("created")));
-            assertEquals("Java", r.value("mode"), "the language, capitalised");
+        });
 
-            EditorBuffer other = new EditorBuffer();
-            other.setPath(medium);
-            r.panel.attach(other);
-            assertEquals("4 kB (5,000 bytes)", r.value("size"));
+        EditorBuffer other = FxTestSupport.callOnFx(() -> {
+            EditorBuffer o = new EditorBuffer();
+            o.setPath(medium);
+            r.panel.attach(o);
+            return o;
+        });
+        awaitValue(r, "size", "4 kB (5,000 bytes)");
+        FxTestSupport.runOnFx(() -> {
             other.setPath(large);
             r.panel.attach(other);
-            assertEquals("1.5 MB (1,572,864 bytes)", r.value("size"));
+        });
+        awaitValue(r, "size", "1.5 MB (1,572,864 bytes)");
 
+        FxTestSupport.runOnFx(() -> {
             other.setPath(dir.resolve("deleted-meanwhile.txt"));
             r.panel.attach(other);
             assertEquals(dir.resolve("deleted-meanwhile.txt").toString(), r.value("fullPath"));
-            assertEquals(DASH, r.value("size"), "a file that is gone has no size to show");
+        });
+        awaitValue(r, "size", DASH); // a file that is gone has no size to show
+        FxTestSupport.runOnFx(() -> {
             assertEquals(DASH, r.value("created"));
             assertEquals(DASH, r.value("modified"));
             assertEquals(DASH, r.value("permissions"));
@@ -239,18 +275,21 @@ class FileInformationPanelFxTest {
         Path file = Files.writeString(dir.resolve("script.sh"), "#!/bin/sh\n");
         Assumptions.assumeTrue(
                 Files.getFileStore(file).supportsFileAttributeView("posix"), "a POSIX filesystem is needed");
-        FxTestSupport.runOnFx(() -> {
-            Rig r = new Rig();
-            r.buffer.setPath(file);
+        Rig r = FxTestSupport.callOnFx(() -> {
+            Rig rig = new Rig();
+            rig.buffer.setPath(file);
             setPermissions(file, "rwxr-x--x");
-            r.panel.attach(r.buffer);
-            assertEquals("751 (-rwxr-x--x)", r.value("permissions"));
+            rig.panel.attach(rig.buffer);
+            return rig;
+        });
+        awaitValue(r, "permissions", "751 (-rwxr-x--x)");
+        FxTestSupport.runOnFx(() -> {
             assertFalse(r.value("owner").isBlank() || DASH.equals(r.value("owner")));
-
             setPermissions(file, "rw--w-rw-");
             r.panel.attach(r.buffer);
-            assertEquals("626 (-rw--w-rw-)", r.value("permissions"));
-
+        });
+        awaitValue(r, "permissions", "626 (-rw--w-rw-)");
+        FxTestSupport.runOnFx(() -> {
             setPermissions(file, "rw-r--r--");
             r.dispose();
         });
@@ -258,12 +297,12 @@ class FileInformationPanelFxTest {
 
     @Test
     void aClosedPanelDoesNoWorkUntilItIsShownAgain() throws Exception {
-        FxTestSupport.runOnFx(() -> {
-            FileInformationPanel hidden = new FileInformationPanel();
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setContent("one two three");
-            hidden.attach(buffer);
-            buffer.getArea().moveTo(4);
+        FileInformationPanel hidden = new FileInformationPanel();
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setContent("one two three");
+            hidden.attach(b);
+            b.getArea().moveTo(4);
             TextField words = FxTestSupport.field(hidden, "wordsValue");
             TextField column = FxTestSupport.field(hidden, "columnValue");
             assertEquals(DASH, words.getText(), "not in a scene: nothing on screen to keep current");
@@ -271,9 +310,11 @@ class FileInformationPanelFxTest {
 
             Stage stage = new Stage();
             stage.setScene(new Scene(hidden, 300, 500));
-            assertEquals("3", words.getText(), "opened: brought up to date at once");
-            assertEquals("5", column.getText());
-
+            assertEquals("5", column.getText(), "opened: the caret facts are brought up to date at once");
+            return b;
+        });
+        awaitValue(hidden, "words", "3"); // ...and the word count as soon as the worker has counted
+        FxTestSupport.runOnFx(() -> {
             hidden.focusFirstItem();
             assertTrue(hidden.isFocusTraversable(), "the read-only panel can still take the focus");
             hidden.attach(null);
@@ -291,7 +332,7 @@ class FileInformationPanelFxTest {
                 return rig;
             });
             async.onClose(() -> FxTestSupport.runOnFx(r::dispose));
-            assertEquals("2", FxTestSupport.callOnFx(() -> r.value("words")));
+            awaitValue(r, "words", "2");
 
             FxTestSupport.runOnFx(() -> r.buffer.getArea().appendText(" three four"));
 

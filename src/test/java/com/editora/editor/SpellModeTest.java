@@ -27,6 +27,27 @@ class SpellModeTest {
         assertEquals(SpellChecker.Syntax.PLAIN, SpellMode.MARKDOWN.syntax());
     }
 
+    /** The code-line scan over a whole snapshot (what runs off the FX thread) splits as RichTextFX does. */
+    @Test
+    void codeLinesOfASnapshotMatchTheParagraphScan() {
+        String markdown = "prose\n```bash\nmvn test\n```\nmore prose\n";
+        String[] lines = markdown.split("\n", -1);
+        BitSet fromParagraphs = SpellMode.MARKDOWN.codeLines(lines.length, i -> lines[i]);
+        assertEquals(fromParagraphs, SpellMode.MARKDOWN.codeLines(markdown));
+        assertTrue(SpellMode.MARKDOWN.codeLines(markdown).get(2));
+        assertFalse(SpellMode.MARKDOWN.codeLines(markdown).get(4));
+        assertEquals(new BitSet(), SpellMode.MARKDOWN.codeLines(""), "an empty document is one prose paragraph");
+        assertTrue(
+                SpellMode.HTML.codeLines("<p>a</p>\n<script>\nx\n</script>\n").get(2));
+        for (SpellMode mode : List.of(SpellMode.PROSE, SpellMode.CODE)) {
+            assertFalse(mode.marksCodeLines());
+            assertEquals(new BitSet(), mode.codeLines(markdown), mode + " has no code lines to scan for");
+        }
+        for (SpellMode mode : List.of(SpellMode.MARKDOWN, SpellMode.HTML, SpellMode.TYPST)) {
+            assertTrue(mode.marksCodeLines());
+        }
+    }
+
     @Test
     void proseChecksEverythingButCodeAndLinks() {
         for (SpellMode mode : List.of(SpellMode.PROSE, SpellMode.MARKDOWN)) {

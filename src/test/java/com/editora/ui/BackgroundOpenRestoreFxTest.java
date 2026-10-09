@@ -141,6 +141,40 @@ class BackgroundOpenRestoreFxTest {
         closeTab(helper);
     }
 
+    /**
+     * A background open resolves {@code .editorconfig} on the read worker, with the load; attaching the tab
+     * applies that prepared result rather than walking the file's ancestor directories again on FX.
+     */
+    @Test
+    void asyncBackgroundOpenAppliesThePreparedEditorConfig() throws Exception {
+        Path project = Files.createDirectories(work.resolve("ec"));
+        Files.writeString(
+                project.resolve(".editorconfig"), "root = true\n\n[*.java]\nindent_style = space\nindent_size = 3\n");
+        Path file = Files.writeString(project.resolve("Spaced.java"), SOURCE.replace("Helper", "Spaced"));
+
+        AtomicReference<EditorBuffer> landed = new AtomicReference<>();
+        Consumer<EditorBuffer> done = landed::set;
+        FxTestSupport.runOnFx(() -> FxTestSupport.call(
+                c, "openBackgroundBufferAsync", new Class<?>[] {Path.class, Consumer.class}, file, done));
+        long deadline = System.nanoTime() + 15_000_000_000L;
+        while (landed.get() == null) {
+            assertTrue(System.nanoTime() < deadline, "background open never completed");
+            Thread.sleep(5);
+            FxTestSupport.drainFx();
+        }
+        EditorBuffer bg = landed.get();
+        assertEquals(
+                Integer.valueOf(3),
+                FxTestSupport.callOnFx(() -> bg.getEditorConfigProps().indentSize()),
+                "the .editorconfig rule the read worker resolved");
+        assertEquals(
+                Boolean.TRUE,
+                FxTestSupport.callOnFx(() -> bg.getEditorConfigProps().insertSpaces()));
+        assertEquals(SOURCE.replace("Helper", "Spaced"), FxTestSupport.callOnFx(bg::getContent));
+        assertFalse(FxTestSupport.callOnFx(bg::isDirty));
+        closeTab(file);
+    }
+
     // ------------------------------------------------------------------------------------------ helpers
 
     /** Breakpoints on lines 2 and 3 and a bookmark on line 4, set through the real commands. */

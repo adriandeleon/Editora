@@ -28,8 +28,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Tag("fx")
 class InitialLoadFxTest {
 
-    /** A document long enough for a deferred fold restore, with a foldable block at lines 1..3. */
+    /** A document a few hundred KiB long (the old synchronous-restore limit), with a foldable block at lines 1..3. */
     private static final String LONG_SOURCE = longSource();
+
+    private static final int LONG_SOURCE_CHARS = 256 * 1024;
 
     @BeforeAll
     static void bootToolkit() throws Exception {
@@ -186,25 +188,55 @@ class InitialLoadFxTest {
     }
 
     @Test
-    void aShortFileStillRestoresSynchronously() throws Exception {
+    void aShortFileRestoresItsFoldsFromTheBackgroundDetectionToo() throws Exception {
+        EditorBuffer[] holder = new EditorBuffer[1];
         runOnFx(() -> {
             EditorBuffer buffer = new EditorBuffer();
-            try {
-                buffer.setPath(java.nio.file.Path.of("Short.java"));
-                buffer.setInitialContent("class A {\n    void one() {\n        int x;\n    }\n}\n");
-                buffer.getFoldManager().restore(List.of(), List.of(1));
-                assertTrue(buffer.getFoldManager().isCollapsed(1));
-                assertFalse(buffer.getFoldManager().regions().isEmpty());
-            } finally {
-                buffer.dispose();
-            }
+            holder[0] = buffer;
+            buffer.setPath(java.nio.file.Path.of("Short.java"));
+            buffer.setInitialContent("class A {\n    void one() {\n        int x;\n    }\n}\n");
+            buffer.getFoldManager().restore(List.of(), List.of(1));
+            assertTrue(buffer.getFoldManager().regions().isEmpty(), "no scan ran on the FX thread");
+            // What a session save in this instant persists: the saved fold, not an empty list.
+            assertEquals(List.of(1), buffer.getFoldManager().collapsedStartLines());
         });
+        EditorBuffer buffer = holder[0];
+        try {
+            await(() -> buffer.getFoldManager().isCollapsed(1));
+            runOnFx(() -> assertFalse(buffer.getFoldManager().regions().isEmpty()));
+        } finally {
+            runOnFx(buffer::dispose);
+        }
+    }
+
+    @Test
+    void theDebouncedDetectionDoesNotRepeatTheRestoresScanButRunsForAnEdit() throws Exception {
+        EditorBuffer[] holder = new EditorBuffer[1];
+        java.util.concurrent.atomic.AtomicInteger applied = new java.util.concurrent.atomic.AtomicInteger();
+        runOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            holder[0] = buffer;
+            buffer.setPath(java.nio.file.Path.of("Short.java"));
+            buffer.getFoldManager().setOnRegionsChanged(applied::incrementAndGet);
+            buffer.setInitialContent("class A {\n    void one() {\n        int x;\n    }\n}\n");
+            buffer.getFoldManager().restore(List.of(), List.of());
+        });
+        EditorBuffer buffer = holder[0];
+        try {
+            await(() -> applied.get() == 1);
+            TimeUnit.MILLISECONDS.sleep(600); // well past the 250 ms settle of the load's own insertion
+            runOnFx(() -> assertEquals(1, applied.get(), "the settle after the load found its scan already done"));
+            runOnFx(() -> buffer.getArea().appendText("class B {\n}\n"));
+            await(() -> applied.get() == 2);
+        } finally {
+            runOnFx(buffer::dispose);
+        }
     }
 
     private static String longSource() {
         StringBuilder sb = new StringBuilder("class Long {\n    void first() {\n        int x = 1;\n    }\n");
         int i = 0;
-        while (sb.length() < FoldManager.DEFERRED_RESTORE_CHARS + 1024) {
+        while (sb.length() < LONG_SOURCE_CHARS + 1024) {
             sb.append("    int field").append(i++).append(" = 0;\n");
         }
         return sb.append("}\n").toString();

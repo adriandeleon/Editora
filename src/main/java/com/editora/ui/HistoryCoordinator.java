@@ -1907,7 +1907,7 @@ final class HistoryCoordinator {
                                     finishBufferRestore(target, completion, RestoreResult.BUFFER_CHANGED);
                                     return;
                                 }
-                                RestoreResult result = diff.applyToLocal(target, text)
+                                RestoreResult result = diff.applyToLocal(b, text)
                                         ? RestoreResult.RESTORED
                                         : RestoreResult.APPLY_FAILED;
                                 finishBufferRestore(target, completion, result);

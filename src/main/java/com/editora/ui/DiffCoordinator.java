@@ -99,7 +99,11 @@ final class DiffCoordinator {
         /** The open buffer for {@code target} (canonical-path match), or {@code null} if not open. */
         EditorBuffer openBufferFor(Path target);
 
-        /** Opens {@code target} in a <em>background</em> buffer (no tab switch) and returns it, or null on error. */
+        /**
+         * Opens {@code target} in a <em>background</em> buffer (no tab switch) and returns it, or null on error,
+         * reading the file on the calling thread: only for {@link #applyMergeResolution}, whose answer a merge
+         * pane's save-before-close needs synchronously. Everything else uses {@link #openBackgroundBufferAsync}.
+         */
         EditorBuffer openBackgroundBuffer(Path target);
 
         /** Loads a closed apply target away from the FX thread, then returns its attached buffer on FX. */
@@ -489,46 +493,24 @@ final class DiffCoordinator {
     }
 
     /**
-     * Writes new text into the local file {@code target} via an undoable editor buffer (opened in the
-     * background if not already open), marking it dirty, then re-diffs every tab. Returns whether the buffer
-     * accepted the edit.
+     * Writes new text into the open buffer {@code b} as an undoable whole-document edit, marking it dirty,
+     * then re-diffs every tab. Returns whether the buffer accepted the edit.
      *
      * <p><b>Unguarded:</b> it replaces whatever the buffer holds now. Only a caller that has already proved
      * the buffer is the version it means to replace may use it — Local File History's whole-file restore
      * checks the buffer's document version first. Anything applying a <em>hunk</em> (text computed from a
-     * displayed diff) must use {@link #applyToLocalIfUnchangedAsync} with the text that diff was showing.
+     * displayed diff) must use {@link #applyToLocalIfUnchangedAsync} with the text that diff was showing,
+     * which also opens a closed target in the background, off the FX thread.
      */
-    boolean applyToLocal(Path target, String newText) {
-        EditorBuffer b = bufferForApply(target);
+    boolean applyToLocal(EditorBuffer b, String newText) {
         if (b == null || !b.isEditable() || b.isDisposed() || b.isTruncatedLoad()) {
-            host.setStatus(tr("status.diff.applyFailed", target.getFileName()));
+            host.setStatus(tr("status.diff.applyFailed", b == null ? "" : b.getTitle()));
             return false;
         }
         if (!NoUndoGuard.allow(b, tr("noUndo.op.diff"))) {
             return false;
         }
         b.replaceWholeDocument(newText); // widens first: newText is whole-document text
-        host.setStatus(tr("status.diff.applied"));
-        refreshOpenDiffs();
-        return true;
-    }
-
-    /** Opens/snapshots the target on FX and mutates only the exact source version shown by the diff. */
-    private boolean applyToLocalIfUnchanged(Path target, String expectedText, String newText) {
-        EditorBuffer existing = ops.openBufferFor(target);
-        EditorBuffer buffer = existing != null ? existing : ops.openBackgroundBuffer(target);
-        if (buffer == null
-                || !buffer.isEditable()
-                || buffer.isDisposed()
-                || buffer.isTruncatedLoad()
-                || !java.util.Objects.equals(expectedText, buffer.getContent())
-                || !NoUndoGuard.allow(buffer, tr("noUndo.op.diff"))) {
-            if (existing == null && buffer != null) {
-                ops.discardBackgroundBuffer(buffer);
-            }
-            return false;
-        }
-        buffer.replaceWholeDocument(newText);
         host.setStatus(tr("status.diff.applied"));
         refreshOpenDiffs();
         return true;
@@ -589,13 +571,6 @@ final class DiffCoordinator {
             host.setStatus(tr("status.diff.saved", target.getFileName()));
             refreshOpenDiffs();
         }
-    }
-
-    /** The editable buffer to apply a diff hunk into: the open buffer for {@code target}, else a fresh one
-     *  opened in the background (no tab switch, so the diff stays focused). */
-    private EditorBuffer bufferForApply(Path target) {
-        EditorBuffer open = ops.openBufferFor(target);
-        return open != null ? open : ops.openBackgroundBuffer(target);
     }
 
     /** Diff the active file's working copy against its committed (HEAD) version. */

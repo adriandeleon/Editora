@@ -554,7 +554,7 @@ public class EditorBuffer implements TabContent {
     /** Lazily attached when "show whitespace" first turns on — see {@link #whitespace()}. */
     private WhitespaceOverlay whitespace;
     /** Eager: spell checking is on by default for prose and for the comments and strings of code. */
-    private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
+    private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentTextSnapshot);
 
     private LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
     private InlineValuesOverlay inlineValues; // lazily attached when a debug session first suspends here
@@ -4193,9 +4193,11 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles, whose scan of the text
-     * ({@link RunScan}) runs off the FX thread — a generation counter drops a superseded result, as for
-     * {@link #refreshTodoMarks}. Every other caller (load, Save As, a feature toggle) needs the answer now.
+     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles — or after a load — whose
+     * scan of the text ({@link RunScan}) runs off the FX thread: a generation counter drops a superseded
+     * result, as for {@link #refreshTodoMarks}. The load's pass lands a few milliseconds after the document
+     * does rather than scanning up to 256 KiB on the FX thread inside the open. Every other caller (Save As,
+     * a feature toggle) needs the answer now.
      */
     private void recomputeRun(boolean settled) {
         maybeApplyShebang(); // an interpreter shebang can set the language before we gate the Run glyph
@@ -6889,7 +6891,7 @@ public class EditorBuffer implements TabContent {
         if (renderingActive || disposed) {
             return;
         }
-        documentSnapshots.releaseUnless(cleanText);
+        documentSnapshots.releaseUnless(baseline == null ? null : baseline.heldText());
         spellOverlay.releaseHiddenCaches();
     }
 
@@ -9456,7 +9458,32 @@ public class EditorBuffer implements TabContent {
         refilter.run();
         dirty.set(false);
         gitLines.reset(); // freshly loaded: buffer lines are the disk's lines again
-        recomputeRun(); // detect a runnable file on load (drives the Run glyph)
+        recomputeRun(true); // detect a runnable file on load (drives the Run glyph), scanning off the FX thread
+    }
+
+    /**
+     * Installs a re-read of the file into a buffer that already shows it. Unlike {@link #setInitialContent},
+     * which swaps the whole document, only the span that differs is rewritten ({@link WholeDocumentEdit}):
+     * the paragraphs, styles and folds outside it survive and nothing is split again on the FX thread. Like a
+     * load, it is not an undo step — the history is forgotten, so undo cannot resurrect text the disk no
+     * longer has — and the loaded text becomes the snapshot, the Undo History baseline and, through the
+     * caller's {@link #markClean}, the saved baseline. Not for a load that needs the segmented or capped
+     * profile ({@code longLine}, truncated): those install through {@link #setInitialContent}.
+     */
+    public void reloadContent(InitialDocument loaded) {
+        lineEnding = loaded.lineEnding();
+        String text = loaded.text();
+        widen(); // the disk's text is the whole document; a narrowed view would duplicate the held-aside part
+        Runnable refilter = logView.suspendFilter(true);
+        replaceVisibleText(area, text);
+        if (area.getLength() == text.length()) {
+            documentSnapshots.seed(docVersion, text); // the rewrite left the document equal to the loaded String
+        }
+        forgetHistoryAtNarrowBoundary(false);
+        captureUndoCheckpoint();
+        refilter.run();
+        gitLines.reset(); // the disk's lines again
+        recomputeRun(true);
     }
 
     /**

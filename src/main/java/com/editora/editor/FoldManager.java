@@ -72,6 +72,8 @@ public final class FoldManager {
     private String language = "plaintext";
     /** Supersedes debounced background detections when the text/language/region sources change again. */
     private long recomputeGeneration;
+    /** The generation the last scan (synchronous or in flight) was made for; a debounced pass for it is redundant. */
+    private long detectedGeneration = -1;
     /** Max number of lines shown in a collapsed region's hover preview. */
     private static final int PREVIEW_LINES = 40;
     /** Minimum digit width the line-number gutter pads to, so a file of fewer than 10 lines still reserves
@@ -104,12 +106,6 @@ public final class FoldManager {
     /** Suppresses change notifications while we programmatically restore saved folds. */
     private boolean restoring;
 
-    /**
-     * A document at least this long restores its folds from a background detection rather than scanning the
-     * whole text on the FX thread while the file opens (measured: 150 ms of a 4.9 MB open). Below it the scan
-     * costs a few milliseconds and the restore stays synchronous.
-     */
-    static final int DEFERRED_RESTORE_CHARS = 256 * 1024;
     /** True from a deferred restore until its regions (or any newer ones) are applied. */
     private boolean regionsPending;
     /** Saved collapsed header lines waiting for those regions, kept in step with edits; null when none. */
@@ -205,7 +201,9 @@ public final class FoldManager {
         this.caretLine = area::getCurrentParagraph;
         this.textSnapshot = textSnapshot;
         area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
-            if (heuristicEnabled) {
+            // A load's own insertion settles here too; its restore already scanned (or is scanning) this very
+            // generation, so the pass would only repeat that detection. Any edit since bumps the generation.
+            if (heuristicEnabled && recomputeGeneration != detectedGeneration) {
                 recomputeAsync();
             }
         });
@@ -412,6 +410,7 @@ public final class FoldManager {
      */
     public void recompute() {
         recomputeGeneration++; // invalidate a debounced result captured before this explicit recompute
+        detectedGeneration = recomputeGeneration;
         String text = heuristicEnabled ? textSnapshot.get() : "";
         applyRegions(detectRegions(text, language, serverRegions, manualRegions, heuristicEnabled));
     }
@@ -423,6 +422,7 @@ public final class FoldManager {
      */
     private void recomputeAsync() {
         long generation = ++recomputeGeneration;
+        detectedGeneration = generation;
         String text = textSnapshot.get();
         String languageSnapshot = language;
         List<Region> serverSnapshot = serverRegions;
@@ -562,9 +562,14 @@ public final class FoldManager {
         }
     }
 
-    /** Whether a restore of this document's folds should wait for a background detection. */
+    /**
+     * Whether a restore of this document's folds waits for a background detection: always, when there is a
+     * heuristic scan to run. The scan used to be synchronous below 256 KiB, which cost every open a
+     * whole-document walk on the FX thread that the debounced pass then repeated; without a heuristic
+     * (large-file mode) there is nothing to scan and the manual/server regions apply at once.
+     */
     private boolean deferRestore() {
-        return heuristicEnabled && area.getLength() >= DEFERRED_RESTORE_CHARS;
+        return heuristicEnabled;
     }
 
     /** Starts the background detection of a deferred restore, carrying {@code collapsed} to its arrival. */
@@ -1391,9 +1396,10 @@ public final class FoldManager {
     }
 
     /**
-     * Restores manual ranges and collapsed headers with one region recomputation instead of two. For a long
-     * document ({@link #DEFERRED_RESTORE_CHARS}) that recomputation runs in the background and the collapsed
-     * headers are applied when its regions arrive; anything that needs them sooner computes them on demand.
+     * Restores manual ranges and collapsed headers with one region recomputation instead of two. That
+     * recomputation runs in the background and the collapsed headers are applied when its regions arrive;
+     * anything that needs them sooner computes them on demand ({@link #collapsedStartLines},
+     * {@link #unfoldContaining}, the fold commands).
      */
     public void restore(List<Region> manual, List<Integer> collapsedStartLines) {
         manualRegions = manual == null || manual.isEmpty() ? List.of() : List.copyOf(manual);

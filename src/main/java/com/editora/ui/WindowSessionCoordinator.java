@@ -661,7 +661,9 @@ final class WindowSessionCoordinator {
         }
         host.fileWorkflows().fileLoadExecutor.execute(() -> {
             try {
-                FileWorkflowCoordinator.PreparedLoad load = host.fileWorkflows().prepareLoad(file, true);
+                // Paragraphs split on the read worker too: the FX thread is left with the document swap.
+                FileWorkflowCoordinator.PreparedLoad load =
+                        host.fileWorkflows().prepareLoad(file, true).preparedFor(buffer);
                 Platform.runLater(() -> {
                     if (buffer.isDisposed() || host.fileWorkflows().isShutdown()) {
                         // Closed while its read was running. Applying the text would revive a dead buffer

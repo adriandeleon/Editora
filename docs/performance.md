@@ -47,8 +47,9 @@ void request(String input, Consumer<Result> onResult) {
 ```
 
 Later additions with the same shape: the find bar's large-document search (`LatestOnly`), the status
-bar's byte count, the Run-glyph scan (`RunScan`), external-change and recent-file checks, and directory
-listings for Find File and the breadcrumb (`DirectoryListing`).
+bar's byte count, the Run-glyph scan (`RunScan`, at a load as well as at a settled edit), external-change and
+recent-file checks, directory listings for Find File and the breadcrumb (`DirectoryListing`), the File
+Information panel's word count and disk facts, and the spell checker's code-line scan of a prose buffer.
 
 Console output is a special case of "don't flood FX": `process/OutputPump` delivers each drain inside an
 `OutputBatch`, `ui/ConsoleAppender` applies a drain as one append, one style application and one trim, and
@@ -156,7 +157,18 @@ again in the loader. The paragraph split and the file hash are also done by the 
 (`InitialDocument`, `PreparedLoad.fingerprint`), and the loaded String is shared as the saved baseline and
 the first text snapshot (`DocumentSnapshots.seed`), so a freshly loaded tab holds one full-text String. A
 load of 5 MB or more that will not fit the free heap takes the capped read-only path instead
-(`LoadHeapGuard`: about 15× the file size plus a 128 MB margin).
+(`LoadHeapGuard`: about 15× the file size plus a 128 MB margin). Every load takes this path: a session
+restore's fill, and a background open on behalf of a diff apply, a workspace edit or an agent write
+(`openBackgroundBufferAsync`), prepare the paragraphs on the worker too and hand the prepared EditorConfig
+result to `addBuffer`, so attaching the tab never walks the ancestor directories again. Only a merge pane's
+save-before-close and the workspace-edit transaction's fallback, both of which must answer synchronously,
+still read on the calling thread.
+
+A reload from disk does not swap the document: `EditorBuffer.reloadContent` rewrites only the span that
+differs (as `replaceWholeDocument` does), so the paragraphs, styles and folds outside it survive and nothing
+is split again on the FX thread; the worker resolves the line endings (`InitialDocument.ofText`). Like a
+load it is not an undo step: the history is forgotten, so undo cannot bring back text the disk no longer
+has. A reload that needs the segmented or capped profile still installs whole.
 
 The saved baseline — what the modified flag compares the document with — is a `SavedBaseline`: the saved
 text's length and `TextFingerprint` (SHA-256 of its chars, computed by the read worker at load and by the
@@ -179,10 +191,11 @@ until loading completes.
 
 Folding's debounced document detection is also generation-guarded background work. Explicit fold
 commands remain synchronous, while large-file mode skips heuristic detection entirely; server and
-manual regions can still be applied without scanning the document. A fold *restore* for a document of
-256 KiB or more is deferred to that background detection: the saved collapsed lines are applied when the
-regions arrive and are computed on demand by `collapsedStartLines()`, `unfoldContaining()` and the fold
-commands.
+manual regions can still be applied without scanning the document. A fold *restore* is always deferred to
+that background detection: the saved collapsed lines are applied when the regions arrive and are computed
+on demand by `collapsedStartLines()`, `unfoldContaining()` and the fold commands. The restore's scan also
+stands in for the debounced pass the load's own insertion would otherwise trigger: that pass runs only when
+the document's generation has moved past the one last scanned.
 
 Whole-document consumers must use `EditorBuffer`'s versioned text snapshot rather than independently
 calling RichTextFX `getText()`. The first consumer of a document version materializes one immutable String
