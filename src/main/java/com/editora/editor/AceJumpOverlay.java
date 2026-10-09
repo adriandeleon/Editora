@@ -27,7 +27,7 @@ import org.fxmisc.richtext.CodeArea;
  * the {@link CodeArea} so nothing is inserted and no chord fires, plus the {@code editora.ownsKeys}
  * property). A mouse-transparent {@link Canvas} draws the labels; visible-only; scrolling cancels.
  */
-final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
+final class AceJumpOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private static final Color PILL = Color.web("#ffe0b2"); // pastel peach/amber
     private static final Color PILL_TEXT = Color.web("#5a3a00"); // dark brown for contrast
@@ -41,6 +41,8 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
     private boolean awaitingChar;
     private String typed = "";
     private boolean redrawPending;
+    /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
+    private boolean rendering = true;
     /** The overlay of the split's second view; a jump started while that view has focus runs there. */
     private AceJumpOverlay follower;
 
@@ -64,7 +66,37 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
     @Override
     public AceJumpOverlay follower(CodeArea view) {
         follower = new AceJumpOverlay(view);
+        follower.setRenderingActive(rendering);
         return follower;
+    }
+
+    /**
+     * A jump cannot outlive its tab's time on screen: hiding the tab ends it and releases the canvas (the
+     * labels are drawn for one viewport, and the keys must not stay owned on a tab the user cannot see).
+     * Driven by {@code EditorBuffer.setRenderingActive}.
+     */
+    @Override
+    public void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            requestLayout();
+        } else {
+            if (active) {
+                exit();
+            }
+            CanvasGuards.release(canvas);
+        }
+    }
+
+    /** Whether there are labels to paint; the canvas is 1x1 (no viewport texture) whenever there are not. */
+    private boolean drawable() {
+        return active && !awaitingChar && rendering;
     }
 
     /** Begins AceJump: the next typed character chooses the targets. */
@@ -123,7 +155,7 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
         labelToOffset.clear();
         area.getProperties().remove("editora.ownsKeys");
         setVisible(false);
-        clear();
+        CanvasGuards.release(canvas); // nothing to show: no viewport texture either
     }
 
     private void onKeyPressed(KeyEvent e) {
@@ -246,20 +278,16 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
 
     @Override
     protected void layoutChildren() {
-        double w = CanvasGuards.clampWidth(this, getWidth());
-        double h = CanvasGuards.clampHeight(this, getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
         canvas.relocate(0, 0);
-        if (active && !awaitingChar) {
-            scheduleRedraw();
+        if (!drawable()) {
+            return; // stay 1x1 / no texture while idle (the usual state) or backgrounded
         }
+        CanvasGuards.fit(this, canvas);
+        scheduleRedraw();
     }
 
     private void scheduleRedraw() {
-        if (redrawPending) {
+        if (!drawable() || redrawPending) {
             return;
         }
         redrawPending = true;
@@ -269,18 +297,16 @@ final class AceJumpOverlay extends Region implements SecondaryPane.Followed {
         });
     }
 
-    private void clear() {
-        canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-    }
-
     private void redraw() {
         GraphicsContext g = canvas.getGraphicsContext2D();
-        double w = canvas.getWidth();
-        double h = canvas.getHeight();
-        g.clearRect(0, 0, w, h);
-        if (!active || awaitingChar || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        g.clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
+            CanvasGuards.release(canvas);
             return;
         }
+        CanvasGuards.fit(this, canvas); // grown here as well: labels are assigned without a layout pass
+        double w = canvas.getWidth();
+        double h = canvas.getHeight();
         g.setFont(font);
         for (Map.Entry<String, Integer> entry : labelToOffset.entrySet()) {
             String label = entry.getKey();

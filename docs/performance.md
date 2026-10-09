@@ -227,9 +227,31 @@ let GPU-backed resources grow with the number of open files:
   unbounded maps — each entry pins an `Image` (a texture). The parsed-SVG cache (`SvgImages`) is heap, not
   texture, and is weighed the same way, by an estimate from its source size. Live-preview renders are kept one per surface
   and released when the buffer is disposed (`PreviewSurfaces`).
-- Every per-buffer Canvas overlay implements `TabSurface`; `EditorBuffer.setRenderingActive` releases them
-  all for a background tab, and an overlay with nothing to draw holds a 1×1 canvas (`CanvasGuards.fit` /
-  `release`).
+- Every per-buffer Canvas overlay implements `TabSurface` — the search-highlight, occurrence-highlight,
+  inline-values and AceJump overlays included, so a find, a word highlight or a suspended debug session left
+  on a hidden tab holds no viewport texture; `EditorBuffer.setRenderingActive` releases them all for a
+  background tab, and an overlay with nothing to draw holds a 1×1 canvas (`CanvasGuards.fit` / `release`).
+  A jump in progress ends when its tab is hidden (its labels are drawn for one viewport and its keys must
+  not stay owned on a tab the user cannot see).
+- A plain buffer builds only what every buffer uses: the note and spell overlays (both on by default), the
+  minimap and the column ruler (one `Line`). Every other overlay and stripe — whitespace, TODO (overlay and
+  stripe, attached with the first non-empty scan result), Markdown lint (overlay and stripe), inline values,
+  the LSP diagnostic stripe, search, occurrences, log, Mermaid lint, LSP squiggles, snippets, AceJump — is
+  attached on first activation through `attachLazyOverlay` / `attachLazyStripe` at its `EditorBuffer.Layer`,
+  which keeps one stacking order whatever a buffer turned on and in whatever sequence. The right-click menu,
+  the note hover tooltip and the fold preview tooltip (each a popup window with a scene of its own) are
+  built on first use, and the log viewer subscribes to edits only once something asks for its epoch.
+  Measured on 30 open 31 KB Java files this takes 14 scene-graph nodes, their subscriptions and three
+  popup scenes off every tab; the live heap per tab (4.3–5.7 MB either way) is the document, its style
+  spans and the highlighting state, not the overlays.
+- A tab that has stayed hidden for `EditorBuffer.HIDDEN_RELEASE_DELAY` (3 minutes) gives back what it keeps
+  only for drawing and can rebuild on demand: the cached whole-document String when it is a second copy (a
+  dirty buffer's — a clean buffer's snapshot *is* its saved baseline, so dropping it would free nothing and
+  cost a copy on the next read) and the spell overlay's per-line spans and squiggle geometry
+  (`EditorBuffer.releaseHiddenCaches`, timed by `HiddenTabTimer`: a `CompletableFuture` delay, no thread and
+  no pulse receiver; showing the tab cancels it). The delay exists because the snapshot is rebuilt on the FX
+  thread in O(document) when next asked for, and a tab switched away from is often switched back to within
+  seconds. Undo entries and Undo History checkpoints are user data and are never released this way.
 - A restored background tab's editor is kept out of the scene until the tab is first selected
   (`DeferredTabContent`). A hidden but sized RichTextFX area lays out a screenful of cells on every
   document update, which was most of the cost of restoring a session.
@@ -250,8 +272,9 @@ diagnostics, …) follows one discipline:
 - `CanvasGuards` for dimension clamping + paintability checks
 - released to a 1×1 backing texture while inactive (the common case is a buffer that doesn't
   use the feature)
-- often **lazily attached** on first activation so an off-feature buffer never builds the
-  `Canvas`/subscriptions at all
+- **lazily attached** on first activation so an off-feature buffer never builds the
+  `Canvas`/subscriptions at all — the rule for everything but the two overlays that are on by default
+  (notes, spelling); see rule 6 above
 
 See the recipe in [extending.md](extending.md#add-a-canvas-overlay), and `SpellCheckOverlay` /
 `MarkdownLintOverlay` as references.

@@ -163,8 +163,11 @@ public final class FoldManager {
     /** Digit width the gutter line numbers were last padded to; re-pad visible rows when it changes. */
     private int lastLineDigits = 1;
 
-    /** Shared hover preview of a collapsed line's hidden content; reused across all lines. */
-    private final Tooltip linePreview = new Tooltip();
+    /** Shared hover preview of a collapsed line's hidden content; reused across all lines, and built on the
+     *  first hover over a collapsed header (a Tooltip is a popup window with a scene of its own). */
+    private Tooltip linePreview;
+    /** The inline colours {@link #setPreviewColors} chose, applied to the preview when it is built. */
+    private String previewStyle = "";
     /** Paragraph whose preview is currently showing, or -1 when hidden. */
     private int previewPar = -1;
     /** Current preview foreground, also exposed as a looked-up color to plain styled-text runs. */
@@ -296,8 +299,6 @@ public final class FoldManager {
      * so the whole line is a hover target.
      */
     private void installHoverPreview() {
-        linePreview.getStyleClass().add("fold-preview-tooltip");
-        linePreview.setShowDuration(javafx.util.Duration.INDEFINITE);
         area.addEventHandler(MouseEvent.MOUSE_MOVED, this::updateHoverPreview);
         area.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hidePreview());
     }
@@ -309,14 +310,27 @@ public final class FoldManager {
     public void setPreviewColors(Color background, Color foreground) {
         previewForeground = foreground;
         Color border = background.interpolate(foreground, 0.3);
-        linePreview.setStyle("-fx-background-color: " + hex(background) + ";"
+        previewStyle = "-fx-background-color: " + hex(background) + ";"
                 + "-fx-text-fill: " + hex(foreground) + ";"
                 + "-fx-border-color: " + hex(border) + ";"
                 + "-fx-border-width: 1;"
                 + "-fx-padding: 6 8 6 8;"
                 + "-fx-font-family: \"JetBrains Mono\", \"monospace\";"
                 + "-fx-font-size: 12px;"
-                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0.15, 0, 3);");
+                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0.15, 0, 3);";
+        if (linePreview != null) {
+            linePreview.setStyle(previewStyle);
+        }
+    }
+
+    private Tooltip linePreview() {
+        if (linePreview == null) {
+            linePreview = new Tooltip();
+            linePreview.getStyleClass().add("fold-preview-tooltip");
+            linePreview.setShowDuration(javafx.util.Duration.INDEFINITE);
+            linePreview.setStyle(previewStyle);
+        }
+        return linePreview;
     }
 
     private static String hex(Color c) {
@@ -329,11 +343,12 @@ public final class FoldManager {
     private void updateHoverPreview(MouseEvent e) {
         int par = paragraphAt(e.getX(), e.getY());
         if (par >= 0 && byStart.containsKey(par) && isCollapsed(par)) {
-            if (par != previewPar || !linePreview.isShowing()) {
+            if (par != previewPar || linePreview == null || !linePreview.isShowing()) {
                 previewPar = par;
-                linePreview.setText(null);
-                linePreview.setGraphic(foldPreviewGraphic(byStart.get(par)));
-                linePreview.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
+                Tooltip preview = linePreview();
+                preview.setText(null);
+                preview.setGraphic(foldPreviewGraphic(byStart.get(par)));
+                preview.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
             }
         } else {
             hidePreview();
@@ -342,7 +357,7 @@ public final class FoldManager {
 
     private void hidePreview() {
         previewPar = -1;
-        if (linePreview.isShowing()) {
+        if (linePreview != null && linePreview.isShowing()) {
             linePreview.hide();
         }
     }

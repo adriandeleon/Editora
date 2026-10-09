@@ -25,7 +25,7 @@ import org.fxmisc.richtext.CodeArea;
  * {@link DebugIdentifiers#matchesIn}), redraws coalesce to one per pulse, and when no values are set
  * the canvas is 1×1 and invisible — zero cost outside a paused debug session.
  */
-final class InlineValuesOverlay extends Region implements SecondaryPane.Followed {
+final class InlineValuesOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final int MAX_PER_LINE = 3;
@@ -40,6 +40,8 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     private int frameLine = -1;
 
     private boolean redrawPending;
+    /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
+    private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private InlineValuesOverlay follower;
 
@@ -66,9 +68,37 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     public InlineValuesOverlay follower(CodeArea view) {
         InlineValuesOverlay second = new InlineValuesOverlay(view);
         second.font = font;
+        second.setRenderingActive(rendering);
         second.setValues(values, frameLine);
         follower = second;
         return second;
+    }
+
+    /**
+     * Releases the canvas while this overlay's tab is in the background and repaints when it is shown again
+     * (driven by {@code EditorBuffer.setRenderingActive}): a session suspended in a hidden tab would otherwise
+     * keep a viewport-sized texture alive for as long as the tab stays open.
+     */
+    @Override
+    public void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas);
+        }
+    }
+
+    /** Whether there is anything to paint; the canvas is 1x1 (no viewport texture) whenever there is not. */
+    private boolean drawable() {
+        return values != null && rendering;
     }
 
     /** Sets the suspended frame's variables (null or empty clears and releases the canvas). */
@@ -84,9 +114,7 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
             requestLayout();
             scheduleRedraw();
         } else {
-            clear();
-            canvas.setWidth(1); // release the full-viewport texture while inactive
-            canvas.setHeight(1);
+            CanvasGuards.release(canvas); // release the full-viewport texture while inactive
         }
     }
 
@@ -102,20 +130,15 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
     @Override
     protected void layoutChildren() {
         canvas.relocate(0, 0);
-        if (values == null) {
-            return;
+        if (!drawable()) {
+            return; // stay 1x1 / no texture while inactive or backgrounded
         }
-        double w = CanvasGuards.clampWidth(this, getWidth());
-        double h = CanvasGuards.clampHeight(this, getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
+        CanvasGuards.fit(this, canvas);
         scheduleRedraw();
     }
 
     private void scheduleRedraw() {
-        if (values == null || redrawPending) {
+        if (!drawable() || redrawPending) {
             return;
         }
         redrawPending = true;
@@ -125,17 +148,13 @@ final class InlineValuesOverlay extends Region implements SecondaryPane.Followed
         });
     }
 
-    private void clear() {
-        canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-    }
-
     private void redraw() {
         GraphicsContext g = canvas.getGraphicsContext2D();
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
         Map<String, String> vals = values;
-        if (vals == null || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         try {

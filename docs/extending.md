@@ -151,8 +151,14 @@ The discipline that keeps overlays off the hot path (see
   `OverlayPalette.track(area, palette -> { colors = palette; scheduleRedraw(); })` in the constructor —
   it re-resolves when the editor theme repaints the background, never per paint.
 
-Attach it in `EditorBuffer.installOverlays()` (eagerly for a common feature, or lazily via
-`attachLazyOverlay` for a rare one), anchor it inside `Minimap.WIDTH`, and add an
+Attach it lazily: a nullable field, an accessor that calls `attachLazyOverlay(new MyOverlay(area),
+Layer.MY_OVERLAY)` on first use (a stripe docked at the right edge goes through `attachLazyStripe`), and a
+new constant in `EditorBuffer.Layer` placed where the overlay belongs in the stack — the accessor hands a
+late-built overlay the state it missed (the font, the large-file guard, its on/off state). Every setter
+that may run before the feature is on guards with `if (on || myOverlay != null) myOverlay().set…`, so
+switching a feature *off* on a buffer that never had it builds nothing (`LazyOverlayFxTest` checks every
+lazy field stays null through such a sweep). Only an overlay that is on for every buffer by default (notes,
+spelling) is built in `installOverlays()`, tagged with `layered(node, Layer.X)`. Then add an
 `EditorBuffer.setXxxEnabled`/`setXxxData` pair injected from `MainController`. If it should also
 show on the scrollbar/minimap, feed a stripe (`DiagnosticStripe`-style) + a `Minimap` channel.
 

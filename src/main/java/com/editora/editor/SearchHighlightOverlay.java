@@ -20,7 +20,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * visible paragraphs. Driven by {@link #setMatches}: it activates when there are matches and clears
  * when empty.
  */
-final class SearchHighlightOverlay extends Region implements SecondaryPane.Followed {
+final class SearchHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     /** Amber wash for all matches, a deeper one + border for the current match (see OverlayPalette). */
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
@@ -34,6 +34,8 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
     private int activeIndex = -1;
     private boolean active;
     private boolean redrawPending;
+    /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
+    private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private SearchHighlightOverlay follower;
 
@@ -59,9 +61,37 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
     @Override
     public SearchHighlightOverlay follower(CodeArea view) {
         SearchHighlightOverlay second = new SearchHighlightOverlay(view);
+        second.setRenderingActive(rendering);
         second.setMatches(matches, activeIndex);
         follower = second;
         return second;
+    }
+
+    /**
+     * Releases the canvas while this overlay's tab is in the background and repaints when it is shown again
+     * (driven by {@code EditorBuffer.setRenderingActive}): a find left open on a hidden tab would otherwise
+     * keep a viewport-sized texture alive for as long as the tab stays open.
+     */
+    @Override
+    public void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas);
+        }
+    }
+
+    /** Whether there is anything to paint; the canvas is 1x1 (no viewport texture) whenever there is not. */
+    private boolean drawable() {
+        return active && rendering;
     }
 
     /** Sets the matches to highlight and which is the current one (-1 for none). */
@@ -80,29 +110,22 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
             requestLayout(); // size the canvas up to the viewport, then draw
             scheduleRedraw();
         } else {
-            clear();
-            canvas.setWidth(1); // release the full-viewport texture while hidden
-            canvas.setHeight(1);
+            CanvasGuards.release(canvas); // release the full-viewport texture while hidden
         }
     }
 
     @Override
     protected void layoutChildren() {
         canvas.relocate(0, 0);
-        if (!active) {
-            return; // stay 1x1 / no texture while inactive (the common case)
+        if (!drawable()) {
+            return; // stay 1x1 / no texture while inactive (the common case) or backgrounded
         }
-        double w = CanvasGuards.clampWidth(this, getWidth());
-        double h = CanvasGuards.clampHeight(this, getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
+        CanvasGuards.fit(this, canvas);
         scheduleRedraw();
     }
 
     private void scheduleRedraw() {
-        if (!active || redrawPending) {
+        if (!drawable() || redrawPending) {
             return;
         }
         redrawPending = true;
@@ -112,16 +135,12 @@ final class SearchHighlightOverlay extends Region implements SecondaryPane.Follo
         });
     }
 
-    private void clear() {
-        canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-    }
-
     private void redraw() {
         GraphicsContext g = canvas.getGraphicsContext2D();
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
-        if (!active || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         try {

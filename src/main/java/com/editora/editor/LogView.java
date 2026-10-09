@@ -94,6 +94,9 @@ final class LogView {
     private boolean adjusting;
     /** Bumped by every change to the text that is not an append: a filter computed before it is stale. */
     private int epoch;
+    /** Whether {@link #epoch} is being kept: counting starts with the first {@link #epoch()} read, so a buffer
+     *  that is never filtered (every non-log buffer) holds no document subscription for this. */
+    private boolean countingEdits;
 
     LogView(CodeArea area, Runnable onFilterChanged) {
         this(area, onFilterChanged, FOLLOW_CAP, FOLLOW_CAP / 8);
@@ -104,7 +107,6 @@ final class LogView {
         this.onFilterChanged = onFilterChanged;
         this.cap = cap;
         this.slack = slack;
-        area.plainTextChanges().filter(c -> !adjusting).subscribe(c -> epoch++); // a user edit
     }
 
     void setOnStateChanged(Runnable listener) {
@@ -209,8 +211,14 @@ final class LogView {
         return full != null ? fullText() : area.getText();
     }
 
-    /** See {@link #epoch}: a {@link LogFilter.Run} is installable only under the epoch its source was read at. */
+    /** See {@link #epoch}: a {@link LogFilter.Run} is installable only under the epoch its source was read at.
+     *  The first read starts the count; an epoch is only ever compared with one read later, so nothing
+     *  before that first read can be stale. */
     int epoch() {
+        if (!countingEdits) {
+            countingEdits = true;
+            area.plainTextChanges().filter(c -> !adjusting).subscribe(c -> epoch++); // a user edit
+        }
         return epoch;
     }
 

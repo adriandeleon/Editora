@@ -1238,8 +1238,12 @@ class DebugUiFlowFxTest {
                             FakeDebugAdapter.Session.variable("n", "0", 0),
                             FakeDebugAdapter.Session.variable("x", "1", 0)));
             stopAt(session, util, 2);
+            // The overlay is attached with the first values, so wait for it as well as for them.
+            await("the inline values never arrived", () -> {
+                Object overlay = FxTestSupport.field(b, "inlineValues");
+                return overlay != null && FxTestSupport.field(overlay, "values") != null;
+            });
             Object overlay = FxTestSupport.field(b, "inlineValues");
-            await("the inline values never arrived", () -> FxTestSupport.field(overlay, "values") != null);
             assertEquals(1, (int) FxTestSupport.callOnFx(() -> FxTestSupport.<Integer>field(overlay, "frameLine")));
         }
     }
