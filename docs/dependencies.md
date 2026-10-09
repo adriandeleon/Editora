@@ -34,12 +34,24 @@ in-project `m2-repo/`** (source: github.com/adriandeleon/RichTextFX). It adds VS
 - **Known limitation:** Emacs movement chords (`C-f`/`C-n`/…) are resolved by the scene-level
   `KeyDispatcher` on the primary caret and don't fan out — use arrows for multi-caret movement.
 
-**To update the fork:** rebuild it, copy the new `richtextfx-<version>.{jar,pom}` into `m2-repo/`,
+- **0.11.7-inlay.2** is a performance release of the same source: `ParagraphBox` caches its preferred
+  height (Flowless re-measures every visible cell on every edit, which was a text layout plus font strikes
+  per visible line per keystroke; the cache is dropped by `requestLayout()`, which every size-relevant
+  change in JavaFX funnels through), `Paragraph.getText()` returns a single segment's own `String` instead
+  of a copy, and `ReadOnlyStyledDocument.getText()` builds the document text from segments without filling
+  every paragraph's text cache. A plain-text file is no longer held twice by the model.
+
+**To update the fork:** rebuild it (**with JDK 21** — see
+[packaging-notes.md](reference/packaging-notes.md); `./gradlew :richtextfx:test` then
+`./gradlew :richtextfx:publishToMavenLocal`, which writes the jar and pom under
+`~/.m2/repository/io/github/adriandeleon/richtextfx/<version>/`), copy the new
+`richtextfx-<version>.{jar,pom}` into `m2-repo/`,
 record each file's SHA-256 beside it (`sha256sum richtextfx-<version>.jar | cut -d' ' -f1 >
 richtextfx-<version>.jar.sha256`, likewise for the `.pom`), delete the previous version's directory,
 and bump `<richtextfx.version>`. `BuildHygieneTest` fails when the jar no longer matches its
 recorded hash, when the version in the pom has no directory, or when an unused version is left behind. Use **0.11.7+** (earlier is incompatible
-with JavaFX 25+).
+with JavaFX 25+). The published pom declares JavaFX 21.0.5 at runtime scope with the classifier of the
+platform that built it; `pom.xml` excludes `org.openjfx:*` from the fork, so that never reaches the path.
 
 RichTextFX and its transitive deps (`reactfx`, `flowless`, `undofx`, `wellbehavedfx`) are
 **automatic modules**, which `jlink` cannot link — the `moditect-maven-plugin` (in the main build,
