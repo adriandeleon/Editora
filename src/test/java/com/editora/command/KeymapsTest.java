@@ -338,4 +338,33 @@ class KeymapsTest {
         r.removeAll(b);
         return r;
     }
+
+    /**
+     * Both histories of a file have a chord in every bundled keymap, not only in Emacs: Local History's tool
+     * window and Git's history of the file. No editor ships a default for either, so the GUI keymaps share one
+     * mnemonic pair (H for history, one more modifier for Git's) that none of them uses for anything else.
+     */
+    @Test
+    void everyKeymapBindsBothHistoriesOfAFile() {
+        Map<String, String> emacs = load("/com/editora/keymaps/emacs.json");
+        assertEquals("tool.fileHistory", emacs.get("M-g l"));
+        assertEquals("git.fileHistory", emacs.get("C-x v l"));
+        for (String id : GUI) {
+            Map<String, String> base = load("/com/editora/keymaps/" + id + ".json");
+            assertEquals("tool.fileHistory", base.get("M-S-h"), id);
+            assertEquals("git.fileHistory", base.get("C-M-S-h"), id);
+            Map<String, String> mac = load("/com/editora/keymaps/" + id + ".mac.json");
+            assertEquals("tool.fileHistory", mac.get("C-Cmd-h"), id + ".mac");
+            assertEquals("git.fileHistory", mac.get("C-Cmd-S-h"), id + ".mac");
+        }
+        for (String resource : allKeymapResources()) {
+            Map<String, String> map = load(resource);
+            for (String command : List.of("tool.fileHistory", "git.fileHistory")) {
+                assertEquals(
+                        1,
+                        map.values().stream().filter(command::equals).count(),
+                        resource + " binds " + command + " exactly once");
+            }
+        }
+    }
 }

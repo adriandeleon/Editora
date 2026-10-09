@@ -316,6 +316,11 @@ final class MenuBarModel {
                                                 SEPARATOR,
                                                 "git.toggleBlame",
                                                 "git.blamePreviousRevision")),
+                                // Editora's own record of every save, beside Git's: the one that still has
+                                // an answer for a file that was never committed.
+                                new MenuSpec(
+                                        "menubar.vcs.localHistory",
+                                        List.of("tool.fileHistory", "history.putLabel", "history.recentChanges")),
                                 new MenuSpec(
                                         "menubar.vcs.compare",
                                         List.of(

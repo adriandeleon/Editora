@@ -218,4 +218,26 @@ class PathKeysTest {
         PathKeys.invalidateCanonicalCache();
         assertEquals(cached, PathKeys.canonical(f), "re-resolves to the same identity after a clear");
     }
+
+    /** A11 (engine half): one file, one history key, whichever way it was reached. */
+    @Test
+    void theHistoryKeyOfAFileIsTheSameThroughALinkAndDirectly(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws Exception {
+        Path real = java.nio.file.Files.createDirectories(dir.resolve("real"));
+        Path file = java.nio.file.Files.writeString(real.resolve("a.txt"), "x");
+        Path link = dir.resolve("link");
+        try {
+            java.nio.file.Files.createSymbolicLink(link, real);
+        } catch (java.io.IOException | UnsupportedOperationException noLinks) {
+            org.junit.jupiter.api.Assumptions.abort("no symbolic links here");
+        }
+        PathKeys.invalidateCanonicalCache();
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+                PathKeys.normalizedKey(file), PathKeys.normalizedKey(link.resolve("a.txt")), "today's key: two");
+        org.junit.jupiter.api.Assertions.assertEquals(
+                PathKeys.historyKey(file), PathKeys.historyKey(link.resolve("a.txt")));
+        // …and for a file that is gone (its pre-delete copy must stay reachable).
+        org.junit.jupiter.api.Assertions.assertEquals(
+                PathKeys.historyKey(real.resolve("deleted.txt")), PathKeys.historyKey(link.resolve("deleted.txt")));
+    }
 }

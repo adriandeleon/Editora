@@ -66,12 +66,12 @@ have the full reference.
   [Typst](https://editora-project.dev/features/typst))
 - **Editing aids.** TextMate highlighting for 40+ languages, snippets for 30, file templates,
   EditorConfig, spell checking, multiple cursors, editor groups, auto-close and auto-rename tags,
-  keyboard macros, abbreviations, local file history and crash recovery.
+  keyboard macros, abbreviations, Local History and crash recovery.
   ([syntax highlighting](https://editora-project.dev/features/syntax-highlighting),
   [snippets](https://editora-project.dev/features/snippets),
   [multiple cursors](https://editora-project.dev/features/multiple-cursors),
   [macros](https://editora-project.dev/features/macros),
-  [local file history](https://editora-project.dev/features/local-file-history))
+  [Local History](https://editora-project.dev/features/local-file-history))
 - **Tooling in the window.** Task windows for Maven, Gradle, npm, Cargo and Go; an HTTP client for
   `.http` files; a server log viewer with follow and filters; HTML live preview; remote files over
   SFTP; and a Doctor screen that checks every external tool.

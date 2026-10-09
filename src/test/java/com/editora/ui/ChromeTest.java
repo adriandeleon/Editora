@@ -702,4 +702,21 @@ class ChromeTest {
         assertTrue(Chrome.contextEnabled("git.init", noRepo), "init is the other way");
         assertFalse(Chrome.contextEnabled("git.commit", noRepo), "an ordinary git command still needs one");
     }
+
+    /**
+     * The menu bar and the tab menu enable their Local History entries from this gate: with the feature off
+     * the window, Put Label and Recent Changes are unavailable, while Git's history of a file and the
+     * commands that delete what was already recorded are not touched.
+     */
+    @Test
+    void localHistoryOffDisablesItsMenuEntriesAndNothingElse() {
+        PaletteGates off = only("localHistory");
+        for (String id : List.of("tool.fileHistory", "history.putLabel", "history.recentChanges")) {
+            assertTrue(Chrome.paletteEnabled(id, allOn(), ctx()), id);
+            assertFalse(Chrome.paletteEnabled(id, off, ctx()), id);
+        }
+        assertTrue(Chrome.paletteEnabled("git.fileHistory", off, ctx()));
+        assertTrue(Chrome.paletteVisible("localHistory.purgeFile", off));
+        assertTrue(Chrome.paletteVisible("view.toggleLocalHistory", off));
+    }
 }

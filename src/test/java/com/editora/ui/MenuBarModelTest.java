@@ -189,4 +189,28 @@ class MenuBarModelTest {
             assertTrue(other.submenus().isEmpty(), "Simple UI mode has no submenus");
         }
     }
+
+    /**
+     * Local History is reachable by browsing, not only from the palette and the Project tree: its window,
+     * a new label and the cross-file list sit in their own submenu beside Git's History & Blame.
+     */
+    @Test
+    void theVcsMenuHasALocalHistorySubmenuBesideGitsHistory() {
+        MenuBarModel.MenuSpec vcs = MenuBarModel.menus().stream()
+                .filter(m -> "menubar.vcs".equals(m.titleKey()))
+                .findFirst()
+                .orElseThrow();
+        List<String> titles =
+                vcs.submenus().stream().map(MenuBarModel.MenuSpec::titleKey).toList();
+        int git = titles.indexOf("menubar.vcs.history");
+        assertEquals(git + 1, titles.indexOf("menubar.vcs.localHistory"), titles.toString());
+        assertEquals(
+                List.of("tool.fileHistory", "history.putLabel", "history.recentChanges"),
+                vcs.submenus().get(git + 1).entries());
+        assertTrue(vcs.submenus().get(git).entries().contains("git.fileHistory"));
+        // Simple UI mode switches Local History off, so its menu does not offer it.
+        for (MenuBarModel.MenuSpec simple : MenuBarModel.menus(true)) {
+            assertFalse(simple.allEntries().contains("tool.fileHistory"));
+        }
+    }
 }

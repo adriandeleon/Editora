@@ -36,6 +36,17 @@ class HistoryIndexGuardTest {
         assertFalse(HistoryIndexGuard.lostIndex(index, dir.resolve("blobs")), "content is the reader's to judge");
     }
 
+    /** A14: a staging file a killed write left among the bodies is not a stored body. */
+    @Test
+    void aLeftoverStagingFileIsNotABody(@TempDir Path dir) throws Exception {
+        Path shard = Files.createDirectories(dir.resolve("blobs").resolve("ab"));
+        Files.writeString(shard.resolve(".abcdef.txt.gz-123.tmp"), "half");
+        assertFalse(HistoryIndexGuard.hasBlobs(dir.resolve("blobs")));
+        assertFalse(HistoryIndexGuard.lostIndex(dir.resolve("index.json"), dir.resolve("blobs")));
+        blob(dir.resolve("blobs"));
+        assertTrue(HistoryIndexGuard.hasBlobs(dir.resolve("blobs")));
+    }
+
     @Test
     void onlyBackupsOfTheIndexCount(@TempDir Path dir) throws Exception {
         Path index = dir.resolve("index.json");

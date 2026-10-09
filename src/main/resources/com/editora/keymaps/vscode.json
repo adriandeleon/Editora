@@ -33,6 +33,8 @@
   "M-f5": "git.nextChange",
   "M-S-f5": "git.previousChange",
   "C-S-d": "tool.debug",
+  "M-S-h": "tool.fileHistory",
+  "C-M-S-h": "git.fileHistory",
   "C-S-x": "plugins.browse",
   "C-,": "view.settings",
   "C-\\": "view.splitVertical",

@@ -23,6 +23,16 @@ public final class HistoryQueries {
      * done by the panel (it owns the display formatter); this stays pure and zone-free.
      */
     public static boolean matches(HistoryRevision r, String query) {
+        return matches(r, query, null);
+    }
+
+    /**
+     * As {@link #matches(HistoryRevision, String)}, also matching {@code reasonLabel} — the reason as the
+     * list <em>shows</em> it ("Auto-save", "Sauvegarde automatique"). The stored reason is an identifier
+     * ({@code AUTOSAVE}); a user filters by the word in front of them, and in a translated UI the identifier
+     * matches nothing they can see. The identifier keeps matching too. {@code reasonLabel} may be null.
+     */
+    public static boolean matches(HistoryRevision r, String query, String reasonLabel) {
         if (query == null || query.isBlank()) {
             return true;
         }
@@ -30,7 +40,7 @@ public final class HistoryQueries {
             return false;
         }
         String q = query.toLowerCase(Locale.ROOT).strip();
-        return contains(r.label(), q) || contains(r.reason(), q);
+        return contains(r.label(), q) || contains(r.reason(), q) || contains(reasonLabel, q);
     }
 
     private static boolean contains(String haystack, String lowerNeedle) {

@@ -46,7 +46,7 @@ class LocalHistoryBaselineFxTest {
             List<HistoryRevision> afterFirst = awaitRevisions(fx, file, 2);
 
             assertEquals(
-                    List.of(HistoryRevision.REASON_SAVE, HistoryRevision.REASON_EXTERNAL),
+                    List.of(HistoryRevision.REASON_SAVE, HistoryCoordinator.REASON_BASELINE),
                     afterFirst.stream().map(HistoryRevision::reason).toList(),
                     "newest first: the save, then what it replaced");
             assertEquals("first edit\n", body(fx, afterFirst.get(0)));
@@ -62,7 +62,10 @@ class LocalHistoryBaselineFxTest {
             List<HistoryRevision> afterSecond = awaitRevisions(fx, file, 3);
             settle(async, fx);
             assertEquals(
-                    List.of(HistoryRevision.REASON_SAVE, HistoryRevision.REASON_SAVE, HistoryRevision.REASON_EXTERNAL),
+                    List.of(
+                            HistoryRevision.REASON_SAVE,
+                            HistoryRevision.REASON_SAVE,
+                            HistoryCoordinator.REASON_BASELINE),
                     revisions(fx, file).stream().map(HistoryRevision::reason).toList());
             assertEquals("second edit\n", body(fx, afterSecond.get(0)));
         }

@@ -125,8 +125,7 @@ class ConfigExporterTest {
                 "settings.json.v104.bak",
                 "notes.json",
                 "projects/app-1.json",
-                "history/index.json",
-                "history/blobs/ab/cdef.gz",
+                "search-history.json",
                 "plugins/my-plugin/plugin.jar",
                 "snippets/java.json")) {
             Files.createDirectories(cfg.resolve(kept).getParent());
@@ -136,6 +135,10 @@ class ConfigExporterTest {
                 "plugins/lsp/java/jdtls/plugins/big.jar",
                 "plugins/dap/java/java-debug.jar",
                 "jdtls-workspaces/abc/.metadata/index",
+                // A15: Local History is the user's files, not their configuration.
+                "history/index.json",
+                "history/index.json.corrupt.bak",
+                "history/blobs/ab/cdef.txt.gz",
                 "instance.lock",
                 "instance.properties",
                 "mcp-endpoint.json",
@@ -150,11 +153,10 @@ class ConfigExporterTest {
 
         assertEquals(
                 List.of(
-                        "history/blobs/ab/cdef.gz",
-                        "history/index.json",
                         "notes.json",
                         "plugins/my-plugin/plugin.jar",
                         "projects/app-1.json",
+                        "search-history.json",
                         "settings.json",
                         "settings.json.v104.bak",
                         "snippets/java.json"),
