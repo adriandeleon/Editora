@@ -7,6 +7,7 @@ import javafx.application.Platform;
 import javafx.scene.SnapshotParameters;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.image.PixelFormat;
 import javafx.scene.image.WritableImage;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.input.ScrollEvent;
@@ -23,7 +24,11 @@ import org.fxmisc.richtext.CodeArea;
  * mouse wheel over the column scrolls the editor exactly as it does over the text.
  *
  * <p>The (relatively expensive) content rendering is cached as an image and only regenerated when
- * the text or size changes; scrolling just re-blits the cached image plus the viewport rectangle.
+ * the text or size changes; scrolling just re-blits the cached image plus the viewport rectangle. A
+ * render draws one row per line, or one per pixel row once lines are less than a pixel tall
+ * ({@link MinimapRows}), and skips the snapshot when the runs it would draw are the ones already cached.
+ * A background tab keeps its content pixels on the CPU ({@link MinimapRetention}) so that switching back
+ * re-blits instead of re-rendering; only the textures go.
  */
 final class Minimap extends Region {
 
@@ -53,6 +58,22 @@ final class Minimap extends Region {
      *  the cached snapshot is dropped so its GPU texture can be reclaimed — keeps retained VRAM from
      *  scaling with the number of open files. */
     private boolean renderingActive = true;
+    /** A render was asked for while the tab was hidden (an edit, new colours, a tab size, {@link #refresh}):
+     *  the pixels kept by {@link MinimapRetention} may no longer match, so showing the tab renders. */
+    private boolean staleWhileHidden;
+    /** This minimap's entry in {@link MinimapRetention}. */
+    private final Object retentionKey = new Object();
+    /** The runs the cached {@link #contentImage} was drawn from, with the colour, line count and size it was
+     *  drawn at: a render that would draw the same thing again skips the snapshot. */
+    private final MinimapRows.RunList lastRuns = new MinimapRows.RunList();
+
+    private final MinimapRows.RunList nextRuns = new MinimapRows.RunList();
+    private Color lastTextColor;
+    private int lastTotal = -1;
+    /** When the last content render ran, for {@link MinimapPacing}; zero before the first. */
+    private long lastRenderNanos;
+    /** Holds an edit-driven render back until {@link MinimapPacing}'s interval has passed. */
+    private final javafx.animation.PauseTransition pacedRender = new javafx.animation.PauseTransition();
     /** Re-entrancy guard. {@link #renderContent}'s {@code canvas.snapshot()} forces a synchronous
      *  full-scene layout pass that can settle the editor's viewport and fire the
      *  {@code estimatedScrollYProperty} listener — re-entering {@link #redraw}/{@link #renderContent}
@@ -70,6 +91,9 @@ final class Minimap extends Region {
 
     /** Content renders run by all minimaps — the test seam for "one render per tab switch / resize drag". */
     static final java.util.concurrent.atomic.AtomicInteger RENDERS_FOR_TEST =
+            new java.util.concurrent.atomic.AtomicInteger();
+    /** Renders that found the cached image already right and skipped the draw and snapshot. */
+    static final java.util.concurrent.atomic.AtomicInteger UNCHANGED_FOR_TEST =
             new java.util.concurrent.atomic.AtomicInteger();
     /** A content render is queued for this pulse; see {@link #renderContent}. */
     private boolean renderPending;
@@ -143,8 +167,9 @@ final class Minimap extends Region {
         setPrefWidth(WIDTH);
         setMaxWidth(WIDTH);
 
-        area.multiPlainChanges().successionEnds(Duration.ofMillis(200)).subscribe(ignore -> renderContent());
+        area.multiPlainChanges().successionEnds(Duration.ofMillis(200)).subscribe(ignore -> renderAfterEdit());
         area.estimatedScrollYProperty().addListener((o, a, b) -> scheduleRedraw());
+        pacedRender.setOnFinished(e -> renderContent());
 
         canvas.addEventHandler(MouseEvent.MOUSE_PRESSED, this::beginDrag);
         canvas.addEventHandler(MouseEvent.MOUSE_DRAGGED, this::continueDrag);
@@ -161,6 +186,17 @@ final class Minimap extends Region {
             gitColors[GitHunk.Kind.DELETED.ordinal()] = palette.error();
             repaintStripes();
         });
+    }
+
+    /** Releases what this minimap holds outside itself: its retained pixels and its timers. */
+    void dispose() {
+        if (follower != null) {
+            follower.dispose();
+        }
+        pacedRender.stop();
+        resizeRender.stop();
+        MinimapRetention.SHARED.remove(retentionKey);
+        contentImage = null;
     }
 
     /** Sets where the Git change marks come from; they are read on the next repaint. */
@@ -344,8 +380,14 @@ final class Minimap extends Region {
 
     /**
      * Marks whether this minimap's buffer is the active (visible) tab. A background tab drops the
-     * cached snapshot (a pinned GPU texture) and stops rendering; the minimap regenerates when the tab
-     * is shown again. This is what keeps retained VRAM from growing with the number of open files.
+     * cached snapshot (a pinned GPU texture) and its canvas texture and stops rendering. This is what
+     * keeps retained VRAM from growing with the number of open files.
+     *
+     * <p>The snapshot's <em>pixels</em> stay, on the CPU, in {@link MinimapRetention}: switching back to
+     * the tab writes them into a fresh image and re-blits — a texture upload — unless something that
+     * changes the picture happened while it was hidden ({@link #staleWhileHidden}) or the column is now
+     * another size, in which case it renders as before. A full render was the largest app frame of a tab
+     * switch; the pixels are a few hundred KB.
      */
     void setRenderingActive(boolean active) {
         if (follower != null) {
@@ -356,15 +398,79 @@ final class Minimap extends Region {
         }
         this.renderingActive = active;
         if (active) {
-            renderContent();
+            // Fit the canvas here rather than waiting for layoutChildren: a render queued now must draw at
+            // the column's size, not into the released 1×1 canvas (and then again once layout re-fits it).
+            CanvasGuards.fit(this, canvas);
+            boolean restored = restoreRetained(canvas.getWidth(), canvas.getHeight());
+            if (restored) {
+                scheduleRedraw(); // the re-fitted canvas is blank: blit the restored image onto it
+            }
+            if (!restored || staleWhileHidden) {
+                // With the pixels restored, the render still skips its snapshot when the edit made while
+                // hidden did not move a run (see renderContent0); the redraw above has shown them by then.
+                renderContent();
+            }
+            staleWhileHidden = false;
         } else {
+            retain();
             contentImage = null;
-            canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
+            CanvasGuards.release(canvas);
         }
+    }
+
+    /** Copies the cached content pixels into {@link MinimapRetention} before the image is dropped. */
+    private void retain() {
+        WritableImage image = contentImage;
+        if (image == null) {
+            return;
+        }
+        int pw = (int) image.getWidth();
+        int ph = (int) image.getHeight();
+        if (pw <= 0 || ph <= 0) {
+            return;
+        }
+        int[] pixels = new int[pw * ph];
+        image.getPixelReader().getPixels(0, 0, pw, ph, PixelFormat.getIntArgbPreInstance(), pixels, 0, pw);
+        MinimapRetention.SHARED.put(retentionKey, new MinimapRetention.Entry(pixels, pw, ph, lastSnapW, lastSnapH));
+    }
+
+    /**
+     * Rebuilds {@link #contentImage} from the retained pixels when they were snapshotted at the current
+     * column size; the entry is consumed either way.
+     *
+     * @return whether the cached image is back
+     */
+    private boolean restoreRetained(double w, double h) {
+        MinimapRetention.Entry entry = MinimapRetention.SHARED.get(retentionKey);
+        if (entry == null) {
+            return false;
+        }
+        MinimapRetention.SHARED.remove(retentionKey);
+        if (entry.canvasWidth() != w || entry.canvasHeight() != h) {
+            return false;
+        }
+        WritableImage image = new WritableImage(entry.pixelWidth(), entry.pixelHeight());
+        image.getPixelWriter()
+                .setPixels(
+                        0,
+                        0,
+                        entry.pixelWidth(),
+                        entry.pixelHeight(),
+                        PixelFormat.getIntArgbPreInstance(),
+                        entry.pixels(),
+                        0,
+                        entry.pixelWidth());
+        contentImage = image;
+        lastSnapW = entry.canvasWidth();
+        lastSnapH = entry.canvasHeight();
+        return true;
     }
 
     @Override
     protected void layoutChildren() {
+        if (!renderingActive) {
+            return; // the canvas is released while the tab is hidden; setRenderingActive(true) re-fits it
+        }
         double w = CanvasGuards.clampWidth(this, getWidth());
         double h = CanvasGuards.clampHeight(this, getHeight());
         if (canvas.getWidth() != w || canvas.getHeight() != h) {
@@ -372,9 +478,11 @@ final class Minimap extends Region {
             canvas.setHeight(h);
             if (contentImage == null) {
                 renderContent();
+            } else if (w == lastSnapW && h == lastSnapH) {
+                scheduleRedraw(); // the cached image is this size already: nothing to re-render
             } else {
                 // Dragging the window edge changes the height on every pulse, and a content render walks
-                // every paragraph and then snapshots (a forced full-scene layout). Until the size settles
+                // the document and then snapshots (a forced full-scene layout). Until the size settles
                 // the cached image is re-blitted with the live viewport box and stripes over it; the
                 // render that matches the final size follows once.
                 scheduleRedraw();
@@ -582,6 +690,11 @@ final class Minimap extends Region {
      * render always draws from the current document.
      */
     private void renderContent() {
+        if (!renderingActive) {
+            // Nothing is drawn for a hidden tab; remember that its retained pixels are no longer current.
+            staleWhileHidden = true;
+            return;
+        }
         if (renderPending) {
             return; // a render is already queued for this pulse; it will pick up whatever changed
         }
@@ -606,6 +719,25 @@ final class Minimap extends Region {
         }.start();
     }
 
+    /**
+     * A typing pause ended: re-render now, or — on a long document — once {@link MinimapPacing}'s interval
+     * since the last render has passed. Edits that land while the wait runs are picked up by that one
+     * render; the timer is not restarted.
+     */
+    private void renderAfterEdit() {
+        if (!renderingActive) {
+            staleWhileHidden = true;
+            return;
+        }
+        long wait = MinimapPacing.delayMillis(area.getParagraphs().size(), System.nanoTime() - lastRenderNanos);
+        if (wait <= 0) {
+            renderContent();
+        } else if (pacedRender.getStatus() != javafx.animation.Animation.Status.RUNNING) {
+            pacedRender.setDuration(javafx.util.Duration.millis(wait));
+            pacedRender.playFromStart();
+        }
+    }
+
     /** Runs a queued render, guarding against the nested paint {@code snapshot()}'s forced layout can cause. */
     private void renderNow() {
         renderPending = false;
@@ -614,7 +746,6 @@ final class Minimap extends Region {
             return; // nested paint triggered by snapshot()'s forced layout — let the outer render finish
         }
         painting = true;
-        RENDERS_FOR_TEST.incrementAndGet();
         try {
             renderContent0();
         } finally {
@@ -626,26 +757,51 @@ final class Minimap extends Region {
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         GraphicsContext g = canvas.getGraphicsContext2D();
-        g.clearRect(0, 0, w, h);
-        // Hold the prior buffer so a same-size re-render can reuse it (see the snapshot call below)
-        // instead of allocating a fresh WritableImage; cleared if we bail out before snapshotting.
-        WritableImage prior = contentImage;
-        contentImage = null;
-        if (!renderingActive || !isVisible() || !CanvasGuards.paintable(getWidth(), getHeight())) {
-            return;
-        }
         int total = area.getParagraphs().size();
-        if (total == 0) {
+        if (!renderingActive || !isVisible() || !CanvasGuards.paintable(getWidth(), getHeight()) || total == 0) {
+            g.clearRect(0, 0, w, h);
+            contentImage = null;
             return;
         }
         double rowHeight = rowHeight(h, total);
-        double blockH = Math.max(0.75, Math.min(rowHeight * 0.8, 2.0));
+        // What this render would draw, decided before anything is cleared: a typing pause that changed no
+        // run (a character inside a word, a style-only edit that still ended a succession) costs the scan
+        // and nothing else. The scan is O(lines) in length reads and O(rows) in text.
+        MinimapRows.plan(
+                total,
+                rowHeight,
+                tabSize,
+                maxColumns(w),
+                area::getParagraphLength,
+                i -> area.getParagraph(i).getText(),
+                nextRuns);
+        if (contentImage != null
+                && w == lastSnapW
+                && h == lastSnapH
+                && total == lastTotal
+                && textColor.equals(lastTextColor)
+                && nextRuns.sameAs(lastRuns)) {
+            UNCHANGED_FOR_TEST.incrementAndGet();
+            return;
+        }
+        RENDERS_FOR_TEST.incrementAndGet();
+        lastRenderNanos = System.nanoTime();
+        g.clearRect(0, 0, w, h);
+        // Hold the prior buffer so a same-size re-render can reuse it (see the snapshot call below)
+        // instead of allocating a fresh WritableImage.
+        WritableImage prior = contentImage;
+        contentImage = null;
+        boolean aggregated = MinimapRows.aggregated(rowHeight);
+        // One whole pixel row per aggregated row; otherwise a block a little shorter than the line's row.
+        double blockH = aggregated ? 1.0 : Math.max(0.75, Math.min(rowHeight * 0.8, 2.0));
         g.setFill(textColor);
-        for (int i = 0; i < total; i++) {
-            if (area.getParagraphLength(i) == 0) {
-                continue; // blank line: nothing to draw, and skip building its (empty) text string
+        for (int k = 0, n = nextRuns.size(); k < n; k++) {
+            double y = aggregated ? nextRuns.row(k) : nextRuns.row(k) * rowHeight;
+            double x = nextRuns.startColumn(k) * CHAR_SCALE;
+            double width = Math.min(w - x, (nextRuns.endColumn(k) - nextRuns.startColumn(k)) * CHAR_SCALE);
+            if (x < w && width > 0) {
+                g.fillRect(x, y, width, blockH);
             }
-            drawRuns(g, area.getParagraph(i).getText(), i * rowHeight, blockH, w);
         }
         SnapshotParameters sp = new SnapshotParameters();
         sp.setFill(Color.TRANSPARENT);
@@ -656,6 +812,9 @@ final class Minimap extends Region {
             contentImage = canvas.snapshot(sp, reuse);
             lastSnapW = w;
             lastSnapH = h;
+            lastTotal = total;
+            lastTextColor = textColor;
+            lastRuns.copyFrom(nextRuns);
         } catch (RuntimeException ignored) {
             // snapshot() forces a synchronous full-scene layout pass; during early startup the
             // CodeArea's VirtualFlow may have no visible cell yet, and Flowless throws
@@ -668,6 +827,11 @@ final class Minimap extends Region {
         drawLintStripes(g, w, h, total, rowHeight);
         drawGitStripes(g, h, total, rowHeight);
         drawTodoStripes(g, h, total, rowHeight);
+    }
+
+    /** How many text columns fit a {@code w}-pixel column before the right edge. */
+    static int maxColumns(double w) {
+        return (int) Math.ceil(w / CHAR_SCALE);
     }
 
     /**
@@ -818,43 +982,6 @@ final class Minimap extends Region {
             // Beside the Git stripe when there is one, so neither hides the other.
             g.fillRect(gitMarks.length == 0 ? 0 : GIT_STRIPE_WIDTH + 1, Math.min(y, h - markH), STRIPE_WIDTH, markH);
         }
-    }
-
-    /** Draws a block for each contiguous run of non-whitespace characters in {@code text}. */
-    private void drawRuns(GraphicsContext g, String text, double y, double blockH, double w) {
-        drawRuns(g, text, y, blockH, w, tabSize);
-    }
-
-    /** As the instance method; returns how many characters of {@code text} had to be examined. */
-    static int drawRuns(GraphicsContext g, String text, double y, double blockH, double w, int tabSize) {
-        int n = text.length();
-        int col = 0;
-        int runStart = -1;
-        for (int i = 0; i <= n; i++) {
-            if (i < n && col * CHAR_SCALE >= w) {
-                // Past the column's right edge nothing more can be drawn; a minified line would otherwise
-                // be scanned to its end for blocks that all fall outside it.
-                if (runStart >= 0 && runStart * CHAR_SCALE < w) {
-                    g.fillRect(runStart * CHAR_SCALE, y, w - runStart * CHAR_SCALE, blockH);
-                }
-                return i;
-            }
-            boolean whitespace = i == n || Character.isWhitespace(text.charAt(i));
-            if (!whitespace && runStart < 0) {
-                runStart = col;
-            } else if (whitespace && runStart >= 0) {
-                double x = runStart * CHAR_SCALE;
-                double width = Math.min(w - x, (col - runStart) * CHAR_SCALE);
-                if (x < w && width > 0) {
-                    g.fillRect(x, y, width, blockH);
-                }
-                runStart = -1;
-            }
-            if (i < n) {
-                col += text.charAt(i) == '\t' ? tabSize : 1;
-            }
-        }
-        return n;
     }
 
     private static int clamp(int idx, int total) {

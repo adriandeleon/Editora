@@ -38,6 +38,12 @@ final class ImageCacheBudget {
     /** Formulas are small; this is a backstop, not a working limit. */
     static final long MATH_BUDGET_BYTES = 32L * 1024 * 1024;
 
+    /**
+     * Content pixels of hidden tabs' minimaps ({@link MinimapRetention}): CPU-side only, a few hundred KB
+     * per tab at a 90 px column, so this binds only on a very tall screen with many tabs.
+     */
+    static final long MINIMAP_BUDGET_BYTES = 16L * 1024 * 1024;
+
     private ImageCacheBudget() {}
 
     /**
