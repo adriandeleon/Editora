@@ -281,7 +281,8 @@ final class NavigationCoordinator {
 
     String bufferParentDir(Tab tab) {
         EditorBuffer b = host.bufferOf(tab);
-        Path p = b == null ? null : b.getPath();
+        RestorePlaceholder placeholder = b == null ? RestorePlaceholder.of(tab) : null;
+        Path p = b != null ? b.getPath() : placeholder == null ? null : placeholder.path();
         return p == null || p.getParent() == null ? "" : p.getParent().toString();
     }
 

@@ -173,6 +173,9 @@ final class FileWorkflowCoordinator {
 
         EditorBuffer bufferOf(Tab tab);
 
+        /** {@link #bufferOf}, building the editor of a restored tab the session restore has not reached yet. */
+        EditorBuffer ensureBuffer(Tab tab);
+
         Tab tabFor(EditorBuffer buffer);
 
         Tab tabForPath(Path file);
@@ -502,7 +505,7 @@ final class FileWorkflowCoordinator {
      */
     void whenLoaded(Path file, Runnable action) {
         Tab tab = host.tabForPath(file);
-        EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
+        EditorBuffer buffer = tab == null ? null : host.ensureBuffer(tab); // a restored tab not built yet: build it
         if (buffer == null) {
             return;
         }

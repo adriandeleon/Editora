@@ -84,9 +84,26 @@ load, through `NavigationCoordinator.landJump`.
 `WindowManager.launch` builds the primary window (the one that had focus), returns to the event loop, and
 then builds each remaining restored window after a painted frame. External open requests that arrive
 meanwhile are queued until every window exists, a quit pauses the queue, and windows not yet built keep
-their saved sessions. Within a window, a restored background tab is loaded, highlighted and has its folds
-and caret restored as before, but its editor node is attached to the scene only when the tab is first
-selected (`DeferredTabContent`); the first restored tab the `TabPane` auto-selects is not treated as active
-(`EditorArea.holdActiveTab`). Tab context menus (`LazyContextMenu`) and the build-tool task trees
+their saved sessions. Within a window, only the selected tab (in a split, each group's selected tab) gets an editor
+before the first frame; every other saved file is a `RestorePlaceholder` tab — a `TabContent` with the
+file's title, icon and pin and an empty node, in its saved group and position, in the same `Tab` object the
+editor is later swapped into. After the selected file has painted, `WindowSessionCoordinator` builds and
+fills the rest on the `RestoreSchedule` cadence: a batch per pulse within a time budget (at least one), a
+painted frame (`afterNextPaint`) between batches, in selected-then-tab order. A background tab is loaded and
+has its folds and caret restored as before, but its editor node is attached to the scene only when the tab
+is first selected (`DeferredTabContent`), and its first syntax-highlight pass waits for that moment too
+(`EditorBuffer.setHighlightDeferred`); the first restored tab the `TabPane` auto-selects is not treated as
+active (`EditorArea.holdActiveTab`). A placeholder that something needs earlier is built out of order
+(`materialize`): `EditorArea`'s tab materializer runs before a newly selected tab is published, so no
+selection listener ever sees a placeholder as the active tab; `MainController.ensureBuffer` serves
+`whenLoaded`, crash-recovery records, MCP buffer operations and the test-method jump; `openBackgroundBuffer`
+(diff apply, agent writes, LSP workspace edits) builds and loads a placeholder's file rather than opening a
+second tab on it. Everything else that iterates buffers sees a placeholder as "no buffer" (`bufferOf` is
+null, `tabPath` is the file): a setting pushed to open buffers reaches the editor when it is built, since
+the wiring reads the current settings; search in open files, Replace in Files, Problems and the tab-close
+paths treat the file as on disk, which is what the placeholder's content is; session capture writes the
+placeholder's saved caret and pin; a rename or folder move relocates the placeholder's path. The restore is
+complete (`restoreComplete`, the `session-restored` startup mark) once every entry is built and filled, in
+or out of order. Tab context menus (`LazyContextMenu`) and the build-tool task trees
 (`ToolWindow` content suppliers) are built on first use, and build-file detection runs on one shared worker
 that skips unchanged marker files (`BuildDetection`).

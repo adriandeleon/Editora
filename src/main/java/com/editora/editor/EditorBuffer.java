@@ -453,6 +453,14 @@ public class EditorBuffer implements TabContent {
     /** Whether this buffer is the visible tab (see {@link #setRenderingActive}); starts true because a
      *  freshly built buffer measures itself before the controller marks background tabs inactive. */
     private boolean renderingActive = true;
+    /**
+     * While set, {@link #applyHighlighting()} records that a pass is owed instead of dispatching it (see
+     * {@link #setHighlightDeferred}). The owed range stays in {@code highlightDirty}, so the pass that runs
+     * when the deferral ends covers everything that changed meanwhile.
+     */
+    private boolean highlightDeferred;
+    /** A highlight pass was requested while {@link #highlightDeferred}; run it when the deferral ends. */
+    private boolean highlightOwed;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     private boolean largeFile;
     /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
@@ -6690,6 +6698,35 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
+     * Holds the syntax highlighter back while this buffer's editor is not in the scene.
+     *
+     * <p>A restored background tab is filled while its editor is detached ({@code DeferredTabContent}); the
+     * load marks the whole document dirty, and without this the tab would be tokenised on the highlight
+     * pool and restyled on the FX thread a pause later — for every restored tab, shortly after its fill,
+     * while the user is looking at a different file. Deferred, the first pass runs when the tab is first
+     * shown instead, which is when its styles are first visible. Every other document consumer (folds, the
+     * caret, LSP sync, the snapshot) is unaffected: only the style pass waits.
+     *
+     * <p>Ending the deferral runs the owed pass at once, if one was requested; a buffer that was never asked
+     * to highlight while deferred dispatches nothing.
+     */
+    public void setHighlightDeferred(boolean deferred) {
+        if (highlightDeferred == deferred) {
+            return;
+        }
+        highlightDeferred = deferred;
+        if (!deferred && highlightOwed) {
+            highlightOwed = false;
+            applyHighlighting();
+        }
+    }
+
+    /** True while {@link #setHighlightDeferred} is holding the highlighter back. */
+    public boolean isHighlightDeferred() {
+        return highlightDeferred;
+    }
+
+    /**
      * Nudges the just-revealed editor area to repaint after a {@code TabPane} tab switch. Flowless's
      * {@code VirtualFlow} lays out synchronously while the tab content is being swapped in — before its
      * viewport bounds are established — so it can present <em>blank</em> until the next layout pulse (which,
@@ -9652,6 +9689,10 @@ public class EditorBuffer implements TabContent {
         }
         if (largeFile) {
             dropHighlightState(); // large-file mode: leave the document as plain text
+            return;
+        }
+        if (highlightDeferred) {
+            highlightOwed = true; // the dirty range is kept; setHighlightDeferred(false) dispatches the pass
             return;
         }
         if (csvRainbow && isCsv() && !heavyFile) {

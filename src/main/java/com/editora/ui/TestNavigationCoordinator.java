@@ -60,6 +60,9 @@ final class TestNavigationCoordinator {
 
         EditorBuffer bufferOf(Tab tab);
 
+        /** {@link #bufferOf}, building the editor of a restored tab the session restore has not reached yet. */
+        EditorBuffer ensureBuffer(Tab tab);
+
         Tab tabForPath(Path file);
     }
 
@@ -479,7 +482,7 @@ final class TestNavigationCoordinator {
     /** Moves the caret to a test method's declaration in an already-open file (text search; strips param/
      *  parameterized/subtest suffixes). Best-effort — leaves the caret at the top if not found. */
     void jumpToTestMethod(Path file, String methodName) {
-        EditorBuffer buffer = host.bufferOf(host.tabForPath(file));
+        EditorBuffer buffer = host.ensureBuffer(host.tabForPath(file)); // a restored tab not built yet: build it
         if (buffer == null || methodName == null || methodName.isBlank()) {
             return;
         }
