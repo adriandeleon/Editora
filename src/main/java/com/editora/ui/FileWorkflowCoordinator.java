@@ -78,14 +78,18 @@ final class FileWorkflowCoordinator {
     }
 
     /**
-     * What a physical commit wrote. The bytes themselves are not kept — one encoded copy of every saved open
-     * file, used only to ask "is this still what we wrote?" — but their SHA-256 and length, which answer the
-     * same question (as {@link EditorBuffer.DiskSnapshot} does for a load).
+     * What a physical commit wrote. Neither the bytes nor the text are kept — one copy of every saved open file
+     * each, used only to ask "is this still what we wrote?" and "is the buffer back at what was saved?" — but
+     * their SHA-256 and length, which answer the same questions (as {@link EditorBuffer.DiskSnapshot} does for
+     * a load, and {@code SavedBaseline} for the buffer). {@code documentVersion} is the buffer's version the
+     * text was captured at, so an acknowledgement on an unchanged document can share its snapshot instead.
      */
     private record CommittedSave(
             long sequence,
             Path target,
-            String content,
+            long documentVersion,
+            int textLength,
+            String textFingerprint,
             String fingerprint,
             long length,
             DiskWrite disk,
@@ -2540,7 +2544,9 @@ final class FileWorkflowCoordinator {
         CommittedSave committed = new CommittedSave(
                 request.sequence(),
                 request.target(),
-                request.content(),
+                request.documentVersion(),
+                request.content().length(),
+                com.editora.editor.TextFingerprint.of(request.content()),
                 fingerprint(request.bytes()),
                 request.bytes().length,
                 disk,
@@ -2589,7 +2595,11 @@ final class FileWorkflowCoordinator {
         // With the ending that was written: a line-ending conversion chosen while this write was in flight is
         // not on disk (the text is the same, so the text alone would call the buffer clean), and converting
         // back afterwards matches the disk again.
-        buffer.acknowledgeSavedContent(committed.content(), committed.lineEnding());
+        buffer.acknowledgeSavedContent(
+                committed.documentVersion(),
+                committed.textLength(),
+                committed.textFingerprint(),
+                committed.lineEnding());
         buffer.setDiskSnapshot(
                 committed.disk().modifiedMillis(), committed.disk().size(), committed.fingerprint());
     }

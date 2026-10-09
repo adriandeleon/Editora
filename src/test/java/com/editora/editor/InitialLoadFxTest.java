@@ -46,7 +46,7 @@ class InitialLoadFxTest {
                 buffer.setInitialContent(loaded);
 
                 assertSame(loaded, buffer.getContent(), "the loaded String itself serves whole-document readers");
-                assertSame(loaded, field(buffer, "cleanText"));
+                assertSame(loaded, field(field(buffer, "baseline"), "text"), "the baseline shares it, not a copy");
                 assertEquals(
                         before,
                         buffer.documentSnapshotMaterializations(),
@@ -75,6 +75,7 @@ class InitialLoadFxTest {
         // Built on this (non-FX) thread, as the file-read worker does.
         InitialDocument prepared = buffer.prepareInitialContent(crlf, false);
         assertNotNull(prepared.document());
+        assertEquals(TextFingerprint.of("one\ntwo\nthree"), prepared.textFingerprint(), "hashed on the worker");
         runOnFx(() -> {
             try {
                 long before = buffer.documentSnapshotMaterializations();
@@ -100,7 +101,7 @@ class InitialLoadFxTest {
                 buffer.setTruncatedLoad(true);
                 buffer.setReadOnly(true);
                 buffer.setInitialContent("first slice of a huge file\n");
-                assertNull(field(buffer, "cleanText"));
+                assertNull(field(buffer, "baseline"));
                 assertFalse(buffer.isDirty());
 
                 buffer.setTruncatedLoad(false); // a reload of a file that is no longer huge...
@@ -109,7 +110,7 @@ class InitialLoadFxTest {
                 buffer.convertLineEndings(false); // back to the file's own: re-evaluates the dirty flag
                 assertFalse(buffer.isDirty(), "...is not dirty for a moment before its text arrives");
                 buffer.setInitialContent("whole file\n");
-                assertEquals("whole file\n", field(buffer, "cleanText"));
+                assertEquals("whole file\n", field(field(buffer, "baseline"), "text"));
                 buffer.getArea().appendText("x");
                 assertTrue(buffer.isDirty());
             } finally {

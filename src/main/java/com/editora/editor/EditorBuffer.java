@@ -220,8 +220,12 @@ public class EditorBuffer implements TabContent {
     private final IndentKeys indentKeys = new IndentKeys(area);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
-    /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
-    private String cleanText = "";
+    /**
+     * The last saved/loaded content — its length and fingerprint, and the text itself only while it is still the
+     * snapshot ({@link SavedBaseline}); the buffer is dirty only when the text differs from this. Null for a
+     * truncated load, which has no baseline: it is never compared, and pins no copy once a log tail moves on.
+     */
+    private SavedBaseline baseline = SavedBaseline.of("");
     /** True when the current content has no durable identity even if it equals the in-memory baseline. */
     private boolean forcedDirty;
     /** The line ending the file had when loaded or last saved; a different one is an unsaved change. */
@@ -1100,6 +1104,7 @@ public class EditorBuffer implements TabContent {
     private void configureSettledEditDispatcher() {
         settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
             resolveDirty();
+            sealBaselineIfDirty();
             applyHighlighting();
             recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
         });
@@ -9159,9 +9164,13 @@ public class EditorBuffer implements TabContent {
                 segmentLongLines ? InitialDocument.prepare(area, content, true) : InitialDocument.ofText(content));
     }
 
-    /** Builds a load's paragraphs for {@link #setInitialContent(InitialDocument)}; safe off the FX thread. */
+    /**
+     * Builds a load's paragraphs for {@link #setInitialContent(InitialDocument)}; safe off the FX thread. Meant
+     * for the read worker, so the text's fingerprint — what the saved baseline keeps once the buffer is edited —
+     * is computed here too, and never on the FX thread.
+     */
     public InitialDocument prepareInitialContent(String content, boolean segmentLongLines) {
-        return InitialDocument.prepare(area, content, segmentLongLines);
+        return InitialDocument.prepare(area, content, segmentLongLines).fingerprinted();
     }
 
     /** Installs a prepared load: one document swap, with the loaded String shared as baseline and snapshot. */
@@ -9176,7 +9185,7 @@ public class EditorBuffer implements TabContent {
         // Establish the baseline before the change event. Otherwise an async loading shell briefly becomes
         // dirty during replace(), which promotes a disposable preview tab before the method can clear it.
         // A truncated load has no baseline (null): it is never compared, and pins no copy once a log tail moves on.
-        cleanText = truncatedLoad ? null : initial;
+        baseline = truncatedLoad ? null : SavedBaseline.of(initial, loaded.textFingerprint());
         forcedDirty = false;
         documentSnapshots.expect(initial); // the dirty check inside the change event must not copy it back out
         if (loaded.document() != null) {
@@ -9456,7 +9465,8 @@ public class EditorBuffer implements TabContent {
         dirtyUnresolved = dirty.get()
                 && !forcedDirty
                 && lineEnding.equals(cleanLineEnding)
-                && contentLength() == cleanText.length();
+                && baseline != null
+                && contentLength() == baseline.length();
         if (!dirtyUnresolved) {
             dirty.set(differsFromSaved());
         }
@@ -9469,9 +9479,26 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Once the edits of a dirty buffer have settled, the baseline's text is no longer the snapshot and would be
+     * a second document-sized String for as long as the tab stays modified: keep its fingerprint only.
+     */
+    private void sealBaselineIfDirty() {
+        if (baseline != null && dirty.get() && !dirtyUnresolved) {
+            baseline.seal();
+        }
+    }
+
+    /** Whether the saved baseline still holds its text rather than a fingerprint alone (tests). */
+    boolean baselineHoldsText() {
+        return baseline != null && baseline.holdsText();
+    }
+
     /** Marks the current content as the saved baseline (after load/save); clears the dirty flag. */
     public void markClean() {
-        cleanText = getContent(); // the whole document, so narrowing never fakes a dirty flag
+        // The whole document, so narrowing never fakes a dirty flag. Widened, this is the snapshot String
+        // itself — shared, not copied — and it stays shared until the next edit settles.
+        baseline = SavedBaseline.of(getContent());
         cleanLineEnding = lineEnding;
         forcedDirty = false;
         dirty.set(false);
@@ -9481,9 +9508,7 @@ public class EditorBuffer implements TabContent {
     private boolean differsFromSaved() {
         return forcedDirty
                 || !lineEnding.equals(cleanLineEnding)
-                || (cleanText != null
-                        && (contentLength() != cleanText.length()
-                                || !getContent().equals(cleanText)));
+                || (baseline != null && (contentLength() != baseline.length() || !baseline.matches(getContent())));
     }
 
     /** Marks content as not durably saved, even when it still equals its in-memory baseline. */
@@ -9497,7 +9522,28 @@ public class EditorBuffer implements TabContent {
      * line-ending conversion made while the write was in flight is still unsaved, and undoing either is clean.
      */
     public void acknowledgeSavedContent(String savedContent, String savedLineEnding) {
-        cleanText = savedContent == null ? "" : savedContent;
+        acknowledgeSavedBaseline(SavedBaseline.of(savedContent == null ? "" : savedContent), savedLineEnding);
+    }
+
+    /**
+     * As above, from what the save worker kept of the text it wrote: its {@link #docVersion() document version},
+     * length and {@link TextFingerprint fingerprint}, never the text. When the document has not changed since
+     * the save was captured, the current snapshot <em>is</em> the saved text and is shared as the baseline;
+     * otherwise the baseline starts sealed and the comparison is by hash.
+     */
+    public void acknowledgeSavedContent(
+            long savedVersion, int savedLength, String savedTextFingerprint, String savedLineEnding) {
+        SavedBaseline saved = savedVersion == docVersion
+                        && narrowPrefix == null
+                        && !logView.filtered()
+                        && area.getLength() == savedLength
+                ? SavedBaseline.of(documentTextSnapshot(), savedTextFingerprint)
+                : SavedBaseline.sealed(savedLength, savedTextFingerprint);
+        acknowledgeSavedBaseline(saved, savedLineEnding);
+    }
+
+    private void acknowledgeSavedBaseline(SavedBaseline saved, String savedLineEnding) {
+        baseline = saved;
         boolean current = savedLineEnding == null || savedLineEnding.equals(getLineEnding());
         cleanLineEnding = current ? lineEnding : savedLineEnding;
         forcedDirty = !current && eolOverride != null; // a rule that arrived mid-save: no converting back to it
