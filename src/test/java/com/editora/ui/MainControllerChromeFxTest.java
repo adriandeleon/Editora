@@ -96,28 +96,38 @@ class MainControllerChromeFxTest {
 
     @Test
     void theToolbarsEditButtonsActOnTheActiveBuffer() throws Exception {
+        // The buttons' enablement follows the buffer one event-loop turn after an edit or selection change
+        // (coalesced, see MainController.scheduleEditStateRefresh), which is always before a click can land;
+        // each press below therefore runs in its own turn, as a user's would.
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = addBuffer("");
+            b.getArea().appendText("hello");
+            b.getArea().getUndoManager().preventMerge();
+            b.getArea().appendText(" world");
+            assertEquals("hello world", b.getContent());
+            return b;
+        });
         FxTestSupport.runOnFx(() -> {
-            EditorBuffer buffer = addBuffer("");
-            buffer.getArea().appendText("hello");
-            buffer.getArea().getUndoManager().preventMerge();
-            buffer.getArea().appendText(" world");
-            assertEquals("hello world", buffer.getContent());
-
             button("undoButton").fire();
             assertEquals("hello", buffer.getContent());
+        });
+        FxTestSupport.runOnFx(() -> {
             button("redoButton").fire();
             assertEquals("hello world", buffer.getContent());
-
             buffer.getArea().selectRange(0, 5);
+        });
+        FxTestSupport.runOnFx(() -> {
             button("copyButton").fire();
             assertEquals("hello", Clipboard.getSystemClipboard().getString());
             assertEquals("hello world", buffer.getContent(), "Copy leaves the text");
-
             buffer.getArea().selectRange(5, 11);
+        });
+        FxTestSupport.runOnFx(() -> {
             button("cutButton").fire();
             assertEquals(" world", Clipboard.getSystemClipboard().getString());
             assertEquals("hello", buffer.getContent());
-
+        });
+        FxTestSupport.runOnFx(() -> {
             ClipboardContent paste = new ClipboardContent();
             paste.putString(", pasted");
             Clipboard.getSystemClipboard().setContent(paste);

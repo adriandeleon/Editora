@@ -75,7 +75,17 @@ private void scheduleRedraw() {
 ```
 
 "One per pulse" here means one per event-loop turn: the `runLater` runs before the next input event, which
-is normally but not always the next pulse. A true once-per-frame scheduler was prototyped and not adopted
+is normally but not always the next pulse. The toolbar's edit state (Save/Undo/Redo/Cut/Copy) follows the same
+shape: a typed character fires an edit and a selection change, and `MainController.scheduleEditStateRefresh`
+turns both into one refresh per turn. That refresh reads the buffer's dirty *property*, not `isDirty()`: the
+exact answer can cost an O(document) compare, and the property's own listener re-runs the refresh when it
+changes. `EditorBuffer.dirtyAfterEdit` decides most edits by length alone; at the saved length it compares the
+text at once for a clean buffer and for a *length-changing* edit that lands there (a deletion or an undo of an
+insert — the way a user gets back to the saved text, and the dip to clean is what the tab marker and the Git
+gutter's reset listen for), while a *same-length* edit of a dirty buffer (move line, overwrite, transpose)
+carries the flag and is compared at the 150 ms settle or when `isDirty()` is asked, so a run of them copies
+nothing. Nobody on the per-key path may ask `isDirty()`. A dirty transition (clean → dirty on the first edit)
+still refreshes at once through the listener; it is the per-key path that is coalesced. A true once-per-frame scheduler was prototyped and not adopted
 (it raised render wait in headless scroll runs); measure on a real GPU pipeline before trying again. For a
 leading-edge-plus-max-wait throttle (rather than a trailing debounce) use `ThrottlePolicy` / `FxThrottle`.
 
@@ -128,6 +138,12 @@ style-only change that still ended a succession — skips the draw and the snaps
   [gotchas.md](gotchas.md#never-ask-getcharacterboundsonscreen-for-an-empty-range).
 - The box returned for a one-character range is wider than the glyph advance, so take a character advance
   from the difference of two `minX` values, never from a box width (`WhitespaceOverlay`).
+- The line-number gutter is rebuilt per cell by Flowless (every edited paragraph, every row scrolled into
+  view), so a row allocates as little as the look allows: its padded number comes from a per-gutter
+  `LineNumberText` cache (no `String.format`), its clip is sized in the row's own `layoutChildren` rather
+  than through two property bindings, and the empty bookmark and chevron slots are bare `Region`s. The
+  per-view scroll features (format bar, AI actions bar, sticky scroll, semantic refresh) share one
+  `estimatedScrollY` listener (`installFormatBarListeners`; `ScrollListenerPolicyTest` pins it).
 - Per-keystroke helpers read a bounded window, not the document: Enter/Tab/closer handling goes through
   `IndentWindow` slices, brace matching checks the two adjacent characters before building its window, and
   the find bar holds a `SearchMatches` page (at most 100,000 matches) that overlays binary-search. None of
@@ -191,7 +207,11 @@ until loading completes.
 
 Folding's debounced document detection is also generation-guarded background work. Explicit fold
 commands remain synchronous, while large-file mode skips heuristic detection entirely; server and
-manual regions can still be applied without scanning the document. A fold *restore* is always deferred to
+manual regions can still be applied without scanning the document. A consumer that wants the regions
+current without a stall asks `FoldManager.recomputeAsync()` (synchronous only when the heuristic is off,
+which reads no text): the Structure outline does so when it attaches to the selected tab, after building its
+tree from the regions the manager already holds, and skips even that while its tool window is closed —
+a tab switch scans nothing; opening the window rebuilds and asks once. A fold *restore* is always deferred to
 that background detection: the saved collapsed lines are applied when the regions arrive and are computed
 on demand by `collapsedStartLines()`, `unfoldContaining()` and the fold commands. The restore's scan also
 stands in for the debounced pass the load's own insertion would otherwise trigger: that pass runs only when
@@ -288,6 +308,10 @@ diagnostics, …) follows one discipline:
 - **lazily attached** on first activation so an off-feature buffer never builds the
   `Canvas`/subscriptions at all — the rule for everything but the two overlays that are on by default
   (notes, spelling); see rule 6 above
+- **inert while it has nothing to paint**: every `scheduleRedraw` returns on its `active` flag before any
+  viewport call, and an overlay that is on for every buffer (the Personal-Notes highlight) also asks a cheap
+  gate (`NoteManager.hasActiveSpans`) before queueing its `runLater`, so a buffer without a note never does
+  the visible-paragraph lookups — the same shape as the TODO overlay being off until it has marks
 
 See the recipe in [extending.md](extending.md#add-a-canvas-overlay), and `SpellCheckOverlay` /
 `MarkdownLintOverlay` as references.

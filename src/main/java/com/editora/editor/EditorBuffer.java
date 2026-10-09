@@ -1083,7 +1083,10 @@ public class EditorBuffer implements TabContent {
         // keystroke — O(n) allocation per char on a very large single buffer (e.g. minified JS on one
         // line, past the line-count heavy-file tier). See dirtyAfterEdit for when the text is compared.
         // A log filter or followed append rewrites the area without being a user edit: dirty is carried over.
-        area.plainTextChanges().filter(c -> !logView.adjusting()).subscribe(c -> dirtyAfterEdit());
+        area.plainTextChanges()
+                .filter(c -> !logView.adjusting())
+                .subscribe(c -> dirtyAfterEdit(
+                        c.getRemoved().length() == c.getInserted().length()));
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -1284,19 +1287,20 @@ public class EditorBuffer implements TabContent {
             scheduleAiActionsBar();
             selectionChanged.run();
         });
+        // One vertical-scroll listener for the four per-scroll features (each gated on its own flag and
+        // coalesced per pulse), in the order the former separate listeners ran: RichTextFX notifies every
+        // listener on every scroll step, so three of them cost three dispatches for one boolean each.
         a.estimatedScrollYProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
-        });
-        a.estimatedScrollYProperty().addListener((obs, old, now) -> scheduleStickyScroll());
-        a.estimatedScrollXProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
-        });
-        a.estimatedScrollYProperty().addListener((obs, old, now) -> {
+            scheduleStickyScroll();
             if (semanticActive) {
                 semanticScrollDebounce.playFromStart(); // re-request tokens for the scrolled-to region
             }
+        });
+        a.estimatedScrollXProperty().addListener((obs, old, now) -> {
+            scheduleFormatBar();
+            scheduleAiActionsBar();
         });
         a.focusedProperty().addListener((obs, was, now) -> {
             if (!now) {
@@ -2089,7 +2093,7 @@ public class EditorBuffer implements TabContent {
         anchorOverText(spellOverlay); // red squiggles
         installImageDrop(area);
         anchorOverText(noteOverlay);
-        noteOverlay.setSpans(notes::activeSpans);
+        noteOverlay.setSpans(notes::activeSpans, notes::hasActiveSpans); // inert until a note is positioned
         noteOverlay.setActive(true);
         installPointerHovers(area);
         AnchorPane.setTopAnchor(minimap, 0d);
@@ -9736,12 +9740,17 @@ public class EditorBuffer implements TabContent {
     /**
      * The per-edit dirty check. A length (or line-ending) difference decides without reading the text. At
      * the saved length the text has to be compared, which builds the whole document: a clean buffer does
-     * that at once — it must never show as modified when it is not — but an already-dirty one stays dirty
-     * and is compared when the edit settles (or when {@link #isDirty()} is asked), so a run of same-length
-     * edits (move line up/down, overwrite, transpose) no longer copies the document on every one of them.
+     * that at once — it must never show as modified when it is not — and so does a dirty buffer that a
+     * length-changing edit (a deletion, an undo of an insert) brought back to the saved length: that is how
+     * a user lands on the saved text, and the tab marker, the Save button and the Git gutter's reset
+     * ({@code GitGutterLines.cleaned}) expect the flag to clear then, not 150 ms later. A dirty buffer edited
+     * with a {@code sameLength} change stays dirty and is compared when the edit settles (or when
+     * {@link #isDirty()} is asked), so a run of same-length edits (move line up/down, overwrite, transpose)
+     * no longer copies the document on every one of them — those runs, not a single landing, were the cost.
      */
-    private void dirtyAfterEdit() {
-        dirtyUnresolved = dirty.get()
+    private void dirtyAfterEdit(boolean sameLength) {
+        dirtyUnresolved = sameLength
+                && dirty.get()
                 && !forcedDirty
                 && lineEnding.equals(cleanLineEnding)
                 && baseline != null
