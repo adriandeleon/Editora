@@ -58,6 +58,19 @@ final class DocumentSnapshots {
         current = null;
     }
 
+    /**
+     * Drops the snapshot unless it is the very String {@code retained} — the saved baseline of a clean buffer,
+     * which the first snapshot aliases: letting that one go would free nothing and cost a whole-document copy
+     * on the next read. Returns whether anything was released.
+     */
+    boolean releaseUnless(String retained) {
+        if (current == null || current.text() == retained) {
+            return false;
+        }
+        current = null;
+        return true;
+    }
+
     long materializations() {
         return materializations;
     }

@@ -277,12 +277,11 @@ class MultiCaretForeignEditFxTest {
 
     /** The editor's right-click menu for {@code b}, as a right-click at its top-left corner builds it. */
     private javafx.scene.control.ContextMenu contextMenu(EditorBuffer b) throws Exception {
-        javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu");
         FxTestSupport.runOnFx(() -> b.getArea()
                 .getOnContextMenuRequested()
                 .handle(new javafx.scene.input.ContextMenuEvent(
                         javafx.scene.input.ContextMenuEvent.CONTEXT_MENU_REQUESTED, 5, 5, 5, 5, false, null)));
-        return menu;
+        return FxTestSupport.field(b, "contextMenu"); // built by the first request
     }
 
     private static javafx.scene.control.MenuItem item(javafx.scene.control.ContextMenu menu, String key) {

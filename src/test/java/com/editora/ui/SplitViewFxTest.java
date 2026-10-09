@@ -442,7 +442,6 @@ class SplitViewFxTest {
         FxTestSupport.runOnFx(() -> second.selectRange(10, 5, 10, 7));
         assertNotNull(FxTestSupport.callOnFx(second::getOnContextMenuRequested), "pane 2 answers a right-click");
 
-        javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu");
         FxTestSupport.runOnFx(() -> {
             // Inside pane 2's selection: a right-click outside it moves the caret there and drops it.
             second.showParagraphAtTop(8);
@@ -463,6 +462,7 @@ class SplitViewFxTest {
                             null));
         });
         settle();
+        javafx.scene.control.ContextMenu menu = FxTestSupport.field(b, "contextMenu"); // built by that request
         try {
             assertTrue(FxTestSupport.callOnFx(menu::isShowing));
             assertSame(second, FxTestSupport.callOnFx(menu::getOwnerNode), "shown on the pane that was clicked");

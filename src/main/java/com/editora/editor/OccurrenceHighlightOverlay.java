@@ -22,7 +22,7 @@ import org.fxmisc.richtext.model.TwoDimensional.Bias;
  * scroll/edit/resize, visible paragraphs only, released to a 1×1 texture while empty (the common case —
  * the caret is rarely resting on a highlightable symbol).
  */
-final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.Followed {
+final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.Followed, TabSurface {
 
     private static final Color READ = Color.web("#90a4ae", 0.28); // neutral blue-gray wash
     private static final Color WRITE = Color.web("#ffb74d", 0.32); // warmer — the symbol is assigned here
@@ -35,6 +35,8 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
 
     private boolean active;
     private boolean redrawPending;
+    /** False while this overlay's tab is in the background — see {@link #setRenderingActive}. */
+    private boolean rendering = true;
     /** The overlay of the split's second view, kept in step with this one (see {@link #follower}). */
     private OccurrenceHighlightOverlay follower;
 
@@ -53,9 +55,37 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
     @Override
     public OccurrenceHighlightOverlay follower(CodeArea view) {
         OccurrenceHighlightOverlay second = new OccurrenceHighlightOverlay(view);
+        second.setRenderingActive(rendering);
         second.setSpans(spans);
         follower = second;
         return second;
+    }
+
+    /**
+     * Releases the canvas while this overlay's tab is in the background and repaints when it is shown again
+     * (driven by {@code EditorBuffer.setRenderingActive}): a word left highlighted on a hidden tab would
+     * otherwise keep a viewport-sized texture alive for as long as the tab stays open.
+     */
+    @Override
+    public void setRenderingActive(boolean on) {
+        if (follower != null) {
+            follower.setRenderingActive(on);
+        }
+        if (rendering == on) {
+            return;
+        }
+        rendering = on;
+        if (on) {
+            requestLayout();
+            scheduleRedraw();
+        } else {
+            CanvasGuards.release(canvas);
+        }
+    }
+
+    /** Whether there is anything to paint; the canvas is 1x1 (no viewport texture) whenever there is not. */
+    private boolean drawable() {
+        return active && rendering;
     }
 
     /** Sets the occurrence spans (offset triples) to wash; empty hides + releases the texture. */
@@ -73,29 +103,22 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
             requestLayout();
             scheduleRedraw();
         } else {
-            canvas.getGraphicsContext2D().clearRect(0, 0, canvas.getWidth(), canvas.getHeight());
-            canvas.setWidth(1); // release the full-viewport texture while hidden
-            canvas.setHeight(1);
+            CanvasGuards.release(canvas); // release the full-viewport texture while hidden
         }
     }
 
     @Override
     protected void layoutChildren() {
         canvas.relocate(0, 0);
-        if (!active) {
-            return;
+        if (!drawable()) {
+            return; // stay 1x1 / no texture while empty or backgrounded
         }
-        double w = CanvasGuards.clampWidth(this, getWidth());
-        double h = CanvasGuards.clampHeight(this, getHeight());
-        if (canvas.getWidth() != w || canvas.getHeight() != h) {
-            canvas.setWidth(w);
-            canvas.setHeight(h);
-        }
+        CanvasGuards.fit(this, canvas);
         scheduleRedraw();
     }
 
     private void scheduleRedraw() {
-        if (!active || redrawPending) {
+        if (!drawable() || redrawPending) {
             return;
         }
         redrawPending = true;
@@ -110,7 +133,7 @@ final class OccurrenceHighlightOverlay extends Region implements SecondaryPane.F
         double w = canvas.getWidth();
         double h = canvas.getHeight();
         g.clearRect(0, 0, w, h);
-        if (!active || !CanvasGuards.paintable(getWidth(), getHeight())) {
+        if (!drawable() || !CanvasGuards.paintable(getWidth(), getHeight())) {
             return;
         }
         try {

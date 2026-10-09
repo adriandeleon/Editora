@@ -296,6 +296,20 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
         scheduleRedraw();
     }
 
+    /**
+     * What a tab hidden for a while gives back: the per-line flagged spans (each entry keys a line's text)
+     * and the squiggle positions, both rebuilt from the word verdicts on the next repaint. The verdicts
+     * themselves ({@link #spellCache}) stay — they are Hunspell lookups, not geometry — and so does the
+     * code-line set the hover and the menu consult. Nothing is scheduled: the tab is not on screen.
+     */
+    void releaseHiddenCaches() {
+        if (follower != null) {
+            follower.releaseHiddenCaches();
+        }
+        flaggedCache.clear();
+        geometry.clear();
+    }
+
     /** Forgets where the squiggles go, not what is misspelled: the font or the tab size changed. */
     void invalidateGeometry() {
         if (follower != null) {

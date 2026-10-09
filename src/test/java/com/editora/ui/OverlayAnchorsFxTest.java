@@ -24,9 +24,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class OverlayAnchorsFxTest {
 
-    /** The overlays built with the buffer. */
-    private static final List<String> EAGER =
-            List.of("whitespace", "spellOverlay", "mdLintOverlay", "inlineValues", "todoOverlay", "noteOverlay");
+    /** The overlays built with the buffer (on by default for every buffer). */
+    private static final List<String> EAGER = List.of("spellOverlay", "noteOverlay");
+    /** The overlays attached on first activation (see {@code LazyOverlayFxTest}). */
+    private static final List<String> LAZY = List.of("whitespace", "mdLintOverlay", "inlineValues", "todoOverlay");
 
     @BeforeAll
     void setUp() throws Exception {
@@ -52,10 +53,21 @@ class OverlayAnchorsFxTest {
             for (String overlay : EAGER) {
                 assertEquals(withMinimap, rightAnchor(b, overlay), overlay + " stops where the text does");
             }
+            // Attached while the minimap is shown: each takes the text rectangle as it is right now.
+            b.setWhitespaceVisible(true);
+            FxTestSupport.call(b, "mdLintOverlay", new Class[] {});
+            b.setInlineValues(java.util.Map.of("alpha", "1"), 0);
+            FxTestSupport.call(b, "todoOverlay", new Class[] {});
+            for (String overlay : LAZY) {
+                assertEquals(withMinimap, rightAnchor(b, overlay), overlay + " starts where the text stops");
+            }
 
             b.setMinimapVisible(false);
             assertEquals(0d, rightAnchor(b, "scrollPane"), "precondition: the text now reaches the edge");
             for (String overlay : EAGER) {
+                assertEquals(0d, rightAnchor(b, overlay), overlay + " reaches the edge with the text");
+            }
+            for (String overlay : LAZY) {
                 assertEquals(0d, rightAnchor(b, overlay), overlay + " reaches the edge with the text");
             }
 
@@ -67,6 +79,9 @@ class OverlayAnchorsFxTest {
             b.setMinimapVisible(true);
             assertEquals(withMinimap, rightAnchor(b, "searchOverlay"));
             for (String overlay : EAGER) {
+                assertEquals(withMinimap, rightAnchor(b, overlay), overlay);
+            }
+            for (String overlay : LAZY) {
                 assertEquals(withMinimap, rightAnchor(b, overlay), overlay);
             }
         });

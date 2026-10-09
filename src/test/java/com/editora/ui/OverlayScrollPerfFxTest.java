@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javafx.scene.Node;
@@ -190,7 +191,11 @@ class OverlayScrollPerfFxTest {
             "logOverlay",
             "spellOverlay",
             "todoOverlay",
-            "noteOverlay");
+            "noteOverlay",
+            "searchOverlay",
+            "occurrenceOverlay",
+            "inlineValues",
+            "aceJump");
 
     @Test
     void backgroundTabsAndEmptyOverlaysHoldNoViewportTexture() throws Exception {
@@ -201,7 +206,14 @@ class OverlayScrollPerfFxTest {
         for (EditorBuffer b : buffers) {
             FxTestSupport.runOnFx(() -> {
                 b.setWhitespaceVisible(true);
-                Object md = FxTestSupport.field(b, "mdLintOverlay");
+                FxTestSupport.call(b, "todoOverlay", new Class[] {}); // attach (lazy) so the loop below finds it
+                // The four overlays that are TabSurface since M4: a find, a word highlight, a suspended
+                // debug session and a jump each hold a full-viewport texture only while their tab is shown.
+                b.setSearchMatches(com.editora.editor.SearchMatches.of(0, 3), 0);
+                b.setOccurrenceSpans(List.of(new com.editora.editor.OccurrenceSpan(0, 0, 0, 3, false)));
+                b.setInlineValues(Map.of("value", "1", "text", "2"), 0);
+                b.startAceJump();
+                Object md = FxTestSupport.call(b, "mdLintOverlay", new Class[] {}); // attached on first use
                 FxTestSupport.invokeWith(md, "setActive", boolean.class, true);
                 FxTestSupport.invokeWith(
                         md,
@@ -235,8 +247,25 @@ class OverlayScrollPerfFxTest {
                 }
             }
         }
-        for (String name : List.of("whitespace", "mdLintOverlay", "lintOverlay", "lspOverlay", "logOverlay")) {
+        for (String name : List.of(
+                "whitespace",
+                "mdLintOverlay",
+                "lintOverlay",
+                "lspOverlay",
+                "logOverlay",
+                "searchOverlay",
+                "occurrenceOverlay",
+                "inlineValues")) {
             assertTrue(drawn(shown, name), name + " of the visible tab draws");
+        }
+        // A jump started on a tab that was then hidden ended with it (its keys must not stay owned there).
+        for (EditorBuffer b : buffers) {
+            if (b != shown) {
+                assertFalse(
+                        (boolean) FxTestSupport.callOnFx(
+                                () -> FxTestSupport.field(FxTestSupport.field(b, "aceJump"), "active")),
+                        "AceJump of a background tab is over");
+            }
         }
 
         // An active overlay with nothing to draw lets its texture go, and takes it back with content.
@@ -264,7 +293,15 @@ class OverlayScrollPerfFxTest {
         // Reselecting a background tab restores its drawing and releases the one just left.
         EditorBuffer back = buffers.get(0);
         select(back);
-        for (String name : List.of("whitespace", "mdLintOverlay", "lintOverlay", "lspOverlay", "logOverlay")) {
+        for (String name : List.of(
+                "whitespace",
+                "mdLintOverlay",
+                "lintOverlay",
+                "lspOverlay",
+                "logOverlay",
+                "searchOverlay",
+                "occurrenceOverlay",
+                "inlineValues")) {
             assertTrue(drawn(back, name), name + " repaints when its tab is shown again");
             assertEquals(1, canvasOf(shown, name).getWidth(), name + " of the tab just left");
         }
