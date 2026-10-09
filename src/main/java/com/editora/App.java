@@ -485,8 +485,8 @@ public class App extends Application {
                   --project[=]<dir>     Open <dir> as a project (only when Projects are enabled)
                   --new-file[=name]     Open a new buffer instead of the Welcome page (optionally named)
                   --single-window[=project]  Open just one window (the named project, else no-project)
-                  --no-session          Open only the files given here; don't restore the saved session
                                         instead of restoring all windows; doesn't change the saved layout
+                  --no-session          Open only the files given here; don't restore the saved session
                   --new-instance        Start a separate editor process instead of handing this launch
                                         to the one already running with the same config directory
                   --diff-ui LEFT RIGHT  Compare two files or directories in a standalone diff window
