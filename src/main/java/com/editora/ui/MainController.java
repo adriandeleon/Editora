@@ -1273,6 +1273,29 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
     }
 
+    /**
+     * One lazily built tool window: its panel is made by {@code content} on the window's first open. The
+     * title is the {@code toolwindow.<id>} message and the toggle command {@code tool.<id>}; the overload
+     * below is for the two whose keys do not follow the id.
+     */
+    private static ToolWindow toolWindow(
+            String id,
+            ToolWindow.Side side,
+            java.util.function.Supplier<javafx.scene.Node> icon,
+            java.util.function.Supplier<? extends Region> content) {
+        return toolWindow(id, "toolwindow." + id, side, icon, content, "tool." + id);
+    }
+
+    private static ToolWindow toolWindow(
+            String id,
+            String titleKey,
+            ToolWindow.Side side,
+            java.util.function.Supplier<javafx.scene.Node> icon,
+            java.util.function.Supplier<? extends Region> content,
+            String commandId) {
+        return new ToolWindow(id, tr(titleKey), side, icon, content, commandId);
+    }
+
     /** The Structure panel, built on its first use; it attaches the active buffer as it is built. */
     private StructurePanel structurePanel() {
         if (structurePanel == null) {
@@ -1405,132 +1428,9 @@ public class MainController implements com.editora.mcp.McpBridge {
         panel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
         panel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         panel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
-        panel.setFileActions(new ProjectPanel.FileActions() {
-            @Override
-            public boolean localHistoryEnabled() {
-                return MainController.this.localHistoryEnabled();
-            }
-
-            @Override
-            public void showLocalHistory(Path file) {
-                historyCoordinator.showForPath(file);
-            }
-
-            @Override
-            public GitPathScope gitScope(Path path) {
-                return git.scopeOf(path);
-            }
-
-            @Override
-            public void gitShowFileHistory(Path file) {
-                git.activatingRepositoryOf(file, () -> gitWindows.gitFileHistoryForPath(file));
-            }
-
-            @Override
-            public void gitCompareWithHead(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsHead(file));
-            }
-
-            @Override
-            public void gitCompareWithBranch(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsBranch(file));
-            }
-
-            @Override
-            public void gitCompareWithTag(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsTag(file));
-            }
-
-            @Override
-            public void gitCompareWithRevision(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsCommit(file));
-            }
-
-            @Override
-            public void gitAnnotate(Path file) {
-                git.ifEnabled(() -> {
-                    fileWorkflows.openPath(file);
-                    git.annotateActive();
-                });
-            }
-
-            @Override
-            public void gitStage(Path file) {
-                git.ifEnabled(() -> git.gitStagePath(file));
-            }
-
-            @Override
-            public void gitUnstage(Path file) {
-                git.ifEnabled(() -> git.gitUnstagePath(file));
-            }
-
-            @Override
-            public void gitRevert(Path file) {
-                git.ifEnabled(() -> git.gitRevertPath(file));
-            }
-
-            @Override
-            public void gitAddToGitignore(Path file) {
-                git.ifEnabled(() -> git.addToGitignore(file));
-            }
-        });
-        panel.setMarkerActions(new ProjectPanel.MarkerActions() {
-            @Override
-            public boolean personalNotesEnabled() {
-                return notesCoordinator.isEnabled();
-            }
-
-            @Override
-            public boolean hasBookmarks(Path file) {
-                return bookmarkCoordinator.hasBookmarks(file);
-            }
-
-            @Override
-            public boolean hasPersonalNotes(Path file) {
-                return notesCoordinator.hasPersonalNotes(file);
-            }
-
-            @Override
-            public String personalNotesTooltip(Path path) {
-                return notesCoordinator.personalNotesTooltip(path);
-            }
-
-            @Override
-            public void addBookmark(Path file) {
-                bookmarkCoordinator.addBookmark(file);
-            }
-
-            @Override
-            public void addBookmark(Path file, int line) {
-                bookmarkCoordinator.addBookmark(file, line);
-            }
-
-            @Override
-            public void addPersonalNote(Path file) {
-                notesCoordinator.addPersonalNote(file);
-            }
-
-            @Override
-            public void addPersonalNote(Path file, com.editora.editor.NoteDraft draft) {
-                notesCoordinator.addPersonalNote(file, draft);
-            }
-
-            @Override
-            public java.util.List<com.editora.config.PersonalNote> personalNotes(Path path) {
-                java.util.List<com.editora.config.PersonalNote> notes = notesCoordinator.notesFor(path);
-                return notes == null ? java.util.List.of() : java.util.List.copyOf(notes);
-            }
-
-            @Override
-            public void updatePersonalNote(Path path, com.editora.config.PersonalNote note, String body) {
-                notesCoordinator.updatePersonalNote(path, note, body);
-            }
-
-            @Override
-            public java.util.Collection<Path> markedPaths() {
-                return ProjectPanel.pathsOf(bookmarkCoordinator.storedKeys(), notesCoordinator.storedKeys());
-            }
-        });
+        panel.setFileActions(new ProjectTreeFileActions(
+                git, gitWindows, diffCoordinator, historyCoordinator, fileWorkflows, this::localHistoryEnabled));
+        panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
         panel.setShowHidden(config.getSettings().isProjectShowHidden());
         panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
         if (projectGitStatus != null) {
@@ -2494,122 +2394,41 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Every tool window below hands ToolWindow a supplier: the panel is built on the window's first open
         // (ToolWindow.getContent), or by the first caller that needs it — never before first paint for a
         // window that is closed. restore() opens the saved-open windows, which builds exactly those.
-        projectToolWindow = new ToolWindow(
-                "project",
-                tr("toolwindow.project"),
-                ToolWindow.Side.RIGHT,
-                Icons::project,
-                this::projectPanel,
-                "tool.project");
-        structureToolWindow = new ToolWindow(
-                "structure",
-                tr("toolwindow.structure"),
-                ToolWindow.Side.RIGHT,
-                Icons::structure,
-                this::structurePanel,
-                "tool.structure");
-        bookmarksToolWindow = new ToolWindow(
-                "bookmarks",
-                tr("toolwindow.bookmarks"),
-                ToolWindow.Side.RIGHT,
-                Icons::bookmark,
-                bookmarkCoordinator::panel,
-                "tool.bookmarks");
-        notesToolWindow = new ToolWindow(
-                "notes",
-                tr("toolwindow.notes"),
-                ToolWindow.Side.RIGHT,
-                Icons::notes,
-                notesCoordinator::panel,
-                "tool.notes");
-        fileInfoToolWindow = new ToolWindow(
+        projectToolWindow = toolWindow("project", ToolWindow.Side.RIGHT, Icons::project, this::projectPanel);
+        structureToolWindow = toolWindow("structure", ToolWindow.Side.RIGHT, Icons::structure, this::structurePanel);
+        bookmarksToolWindow =
+                toolWindow("bookmarks", ToolWindow.Side.RIGHT, Icons::bookmark, bookmarkCoordinator::panel);
+        notesToolWindow = toolWindow("notes", ToolWindow.Side.RIGHT, Icons::notes, notesCoordinator::panel);
+        fileInfoToolWindow = toolWindow(
                 "file-information",
-                tr("toolwindow.file-information"),
+                "toolwindow.file-information",
                 ToolWindow.Side.RIGHT,
                 Icons::about,
                 this::fileInfoPanel,
                 "tool.fileInformation");
-        undoHistoryToolWindow = new ToolWindow(
-                "undoHistory",
-                tr("toolwindow.undoHistory"),
-                ToolWindow.Side.RIGHT,
-                Icons::history,
-                this::undoHistoryPanel,
-                "tool.undoHistory");
-        commitToolWindow = new ToolWindow(
-                "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, this::gitPanel, "tool.commit");
+        undoHistoryToolWindow =
+                toolWindow("undoHistory", ToolWindow.Side.RIGHT, Icons::history, this::undoHistoryPanel);
+        commitToolWindow = toolWindow("commit", ToolWindow.Side.RIGHT, Icons::git, this::gitPanel);
         gitLogOps = gitWindows.gitLogActions();
         gitWindows.listenTo(git);
-        gitLogToolWindow = new ToolWindow(
-                "gitLog",
-                tr("toolwindow.gitLog"),
-                ToolWindow.Side.BOTTOM,
-                Icons::gitLog,
-                this::gitLogPanel,
-                "tool.gitLog");
-        githubToolWindow = new ToolWindow(
-                "github",
-                tr("toolwindow.github"),
-                ToolWindow.Side.BOTTOM,
-                Icons::github,
-                this::githubPanel,
-                "tool.github");
+        gitLogToolWindow = toolWindow("gitLog", ToolWindow.Side.BOTTOM, Icons::gitLog, this::gitLogPanel);
+        githubToolWindow = toolWindow("github", ToolWindow.Side.BOTTOM, Icons::github, this::githubPanel);
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
         noUndoGuard = new NoUndoGuard(historyCoordinator::recordSafetyCopy, coordinatorHost::setStatus);
         git.attachWindow(diffCoordinator, buffer -> addBuffer(buffer, true)); // stash review, patches, revision tabs
-        fileHistoryToolWindow = new ToolWindow(
-                "fileHistory",
-                tr("toolwindow.fileHistory"),
-                ToolWindow.Side.BOTTOM,
-                Icons::history,
-                historyCoordinator::panel,
-                "tool.fileHistory");
-        searchToolWindow = new ToolWindow(
-                "search",
-                tr("toolwindow.search"),
-                ToolWindow.Side.RIGHT,
-                // The same glyph as the toolbar's Find in Files button — one feature, one mark. The plain
-                // magnifier this used belongs to the in-file find bar, which is a different thing.
-                Icons::findInFiles,
-                searchCoordinator::panel,
-                "tool.search");
-        todoToolWindow = new ToolWindow(
-                "todo",
-                tr("toolwindow.todo"),
-                ToolWindow.Side.BOTTOM,
-                Icons::todo,
-                todoCoordinator::panel,
-                "tool.todo");
-        markdownLintToolWindow = new ToolWindow(
-                "markdownLint",
-                tr("toolwindow.markdownLint"),
-                ToolWindow.Side.BOTTOM,
-                Icons::warning,
-                this::markdownLintPanel,
-                "tool.markdownLint");
-        problemsToolWindow = new ToolWindow(
-                "problems",
-                tr("toolwindow.problems"),
-                ToolWindow.Side.BOTTOM,
-                Icons::problems,
-                lspCoordinator::problemsPanel,
-                "tool.problems");
-        referencesToolWindow = new ToolWindow(
-                "references",
-                tr("toolwindow.references"),
-                ToolWindow.Side.BOTTOM,
-                Icons::find,
-                lspCoordinator::referencesPanel,
-                "tool.references");
-        hierarchyToolWindow = new ToolWindow(
-                "hierarchy",
-                tr("toolwindow.hierarchy"),
-                ToolWindow.Side.BOTTOM,
-                Icons::structure,
-                lspCoordinator::hierarchyPanel,
-                "tool.hierarchy");
-        runToolWindow = new ToolWindow(
-                "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator::panel, "tool.run");
+        fileHistoryToolWindow =
+                toolWindow("fileHistory", ToolWindow.Side.BOTTOM, Icons::history, historyCoordinator::panel);
+        searchToolWindow = toolWindow("search", ToolWindow.Side.RIGHT, Icons::findInFiles, searchCoordinator::panel);
+        todoToolWindow = toolWindow("todo", ToolWindow.Side.BOTTOM, Icons::todo, todoCoordinator::panel);
+        markdownLintToolWindow =
+                toolWindow("markdownLint", ToolWindow.Side.BOTTOM, Icons::warning, this::markdownLintPanel);
+        problemsToolWindow =
+                toolWindow("problems", ToolWindow.Side.BOTTOM, Icons::problems, lspCoordinator::problemsPanel);
+        referencesToolWindow =
+                toolWindow("references", ToolWindow.Side.BOTTOM, Icons::find, lspCoordinator::referencesPanel);
+        hierarchyToolWindow =
+                toolWindow("hierarchy", ToolWindow.Side.BOTTOM, Icons::structure, lspCoordinator::hierarchyPanel);
+        runToolWindow = toolWindow("run", ToolWindow.Side.BOTTOM, Icons::run, runCoordinator::panel);
         debugCoordinator = new DebugCoordinator(
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
@@ -2706,16 +2525,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                         marksStored(MarkMerge.Kind.BREAKPOINTS, bucket, fileKey);
                     }
                 });
-        debugToolWindow = new ToolWindow(
-                "debug",
-                tr("toolwindow.debug"),
-                ToolWindow.Side.BOTTOM,
-                Icons::debug,
-                debugCoordinator::panel,
-                "tool.debug");
-        externalToolToolWindow = new ToolWindow(
+        debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        externalToolToolWindow = toolWindow(
                 "externalTool",
-                tr("toolwindow.externalTools"),
+                "toolwindow.externalTools",
                 ToolWindow.Side.BOTTOM,
                 Icons::tools,
                 externalToolCoordinator::panel,
@@ -2748,13 +2561,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::terminal,
                 buildOutputPanel,
                 "tool.buildOutput");
-        testResultsToolWindow = new ToolWindow(
-                "testResults",
-                tr("toolwindow.testResults"),
-                ToolWindow.Side.BOTTOM,
-                Icons::testResults,
-                testRunCoordinator::panel,
-                "tool.testResults");
+        testResultsToolWindow =
+                toolWindow("testResults", ToolWindow.Side.BOTTOM, Icons::testResults, testRunCoordinator::panel);
         // Mirror a recognized `test` run of any build tool into the Test Results window.
         buildCoordinators.forEach(c -> c.setTestRunHook(testRunCoordinator));
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallCoordinator.Ops() {
@@ -2800,20 +2608,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
-        remoteToolWindow = new ToolWindow(
-                "remote",
-                tr("toolwindow.remote"),
-                ToolWindow.Side.RIGHT,
-                Icons::remote,
-                remoteCoordinator::panel,
-                "tool.remote");
-        agentToolWindow = new ToolWindow(
-                "agent",
-                tr("toolwindow.agent"),
-                ToolWindow.Side.RIGHT,
-                Icons::agent,
-                agentCoordinator::panel,
-                "tool.agent");
+        remoteToolWindow = toolWindow("remote", ToolWindow.Side.RIGHT, Icons::remote, remoteCoordinator::panel);
+        agentToolWindow = toolWindow("agent", ToolWindow.Side.RIGHT, Icons::agent, agentCoordinator::panel);
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -3617,7 +3413,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public String readGradleBuildFile(java.nio.file.Path root) {
-                    return MainController.this.readGradleBuildFile(root);
+                    return com.editora.build.SpringBoot.readGradleBuildFile(root);
                 }
 
                 @Override
@@ -6900,8 +6696,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void runGradleRunTask(java.nio.file.Path root) {
-            String task =
-                    com.editora.build.SpringBoot.gradleRunTask(readGradleBuildFile(root)); // bootRun for Spring Boot
+            String task = com.editora.build.SpringBoot.gradleRunTask(
+                    com.editora.build.SpringBoot.readGradleBuildFile(root)); // bootRun for Spring Boot
             for (BuildCoordinator c : buildCoordinators) {
                 if (c.tool() == BuildTool.GRADLE && c.isEnabled() && c.isDetected()) {
                     c.runTask(List.of(task), List.of());
@@ -6910,25 +6706,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
     });
-
-    /** Reads the Gradle build script at {@code root} ({@code build.gradle} or {@code .kts}) for the Spring
-     *  Boot sniff, or "" when neither is readable. */
-    private static String readGradleBuildFile(java.nio.file.Path root) {
-        if (root == null) {
-            return "";
-        }
-        for (String name : List.of("build.gradle", "build.gradle.kts")) {
-            java.nio.file.Path f = root.resolve(name);
-            if (java.nio.file.Files.isRegularFile(f)) {
-                try {
-                    return java.nio.file.Files.readString(f);
-                } catch (java.io.IOException e) {
-                    return "";
-                }
-            }
-        }
-        return "";
-    }
 
     /** Builds IntelliJ-style Test Results from recognized build-tool test runs. */
     private final TestRunCoordinator testRunCoordinator =
@@ -9615,8 +9392,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         // Prefer the main class a Gradle `application` block declares — that's what `gradle run` would launch,
         // so a config saved in such a project matches the build rather than whichever file happens to be open.
-        String declared =
-                com.editora.build.GradleApplication.mainClass(readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
+        String declared = com.editora.build.GradleApplication.mainClass(
+                com.editora.build.SpringBoot.readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
         if (declared != null) {
             return declared;
         }
