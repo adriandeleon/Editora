@@ -34,7 +34,8 @@ final class WindowSessionCoordinator {
 
         ConfigManager config();
 
-        ProjectPanel projectPanel();
+        /** Points the Project tree at {@code root} (the panel is built on its first open). */
+        void setProjectRoot(Path root);
 
         ProjectManager projects();
 
@@ -761,7 +762,7 @@ final class WindowSessionCoordinator {
         host.projects().setActive(p.id());
         host.projects().save();
         host.config().setWorkspaceStateFile(host.projects().stateFile(p)); // openInitialBuffer() then restores it
-        host.projectPanel().setRoot(Path.of(p.root()));
+        host.setProjectRoot(Path.of(p.root()));
         host.refreshProjectPanelList();
         host.updateWindowTitle();
     }

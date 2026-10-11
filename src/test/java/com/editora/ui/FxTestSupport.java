@@ -1,6 +1,7 @@
 package com.editora.ui;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicReference;
@@ -150,14 +151,26 @@ final class FxTestSupport {
         throw new IllegalArgumentException("No method '" + method + "' on " + target.getClass());
     }
 
-    /** Read a private/{@code @FXML} field by name from any object (walks up the class hierarchy). */
+    /**
+     * Read a private/{@code @FXML} field by name from any object (walks up the class hierarchy).
+     *
+     * <p>A {@link MainController} panel field ({@code gitPanel}, {@code projectPanel}, …) is {@code null} until
+     * its tool window first opens: the panel is built on first use by the private no-argument accessor of the
+     * same name. A test that reaches for such a panel wants the panel, not the fact that nothing has built
+     * it yet, so a null window field with a same-named accessor is read through the accessor, on the FX
+     * thread. A test about laziness itself asks the {@link ToolWindow} ({@code contentIfBuilt}) instead.
+     */
     @SuppressWarnings("unchecked")
     static <T> T field(Object target, String name) {
         for (Class<?> c = target.getClass(); c != null; c = c.getSuperclass()) {
             try {
                 Field f = c.getDeclaredField(name);
                 f.setAccessible(true);
-                return (T) f.get(target);
+                Object value = f.get(target);
+                if (value == null && target instanceof MainController) {
+                    value = builtByAccessor(target, c, name);
+                }
+                return (T) value;
             } catch (NoSuchFieldException e) {
                 // try the superclass
             } catch (IllegalAccessException e) {
@@ -165,5 +178,22 @@ final class FxTestSupport {
             }
         }
         throw new IllegalArgumentException("No field '" + name + "' on " + target.getClass());
+    }
+
+    /** The value of {@code target}'s private no-argument method {@code name}, run on the FX thread, or null. */
+    private static Object builtByAccessor(Object target, Class<?> c, String name) {
+        Method accessor;
+        try {
+            accessor = c.getDeclaredMethod(name);
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
+        accessor.setAccessible(true);
+        java.util.concurrent.Callable<Object> build = () -> accessor.invoke(target);
+        try {
+            return javafx.application.Platform.isFxApplicationThread() ? build.call() : callOnFx(build);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }

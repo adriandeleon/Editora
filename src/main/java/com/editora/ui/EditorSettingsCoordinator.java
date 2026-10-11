@@ -790,6 +790,7 @@ final class EditorSettingsCoordinator {
     void applyViewSettings(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
         Settings s = host.config().getSettings();
         int effectiveFont = Math.max(1, (int) Math.round(s.getFontSize() * s.getFontZoom()));
+        Fonts.ensureFamily(s.getFontFamily()); // a bundled family picked after startup may still be deferred
         buffer.setFont(s.getFontFamily(), effectiveFont);
         // Zen/Expert (per window, "focus modes") hide distraction-free chrome without clobbering the saved
         // prefs; Simple UI mode additionally removes the whole gutter + minimap. All effective overlays.
@@ -1061,9 +1062,11 @@ final class EditorSettingsCoordinator {
      */
     void applyFontsAndPerBufferView(Settings settings) {
         int consoleFont = Math.max(1, (int) Math.round(settings.getFontSize() * settings.getFontZoom()));
-        host.externalToolCoordinator().panel().setOutputFont(settings.getFontFamily(), consoleFont);
-        host.runCoordinator().panel().setOutputFont(settings.getFontFamily(), consoleFont);
-        host.debugCoordinator().panel().setConsoleFont(settings.getFontFamily(), consoleFont);
+        Fonts.ensureFamily(settings.getFontFamily());
+        // The coordinators remember the font for a console panel not built yet (they are built on first use).
+        host.externalToolCoordinator().setOutputFont(settings.getFontFamily(), consoleFont);
+        host.runCoordinator().setOutputFont(settings.getFontFamily(), consoleFont);
+        host.debugCoordinator().setConsoleFont(settings.getFontFamily(), consoleFont);
         host.buildOutputPanel().setOutputFont(settings.getFontFamily(), consoleFont);
         host.testRunCoordinator().setOutputFont(settings.getFontFamily(), consoleFont);
         for (Tab tab : host.editorArea().tabs()) {

@@ -193,7 +193,10 @@ final class SearchCoordinator {
     private final ReplaceConfirmation replaceConfirmation;
     private final java.util.concurrent.atomic.AtomicBoolean shutdown = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.Set<ReplaceJob> queuedReplaces = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final SearchPanel panel;
+    /** The Find in Files panel, built on its first use (the tool window's first open, or a search). */
+    private SearchPanel panel;
+
+    private final SearchPanel.Actions panelActions;
     /**
      * This window's copy of the shared search history, the list the query combo is bound to. The combo is
      * bound to a copy rather than to the shared list because that list outlives the window and is changed by
@@ -233,7 +236,7 @@ final class SearchCoordinator {
         this.ops = ops;
         this.replaceExecutor = java.util.Objects.requireNonNull(replaceExecutor, "replaceExecutor");
         this.replaceConfirmation = java.util.Objects.requireNonNull(replaceConfirmation, "replaceConfirmation");
-        this.panel = new SearchPanel(new SearchPanel.Actions() {
+        this.panelActions = new SearchPanel.Actions() {
             @Override
             public void search(SearchQuery query, String includeGlobs, String excludeGlobs) {
                 runFileSearch(query, includeGlobs, excludeGlobs);
@@ -255,11 +258,16 @@ final class SearchCoordinator {
                 ops.recordSearch(query);
                 refreshHistory();
             }
-        });
-        panel.setHistory(historyView);
+        };
     }
 
     SearchPanel panel() {
+        if (panel == null) {
+            panel = new SearchPanel(panelActions);
+            panel.setHistory(historyView);
+            panel.setBackendActive(backendRipgrep);
+            refreshScope();
+        }
         return panel;
     }
 
@@ -356,14 +364,14 @@ final class SearchCoordinator {
             // Neither backend can run it (ripgrep's hits are re-matched in Java), and "No results" for a
             // pattern that never ran sends the user looking for a typo in the wrong place.
             shown = null;
-            panel.showError(badRegex);
+            panel().showError(badRegex);
             host.setError(badRegex);
             return;
         }
         if (RemoteReadFailure.connectionClosed(root)) {
             // The walk would fail folder by folder and report "No results" for files it never read.
             shown = null;
-            panel.showError(RemoteReadFailure.unreadable(root));
+            panel().showError(RemoteReadFailure.unreadable(root));
             host.setError(RemoteReadFailure.unreadable(root));
             return;
         }
@@ -399,7 +407,7 @@ final class SearchCoordinator {
                 outcome -> {
                     closeQuietly(task);
                     shown = snapshot; // what the result tree now shows, and so what Replace All may act on
-                    panel.setResults(outcome);
+                    panel().setResults(outcome);
                     String summary = outcome.totalMatches() == 0
                             ? tr("search.none")
                             : tr("search.summary", outcome.totalMatches(), outcome.fileCount());
@@ -473,6 +481,9 @@ final class SearchCoordinator {
 
     /** Pushes the current search scope folder to the panel's "searching in" label (home-collapsed + tooltip). */
     void refreshScope() {
+        if (panel == null) {
+            return; // applied when the panel is built
+        }
         Path root = searchScopeRoot();
         if (root == null) {
             panel.setScope(tr("search.scopeOpenFiles"), null);
@@ -496,7 +507,7 @@ final class SearchCoordinator {
             refreshScope(); // show the folder we'll search before the first query
             String selection = selectedLineForSearch();
             if (selection != null) {
-                panel.setQuery(selection); // pre-fill (and run) from the editor selection
+                panel().setQuery(selection); // pre-fill (and run) from the editor selection
             }
             ops.openToolWindow();
         }
@@ -776,7 +787,9 @@ final class SearchCoordinator {
             }
             host.setError(tr("search.replacePartial", total, changedFiles, failedFiles.size()) + ": " + paths);
         }
-        panel.refresh();
+        if (panel != null) {
+            panel.refresh();
+        }
         return new ReplaceResult(total, changedFiles, failedFiles, false);
     }
 
@@ -887,7 +900,9 @@ final class SearchCoordinator {
     /** Records the effective backend and pushes the "ripgrep" badge to the panel + the popup (if built). */
     private void applyBackendBadge(boolean effective) {
         backendRipgrep = effective;
-        panel.setBackendActive(effective);
+        if (panel != null) {
+            panel.setBackendActive(effective); // else applied when the panel is built
+        }
         if (popup != null) {
             popup.setBackendActive(effective);
         }

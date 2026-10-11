@@ -65,6 +65,8 @@ final class WindowCommandRegistrar {
 
         PluginCoordinator pluginCoordinator();
 
+        /** The Project panel if it has been built (its window opened), else {@code null}; opening the
+         *  Project tool window builds it. */
         ProjectPanel projectPanel();
 
         WindowManager windowManager();
@@ -514,10 +516,14 @@ final class WindowCommandRegistrar {
                                         "view.toggleProjectHidden",
                                         () -> host.config().getSettings().isProjectShowHidden(),
                                         v -> host.config().getSettings().setProjectShowHidden(v),
-                                        () -> host.projectPanel()
-                                                .setShowHidden(host.config()
+                                        () -> {
+                                            ProjectPanel panel = host.projectPanel();
+                                            if (panel != null) { // else applied when it is built
+                                                panel.setShowHidden(host.config()
                                                         .getSettings()
-                                                        .isProjectShowHidden()))));
+                                                        .isProjectShowHidden());
+                                            }
+                                        })));
         host.registry()
                 .register(Command.of(
                         "view.toggleNoteIndicators",

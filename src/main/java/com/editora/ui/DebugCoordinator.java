@@ -135,7 +135,12 @@ final class DebugCoordinator {
     private final LspManager lspManager;
     private final LspCoordinator lsp;
     private final Ops ops;
-    private final DebugPanel debugPanel;
+    /** The Debug panel; null until {@link #panel()} builds it. */
+    private DebugPanel debugPanel;
+    /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
+    private String consoleFontFamily;
+
+    private int consoleFontSize;
 
     /**
      * The before-launch build of a debug launch. On its own service rather than the Run console's, so
@@ -210,18 +215,37 @@ final class DebugCoordinator {
         this.lsp = lsp;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
-        this.debugPanel = new DebugPanel(debugActions());
-        debugPanel.setPrompt(host::promptText);
-        debugPanel.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
-        debugPanel.setWatches(ops.debugWatches());
-        debugPanel.setOnWatchesChanged(() -> ops.persistDebugWatches(new ArrayList<>(debugPanel.getWatches())));
         dapManager.setListener(dapListener());
         dapManager.setBreakpointsSupplier(this::collectBreakpoints);
     }
 
-    /** The Debug tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
+    /**
+     * The Debug tool-window content (the {@code ToolWindow} itself stays in {@code MainController}), built on
+     * its first use: the window's first open, or the first session event that has something to show.
+     */
     DebugPanel panel() {
+        if (debugPanel == null) {
+            DebugPanel built = new DebugPanel(debugActions());
+            built.setPrompt(host::promptText);
+            built.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
+            built.setWatches(ops.debugWatches());
+            built.setOnWatchesChanged(() -> ops.persistDebugWatches(new ArrayList<>(built.getWatches())));
+            if (consoleFontFamily != null) {
+                built.setConsoleFont(consoleFontFamily, consoleFontSize);
+            }
+            built.setState(dapManager.state()); // a session may already be running (the window opened mid-session)
+            debugPanel = built;
+        }
         return debugPanel;
+    }
+
+    /** Matches the console font to the editor font; remembered for a panel not built yet. */
+    void setConsoleFont(String family, int size) {
+        consoleFontFamily = family;
+        consoleFontSize = size;
+        if (debugPanel != null) {
+            debugPanel.setConsoleFont(family, size);
+        }
     }
 
     // --- gating / effectiveness --------------------------------------------------------------------
@@ -316,7 +340,7 @@ final class DebugCoordinator {
     /** Names the session being launched in the panel; survives the end of the session it replaces. */
     private void nameSession(String label) {
         sessionLabel = label == null ? "" : label;
-        debugPanel.setSessionFile(sessionLabel);
+        panel().setSessionFile(sessionLabel);
     }
 
     /** Streams a before-launch build into the Debug console and keeps Stop usable while it runs. */
@@ -325,23 +349,23 @@ final class DebugCoordinator {
             @Override
             public void started(String commandLine) {
                 ops.openToolWindow();
-                debugPanel.setPreparing(true);
-                debugPanel.clearConsole(); // a new launch: the previous session's output is not this one's
+                panel().setPreparing(true);
+                panel().clearConsole(); // a new launch: the previous session's output is not this one's
                 consoleStarted = true;
-                debugPanel.appendOutput("$ " + commandLine + "\n", "console");
+                panel().appendOutput("$ " + commandLine + "\n", "console");
             }
 
             @Override
             public void output(String line, boolean stderr) {
-                debugPanel.appendOutput(line + "\n", stderr ? "stderr" : "stdout");
+                panel().appendOutput(line + "\n", stderr ? "stderr" : "stdout");
             }
 
             @Override
             public void ended(int code, String launchError) {
-                debugPanel.setPreparing(false);
+                panel().setPreparing(false);
                 consoleStarted = code == 0 && launchError == null; // a failed build is not followed by a session
                 if (launchError != null) {
-                    debugPanel.appendOutput(launchError + "\n", "stderr");
+                    panel().appendOutput(launchError + "\n", "stderr");
                 }
             }
         };
@@ -536,7 +560,7 @@ final class DebugCoordinator {
      * flagged, and the text is shown in the console and the status bar either way.
      */
     private void adapterNotice(String message, boolean error) {
-        debugPanel.appendOutput(message + System.lineSeparator(), error ? "stderr" : "console");
+        panel().appendOutput(message + System.lineSeparator(), error ? "stderr" : "console");
         host.setStatus(tr("status.debug.error", message));
         host.forEachBuffer(b -> {
             if (b.getPath() == null) {
@@ -876,20 +900,27 @@ final class DebugCoordinator {
         return new DapManager.Listener() {
             @Override
             public void onState(DapManager.State state) {
+                // INACTIVE with no panel built is what startup (configure, stop) reports: a panel built later
+                // starts in that state by itself, so there is nothing to show and no reason to build it now.
+                boolean show = debugPanel != null || state != DapManager.State.INACTIVE;
                 if (state == DapManager.State.STARTING) {
                     if (!consoleStarted) {
-                        debugPanel.clearConsole(); // each launch starts with its own output
+                        panel().clearConsole(); // each launch starts with its own output
                     }
                     consoleStarted = false;
                 }
-                debugPanel.setRestartBlocked(restartAvailable() ? null : tr("status.debug.cannotRestartAttached"));
-                debugPanel.setState(state);
+                if (show) {
+                    panel().setRestartBlocked(restartAvailable() ? null : tr("status.debug.cannotRestartAttached"));
+                    panel().setState(state);
+                }
                 if (state == DapManager.State.STARTING) {
                     nameSession(sessionLabel); // ending the replaced session cleared it
                 }
                 if (state != DapManager.State.SUSPENDED) {
                     shownFrame = null;
-                    debugPanel.setStopReason(null);
+                    if (show) {
+                        panel().setStopReason(null);
+                    }
                 }
                 updateDebugStatus(state);
                 if (state == DapManager.State.INACTIVE || state == DapManager.State.STARTING) {
@@ -913,30 +944,30 @@ final class DebugCoordinator {
 
             @Override
             public void onStopped(int threadId, String reason, List<DapModels.StackFrameInfo> frames) {
-                debugPanel.setStopReason(reason);
+                panel().setStopReason(reason);
                 // Selects the first frame that has source to show → selectFrame highlights + loads vars.
                 int shown = firstFrameWithSource(frames, DebugCoordinator.this::hasSource);
-                debugPanel.setCallStack(frames, shown);
+                panel().setCallStack(frames, shown);
                 if (shown > 0) {
                     host.setStatus(tr(
                             "status.debug.stoppedWithoutSource", frames.get(0).name()));
                 }
-                dapManager.threads(list -> debugPanel.setThreads(list, dapManager.currentThreadId()));
+                dapManager.threads(list -> panel().setThreads(list, dapManager.currentThreadId()));
             }
 
             @Override
             public void onOutput(String text, String category) {
-                debugPanel.appendOutput(text, category);
+                panel().appendOutput(text, category);
             }
 
             @Override
             public void onProgramInput(boolean available) {
-                debugPanel.setProgramInput(available);
+                panel().setProgramInput(available);
             }
 
             @Override
             public void onProgramExit(int code) {
-                debugPanel.appendNotice(tr("run.exited", code));
+                panel().appendNotice(tr("run.exited", code));
             }
 
             @Override
@@ -957,7 +988,7 @@ final class DebugCoordinator {
             @Override
             public void onExceptionInfo(int threadId, DapModels.ExceptionInfo info) {
                 // Which exception: the one thing an exception stop has to say, and the stop event does not.
-                debugPanel.setStoppedException(DebugFeedback.exceptionSummary(info, true));
+                panel().setStoppedException(DebugFeedback.exceptionSummary(info, true));
                 host.setStatus(tr("status.debug.stoppedOnException", DebugFeedback.exceptionSummary(info, false)));
             }
         };
@@ -994,18 +1025,18 @@ final class DebugCoordinator {
                 int previous = dapManager.currentThreadId();
                 dapManager.selectThread(threadId, frames -> {
                     if (!frames.isEmpty() || threadId == previous) {
-                        debugPanel.setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::hasSource));
+                        panel().setCallStack(frames, firstFrameWithSource(frames, DebugCoordinator.this::hasSource));
                         return;
                     }
                     // A thread that is not suspended has no stack to inspect. Stay on the stopped one: showing
                     // an empty stack beside the other thread's variables and execution line — with Step now
                     // aimed at the running thread — said nothing about why.
                     host.setStatus(tr("status.debug.threadRunning"));
-                    debugPanel.showThread(previous);
+                    panel().showThread(previous);
                     dapManager.selectThread(previous, back -> {
                         if (back.isEmpty()) { // it has been resumed meanwhile: nothing is stopped to show
-                            debugPanel.setCallStack(back, 0);
-                            debugPanel.setScopes(List.of());
+                            panel().setCallStack(back, 0);
+                            panel().setScopes(List.of());
                             clearExecHighlight();
                             clearDebugEditorSurfaces();
                         }
@@ -1047,7 +1078,7 @@ final class DebugCoordinator {
                 shownFrame = frame;
                 highlightFrame(frame);
                 dapManager.scopes(frame.id(), scopes -> {
-                    debugPanel.setScopes(scopes);
+                    panel().setScopes(scopes);
                     applyInlineValues(frame, scopes);
                 });
             }
@@ -1220,7 +1251,7 @@ final class DebugCoordinator {
         var scene = window == null ? null : window.getScene();
         Node owner = scene == null ? null : scene.getFocusOwner();
         for (Node n = owner; n != null; n = n.getParent()) {
-            if (n == debugPanel) {
+            if (debugPanel != null && n == debugPanel) {
                 return owner;
             }
         }
@@ -1865,7 +1896,7 @@ final class DebugCoordinator {
     /** Focuses the Debug console's evaluate field ({@code debug.evaluate} command). */
     void focusEvaluate() {
         ops.openToolWindow();
-        debugPanel.focusEvaluate();
+        panel().focusEvaluate();
     }
 
     /**
@@ -1875,17 +1906,17 @@ final class DebugCoordinator {
      */
     void endProgramInput() {
         if (dapManager.closeProgramInput()) {
-            debugPanel.showInputEnded();
+            panel().showInputEnded();
         } else {
             host.setStatus(tr("status.debug.noProgramInput"));
         }
     }
 
     void addWatch() {
-        debugPanel.addWatch();
+        panel().addWatch();
     }
 
     void setSelectedValue() {
-        debugPanel.setSelectedValue();
+        panel().setSelectedValue();
     }
 }

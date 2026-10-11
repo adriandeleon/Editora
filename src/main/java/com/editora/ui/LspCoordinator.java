@@ -290,9 +290,15 @@ final class LspCoordinator {
     /** Diagnostics by file, <b>scoped to open files only</b> (a server publishes project-wide). */
     private final Map<Path, List<LspDiagnostic>> problems = new LinkedHashMap<>();
 
-    private final ProblemsPanel problemsPanel;
-    private final ReferencesPanel referencesPanel;
-    private final HierarchyPanel hierarchyPanel;
+    /** The Problems / References / Hierarchy panels, each built on its first use (see the accessors). */
+    private ProblemsPanel problemsPanel;
+
+    private ReferencesPanel referencesPanel;
+    private HierarchyPanel hierarchyPanel;
+    private final ProblemsPanel.Actions problemsActions;
+    private final HierarchyPanel.Loader hierarchyLoader;
+    /** The Problems tree's active file, remembered for a panel not built yet. */
+    private Path problemsActiveFile;
 
     /** The buffer path a hierarchy was started from — routes child expansions to the right session. */
     private Path hierarchyAnchor;
@@ -369,7 +375,7 @@ final class LspCoordinator {
         this.ops = ops;
         this.workspaceFiles = java.util.Objects.requireNonNull(workspaceFiles, "workspaceFiles");
         this.workspaceExecutor = java.util.Objects.requireNonNull(workspaceExecutor, "workspaceExecutor");
-        this.problemsPanel = new ProblemsPanel(new ProblemsPanel.Actions() {
+        this.problemsActions = new ProblemsPanel.Actions() {
             @Override
             public void open(java.nio.file.Path file, int line, int col) {
                 ops.openAndGoto(file, line, col);
@@ -379,9 +385,8 @@ final class LspCoordinator {
             public void setProjectWide(boolean projectWide) {
                 setProjectWideProblems(projectWide); // #743
             }
-        });
-        this.referencesPanel = new ReferencesPanel(ops::openAndGoto);
-        this.hierarchyPanel = new HierarchyPanel(new HierarchyPanel.Loader() {
+        };
+        this.hierarchyLoader = new HierarchyPanel.Loader() {
             @Override
             public void children(
                     com.editora.lsp.LspManager.HierarchyNode node,
@@ -401,7 +406,7 @@ final class LspCoordinator {
             public void open(Path file, int line, int col) {
                 ops.openAndGoto(file, line, col);
             }
-        });
+        };
         lspManager.setOnSessionCrashed(this::onSessionCrashed);
         lspManager.setFolderTrust(this::folderTrusted);
         lspManager.setOnStartWithheld(this::onStartWithheld);
@@ -691,18 +696,34 @@ final class LspCoordinator {
         return times.size() <= maxRestarts;
     }
 
-    /** The Problems tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
+    /**
+     * The Problems tool-window content (the {@code ToolWindow} itself stays in {@code MainController}), built
+     * on the window's first open. Diagnostics that arrived before then are in {@link #problems}; the build
+     * shows them.
+     */
     ProblemsPanel problemsPanel() {
+        if (problemsPanel == null) {
+            problemsPanel = new ProblemsPanel(problemsActions);
+            problemsPanel.setProjectWide(projectWideProblems);
+            problemsPanel.setActiveFile(problemsActiveFile);
+            problemsPanel.setProblems(problems);
+        }
         return problemsPanel;
     }
 
     /** The References tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     ReferencesPanel referencesPanel() {
+        if (referencesPanel == null) {
+            referencesPanel = new ReferencesPanel(ops::openAndGoto);
+        }
         return referencesPanel;
     }
 
     /** The Hierarchy tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     HierarchyPanel hierarchyPanel() {
+        if (hierarchyPanel == null) {
+            hierarchyPanel = new HierarchyPanel(hierarchyLoader);
+        }
         return hierarchyPanel;
     }
 
@@ -746,7 +767,7 @@ final class LspCoordinator {
             }
             hierarchyAnchor = path;
             hierarchyMode = mode;
-            hierarchyPanel.setRoots(mode, roots);
+            hierarchyPanel().setRoots(mode, roots);
             ops.openHierarchyWindow();
         };
         if (mode == HierarchyPanel.Mode.CALLS) {
@@ -763,7 +784,10 @@ final class LspCoordinator {
 
     /** Sorts the Problems tree so the active file's group is on top (pass the canonical path; on tab switch). */
     void setProblemsActiveFile(Path canonicalActive) {
-        problemsPanel.setActiveFile(canonicalActive);
+        problemsActiveFile = canonicalActive;
+        if (problemsPanel != null) {
+            problemsPanel.setActiveFile(canonicalActive);
+        }
     }
 
     /** Diagnostics callback from the manager (already on the FX thread): store + paint + refresh Problems. */
@@ -810,7 +834,9 @@ final class LspCoordinator {
         if (!projectWide) {
             problems.keySet().removeIf(p -> ops.bufferForPath(p) == null);
         }
-        problemsPanel.setProjectWide(projectWide);
+        if (problemsPanel != null) {
+            problemsPanel.setProjectWide(projectWide);
+        }
         refreshProblems();
     }
 
@@ -861,7 +887,9 @@ final class LspCoordinator {
     private final FxThrottle problemsRefresh = new FxThrottle(PROBLEMS_REFRESH_MILLIS, true, this::showProblems);
 
     private void showProblems() {
-        problemsPanel.setProblems(problems);
+        if (problemsPanel != null) {
+            problemsPanel.setProblems(problems); // an unbuilt panel shows the map when it is built
+        }
     }
 
     /** Runs a Problems rebuild that is waiting for its turn now — a test's stand-in for the pacing delay. */
@@ -3116,7 +3144,7 @@ final class LspCoordinator {
             refs.add(new ReferencesPanel.Reference(
                     t.file(), t.line(), t.character(), previews.get(i), previewRuns(t, previews.get(i))));
         }
-        referencesPanel.setReferences(refs);
+        referencesPanel().setReferences(refs);
         ops.openReferencesWindow();
     }
 

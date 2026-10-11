@@ -49,7 +49,6 @@ public class App extends Application {
     public void start(Stage stage) throws IOException {
         com.editora.perf.Startup.mark(com.editora.perf.Startup.FX_START);
         com.editora.perf.Startup.startSampler(Thread.currentThread()); // inert unless EDITORA_PERF_SAMPLE=1
-        com.editora.ui.Fonts.load(); // register bundled fonts before any UI/CSS uses them
 
         // On macOS the JavaFX/AppKit (FX application) thread's context classloader can be null, which
         // breaks loading FXML-referenced classes (and other lazy class loads) when building windows at
@@ -71,6 +70,11 @@ public class App extends Application {
         SharedConfig shared = bootstrap.shared();
         sharedConfig = shared;
         com.editora.perf.Startup.mark(com.editora.perf.Startup.CONFIG_LOADED);
+        // Register the bundled fonts the first frame can show (the UI chrome's, app.css's monospace default
+        // and the configured editor family) before any UI/CSS uses them; the other families load after the
+        // first painted frame (see the afterNextPaint below) — about 4 MB of TrueType that nothing on screen
+        // needs yet.
+        com.editora.ui.Fonts.loadForFirstPaint(settings.getFontFamily());
         // Flush any pending off-thread settings/session writes on exit, covering paths where persistSession()
         // doesn't run (the normal quit already flushes via its blocking config.save()).
         Runtime.getRuntime().addShutdownHook(new Thread(shared::flushWrites, "config-flush"));
@@ -148,6 +152,9 @@ public class App extends Application {
             // A save that was killed while overwriting a file in place left the previous bytes in a backup.
             com.editora.ui.SaveBackupRecovery.offerAtStartup(shared, stage);
         }
+        // The bundled families the first frame did not need: parsed on a daemon thread once a frame has
+        // painted, so the font picker and a font-setting change find them registered (they wait if not).
+        com.editora.ui.Fonts.loadRemainingAfterNextPaint();
 
         // macOS: receive files opened via Finder's "Open With" (a CFBundleDocumentTypes association added by
         // the packaged app — written by scripts/aot_build.java's fixMacDocumentTypes, NOT jpackage's

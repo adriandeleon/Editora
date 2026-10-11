@@ -8503,6 +8503,7 @@ public class SettingsWindow {
 
     /** The editor-font picker choices (bundled monospace families first, then system monospace). */
     public static List<String> fontFamilyChoices() {
+        Fonts.ensureAllLoaded(); // the deferred families must be registered before the picker lists them
         List<String> choices = new ArrayList<>(Fonts.BUNDLED);
         for (String family : monospaceFamilies()) {
             if (!choices.contains(family)) {

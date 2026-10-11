@@ -340,10 +340,38 @@ rather than once per misspelled word.
 
 ## Startup
 
-Time-to-first-paint is measured by `scripts/measure-startup.sh` (the `perf/Startup` marks). The rules below keep
-the show path free of work the user is not waiting for; measure against them when touching `App`,
-`WindowManager.buildWindow`, `MainController.init` or the session restore.
+Time-to-first-paint is measured with `scripts/measure-startup.sh` (median of N launches, with the
+`com.editora.perf.Startup` phase marks; `EDITORA_PERF_SAMPLE=1` adds FX-thread stack samples). The rules below
+keep the show path free of work the user is not waiting for; measure against them when touching `App`,
+`WindowManager.buildWindow`, `MainController.init` or the session restore:
 
+- **Tool-window panels are built on first open, never at registration.** Every `ToolWindow` in
+  `MainController.setupToolWindows` is registered with the `Supplier` constructor; `ToolWindow.getContent()`
+  builds the panel the first time the window opens (`ToolWindowManager.restore()` opens the saved-open
+  windows, so exactly those are built before first paint) or the first time a caller needs it. A coordinator
+  that pushes state into its panel while the window is closed either drops the push and re-reads at build
+  (Bookmarks, Notes, File History, Remote Sites, Problems' diagnostics map, the Git status/operation/refusal
+  the Commit panel shows, the Project tree's root, Git status and active file) or forces the build because
+  the push *is* the feature being used (a run's console output, search results, a debug session's events,
+  a test run). The one exception is the shared build `Output` console: an empty `TabPane` that every build
+  coordinator and the Git transcript write to from the first command, so it stays eager.
+  `LazyToolWindowsFxTest` fails when a closed window has built its panel, and opens each one to prove it
+  still works. The console fonts follow the same rule: `EditorSettingsCoordinator.applyFontsAndPerBufferView`
+  hands the font to the coordinator (`setOutputFont`/`setConsoleFont`), which applies it when the panel exists.
+- **Only the fonts the first frame needs are registered before it.** `App.start` calls
+  `Fonts.loadForFirstPaint(editorFamily)` — Inter (the chrome), JetBrains Mono (`app.css`'s monospace
+  fallback) and the configured editor family — and arms `Fonts.loadRemainingAfterNextPaint()`, which parses the
+  other bundled families on a daemon thread once a frame has painted (`Font.loadFont` is static and safe off
+  the FX thread). Anything that lists or applies a family a user may pick waits for that load first:
+  `SettingsWindow.fontFamilyChoices` calls `Fonts.ensureAllLoaded()`, and applying a font setting calls
+  `Fonts.ensureFamily(family)`, which loads just that family inline when nothing deferred has started.
+  `Fonts.load()` remains the eager form for tests and tools.
+- **Stylesheets ship precompiled.** The build writes a binary `.bss` beside every bundled JavaFX `.css`
+  (`scripts/css2bss.java`, at `process-classes`); JavaFX's `StyleManager` looks for `name.bss` before parsing
+  `name.css`, so the 165 KB user-agent theme and the 190 KB `app.css` are read as binary at every window
+  instead of being parsed as text (measured 180–340 ms for the text parse of the first window, 12–17 ms
+  binary). Nothing in the application names a `.bss`; a user theme under the config directory has none and
+  is parsed as before. See [building and packaging](building-and-packaging.md#precompiled-stylesheets-bss).
 - **The config prefetch starts before the single-instance probe.** `App.main` starts the `config-prefetch`
   thread and only then probes the endpoint file (a stale one can cost up to the connect timeout). Until the
   probe has decided that this process will run, the thread does only `App.warmConfigLoad` — the JSON mapper,

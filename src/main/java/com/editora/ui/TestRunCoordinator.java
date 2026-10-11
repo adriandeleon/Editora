@@ -97,7 +97,12 @@ final class TestRunCoordinator implements TestRunHook {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final TestRunnerPanel panel = new TestRunnerPanel();
+    /** The Test Results panel, built on its first use (normally a test run or the window's first open). */
+    private TestRunnerPanel panel;
+    /** The output font to apply when the panel is built (set by every settings apply, panel or not). */
+    private String outputFontFamily;
+
+    private int outputFontSize;
     private final ScheduledExecutorService poller = Executors.newSingleThreadScheduledExecutor(r -> {
         Thread t = new Thread(r, "test-report-poll");
         t.setDaemon(true);
@@ -132,22 +137,33 @@ final class TestRunCoordinator implements TestRunHook {
     TestRunCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
-        panel.setOnRerun(this::rerun);
-        panel.setOnRerunFailed(this::rerunFailed);
-        panel.setOnStop(this::stop);
-        panel.setOnLink(ops::openLink);
-        panel.setOnActivate(this::activate);
-        panel.setOnRerunOne(this::rerunOne);
-        panel.setOnDebugOne(this::debugOne);
-        panel.setDebugAvailable(ops::debugAvailable);
     }
 
     TestRunnerPanel panel() {
+        if (panel == null) {
+            panel = new TestRunnerPanel();
+            panel.setOnRerun(this::rerun);
+            panel.setOnRerunFailed(this::rerunFailed);
+            panel.setOnStop(this::stop);
+            panel.setOnLink(ops::openLink);
+            panel.setOnActivate(this::activate);
+            panel.setOnRerunOne(this::rerunOne);
+            panel.setOnDebugOne(this::debugOne);
+            panel.setDebugAvailable(ops::debugAvailable);
+            if (outputFontFamily != null) {
+                panel.setOutputFont(outputFontFamily, outputFontSize);
+            }
+        }
         return panel;
     }
 
+    /** Matches the output font to the editor font; remembered for a panel not built yet. */
     void setOutputFont(String family, int size) {
-        panel.setOutputFont(family, size);
+        outputFontFamily = family;
+        outputFontSize = size;
+        if (panel != null) {
+            panel.setOutputFont(family, size);
+        }
     }
 
     private boolean isEnabled() {
@@ -186,7 +202,7 @@ final class TestRunCoordinator implements TestRunHook {
         sawGradleTaskLines = false;
         reusedGradleTasks.clear();
 
-        panel.startRun(String.join(" ", taskArgs));
+        panel().startRun(String.join(" ", taskArgs));
         ops.setTestResultsAvailable(true);
         ops.openTestResults();
         startElapsedTimer();
@@ -330,7 +346,7 @@ final class TestRunCoordinator implements TestRunHook {
             run.root().pruneRunning(); // drop pre-seeded placeholders that never got a result (parameterized/skipped)
         }
         run.finish(code, System.currentTimeMillis());
-        panel.finishRun(run, code);
+        panel().finishRun(run, code);
         // A Maven filter that matches nothing is not an error (the flags a reactor needs see to that), so
         // the build is green and the tree empty. Say so: "0 of 0 tests passed" reads as a pass.
         if (code == 0
@@ -373,7 +389,7 @@ final class TestRunCoordinator implements TestRunHook {
         Platform.runLater(() -> {
             refreshPending = false;
             if (currentRun != null) {
-                panel.update(currentRun, followTarget);
+                panel().update(currentRun, followTarget);
             }
         });
     }
@@ -384,7 +400,7 @@ final class TestRunCoordinator implements TestRunHook {
         stopElapsedTimer();
         elapsedTimer = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
             if (currentRun != null && currentRun.isRunning()) {
-                panel.setElapsed(currentRun.elapsedMillis(System.currentTimeMillis()));
+                panel().setElapsed(currentRun.elapsedMillis(System.currentTimeMillis()));
             }
         }));
         elapsedTimer.setCycleCount(Animation.INDEFINITE);
@@ -684,21 +700,21 @@ final class TestRunCoordinator implements TestRunHook {
     /** {@code test.showOnlyFailed}: open the window and narrow the tree to failures/errors. */
     void showOnlyFailed() {
         ops.openTestResults();
-        panel.showOnlyFailed();
+        panel().showOnlyFailed();
         host.setStatus(tr("status.testrunner.filterFailed"));
     }
 
     /** {@code test.showAllTests}: open the window and drop every status/name filter. */
     void showAllTests() {
         ops.openTestResults();
-        panel.clearFilter();
+        panel().clearFilter();
         host.setStatus(tr("status.testrunner.filterCleared"));
     }
 
     /** {@code test.filterTests}: open the window and put the caret in its filter field. */
     void focusFilter() {
         ops.openTestResults();
-        panel.focusFilter();
+        panel().focusFilter();
     }
 
     void rerun() {

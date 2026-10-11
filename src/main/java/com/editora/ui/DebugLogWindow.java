@@ -28,9 +28,10 @@ import static com.editora.i18n.Messages.tr;
  */
 public final class DebugLogWindow {
 
-    private final Stage stage = new Stage();
-    private final TextArea area = new TextArea();
-    private final Label fileLabel = new Label();
+    // Built on the first show(): a Stage and a TextArea are not free, and most sessions never open this.
+    private Stage stage;
+    private TextArea area;
+    private Label fileLabel;
     private Path sessionFile;
     private boolean built;
 
@@ -54,6 +55,9 @@ public final class DebugLogWindow {
     }
 
     private void build(Window owner) {
+        stage = new Stage();
+        area = new TextArea();
+        fileLabel = new Label();
         stage.setTitle(tr("debuglog.title"));
         if (owner != null) {
             stage.initOwner(owner);
