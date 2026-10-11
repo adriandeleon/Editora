@@ -17,9 +17,7 @@ import javafx.collections.ObservableList;
 import javafx.css.PseudoClass;
 import javafx.fxml.FXML;
 import javafx.geometry.Orientation;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -37,8 +35,6 @@ import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
-import javafx.scene.input.Dragboard;
-import javafx.scene.input.TransferMode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -333,7 +329,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
     final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
     /** The tab currently being dragged to reorder the strip, or null. */
-    private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
     private String currentEditorThemeCss;
 
@@ -1683,8 +1678,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             // A restored tab not built yet: its read, when it comes, must find the file where it now is. The
             // path-keyed stores are remapped by the caller; the tab has no buffer-side state to move.
             placeholder.relocate(target);
-            setContentHeader(tab, placeholder);
-            tab.setTooltip(new Tooltip(target.toAbsolutePath().toString()));
+            tabHeaders.contentHeader(tab, placeholder);
+            tab.setTooltip(TabHeaders.tooltip(target));
         } else if (bufferOf(tab) != null) {
             EditorBuffer buffer = bufferOf(tab);
             buffer.setPath(target);
@@ -1713,7 +1708,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                         // Not built yet: its read, when it comes, must find the file where it now is.
                         Path moved = target.resolve(oldNorm.relativize(pn));
                         unbuilt.relocate(moved);
-                        t.setTooltip(new Tooltip(moved.toAbsolutePath().toString()));
+                        t.setTooltip(TabHeaders.tooltip(moved));
                         migrateFileState(p, moved);
                     }
                     continue;
@@ -2155,7 +2150,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void setupToolWindows() {
-        editorArea.setDraggedTabSource(() -> draggedTab); // drops onto a group body move/split it
+        editorArea.setDraggedTabSource(tabHeaders::draggedTab); // drops onto a group body move/split it
         // The menu bar sits above the toolbar. Built from the registry, so it needs no per-command wiring.
         menuBar = new MainMenuBar(registry, this::invertBindings, this::paletteGates, this::paletteContext, id -> {
             if (registry.get(id).isPresent()) {
@@ -8231,12 +8226,10 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     /**
-     * Gives a restored placeholder tab its editor: the same wiring as {@link #addBuffer}, into the
-     * {@link Tab} that already holds the file's place in the strip (its pin, group, MRU slot and selection
-     * stay as they are). {@code shown} says the tab is on screen — being selected right now, or the selected
-     * tab of a split group — so its editor attaches at once; otherwise the editor stays out of the scene
-     * until the tab is first selected ({@link DeferredTabContent}) and its first highlight pass waits for
-     * that too ({@link EditorBuffer#setHighlightDeferred}).
+     * Gives a restored placeholder tab its editor: the wiring of {@link #addBuffer}, into the {@link Tab} that
+     * already holds the file's place (pin, group, MRU slot and selection stay). {@code shown}: the tab is on
+     * screen, so the editor attaches now; otherwise it stays detached ({@link DeferredTabContent}) and
+     * unhighlighted ({@link EditorBuffer#setHighlightDeferred}) until the tab is first selected.
      */
     private Tab attachRestoredBuffer(Tab tab, EditorBuffer buffer, boolean shown) {
         wireBuffer(buffer, false);
@@ -8262,22 +8255,15 @@ public class MainController implements com.editora.mcp.McpBridge {
         return tab;
     }
 
-    /**
-     * Puts a restored file's placeholder tab in the strip: title, file icon and pin marker, no editor. The
-     * editor is built by {@link #attachRestoredBuffer} when the restore reaches it or something needs it.
-     */
+    /** A restored file's placeholder tab: title, icon, pin, no editor until {@link #attachRestoredBuffer}. */
     private Tab addPlaceholderTab(RestorePlaceholder placeholder) {
         Tab tab = addContentTab(placeholder, false);
         if (placeholder.entry().isPinned()) {
             pinned.add(tab);
-            toggleClass(tab, "pinned", true);
-            setContentHeader(tab, placeholder); // again, now that the pin is known
+            TabHeaders.toggleClass(tab, "pinned", true);
+            tabHeaders.contentHeader(tab, placeholder); // again, now that the pin is known
         }
-        Path p = placeholder.path();
-        tab.setTooltip(new Tooltip(
-                com.editora.vfs.Vfs.isRemote(p)
-                        ? com.editora.vfs.Vfs.displayLabel(p)
-                        : p.toAbsolutePath().toString()));
+        tab.setTooltip(TabHeaders.tooltip(placeholder.path()));
         // The tab menu is a buffer's; opening it on a placeholder builds the editor first.
         tab.setContextMenu(LazyContextMenu.of(menu -> {
             EditorBuffer built = ensureBuffer(tab);
@@ -8290,8 +8276,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /**
      * The buffer in {@code tab}, built now when the tab is still a restore placeholder; {@code null} for a
-     * viewer, the Welcome page or a closed tab. For callers that need the editor itself — a load-dependent
-     * action, a recovery record, an MCP buffer operation — rather than the file, which is on disk.
+     * viewer or the Welcome page. For callers that need the editor itself rather than the file on disk.
      */
     private EditorBuffer ensureBuffer(Tab tab) {
         EditorBuffer buffer = bufferOf(tab);
@@ -8448,7 +8433,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab tab = new Tab();
         DeferredTabContent.install(tab, content.node()); // a restored background tab attaches when shown
         tab.setUserData(content);
-        setContentHeader(tab, content);
+        tabHeaders.contentHeader(tab, content);
         tab.setClosable(content.closeable());
         tab.setOnCloseRequest(e -> {
             if (!closes.confirmClose(tab)) {
@@ -8462,28 +8447,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         return tab;
     }
-    /**
-     * Gives {@code tab} the generic header of a {@link TabContent}: its icon and title in a draggable graphic
-     * (the tab text stays empty). Buffer tabs replace it via {@link #updateTabMeta}; a restore placeholder
-     * gets it again when its file moves before its editor exists.
-     */
-    private void setContentHeader(Tab tab, TabContent content) {
-        Label title = new Label(content.title());
-        title.getStyleClass().add("tab-title");
-        HBox header = new HBox(6);
-        header.getStyleClass().add("tab-header");
-        header.setAlignment(Pos.CENTER_LEFT);
-        Node icon = content.icon();
-        if (icon != null) {
-            header.getChildren().add(icon);
-        }
-        header.getChildren().add(title);
-        enableTabDrag(header, tab);
-        if (pinned.contains(tab)) {
-            header.getStyleClass().add("pinned");
-        }
-        tab.setGraphic(header);
-    }
+    /** Tab headers (icon, title, markers, drag handle); see {@link TabHeaders}. */
+    private final TabHeaders tabHeaders = new TabHeaders(() -> editorArea, tab -> pinned.contains(tab));
 
     /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
     private void updateTabMeta(Tab tab, EditorBuffer buffer) {
@@ -8491,116 +8456,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (tab == editorArea.selectedTab()) {
             updateWindowTitle();
         }
-        boolean dirty = buffer.isDirty();
-        if (dirty) {
+        if (buffer.isDirty()) {
             // Editing is the clearest possible statement that this file is not a passing glance.
             promoteTab(tab);
         }
-        boolean isPinned = pinned.contains(tab);
-        // The graphic header supports drag reordering and optional state/file icons.
-        Label title = new Label((dirty ? "• " : "") + buffer.getTitle());
-        title.getStyleClass().add("tab-title");
-        if (tab == previewTab) {
-            title.getStyleClass().add("preview-tab-title"); // italic: this tab will be reused
-        }
-        Path p = buffer.getPath();
-        boolean remote = com.editora.vfs.Vfs.isRemote(p);
-        HBox header = new HBox(6);
-        header.getStyleClass().add("tab-header");
-        if (dirty) header.getStyleClass().add("dirty");
-        if (isPinned) header.getStyleClass().add("pinned");
-        if (!buffer.isEditable()) header.getStyleClass().add("read-only");
-        if (remote) header.getStyleClass().add("remote");
-        header.setAlignment(Pos.CENTER_LEFT);
-        if (isPinned) {
-            header.getChildren().add(Icons.pin());
-        }
-        if (remote) {
-            header.getChildren().add(Icons.remote()); // cloud glyph: this file lives on a remote host
-        }
-        // A file-type glyph reflecting the file's kind (Java/Python/image/…), or a generic doc.
-        Node typeIcon = FileIcons.forFileName(buffer.getTitle());
-        typeIcon.getStyleClass().add("tab-file-icon");
-        header.getChildren().add(typeIcon);
-        header.getChildren().add(title);
-        enableTabDrag(header, tab);
-        tab.setText("");
-        tab.setGraphic(header);
-        toggleClass(tab, "dirty", dirty);
-        toggleClass(tab, "pinned", isPinned);
-        toggleClass(tab, "read-only", !buffer.isEditable());
-        toggleClass(tab, "remote", remote);
-        tab.setTooltip(new Tooltip(
-                p == null
-                        ? "untitled"
-                        : remote
-                                ? com.editora.vfs.Vfs.displayLabel(p)
-                                : p.toAbsolutePath().toString()));
-    }
-
-    /** Wires drag-and-drop on a tab's header so the user can reorder the strip with the mouse. */
-    private void enableTabDrag(Node header, Tab tab) {
-        header.setOnDragDetected(e -> {
-            Dragboard db = header.startDragAndDrop(TransferMode.MOVE);
-            ClipboardContent content = new ClipboardContent();
-            content.putString("tab"); // marker; the dragged tab is tracked in draggedTab
-            db.setContent(content);
-            // A snapshot of the tab follows the cursor so it's clear what's being dragged.
-            SnapshotParameters params = new SnapshotParameters();
-            params.setFill(Color.TRANSPARENT);
-            db.setDragView(header.snapshot(params, null), e.getX(), e.getY());
-            draggedTab = tab;
-            header.getStyleClass().add("tab-dragging");
-            e.consume();
-        });
-        header.setOnDragOver(e -> {
-            if (draggedTab != null && draggedTab != tab) {
-                e.acceptTransferModes(TransferMode.MOVE);
-                // Show an insertion line on the side the tab would land.
-                boolean after = e.getX() > header.getBoundsInLocal().getWidth() / 2;
-                toggleStyle(header, "tab-drop-after", after);
-                toggleStyle(header, "tab-drop-before", !after);
-            }
-            e.consume();
-        });
-        header.setOnDragExited(e -> clearDropMarkers(header));
-        header.setOnDragDropped(e -> {
-            clearDropMarkers(header);
-            boolean done = false;
-            if (draggedTab != null && draggedTab != tab) {
-                // Drop on the right half of the target inserts after it, left half before it.
-                done = editorArea.moveBeside(
-                        draggedTab, tab, e.getX() > header.getBoundsInLocal().getWidth() / 2, pinned::contains);
-            }
-            e.setDropCompleted(done);
-            e.consume();
-        });
-        header.setOnDragDone(e -> {
-            header.getStyleClass().remove("tab-dragging");
-            clearDropMarkers(header);
-            draggedTab = null;
-        });
-    }
-
-    private static void clearDropMarkers(Node header) {
-        header.getStyleClass().removeAll("tab-drop-before", "tab-drop-after");
-    }
-
-    private static void toggleStyle(Node node, String styleClass, boolean on) {
-        node.getStyleClass().remove(styleClass);
-        if (on) {
-            node.getStyleClass().add(styleClass);
-        }
-    }
-
-    private static void toggleClass(Tab tab, String styleClass, boolean on) {
-        if (on) {
-            if (!tab.getStyleClass().contains(styleClass)) {
-                tab.getStyleClass().add(styleClass);
-            }
-        } else {
-            tab.getStyleClass().remove(styleClass);
-        }
+        tabHeaders.bufferHeader(tab, buffer, tab == previewTab);
     }
 
     // --- File actions ---

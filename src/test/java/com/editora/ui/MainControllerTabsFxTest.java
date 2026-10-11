@@ -106,9 +106,9 @@ class MainControllerTabsFxTest {
 
     private void setDragged(Tab tab) {
         try {
-            java.lang.reflect.Field f = MainController.class.getDeclaredField("draggedTab");
+            java.lang.reflect.Field f = TabHeaders.class.getDeclaredField("draggedTab");
             f.setAccessible(true);
-            f.set(controller, tab);
+            f.set(FxTestSupport.field(controller, "tabHeaders"), tab);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
@@ -163,7 +163,7 @@ class MainControllerTabsFxTest {
 
             Event.fireEvent(movedHeader, drag(DragEvent.DRAG_DONE, movedHeader, false));
             assertFalse(movedHeader.getStyleClass().contains("tab-dragging"));
-            assertNull(FxTestSupport.field(controller, "draggedTab"), "the gesture is over");
+            assertNull(FxTestSupport.<TabHeaders>field(controller, "tabHeaders").draggedTab(), "the gesture is over");
 
             // With nothing being dragged, a stray drag event over a tab moves nothing.
             Event.fireEvent(headerC, drag(DragEvent.DRAG_OVER, headerC, true));
