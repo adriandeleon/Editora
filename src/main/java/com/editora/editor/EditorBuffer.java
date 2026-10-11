@@ -659,10 +659,9 @@ public class EditorBuffer implements TabContent {
     private boolean markdownLintEnabled;
     private javafx.scene.control.Tooltip mdLintTooltip;
     private String mdLintTooltipText;
-    /** Injected handler for image files dropped onto a Markdown buffer (controller copies + inserts links). */
-    private java.util.function.Consumer<java.util.List<java.io.File>> imageDropHandler;
-    /** Injected handler for a raw image / image URL dragged from a browser (image, url — either may be null). */
-    private java.util.function.BiConsumer<javafx.scene.image.Image, String> webImageDropHandler;
+    /** Image files and browser images dropped onto a Markdown or Typst buffer; see {@link ImageDrop}. */
+    private final ImageDrop imageDrop =
+            new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::caretToDrop);
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
 
@@ -2087,11 +2086,11 @@ public class EditorBuffer implements TabContent {
         // off-feature buffer never builds their Canvas, subscriptions or listeners.
         root.getChildren()
                 .addAll(
-                        layered(scrollPane, Layer.TEXT),
-                        layered(noteOverlay, Layer.NOTE),
-                        layered(spellOverlay, Layer.SPELL),
-                        layered(minimap, Layer.MINIMAP),
-                        layered(columnRuler, Layer.RULER));
+                        OverlayLayer.layered(scrollPane, OverlayLayer.TEXT),
+                        OverlayLayer.layered(noteOverlay, OverlayLayer.NOTE),
+                        OverlayLayer.layered(spellOverlay, OverlayLayer.SPELL),
+                        OverlayLayer.layered(minimap, OverlayLayer.MINIMAP),
+                        OverlayLayer.layered(columnRuler, OverlayLayer.RULER));
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
@@ -2099,7 +2098,7 @@ public class EditorBuffer implements TabContent {
         // The overlays share the text rectangle with the scroll pane (and track it when the minimap is
         // toggled — see anchorOverText); they are mouse-transparent so clicks reach the editor.
         anchorOverText(spellOverlay); // red squiggles
-        installImageDrop(area);
+        imageDrop.install(area);
         anchorOverText(noteOverlay);
         noteOverlay.setSpans(notes::activeSpans, notes::hasActiveSpans); // inert until a note is positioned
         noteOverlay.setActive(true);
@@ -2107,49 +2106,6 @@ public class EditorBuffer implements TabContent {
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);
-    }
-
-    /**
-     * Where each child of the code pane ({@link #root}) sits in its stack, lowest first. A lazily attached
-     * overlay or stripe goes in just below the first child with a higher layer, so the order is the same
-     * whichever features a buffer turned on, and in whatever sequence. Nodes without a layer (the corner
-     * controls, the sticky-scroll bar) are appended later and count as topmost.
-     */
-    static final class Layer {
-        static final int TEXT = 0;
-        static final int NOTE = 10;
-        static final int SNIPPET = 20;
-        static final int SEARCH = 30;
-        static final int OCCURRENCE = 40;
-        static final int TODO = 50;
-        static final int LOG = 60;
-        static final int WHITESPACE = 70;
-        static final int SPELL = 80;
-        static final int MERMAID_LINT = 90;
-        static final int MARKDOWN_LINT = 100;
-        static final int LSP = 110;
-        static final int INLINE_VALUES = 120;
-        static final int ACE_JUMP = 125;
-        static final int MINIMAP = 130;
-        static final int DIAGNOSTIC_STRIPE = 140;
-        static final int MARKDOWN_LINT_STRIPE = 150;
-        static final int TODO_STRIPE = 160;
-        static final int RULER = 170;
-
-        /** The property the layer is kept in on the node, so the stack can be rebuilt from the children. */
-        static final String PROPERTY = "editora.overlayLayer";
-
-        private Layer() {}
-
-        static int of(Node node) {
-            Object layer = node.hasProperties() ? node.getProperties().get(PROPERTY) : null;
-            return layer instanceof Integer i ? i : Integer.MAX_VALUE;
-        }
-    }
-
-    private static <T extends Node> T layered(T node, int layer) {
-        node.getProperties().put(Layer.PROPERTY, layer);
-        return node;
     }
 
     /** Moves the caret to the start of {@code line} (0-based), scrolls it into view, and focuses the editor. */
@@ -2633,11 +2589,11 @@ public class EditorBuffer implements TabContent {
         if (node instanceof TabSurface surface) {
             surface.setRenderingActive(renderingActive); // first activated while its tab is in the background
         }
-        layered(node, layer);
+        OverlayLayer.layered(node, layer);
         List<Node> children = root.getChildren();
         int idx = children.size();
         for (int i = 0; i < children.size(); i++) {
-            if (Layer.of(children.get(i)) > layer) {
+            if (OverlayLayer.of(children.get(i)) > layer) {
                 idx = i;
                 break;
             }
@@ -2651,21 +2607,21 @@ public class EditorBuffer implements TabContent {
 
     private SearchHighlightOverlay searchOverlay() {
         if (searchOverlay == null) {
-            searchOverlay = attachLazyOverlay(new SearchHighlightOverlay(area), Layer.SEARCH);
+            searchOverlay = attachLazyOverlay(new SearchHighlightOverlay(area), OverlayLayer.SEARCH);
         }
         return searchOverlay;
     }
 
     private OccurrenceHighlightOverlay occurrenceOverlay() {
         if (occurrenceOverlay == null) {
-            occurrenceOverlay = attachLazyOverlay(new OccurrenceHighlightOverlay(area), Layer.OCCURRENCE);
+            occurrenceOverlay = attachLazyOverlay(new OccurrenceHighlightOverlay(area), OverlayLayer.OCCURRENCE);
         }
         return occurrenceOverlay;
     }
 
     private TodoHighlightOverlay todoOverlay() {
         if (todoOverlay == null) {
-            todoOverlay = attachLazyOverlay(new TodoHighlightOverlay(area), Layer.TODO);
+            todoOverlay = attachLazyOverlay(new TodoHighlightOverlay(area), OverlayLayer.TODO);
         }
         return todoOverlay;
     }
@@ -2677,14 +2633,14 @@ public class EditorBuffer implements TabContent {
                 made.setFont(fontFamily, fontSize);
             }
             made.setSuppressed(largeFile);
-            whitespace = attachLazyOverlay(made, Layer.WHITESPACE);
+            whitespace = attachLazyOverlay(made, OverlayLayer.WHITESPACE);
         }
         return whitespace;
     }
 
     private MarkdownLintOverlay mdLintOverlay() {
         if (mdLintOverlay == null) {
-            mdLintOverlay = attachLazyOverlay(new MarkdownLintOverlay(area), Layer.MARKDOWN_LINT);
+            mdLintOverlay = attachLazyOverlay(new MarkdownLintOverlay(area), OverlayLayer.MARKDOWN_LINT);
         }
         return mdLintOverlay;
     }
@@ -2695,14 +2651,14 @@ public class EditorBuffer implements TabContent {
             if (fontApplied) {
                 made.setFont(fontFamily, fontSize);
             }
-            inlineValues = attachLazyOverlay(made, Layer.INLINE_VALUES);
+            inlineValues = attachLazyOverlay(made, OverlayLayer.INLINE_VALUES);
         }
         return inlineValues;
     }
 
     private DiagnosticStripe diagnosticStripe() {
         if (diagnosticStripe == null) {
-            diagnosticStripe = attachLazyStripe(new DiagnosticStripe(area), Layer.DIAGNOSTIC_STRIPE);
+            diagnosticStripe = attachLazyStripe(new DiagnosticStripe(area), OverlayLayer.DIAGNOSTIC_STRIPE);
             diagnosticStripe.setOnActivate(this::jumpToLine);
             updateDiagnosticStripe(); // its inset and on/off state, as if it had been there all along
         }
@@ -2711,7 +2667,7 @@ public class EditorBuffer implements TabContent {
 
     private MarkdownLintStripe mdLintStripe() {
         if (mdLintStripe == null) {
-            mdLintStripe = attachLazyStripe(new MarkdownLintStripe(area), Layer.MARKDOWN_LINT_STRIPE);
+            mdLintStripe = attachLazyStripe(new MarkdownLintStripe(area), OverlayLayer.MARKDOWN_LINT_STRIPE);
             mdLintStripe.setOnActivate(this::jumpToLine);
             updateMarkdownLintStripe(); // its inset and on/off state, as if it had been there all along
         }
@@ -2720,7 +2676,7 @@ public class EditorBuffer implements TabContent {
 
     private TodoStripe todoStripe() {
         if (todoStripe == null) {
-            todoStripe = attachLazyStripe(new TodoStripe(area), Layer.TODO_STRIPE);
+            todoStripe = attachLazyStripe(new TodoStripe(area), OverlayLayer.TODO_STRIPE);
             todoStripe.setOnActivate(this::jumpToLine);
             updateTodoStripe(); // its inset and on/off state, as if it had been there all along
         }
@@ -2741,28 +2697,28 @@ public class EditorBuffer implements TabContent {
                             return logView.levelAt(paragraph);
                         }
                     }),
-                    Layer.LOG);
+                    OverlayLayer.LOG);
         }
         return logOverlay;
     }
 
     private MermaidLintOverlay lintOverlay() {
         if (lintOverlay == null) {
-            lintOverlay = attachLazyOverlay(new MermaidLintOverlay(area), Layer.MERMAID_LINT);
+            lintOverlay = attachLazyOverlay(new MermaidLintOverlay(area), OverlayLayer.MERMAID_LINT);
         }
         return lintOverlay;
     }
 
     private LspDiagnosticOverlay lspOverlay() {
         if (lspOverlay == null) {
-            lspOverlay = attachLazyOverlay(new LspDiagnosticOverlay(area), Layer.LSP);
+            lspOverlay = attachLazyOverlay(new LspDiagnosticOverlay(area), OverlayLayer.LSP);
         }
         return lspOverlay;
     }
 
     private AceJumpOverlay aceJump() {
         if (aceJump == null) {
-            aceJump = attachLazyOverlay(new AceJumpOverlay(area), Layer.ACE_JUMP);
+            aceJump = attachLazyOverlay(new AceJumpOverlay(area), OverlayLayer.ACE_JUMP);
         }
         return aceJump;
     }
@@ -3754,7 +3710,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the handler for image files dropped onto a Markdown buffer; null disables the drop affordance. */
     public void setImageDropHandler(java.util.function.Consumer<java.util.List<java.io.File>> handler) {
-        this.imageDropHandler = handler;
+        imageDrop.setImageDropHandler(handler);
     }
 
     /**
@@ -3763,62 +3719,7 @@ public class EditorBuffer implements TabContent {
      * {@code Image} (or null) and the image URL/data-URI (or null) — at least one is non-null.
      */
     public void setWebImageDropHandler(java.util.function.BiConsumer<javafx.scene.image.Image, String> handler) {
-        this.webImageDropHandler = handler;
-    }
-
-    /** The image URL a browser drag carries (its URL, an {@code <img src>} in the HTML, or an image string). */
-    private static String webImageUrl(javafx.scene.input.Dragboard db) {
-        return com.editora.markdown.MarkdownImagePaste.imageUrlFromDrag(
-                db.hasUrl() ? db.getUrl() : null,
-                db.hasHtml() ? db.getHtml() : null,
-                db.hasString() ? db.getString() : null);
-    }
-
-    /**
-     * Accepts dropped images on a Markdown buffer (copy/download into {@code assets/} + insert {@code ![](…)}):
-     * image <em>files</em> from the OS, and a raw image / image URL dragged from a web browser.
-     */
-    private void installImageDrop(CodeArea a) {
-        a.addEventHandler(javafx.scene.input.DragEvent.DRAG_OVER, e -> {
-            if ((!isMarkdown() && !isTypst()) || !isEditable()) {
-                return;
-            }
-            javafx.scene.input.Dragboard db = e.getDragboard();
-            boolean file = imageDropHandler != null && db.hasFiles() && hasImageFile(db.getFiles());
-            boolean web = webImageDropHandler != null && (db.hasImage() || webImageUrl(db) != null);
-            if (file || web) {
-                e.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
-                e.consume();
-            }
-        });
-        a.addEventHandler(javafx.scene.input.DragEvent.DRAG_DROPPED, e -> {
-            if ((!isMarkdown() && !isTypst()) || !isEditable()) {
-                return;
-            }
-            javafx.scene.input.Dragboard db = e.getDragboard();
-            // Prefer real image files (self-contained copy); fall back to a browser image (download/encode).
-            if (imageDropHandler != null && db.hasFiles()) {
-                java.util.List<java.io.File> images =
-                        db.getFiles().stream().filter(EditorBuffer::isImageFile).toList();
-                if (!images.isEmpty()) {
-                    caretToDrop(a, e);
-                    imageDropHandler.accept(images);
-                    e.setDropCompleted(true);
-                    e.consume();
-                    return;
-                }
-            }
-            if (webImageDropHandler != null) {
-                String url = webImageUrl(db);
-                javafx.scene.image.Image img = db.hasImage() ? db.getImage() : null;
-                if (url != null || img != null) {
-                    caretToDrop(a, e);
-                    webImageDropHandler.accept(img, url);
-                    e.setDropCompleted(true);
-                    e.consume();
-                }
-            }
-        });
+        imageDrop.setWebImageDropHandler(handler);
     }
 
     /** A drop lands under the pointer, in the view it was dropped on — a window dragged into has no focus yet. */
@@ -3826,21 +3727,6 @@ public class EditorBuffer implements TabContent {
         focusedArea = a;
         focusedView.set(a);
         EditorMouse.moveCaretToDrop(a, e.getX(), e.getY());
-    }
-
-    private static boolean hasImageFile(java.util.List<java.io.File> files) {
-        return files.stream().anyMatch(EditorBuffer::isImageFile);
-    }
-
-    private static boolean isImageFile(java.io.File f) {
-        String n = f.getName().toLowerCase(java.util.Locale.ROOT);
-        return n.endsWith(".png")
-                || n.endsWith(".jpg")
-                || n.endsWith(".jpeg")
-                || n.endsWith(".gif")
-                || n.endsWith(".bmp")
-                || n.endsWith(".webp")
-                || n.endsWith(".svg");
     }
 
     // --- LSP (Language Server Protocol) integration ---------------------------------------------
@@ -6692,7 +6578,7 @@ public class EditorBuffer implements TabContent {
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installCodeLensClick(area2);
-        installImageDrop(area2);
+        imageDrop.install(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
         }
@@ -8410,7 +8296,7 @@ public class EditorBuffer implements TabContent {
 
     private void snippetSessionChanged() {
         if (snippetOverlay == null && snippetSession.isActive()) {
-            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), Layer.SNIPPET);
+            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), OverlayLayer.SNIPPET);
         }
         if (snippetOverlay != null) snippetOverlay.refresh();
         snippetProgress.accept(snippetSession.progress());
