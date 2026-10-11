@@ -287,7 +287,19 @@ let GPU-backed resources grow with the number of open files:
   seconds. Undo entries and Undo History checkpoints are user data and are never released this way.
 - A restored background tab's editor is kept out of the scene until the tab is first selected
   (`DeferredTabContent`). A hidden but sized RichTextFX area lays out a screenful of cells on every
-  document update, which was most of the cost of restoring a session.
+  document update, which was most of the cost of restoring a session. The editor itself is not even built
+  before the first frame: a session restore creates only the selected tab's `EditorBuffer` (and, in a
+  split, each group's selected one); every other saved file is a `RestorePlaceholder` tab — title, icon,
+  pin, order and group in place, an empty node as content — whose editor is built and filled after the
+  selected file has painted, on the `RestoreSchedule` cadence (a time-boxed batch per pulse, a painted
+  frame between batches). A tab built in the background also holds its first highlight pass back until it
+  is first shown (`EditorBuffer.setHighlightDeferred`): the fill marks the whole document dirty, and
+  tokenising thirty files nobody is looking at is pure cost. Measured on a 30-file session (headless, 20–60
+  KB Java files): the window build no longer carries ~18 ms of buffer wiring per saved file before `show()`
+  returns. Anything that needs a placeholder's editor before its turn — selecting the tab, a workspace edit,
+  a recovery record, an MCP buffer call — gets it built on the spot (`MainController.ensureBuffer`,
+  `WindowSessionCoordinator.materialize`); everything else that iterates buffers sees a placeholder as "no
+  buffer", like an image tab, and treats the file as on disk, which is what its content is.
 - A Canvas overlay releases its backing canvas to **1×1** when it has nothing to draw.
 
 When you add any per-buffer `Canvas`/`Image`, make sure it is released or bounded. The dist

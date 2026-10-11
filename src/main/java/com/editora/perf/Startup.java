@@ -45,8 +45,11 @@ public final class Startup {
      */
     public static final String FIRST_PAINT = "first-paint";
     /**
-     * Phase: every tab of the saved session has been restored (or there was no session). Normally after
-     * {@link #FIRST_PAINT}, in which case it is printed as a late line below the report.
+     * Phase: every tab of the saved session has its editor and its text (or there was no session). The
+     * restore builds only the selected tab's editor before the first frame and the rest on a cadence that
+     * waits for a painted frame between batches, so this lands well after {@link #FIRST_PAINT} and is printed
+     * as a late line below the report: it measures how long the window keeps doing restore work in the
+     * background, not how long the user waits.
      */
     public static final String SESSION_RESTORED = "session-restored";
 

@@ -189,9 +189,9 @@ class TabHeaderDropFxTest {
     /** Delivers a drop of {@code dragged} on {@code target}'s header: its right half when {@code after}. */
     private void drop(Tab dragged, Tab target, boolean after) {
         try {
-            java.lang.reflect.Field inFlight = MainController.class.getDeclaredField("draggedTab");
+            java.lang.reflect.Field inFlight = TabHeaders.class.getDeclaredField("draggedTab");
             inFlight.setAccessible(true);
-            inFlight.set(fx.controller, dragged);
+            inFlight.set(FxTestSupport.field(fx.controller, "tabHeaders"), dragged);
             Node header = target.getGraphic();
             double x = after ? header.getBoundsInLocal().getWidth() + 1000 : 0;
             header.getOnDragDropped()
@@ -208,7 +208,7 @@ class TabHeaderDropFxTest {
                             header,
                             header,
                             null));
-            inFlight.set(fx.controller, null);
+            inFlight.set(FxTestSupport.field(fx.controller, "tabHeaders"), null);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
