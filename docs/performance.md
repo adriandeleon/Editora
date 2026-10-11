@@ -326,6 +326,52 @@ before, 0.14–0.5 ms after. The same overlay bounds its work per line: a line o
 one line gets at most 250 squiggles, and a line is cut into tokens once (`SpellChecker.checkableWords`)
 rather than once per misspelled word.
 
+## Startup
+
+Time-to-first-paint is measured by `scripts/measure-startup.sh` (the `perf/Startup` marks). The rules below keep
+the show path free of work the user is not waiting for; measure against them when touching `App`,
+`WindowManager.buildWindow`, `MainController.init` or the session restore.
+
+- **The config prefetch starts before the single-instance probe.** `App.main` starts the `config-prefetch`
+  thread and only then probes the endpoint file (a stale one can cost up to the connect timeout). Until the
+  probe has decided that this process will run, the thread does only `App.warmConfigLoad` — the JSON mapper,
+  the store classes and the main files' bytes, read and dropped — because a load can move files (a migration
+  backup, a restored set-aside copy, the TOML conversion) and a launch about to be forwarded must not touch
+  the running editor's directory. After the gate it loads the shared config and everything the first window
+  used to read on the FX thread: the plugin manifests (`WindowManager.discoverPlugins`), the session of the
+  project or untitled window the launch will focus (`WindowManager.primaryWindowStateFile`, adopted through
+  `adoptBootstrapConfig(bootstrap, projectWindow)`) and the readability of every saved session entry
+  (`config/SessionScan`, handed over by `ConfigManager.setStartupSessionScan` and taken once by
+  `WindowSessionCoordinator.openInitialBuffer`, which therefore stats nothing on FX). A window built any other
+  way reads and scans inline, with the same rules.
+- **Probes wait for the first painted frame.** `perf/AfterFirstPaint` is held by `App.start` before the first
+  window and released by the frame after the first content lands (`FileWorkflowCoordinator.firstPainted`, the
+  same two-tick timer as the `FIRST_PAINT` mark) or, for a window that never loads content that way, by
+  `WindowManager.FIRST_PAINT_FALLBACK` after show. Behind it: the login-shell PATH warm-up
+  (`ProcessRunner.warmAugmentedPathAsync`, at once when LSP is on since a session start reads it on FX; the
+  `LspManager` constructor no longer spawns it), the `rg --version` probe (and none at all while the ripgrep
+  setting is off), the `gh` probe, the Hunspell dictionary build (`SpellDictionaries.ensureBuilt` keeps the
+  waiting callbacks), the clipboard read behind the Paste button, and the release check, which also waits
+  `UpdateCheckScheduler.DELAY` after that. Outside a launch (tests, a later window) `AfterFirstPaint.run`
+  runs its task at once, so callers need not know whether a hold exists. Keep the queued tasks starters —
+  an executor submit, a thread start — since they run on the FX thread at release.
+- **The focus a window gains by being shown is not a regain.** `MainController.onWindowFocusGained` skips the
+  regain fan-out (external-change check, `git status` + diff, build-tool detection, clipboard, Project tree
+  re-listing, open diffs) for that first focus; it only computes the repository state when no tab switch did
+  (`StartupFocus`), so a window opening on Welcome still gets its Git status once.
+- **No clipboard round trip without a buffer.** `refreshPasteState` asks the clipboard owner only when a
+  buffer could take the paste; the editability flip of every restored shell goes through the coalesced
+  `schedulePasteStateRefresh`.
+- **The projects index is not `fsync`ed on FX at launch.** `WindowManager.launch` and `finishRestore` save it
+  through `SharedConfig.saveProjectsQueued` (`ProjectManager.saveQueued`: serialized now, written on the config
+  writer; a direct `save()` made meanwhile is newer and wins), and the orphan session sweep
+  (`gcOrphanWindowSessions`) lists and deletes on a virtual thread.
+
+What stays: every store is still re-serialized once at load for the `StoreSync` baseline. The baseline must be
+the canonical form of the store as loaded — the "nothing changed" check and the three-way merge compare
+against it — and a decoded-bytes baseline would change what a merge keeps of another writer's keys. That
+serialization runs on the prefetch thread for every store a launch reads.
+
 ## Packaged-runtime tuning
 
 The dist `<javaOptions>` (mirrored into `javafx:run` so dev == prod) pin heap and GC:

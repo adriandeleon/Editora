@@ -47,6 +47,7 @@ class PackageDependencyTest {
             "editorconfig",
             "i18n",
             "markdown",
+            "perf",
             "snippet",
             "structured",
             // Pure per-format parsers and detectors behind the gutter Run/Test markers and the previews.

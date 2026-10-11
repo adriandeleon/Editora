@@ -22,23 +22,12 @@ final class SessionEntries {
     private SessionEntries() {}
 
     /**
-     * Whether a saved entry whose file cannot be read right now stays in the session.
-     *
-     * <p>It is dropped only when the file is known to be gone: its folder is there and the file is not —
-     * someone deleted or renamed it, and keeping the entry would resurrect a tab nobody wants. When the
-     * folder itself is missing or cannot be examined (an unmounted volume, a network share that is down, a
-     * permission that was revoked) nothing has been learned about the file, so the entry is kept.
-     *
-     * @param file the resolved path, or {@code null} when the entry could not be resolved at all (a remote
-     *     file whose connection is not open) — those are not restorable and are dropped, as before
+     * Whether a saved entry whose file cannot be read right now stays in the session. The rule lives with
+     * the scan that applies it, {@link com.editora.config.SessionScan#keepUnreadable}; kept here for its
+     * callers and tests.
      */
     static boolean keepUnreadable(Path file, Predicate<Path> isDirectory, Predicate<Path> notExists) {
-        if (file == null) {
-            return false;
-        }
-        Path parent = file.toAbsolutePath().getParent();
-        boolean knownDeleted = parent != null && isDirectory.test(parent) && notExists.test(file);
-        return !knownDeleted;
+        return com.editora.config.SessionScan.keepUnreadable(file, isDirectory, notExists);
     }
 
     /**

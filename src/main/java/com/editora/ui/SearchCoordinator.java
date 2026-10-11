@@ -217,6 +217,9 @@ final class SearchCoordinator {
     }
 
     private List<String> ripgrepProbedCommand = null;
+    /** The command a probe is queued or running for (FX thread); {@code null} when none is. */
+    private List<String> ripgrepProbeInFlight = null;
+
     private volatile boolean ripgrepAvailable = false;
     private boolean backendRipgrep = false; // effective backend, pushed to the panel + the popup's badge
 
@@ -841,33 +844,44 @@ final class SearchCoordinator {
     /**
      * Configures the Find-in-Files backend: ripgrep when the setting is on AND rg is detected on PATH, else
      * the built-in Java walker. Detection runs off the FX thread (it spawns {@code rg --version}); cached per
-     * command. Run at init + on every settings apply.
+     * command, and only when the setting is on — with ripgrep off the walker is used without a probe (the
+     * Settings page probes for its own status row when it opens). At startup the probe waits for the first
+     * painted frame. Run at init + on every settings apply.
      */
     void applyRipgrepSupport() {
         var s = host.settings();
         List<String> cmd = Ripgrep.command(s.getRipgrepCommand());
         boolean enabled = s.isRipgrepSearch();
-        if (cmd.equals(ripgrepProbedCommand)) {
+        if (!enabled || cmd.equals(ripgrepProbedCommand)) {
             boolean effective = enabled && ripgrepAvailable;
             service.setBackend(effective, cmd, s.isSearchRespectGitignore());
             applyBackendBadge(effective);
             return;
         }
-        Thread t = new Thread(
-                () -> {
-                    boolean ok = Ripgrep.detect(cmd);
-                    Platform.runLater(() -> {
-                        ripgrepProbedCommand = cmd;
-                        ripgrepAvailable = ok;
-                        boolean effective = s.isRipgrepSearch() && ok;
-                        service.setBackend(effective, cmd, s.isSearchRespectGitignore());
-                        applyBackendBadge(effective); // records it for the popup too, not just the panel
-                        ops.syncRipgrepStatus(ok);
-                    });
-                },
-                "rg-detect");
-        t.setDaemon(true);
-        t.start();
+        if (cmd.equals(ripgrepProbeInFlight)) {
+            return; // init and a settings apply before the first paint: one probe answers both
+        }
+        ripgrepProbeInFlight = cmd;
+        com.editora.perf.AfterFirstPaint.run(() -> {
+            Thread t = new Thread(
+                    () -> {
+                        boolean ok = Ripgrep.detect(cmd);
+                        Platform.runLater(() -> {
+                            if (cmd.equals(ripgrepProbeInFlight)) {
+                                ripgrepProbeInFlight = null;
+                            }
+                            ripgrepProbedCommand = cmd;
+                            ripgrepAvailable = ok;
+                            boolean effective = s.isRipgrepSearch() && ok;
+                            service.setBackend(effective, cmd, s.isSearchRespectGitignore());
+                            applyBackendBadge(effective); // records it for the popup too, not just the panel
+                            ops.syncRipgrepStatus(ok);
+                        });
+                    },
+                    "rg-detect");
+            t.setDaemon(true);
+            t.start();
+        });
     }
 
     /** Records the effective backend and pushes the "ripgrep" badge to the panel + the popup (if built). */

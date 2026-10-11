@@ -250,7 +250,9 @@ final class GitHubCoordinator {
         if (!commandChanged && cached != null && cached.authenticated()) {
             apply.accept(cached);
         } else {
-            service.detect(apply);
+            // The gh probe is a process; at startup it waits for the first painted frame so it does not
+            // compete with the file load. Until then the surfaces stay gated as "not found".
+            com.editora.perf.AfterFirstPaint.run(() -> service.detect(apply));
         }
     }
 

@@ -613,7 +613,7 @@ final class FileWorkflowCoordinator {
      * tab filled first, without one it's the only file opened.
      */
     void notePerfContentLoaded(EditorBuffer buffer) {
-        if (!com.editora.perf.Startup.enabled() || perfPaintTimerStarted) {
+        if (!firstPaintMatters() || perfPaintTimerStarted) {
             return;
         }
         perfPaintTimerStarted = true;
@@ -622,8 +622,7 @@ final class FileWorkflowCoordinator {
         // only means "a pulse is beginning"; it's the second tick that proves the pulse in between — the one
         // that laid out and painted this content — completed. Accurate to about one frame (~16 ms), which is
         // the honest resolution of "when did the user first see it" without hooking Prism internals.
-        WindowSessionCoordinator.afterNextPaint(
-                () -> com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT));
+        WindowSessionCoordinator.afterNextPaint(FileWorkflowCoordinator::firstPainted);
     }
 
     /**
@@ -631,12 +630,26 @@ final class FileWorkflowCoordinator {
      * timer as {@link #notePerfContentLoaded}, so whichever of the two arms first is the one that reports.
      */
     void notePerfWindowShown() {
-        if (!com.editora.perf.Startup.enabled() || perfPaintTimerStarted) {
+        if (!firstPaintMatters() || perfPaintTimerStarted) {
             return;
         }
         perfPaintTimerStarted = true;
-        WindowSessionCoordinator.afterNextPaint(
-                () -> com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT));
+        WindowSessionCoordinator.afterNextPaint(FileWorkflowCoordinator::firstPainted);
+    }
+
+    /**
+     * Whether anything waits for the first painted frame: the startup report, or the probes a launch holds
+     * back until the user's file is on screen ({@link com.editora.perf.AfterFirstPaint}). A window built
+     * outside a launch (a test, a later window) arms no timer.
+     */
+    private static boolean firstPaintMatters() {
+        return com.editora.perf.Startup.enabled() || com.editora.perf.AfterFirstPaint.held();
+    }
+
+    /** The frame after the first content is in place has rendered: report it, and let the held work go. */
+    private static void firstPainted() {
+        com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT);
+        com.editora.perf.AfterFirstPaint.release();
     }
 
     /** True once the first-paint timer has been armed, so it arms for one buffer only. */

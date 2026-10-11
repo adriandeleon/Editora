@@ -119,6 +119,19 @@ public class WindowManager {
     }
 
     public WindowManager(SharedConfig shared, KeymapManager keymap, HostServices hostServices) {
+        this(shared, keymap, hostServices, null);
+    }
+
+    /**
+     * As above, with the plugin manifests already discovered — by the launch's config-prefetch thread
+     * ({@link #discoverPlugins}), so the directory listing and manifest reads are not done on the FX thread
+     * here. {@code null} discovers inline, as a test fixture or a harness does.
+     */
+    public WindowManager(
+            SharedConfig shared,
+            KeymapManager keymap,
+            HostServices hostServices,
+            com.editora.plugin.PluginManager discoveredPlugins) {
         this.shared = shared;
         this.keymap = keymap;
         this.hostServices = hostServices;
@@ -129,13 +142,8 @@ public class WindowManager {
         // TextInputKeymap). Done here, by the keymap's owner, so every window this manager builds — including
         // the headless test fixture's — gets them, not only one launched through App.
         com.editora.command.TextInputKeymap.setShared(keymap);
-        // Discover plugins once (startup I/O + class loaders). The predicate factors the master gate, so
-        // no untrusted code loads unless plugins are enabled; the Settings page still lists all of them.
-        this.pluginManager = new com.editora.plugin.PluginManager(
-                shared.getPluginsDir(),
-                id -> shared.getSettings().isPluginSupport()
-                        && shared.getPluginStore().isEnabled(id));
-        this.pluginManager.discover();
+        // Discover plugins once (startup I/O + class loaders), unless the launch did so off-thread already.
+        this.pluginManager = discoveredPlugins != null ? discoveredPlugins : discoverPlugins(shared);
         openSetReconcile.setOnFinished(e -> reconcileOpenSet());
         // Surface durable config-write failures (full disk, read-only ~/.editora) instead of silently
         // swallowing them — a setting/session change would otherwise vanish next launch with no sign (#418).
@@ -163,6 +171,58 @@ public class WindowManager {
 
     SettingsSync settingsSync() {
         return settingsSync;
+    }
+
+    /**
+     * Lists the plugins directory and reads every manifest (startup I/O + class loaders). The predicate
+     * factors the master gate, so no untrusted code loads unless plugins are enabled; the Settings page
+     * still lists all of them. Safe off the FX thread: the launch runs it on the config-prefetch thread.
+     */
+    public static com.editora.plugin.PluginManager discoverPlugins(SharedConfig shared) {
+        var manager = new com.editora.plugin.PluginManager(
+                shared.getPluginsDir(),
+                id -> shared.getSettings().isPluginSupport()
+                        && shared.getPluginStore().isEnabled(id));
+        manager.discover();
+        return manager;
+    }
+
+    /**
+     * The session file of the window {@link #launch} will build first and focus — the same choice
+     * {@code launch} makes ({@link WindowKeys#restoreKeys}, {@link WindowKeys#primaryKey}) — so the launch's
+     * prefetch thread can read it ahead of time. {@code null} when that window is the default no-project one
+     * (its session is the bootstrap config's), when a {@code --project} folder is not a project yet (its
+     * session file does not exist), or for a {@code --single-window} launch.
+     */
+    public static Path primaryWindowStateFile(SharedConfig shared, String projectArg, boolean singleWindow) {
+        if (singleWindow) {
+            return null;
+        }
+        boolean projectsOn = shared.getSettings().isProjectSupport();
+        ProjectManager pm = shared.projects();
+        String cliId = null;
+        if (projectsOn && projectArg != null) {
+            Project cli = pm.find(Path.of(projectArg).toAbsolutePath().normalize());
+            if (cli == null) {
+                return null; // launch creates it; a new project has no session file to read
+            }
+            cliId = cli.id();
+        }
+        LinkedHashSet<String> toOpen = WindowKeys.restoreKeys(pm.openProjectIds(), projectsOn, cliId);
+        String primary = WindowKeys.primaryKey(
+                cliId, toOpen, pm.active() == null ? null : pm.active().id());
+        if (primary == null || primary.isEmpty()) {
+            return null;
+        }
+        if (WindowKeys.isUntitled(primary)) {
+            return shared.getConfigDir().resolve("windows").resolve(WindowKeys.untitledSessionFileName(primary));
+        }
+        for (Project p : pm.list()) {
+            if (p.id().equals(primary)) {
+                return pm.stateFile(p);
+            }
+        }
+        return null;
     }
 
     // --- what settings sync needs of the windows ---
@@ -324,7 +384,7 @@ public class WindowManager {
                     ? root.toString()
                     : root.getFileName().toString();
             cli = pm.createOrGet(name, root);
-            pm.save();
+            shared.saveProjectsQueued(); // off the FX thread: the first frame is still to come
         }
         String cliId = cli == null ? null : cli.id();
         // The no-project windows (global "" + untitled "New Window"s) always restore; project windows only
@@ -363,7 +423,7 @@ public class WindowManager {
                     isPrimary ? newFile : null,
                     isPrimary && simple);
         }
-        pm.save();
+        shared.saveProjectsQueued(); // the open set + active project; written on the config writer, not here
         // Against the whole restore set, and now rather than when the last window exists: a window the user
         // opens while the rest are still being built has a session file this set does not know about.
         gcOrphanWindowSessions(toOpen);
@@ -383,10 +443,25 @@ public class WindowManager {
      */
     private ConfigManager bootstrapConfig;
 
+    /**
+     * Likewise for the project (or untitled) window the launch focuses first: its session, read by the
+     * prefetch thread against the file {@link #primaryWindowStateFile} named. Adopted only by the window
+     * built for exactly that file.
+     */
+    private ConfigManager bootstrapProjectConfig;
+
     /** Offers {@code bootstrap} to the default window of the launch that follows. */
     public void adoptBootstrapConfig(ConfigManager bootstrap) {
+        adoptBootstrapConfig(bootstrap, null);
+    }
+
+    /** As above, plus the prefetched session of the first project window ({@code null}: none was read). */
+    public void adoptBootstrapConfig(ConfigManager bootstrap, ConfigManager projectWindow) {
         if (bootstrap != null && bootstrap.shared() == shared) {
             bootstrapConfig = bootstrap;
+        }
+        if (projectWindow != null && projectWindow.shared() == shared) {
+            bootstrapProjectConfig = projectWindow;
         }
     }
 
@@ -394,6 +469,13 @@ public class WindowManager {
         ConfigManager boot = bootstrapConfig;
         bootstrapConfig = null;
         return boot;
+    }
+
+    /** The prefetched project-window config when it was read from {@code stateFile}, else {@code null}. */
+    private ConfigManager takeBootstrapProjectConfig(Path stateFile) {
+        ConfigManager boot = bootstrapProjectConfig;
+        bootstrapProjectConfig = null;
+        return boot != null && boot.getWorkspaceStateFile().equals(stateFile) ? boot : null;
     }
 
     /** A restored window waiting for its turn to be built; see {@link #launch}. */
@@ -413,6 +495,12 @@ public class WindowManager {
 
     /** How the next pending window's build is scheduled (a seam: tests step the queue by hand). */
     java.util.function.Consumer<Runnable> restoreScheduler = WindowSessionCoordinator::afterNextPaint;
+
+    /**
+     * The longest the probes a launch holds back ({@link com.editora.perf.AfterFirstPaint}) wait after the
+     * first window is shown, when no content paint lets them go sooner.
+     */
+    static final javafx.util.Duration FIRST_PAINT_FALLBACK = javafx.util.Duration.millis(1500);
 
     /** True while restored windows are still waiting to be built. */
     boolean restorePending() {
@@ -466,10 +554,11 @@ public class WindowManager {
     /** Runs what waits for the whole restore set to exist: the persisted open set, focus, queued launches. */
     private void finishRestore() {
         bootstrapConfig = null; // the launch is over; see the field
+        bootstrapProjectConfig = null;
         if (findHolder(restoreFocusKey) == null && !windows.isEmpty()) {
             restoreFocusKey = windows.get(0).key(); // the chosen primary failed to build — focus whatever opened
         }
-        projects().save();
+        shared.saveProjectsQueued(); // the restore is still painting windows; no fsync on the FX thread
         if (actuallyFocusedHolder() == null) {
             focusKey(restoreFocusKey);
         }
@@ -1362,7 +1451,7 @@ public class WindowManager {
             CommandRegistry registry = new CommandRegistry();
             // A no-project window normally uses the default workspace-state.json (stateFile null); a project
             // OR an extra "untitled" no-project window passes its own session file so windows never clobber.
-            ConfigManager config = stateFile == null ? takeBootstrapConfig() : null;
+            ConfigManager config = stateFile == null ? takeBootstrapConfig() : takeBootstrapProjectConfig(stateFile);
             if (config == null) {
                 config = stateFile == null ? new ConfigManager(shared) : new ConfigManager(shared, stateFile);
                 config.setWorkspaceStateFile(config.getWorkspaceStateFile()); // load this window's session
@@ -1429,6 +1518,14 @@ public class WindowManager {
             com.editora.perf.Startup.mark(com.editora.perf.Startup.WINDOW_BUILT);
             stage.show();
             com.editora.perf.Startup.mark(com.editora.perf.Startup.WINDOW_SHOWN);
+            if (!secondary && com.editora.perf.AfterFirstPaint.held()) {
+                // The held startup probes are normally let go by the frame after the first content lands
+                // (FileWorkflowCoordinator.firstPainted). A window that never loads content that way — the
+                // standalone diff, a failed restore — must not hold them forever.
+                javafx.animation.PauseTransition fallback = new javafx.animation.PauseTransition(FIRST_PAINT_FALLBACK);
+                fallback.setOnFinished(e -> com.editora.perf.AfterFirstPaint.release());
+                fallback.play();
+            }
             // AOT-cache training hook (build-time only; see the dist profile in pom.xml). When
             // -Deditora.aotTrainExit is set, render the first window then exit, so a -XX:AOTCacheOutput
             // training run captures the real GUI startup classes (JavaFX scene/controls/CSS, the editor,
@@ -1577,6 +1674,20 @@ public class WindowManager {
             return;
         }
         Path dir = windowsDir();
+        java.util.Set<String> keys = java.util.Set.copyOf(openKeys);
+        // The listing and the deletes are disk I/O with nothing on screen waiting for them: a virtual thread,
+        // off the FX thread the first frame is about to be painted on. The set is decided here, now.
+        sessionGc = java.util.concurrent.CompletableFuture.runAsync(
+                () -> sweepOrphanSessions(dir, keys),
+                r -> Thread.ofVirtual().name("session-gc").start(r));
+    }
+
+    /** The launch-time sweep in flight — a test joins it; already complete when nothing was swept. */
+    java.util.concurrent.CompletableFuture<Void> sessionGc =
+            java.util.concurrent.CompletableFuture.completedFuture(null);
+
+    /** The sweep itself; {@code openKeys} is the restore set as it was when the launch decided it. */
+    private static void sweepOrphanSessions(Path dir, java.util.Set<String> openKeys) {
         if (!java.nio.file.Files.isDirectory(dir)) {
             return;
         }

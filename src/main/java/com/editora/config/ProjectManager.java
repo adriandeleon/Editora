@@ -217,6 +217,7 @@ public class ProjectManager {
         if (writeProtected() || holdingFailedIndex) {
             return false;
         }
+        saveGeneration.incrementAndGet(); // this save is newer than any queued one still waiting
         boolean written;
         try {
             Files.createDirectories(configDir);
@@ -229,6 +230,41 @@ public class ProjectManager {
             onSaved.accept(indexFile());
         }
         return true;
+    }
+
+    /**
+     * Counts saves, queued and direct, so a queued write that a later {@link #save} overtook writes nothing:
+     * the two run on different threads, and the older bytes must not land after the newer ones.
+     */
+    private final java.util.concurrent.atomic.AtomicLong saveGeneration = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * As {@link #save()}, with the write queued on {@code writer} instead of done here: the index is
+     * serialized now, on the calling thread, and written (with the same merge rules) on the writer's thread.
+     * For the launch path, which saves the index on the FX thread before and after the first window and
+     * again when the restore completes, where a synchronous {@code fsync} is only latency. A failure is
+     * reported and retried by the writer like any queued store.
+     */
+    public void saveQueued(ConfigWriter writer) {
+        if (writeProtected() || holdingFailedIndex) {
+            return;
+        }
+        byte[] mine;
+        try {
+            mine = json.writeValueAsBytes(index);
+        } catch (IOException e) {
+            onWriteError.accept(indexFile(), e);
+            return;
+        }
+        long generation = saveGeneration.incrementAndGet();
+        Path file = indexFile();
+        writer.enqueue(file, () -> {
+            if (generation != saveGeneration.get()) {
+                return ConfigWriter.UNCHANGED; // a newer save already wrote (or will write) the index
+            }
+            Files.createDirectories(configDir);
+            return sync.write(file, mine, ConfigSchema.PROJECTS, null) ? null : ConfigWriter.UNCHANGED;
+        });
     }
 
     public List<Project> list() {
@@ -315,17 +351,27 @@ public class ProjectManager {
         return removed;
     }
 
-    /**
-     * Returns the existing project for {@code root} (matched by absolute path), or creates and stores a
-     * new one named {@code name}. Does not change the active project or persist; callers do that.
-     */
-    public Project createOrGet(String name, Path root) {
+    /** The project whose root is {@code root} (matched by absolute, normalized path), or {@code null}. */
+    public Project find(Path root) {
         String absRoot = root.toAbsolutePath().normalize().toString();
         for (Project p : index.getProjects()) {
             if (p.root().equals(absRoot)) {
                 return p;
             }
         }
+        return null;
+    }
+
+    /**
+     * Returns the existing project for {@code root} (matched by absolute path), or creates and stores a
+     * new one named {@code name}. Does not change the active project or persist; callers do that.
+     */
+    public Project createOrGet(String name, Path root) {
+        Project existing = find(root);
+        if (existing != null) {
+            return existing;
+        }
+        String absRoot = root.toAbsolutePath().normalize().toString();
         Project project = new Project(uniqueId(idFor(name, absRoot)), name, absRoot);
         index.getProjects().add(project);
         holdingFailedIndex = false; // the user is rebuilding the list; what could not be read is in its .bak

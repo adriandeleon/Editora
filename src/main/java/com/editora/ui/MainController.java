@@ -283,13 +283,15 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The IntelliJ-style Test Results window; available once a {@code test} run has occurred. */
     private ToolWindow testResultsToolWindow;
 
-    /** Checks GitHub for a newer release (background, once/day + manual). */
-    private final com.editora.update.UpdateService updateService = new com.editora.update.UpdateService();
-    /** The newest release found to be newer than the running version, shared across windows in-process (so a
-     *  second window and the About dialog see it); null when up to date / not yet checked. */
-    private static volatile com.editora.update.ReleaseInfo latestKnownUpdate;
-    /** Set once the first window kicks off the session's background update check, so others don't duplicate it. */
-    private static volatile boolean updateCheckStartedThisSession;
+    /** The release check: automatic (a few seconds after the first paint), manual, notice and download page.
+     *  The lambdas read the window's fields at call time, after init. */
+    private final UpdateCoordinator updates = new UpdateCoordinator(
+            () -> this.config.getSettings(), // qualified: these fields are declared below
+            () -> this.fileWorkflows.isShutdown(),
+            this::requestSave,
+            this::setStatus,
+            (show, version) -> this.statusBar.setUpdateAvailable(show, version),
+            this::openExternalUrl);
 
     private ToolWindow agentToolWindow;
 
@@ -480,16 +482,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Detect files changed by another program: re-check open files whenever the window regains focus.
         stage.focusedProperty().addListener((obs, was, now) -> {
             if (Boolean.TRUE.equals(now)) {
-                // The filesystem may have shifted while we were away — drop cached canonical paths (#680).
-                com.editora.config.PathKeys.invalidateCanonicalCache();
-                fileWorkflows.checkExternalChanges();
-                git.refresh(); // another tool may have changed the repo while we were away
-                refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
-                refreshPasteState(); // clipboard may have changed in another app while we were away
-                if (projectPanel != null) {
-                    projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
-                }
-                diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
+                onWindowFocusGained();
             }
         });
         this.config = config;
@@ -909,77 +902,32 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         fileWorkflows.applyAutoSave();
-        refreshUpdateNotice(); // reflect any update an earlier window already found
-        maybeCheckForUpdates(); // background check (once/session, once/day, only if enabled)
+        updates.applyAtStartup(); // the notice of a release an earlier window found + the automatic check
     }
 
-    // --- update check ------------------------------------------------------------------------------
+    final StartupFocus startupFocus = new StartupFocus(); // the show-time focus, told from a real regain
 
-    /** Kicks off the background update check when enabled and due — at most once per app session (a static
-     *  guard, so multiple windows don't each hit GitHub) and at most once per day (the persisted timestamp). */
-    private void maybeCheckForUpdates() {
-        if (!config.getSettings().isUpdateCheck() || updateCheckStartedThisSession) {
+    /** The window gained focus: re-check what another program may have changed while we were away — unless
+     *  this is the focus gained by being shown ({@link StartupFocus}), which repeats nothing. */
+    void onWindowFocusGained() {
+        StartupFocus.Action action = startupFocus.onFocusGained();
+        if (action == StartupFocus.Action.STARTUP_REFRESH) {
+            git.refresh(); // the project root is known only since setWindowContext
+            refreshBuildTools();
+        }
+        if (action != StartupFocus.Action.REGAIN) {
             return;
         }
-        long now = System.currentTimeMillis();
-        if (!com.editora.update.UpdateCheck.isDue(
-                config.getSettings().getLastUpdateCheckEpoch(),
-                now,
-                com.editora.update.UpdateCheck.DEFAULT_INTERVAL_MS)) {
-            return;
+        // The filesystem may have shifted while we were away — drop cached canonical paths (#680).
+        com.editora.config.PathKeys.invalidateCanonicalCache();
+        fileWorkflows.checkExternalChanges();
+        git.refresh(); // another tool may have changed the repo while we were away
+        refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
+        refreshPasteState(); // clipboard may have changed in another app while we were away
+        if (projectPanel != null) {
+            projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
         }
-        updateCheckStartedThisSession = true;
-        config.getSettings().setLastUpdateCheckEpoch(now); // throttle even if the check fails (don't retry all day)
-        requestSave();
-        updateService.check(com.editora.AppInfo.VERSION, o -> onUpdateOutcome(o, false));
-    }
-
-    /** Applies a check result: on a newer release, cache it + show the notice; a manual check also echoes an
-     *  up-to-date / failure status. */
-    private void onUpdateOutcome(com.editora.update.UpdateService.Outcome outcome, boolean manual) {
-        if (!outcome.ok()) {
-            if (manual) {
-                setStatus(tr("status.update.failed", outcome.error()));
-            }
-            return;
-        }
-        if (outcome.available()) {
-            latestKnownUpdate = outcome.latest();
-            refreshUpdateNotice();
-            setStatus(tr("status.update.available", outcome.latest().version()));
-        } else {
-            latestKnownUpdate = null; // running the latest
-            refreshUpdateNotice();
-            if (manual) {
-                setStatus(tr("status.update.upToDate", com.editora.AppInfo.VERSION));
-            }
-        }
-    }
-
-    /** Shows this window's status-bar update segment when a newer, non-dismissed release is known; else hides it. */
-    private void refreshUpdateNotice() {
-        com.editora.update.ReleaseInfo info = latestKnownUpdate;
-        boolean show =
-                info != null && !info.version().equals(config.getSettings().getDismissedUpdateVersion());
-        statusBar.setUpdateAvailable(show, show ? info.version() : null);
-    }
-
-    /** Manual "Check for Updates" — always checks (ignores the throttle + the auto-check setting). */
-    private void checkForUpdatesNow() {
-        setStatus(tr("status.update.checking"));
-        updateService.check(com.editora.AppInfo.VERSION, o -> onUpdateOutcome(o, true));
-    }
-
-    /** Opens the release page for the known update (else the releases page) and dismisses that version's notice. */
-    private void openUpdateDownloadPage() {
-        com.editora.update.ReleaseInfo info = latestKnownUpdate;
-        String url = info != null && !info.url().isBlank() ? info.url() : com.editora.AppInfo.RELEASES_PAGE;
-        openExternalUrl(url);
-        if (info != null) {
-            config.getSettings().setDismissedUpdateVersion(info.version());
-            requestSave();
-        }
-        refreshUpdateNotice();
+        diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
     }
 
     // --- plugins ----------------------------------------------------------------------------------
@@ -1351,7 +1299,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> typst.shutdown(),
                 () -> doctorCoordinator.shutdown(), // stop any in-flight Doctor probes
                 () -> buildCoordinators.forEach(BuildCoordinator::shutdown),
-                () -> updateService.shutdown(), // stop the update-check worker
+                updates::shutdown, // stop the update-check worker
                 () -> htmlPreview.shutdown(), // stop the HTML-preview HTTP server + worker
                 () -> logViewer.shutdown(), // stop any log tail-follow poll thread
                 () -> stopMcpIfOwner(), // stop the MCP server if this window owns it
@@ -2001,6 +1949,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             fileWorkflows.checkExternalChanges(); // prompt if the file we just switched to changed on disk
             git.refresh(); // update branch/status + this file's gutter change bars
             refreshBuildTools(); // re-detect marker files for the newly active file/project
+            startupFocus.repositoryStateComputed(); // the first focus after show need not repeat these two
             lspCoordinator
                     .updateStatusBar(); // show/hide the "LSP: <server>" segment + Problems window for the new file
             debugCoordinator.updateDebugAvailability(); // Debug window only for a debuggable file / live session
@@ -3780,12 +3729,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void checkForUpdatesNow() {
-            MainController.this.checkForUpdatesNow();
+            updates.checkNow();
         }
 
         @Override
         public void openUpdateDownloadPage() {
-            MainController.this.openUpdateDownloadPage();
+            updates.openDownloadPage();
         }
 
         @Override
@@ -8097,8 +8046,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         EditorBuffer buffer = activeBuffer();
         boolean editable = buffer != null && buffer.isEditable();
-        boolean hasClip = Clipboard.getSystemClipboard().hasString();
-        pasteButton.setDisable(!editable || !hasClip);
+        // hasString() is a round trip to whichever program owns the clipboard (X11, Wayland): asked only
+        // when a buffer could take the paste.
+        pasteButton.setDisable(!editable || !Clipboard.getSystemClipboard().hasString());
+    }
+
+    private final Object pasteRefreshKey = new Object();
+
+    /** {@link #refreshPasteState} after the first painted frame, once however many restored shells land. */
+    private void schedulePasteStateRefresh() {
+        com.editora.perf.AfterFirstPaint.runOnce(pasteRefreshKey, this::refreshPasteState);
     }
 
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
@@ -9364,7 +9321,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows::openPath,
                 this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : "", // build commit shown only in --dev
-                latestKnownUpdate); // "Update available" row when a newer release is known
+                UpdateCoordinator.latestKnown()); // "Update available" row when a newer release is known
     }
 
     /**
@@ -9668,7 +9625,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         statusBar.refresh();
         if (buffer == activeBuffer()) {
             refreshEditState(); // editability change affects cut enablement
-            refreshPasteState(); // ...and paste enablement
+            schedulePasteStateRefresh(); // ...and paste enablement (a restored shell flips when it lands)
         }
     }
 

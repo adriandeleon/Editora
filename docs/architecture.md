@@ -21,10 +21,16 @@ themed by AtlantaFX.
 1. **`App.main`** ([`App.java`](../src/main/java/com/editora/App.java)) sets
    `java.awt.headless=true` as its very first statement (the SVG-rasterization guard — see
    the note below), installs the debug-log handler + uncaught-exception handler, and handles
-   `--version`/`--help` before the toolkit starts.
-2. **`App.start`** loads the shared config, initializes i18n (`Messages.init`), pins a
+   `--version`/`--help` before the toolkit starts. It then starts the `config-prefetch` thread,
+   probes the single-instance endpoint (a launch may be handed to a running editor and exit), opens
+   the prefetch's gate and starts the toolkit. The prefetch only warms (read-only) until the gate
+   opens; after it, it loads the shared config, the message catalog, the plugin manifests, the
+   session of the window the launch will focus and the readability of its saved entries — see
+   [performance.md](performance.md#startup).
+2. **`App.start`** takes the prefetched config (or loads inline when there is none), pins a
    classloader (the macOS FXML null-context-classloader fix), reaps orphaned LSP/DAP servers
-   from a previous run, then hands off to **`WindowManager`**.
+   from a previous run, holds `perf/AfterFirstPaint` (the startup probes wait for the first
+   painted frame), then hands off to **`WindowManager`**.
 3. **`WindowManager`** ([`ui/WindowManager.java`](../src/main/java/com/editora/ui/WindowManager.java))
    owns the set of open windows and restores the previously-open window set.
    `buildWindow(...)` is the per-window construction: it loads config, builds the command +
@@ -44,9 +50,10 @@ sequenceDiagram
     participant MC as MainController (per window)
     main->>main: java.awt.headless=true  (first statement)
     main->>main: DebugLog.install() + uncaught handler
+    main->>main: prefetchConfig() (warm-up), SingleInstance.start(), open the load gate
     main->>start: launch()
-    start->>start: config.load(), Messages.init(), pin classloader
-    start->>start: ProcessRegistry.reapOrphans()
+    start->>start: takeBootstrap() (config, catalog, plugins, first session), pin classloader
+    start->>start: ProcessRegistry.reapOrphans(), AfterFirstPaint.hold()
     start->>WM: launch()  (restore previously-open windows: primary first, the rest one per painted frame)
     loop each window to open
         WM->>MC: buildWindow()
