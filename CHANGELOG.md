@@ -9,6 +9,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Faster typing, file opening and tab switching, and less memory per open file.** A performance pass over
+  the whole editor; nothing changes what the editor does, only how much work it does and where.
+  - Editor: typing no longer re-measures every visible line on each keystroke; the vendored RichTextFX
+    (0.11.7-inlay.2) caches each paragraph cell's preferred height and re-measures only the edited line. The
+    line-number gutter formats and allocates less per rebuilt row, the toolbar's edit state is refreshed once
+    per event-loop turn and never compares the document per keystroke (the Save button follows the buffer's
+    modified flag), the Personal-Notes highlight overlay is inert for buffers without a positioned note, and
+    the per-view scroll features share one scroll listener.
+  - Tabs: switching tabs no longer scans the whole document for fold regions on the UI thread; the Structure
+    outline refreshes in the background and does nothing while its window is closed. A plain buffer no longer
+    builds the whitespace, TODO, Markdown-lint, inline-values and diagnostic-stripe overlays, nor its
+    right-click menu, note tooltip or fold preview popup; each is attached on first use. The search,
+    occurrence, inline-values and AceJump overlays release their viewport texture while their tab is in the
+    background (a jump ends when its tab is hidden), and a tab hidden for three minutes drops its second
+    whole-document copy and spell-check geometry, both rebuilt on demand.
+  - Minimap: on documents taller than the column, one row is drawn per pixel row (the longest line in it)
+    instead of one sub-pixel row per line, so a render is bounded by the column height; a typing pause that
+    moves no run skips the snapshot, renders of long documents are paced (lines/10 ms, at most 2 s apart), and
+    a background tab keeps its content pixels on the CPU (16 tabs / 16 MB) so switching back re-blits instead
+    of re-rendering.
+  - Opening files does less on the UI thread. Session restore, files opened in the background (a diff apply,
+    a workspace edit, an agent write) and Reload from Disk now split the file into paragraphs and resolve its
+    line endings and `.editorconfig` rules on the read worker, as opening a file already did; a reload
+    rewrites only the part of the document that changed, so the rest of the file (and its folds and
+    highlighting) is left alone. Saved folds are always re-applied from the background detection, which no
+    longer runs a second time right after a file opens, and the Run glyph's scan of a newly opened file runs
+    off the UI thread. The File Information window computes the word count and the file's disk facts on a
+    worker thread, and the prose spell checker's code-block scan runs there too.
+  - Memory: large plain-text files use about one file-size less heap (the fork no longer keeps a second copy
+    of every line's text; a 49 MB file went from 13.3× to 11.5× its size); a modified tab no longer holds a
+    second copy of its document as the saved baseline (length plus SHA-256, hashed by the load and save
+    workers); the undo queues of all open documents share one 64 M-character budget, the least recently edited
+    document giving up its oldest steps first, and a closed tab releases its queue at once. The AI Agent
+    transcript is bounded to 200,000 characters per entry and 1,000,000 in all, test results keep the head and
+    tail of output past 200,000 characters, CSV grids keep a document version instead of a text copy, the
+    parsed-SVG cache is bounded in bytes, cached blame and last-save stamps are dropped when a file's last
+    tab closes, and the GitHub repository and git root caches are bounded.
+  - Startup: the focus a window gains by being shown no longer repeats the regain work (a second `git status`,
+    build detection, a clipboard round trip, re-listing the Project tree). The login-shell PATH probe, the
+    `rg` and `gh` probes, the spell dictionary build and the release check wait for the first painted frame
+    (the release check a further 5 s); no login shell is spawned while language servers are off and no `rg`
+    probe while ripgrep search is off. The first project window's session, the plugin manifests and the
+    readability of saved session entries are read on the config-prefetch thread, which now overlaps the
+    single-instance probe, and the projects index is saved on the config writer instead of an fsync on the
+    UI thread.
+  - Session restore: only the file you were looking at (in a split, each pane's visible file) gets its editor
+    before the window's first frame; every other tab appears with its name, icon and pin and is built after
+    the first frame, a batch per frame, so a 30-file session no longer pays for thirty editors before
+    anything is drawn. A tab you click before its turn is built on the spot, a tab you never look at is not
+    syntax-highlighted until you do, and a session save made meanwhile keeps each tab's saved caret.
+    Tool-window panels are built on their first open rather than before the first frame (the Debug Log
+    window on first show), only the fonts the first frame needs are loaded before it and the other bundled
+    families after the first painted frame (the font picker waits for them), and the JavaFX stylesheets ship
+    precompiled (`.bss`, written by `scripts/css2bss.java` at `process-classes`) so themes and `app.css` load
+    as binary instead of being parsed as text per window.
+- **Fixed:** a language-server start withheld for an untrusted folder could leave the file looking
+  server-managed.
+
 - **A click on a code lens works, and a references lens always opens the References tool window.** A
   lens ("3 references") did not react to the mouse at all: no hand cursor, no highlight, and a click only
   placed the caret. It now lights up under the pointer and a click opens what it counts. A references
