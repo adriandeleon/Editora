@@ -121,7 +121,7 @@ class EditorBufferFxTest {
             buf.setContent("void main() {\n    IO.println(\"hi\");\n}\n");
             return buf;
         });
-        assertTrue(FxTestSupport.callOnFx(java::isRunnable), "compact-source main ⇒ runnable");
+        awaitRunnable(java, "compact-source main ⇒ runnable");
         assertTrue(FxTestSupport.callOnFx(java::isCompactSource));
         assertFalse(FxTestSupport.callOnFx(java::isPython));
 
@@ -133,7 +133,7 @@ class EditorBufferFxTest {
             buf.setContent("if __name__ == \"__main__\":\n    print('hi')\n");
             return buf;
         });
-        assertTrue(FxTestSupport.callOnFx(py::isRunnable));
+        awaitRunnable(py, "python main guard ⇒ runnable");
         assertFalse(FxTestSupport.callOnFx(py::isCompactSource));
         assertTrue(FxTestSupport.callOnFx(py::isPython));
 
@@ -153,6 +153,15 @@ class EditorBufferFxTest {
         // Turning the Run feature off removes the glyph for every language.
         FxTestSupport.runOnFx(() -> py.setRunEnabled(false));
         assertFalse(FxTestSupport.callOnFx(py::isRunnable));
+    }
+
+    /** The load's Run-glyph text scan runs off the FX thread; wait for it to flip the glyph. */
+    private static void awaitRunnable(EditorBuffer buffer, String message) throws Exception {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (!FxTestSupport.callOnFx(buffer::isRunnable)) {
+            assertTrue(System.nanoTime() < deadline, message);
+            Thread.sleep(10);
+        }
     }
 
     @Test
