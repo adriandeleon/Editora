@@ -439,7 +439,7 @@ final class RecoveryCoordinator {
             restoredAsNew(entry, record, path, tr("status.recovery.restored", record.title()));
             return;
         }
-        EditorBuffer open = files.host().bufferOf(openTab);
+        EditorBuffer open = files.host().ensureBuffer(openTab); // a restored tab not built yet gets its editor now
         if (open == null) {
             // The file is showing in a viewer tab (image, hex): there is no editor buffer to put text in.
             restoredAsNew(entry, record, null, tr("status.recovery.restoredAsUntitled", record.title()));

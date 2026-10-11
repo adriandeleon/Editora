@@ -529,6 +529,20 @@ public final class ProcessRunner {
         return built;
     }
 
+    private static final AtomicBoolean PATH_WARM_STARTED = new AtomicBoolean();
+
+    /**
+     * Resolves and caches the {@link #augmentedPath() augmented PATH} on a virtual thread, once per process,
+     * so the first caller on the FX thread (an LSP session start, Run, Build, Debug) does not wait for the
+     * login shell. Idempotent and cheap to over-call; nothing is spawned when the PATH is already cached.
+     */
+    public static void warmAugmentedPathAsync() {
+        if (cachedPath != null || !PATH_WARM_STARTED.compareAndSet(false, true)) {
+            return;
+        }
+        Thread.ofVirtual().name("path-warmup").start(ProcessRunner::augmentedPath);
+    }
+
     /** Splits a {@code PATH}-style string and adds each non-blank entry to {@code dirs} (set ⇒ de-dups). */
     private static void addPathEntries(LinkedHashSet<String> dirs, String path) {
         if (path == null || path.isBlank()) {

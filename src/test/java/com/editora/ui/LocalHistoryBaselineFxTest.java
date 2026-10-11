@@ -107,6 +107,12 @@ class LocalHistoryBaselineFxTest {
             onSaveWorker(async, () -> history.saveReplaced(file, new byte[] {1, 0, 2, 0, 0}, ours));
             settle(async, fx);
             assertEquals(1, revisions(fx, file).size());
+
+            // The file's last tab closes: the window stops remembering what it last wrote there.
+            assertEquals(1, history.savedStampCount());
+            history.pathClosed(file);
+            assertEquals(0, history.savedStampCount());
+            history.pathClosed(null);
         }
     }
 

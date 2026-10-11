@@ -109,6 +109,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         sceneProperty().addListener((o, was, now) -> {
             if (now != null && pendingRebuild) {
                 rebuild();
+                if (buffer != null) {
+                    buffer.getFoldManager().recomputeAsync(); // one fresh scan per show, not per tab switch
+                }
             }
             if (now != null) {
                 requestStaleLspSymbols();
@@ -300,9 +303,18 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         buffer.getFoldManager().setOnRegionsChanged(this::rebuildIfChanged);
         buffer.setOnSymbolsChanged(this::rebuildIfChanged);
         modelShown = false; // the tree still shows the previous buffer: the next build is unconditional
-        // Force a recompute so the tree reflects the current text immediately; the callbacks above
-        // then drive live updates as the document changes.
-        buffer.getFoldManager().recompute();
+        if (!showsOutline()) {
+            // Nothing shows the tree, so a tab switch scans nothing: the manager's own debounced detection
+            // keeps its regions current, and opening the window rebuilds from them (sceneProperty listener).
+            pendingRebuild = true;
+            return;
+        }
+        // Build at once from the regions the manager already holds (current to within its 250 ms debounce),
+        // then refresh them off the FX thread; the result lands through the callback above and is compared
+        // against the shown model, so an unchanged outline is not rebuilt twice. The synchronous recompute
+        // this replaced scanned the whole document on every tab switch (T1 in the 2026-10 perf review).
+        rebuild();
+        buffer.getFoldManager().recomputeAsync();
     }
 
     /** Moves keyboard focus into the panel (the search field), for window-switching. */

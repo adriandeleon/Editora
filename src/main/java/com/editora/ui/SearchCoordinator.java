@@ -193,7 +193,10 @@ final class SearchCoordinator {
     private final ReplaceConfirmation replaceConfirmation;
     private final java.util.concurrent.atomic.AtomicBoolean shutdown = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.Set<ReplaceJob> queuedReplaces = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final SearchPanel panel;
+    /** The Find in Files panel, built on its first use (the tool window's first open, or a search). */
+    private SearchPanel panel;
+
+    private final SearchPanel.Actions panelActions;
     /**
      * This window's copy of the shared search history, the list the query combo is bound to. The combo is
      * bound to a copy rather than to the shared list because that list outlives the window and is changed by
@@ -217,6 +220,9 @@ final class SearchCoordinator {
     }
 
     private List<String> ripgrepProbedCommand = null;
+    /** The command a probe is queued or running for (FX thread); {@code null} when none is. */
+    private List<String> ripgrepProbeInFlight = null;
+
     private volatile boolean ripgrepAvailable = false;
     private boolean backendRipgrep = false; // effective backend, pushed to the panel + the popup's badge
 
@@ -230,7 +236,7 @@ final class SearchCoordinator {
         this.ops = ops;
         this.replaceExecutor = java.util.Objects.requireNonNull(replaceExecutor, "replaceExecutor");
         this.replaceConfirmation = java.util.Objects.requireNonNull(replaceConfirmation, "replaceConfirmation");
-        this.panel = new SearchPanel(new SearchPanel.Actions() {
+        this.panelActions = new SearchPanel.Actions() {
             @Override
             public void search(SearchQuery query, String includeGlobs, String excludeGlobs) {
                 runFileSearch(query, includeGlobs, excludeGlobs);
@@ -252,11 +258,16 @@ final class SearchCoordinator {
                 ops.recordSearch(query);
                 refreshHistory();
             }
-        });
-        panel.setHistory(historyView);
+        };
     }
 
     SearchPanel panel() {
+        if (panel == null) {
+            panel = new SearchPanel(panelActions);
+            panel.setHistory(historyView);
+            panel.setBackendActive(backendRipgrep);
+            refreshScope();
+        }
         return panel;
     }
 
@@ -353,14 +364,14 @@ final class SearchCoordinator {
             // Neither backend can run it (ripgrep's hits are re-matched in Java), and "No results" for a
             // pattern that never ran sends the user looking for a typo in the wrong place.
             shown = null;
-            panel.showError(badRegex);
+            panel().showError(badRegex);
             host.setError(badRegex);
             return;
         }
         if (RemoteReadFailure.connectionClosed(root)) {
             // The walk would fail folder by folder and report "No results" for files it never read.
             shown = null;
-            panel.showError(RemoteReadFailure.unreadable(root));
+            panel().showError(RemoteReadFailure.unreadable(root));
             host.setError(RemoteReadFailure.unreadable(root));
             return;
         }
@@ -396,7 +407,7 @@ final class SearchCoordinator {
                 outcome -> {
                     closeQuietly(task);
                     shown = snapshot; // what the result tree now shows, and so what Replace All may act on
-                    panel.setResults(outcome);
+                    panel().setResults(outcome);
                     String summary = outcome.totalMatches() == 0
                             ? tr("search.none")
                             : tr("search.summary", outcome.totalMatches(), outcome.fileCount());
@@ -470,6 +481,9 @@ final class SearchCoordinator {
 
     /** Pushes the current search scope folder to the panel's "searching in" label (home-collapsed + tooltip). */
     void refreshScope() {
+        if (panel == null) {
+            return; // applied when the panel is built
+        }
         Path root = searchScopeRoot();
         if (root == null) {
             panel.setScope(tr("search.scopeOpenFiles"), null);
@@ -493,7 +507,7 @@ final class SearchCoordinator {
             refreshScope(); // show the folder we'll search before the first query
             String selection = selectedLineForSearch();
             if (selection != null) {
-                panel.setQuery(selection); // pre-fill (and run) from the editor selection
+                panel().setQuery(selection); // pre-fill (and run) from the editor selection
             }
             ops.openToolWindow();
         }
@@ -773,7 +787,9 @@ final class SearchCoordinator {
             }
             host.setError(tr("search.replacePartial", total, changedFiles, failedFiles.size()) + ": " + paths);
         }
-        panel.refresh();
+        if (panel != null) {
+            panel.refresh();
+        }
         return new ReplaceResult(total, changedFiles, failedFiles, false);
     }
 
@@ -841,39 +857,52 @@ final class SearchCoordinator {
     /**
      * Configures the Find-in-Files backend: ripgrep when the setting is on AND rg is detected on PATH, else
      * the built-in Java walker. Detection runs off the FX thread (it spawns {@code rg --version}); cached per
-     * command. Run at init + on every settings apply.
+     * command, and only when the setting is on — with ripgrep off the walker is used without a probe (the
+     * Settings page probes for its own status row when it opens). At startup the probe waits for the first
+     * painted frame. Run at init + on every settings apply.
      */
     void applyRipgrepSupport() {
         var s = host.settings();
         List<String> cmd = Ripgrep.command(s.getRipgrepCommand());
         boolean enabled = s.isRipgrepSearch();
-        if (cmd.equals(ripgrepProbedCommand)) {
+        if (!enabled || cmd.equals(ripgrepProbedCommand)) {
             boolean effective = enabled && ripgrepAvailable;
             service.setBackend(effective, cmd, s.isSearchRespectGitignore());
             applyBackendBadge(effective);
             return;
         }
-        Thread t = new Thread(
-                () -> {
-                    boolean ok = Ripgrep.detect(cmd);
-                    Platform.runLater(() -> {
-                        ripgrepProbedCommand = cmd;
-                        ripgrepAvailable = ok;
-                        boolean effective = s.isRipgrepSearch() && ok;
-                        service.setBackend(effective, cmd, s.isSearchRespectGitignore());
-                        applyBackendBadge(effective); // records it for the popup too, not just the panel
-                        ops.syncRipgrepStatus(ok);
-                    });
-                },
-                "rg-detect");
-        t.setDaemon(true);
-        t.start();
+        if (cmd.equals(ripgrepProbeInFlight)) {
+            return; // init and a settings apply before the first paint: one probe answers both
+        }
+        ripgrepProbeInFlight = cmd;
+        com.editora.perf.AfterFirstPaint.run(() -> {
+            Thread t = new Thread(
+                    () -> {
+                        boolean ok = Ripgrep.detect(cmd);
+                        Platform.runLater(() -> {
+                            if (cmd.equals(ripgrepProbeInFlight)) {
+                                ripgrepProbeInFlight = null;
+                            }
+                            ripgrepProbedCommand = cmd;
+                            ripgrepAvailable = ok;
+                            boolean effective = s.isRipgrepSearch() && ok;
+                            service.setBackend(effective, cmd, s.isSearchRespectGitignore());
+                            applyBackendBadge(effective); // records it for the popup too, not just the panel
+                            ops.syncRipgrepStatus(ok);
+                        });
+                    },
+                    "rg-detect");
+            t.setDaemon(true);
+            t.start();
+        });
     }
 
     /** Records the effective backend and pushes the "ripgrep" badge to the panel + the popup (if built). */
     private void applyBackendBadge(boolean effective) {
         backendRipgrep = effective;
-        panel.setBackendActive(effective);
+        if (panel != null) {
+            panel.setBackendActive(effective); // else applied when the panel is built
+        }
         if (popup != null) {
             popup.setBackendActive(effective);
         }

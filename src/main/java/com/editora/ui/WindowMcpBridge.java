@@ -48,6 +48,9 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
 
         EditorBuffer bufferOf(Tab tab);
 
+        /** {@link #bufferOf}, building the editor of a restored tab the session restore has not reached yet. */
+        EditorBuffer ensureBuffer(Tab tab);
+
         Path tabPath(Tab tab);
 
         Path canonicalPath(Path p);
@@ -98,6 +101,17 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
             for (Tab tab : host.editorArea().tabs()) {
                 EditorBuffer b = host.bufferOf(tab);
                 if (b == null) {
+                    RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+                    if (placeholder != null) {
+                        // A restored tab whose editor is not built yet is an open, clean file.
+                        out.add(new OpenFile(
+                                placeholder.path().toString(),
+                                placeholder.title(),
+                                com.editora.editor.LanguageRegistry.forFileName(
+                                        placeholder.path().toString()),
+                                false,
+                                false));
+                    }
                     continue;
                 }
                 out.add(new OpenFile(
@@ -503,8 +517,8 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     /** The MCP {@code type} label for a tab: {@code editor}/{@code image}/{@code hex}/{@code diff}/
      *  {@code merge}/{@code welcome}/{@code other}. */
     String tabType(Tab tab) {
-        if (host.bufferOf(tab) != null) {
-            return "editor";
+        if (host.bufferOf(tab) != null || RestorePlaceholder.of(tab) != null) {
+            return "editor"; // a restored tab not built yet is an editor tab whose text is on disk
         }
         if (host.imagePaneOf(tab) != null) {
             return "image";
@@ -547,11 +561,11 @@ final class WindowMcpBridge implements com.editora.mcp.McpBridge {
     EditorBuffer openBufferForPath(String path) {
         Path key = host.canonicalPath(Path.of(path));
         for (Tab tab : host.editorArea().tabs()) {
-            EditorBuffer b = host.bufferOf(tab);
-            if (b != null
-                    && b.getPath() != null
-                    && com.editora.config.PathKeys.samePath(host.canonicalPath(b.getPath()), key)) {
-                return b;
+            Path shown = host.tabPath(tab);
+            if (shown != null
+                    && com.editora.config.PathKeys.samePath(host.canonicalPath(shown), key)
+                    && (host.bufferOf(tab) != null || RestorePlaceholder.of(tab) != null)) {
+                return host.ensureBuffer(tab); // a restored tab not built yet: the caller asked for its buffer
             }
         }
         return null;

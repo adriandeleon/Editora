@@ -38,8 +38,9 @@ the toolbar (Settings checkbox or the `view.toggleToolbar` palette command) can 
 `refreshEditState()` (save←dirty, undo/redo←`area.isUndoAvailable/isRedoAvailable`, cut←selection+editable,
 copy←selection — all disabled on a non-buffer/Welcome tab) and `refreshPasteState()` (paste←editable +
 `Clipboard.hasString()`, kept off the per-keystroke path: run on tab switch, window focus-regain, and after
-cut/copy). `refreshEditState` runs on tab switch and the active buffer's edit/selection/dirty pulses;
-disabling is cosmetic only — the `C-s`/`C-z`/… keymap commands still work. The toolbar's **Find in Files**
+cut/copy). `refreshEditState` runs on tab switch and the active buffer's dirty transitions at once, and on its
+edit/selection pulses coalesced to one per event-loop turn (`scheduleEditStateRefresh`); it reads the dirty
+*property*, never `isDirty()`, so no keystroke compares the document. Disabling is cosmetic only — the `C-s`/`C-z`/… keymap commands still work. The toolbar's **Find in Files**
 icon (`Icons.findInFiles()`, `onFindInFiles → openSearchInFiles`) sits beside the in-file Find icon.
 
 - `command/` — the keyboard-driven core.

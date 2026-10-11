@@ -14,6 +14,26 @@ Run Maven from the project root. The bundled `./mvnw` wrapper is fine.
 The `javafx:run`/`compile` dev loop deliberately skips the Spotless check (it runs only at
 `verify`/`package`), so iterating is fast.
 
+## Precompiled stylesheets (`.bss`)
+
+Every bundled JavaFX stylesheet under `src/main/resources/com/editora/styles` (`app.css`, `syntax.css`,
+`ui-font.css`, the AtlantaFX themes and the editor themes — not `markdown-export.css`, which is HTML CSS) is
+compiled to JavaFX's binary form at `process-classes`, into `target/classes` beside the `.css`:
+`scripts/css2bss.java`, run by the `css-to-bss` `exec-maven-plugin` execution on the build JDK with only
+`javafx.base` and `javafx.graphics` on its classpath (the `css-to-bss-classpath` `maven-dependency-plugin`
+execution resolves those two jars; no toolkit starts). The step is incremental (a `.bss` newer than its `.css`
+is kept), takes under a second, and a stylesheet that does not parse cleanly fails the build rather than
+shipping a binary with the broken rule dropped.
+
+Nothing in the application names a `.bss`: JavaFX's `StyleManager` looks for `name.bss` before parsing
+`name.css` whatever the sheet was named by, and falls back to the text when the binary is missing or
+written by another JavaFX version — so a build that skips the step still runs, only with the text parse
+(see [performance.md](performance.md#startup) for the numbers). Because `javafx:run`, the tests, the jlink
+image and the fat jar are all built from `target/classes`, they all carry the binaries; the `fatjar` profile
+wipes `target/classes` and the `dist` profile cleans, and both pass through `process-classes` again.
+`StylesheetBinaryTest` checks that each precompiled sheet is present, loads, and says exactly what the
+text says. The `.bss` files add about 4 MB to the jar (one per theme).
+
 ## Native installer (`-Pdist`)
 
 ```

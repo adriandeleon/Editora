@@ -107,7 +107,9 @@ public final class SpellDictionaries {
         if (!BUILDING.add(langId)) {
             return; // a build is in flight; it will run our queued callback
         }
-        BUILDER.execute(() -> {
+        // A 4 MB dictionary parse has no place beside the session restore: at startup the build waits for
+        // the first painted frame (the callbacks above are kept, so every waiting buffer still redraws).
+        com.editora.perf.AfterFirstPaint.run(() -> BUILDER.execute(() -> {
             try {
                 Hunspell h = build(langId);
                 CACHE.put(langId, h);
@@ -128,7 +130,7 @@ public final class SpellDictionaries {
                     }
                 }
             }
-        });
+        }));
     }
 
     /** Builds (and caches) a language synchronously — for tests/headless use. Empty on failure. */

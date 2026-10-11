@@ -74,7 +74,9 @@ final class BookmarkCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final BookmarksPanel panel;
+    /** The Bookmarks panel, built on its first use (the tool window's first open). */
+    private BookmarksPanel panel;
+
     private final QuickOpen<BookmarkEntry> jumpPalette;
     private Runnable onChanged = () -> {};
 
@@ -92,7 +94,21 @@ final class BookmarkCoordinator {
         this.host = host;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
-        this.panel = new BookmarksPanel(this::scope, new BookmarksPanel.Actions() {
+        this.jumpPalette = new QuickOpen<>(
+                tr("nav.bookmarks.title"),
+                tr("nav.bookmarks.prompt"),
+                this::allBookmarkEntries,
+                e -> bookmarkLabel(e.bm()),
+                e -> e.bm().isFolder() ? e.file().toString() : e.file().getFileName() + ":" + (e.bm().line() + 1),
+                // The jump picker is scoped to the active project's bookmarks, so they open in this window.
+                e -> bookmarkActivate(ops.currentProjectKey(), e.file(), e.bm().line()));
+    }
+
+    BookmarksPanel panel() {
+        if (panel != null) {
+            return panel;
+        }
+        panel = new BookmarksPanel(this::scope, new BookmarksPanel.Actions() {
             @Override
             public void openAndJump(String projectKey, Path file, int line) {
                 bookmarkActivate(projectKey, file, line);
@@ -124,17 +140,7 @@ final class BookmarkCoordinator {
             }
         });
         panel.setPrompt(ops::promptText); // in-scene bookmark-note prompt
-        this.jumpPalette = new QuickOpen<>(
-                tr("nav.bookmarks.title"),
-                tr("nav.bookmarks.prompt"),
-                this::allBookmarkEntries,
-                e -> bookmarkLabel(e.bm()),
-                e -> e.bm().isFolder() ? e.file().toString() : e.file().getFileName() + ":" + (e.bm().line() + 1),
-                // The jump picker is scoped to the active project's bookmarks, so they open in this window.
-                e -> bookmarkActivate(ops.currentProjectKey(), e.file(), e.bm().line()));
-    }
-
-    BookmarksPanel panel() {
+        panel.refresh(); // the refreshes before now had no panel to fill
         return panel;
     }
 
@@ -227,7 +233,9 @@ final class BookmarkCoordinator {
     }
 
     private void refreshViews() {
-        panel.refresh();
+        if (panel != null) {
+            panel.refresh(); // an unbuilt panel reads the store when it is built
+        }
         onChanged.run();
     }
 

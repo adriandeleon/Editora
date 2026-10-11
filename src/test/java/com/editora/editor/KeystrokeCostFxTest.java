@@ -121,6 +121,40 @@ class KeystrokeCostFxTest {
         });
     }
 
+    @Test
+    void aLengthChangingEditBackToTheSavedTextPublishesCleanAtOnce() throws Exception {
+        runOnFx(() -> {
+            EditorBuffer buffer = new EditorBuffer();
+            try {
+                buffer.setInitialContent("one\ntwo\nthree\n");
+                CodeArea area = buffer.getArea();
+                int[] dips = {0};
+                buffer.dirtyProperty().addListener((obs, was, now) -> {
+                    if (!now) {
+                        dips[0]++;
+                    }
+                });
+                area.insertText(0, "x");
+                assertTrue(buffer.dirtyProperty().get());
+                area.deleteText(0, 1); // a deletion lands on the saved length: compared now, nobody asked
+                assertFalse(buffer.dirtyProperty().get(), "the property itself clears on the edit");
+                assertEquals(1, dips[0], "so a listener (the Git gutter's reset) sees the dip");
+
+                area.replaceText(0, 8, "two\none\n"); // same length: dirty, compared at once from clean
+                area.replaceText(0, 8, "one\ntwo\n"); // same length back: carried, not compared
+                assertTrue(buffer.dirtyProperty().get());
+                assertEquals(1, dips[0], "a same-length return is still deferred to the settle");
+                area.insertText(0, "y"); // typed within the settle: dirty by length, still no dip
+                assertEquals(1, dips[0]);
+                area.deleteText(0, 1); // and the deletion back decides at once again
+                assertEquals(2, dips[0]);
+                assertFalse(buffer.dirtyProperty().get());
+            } finally {
+                buffer.dispose();
+            }
+        });
+    }
+
     // --- Enter / Tab ---
 
     @Test

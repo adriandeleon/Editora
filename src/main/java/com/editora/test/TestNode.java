@@ -7,7 +7,8 @@ import java.util.List;
  * A node in the test-results tree: the {@code ROOT}, a {@code SUITE} grouping (class/package/crate), or a
  * {@code TEST} leaf. Deliberately a mutable class (not a record) because a live run updates a node's
  * {@code status}/{@code durationMs} in place as results stream in; all mutation happens on the FX thread.
- * Pure — no toolkit imports.
+ * Pure — no toolkit imports. The text a node holds (output, failure message, stack trace) is bounded by
+ * {@link OutputCap}: a test that prints by the megabyte keeps the head and the tail of it.
  */
 public final class TestNode {
 
@@ -84,7 +85,7 @@ public final class TestNode {
     }
 
     public void setFailureMessage(String failureMessage) {
-        this.failureMessage = failureMessage;
+        this.failureMessage = OutputCap.cap(failureMessage);
     }
 
     public String stackTrace() {
@@ -92,7 +93,7 @@ public final class TestNode {
     }
 
     public void setStackTrace(String stackTrace) {
-        this.stackTrace = stackTrace;
+        this.stackTrace = OutputCap.cap(stackTrace);
     }
 
     public String stdout() {
@@ -100,7 +101,7 @@ public final class TestNode {
     }
 
     public void setStdout(String stdout) {
-        this.stdout = stdout;
+        this.stdout = OutputCap.cap(stdout);
     }
 
     public String stderr() {
@@ -108,7 +109,7 @@ public final class TestNode {
     }
 
     public void setStderr(String stderr) {
-        this.stderr = stderr;
+        this.stderr = OutputCap.cap(stderr);
     }
 
     public String sourceFileHint() {

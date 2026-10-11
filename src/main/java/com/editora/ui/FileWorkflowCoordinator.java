@@ -78,14 +78,18 @@ final class FileWorkflowCoordinator {
     }
 
     /**
-     * What a physical commit wrote. The bytes themselves are not kept — one encoded copy of every saved open
-     * file, used only to ask "is this still what we wrote?" — but their SHA-256 and length, which answer the
-     * same question (as {@link EditorBuffer.DiskSnapshot} does for a load).
+     * What a physical commit wrote. Neither the bytes nor the text are kept — one copy of every saved open file
+     * each, used only to ask "is this still what we wrote?" and "is the buffer back at what was saved?" — but
+     * their SHA-256 and length, which answer the same questions (as {@link EditorBuffer.DiskSnapshot} does for
+     * a load, and {@code SavedBaseline} for the buffer). {@code documentVersion} is the buffer's version the
+     * text was captured at, so an acknowledgement on an unchanged document can share its snapshot instead.
      */
     private record CommittedSave(
             long sequence,
             Path target,
-            String content,
+            long documentVersion,
+            int textLength,
+            String textFingerprint,
             String fingerprint,
             long length,
             DiskWrite disk,
@@ -119,7 +123,11 @@ final class FileWorkflowCoordinator {
 
         FileBreadcrumb breadcrumb();
 
+        /** The Project panel if it has been built (its window opened), else {@code null}. */
         ProjectPanel projectPanel();
+
+        /** What the Project tree is (or will be) rooted at; {@code null} outside a project with no folder. */
+        Path projectRoot();
 
         HistoryCoordinator historyCoordinator();
 
@@ -172,6 +180,9 @@ final class FileWorkflowCoordinator {
         String autoSaveLabel(String mode);
 
         EditorBuffer bufferOf(Tab tab);
+
+        /** {@link #bufferOf}, building the editor of a restored tab the session restore has not reached yet. */
+        EditorBuffer ensureBuffer(Tab tab);
 
         Tab tabFor(EditorBuffer buffer);
 
@@ -502,7 +513,7 @@ final class FileWorkflowCoordinator {
      */
     void whenLoaded(Path file, Runnable action) {
         Tab tab = host.tabForPath(file);
-        EditorBuffer buffer = tab == null ? null : host.bufferOf(tab);
+        EditorBuffer buffer = tab == null ? null : host.ensureBuffer(tab); // a restored tab not built yet: build it
         if (buffer == null) {
             return;
         }
@@ -609,7 +620,7 @@ final class FileWorkflowCoordinator {
      * tab filled first, without one it's the only file opened.
      */
     void notePerfContentLoaded(EditorBuffer buffer) {
-        if (!com.editora.perf.Startup.enabled() || perfPaintTimerStarted) {
+        if (!firstPaintMatters() || perfPaintTimerStarted) {
             return;
         }
         perfPaintTimerStarted = true;
@@ -618,8 +629,7 @@ final class FileWorkflowCoordinator {
         // only means "a pulse is beginning"; it's the second tick that proves the pulse in between — the one
         // that laid out and painted this content — completed. Accurate to about one frame (~16 ms), which is
         // the honest resolution of "when did the user first see it" without hooking Prism internals.
-        WindowSessionCoordinator.afterNextPaint(
-                () -> com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT));
+        WindowSessionCoordinator.afterNextPaint(FileWorkflowCoordinator::firstPainted);
     }
 
     /**
@@ -627,12 +637,26 @@ final class FileWorkflowCoordinator {
      * timer as {@link #notePerfContentLoaded}, so whichever of the two arms first is the one that reports.
      */
     void notePerfWindowShown() {
-        if (!com.editora.perf.Startup.enabled() || perfPaintTimerStarted) {
+        if (!firstPaintMatters() || perfPaintTimerStarted) {
             return;
         }
         perfPaintTimerStarted = true;
-        WindowSessionCoordinator.afterNextPaint(
-                () -> com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT));
+        WindowSessionCoordinator.afterNextPaint(FileWorkflowCoordinator::firstPainted);
+    }
+
+    /**
+     * Whether anything waits for the first painted frame: the startup report, or the probes a launch holds
+     * back until the user's file is on screen ({@link com.editora.perf.AfterFirstPaint}). A window built
+     * outside a launch (a test, a later window) arms no timer.
+     */
+    private static boolean firstPaintMatters() {
+        return com.editora.perf.Startup.enabled() || com.editora.perf.AfterFirstPaint.held();
+    }
+
+    /** The frame after the first content is in place has rendered: report it, and let the held work go. */
+    private static void firstPainted() {
+        com.editora.perf.Startup.mark(com.editora.perf.Startup.FIRST_PAINT);
+        com.editora.perf.AfterFirstPaint.release();
     }
 
     /** True once the first-paint timer has been armed, so it arms for one buffer only. */
@@ -737,6 +761,38 @@ final class FileWorkflowCoordinator {
                     declaredCharset,
                     fingerprint,
                     buffer.prepareInitialContent(content, longLine));
+        }
+
+        /**
+         * This load with its line endings resolved on the read worker but no paragraphs built: what an
+         * in-place reload needs, which rewrites only the span that differs ({@link EditorBuffer#reloadContent})
+         * and so never splits the text into paragraphs at all.
+         */
+        PreparedLoad normalised() {
+            if (content == null || document != null) {
+                return this;
+            }
+            return new PreparedLoad(
+                    file,
+                    content,
+                    size,
+                    mtime,
+                    lines,
+                    maxLineLength,
+                    charset,
+                    editorConfig,
+                    binary,
+                    large,
+                    heavy,
+                    longLine,
+                    truncated,
+                    log,
+                    logOffset,
+                    tail,
+                    sourceBytes,
+                    declaredCharset,
+                    fingerprint,
+                    com.editora.editor.InitialDocument.ofText(content));
         }
 
         /** The declared charset could not decode the file, so {@link #charset} is a lossless stand-in. */
@@ -949,6 +1005,15 @@ final class FileWorkflowCoordinator {
 
     /** Applies a prepared document atomically on the FX thread, with all expensive-mode flags already active. */
     String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load) {
+        return applyPreparedLoad(buffer, load, false);
+    }
+
+    /**
+     * As {@link #applyPreparedLoad(EditorBuffer, PreparedLoad)}; {@code inPlace} is a reload into a buffer that
+     * already shows the file, which rewrites only the span that differs instead of swapping the whole document
+     * — unless the load needs the segmented or capped profile, which only a whole-document install provides.
+     */
+    String applyPreparedLoad(EditorBuffer buffer, PreparedLoad load, boolean inPlace) {
         buffer.setDiskSnapshot(load.mtime(), load.size(), load.fingerprint());
         buffer.setTruncatedLoad(load.truncated());
         host.editorSettings().applyResolvedEditorConfig(buffer, load.editorConfig());
@@ -974,7 +1039,9 @@ final class FileWorkflowCoordinator {
             // Also back to editable: a reload of a file that is no longer huge used to stay read-only.
             buffer.setReadOnly(load.truncated());
         }
-        if (load.document() != null) {
+        if (inPlace && load.document() != null && !load.longLine() && !load.truncated()) {
+            buffer.reloadContent(load.document());
+        } else if (load.document() != null) {
             buffer.setInitialContent(load.document());
         } else {
             buffer.setInitialContent(load.content(), load.longLine());
@@ -1314,7 +1381,9 @@ final class FileWorkflowCoordinator {
                 if (hook != null) {
                     hook.run();
                 }
-                PreparedLoad load = prepareLoad(file, false);
+                PreparedLoad read = prepareLoad(file, false);
+                // The differing-span rewrite needs no paragraphs; the segmented/capped profiles need them all.
+                PreparedLoad load = read.longLine() || read.truncated() ? read.preparedFor(buffer) : read.normalised();
                 Platform.runLater(() -> {
                     boolean applied = false;
                     try {
@@ -1346,12 +1415,12 @@ final class FileWorkflowCoordinator {
 
     /** Applies bytes prepared off-thread after the user explicitly chooses the external copy. FX thread. */
     private void applyPreparedReload(Tab tab, EditorBuffer buffer, PreparedLoad load) {
-        // The whole document is about to be replaced, which resets the viewport and clears the folds: keep
-        // the user's place (caret line/column, scroll position, collapsed folds) rather than the caret alone.
+        // Only the span that differs is rewritten, but a change above the viewport still moves it and a fold
+        // inside the span is lost: keep the user's place (caret line/column, scroll position, collapsed folds).
         ReloadViewState view = ReloadViewState.capture(buffer);
         host.historyCoordinator()
                 .record(buffer, HistoryRevision.REASON_EXTERNAL); // snapshot the in-memory version before disk wins
-        String note = applyPreparedLoad(buffer, load);
+        String note = applyPreparedLoad(buffer, load, true);
         notePerfContentLoaded(buffer);
         buffer.markClean();
         view.restore();
@@ -1817,7 +1886,7 @@ final class FileWorkflowCoordinator {
         if (p != null && com.editora.vfs.Vfs.isLocal(p) && p.getParent() != null) {
             return p.getParent();
         }
-        Path root = host.projectPanel() == null ? null : host.projectPanel().getRoot();
+        Path root = host.projectRoot();
         if (root != null && com.editora.vfs.Vfs.isLocal(root)) {
             return root;
         }
@@ -2540,7 +2609,9 @@ final class FileWorkflowCoordinator {
         CommittedSave committed = new CommittedSave(
                 request.sequence(),
                 request.target(),
-                request.content(),
+                request.documentVersion(),
+                request.content().length(),
+                com.editora.editor.TextFingerprint.of(request.content()),
                 fingerprint(request.bytes()),
                 request.bytes().length,
                 disk,
@@ -2589,7 +2660,11 @@ final class FileWorkflowCoordinator {
         // With the ending that was written: a line-ending conversion chosen while this write was in flight is
         // not on disk (the text is the same, so the text alone would call the buffer clean), and converting
         // back afterwards matches the disk again.
-        buffer.acknowledgeSavedContent(committed.content(), committed.lineEnding());
+        buffer.acknowledgeSavedContent(
+                committed.documentVersion(),
+                committed.textLength(),
+                committed.textFingerprint(),
+                committed.lineEnding());
         buffer.setDiskSnapshot(
                 committed.disk().modifiedMillis(), committed.disk().size(), committed.fingerprint());
     }

@@ -70,6 +70,7 @@ final class TemplateCoordinator {
 
         OverlayHost overlayHost();
 
+        /** The Project panel if it has been built (its window opened), else {@code null}. */
         ProjectPanel projectPanel();
 
         ProjectManager projects();

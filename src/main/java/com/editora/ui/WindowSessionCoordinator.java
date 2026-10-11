@@ -34,7 +34,8 @@ final class WindowSessionCoordinator {
 
         ConfigManager config();
 
-        ProjectPanel projectPanel();
+        /** Points the Project tree at {@code root} (the panel is built on its first open). */
+        void setProjectRoot(Path root);
 
         ProjectManager projects();
 
@@ -79,6 +80,12 @@ final class WindowSessionCoordinator {
 
         Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings);
 
+        /** Puts a restored file's placeholder tab in the strip (title, icon, pin; no editor yet). */
+        Tab addPlaceholderTab(RestorePlaceholder placeholder);
+
+        /** Gives a placeholder tab its editor, wired like {@link #addBuffer}; see {@code MainController}. */
+        Tab attachRestoredBuffer(Tab tab, EditorBuffer buffer, boolean shown);
+
         void updateTabMeta(Tab tab, EditorBuffer buffer);
 
         void clearLoading(EditorBuffer buffer);
@@ -110,30 +117,34 @@ final class WindowSessionCoordinator {
     /**
      * Restores last session's open files (with their carets); falls back to one empty buffer.
      *
-     * <p>Two phases so the UI is responsive immediately: first every tab is created (empty), so all
-     * tab headers show at once; then content + folds are filled one file per pulse — the active file
-     * first. Filling a non-selected tab is cheap (its editor isn't rendered), so a heavily-folded
-     * background file can't freeze startup. Tab order and pinning are preserved.
+     * <p>Three phases so the UI is responsive immediately. Before the first frame every saved file gets a
+     * tab, so the strip shows the whole session in its saved order and groups, but only the tab the user
+     * will see (the selected one; in a split, each group's selected one) gets an editor — the rest are
+     * {@link RestorePlaceholder}s. After the selected file has painted, the remaining editors are built and
+     * filled on a cadence ({@link RestoreSchedule}: a time-boxed batch per pulse, a painted frame between
+     * batches), each one kept out of the scene and left unhighlighted until its tab is first shown. A
+     * placeholder that something needs earlier — a click on its tab, a workspace edit — is built on the
+     * spot ({@link #materialize}). Tab order and pinning are preserved throughout.
      */
     public void openInitialBuffer() {
         WorkspaceState state = host.config().getWorkspaceState();
-        List<WorkspaceState.OpenFile> files = new ArrayList<>();
         missingSessionFiles.clear();
-        for (WorkspaceState.OpenFile f : skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles()) {
-            // parseStorable reconstructs a local path directly, or a remote (sftp://) one via the resolver —
-            // which is null until its connection is open, so a remote entry is skipped at startup rather than
-            // reopened as a same-named *local* file.
-            Path rp = f.getPath() == null || f.getPath().isBlank()
-                    ? null
-                    : com.editora.vfs.Vfs.parseStorable(f.getPath());
-            if (rp != null && Files.isReadable(rp)) {
-                files.add(f);
-            } else if (SessionEntries.keepUnreadable(rp, Files::isDirectory, Files::notExists)) {
-                // Not openable right now, but not known to be gone either (its folder is missing — an
-                // unmounted volume). Dropping it here made the next save persist a session without it.
-                missingSessionFiles.add(f);
-            }
+        // Which entries can be reopened takes a stat per entry (more for one that cannot be read), each able
+        // to stall on a network mount. A launch made that scan on its config-prefetch thread; a window built
+        // any other way scans here, with the same rules. parseStorable reconstructs a local path directly, or
+        // a remote (sftp://) one via the resolver — which is null until its connection is open, so a remote
+        // entry is skipped at startup rather than reopened as a same-named *local* file.
+        com.editora.config.SessionScan scan =
+                skipSessionFiles ? null : host.config().takeStartupSessionScan();
+        if (scan == null) {
+            scan = com.editora.config.SessionScan.of(
+                    skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles(),
+                    com.editora.vfs.Vfs::parseStorable);
         }
+        List<WorkspaceState.OpenFile> files = new ArrayList<>(scan.openable());
+        // Not openable right now, but not known to be gone either (its folder is missing — an unmounted
+        // volume). Dropping these here made the next save persist a session without them.
+        missingSessionFiles.addAll(scan.missing());
         restoreStarted = true; // the saved list has been read: a live capture can no longer pre-empt it
         if (files.isEmpty()) {
             // No session to restore (empty, or --no-session): open the CLI action's file (--new-file / FILE
@@ -141,6 +152,7 @@ final class WindowSessionCoordinator {
             // is nothing to restore around it, so there's no reason to wait a pulse. Then flip the
             // restore-complete bookkeeping, and show Welcome only if nothing got opened.
             runPendingStartupAction(hasStartupWork);
+            restoreComplete = true;
             runPendingAfterRestore(); // action already ran when hasStartupWork; this does the bookkeeping
             if (startupTargets.isEmpty()) {
                 // No file will load, so nothing else arms the first-paint mark: a launch that lands on
@@ -151,7 +163,6 @@ final class WindowSessionCoordinator {
             return;
         }
         String activePath = state.getActiveFile();
-        List<EditorBuffer> buffers = new ArrayList<>();
         int activeIndex = 0;
         for (int i = 0; i < files.size(); i++) {
             if (files.get(i).getPath().equals(activePath)) {
@@ -173,72 +184,76 @@ final class WindowSessionCoordinator {
         // group rather than opened into one group and moved afterwards.
         com.editora.config.EditorGroupLayout layout = state.getEditorLayout();
         host.editorArea().restoreLayout(layout);
+        restoreFiles = files;
+        restoreTabs = new ArrayList<>();
+        // Fill order: the selected file first (the CLI target when there is one, else the session's active
+        // file), then the rest in tab order.
+        schedule = new RestoreSchedule(files.size(), selectIndex >= 0 ? selectIndex : activeIndex);
         host.editorArea().holdActiveTab(true); // until the session's own active tab is the selected one
         try {
-            restoreShells(files, layout, selectIndex, buffers);
+            restoreShells(files, layout, selectIndex, restoreTabs);
         } finally {
             host.editorArea().holdActiveTab(false);
             // Only now is each group's selection the restored one: the tabs showing attach their editor,
             // the rest wait for their first selection.
             host.editorArea().tabs().forEach(DeferredTabContent::arm);
         }
-        // Fill order: the selected file first (the CLI target when there is one, else the session's active
-        // file), then the rest in tab order.
-        int firstIndex = selectIndex >= 0 ? selectIndex : activeIndex;
-        List<Integer> order = new ArrayList<>();
-        order.add(firstIndex);
-        for (int i = 0; i < files.size(); i++) {
-            if (i != firstIndex) {
-                order.add(i);
+        // In a split, every group shows its selected tab from the first frame: those editors are built now,
+        // like the active one. (The active tab's own selection was held, so the materializer did not run.)
+        for (Tab tab : List.copyOf(host.editorArea().tabs())) {
+            if (tab.isSelected()) {
+                materialize(tab, true);
             }
         }
-        fillSessionFiles(files, buffers, order, 0);
+        startRestore();
     }
 
-    /** Creates every restored tab as an empty shell, in tab order, and applies the saved selection. */
+    /**
+     * Creates every restored tab, in tab order, and applies the saved selection: an editor shell for the
+     * selected file, the read-only viewer for an image or a PDF, and a {@link RestorePlaceholder} for every
+     * other text file. {@code tabs} receives one entry per file (its tab), aligned with {@code files}.
+     */
     private void restoreShells(
             List<WorkspaceState.OpenFile> files,
             com.editora.config.EditorGroupLayout layout,
             int selectIndex,
-            List<EditorBuffer> buffers) {
+            List<Tab> tabs) {
         for (int i = 0; i < files.size(); i++) {
             WorkspaceState.OpenFile f = files.get(i);
             host.editorArea().setRestoreTargetGroup(layout == null ? -1 : f.getGroup());
             Path p = com.editora.vfs.Vfs.parseStorable(f.getPath()); // non-null: the filter above kept only readable
             boolean active = i == selectIndex;
-            // A raster image restores into the read-only image viewer (a null buffer placeholder keeps the
-            // per-file fill indices aligned; fillSessionFiles skips nulls).
+            // A raster image restores into the read-only image viewer.
             if (ImageFormats.isSupported(p.getFileName().toString())) {
                 Tab tab = host.fileWorkflows().openImageTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);
                 }
-                buffers.add(null);
+                tabs.add(tab);
                 continue;
             }
-            // A PDF restores into the read-only PDF viewer (null placeholder keeps the fill indices aligned).
+            // A PDF restores into the read-only PDF viewer.
             if (PdfViewerPane.isPdf(p.getFileName().toString())) {
                 Tab tab = host.fileWorkflows().openPdfTab(p, active);
                 if (f.isPinned()) {
                     host.pinned().add(tab);
                 }
-                buffers.add(null);
+                tabs.add(tab);
                 continue;
             }
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(p); // sets the tab title/language; content comes later
-            buffer.setHeavyFile(true); // suppress LSP/minimap while this restored tab is only a shell
-            buffer.setLoading(true);
-            host.fileWorkflows().loadingBuffers.add(buffer);
             if (!active) {
-                DeferredTabContent.defer(buffer.getNode()); // filled in the background, laid out when shown
+                // Title, icon and pin only: the editor (about 18 ms of wiring each, before any text) is built
+                // after the first frame, on the restore cadence, or when something needs it first.
+                tabs.add(host.addPlaceholderTab(new RestorePlaceholder(f, p, i)));
+                continue;
             }
-            Tab tab = host.addBuffer(buffer, active, false);
+            EditorBuffer buffer = newShell(p);
+            Tab tab = host.addBuffer(buffer, true, false);
             if (f.isPinned()) {
                 host.pinned().add(tab);
                 host.updateTabMeta(tab, buffer);
             }
-            buffers.add(buffer);
+            tabs.add(tab);
         }
         host.editorArea().setRestoreTargetGroup(-1);
         if (layout != null) {
@@ -255,38 +270,208 @@ final class WindowSessionCoordinator {
         }
     }
 
-    /** Fills one restored buffer per pulse (in {@code order}), keeping the UI responsive between files. */
-    void fillSessionFiles(List<WorkspaceState.OpenFile> files, List<EditorBuffer> buffers, List<Integer> order, int k) {
+    /** An empty, non-editable loading shell for {@code p}: its tab exists before its text does. */
+    private EditorBuffer newShell(Path p) {
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setPath(p); // sets the tab title/language; content comes later
+        buffer.setHeavyFile(true); // suppress LSP/minimap while this restored tab is only a shell
+        buffer.setLoading(true);
+        host.fileWorkflows().loadingBuffers.add(buffer);
+        return buffer;
+    }
+
+    /** The session's files, as restored, and each one's tab; the two lists are aligned. */
+    private List<WorkspaceState.OpenFile> restoreFiles = List.of();
+
+    private List<Tab> restoreTabs = List.of();
+
+    /** Which entries still need their editor, and in what order; null until a session is being restored. */
+    private RestoreSchedule schedule;
+
+    /** Restored buffers whose text has not landed yet (built on the cadence or out of order alike). */
+    private int inFlight;
+
+    /**
+     * True once every restored tab has its editor and its text (or there was no session to restore). The
+     * {@code session-restored} startup mark is set at the same moment.
+     */
+    boolean restoreComplete;
+
+    boolean isRestoreComplete() {
+        return restoreComplete;
+    }
+
+    /**
+     * Fills the first file (the selected one: its shell already exists, or it is the session's active file
+     * behind a command-line target and is built now), runs the CLI action, and starts the cadence after
+     * that file has had a frame to paint.
+     */
+    private void startRestore() {
+        int first = schedule.first();
+        Runnable continued = () -> {
+            // The requested file (already selected + just filled) is the one the CLI action targets, so run
+            // it now rather than after the whole restore — a caret jump needs its content.
+            runPendingStartupAction(false);
+            // Keep background tabs out of the visible file's first rendered frames.
+            afterNextPaint(this::restoreStep);
+        };
+        if (first >= 0 && schedule.claim(first) && startEntry(first, continued)) {
+            return;
+        }
+        continued.run(); // image/PDF viewer, or already built: nothing to fill before the CLI action
+    }
+
+    /**
+     * One pulse of the cadence: builds and fills the next batch of placeholders within the time budget, then
+     * waits for a painted frame before the next batch, so the window keeps rendering while the session comes
+     * back. A tab that was closed or built out of order meanwhile is skipped.
+     */
+    private void restoreStep() {
         if (host.fileWorkflows().isShutdown()) {
             return; // the window closed mid-restore: there is nothing left to fill or to open
         }
-        if (k >= order.size()) {
-            runPendingAfterRestore(); // session fully restored — now safe to apply CLI targets
+        if (schedule.isExhausted()) {
+            maybeFinishRestore();
             return;
         }
-        Platform.runLater(() -> {
-            if (host.fileWorkflows().isShutdown()) {
-                return;
+        int[] started = {0};
+        int[] completed = {0};
+        boolean[] counted = {false};
+        Runnable onDone = () -> {
+            completed[0]++;
+            if (counted[0] && completed[0] == started[0]) {
+                afterNextPaint(this::restoreStep);
             }
-            int i = order.get(k);
-            EditorBuffer buffer = buffers.get(i);
-            Runnable continued = () -> {
-                if (k == 0) {
-                    // The requested file (already selected + just filled) is the one the CLI action targets,
-                    // so run it now rather than after the whole restore — a caret jump needs its content.
-                    runPendingStartupAction(false);
-                    // Keep background tabs out of the visible file's first rendered frames.
-                    afterNextPaint(() -> fillSessionFiles(files, buffers, order, k + 1));
-                    return;
-                }
-                fillSessionFiles(files, buffers, order, k + 1);
-            };
-            if (buffer == null) { // image/PDF/hex viewer: nothing to fill
-                continued.run();
-            } else {
-                fillSessionBuffer(files.get(i), buffer, continued);
+        };
+        started[0] = schedule.batch(System::nanoTime, RestoreSchedule.DEFAULT_BUDGET_NANOS, i -> startEntry(i, onDone))
+                .size();
+        counted[0] = true;
+        if (started[0] == 0) {
+            restoreStep(); // only viewers or closed tabs this time: no load to wait for
+        } else if (completed[0] == started[0]) {
+            afterNextPaint(this::restoreStep); // every load of the batch already landed (or failed) synchronously
+        }
+    }
+
+    /**
+     * Starts the fill of entry {@code i}: builds its editor if the tab is still a placeholder, then reads
+     * its file. False when there is nothing to fill — a viewer tab, a tab closed before its turn, a tab
+     * already built out of order (its own fill is in flight). {@code onComplete} runs once the text has
+     * landed, the load failed, or the tab went away first.
+     */
+    private boolean startEntry(int i, Runnable onComplete) {
+        Tab tab = i < restoreTabs.size() ? restoreTabs.get(i) : null;
+        if (tab == null || !host.editorArea().contains(tab)) {
+            return false;
+        }
+        WorkspaceState.OpenFile f = restoreFiles.get(i);
+        EditorBuffer buffer = host.bufferOf(tab);
+        Path file;
+        if (buffer != null) {
+            if (!host.fileWorkflows().loadingBuffers.contains(buffer)) {
+                return false; // built and filled (or filling) already
             }
+            file = com.editora.vfs.Vfs.parseStorable(f.getPath());
+        } else {
+            RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+            if (placeholder == null) {
+                return false; // image/PDF/hex viewer: nothing to fill
+            }
+            buffer = buildEditor(tab, placeholder, false);
+            file = placeholder.path();
+        }
+        inFlight++;
+        fillSessionBuffer(f, file, buffer, () -> {
+            inFlight--;
+            onComplete.run();
         });
+        return true;
+    }
+
+    /** Builds a placeholder's editor and swaps it into the tab; the text is still to come. */
+    private EditorBuffer buildEditor(Tab tab, RestorePlaceholder placeholder, boolean shown) {
+        EditorBuffer buffer = newShell(placeholder.path());
+        host.attachRestoredBuffer(tab, buffer, shown);
+        return buffer;
+    }
+
+    /**
+     * Builds the editor of a restored tab that is still a {@link RestorePlaceholder}, out of the cadence's
+     * order, and starts reading its file. {@code shown} says the tab is being selected (or is a split
+     * group's selected tab), so the editor attaches and highlights at once; otherwise it stays detached until
+     * first shown. Returns the tab's buffer, or {@code null} when the tab holds no buffer and no placeholder
+     * (a viewer, the Welcome page); a tab that already has its buffer is returned untouched, so this is a
+     * cheap no-op for every selection of an ordinary tab.
+     */
+    EditorBuffer materialize(Tab tab, boolean shown) {
+        return materialize(tab, shown, null);
+    }
+
+    /**
+     * As above; {@code done} (if given) receives the buffer once its text has landed, or {@code null} if the
+     * load failed or the tab was closed first.
+     */
+    EditorBuffer materialize(Tab tab, boolean shown, java.util.function.Consumer<EditorBuffer> done) {
+        RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+        if (placeholder == null) {
+            EditorBuffer existing = host.bufferOf(tab);
+            if (done != null) {
+                done.accept(existing);
+            }
+            return existing;
+        }
+        EditorBuffer buffer = buildEditor(tab, placeholder, shown);
+        if (schedule != null) {
+            schedule.claim(placeholder.index());
+        }
+        inFlight++;
+        fillSessionBuffer(placeholder.entry(), placeholder.path(), buffer, () -> {
+            inFlight--;
+            if (done != null) {
+                done.accept(buffer.isDisposed() ? null : buffer);
+            }
+            maybeFinishRestore();
+        });
+        return buffer;
+    }
+
+    /**
+     * Builds a placeholder's editor and reads its file on the calling (FX) thread, for a caller that needs a
+     * loaded buffer now ({@code openBackgroundBuffer}: a diff apply, an agent write). The tab stays in the
+     * background. Null when {@code tab} is not a placeholder, or the read fails (the tab is then removed,
+     * like any restored file that cannot be read).
+     */
+    EditorBuffer materializeLoaded(Tab tab) {
+        RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+        if (placeholder == null) {
+            return null;
+        }
+        EditorBuffer buffer = buildEditor(tab, placeholder, false);
+        if (schedule != null) {
+            schedule.claim(placeholder.index());
+        }
+        Path file = placeholder.path();
+        try {
+            FileWorkflowCoordinator.PreparedLoad load = host.fileWorkflows().prepareLoad(file, true);
+            EditorBuffer loaded = applySessionLoad(placeholder.entry(), buffer, load);
+            maybeFinishRestore();
+            return loaded;
+        } catch (IOException | RuntimeException e) {
+            failSessionBuffer(placeholder.entry(), buffer, RemoteReadFailure.reason(file, e));
+            maybeFinishRestore();
+            return null;
+        }
+    }
+
+    /** Declares the restore finished once no entry is waiting and no fill is in flight. */
+    private void maybeFinishRestore() {
+        if (restoreComplete || schedule == null || inFlight > 0 || !schedule.isExhausted()) {
+            return;
+        }
+        restoreComplete = true;
+        restoreTabs = List.of(); // nothing left to build: drop the references to the restored tabs
+        restoreFiles = List.of();
+        runPendingAfterRestore(); // session fully restored — now safe to apply CLI targets
     }
 
     /**
@@ -523,7 +708,12 @@ final class WindowSessionCoordinator {
         for (Tab t : host.tabPane().getTabs()) {
             EditorBuffer b = host.bufferOf(t);
             hasAnyTab = true;
-            if (b != null && b.getPath() != null && "java".equals(b.getLanguage())) {
+            // A restored Java tab not built yet is a Java tab all the same (its language is the file's).
+            Path p = b != null ? b.getPath() : host.tabPath(t);
+            String language = b != null
+                    ? b.getLanguage()
+                    : p == null ? null : com.editora.editor.LanguageRegistry.forFileName(p.toString());
+            if (p != null && "java".equals(language)) {
                 hasJavaOpen = true;
                 break;
             }
@@ -572,7 +762,7 @@ final class WindowSessionCoordinator {
         host.projects().setActive(p.id());
         host.projects().save();
         host.config().setWorkspaceStateFile(host.projects().stateFile(p)); // openInitialBuffer() then restores it
-        host.projectPanel().setRoot(Path.of(p.root()));
+        host.setProjectRoot(Path.of(p.root()));
         host.refreshProjectPanelList();
         host.updateWindowTitle();
     }
@@ -649,11 +839,13 @@ final class WindowSessionCoordinator {
         }
     }
 
-    /** Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). */
-    void fillSessionBuffer(WorkspaceState.OpenFile f, EditorBuffer buffer, Runnable onComplete) {
-        // The resolver openInitialBuffer used to create this tab. Path.of() would hand an sftp:// entry to the
-        // local filesystem, where it either fails or names an unrelated local file.
-        Path file = com.editora.vfs.Vfs.parseStorable(f.getPath());
+    /**
+     * Loads a restored tab's content, large-file mode, folds, and caret (the tab already exists). {@code file}
+     * is the path as the restore resolved it — the entry's own string run through the storable-path resolver
+     * ({@code Path.of()} would hand an sftp:// entry to the local filesystem, where it either fails or names
+     * an unrelated local file), or where a move made before the editor was built relocated it.
+     */
+    void fillSessionBuffer(WorkspaceState.OpenFile f, Path file, EditorBuffer buffer, Runnable onComplete) {
         if (file == null) {
             failSessionBuffer(f, buffer, f.getPath());
             onComplete.run();
@@ -661,7 +853,9 @@ final class WindowSessionCoordinator {
         }
         host.fileWorkflows().fileLoadExecutor.execute(() -> {
             try {
-                FileWorkflowCoordinator.PreparedLoad load = host.fileWorkflows().prepareLoad(file, true);
+                // Paragraphs split on the read worker too: the FX thread is left with the document swap.
+                FileWorkflowCoordinator.PreparedLoad load =
+                        host.fileWorkflows().prepareLoad(file, true).preparedFor(buffer);
                 Platform.runLater(() -> {
                     if (buffer.isDisposed() || host.fileWorkflows().isShutdown()) {
                         // Closed while its read was running. Applying the text would revive a dead buffer
@@ -672,24 +866,7 @@ final class WindowSessionCoordinator {
                         }
                         return;
                     }
-                    Tab tab = host.tabForBuffer(buffer);
-                    if (tab != null) {
-                        if (load.binary()) {
-                            boolean selected = host.editorArea().selectedTab() == tab;
-                            boolean wasPinned = host.pinned().remove(tab);
-                            host.discardLoading(buffer);
-                            host.editorArea().remove(tab);
-                            Tab hex = host.fileWorkflows().openHexTab(load.file(), selected);
-                            if (wasPinned) {
-                                host.pinned().add(hex);
-                            }
-                        } else {
-                            finishSessionBuffer(f, buffer, load);
-                            host.clearLoading(buffer);
-                        }
-                    } else {
-                        host.discardLoading(buffer);
-                    }
+                    applySessionLoad(f, buffer, load);
                     onComplete.run();
                 });
             } catch (IOException | RuntimeException e) {
@@ -718,6 +895,34 @@ final class WindowSessionCoordinator {
             host.editorArea().remove(tab);
         }
         host.setStatus(tr("status.failedOpen", reason));
+    }
+
+    /**
+     * Puts a prepared load into a restored shell on the FX thread: a binary swaps the tab for the hex viewer,
+     * anything else becomes the buffer's text. Returns the buffer that now holds the file, or {@code null}
+     * when the tab was closed meanwhile or became a hex view.
+     */
+    private EditorBuffer applySessionLoad(
+            WorkspaceState.OpenFile f, EditorBuffer buffer, FileWorkflowCoordinator.PreparedLoad load) {
+        Tab tab = host.tabForBuffer(buffer);
+        if (tab == null) {
+            host.discardLoading(buffer);
+            return null;
+        }
+        if (load.binary()) {
+            boolean selected = host.editorArea().selectedTab() == tab;
+            boolean wasPinned = host.pinned().remove(tab);
+            host.discardLoading(buffer);
+            host.editorArea().remove(tab);
+            Tab hex = host.fileWorkflows().openHexTab(load.file(), selected);
+            if (wasPinned) {
+                host.pinned().add(hex);
+            }
+            return null;
+        }
+        finishSessionBuffer(f, buffer, load);
+        host.clearLoading(buffer);
+        return buffer;
     }
 
     void finishSessionBuffer(
@@ -909,7 +1114,10 @@ final class WindowSessionCoordinator {
                 // Vfs.toStorableString keeps a remote file's sftp:// URI — a bare path would be reopened as a
                 // *local* file on restart (a same-named local file could silently open in its place).
                 String stored = com.editora.vfs.Vfs.toStorableString(p);
-                int caret = buffer != null ? buffer.getArea().getCaretPosition() : 0;
+                RestorePlaceholder placeholder = buffer == null ? RestorePlaceholder.of(tab) : null;
+                int caret = buffer != null
+                        ? buffer.getArea().getCaretPosition()
+                        : placeholder != null ? placeholder.caret() : 0; // not built yet: the saved position
                 if (buffer != null && buffer.isLoading() && saved.containsKey(stored)) {
                     caret = saved.get(stored).getCaret(); // a shell's caret is 0 until its text arrives
                 }

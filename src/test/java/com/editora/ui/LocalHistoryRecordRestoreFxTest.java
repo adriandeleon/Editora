@@ -120,6 +120,7 @@ class LocalHistoryRecordRestoreFxTest {
         async.awaitFx();
     }
 
+    /** What the File History panel lists (building the panel, as its window's first open would). */
     private static List<HistoryRevision> listed(Window win) {
         ListView<HistoryRevision> list = FxTestSupport.field(win.history().panel(), "revisions");
         return List.copyOf(list.getItems());
@@ -671,8 +672,9 @@ class LocalHistoryRecordRestoreFxTest {
             awaitRevisions(async, win, file, 1);
             settle(async, win);
 
-            assertEquals(
-                    0, FxTestSupport.callOnFx(() -> listed(win).size()), "the closed window's panel is left alone");
+            // The panel is built on its window's first open; a record landing after the window closed must
+            // not be what builds it (nor touch one, had it existed).
+            assertNull(FxTestSupport.<Object>field(win.history(), "panel"), "the closed window's panel is left alone");
             assertEquals("", win.w().status());
             assertNotNull(
                     Files.readString(win.w().fx.configDir.resolve("history").resolve("index.json")));

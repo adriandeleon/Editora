@@ -33,4 +33,15 @@ class SpringBootTest {
         assertFalse(SpringBoot.isSpringBootGradle(null));
         assertEquals("run", SpringBoot.gradleRunTask(null));
     }
+
+    @org.junit.jupiter.api.Test
+    void readsTheGroovyScriptFirstThenTheKotlinOneAndEmptyForNeither(
+            @org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        org.junit.jupiter.api.Assertions.assertEquals("", SpringBoot.readGradleBuildFile(null));
+        org.junit.jupiter.api.Assertions.assertEquals("", SpringBoot.readGradleBuildFile(dir));
+        java.nio.file.Files.writeString(dir.resolve("build.gradle.kts"), "plugins { application }\n");
+        org.junit.jupiter.api.Assertions.assertEquals("plugins { application }\n", SpringBoot.readGradleBuildFile(dir));
+        java.nio.file.Files.writeString(dir.resolve("build.gradle"), "apply plugin: 'java'\n");
+        org.junit.jupiter.api.Assertions.assertEquals("apply plugin: 'java'\n", SpringBoot.readGradleBuildFile(dir));
+    }
 }

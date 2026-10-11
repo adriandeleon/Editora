@@ -72,6 +72,8 @@ public final class FoldManager {
     private String language = "plaintext";
     /** Supersedes debounced background detections when the text/language/region sources change again. */
     private long recomputeGeneration;
+    /** The generation the last scan (synchronous or in flight) was made for; a debounced pass for it is redundant. */
+    private long detectedGeneration = -1;
     /** Max number of lines shown in a collapsed region's hover preview. */
     private static final int PREVIEW_LINES = 40;
     /** Minimum digit width the line-number gutter pads to, so a file of fewer than 10 lines still reserves
@@ -104,12 +106,6 @@ public final class FoldManager {
     /** Suppresses change notifications while we programmatically restore saved folds. */
     private boolean restoring;
 
-    /**
-     * A document at least this long restores its folds from a background detection rather than scanning the
-     * whole text on the FX thread while the file opens (measured: 150 ms of a 4.9 MB open). Below it the scan
-     * costs a few milliseconds and the restore stays synchronous.
-     */
-    static final int DEFERRED_RESTORE_CHARS = 256 * 1024;
     /** True from a deferred restore until its regions (or any newer ones) are applied. */
     private boolean regionsPending;
     /** Saved collapsed header lines waiting for those regions, kept in step with edits; null when none. */
@@ -163,8 +159,11 @@ public final class FoldManager {
     /** Digit width the gutter line numbers were last padded to; re-pad visible rows when it changes. */
     private int lastLineDigits = 1;
 
-    /** Shared hover preview of a collapsed line's hidden content; reused across all lines. */
-    private final Tooltip linePreview = new Tooltip();
+    /** Shared hover preview of a collapsed line's hidden content; reused across all lines, and built on the
+     *  first hover over a collapsed header (a Tooltip is a popup window with a scene of its own). */
+    private Tooltip linePreview;
+    /** The inline colours {@link #setPreviewColors} chose, applied to the preview when it is built. */
+    private String previewStyle = "";
     /** Paragraph whose preview is currently showing, or -1 when hidden. */
     private int previewPar = -1;
     /** Current preview foreground, also exposed as a looked-up color to plain styled-text runs. */
@@ -202,7 +201,9 @@ public final class FoldManager {
         this.caretLine = area::getCurrentParagraph;
         this.textSnapshot = textSnapshot;
         area.multiPlainChanges().successionEnds(Duration.ofMillis(250)).subscribe(ignore -> {
-            if (heuristicEnabled) {
+            // A load's own insertion settles here too; its restore already scanned (or is scanning) this very
+            // generation, so the pass would only repeat that detection. Any edit since bumps the generation.
+            if (heuristicEnabled && recomputeGeneration != detectedGeneration) {
                 recomputeAsync();
             }
         });
@@ -296,8 +297,6 @@ public final class FoldManager {
      * so the whole line is a hover target.
      */
     private void installHoverPreview() {
-        linePreview.getStyleClass().add("fold-preview-tooltip");
-        linePreview.setShowDuration(javafx.util.Duration.INDEFINITE);
         area.addEventHandler(MouseEvent.MOUSE_MOVED, this::updateHoverPreview);
         area.addEventHandler(MouseEvent.MOUSE_EXITED, e -> hidePreview());
     }
@@ -309,14 +308,27 @@ public final class FoldManager {
     public void setPreviewColors(Color background, Color foreground) {
         previewForeground = foreground;
         Color border = background.interpolate(foreground, 0.3);
-        linePreview.setStyle("-fx-background-color: " + hex(background) + ";"
+        previewStyle = "-fx-background-color: " + hex(background) + ";"
                 + "-fx-text-fill: " + hex(foreground) + ";"
                 + "-fx-border-color: " + hex(border) + ";"
                 + "-fx-border-width: 1;"
                 + "-fx-padding: 6 8 6 8;"
                 + "-fx-font-family: \"JetBrains Mono\", \"monospace\";"
                 + "-fx-font-size: 12px;"
-                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0.15, 0, 3);");
+                + "-fx-effect: dropshadow(gaussian, rgba(0,0,0,0.35), 12, 0.15, 0, 3);";
+        if (linePreview != null) {
+            linePreview.setStyle(previewStyle);
+        }
+    }
+
+    private Tooltip linePreview() {
+        if (linePreview == null) {
+            linePreview = new Tooltip();
+            linePreview.getStyleClass().add("fold-preview-tooltip");
+            linePreview.setShowDuration(javafx.util.Duration.INDEFINITE);
+            linePreview.setStyle(previewStyle);
+        }
+        return linePreview;
     }
 
     private static String hex(Color c) {
@@ -329,11 +341,12 @@ public final class FoldManager {
     private void updateHoverPreview(MouseEvent e) {
         int par = paragraphAt(e.getX(), e.getY());
         if (par >= 0 && byStart.containsKey(par) && isCollapsed(par)) {
-            if (par != previewPar || !linePreview.isShowing()) {
+            if (par != previewPar || linePreview == null || !linePreview.isShowing()) {
                 previewPar = par;
-                linePreview.setText(null);
-                linePreview.setGraphic(foldPreviewGraphic(byStart.get(par)));
-                linePreview.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
+                Tooltip preview = linePreview();
+                preview.setText(null);
+                preview.setGraphic(foldPreviewGraphic(byStart.get(par)));
+                preview.show(area, e.getScreenX() + 12, e.getScreenY() + 16);
             }
         } else {
             hidePreview();
@@ -342,7 +355,7 @@ public final class FoldManager {
 
     private void hidePreview() {
         previewPar = -1;
-        if (linePreview.isShowing()) {
+        if (linePreview != null && linePreview.isShowing()) {
             linePreview.hide();
         }
     }
@@ -397,17 +410,26 @@ public final class FoldManager {
      */
     public void recompute() {
         recomputeGeneration++; // invalidate a debounced result captured before this explicit recompute
+        detectedGeneration = recomputeGeneration;
         String text = heuristicEnabled ? textSnapshot.get() : "";
         applyRegions(detectRegions(text, language, serverRegions, manualRegions, heuristicEnabled));
     }
 
     /**
-     * Runs the expensive brace/indent/comment scan away from the FX thread after typing or initial load.
-     * Capturing RichTextFX text stays on FX; only the pure detector crosses threads. A generation check
-     * prevents an older snapshot from replacing regions for newer text or language state.
+     * Runs the expensive brace/indent/comment scan away from the FX thread after typing or initial load, and
+     * for a consumer that wants the regions current without stalling the thread (the Structure outline on a
+     * tab switch). Capturing RichTextFX text stays on FX; only the pure detector crosses threads. A
+     * generation check prevents an older snapshot from replacing regions for newer text or language state.
+     * With the heuristic off (large-file mode) there is no scan to move: the server and manual regions are
+     * applied synchronously, which reads no text.
      */
-    private void recomputeAsync() {
+    public void recomputeAsync() {
+        if (!heuristicEnabled) {
+            recompute();
+            return;
+        }
         long generation = ++recomputeGeneration;
+        detectedGeneration = generation;
         String text = textSnapshot.get();
         String languageSnapshot = language;
         List<Region> serverSnapshot = serverRegions;
@@ -490,7 +512,7 @@ public final class FoldManager {
                 recreateVisibleGutter(second, changed, total);
             }
         }
-        // The line-number gutter pads to the digit width of the line count (see formatLineNo). Since the
+        // The line-number gutter pads to the digit width of the line count (see LineNumberText). Since the
         // line number is now set directly (no live binding), re-pad the visible rows when that width
         // changes — i.e. the count crossed a power of 10. Runs only on this debounced recompute, not per
         // keystroke; offscreen rows get the right width when they're next built.
@@ -547,9 +569,14 @@ public final class FoldManager {
         }
     }
 
-    /** Whether a restore of this document's folds should wait for a background detection. */
+    /**
+     * Whether a restore of this document's folds waits for a background detection: always, when there is a
+     * heuristic scan to run. The scan used to be synchronous below 256 KiB, which cost every open a
+     * whole-document walk on the FX thread that the debounced pass then repeated; without a heuristic
+     * (large-file mode) there is nothing to scan and the manual/server regions apply at once.
+     */
     private boolean deferRestore() {
-        return heuristicEnabled && area.getLength() >= DEFERRED_RESTORE_CHARS;
+        return heuristicEnabled;
     }
 
     /** Starts the background detection of a deferred restore, carrying {@code collapsed} to its arrival. */
@@ -1376,9 +1403,10 @@ public final class FoldManager {
     }
 
     /**
-     * Restores manual ranges and collapsed headers with one region recomputation instead of two. For a long
-     * document ({@link #DEFERRED_RESTORE_CHARS}) that recomputation runs in the background and the collapsed
-     * headers are applied when its regions arrive; anything that needs them sooner computes them on demand.
+     * Restores manual ranges and collapsed headers with one region recomputation instead of two. That
+     * recomputation runs in the background and the collapsed headers are applied when its regions arrive;
+     * anything that needs them sooner computes them on demand ({@link #collapsedStartLines},
+     * {@link #unfoldContaining}, the fold commands).
      */
     public void restore(List<Region> manual, List<Integer> collapsedStartLines) {
         manualRegions = manual == null || manual.isEmpty() ? List.of() : List.copyOf(manual);
@@ -1467,17 +1495,35 @@ public final class FoldManager {
         control.addEventHandler(javafx.scene.input.MouseEvent.ANY, OWN_POINTER);
     }
 
+    /**
+     * One gutter row. A folded paragraph's cell is laid out at zero height, but the line-number Label doesn't
+     * clip to it, so the hidden lines' numbers would overflow and stack into a smear on the fold-header row:
+     * the row clips to its own bounds so a collapsed (0-height) cell shows nothing. The clip follows the row's
+     * size from {@code layoutChildren} — a resize marks the row for layout — rather than through two property
+     * bindings, which Flowless would allocate and later tear down for every rebuilt cell.
+     */
+    private static final class GutterRow extends HBox {
+        private final Rectangle clip = new Rectangle();
+
+        GutterRow() {
+            getStyleClass().add("fold-gutter");
+            setAlignment(Pos.CENTER_RIGHT);
+            setClip(clip);
+        }
+
+        @Override
+        protected void layoutChildren() {
+            super.layoutChildren();
+            clip.setWidth(getWidth());
+            clip.setHeight(getHeight());
+        }
+    }
+
+    /** The padded line-number strings of this gutter's rows (see {@link LineNumberText}). FX-thread only. */
+    private final LineNumberText lineNumberText = new LineNumberText();
+
     private Node buildGutter(int idx, boolean showLineNumbers) {
-        HBox box = new HBox();
-        box.getStyleClass().add("fold-gutter");
-        box.setAlignment(Pos.CENTER_RIGHT);
-        // A folded paragraph's cell is laid out at zero height, but the line-number Label doesn't clip
-        // to it, so the hidden lines' numbers overflow and stack into a smear on the fold-header row.
-        // Clip the gutter to its own bounds so a collapsed (0-height) cell shows nothing.
-        Rectangle clip = new Rectangle();
-        clip.widthProperty().bind(box.widthProperty());
-        clip.heightProperty().bind(box.heightProperty());
-        box.setClip(clip);
+        HBox box = new GutterRow();
         // The gutter itself is deliberately NOT clickable: a whole-gutter click used to toggle a bookmark,
         // which misfired constantly on the narrow breakpoint / Run targets sitting inside it (a slightly-off
         // click on the ▶ or the breakpoint strip added a stray bookmark instead). Bookmarks are added from
@@ -1522,15 +1568,19 @@ public final class FoldManager {
         // A fixed-width bookmark slot is reserved on EVERY row, so toggling a bookmark only fills/empties
         // the slot and never changes the gutter width — which would otherwise shift that line's text
         // indentation rightward (the paragraph graphic's width is the text's left inset). The glyph
-        // itself is created only for bookmarked lines, so unbookmarked rows allocate just an empty slot.
-        StackPane bookmarkSlot = new StackPane();
+        // itself is created only for bookmarked lines, so unbookmarked rows allocate just an empty slot — a
+        // bare Region, not a Pane: a StackPane's children list, alignment and margin bookkeeping would be
+        // built for every row only to stay empty.
+        javafx.scene.layout.Region bookmarkSlot;
+        if (isBookmarked.test(idx)) {
+            bookmarkSlot = new StackPane(bookmarkMarker());
+        } else {
+            bookmarkSlot = new javafx.scene.layout.Region();
+        }
         bookmarkSlot.getStyleClass().add("bookmark-slot");
         bookmarkSlot.setMinWidth(BOOKMARK_SLOT_WIDTH);
         bookmarkSlot.setPrefWidth(BOOKMARK_SLOT_WIDTH);
         bookmarkSlot.setMaxWidth(BOOKMARK_SLOT_WIDTH);
-        if (isBookmarked.test(idx)) {
-            bookmarkSlot.getChildren().add(bookmarkMarker());
-        }
         box.getChildren().add(bookmarkSlot);
 
         // (Personal-Notes markers are drawn inline at the note's start by NoteHighlightOverlay, not in the
@@ -1575,19 +1625,21 @@ public final class FoldManager {
             // binding — the binding's subscribe/unsubscribe churn as cells recycle was a measurable cost
             // on every scroll (a layout-forced scroll sweep over README.md was ~12-21% faster without it).
             // Padding re-pads via repadVisibleLineNumbers() only when the digit width of the line count
-            // actually changes (a power-of-10 crossing — rare), not per row.
+            // actually changes (a power-of-10 crossing — rare), not per row. The padded string comes from a
+            // per-gutter cache, so a rebuilt cell (every edited paragraph) formats nothing.
             int number = lineNumberAt.applyAsInt(idx);
+            int width = digits(lineCount());
             lineNo.setText(
                     number == 0
-                            ? " ".repeat(digits(lineCount()))
-                            : formatLineNo(number < 0 ? idx + 1 : number, lineCount()));
+                            ? lineNumberText.blank(width)
+                            : lineNumberText.padded(number < 0 ? idx + 1 : number, width));
             box.getChildren().add(lineNo);
         }
 
         // The chevron column is reserved on every row, but only a fold-start line gets the Label: a Label is
         // a Control with a skin and a Text child, and nine rows in ten would build one to show a space. The
         // rest get a bare Region that the stylesheet gives the same width (.fold-chevron-slot).
-        if (regionStartingAt(idx).isEmpty()) {
+        if (!byStart.containsKey(idx)) { // no Optional per row: this runs for every rebuilt cell
             javafx.scene.layout.Region slot = new javafx.scene.layout.Region();
             slot.getStyleClass().add("fold-chevron-slot");
             box.getChildren().add(slot);
@@ -1841,10 +1893,6 @@ public final class FoldManager {
             text.getStyleClass().addAll(styles);
         }
         return text;
-    }
-
-    private static String formatLineNo(int line, int total) {
-        return String.format("%1$" + digits(total) + "s", line);
     }
 
     /**

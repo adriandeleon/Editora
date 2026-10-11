@@ -42,8 +42,9 @@ import static com.editora.i18n.Messages.tr;
  * only the blocks that can still change ({@link AgentStreamSplit}); finished blocks keep their nodes.
  * {@link #appendLine} (a new prompt, a tool-call line, an error) finalizes — renders once more, as a
  * whole — whatever agent message was streaming, so the next chunk starts a fresh message
- * rather than continuing the previous one. Capped at {@link #MAX_ENTRIES} transcript nodes (oldest
- * dropped first) so a long session can't grow memory without bound.
+ * rather than continuing the previous one. Capped at {@link #MAX_ENTRIES} transcript nodes and
+ * {@link #MAX_TRANSCRIPT_CHARS} characters (oldest dropped first), and each entry at {@link #MAX_ENTRY_CHARS}, so a
+ * long session — or one tool result of megabytes — can't grow memory without bound.
  *
  * <p>Every rendered reply is also walked ({@link #wireInlineCodePaths}) to make an inline-code span that
  * looks like a file path ({@link #looksLikePath}) clickable — opens it via the injected {@code onOpenPath}
@@ -54,6 +55,27 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
 
     /** Trim the transcript once it exceeds this many entries (keeps the most recent messages/lines). */
     private static final int MAX_ENTRIES = 2000;
+
+    /**
+     * Most characters one entry holds — a console's worth. A tool result can be megabytes; the entry keeps its
+     * head and says how much was cut. A streaming reply stops taking chunks at this size.
+     */
+    static final int MAX_ENTRY_CHARS = 200_000;
+
+    /**
+     * Most characters the whole transcript holds; the oldest entries go first, as with the entry count. The
+     * panel outlives its tool window being closed, so this is what bounds a long session's memory.
+     */
+    static final int MAX_TRANSCRIPT_CHARS = 1_000_000;
+
+    /** Node property holding the characters an entry was accounted at (see {@link #account}). */
+    private static final Object ENTRY_CHARS = new Object();
+
+    /** Characters accounted across the transcript's entries. */
+    private long transcriptChars;
+
+    /** Characters of the streaming reply refused past {@link #MAX_ENTRY_CHARS}; noted when it is finalized. */
+    private long currentAgentCut;
 
     /**
      * The longest a streamed chunk waits to be shown. This used to be a 150 ms debounce restarted by every
@@ -249,8 +271,21 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     public void appendChunk(String text) {
         if (currentAgentWrapper == null) {
             currentAgentWrapper = new VBox();
+            account(currentAgentWrapper, 0); // accounted at its final size when it is finalized
             transcriptBox.getChildren().add(currentAgentWrapper);
             trimIfNeeded();
+        }
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        int room = MAX_ENTRY_CHARS - currentAgentMarkdown.length();
+        if (room <= 0) {
+            currentAgentCut += text.length();
+            return; // the reply is already a console's worth: the rest is counted, not kept
+        }
+        if (text.length() > room) {
+            currentAgentCut += text.length() - room;
+            text = text.substring(0, room);
         }
         currentAgentMarkdown.append(text);
         renderThrottle.request();
@@ -260,12 +295,40 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
      *  (flushes) whatever agent message was streaming first, so the next chunk starts a fresh message. */
     public void appendLine(String line) {
         finalizeCurrentMessage();
-        Label label = new Label(line);
+        String shown = capEntry(line);
+        Label label = new Label(shown);
         label.getStyleClass().add("agent-line");
         label.setWrapText(true);
         applyLineFont(label);
+        account(label, shown.length());
         transcriptBox.getChildren().add(label);
         trimIfNeeded();
+    }
+
+    /** {@code text} while it fits one entry, else its head and a note of how much was cut. */
+    static String capEntry(String text) {
+        if (text == null) {
+            return "";
+        }
+        if (text.length() <= MAX_ENTRY_CHARS) {
+            return text;
+        }
+        return text.substring(0, MAX_ENTRY_CHARS) + cutNote(text.length() - MAX_ENTRY_CHARS);
+    }
+
+    private static String cutNote(long cut) {
+        return "\n" + tr("output.charactersCut", cut);
+    }
+
+    /** Records the characters {@code entry} holds, so the transcript's total can be kept within its budget. */
+    private void account(Node entry, int chars) {
+        Object previous = entry.getProperties().put(ENTRY_CHARS, chars);
+        transcriptChars += chars - (previous instanceof Integer p ? p : 0);
+    }
+
+    /** Characters the transcript's entries hold, as accounted (tests). */
+    long transcriptChars() {
+        return transcriptChars;
     }
 
     /** Appends a tool-call / command line ({@code command}, glyph-prefixed) with light shell syntax
@@ -280,7 +343,9 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         glyph.getStyleClass().add("agent-tool-glyph");
         applyRunFont(glyph);
         flow.getChildren().add(glyph);
-        for (AgentCommandHighlighter.Span span : AgentCommandHighlighter.spans(command == null ? "" : command)) {
+        String shown = capEntry(command);
+        account(flow, shown.length());
+        for (AgentCommandHighlighter.Span span : AgentCommandHighlighter.spans(shown)) {
             Text run = new Text(span.text());
             if (span.styleClass() != null) {
                 run.getStyleClass().addAll("text", span.styleClass()); // reuse .text.<class> token colors
@@ -307,8 +372,14 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     }
 
     private void trimIfNeeded() {
-        while (transcriptBox.getChildren().size() > MAX_ENTRIES) {
-            transcriptBox.getChildren().remove(0);
+        List<Node> entries = transcriptBox.getChildren();
+        // Oldest first, by count and by characters; the streaming reply is never dropped from under its render.
+        while (entries.size() > 1
+                && entries.get(0) != currentAgentWrapper
+                && (entries.size() > MAX_ENTRIES || transcriptChars > MAX_TRANSCRIPT_CHARS)) {
+            Node dropped = entries.remove(0);
+            Object chars = dropped.getProperties().get(ENTRY_CHARS);
+            transcriptChars -= chars instanceof Integer c ? c : 0;
         }
     }
 
@@ -317,10 +388,16 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     private void finalizeCurrentMessage() {
         renderThrottle.cancel();
         if (currentAgentWrapper != null) {
+            if (currentAgentCut > 0) {
+                currentAgentMarkdown.append(cutNote(currentAgentCut));
+                currentAgentCut = 0;
+            }
             renderCurrentMarkdown(true);
+            account(currentAgentWrapper, currentAgentMarkdown.length());
             currentAgentWrapper = null;
             currentAgentMarkdown.setLength(0);
             streamBlocks = null;
+            trimIfNeeded(); // the finished reply's size may have put the transcript over its budget
         }
     }
 
@@ -452,6 +529,8 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
     /** Clears the transcript (a new session). */
     public void clearTranscript() {
         transcriptBox.getChildren().clear();
+        transcriptChars = 0;
+        currentAgentCut = 0;
         renderThrottle.cancel();
         streamBlocks = null;
         currentAgentWrapper = null;

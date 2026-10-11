@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -87,6 +88,40 @@ class ReloadKeepsViewFxTest {
                 190,
                 (int) FxTestSupport.callOnFx(area::firstVisibleParToAllParIndex),
                 "the view is where the user left it: " + e.viewport(area));
+    }
+
+    /**
+     * A reload used to swap the whole document (every paragraph split again on the FX thread). It now rewrites
+     * only the span that differs; as before, it is not an undo step, and the loaded text is the clean baseline.
+     */
+    @Test
+    void reloadRewritesOnlyTheDifferingSpanAndIsNotAnUndoStep() throws Exception {
+        String text = EditingFx.lines("line", 200);
+        EditorBuffer b = e.open("span-reload.txt", text);
+        CodeArea area = b.getArea();
+        java.util.List<org.fxmisc.richtext.model.PlainTextChange> changes =
+                java.util.Collections.synchronizedList(new java.util.ArrayList<>());
+        FxTestSupport.runOnFx(() -> area.plainTextChanges().subscribe(changes::add));
+
+        String changed = text.replace("line 100\n", "line one hundred\n");
+        Files.writeString(b.getPath(), changed);
+        reload(b);
+        assertTrue(e.await(() -> area.getText().contains("one hundred")), "the copy on disk was loaded");
+        e.pulses(5);
+
+        assertEquals(1, changes.size(), "one document change: " + changes);
+        assertEquals("100", changes.getFirst().getRemoved(), "only the differing span was removed");
+        assertEquals("one hundred", changes.getFirst().getInserted());
+        assertEquals(changed, FxTestSupport.callOnFx(b::getContent));
+        assertFalse(FxTestSupport.callOnFx(b::isDirty), "the loaded text is the clean baseline");
+        assertFalse(
+                FxTestSupport.callOnFx(() -> area.getUndoManager().isUndoAvailable()),
+                "the reload is not an undo step: undo cannot resurrect text the disk no longer has");
+        assertEquals(
+                changed,
+                FxTestSupport.callOnFx(
+                        () -> b.getUndoHistory().entriesNewestFirst().getFirst().text()),
+                "the Undo History baseline is the reloaded text");
     }
 
     /** The captured place is a document position: a reload widens, so a region-relative one would be wrong. */

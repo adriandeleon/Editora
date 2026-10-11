@@ -15,6 +15,27 @@ public final class SpringBoot {
 
     /** The Gradle task to run for a project whose build script is {@code buildFileText}: {@code bootRun}
      *  when the Spring Boot plugin is applied, else {@code run}. */
+    /**
+     * The Gradle build script at {@code root} ({@code build.gradle}, else {@code build.gradle.kts}) as text, for
+     * the Spring Boot sniff and the application-plugin main class; {@code ""} when neither is readable.
+     */
+    public static String readGradleBuildFile(java.nio.file.Path root) {
+        if (root == null) {
+            return "";
+        }
+        for (String name : java.util.List.of("build.gradle", "build.gradle.kts")) {
+            java.nio.file.Path f = root.resolve(name);
+            if (java.nio.file.Files.isRegularFile(f)) {
+                try {
+                    return java.nio.file.Files.readString(f);
+                } catch (java.io.IOException e) {
+                    return "";
+                }
+            }
+        }
+        return "";
+    }
+
     public static String gradleRunTask(String buildFileText) {
         return isSpringBootGradle(buildFileText) ? "bootRun" : "run";
     }

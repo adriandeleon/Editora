@@ -53,16 +53,17 @@ class LaunchSessionGcFxTest {
             keymap.loadNamed(shared.getSettings().getKeymap());
             WindowManager manager = new WindowManager(shared, keymap, null);
             manager.adoptBootstrapConfig(bootstrap);
-            manager.restoreScheduler = task -> {}; // the sweep runs inside launch(); the other windows are not needed
+            manager.restoreScheduler = task -> {}; // the sweep starts inside launch(); the other windows are not needed
             manager.launch(new Stage(), null, List.of(), false, false, null, false, null, false);
             return new Object[] {shared, manager};
         });
+        SharedConfig shared = (SharedConfig) made[0];
+        WindowManager wm = (WindowManager) made[1];
+        wm.sessionGc.get(30, java.util.concurrent.TimeUnit.SECONDS); // the sweep itself runs off the FX thread
         List<String> left;
         try (var files = Files.list(windows)) {
             left = files.map(p -> p.getFileName().toString()).sorted().toList();
         }
-        SharedConfig shared = (SharedConfig) made[0];
-        WindowManager wm = (WindowManager) made[1];
         FxTestSupport.runOnFx(() -> {
             for (Object holder : List.copyOf(FxTestSupport.<List<?>>field(wm, "windows"))) {
                 MainController c = (MainController) FxTestSupport.call(holder, "controller", new Class<?>[] {});

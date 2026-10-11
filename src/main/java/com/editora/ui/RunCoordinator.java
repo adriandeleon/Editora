@@ -112,7 +112,12 @@ final class RunCoordinator {
     private final Ops ops;
     private final RunService service = new RunService();
     private final BeforeLaunchStep beforeLaunch = new BeforeLaunchStep(service, true); // the console can answer it
-    private final RunPanel panel;
+    /** The Run console, built on its first use (a run, or the tool window's first open). */
+    private RunPanel panel;
+    /** The console font to apply when the panel is built (set by every settings apply, panel or not). */
+    private String outputFontFamily;
+
+    private int outputFontSize;
 
     /**
      * The most recent launch, for {@code run.rerun}. Assigned only by {@link #streamRun}, all four together:
@@ -131,14 +136,28 @@ final class RunCoordinator {
     RunCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
-        this.panel = new RunPanel(this::stopRun);
-        panel.setOnInput(service::sendInput); // stdin field → the running process
-        panel.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
-        panel.setOnUrl(ops::openUrl); // single-clicked HTTP(S) URL → browser
     }
 
     RunPanel panel() {
+        if (panel == null) {
+            panel = new RunPanel(this::stopRun);
+            panel.setOnInput(service::sendInput); // stdin field → the running process
+            panel.setOnLink(ops::openLink); // double-clicked stack-trace line → jump
+            panel.setOnUrl(ops::openUrl); // single-clicked HTTP(S) URL → browser
+            if (outputFontFamily != null) {
+                panel.setOutputFont(outputFontFamily, outputFontSize);
+            }
+        }
         return panel;
+    }
+
+    /** Matches the console font to the editor font; remembered for a panel not built yet. */
+    void setOutputFont(String family, int size) {
+        outputFontFamily = family;
+        outputFontSize = size;
+        if (panel != null) {
+            panel.setOutputFont(family, size);
+        }
     }
 
     /** Working directory of the most recent run, or {@code null} — used by the shared link resolver. */
@@ -314,20 +333,20 @@ final class RunCoordinator {
                     public void started(String commandLine) {
                         consoleDir = cwd; // so a compiler error's file link in the build output resolves
                         consoleUsed = true;
-                        panel.started(commandLine);
+                        panel().started(commandLine);
                     }
 
                     @Override
                     public void output(String line, boolean stderr) {
-                        panel.appendOutput(line, stderr);
+                        panel().appendOutput(line, stderr);
                     }
 
                     @Override
                     public void ended(int code, String launchError) {
                         if (launchError != null) {
-                            panel.failed(launchError);
+                            panel().failed(launchError);
                         } else {
-                            panel.finished(code);
+                            panel().finished(code);
                         }
                         ops.onRunStateChanged();
                     }
@@ -727,6 +746,9 @@ final class RunCoordinator {
 
     private void runActiveFile(boolean promptArgs) {
         EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null) {
+            buffer.settleRunScan(); // the load's scan runs off FX; the answer is needed now
+        }
         if (buffer == null || !buffer.isRunnable()) {
             host.setStatus(tr("status.run.notCompact"));
             return;
@@ -850,34 +872,34 @@ final class RunCoordinator {
         lastRunEnv = env;
         consoleUsed = true;
         ops.openToolWindow();
-        panel.started(label);
+        panel().started(label);
         host.setStatus(tr("status.run.started", label));
         service.runInDir(workingDir, command, env, new RunService.Listener() {
             @Override
             public void onStart(String commandLine) {
-                panel.started(commandLine);
+                panel().started(commandLine);
             }
 
             @Override
             public void onOutput(String line, boolean stderr) {
-                panel.appendOutput(line, stderr);
+                panel().appendOutput(line, stderr);
             }
 
             @Override
             public void onPartialOutput(String text, boolean stderr) {
-                panel.appendPartialOutput(text, stderr);
+                panel().appendPartialOutput(text, stderr);
             }
 
             @Override
             public void onExit(int code) {
-                panel.finished(code);
+                panel().finished(code);
                 host.setStatus(code == 0 ? tr("status.run.ok") : tr("status.run.exit", code));
                 ops.onRunStateChanged();
             }
 
             @Override
             public void onError(String message) {
-                panel.failed(message);
+                panel().failed(message);
                 host.setStatus(tr("status.run.failed", message));
                 ops.onRunStateChanged();
             }
@@ -900,7 +922,7 @@ final class RunCoordinator {
     }
 
     void clearConsole() {
-        panel.clearConsole();
+        panel().clearConsole();
     }
 
     void shutdown() {

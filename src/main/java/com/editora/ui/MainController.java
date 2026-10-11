@@ -17,9 +17,7 @@ import javafx.collections.ObservableList;
 import javafx.css.PseudoClass;
 import javafx.fxml.FXML;
 import javafx.geometry.Orientation;
-import javafx.geometry.Pos;
 import javafx.scene.Node;
-import javafx.scene.SnapshotParameters;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
@@ -37,8 +35,6 @@ import javafx.scene.control.ToolBar;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
-import javafx.scene.input.Dragboard;
-import javafx.scene.input.TransferMode;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -213,7 +209,13 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     private com.editora.completion.CompletionEngine completion;
 
+    /** The Project panel; null until {@link #projectPanel()} builds it. */
     private ProjectPanel projectPanel;
+    /** What the Project tree is rooted at (null: the placeholder), applied to the panel when it is built. */
+    private Path projectRoot;
+    /** The last Git status pushed to the Project tree, applied to the panel when it is built. */
+    private java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> projectGitStatus;
+
     private ProjectDeleteCoordinator projectDeletes;
     private ProjectManager projects;
     /** The multi-window coordinator (null in single-window/test use); set right after {@link #init}. */
@@ -237,7 +239,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     private ToolWindow bookmarksToolWindow;
     private ToolWindow notesToolWindow;
     private ToolWindow fileInfoToolWindow;
+    /** The File Information / Undo History / Structure panels; each null until its accessor builds it. */
     private FileInformationPanel fileInfoPanel;
+
     private ToolWindow undoHistoryToolWindow;
     private UndoHistoryPanel undoHistoryPanel;
     private StructurePanel structurePanel;
@@ -283,13 +287,15 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** The IntelliJ-style Test Results window; available once a {@code test} run has occurred. */
     private ToolWindow testResultsToolWindow;
 
-    /** Checks GitHub for a newer release (background, once/day + manual). */
-    private final com.editora.update.UpdateService updateService = new com.editora.update.UpdateService();
-    /** The newest release found to be newer than the running version, shared across windows in-process (so a
-     *  second window and the About dialog see it); null when up to date / not yet checked. */
-    private static volatile com.editora.update.ReleaseInfo latestKnownUpdate;
-    /** Set once the first window kicks off the session's background update check, so others don't duplicate it. */
-    private static volatile boolean updateCheckStartedThisSession;
+    /** The release check: automatic (a few seconds after the first paint), manual, notice and download page.
+     *  The lambdas read the window's fields at call time, after init. */
+    private final UpdateCoordinator updates = new UpdateCoordinator(
+            () -> this.config.getSettings(), // qualified: these fields are declared below
+            () -> this.fileWorkflows.isShutdown(),
+            this::requestSave,
+            this::setStatus,
+            (show, version) -> this.statusBar.setUpdateAvailable(show, version),
+            this::openExternalUrl);
 
     private ToolWindow agentToolWindow;
 
@@ -307,12 +313,20 @@ public class MainController implements com.editora.mcp.McpBridge {
      *  (after the LSP/Debug coordinators it re-detects through). See {@link InstallCoordinator}. */
     private InstallCoordinator installCoordinator;
 
+    /** The Commit panel; null until {@link #gitPanel()} builds it. The state it shows is tracked below. */
     private GitPanel gitPanel;
+
+    private com.editora.git.GitStatus lastGitStatus;
+    private com.editora.git.GitOperation lastGitOperation;
+    private String lastGitRefusal;
+    private boolean gitAiAvailable;
     private ToolWindow commitToolWindow;
+    /** The Git Log panel; null until {@link #gitLogPanel()} builds it. */
     private GitLogPanel gitLogPanel;
+
     private GitLogPanel.Actions gitLogOps; // reused by the git.log.* palette commands (act on the selected commit)
     private ToolWindow gitLogToolWindow;
-    /** GitHub PR/issue tool window; available only inside a GitHub repo. */
+    /** GitHub PR/issue tool window; available only inside a GitHub repo. Null until {@link #githubPanel()}. */
     private GitHubPanel githubPanel;
 
     private ToolWindow githubToolWindow;
@@ -333,7 +347,6 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Pinned tabs (identity-based): kept grouped at the front and skipped by bulk-close actions. */
     final Set<Tab> pinned = Collections.newSetFromMap(new IdentityHashMap<>());
     /** The tab currently being dragged to reorder the strip, or null. */
-    private Tab draggedTab;
     /** The editor-theme override stylesheet currently on the scene, or null for the default theme. */
     private String currentEditorThemeCss;
 
@@ -480,16 +493,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         // Detect files changed by another program: re-check open files whenever the window regains focus.
         stage.focusedProperty().addListener((obs, was, now) -> {
             if (Boolean.TRUE.equals(now)) {
-                // The filesystem may have shifted while we were away — drop cached canonical paths (#680).
-                com.editora.config.PathKeys.invalidateCanonicalCache();
-                fileWorkflows.checkExternalChanges();
-                git.refresh(); // another tool may have changed the repo while we were away
-                refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
-                refreshPasteState(); // clipboard may have changed in another app while we were away
-                if (projectPanel != null) {
-                    projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
-                }
-                diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
+                onWindowFocusGained();
             }
         });
         this.config = config;
@@ -909,77 +913,32 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         fileWorkflows.applyAutoSave();
-        refreshUpdateNotice(); // reflect any update an earlier window already found
-        maybeCheckForUpdates(); // background check (once/session, once/day, only if enabled)
+        updates.applyAtStartup(); // the notice of a release an earlier window found + the automatic check
     }
 
-    // --- update check ------------------------------------------------------------------------------
+    final StartupFocus startupFocus = new StartupFocus(); // the show-time focus, told from a real regain
 
-    /** Kicks off the background update check when enabled and due — at most once per app session (a static
-     *  guard, so multiple windows don't each hit GitHub) and at most once per day (the persisted timestamp). */
-    private void maybeCheckForUpdates() {
-        if (!config.getSettings().isUpdateCheck() || updateCheckStartedThisSession) {
+    /** The window gained focus: re-check what another program may have changed while we were away — unless
+     *  this is the focus gained by being shown ({@link StartupFocus}), which repeats nothing. */
+    void onWindowFocusGained() {
+        StartupFocus.Action action = startupFocus.onFocusGained();
+        if (action == StartupFocus.Action.STARTUP_REFRESH) {
+            git.refresh(); // the project root is known only since setWindowContext
+            refreshBuildTools();
+        }
+        if (action != StartupFocus.Action.REGAIN) {
             return;
         }
-        long now = System.currentTimeMillis();
-        if (!com.editora.update.UpdateCheck.isDue(
-                config.getSettings().getLastUpdateCheckEpoch(),
-                now,
-                com.editora.update.UpdateCheck.DEFAULT_INTERVAL_MS)) {
-            return;
+        // The filesystem may have shifted while we were away — drop cached canonical paths (#680).
+        com.editora.config.PathKeys.invalidateCanonicalCache();
+        fileWorkflows.checkExternalChanges();
+        git.refresh(); // another tool may have changed the repo while we were away
+        refreshBuildTools(); // a marker file (or the active file's project) may have changed while away
+        refreshPasteState(); // clipboard may have changed in another app while we were away
+        if (projectPanel != null) {
+            projectPanel.refreshTree(); // pick up files/folders added or removed outside Editora
         }
-        updateCheckStartedThisSession = true;
-        config.getSettings().setLastUpdateCheckEpoch(now); // throttle even if the check fails (don't retry all day)
-        requestSave();
-        updateService.check(com.editora.AppInfo.VERSION, o -> onUpdateOutcome(o, false));
-    }
-
-    /** Applies a check result: on a newer release, cache it + show the notice; a manual check also echoes an
-     *  up-to-date / failure status. */
-    private void onUpdateOutcome(com.editora.update.UpdateService.Outcome outcome, boolean manual) {
-        if (!outcome.ok()) {
-            if (manual) {
-                setStatus(tr("status.update.failed", outcome.error()));
-            }
-            return;
-        }
-        if (outcome.available()) {
-            latestKnownUpdate = outcome.latest();
-            refreshUpdateNotice();
-            setStatus(tr("status.update.available", outcome.latest().version()));
-        } else {
-            latestKnownUpdate = null; // running the latest
-            refreshUpdateNotice();
-            if (manual) {
-                setStatus(tr("status.update.upToDate", com.editora.AppInfo.VERSION));
-            }
-        }
-    }
-
-    /** Shows this window's status-bar update segment when a newer, non-dismissed release is known; else hides it. */
-    private void refreshUpdateNotice() {
-        com.editora.update.ReleaseInfo info = latestKnownUpdate;
-        boolean show =
-                info != null && !info.version().equals(config.getSettings().getDismissedUpdateVersion());
-        statusBar.setUpdateAvailable(show, show ? info.version() : null);
-    }
-
-    /** Manual "Check for Updates" — always checks (ignores the throttle + the auto-check setting). */
-    private void checkForUpdatesNow() {
-        setStatus(tr("status.update.checking"));
-        updateService.check(com.editora.AppInfo.VERSION, o -> onUpdateOutcome(o, true));
-    }
-
-    /** Opens the release page for the known update (else the releases page) and dismisses that version's notice. */
-    private void openUpdateDownloadPage() {
-        com.editora.update.ReleaseInfo info = latestKnownUpdate;
-        String url = info != null && !info.url().isBlank() ? info.url() : com.editora.AppInfo.RELEASES_PAGE;
-        openExternalUrl(url);
-        if (info != null) {
-            config.getSettings().setDismissedUpdateVersion(info.version());
-            requestSave();
-        }
-        refreshUpdateNotice();
+        diffCoordinator.refreshOpenDiffs(); // a compared file may have changed on disk while we were away
     }
 
     // --- plugins ----------------------------------------------------------------------------------
@@ -1215,7 +1174,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         this.windowProject = project;
         this.projectKey = project == null ? "" : project.id();
         recovery.attach(windowManager == null ? null : windowManager.recovery());
-        projectPanel.setRoot(project == null ? null : Path.of(project.root()));
+        setProjectRoot(project == null ? null : Path.of(project.root()));
         updateProjectFolderView(); // global ("No Project") window: show the active file's folder instead
         searchCoordinator
                 .refreshScope(); // Find-in-Files scope label reflects this window's project (or current folder)
@@ -1249,11 +1208,207 @@ public class MainController implements com.editora.mcp.McpBridge {
         Path dir = (path != null && com.editora.vfs.Vfs.isLocal(path))
                 ? path.toAbsolutePath().getParent()
                 : null;
-        if (!com.editora.config.PathKeys.samePath(projectPanel.getRoot(), dir)) {
-            projectPanel.setRoot(dir); // null => placeholder (unsaved/Welcome tab); rebuilds only on change
+        if (!com.editora.config.PathKeys.samePath(projectRoot(), dir)) {
+            setProjectRoot(dir); // null => placeholder (unsaved/Welcome tab); rebuilds only on change
         }
         if (projectToolWindow != null) {
             projectToolWindow.setTitle(tr(dir != null ? "toolwindow.currentFolder" : "toolwindow.project"));
+        }
+    }
+
+    /**
+     * One lazily built tool window: its panel is made by {@code content} on the window's first open. The
+     * title is the {@code toolwindow.<id>} message and the toggle command {@code tool.<id>}; the overload
+     * below is for the two whose keys do not follow the id.
+     */
+    private static ToolWindow toolWindow(
+            String id,
+            ToolWindow.Side side,
+            java.util.function.Supplier<javafx.scene.Node> icon,
+            java.util.function.Supplier<? extends Region> content) {
+        return toolWindow(id, "toolwindow." + id, side, icon, content, "tool." + id);
+    }
+
+    private static ToolWindow toolWindow(
+            String id,
+            String titleKey,
+            ToolWindow.Side side,
+            java.util.function.Supplier<javafx.scene.Node> icon,
+            java.util.function.Supplier<? extends Region> content,
+            String commandId) {
+        return new ToolWindow(id, tr(titleKey), side, icon, content, commandId);
+    }
+
+    /** The Structure panel, built on its first use; it attaches the active buffer as it is built. */
+    private StructurePanel structurePanel() {
+        if (structurePanel == null) {
+            structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
+            EditorBuffer active = activeBuffer();
+            structurePanel.attach(active);
+            lspCoordinator.requestStructureSymbols(active); // the LSP outline, when the server offers one
+        }
+        return structurePanel;
+    }
+
+    /** The File Information panel, built on its first use; it attaches the active buffer as it is built. */
+    private FileInformationPanel fileInfoPanel() {
+        if (fileInfoPanel == null) {
+            fileInfoPanel = new FileInformationPanel();
+            fileInfoPanel.attach(activeBuffer());
+        }
+        return fileInfoPanel;
+    }
+
+    /** The Undo History panel, built on its first use; it attaches the active buffer as it is built. */
+    private UndoHistoryPanel undoHistoryPanel() {
+        if (undoHistoryPanel == null) {
+            undoHistoryPanel = new UndoHistoryPanel();
+            undoHistoryPanel.attach(activeBuffer());
+        }
+        return undoHistoryPanel;
+    }
+
+    /** The Commit panel, built on its first use with the Git state the window has seen so far. */
+    private GitPanel gitPanel() {
+        if (gitPanel == null) {
+            GitPanel panel = new GitPanel(new GitPanelActions(git, diffCoordinator, fileWorkflows));
+            panel.setOnClone(git::cloneRepo);
+            panel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
+            if (lastGitStatus != null) {
+                panel.setStatus(lastGitStatus);
+            }
+            if (lastGitOperation != null) {
+                panel.setOperation(lastGitOperation);
+            }
+            if (lastGitRefusal != null) {
+                panel.setRefusal(lastGitRefusal);
+            }
+            panel.setAiAvailable(gitAiAvailable);
+            gitPanel = panel;
+        }
+        return gitPanel;
+    }
+
+    /** The Git Log panel, built on its first use (the window's open loads the history into it). */
+    private GitLogPanel gitLogPanel() {
+        if (gitLogPanel == null) {
+            gitLogPanel = new GitLogPanel(gitLogOps);
+        }
+        return gitLogPanel;
+    }
+
+    /** The GitHub panel, built on its first use (the window's open fetches its list). */
+    private GitHubPanel githubPanel() {
+        if (githubPanel == null) {
+            githubPanel = new GitHubPanel(gitWindows.githubActions());
+        }
+        return githubPanel;
+    }
+
+    /** The Markdown Lint panel, built on its first use (the window's open runs the scan that fills it). */
+    private MarkdownLintPanel markdownLintPanel() {
+        if (markdownLintPanel == null) {
+            markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
+                @Override
+                public void open(java.nio.file.Path file, int line, int col) {
+                    fileWorkflows.openPath(file);
+                    Platform.runLater(() -> sessions.gotoInFile(file, line, col));
+                }
+
+                @Override
+                public void refresh() {
+                    previews.runMarkdownLintScan();
+                }
+            });
+        }
+        return markdownLintPanel;
+    }
+
+    /**
+     * The Project panel, built on its first use — the tool window's first open, or a reveal into it. Until
+     * then the state it would show is tracked here (the root, the Git status, the active file, the settings)
+     * and applied when it is built; refreshes that reach a panel not built yet are dropped, since the build
+     * reads everything afresh.
+     */
+    private ProjectPanel projectPanel() {
+        if (projectPanel != null) {
+            return projectPanel;
+        }
+        ProjectPanel panel = new ProjectPanel(
+                fileWorkflows::openPath,
+                this::onProjectFileRenamed,
+                this::onProjectTreeFileDeleted,
+                this::isPathModified,
+                this::hasFileOpen,
+                this::projectMapPreviewContent);
+        panel.setRememberedMapState(config::getWorkspaceState, config::save);
+        panel.setOpenFiles(() -> editorArea.tabs().stream()
+                .map(MainController::tabPath)
+                .filter(java.util.Objects::nonNull)
+                .toList());
+        panel.setPrompt(this::promptText); // in-scene rename prompt
+        panel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
+        panel.setDeletePreparation(projectDeletes);
+        panel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
+        panel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
+        panel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
+        panel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
+        panel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
+        panel.setMapOutputActions(
+                exports::printProjectMap, image -> exports.exportProjectMapPdf(image, projectMapBaseName()));
+        // An external program (a terminal `git`, another editor, a build) changed files under the repo while
+        // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
+        // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
+        panel.setOnExternalChanges((changes, complete) -> {
+            com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
+            indexCoordinator.onExternalChanges(changes, complete);
+            git.refresh();
+            refreshBuildTools();
+            diffCoordinator.refreshOpenDiffs();
+        });
+        // Forward the watcher's raw events to the language servers (didChangeWatchedFiles) so a git
+        // checkout / CLI build / external editor doesn't leave their project models stale (#677).
+        panel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
+        panel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        panel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
+        panel.setFileActions(new ProjectTreeFileActions(
+                git, gitWindows, diffCoordinator, historyCoordinator, fileWorkflows, this::localHistoryEnabled));
+        panel.setMarkerActions(new ProjectTreeMarkerActions(bookmarkCoordinator, notesCoordinator));
+        panel.setShowHidden(config.getSettings().isProjectShowHidden());
+        panel.setRespectGitignore(config.getSettings().isSearchRespectGitignore());
+        if (projectGitStatus != null) {
+            panel.setGitStatus(projectGitStatus);
+        }
+        panel.setRoot(projectRoot);
+        EditorBuffer selected = activeBuffer();
+        panel.setActiveFile(selected == null ? null : selected.getPath());
+        projectPanel = panel;
+        return panel;
+    }
+
+    /** What the Project tree is rooted at: the built panel's own root, else the one recorded for its build. */
+    private Path projectRoot() {
+        return projectPanel != null ? projectPanel.getRoot() : projectRoot;
+    }
+
+    /** Points the Project tree at {@code root} ({@code null}: the placeholder), now or when the panel is built. */
+    private void setProjectRoot(Path root) {
+        projectRoot = root;
+        if (projectPanel != null) {
+            projectPanel.setRoot(root);
+        }
+    }
+
+    /** Re-lists the Project tree if it exists; an unbuilt one lists afresh when built. */
+    private void refreshProjectTreeIfBuilt() {
+        if (projectPanel != null) {
+            projectPanel.refreshTree();
+        }
+    }
+
+    private void refreshProjectMarkersIfBuilt() {
+        if (projectPanel != null) {
+            projectPanel.refreshMarkers();
         }
     }
 
@@ -1351,7 +1506,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> typst.shutdown(),
                 () -> doctorCoordinator.shutdown(), // stop any in-flight Doctor probes
                 () -> buildCoordinators.forEach(BuildCoordinator::shutdown),
-                () -> updateService.shutdown(), // stop the update-check worker
+                updates::shutdown, // stop the update-check worker
                 () -> htmlPreview.shutdown(), // stop the HTML-preview HTTP server + worker
                 () -> logViewer.shutdown(), // stop any log tail-follow poll thread
                 () -> stopMcpIfOwner(), // stop the MCP server if this window owns it
@@ -1367,7 +1522,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 () -> externalToolCoordinator.shutdown(), // the external-tool worker thread
                 () -> httpClient.shutdown(), // the http-client worker thread
                 () -> remoteCoordinator.shutdown(), // SFTP sessions + the SSH client (and un-pin the Vfs hooks)
-                () -> projectPanel.dispose()); // stop the project tree's filesystem watcher + its daemon thread
+                () -> {
+                    if (projectPanel != null) {
+                        projectPanel.dispose(); // stop the project tree's filesystem watcher + its daemon thread
+                    }
+                });
     }
 
     /**
@@ -1518,9 +1677,11 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** Shows/hides all project UI per the "Enable projects" setting: toolbar icon + combo, tool window. */
     private void applyProjectSupport() {
-        projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()); // hidden-files toggle (init + apply)
-        projectPanel.setRespectGitignore(
-                config.getSettings().isSearchRespectGitignore()); // skip .gitignore'd files in the filter search
+        if (projectPanel != null) { // else applied when the panel is built
+            projectPanel.setShowHidden(config.getSettings().isProjectShowHidden()); // hidden-files toggle
+            projectPanel.setRespectGitignore(
+                    config.getSettings().isSearchRespectGitignore()); // skip .gitignore'd files in the filter search
+        }
         boolean on = projectsEnabled();
         // Turning projects off just hides the project chrome — each window keeps editing its open files
         // (windows no longer share one session that could be "stranded"). On the next launch with projects
@@ -1678,7 +1839,14 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab tab = tabForPath(old); // before the cache goes: `old` no longer exists, so it cannot be re-resolved
         com.editora.config.PathKeys.invalidateCanonicalCache(); // stale resolutions must not survive a move (#680)
         indexCoordinator.onFileRenamed(old, target);
-        if (tab != null) {
+        RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+        if (placeholder != null) {
+            // A restored tab not built yet: its read, when it comes, must find the file where it now is. The
+            // path-keyed stores are remapped by the caller; the tab has no buffer-side state to move.
+            placeholder.relocate(target);
+            tabHeaders.contentHeader(tab, placeholder);
+            tab.setTooltip(TabHeaders.tooltip(target));
+        } else if (bufferOf(tab) != null) {
             EditorBuffer buffer = bufferOf(tab);
             buffer.setPath(target);
             editorSettings.applyEditorConfig(buffer);
@@ -1695,11 +1863,22 @@ public class MainController implements com.editora.mcp.McpBridge {
             Path oldNorm = old.toAbsolutePath().normalize();
             for (Tab t : editorArea.tabs()) {
                 EditorBuffer b = bufferOf(t);
-                Path p = b == null ? null : b.getPath();
+                RestorePlaceholder unbuilt = b == null ? RestorePlaceholder.of(t) : null;
+                Path p = b != null ? b.getPath() : unbuilt == null ? null : unbuilt.path();
                 if (p == null) {
                     continue;
                 }
                 Path pn = p.toAbsolutePath().normalize();
+                if (unbuilt != null) {
+                    if (com.editora.config.PathKeys.isUnder(pn, oldNorm)) {
+                        // Not built yet: its read, when it comes, must find the file where it now is.
+                        Path moved = target.resolve(oldNorm.relativize(pn));
+                        unbuilt.relocate(moved);
+                        t.setTooltip(TabHeaders.tooltip(moved));
+                        migrateFileState(p, moved);
+                    }
+                    continue;
+                }
                 if (com.editora.config.PathKeys.isUnder(pn, oldNorm)) { // never a tab on another file system
                     Path moved = target.resolve(oldNorm.relativize(pn));
                     fileWorkflows.invalidatePendingWrite(p);
@@ -1857,7 +2036,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (projectToolWindow != null) {
                 toolWindows.open(projectToolWindow, false);
             }
-            projectPanel.revealPathInTree(file);
+            projectPanel().revealPathInTree(file);
             return;
         }
         fileWorkflows.openThen(file, () -> navigateToLine(navigation.areaLine(activeBuffer(), line)));
@@ -1952,6 +2131,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     private void setupMruTracking() {
         // A mouse click in the editor area repositions the caret, which ends an Emacs mark session.
         editorArea.addEventFilter(javafx.scene.input.MouseEvent.MOUSE_PRESSED, e -> editing.deactivateMark());
+        // A selected tab always has its buffer: a restore placeholder is built before any listener runs.
+        editorArea.setTabMaterializer(tab -> sessions.materialize(tab, true));
         editorArea.addSelectionListener((obs, was, now) -> findBar.onActiveBufferChanged());
         editorArea.addSelectionListener((obs, was, now) -> {
             if (now != null) {
@@ -1971,9 +2152,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 // A restored background tab defers its language server until it's actually looked at.
                 lspCoordinator.onBufferShown(buffer);
             }
-            fileInfoPanel.attach(buffer);
-            structurePanel.attach(buffer);
-            undoHistoryPanel.attach(buffer);
+            // A panel not built yet attaches the active buffer when it is (see the accessors).
+            if (fileInfoPanel != null) {
+                fileInfoPanel.attach(buffer);
+            }
+            if (structurePanel != null) {
+                structurePanel.attach(buffer);
+            }
+            if (undoHistoryPanel != null) {
+                undoHistoryPanel.attach(buffer);
+            }
             lspCoordinator.requestStructureSymbols(
                     buffer); // upgrade the outline to LSP symbols when the server supports them
             statusBar.attach(buffer);
@@ -2001,6 +2189,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             fileWorkflows.checkExternalChanges(); // prompt if the file we just switched to changed on disk
             git.refresh(); // update branch/status + this file's gutter change bars
             refreshBuildTools(); // re-detect marker files for the newly active file/project
+            startupFocus.repositoryStateComputed(); // the first focus after show need not repeat these two
             lspCoordinator
                     .updateStatusBar(); // show/hide the "LSP: <server>" segment + Problems window for the new file
             debugCoordinator.updateDebugAvailability(); // Debug window only for a debuggable file / live session
@@ -2054,6 +2243,10 @@ public class MainController implements com.editora.mcp.McpBridge {
                             csvCoordinator.onBufferClosed(closed); // drop the CSV grid's edit listener
                             httpClient.onBufferClosed(closed); // drop this buffer's HTTP response panel
                             recovery.untrack(closed); // closed by choice: its recovery copy goes with it
+                            if (closed.getPath() != null && tabForPath(closed.getPath()) == null) {
+                                git.service().forgetBlame(closed.getPath()); // per-line records of a closed file
+                                historyCoordinator.pathClosed(closed.getPath());
+                            }
                             closed.dispose();
                         } else {
                             // Tab.setOnClosed only fires for a click on the ✕ — never for a programmatic
@@ -2135,7 +2328,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private void setupToolWindows() {
-        editorArea.setDraggedTabSource(() -> draggedTab); // drops onto a group body move/split it
+        editorArea.setDraggedTabSource(tabHeaders::draggedTab); // drops onto a group body move/split it
         // The menu bar sits above the toolbar. Built from the registry, so it needs no per-command wiring.
         menuBar = new MainMenuBar(registry, this::invertBindings, this::paletteGates, this::paletteContext, id -> {
             if (registry.get(id).isPresent()) {
@@ -2151,20 +2344,6 @@ public class MainController implements com.editora.mcp.McpBridge {
                                 ? ExtendedWindow.header(menuBar.node(), stage)
                                 : menuBar.node());
         toolWindows = new ToolWindowManager(workspace, editorFooter(), config, keymap);
-        projectPanel = new ProjectPanel(
-                fileWorkflows::openPath,
-                this::onProjectFileRenamed,
-                this::onProjectTreeFileDeleted,
-                this::isPathModified,
-                this::hasFileOpen,
-                this::projectMapPreviewContent);
-        projectPanel.setRememberedMapState(config::getWorkspaceState, config::save);
-        projectPanel.setOpenFiles(() -> editorArea.tabs().stream()
-                .map(MainController::tabPath)
-                .filter(java.util.Objects::nonNull)
-                .toList());
-        projectPanel.setPrompt(this::promptText); // in-scene rename prompt
-        projectPanel.setOnFocusEditor(toolWindows::focusEditor); // Escape on the Project Map
         projectDeletes = new ProjectDeleteCoordinator(
                 path -> windowManager == null ? buffersAtOrUnderLocal(path) : windowManager.buffersAtOrUnder(path),
                 buffer -> ownerOf(buffer).revealBufferLocal(buffer),
@@ -2173,287 +2352,51 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows::invalidatePendingWrite,
                 (path, completion) -> historyCoordinator.captureBeforeDeleteDurably(path, completion),
                 this::setStatus);
-        projectPanel.setDeletePreparation(projectDeletes);
-        projectPanel.setOnNewFile(templateActions::newFileOfType); // folder "New ▸ <type>"
-        projectPanel.setOnNewFromTemplate(templateActions::newFromTemplate); // folder "New From Template…"
-        projectPanel.setMavenMenu(mavenProjectCoordinator::mavenMenu);
-        projectPanel.setOnNewMavenProject(mavenProjectCoordinator::newProject); // folder "New Maven Project…"
-        projectPanel.setOnStatus(this::setStatus); // drag-move / multi-delete feedback in the status bar
         exports.activeTabContent =
                 () -> tabPath(activeTab()) == null ? null : activeTab().getUserData();
-        projectPanel.setMapOutputActions(
-                exports::printProjectMap, image -> exports.exportProjectMapPdf(image, projectMapBaseName()));
-        // An external program (a terminal `git`, another editor, a build) changed files under the repo while
-        // Editora already had focus: re-evaluate the working-tree-anchored surfaces the focus-regain handler
-        // also refreshes — Git status + the Commit stripe, build-tool markers, and open diffs (#529).
-        projectPanel.setOnExternalChanges((changes, complete) -> {
-            com.editora.config.PathKeys.invalidateCanonicalCache(); // files moved on disk under us (#680)
-            indexCoordinator.onExternalChanges(changes, complete);
-            git.refresh();
-            refreshBuildTools();
-            diffCoordinator.refreshOpenDiffs();
-        });
-        // Forward the watcher's raw events to the language servers (didChangeWatchedFiles) so a git
-        // checkout / CLI build / external editor doesn't leave their project models stale (#677).
-        projectPanel.setFsChangeSink(lspCoordinator::watchedFilesChanged);
-        projectPanel.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
-        projectPanel.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         // Breadcrumb crumbs offer the same Reveal / Open Terminal as the Project tree (local files only).
         breadcrumb.setOnReveal((p, dir) -> revealInFileManager(p, dir, com.editora.vfs.Vfs.isLocal(p)));
         breadcrumb.setOnOpenTerminal((p, dir) -> openTerminalAt(p, dir, com.editora.vfs.Vfs.isLocal(p)));
-        projectPanel.setFileActions(new ProjectPanel.FileActions() {
-            @Override
-            public boolean localHistoryEnabled() {
-                return MainController.this.localHistoryEnabled();
-            }
-
-            @Override
-            public void showLocalHistory(Path file) {
-                historyCoordinator.showForPath(file);
-            }
-
-            @Override
-            public GitPathScope gitScope(Path path) {
-                return git.scopeOf(path);
-            }
-
-            @Override
-            public void gitShowFileHistory(Path file) {
-                git.activatingRepositoryOf(file, () -> gitWindows.gitFileHistoryForPath(file));
-            }
-
-            @Override
-            public void gitCompareWithHead(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsHead(file));
-            }
-
-            @Override
-            public void gitCompareWithBranch(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsBranch(file));
-            }
-
-            @Override
-            public void gitCompareWithTag(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsTag(file));
-            }
-
-            @Override
-            public void gitCompareWithRevision(Path file) {
-                git.withRepositoryOf(file, () -> diffCoordinator.diffPathVsCommit(file));
-            }
-
-            @Override
-            public void gitAnnotate(Path file) {
-                git.ifEnabled(() -> {
-                    fileWorkflows.openPath(file);
-                    git.annotateActive();
-                });
-            }
-
-            @Override
-            public void gitStage(Path file) {
-                git.ifEnabled(() -> git.gitStagePath(file));
-            }
-
-            @Override
-            public void gitUnstage(Path file) {
-                git.ifEnabled(() -> git.gitUnstagePath(file));
-            }
-
-            @Override
-            public void gitRevert(Path file) {
-                git.ifEnabled(() -> git.gitRevertPath(file));
-            }
-
-            @Override
-            public void gitAddToGitignore(Path file) {
-                git.ifEnabled(() -> git.addToGitignore(file));
-            }
-        });
-        projectPanel.setMarkerActions(new ProjectPanel.MarkerActions() {
-            @Override
-            public boolean personalNotesEnabled() {
-                return notesCoordinator.isEnabled();
-            }
-
-            @Override
-            public boolean hasBookmarks(Path file) {
-                return bookmarkCoordinator.hasBookmarks(file);
-            }
-
-            @Override
-            public boolean hasPersonalNotes(Path file) {
-                return notesCoordinator.hasPersonalNotes(file);
-            }
-
-            @Override
-            public String personalNotesTooltip(Path path) {
-                return notesCoordinator.personalNotesTooltip(path);
-            }
-
-            @Override
-            public void addBookmark(Path file) {
-                bookmarkCoordinator.addBookmark(file);
-            }
-
-            @Override
-            public void addBookmark(Path file, int line) {
-                bookmarkCoordinator.addBookmark(file, line);
-            }
-
-            @Override
-            public void addPersonalNote(Path file) {
-                notesCoordinator.addPersonalNote(file);
-            }
-
-            @Override
-            public void addPersonalNote(Path file, com.editora.editor.NoteDraft draft) {
-                notesCoordinator.addPersonalNote(file, draft);
-            }
-
-            @Override
-            public java.util.List<com.editora.config.PersonalNote> personalNotes(Path path) {
-                java.util.List<com.editora.config.PersonalNote> notes = notesCoordinator.notesFor(path);
-                return notes == null ? java.util.List.of() : java.util.List.copyOf(notes);
-            }
-
-            @Override
-            public void updatePersonalNote(Path path, com.editora.config.PersonalNote note, String body) {
-                notesCoordinator.updatePersonalNote(path, note, body);
-            }
-
-            @Override
-            public java.util.Collection<Path> markedPaths() {
-                return ProjectPanel.pathsOf(bookmarkCoordinator.storedKeys(), notesCoordinator.storedKeys());
-            }
-        });
-        bookmarkCoordinator.setOnChanged(projectPanel::refreshMarkers);
-        notesCoordinator.setOnChanged(projectPanel::refreshMarkers);
-        projectToolWindow = new ToolWindow(
-                "project",
-                tr("toolwindow.project"),
-                ToolWindow.Side.RIGHT,
-                Icons::project,
-                projectPanel,
-                "tool.project");
-        structurePanel = new StructurePanel(bookmarkCoordinator, notesCoordinator);
-        structureToolWindow = new ToolWindow(
-                "structure",
-                tr("toolwindow.structure"),
-                ToolWindow.Side.RIGHT,
-                Icons::structure,
-                structurePanel,
-                "tool.structure");
-        bookmarksToolWindow = new ToolWindow(
-                "bookmarks",
-                tr("toolwindow.bookmarks"),
-                ToolWindow.Side.RIGHT,
-                Icons::bookmark,
-                bookmarkCoordinator.panel(),
-                "tool.bookmarks");
-        notesToolWindow = new ToolWindow(
-                "notes",
-                tr("toolwindow.notes"),
-                ToolWindow.Side.RIGHT,
-                Icons::notes,
-                notesCoordinator.panel(),
-                "tool.notes");
-        fileInfoPanel = new FileInformationPanel();
-        fileInfoToolWindow = new ToolWindow(
+        bookmarkCoordinator.setOnChanged(this::refreshProjectMarkersIfBuilt);
+        notesCoordinator.setOnChanged(this::refreshProjectMarkersIfBuilt);
+        // Every tool window below hands ToolWindow a supplier: the panel is built on the window's first open
+        // (ToolWindow.getContent), or by the first caller that needs it — never before first paint for a
+        // window that is closed. restore() opens the saved-open windows, which builds exactly those.
+        projectToolWindow = toolWindow("project", ToolWindow.Side.RIGHT, Icons::project, this::projectPanel);
+        structureToolWindow = toolWindow("structure", ToolWindow.Side.RIGHT, Icons::structure, this::structurePanel);
+        bookmarksToolWindow =
+                toolWindow("bookmarks", ToolWindow.Side.RIGHT, Icons::bookmark, bookmarkCoordinator::panel);
+        notesToolWindow = toolWindow("notes", ToolWindow.Side.RIGHT, Icons::notes, notesCoordinator::panel);
+        fileInfoToolWindow = toolWindow(
                 "file-information",
-                tr("toolwindow.file-information"),
+                "toolwindow.file-information",
                 ToolWindow.Side.RIGHT,
                 Icons::about,
-                fileInfoPanel,
+                this::fileInfoPanel,
                 "tool.fileInformation");
-        undoHistoryPanel = new UndoHistoryPanel();
-        undoHistoryToolWindow = new ToolWindow(
-                "undoHistory",
-                tr("toolwindow.undoHistory"),
-                ToolWindow.Side.RIGHT,
-                Icons::history,
-                undoHistoryPanel,
-                "tool.undoHistory");
-        gitPanel = new GitPanel(new GitPanelActions(git, diffCoordinator, fileWorkflows));
-        gitPanel.setOnClone(git::cloneRepo);
-        gitPanel.setOnGenerateCommitMessage(aiCoordinator::generateCommitMessage);
-        commitToolWindow = new ToolWindow(
-                "commit", tr("toolwindow.commit"), ToolWindow.Side.RIGHT, Icons::git, gitPanel, "tool.commit");
-        gitLogPanel = new GitLogPanel(gitLogOps = gitWindows.gitLogActions());
+        undoHistoryToolWindow =
+                toolWindow("undoHistory", ToolWindow.Side.RIGHT, Icons::history, this::undoHistoryPanel);
+        commitToolWindow = toolWindow("commit", ToolWindow.Side.RIGHT, Icons::git, this::gitPanel);
+        gitLogOps = gitWindows.gitLogActions();
         gitWindows.listenTo(git);
-        gitLogToolWindow = new ToolWindow(
-                "gitLog", tr("toolwindow.gitLog"), ToolWindow.Side.BOTTOM, Icons::gitLog, gitLogPanel, "tool.gitLog");
-        githubPanel = new GitHubPanel(gitWindows.githubActions());
-        githubToolWindow = new ToolWindow(
-                "github", tr("toolwindow.github"), ToolWindow.Side.BOTTOM, Icons::github, githubPanel, "tool.github");
+        gitLogToolWindow = toolWindow("gitLog", ToolWindow.Side.BOTTOM, Icons::gitLog, this::gitLogPanel);
+        githubToolWindow = toolWindow("github", ToolWindow.Side.BOTTOM, Icons::github, this::githubPanel);
         historyCoordinator = new HistoryCoordinator(coordinatorHost, diffCoordinator, historyOps(), config.shared());
         noUndoGuard = new NoUndoGuard(historyCoordinator::recordSafetyCopy, coordinatorHost::setStatus);
         git.attachWindow(diffCoordinator, buffer -> addBuffer(buffer, true)); // stash review, patches, revision tabs
-        fileHistoryToolWindow = new ToolWindow(
-                "fileHistory",
-                tr("toolwindow.fileHistory"),
-                ToolWindow.Side.BOTTOM,
-                Icons::history,
-                historyCoordinator.panel(),
-                "tool.fileHistory");
-        searchToolWindow = new ToolWindow(
-                "search",
-                tr("toolwindow.search"),
-                ToolWindow.Side.RIGHT,
-                // The same glyph as the toolbar's Find in Files button — one feature, one mark. The plain
-                // magnifier this used belongs to the in-file find bar, which is a different thing.
-                Icons::findInFiles,
-                searchCoordinator.panel(),
-                "tool.search");
-        todoToolWindow = new ToolWindow(
-                "todo",
-                tr("toolwindow.todo"),
-                ToolWindow.Side.BOTTOM,
-                Icons::todo,
-                todoCoordinator.panel(),
-                "tool.todo");
-        markdownLintPanel = new MarkdownLintPanel(new MarkdownLintPanel.Actions() {
-            @Override
-            public void open(java.nio.file.Path file, int line, int col) {
-                fileWorkflows.openPath(file);
-                Platform.runLater(() -> sessions.gotoInFile(file, line, col));
-            }
-
-            @Override
-            public void refresh() {
-                previews.runMarkdownLintScan();
-            }
-        });
-        markdownLintToolWindow = new ToolWindow(
-                "markdownLint",
-                tr("toolwindow.markdownLint"),
-                ToolWindow.Side.BOTTOM,
-                Icons::warning,
-                markdownLintPanel,
-                "tool.markdownLint");
-        problemsToolWindow = new ToolWindow(
-                "problems",
-                tr("toolwindow.problems"),
-                ToolWindow.Side.BOTTOM,
-                Icons::problems,
-                lspCoordinator.problemsPanel(),
-                "tool.problems");
-        referencesToolWindow = new ToolWindow(
-                "references",
-                tr("toolwindow.references"),
-                ToolWindow.Side.BOTTOM,
-                Icons::find,
-                lspCoordinator.referencesPanel(),
-                "tool.references");
-        hierarchyToolWindow = new ToolWindow(
-                "hierarchy",
-                tr("toolwindow.hierarchy"),
-                ToolWindow.Side.BOTTOM,
-                Icons::structure,
-                lspCoordinator.hierarchyPanel(),
-                "tool.hierarchy");
-        runToolWindow = new ToolWindow(
-                "run", tr("toolwindow.run"), ToolWindow.Side.BOTTOM, Icons::run, runCoordinator.panel(), "tool.run");
+        fileHistoryToolWindow =
+                toolWindow("fileHistory", ToolWindow.Side.BOTTOM, Icons::history, historyCoordinator::panel);
+        searchToolWindow = toolWindow("search", ToolWindow.Side.RIGHT, Icons::findInFiles, searchCoordinator::panel);
+        todoToolWindow = toolWindow("todo", ToolWindow.Side.BOTTOM, Icons::todo, todoCoordinator::panel);
+        markdownLintToolWindow =
+                toolWindow("markdownLint", ToolWindow.Side.BOTTOM, Icons::warning, this::markdownLintPanel);
+        problemsToolWindow =
+                toolWindow("problems", ToolWindow.Side.BOTTOM, Icons::problems, lspCoordinator::problemsPanel);
+        referencesToolWindow =
+                toolWindow("references", ToolWindow.Side.BOTTOM, Icons::find, lspCoordinator::referencesPanel);
+        hierarchyToolWindow =
+                toolWindow("hierarchy", ToolWindow.Side.BOTTOM, Icons::structure, lspCoordinator::hierarchyPanel);
+        runToolWindow = toolWindow("run", ToolWindow.Side.BOTTOM, Icons::run, runCoordinator::panel);
         debugCoordinator = new DebugCoordinator(
                 coordinatorHost, dapManager, lspManager, lspCoordinator, new DebugCoordinator.Ops() {
                     @Override
@@ -2550,19 +2493,13 @@ public class MainController implements com.editora.mcp.McpBridge {
                         marksStored(MarkMerge.Kind.BREAKPOINTS, bucket, fileKey);
                     }
                 });
-        debugToolWindow = new ToolWindow(
-                "debug",
-                tr("toolwindow.debug"),
-                ToolWindow.Side.BOTTOM,
-                Icons::debug,
-                debugCoordinator.panel(),
-                "tool.debug");
-        externalToolToolWindow = new ToolWindow(
+        debugToolWindow = toolWindow("debug", ToolWindow.Side.BOTTOM, Icons::debug, debugCoordinator::panel);
+        externalToolToolWindow = toolWindow(
                 "externalTool",
-                tr("toolwindow.externalTools"),
+                "toolwindow.externalTools",
                 ToolWindow.Side.BOTTOM,
                 Icons::tools,
-                externalToolCoordinator.panel(),
+                externalToolCoordinator::panel,
                 "tool.externalTools");
         for (BuildCoordinator c : buildCoordinators) {
             BuildTool tool = c.tool();
@@ -2592,13 +2529,8 @@ public class MainController implements com.editora.mcp.McpBridge {
                 Icons::terminal,
                 buildOutputPanel,
                 "tool.buildOutput");
-        testResultsToolWindow = new ToolWindow(
-                "testResults",
-                tr("toolwindow.testResults"),
-                ToolWindow.Side.BOTTOM,
-                Icons::testResults,
-                testRunCoordinator.panel(),
-                "tool.testResults");
+        testResultsToolWindow =
+                toolWindow("testResults", ToolWindow.Side.BOTTOM, Icons::testResults, testRunCoordinator::panel);
         // Mirror a recognized `test` run of any build tool into the Test Results window.
         buildCoordinators.forEach(c -> c.setTestRunHook(testRunCoordinator));
         installCoordinator = new InstallCoordinator(coordinatorHost, new InstallCoordinator.Ops() {
@@ -2644,20 +2576,8 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         });
         remoteCoordinator = new RemoteCoordinator(coordinatorHost, remoteOps());
-        remoteToolWindow = new ToolWindow(
-                "remote",
-                tr("toolwindow.remote"),
-                ToolWindow.Side.RIGHT,
-                Icons::remote,
-                remoteCoordinator.panel(),
-                "tool.remote");
-        agentToolWindow = new ToolWindow(
-                "agent",
-                tr("toolwindow.agent"),
-                ToolWindow.Side.RIGHT,
-                Icons::agent,
-                agentCoordinator.panel(),
-                "tool.agent");
+        remoteToolWindow = toolWindow("remote", ToolWindow.Side.RIGHT, Icons::remote, remoteCoordinator::panel);
+        agentToolWindow = toolWindow("agent", ToolWindow.Side.RIGHT, Icons::agent, agentCoordinator::panel);
         toolWindows.register(projectToolWindow);
         toolWindows.register(structureToolWindow);
         toolWindows.register(bookmarksToolWindow);
@@ -2784,7 +2704,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void setProjectRoot(Path root) {
-                projectPanel.setRoot(root);
+                MainController.this.setProjectRoot(root);
             }
 
             @Override
@@ -2844,7 +2764,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
             @Override
             public void refreshProjectTree() {
-                projectPanel.refreshTree();
+                refreshProjectTreeIfBuilt();
             }
 
             @Override
@@ -3461,7 +3381,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
                 @Override
                 public String readGradleBuildFile(java.nio.file.Path root) {
-                    return MainController.this.readGradleBuildFile(root);
+                    return com.editora.build.SpringBoot.readGradleBuildFile(root);
                 }
 
                 @Override
@@ -3751,7 +3671,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitHubPanel githubPanel() {
-            return githubPanel;
+            return MainController.this.githubPanel();
         }
 
         @Override
@@ -3776,12 +3696,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void checkForUpdatesNow() {
-            MainController.this.checkForUpdatesNow();
+            updates.checkNow();
         }
 
         @Override
         public void openUpdateDownloadPage() {
-            MainController.this.openUpdateDownloadPage();
+            updates.openDownloadPage();
         }
 
         @Override
@@ -4403,7 +4323,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public StructurePanel structurePanel() {
-            return structurePanel;
+            return MainController.this.structurePanel(); // the structure palette reads the outline: build it
         }
 
         @Override
@@ -4565,7 +4485,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public MarkdownLintPanel markdownLintPanel() {
-            return markdownLintPanel;
+            return MainController.this.markdownLintPanel();
         }
 
         @Override
@@ -4658,7 +4578,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitPanel gitPanel() {
-            return gitPanel;
+            return MainController.this.gitPanel();
         }
 
         @Override
@@ -4668,7 +4588,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitLogPanel gitLogPanel() {
-            return gitLogPanel;
+            return MainController.this.gitLogPanel();
         }
 
         @Override
@@ -4683,7 +4603,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public GitHubPanel githubPanel() {
-            return githubPanel;
+            return MainController.this.githubPanel();
         }
 
         @Override
@@ -5007,6 +4927,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public EditorBuffer ensureBuffer(Tab tab) {
+            return MainController.this.ensureBuffer(tab);
+        }
+
+        @Override
         public Path tabPath(Tab tab) {
             return MainController.this.tabPath(tab);
         }
@@ -5046,7 +4971,12 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public ProjectPanel projectPanel() {
-            return projectPanel;
+            return projectPanel; // null until the Project window first opens: callers read, never build
+        }
+
+        @Override
+        public Path projectRoot() {
+            return MainController.this.projectRoot();
         }
 
         @Override
@@ -5185,6 +5115,11 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
+        public EditorBuffer ensureBuffer(Tab tab) {
+            return MainController.this.ensureBuffer(tab);
+        }
+
+        @Override
         public Tab tabFor(EditorBuffer buffer) {
             return MainController.this.tabFor(buffer);
         }
@@ -5273,8 +5208,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
 
         @Override
-        public ProjectPanel projectPanel() {
-            return projectPanel;
+        public void setProjectRoot(Path root) {
+            MainController.this.setProjectRoot(root);
         }
 
         @Override
@@ -5395,6 +5330,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         @Override
         public void discardLoading(EditorBuffer buffer) {
             MainController.this.discardLoading(buffer);
+        }
+
+        @Override
+        public Tab addPlaceholderTab(RestorePlaceholder placeholder) {
+            return MainController.this.addPlaceholderTab(placeholder);
+        }
+
+        @Override
+        public Tab attachRestoredBuffer(Tab tab, EditorBuffer buffer, boolean shown) {
+            return MainController.this.attachRestoredBuffer(tab, buffer, shown);
         }
 
         @Override
@@ -5539,6 +5484,11 @@ public class MainController implements com.editora.mcp.McpBridge {
                 @Override
                 public EditorBuffer bufferOf(Tab tab) {
                     return MainController.this.bufferOf(tab);
+                }
+
+                @Override
+                public EditorBuffer ensureBuffer(Tab tab) {
+                    return MainController.this.ensureBuffer(tab);
                 }
 
                 @Override
@@ -5753,28 +5703,38 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setGitPanelStatus(com.editora.git.GitStatus status) {
-            gitPanel.setStatus(status);
+            lastGitStatus = status; // a panel not built yet shows it when it is
+            if (gitPanel != null) {
+                gitPanel.setStatus(status);
+            }
         }
 
         @Override
         public void setGitOperation(com.editora.git.GitOperation operation, int conflicts) {
             statusBar.setGitOperation(operation);
-            gitPanel.setOperation(operation);
+            lastGitOperation = operation;
+            if (gitPanel != null) {
+                gitPanel.setOperation(operation);
+            }
         }
 
         @Override
         public void setGitRefusal(String reason) {
             statusBar.setGitRefusal(reason);
-            gitPanel.setRefusal(reason);
+            lastGitRefusal = reason;
+            if (gitPanel != null) {
+                gitPanel.setRefusal(reason);
+            }
         }
 
         @Override
         public boolean commitFromPanel() {
-            return gitPanel.commitNow();
+            return gitPanel().commitNow();
         }
 
         @Override
         public void setProjectGitStatus(java.util.Map<java.nio.file.Path, com.editora.git.GitFileStatus> byPath) {
+            projectGitStatus = byPath; // a panel not built yet shows it when it is
             if (projectPanel != null) {
                 projectPanel.setGitStatus(byPath);
             }
@@ -5830,7 +5790,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void focusCommitMessage() {
-            Platform.runLater(gitPanel::focusCommitMessage);
+            Platform.runLater(() -> gitPanel().focusCommitMessage());
         }
 
         @Override
@@ -6729,8 +6689,8 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void runGradleRunTask(java.nio.file.Path root) {
-            String task =
-                    com.editora.build.SpringBoot.gradleRunTask(readGradleBuildFile(root)); // bootRun for Spring Boot
+            String task = com.editora.build.SpringBoot.gradleRunTask(
+                    com.editora.build.SpringBoot.readGradleBuildFile(root)); // bootRun for Spring Boot
             for (BuildCoordinator c : buildCoordinators) {
                 if (c.tool() == BuildTool.GRADLE && c.isEnabled() && c.isDetected()) {
                     c.runTask(List.of(task), List.of());
@@ -6739,25 +6699,6 @@ public class MainController implements com.editora.mcp.McpBridge {
             }
         }
     });
-
-    /** Reads the Gradle build script at {@code root} ({@code build.gradle} or {@code .kts}) for the Spring
-     *  Boot sniff, or "" when neither is readable. */
-    private static String readGradleBuildFile(java.nio.file.Path root) {
-        if (root == null) {
-            return "";
-        }
-        for (String name : List.of("build.gradle", "build.gradle.kts")) {
-            java.nio.file.Path f = root.resolve(name);
-            if (java.nio.file.Files.isRegularFile(f)) {
-                try {
-                    return java.nio.file.Files.readString(f);
-                } catch (java.io.IOException e) {
-                    return "";
-                }
-            }
-        }
-        return "";
-    }
 
     /** Builds IntelliJ-style Test Results from recognized build-tool test runs. */
     private final TestRunCoordinator testRunCoordinator =
@@ -7105,7 +7046,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void refreshProjectTree() {
-            projectPanel.refreshTree();
+            refreshProjectTreeIfBuilt();
         }
 
         @Override
@@ -7155,13 +7096,13 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setCommitMessage(String message) {
-            gitPanel.setCommitMessage(message);
+            gitPanel().setCommitMessage(message);
         }
 
         @Override
         public void openCommitWindow() {
             toolWindows.open(commitToolWindow, true);
-            gitPanel.focusCommitMessage();
+            gitPanel().focusCommitMessage();
         }
 
         @Override
@@ -7171,7 +7112,10 @@ public class MainController implements com.editora.mcp.McpBridge {
 
         @Override
         public void setCommitAiAvailable(boolean available) {
-            gitPanel.setAiAvailable(available);
+            gitAiAvailable = available; // a panel not built yet shows it when it is
+            if (gitPanel != null) {
+                gitPanel.setAiAvailable(available);
+            }
         }
     });
 
@@ -7558,13 +7502,7 @@ public class MainController implements com.editora.mcp.McpBridge {
 
     /** The open buffer for {@code target} (canonical-path match), or null if not open. */
     private EditorBuffer openBufferFor(Path target) {
-        for (Tab tab : editorArea.tabs()) {
-            EditorBuffer b = bufferOf(tab);
-            if (b != null && b.getPath() != null && pathKey(b.getPath()).equals(pathKey(target))) {
-                return b;
-            }
-        }
-        return null;
+        return OpenBufferLifecycle.bufferForPath(editorArea, MainController::bufferOf, target);
     }
 
     /** Open buffers in this window whose path is exactly {@code target} or a descendant of it. */
@@ -7576,58 +7514,89 @@ public class MainController implements com.editora.mcp.McpBridge {
         return OpenBufferLifecycle.atOrUnder(editorArea, MainController::bufferOf, target);
     }
 
-    /** Opens {@code target} (assumed not already open — callers check {@link #openBufferFor} first) as a
-     *  new, unfocused background tab. Used when something other than the user opens a file the editor
-     *  doesn't have a tab for yet (a diff's compare-with-local target, an AI agent's newly-written file). */
+    /**
+     * Opens {@code target} (assumed not already open — callers check {@link #openBufferFor} first) as a new,
+     * unfocused background tab, reading the file on the calling (FX) thread. Only for the two callers that must
+     * answer synchronously (a merge pane's save-before-close, the workspace-edit transaction's fallback for a
+     * tab closed mid-transaction); everything else goes through {@link #openBackgroundBufferAsync}.
+     */
     private EditorBuffer openBackgroundBuffer(Path target) {
+        Tab placeholder = tabForPath(target);
+        if (RestorePlaceholder.of(placeholder) != null) {
+            // The file is open, as a restored tab that has not been built yet: build it (read on the caller's
+            // thread, as below) rather than open a second tab on the same file.
+            return sessions.materializeLoaded(placeholder);
+        }
         try {
             EditorBuffer buffer = new EditorBuffer();
             buffer.setPath(target);
-            fileWorkflows.loadInto(buffer, target);
-            return attachBackground(buffer);
+            FileWorkflowCoordinator.PreparedLoad load =
+                    fileWorkflows.prepareLoad(target, false).preparedFor(buffer);
+            fileWorkflows.applyPreparedLoad(buffer, load);
+            fileWorkflows.notePerfContentLoaded(buffer);
+            return attachBackground(buffer, load.editorConfig());
         } catch (IOException e) {
             return null;
         }
     }
 
-    /** Adds a loaded {@code buffer} as an unfocused tab with its stored per-file state, like any other open:
-     *  without the marks the next mark change would persist over them, and callers gate on the read-only pin. */
-    private EditorBuffer attachBackground(EditorBuffer buffer) {
-        Tab tab = addBuffer(buffer, false); // background: keep the caller's current tab focused
+    /**
+     * Adds a loaded {@code buffer} as an unfocused tab with its stored per-file state, like any other open:
+     * without the marks the next mark change would persist over them, and callers gate on the read-only pin.
+     * {@code editorConfig} is the load's resolved {@code .editorconfig} result: no ancestor walk on FX again.
+     */
+    private EditorBuffer attachBackground(
+            EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+        Tab tab = addBuffer(buffer, false, editorConfig); // background: keep the caller's current tab focused
         restorePerFileState(buffer);
         previews.restoreMarkdownMode(buffer);
         updateTabMeta(tab, buffer);
         return buffer;
     }
 
-    /** Workspace edits may touch unopened files. Decode them on the normal file-load executor and only
-     *  create/attach the RichTextFX buffer on the FX thread. */
+    /**
+     * Workspace edits, diff applies and agent writes may touch unopened files. The buffer is created here (on
+     * FX) so the load worker can read, decode and split the file into its paragraphs, as {@code openPath} does;
+     * the FX thread is left with the document swap and the tab. The shell is disposed when the read fails, the
+     * file is binary, or the file was opened by other means while the read ran.
+     */
     private void openBackgroundBufferAsync(Path target, java.util.function.Consumer<EditorBuffer> done) {
         EditorBuffer existing = openBufferFor(target);
         if (existing != null) {
             done.accept(existing);
             return;
         }
+        Tab placeholder = tabForPath(target);
+        if (RestorePlaceholder.of(placeholder) != null) {
+            sessions.materialize(placeholder, false, done); // its own read, on the same executor
+            return;
+        }
+        EditorBuffer buffer = new EditorBuffer();
+        buffer.setPath(target);
         fileWorkflows.fileLoadExecutor.execute(() -> {
             try {
-                FileWorkflowCoordinator.PreparedLoad load = fileWorkflows.prepareLoad(target, false);
+                FileWorkflowCoordinator.PreparedLoad load =
+                        fileWorkflows.prepareLoad(target, false).preparedFor(buffer);
                 Platform.runLater(() -> {
                     if (sessionClosed || load.binary()) { // never attach a buffer to a disposed window
+                        buffer.dispose();
                         done.accept(null);
                         return;
                     }
                     EditorBuffer openedWhileLoading = openBufferFor(target);
                     if (openedWhileLoading != null) {
+                        buffer.dispose();
                         done.accept(openedWhileLoading);
                         return;
                     }
-                    EditorBuffer buffer = new EditorBuffer();
-                    buffer.setPath(target);
                     fileWorkflows.applyPreparedLoad(buffer, load);
-                    done.accept(attachBackground(buffer));
+                    done.accept(attachBackground(buffer, load.editorConfig()));
                 });
             } catch (IOException | RuntimeException e) {
-                Platform.runLater(() -> done.accept(null));
+                Platform.runLater(() -> {
+                    buffer.dispose();
+                    done.accept(null);
+                });
             }
         });
     }
@@ -8041,11 +8010,31 @@ public class MainController implements com.editora.mcp.McpBridge {
         boolean hasBuffer = buffer != null;
         boolean editable = hasBuffer && buffer.isEditable();
         boolean hasSelection = area != null && area.getSelection().getLength() > 0;
-        saveButton.setDisable(!hasBuffer || !buffer.isDirty());
+        // The dirty PROPERTY, not isDirty(): the exact answer can compare the whole document (a dirty buffer edited
+        // back to its saved length), deferred to the 150 ms settle on purpose; the property's listener re-runs this.
+        saveButton.setDisable(!hasBuffer || !buffer.dirtyProperty().get());
         undoButton.setDisable(area == null || !area.isUndoAvailable());
         redoButton.setDisable(area == null || !area.isRedoAvailable());
         cutButton.setDisable(!hasSelection || !editable);
         copyButton.setDisable(!hasSelection);
+    }
+
+    private boolean editStateRefreshPending; // a refreshEditState is queued (edits and selection moves arrive per key)
+
+    /**
+     * Coalesces {@link #refreshEditState} to one per event-loop turn (the contract's pending-flag shape): a typed
+     * character fires a text change and a selection change, each of which used to re-evaluate five toolbar
+     * buttons inside the keystroke. The refresh reads the active buffer when it runs, so it describes the tab shown.
+     */
+    private void scheduleEditStateRefresh() {
+        if (editStateRefreshPending) {
+            return;
+        }
+        editStateRefreshPending = true;
+        Platform.runLater(() -> {
+            editStateRefreshPending = false;
+            refreshEditState();
+        });
     }
 
     /**
@@ -8059,8 +8048,16 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         EditorBuffer buffer = activeBuffer();
         boolean editable = buffer != null && buffer.isEditable();
-        boolean hasClip = Clipboard.getSystemClipboard().hasString();
-        pasteButton.setDisable(!editable || !hasClip);
+        // hasString() is a round trip to whichever program owns the clipboard (X11, Wayland): asked only
+        // when a buffer could take the paste.
+        pasteButton.setDisable(!editable || !Clipboard.getSystemClipboard().hasString());
+    }
+
+    private final Object pasteRefreshKey = new Object();
+
+    /** {@link #refreshPasteState} after the first painted frame, once however many restored shells land. */
+    private void schedulePasteStateRefresh() {
+        com.editora.perf.AfterFirstPaint.runOnce(pasteRefreshKey, this::refreshPasteState);
     }
 
     /** A startup file to open, with an optional 1-based line/column ({@code 0} = unspecified). */
@@ -8164,10 +8161,89 @@ public class MainController implements com.editora.mcp.McpBridge {
      * document insertion.
      */
     private Tab addBuffer(EditorBuffer buffer, boolean select, boolean resolvePathSettings) {
+        return addBuffer(
+                buffer, select, resolvePathSettings ? null : com.editora.editorconfig.EditorConfigProperties.EMPTY);
+    }
+
+    /** Adds a tab with the file's {@code .editorconfig} result in hand ({@code null}: resolve it here, an
+     *  ancestor-directory walk on FX). A load prepared on the worker passes its result: one walk, off FX. */
+    private Tab addBuffer(
+            EditorBuffer buffer, boolean select, com.editora.editorconfig.EditorConfigProperties editorConfig) {
+        wireBuffer(buffer, editorConfig);
+        Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
+        attachBufferTab(tab, buffer);
+        if (select) {
+            editorArea.select(tab);
+            buffer.getArea().requestFocus();
+        }
+        return tab;
+    }
+
+    /**
+     * Gives a restored placeholder tab its editor: the wiring of {@link #addBuffer}, into the {@link Tab} that
+     * already holds the file's place (pin, group, MRU slot and selection stay). {@code shown}: the tab is on
+     * screen, so the editor attaches now; otherwise it stays detached ({@link DeferredTabContent}) and
+     * unhighlighted ({@link EditorBuffer#setHighlightDeferred}) until the tab is first selected.
+     */
+    private Tab attachRestoredBuffer(Tab tab, EditorBuffer buffer, boolean shown) {
+        wireBuffer(buffer, com.editora.editorconfig.EditorConfigProperties.EMPTY); // prepared on the worker
+        if (!shown) {
+            DeferredTabContent.defer(buffer.getNode()); // filled in the background, laid out when shown
+        }
+        tab.setContent(null); // the placeholder's empty node: a deferred attach only fills an empty tab
+        DeferredTabContent.install(tab, buffer.getNode());
+        if (!shown) {
+            // Registered after install, which is what makes the tab deferred: before it, whenShown runs at once.
+            buffer.setHighlightDeferred(true);
+            DeferredTabContent.whenShown(tab, () -> buffer.setHighlightDeferred(false));
+        }
+        tab.setUserData(buffer);
+        attachBufferTab(tab, buffer);
+        // What the tabs listener does for a tab added in the background: the placeholder was the tab that
+        // was added, so the buffer gets it here.
+        if (!shown) {
+            buffer.setRenderingActive(false);
+        }
+        recovery.track(buffer);
+        DeferredTabContent.arm(tab);
+        return tab;
+    }
+
+    /** A restored file's placeholder tab: title, icon, pin, no editor until {@link #attachRestoredBuffer}. */
+    private Tab addPlaceholderTab(RestorePlaceholder placeholder) {
+        Tab tab = addContentTab(placeholder, false);
+        if (placeholder.entry().isPinned()) {
+            pinned.add(tab);
+            TabHeaders.toggleClass(tab, "pinned", true);
+            tabHeaders.contentHeader(tab, placeholder); // again, now that the pin is known
+        }
+        tab.setTooltip(TabHeaders.tooltip(placeholder.path()));
+        // The tab menu is a buffer's; opening it on a placeholder builds the editor first.
+        tab.setContextMenu(LazyContextMenu.of(menu -> {
+            EditorBuffer built = ensureBuffer(tab);
+            if (built != null) {
+                TabContextMenu.build(this, tab, built, menu);
+            }
+        }));
+        return tab;
+    }
+
+    /**
+     * The buffer in {@code tab}, built now when the tab is still a restore placeholder; {@code null} for a
+     * viewer or the Welcome page. For callers that need the editor itself rather than the file on disk.
+     */
+    private EditorBuffer ensureBuffer(Tab tab) {
+        EditorBuffer buffer = bufferOf(tab);
+        return buffer != null ? buffer : sessions.materialize(tab, false);
+    }
+
+    /** Everything a buffer is wired to before it has a tab: handlers, settings, feature coordinators.
+     *  {@code editorConfig} null: resolve the file's {@code .editorconfig} here, an ancestor walk on FX. */
+    private void wireBuffer(EditorBuffer buffer, com.editora.editorconfig.EditorConfigProperties editorConfig) {
         // Spell checking: share the user dictionary + persist "Add to Dictionary" (before applyViewSettings,
         // which sets the per-file language and enables checking).
         editorSettings.spell().wire(buffer);
-        editorSettings.applyViewSettings(buffer, resolvePathSettings);
+        editorSettings.applyViewSettings(buffer, editorConfig);
         buffer.getFoldManager().setOnFoldStateChanged(() -> persistFolds(buffer));
         buffer.setOnBookmarksChanged(() -> bookmarkCoordinator.schedulePersistBookmarks(buffer));
         buffer.setBookmarkToggleRequest(bookmarkCoordinator::onBookmarkToggleRequest);
@@ -8257,7 +8333,7 @@ public class MainController implements com.editora.mcp.McpBridge {
             if (activeBuffer() == buffer
                     && markdownLintToolWindow != null
                     && toolWindows.isOpen(markdownLintToolWindow)) {
-                markdownLintPanel.setResults(buffer.getPath(), diags);
+                markdownLintPanel().setResults(buffer.getPath(), diags);
             }
         }));
         buffer.setMarkdownLintEnabled(previews.markdownLintEnabled());
@@ -8270,7 +8346,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         previews.ensurePreviewControls(buffer);
         htmlPreview.ensureControl(buffer); // the floating "open in browser" globe (HTML buffers, feature on)
         logViewer.ensureControl(buffer); // the floating Follow / level / regex control (log buffers, feature on)
-        Tab tab = addContentTab(buffer, false); // added to the strip; selected below (focus the area, not the node)
+    }
+
+    /** The per-tab part of {@link #addBuffer}: header, dirty/edit/selection listeners and the tab menu. */
+    private void attachBufferTab(Tab tab, EditorBuffer buffer) {
         updateTabMeta(tab, buffer); // replaces the default text/icon with the buffer header (drag handle, pin, dirty)
         buffer.dirtyProperty().addListener((obs, was, now) -> {
             updateTabMeta(tab, buffer);
@@ -8287,21 +8366,16 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows.autoSaveIdleTimer.playFromStart();
             }
             if (buffer == activeBuffer()) {
-                refreshEditState(); // edits change undo/redo (and dirty) availability
+                scheduleEditStateRefresh(); // edits change undo/redo (and dirty) availability
             }
         });
         // Selection changes toggle cut/copy enablement (no clipboard read here — that's refreshPasteState).
         buffer.onSelectionChanged(() -> {
             if (buffer == activeBuffer()) {
-                refreshEditState(); // of the split pane in use
+                scheduleEditStateRefresh(); // of the split pane in use
             }
         });
         installTabMenu(tab, buffer);
-        if (select) {
-            editorArea.select(tab);
-            buffer.getArea().requestFocus();
-        }
-        return tab;
     }
 
     /**
@@ -8314,19 +8388,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         Tab tab = new Tab();
         DeferredTabContent.install(tab, content.node()); // a restored background tab attaches when shown
         tab.setUserData(content);
-        // The title is a graphic header (a drag handle); buffer tabs replace it via updateTabMeta.
-        Label title = new Label(content.title());
-        title.getStyleClass().add("tab-title");
-        HBox header = new HBox(6);
-        header.getStyleClass().add("tab-header");
-        header.setAlignment(Pos.CENTER_LEFT);
-        Node icon = content.icon();
-        if (icon != null) {
-            header.getChildren().add(icon);
-        }
-        header.getChildren().add(title);
-        enableTabDrag(header, tab);
-        tab.setGraphic(header);
+        tabHeaders.contentHeader(tab, content);
         tab.setClosable(content.closeable());
         tab.setOnCloseRequest(e -> {
             if (!closes.confirmClose(tab)) {
@@ -8340,122 +8402,20 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         return tab;
     }
+    /** Tab headers (icon, title, markers, drag handle); see {@link TabHeaders}. */
+    private final TabHeaders tabHeaders = new TabHeaders(() -> editorArea, tab -> pinned.contains(tab));
+
     /** Refreshes a tab's title (pin + dirty markers), style classes, and full-path tooltip. */
     private void updateTabMeta(Tab tab, EditorBuffer buffer) {
         // Keep the window title's file name/path + dirty marker in step (dirty flips, Save-As, rename).
         if (tab == editorArea.selectedTab()) {
             updateWindowTitle();
         }
-        boolean dirty = buffer.isDirty();
-        if (dirty) {
+        if (buffer.isDirty()) {
             // Editing is the clearest possible statement that this file is not a passing glance.
             promoteTab(tab);
         }
-        boolean isPinned = pinned.contains(tab);
-        // The graphic header supports drag reordering and optional state/file icons.
-        Label title = new Label((dirty ? "• " : "") + buffer.getTitle());
-        title.getStyleClass().add("tab-title");
-        if (tab == previewTab) {
-            title.getStyleClass().add("preview-tab-title"); // italic: this tab will be reused
-        }
-        Path p = buffer.getPath();
-        boolean remote = com.editora.vfs.Vfs.isRemote(p);
-        HBox header = new HBox(6);
-        header.getStyleClass().add("tab-header");
-        if (dirty) header.getStyleClass().add("dirty");
-        if (isPinned) header.getStyleClass().add("pinned");
-        if (!buffer.isEditable()) header.getStyleClass().add("read-only");
-        if (remote) header.getStyleClass().add("remote");
-        header.setAlignment(Pos.CENTER_LEFT);
-        if (isPinned) {
-            header.getChildren().add(Icons.pin());
-        }
-        if (remote) {
-            header.getChildren().add(Icons.remote()); // cloud glyph: this file lives on a remote host
-        }
-        // A file-type glyph reflecting the file's kind (Java/Python/image/…), or a generic doc.
-        Node typeIcon = FileIcons.forFileName(buffer.getTitle());
-        typeIcon.getStyleClass().add("tab-file-icon");
-        header.getChildren().add(typeIcon);
-        header.getChildren().add(title);
-        enableTabDrag(header, tab);
-        tab.setText("");
-        tab.setGraphic(header);
-        toggleClass(tab, "dirty", dirty);
-        toggleClass(tab, "pinned", isPinned);
-        toggleClass(tab, "read-only", !buffer.isEditable());
-        toggleClass(tab, "remote", remote);
-        tab.setTooltip(new Tooltip(
-                p == null
-                        ? "untitled"
-                        : remote
-                                ? com.editora.vfs.Vfs.displayLabel(p)
-                                : p.toAbsolutePath().toString()));
-    }
-
-    /** Wires drag-and-drop on a tab's header so the user can reorder the strip with the mouse. */
-    private void enableTabDrag(Node header, Tab tab) {
-        header.setOnDragDetected(e -> {
-            Dragboard db = header.startDragAndDrop(TransferMode.MOVE);
-            ClipboardContent content = new ClipboardContent();
-            content.putString("tab"); // marker; the dragged tab is tracked in draggedTab
-            db.setContent(content);
-            // A snapshot of the tab follows the cursor so it's clear what's being dragged.
-            SnapshotParameters params = new SnapshotParameters();
-            params.setFill(Color.TRANSPARENT);
-            db.setDragView(header.snapshot(params, null), e.getX(), e.getY());
-            draggedTab = tab;
-            header.getStyleClass().add("tab-dragging");
-            e.consume();
-        });
-        header.setOnDragOver(e -> {
-            if (draggedTab != null && draggedTab != tab) {
-                e.acceptTransferModes(TransferMode.MOVE);
-                // Show an insertion line on the side the tab would land.
-                boolean after = e.getX() > header.getBoundsInLocal().getWidth() / 2;
-                toggleStyle(header, "tab-drop-after", after);
-                toggleStyle(header, "tab-drop-before", !after);
-            }
-            e.consume();
-        });
-        header.setOnDragExited(e -> clearDropMarkers(header));
-        header.setOnDragDropped(e -> {
-            clearDropMarkers(header);
-            boolean done = false;
-            if (draggedTab != null && draggedTab != tab) {
-                // Drop on the right half of the target inserts after it, left half before it.
-                done = editorArea.moveBeside(
-                        draggedTab, tab, e.getX() > header.getBoundsInLocal().getWidth() / 2, pinned::contains);
-            }
-            e.setDropCompleted(done);
-            e.consume();
-        });
-        header.setOnDragDone(e -> {
-            header.getStyleClass().remove("tab-dragging");
-            clearDropMarkers(header);
-            draggedTab = null;
-        });
-    }
-
-    private static void clearDropMarkers(Node header) {
-        header.getStyleClass().removeAll("tab-drop-before", "tab-drop-after");
-    }
-
-    private static void toggleStyle(Node node, String styleClass, boolean on) {
-        node.getStyleClass().remove(styleClass);
-        if (on) {
-            node.getStyleClass().add(styleClass);
-        }
-    }
-
-    private static void toggleClass(Tab tab, String styleClass, boolean on) {
-        if (on) {
-            if (!tab.getStyleClass().contains(styleClass)) {
-                tab.getStyleClass().add(styleClass);
-            }
-        } else {
-            tab.getStyleClass().remove(styleClass);
-        }
+        tabHeaders.bufferHeader(tab, buffer, tab == previewTab);
     }
 
     // --- File actions ---
@@ -8938,7 +8898,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         if (tab == null) {
             return;
         }
-        EditorBuffer buffer = bufferOf(tab);
+        EditorBuffer buffer = ensureBuffer(tab); // a restored tab not built yet has a header to mark: build it
         if (buffer == null) {
             // The Welcome tab or a viewer: its header has no pin marker to show, and buffer.togglePin reaches
             // here with whatever tab is selected. Pinning it used to throw after the tab was already pinned.
@@ -9061,14 +9021,7 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private Tab tabForPath(Path file) {
-        String target = pathKey(file);
-        for (Tab tab : editorArea.tabs()) {
-            Path p = tabPath(tab); // buffer path, else an image-viewer tab's path
-            if (p != null && pathKey(p).equals(target)) {
-                return tab;
-            }
-        }
-        return null;
+        return OpenBufferLifecycle.tabForPath(editorArea, MainController::tabPath, file); // buffer or viewer path
     }
 
     /** The file backing {@code tab} (a buffer / image viewer / hex viewer path), or {@code null} for none. */
@@ -9076,6 +9029,10 @@ public class MainController implements com.editora.mcp.McpBridge {
         EditorBuffer buffer = bufferOf(tab);
         if (buffer != null) {
             return buffer.getPath();
+        }
+        RestorePlaceholder placeholder = RestorePlaceholder.of(tab);
+        if (placeholder != null) {
+            return placeholder.path(); // a restored file whose editor is not built yet is still open
         }
         ImageViewerPane image = imagePaneOf(tab);
         if (image != null) {
@@ -9325,7 +9282,7 @@ public class MainController implements com.editora.mcp.McpBridge {
                 fileWorkflows::openPath,
                 this::openExternalUrl,
                 config.isDev() ? com.editora.AppInfo.gitCommit() : "", // build commit shown only in --dev
-                latestKnownUpdate); // "Update available" row when a newer release is known
+                UpdateCoordinator.latestKnown()); // "Update available" row when a newer release is known
     }
 
     /**
@@ -9441,8 +9398,8 @@ public class MainController implements com.editora.mcp.McpBridge {
         }
         // Prefer the main class a Gradle `application` block declares — that's what `gradle run` would launch,
         // so a config saved in such a project matches the build rather than whichever file happens to be open.
-        String declared =
-                com.editora.build.GradleApplication.mainClass(readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
+        String declared = com.editora.build.GradleApplication.mainClass(
+                com.editora.build.SpringBoot.readGradleBuildFile(JavaProjectRoot.find(b.getPath())));
         if (declared != null) {
             return declared;
         }
@@ -9629,7 +9586,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         statusBar.refresh();
         if (buffer == activeBuffer()) {
             refreshEditState(); // editability change affects cut enablement
-            refreshPasteState(); // ...and paste enablement
+            schedulePasteStateRefresh(); // ...and paste enablement (a restored shell flips when it lands)
         }
     }
 
@@ -9709,8 +9666,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     }
 
     private String projectMapBaseName() {
-        Path projectRoot = projectPanel == null ? null : projectPanel.getRoot();
-        Path name = projectRoot == null ? null : projectRoot.getFileName();
+        Path root = projectRoot();
+        Path name = root == null ? null : root.getFileName();
         return (name == null ? "project" : name.toString()) + "-map";
     }
 

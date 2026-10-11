@@ -368,6 +368,28 @@ public class ConfigManager {
         return state;
     }
 
+    /** See {@link #setStartupSessionScan}. */
+    private SessionScan startupSessionScan;
+
+    /**
+     * Attaches a {@link SessionScan} of the current session's open files, made off the FX thread by the launch
+     * that read this session, for {@link #takeStartupSessionScan} to hand to the restore. Harmless if the
+     * session is replaced before it is taken: the scan is then of another list and is not returned.
+     */
+    public void setStartupSessionScan(SessionScan scan) {
+        this.startupSessionScan = scan;
+    }
+
+    /**
+     * The attached scan when it is of this session's current open-file list, else {@code null}; either way it
+     * is detached, so a later restore scans afresh.
+     */
+    public SessionScan takeStartupSessionScan() {
+        SessionScan scan = startupSessionScan;
+        startupSessionScan = null;
+        return scan != null && scan.covers(workspaceState.getOpenFiles()) ? scan : null;
+    }
+
     public WorkspaceState getWorkspaceState() {
         return workspaceState;
     }

@@ -357,7 +357,7 @@ class WindowOpsFxTest {
     }
 
     private String readGradle(Path root) {
-        return (String) FxTestSupport.invokeWith(controller, "readGradleBuildFile", Path.class, root);
+        return com.editora.build.SpringBoot.readGradleBuildFile(root); // the window's Ops delegate to it
     }
 
     @Test

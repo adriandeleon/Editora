@@ -220,8 +220,12 @@ public class EditorBuffer implements TabContent {
     private final IndentKeys indentKeys = new IndentKeys(area);
     private final VirtualizedScrollPane<CodeArea> scrollPane = new VirtualizedScrollPane<>(area);
     private final BooleanProperty dirty = new SimpleBooleanProperty(false);
-    /** The last saved/loaded content; the buffer is dirty only when the text differs from this. */
-    private String cleanText = "";
+    /**
+     * The last saved/loaded content — its length and fingerprint, and the text itself only while it is still the
+     * snapshot ({@link SavedBaseline}); the buffer is dirty only when the text differs from this. Null for a
+     * truncated load, which has no baseline: it is never compared, and pins no copy once a log tail moves on.
+     */
+    private SavedBaseline baseline = SavedBaseline.of("");
     /** True when the current content has no durable identity even if it equals the in-memory baseline. */
     private boolean forcedDirty;
     /** The line ending the file had when loaded or last saved; a different one is an unsaved change. */
@@ -453,6 +457,14 @@ public class EditorBuffer implements TabContent {
     /** Whether this buffer is the visible tab (see {@link #setRenderingActive}); starts true because a
      *  freshly built buffer measures itself before the controller marks background tabs inactive. */
     private boolean renderingActive = true;
+    /**
+     * While set, {@link #applyHighlighting()} records that a pass is owed instead of dispatching it (see
+     * {@link #setHighlightDeferred}). The owed range stays in {@code highlightDirty}, so the pass that runs
+     * when the deferral ends covers everything that changed meanwhile.
+     */
+    private boolean highlightDeferred;
+    /** A highlight pass was requested while {@link #highlightDeferred}; run it when the deferral ends. */
+    private boolean highlightOwed;
     /** Large-file mode: syntax highlighting and the minimap are disabled regardless of settings. */
     private boolean largeFile;
     /** Intermediate "large source file" tier (below the 5 MB hard mode): the minimap and LSP are
@@ -547,10 +559,13 @@ public class EditorBuffer implements TabContent {
 
     private final ColumnRuler columnRuler = new ColumnRuler(area);
     private final Minimap minimap = new Minimap(area);
-    private final WhitespaceOverlay whitespace = new WhitespaceOverlay(area);
-    private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area);
+    /** Lazily attached when "show whitespace" first turns on — see {@link #whitespace()}. */
+    private WhitespaceOverlay whitespace;
+    /** Eager: spell checking is on by default for prose and for the comments and strings of code. */
+    private final SpellCheckOverlay spellOverlay = new SpellCheckOverlay(area, this::documentTextSnapshot);
+
     private LogHighlightOverlay logOverlay; // lazily attached on first activation — see logOverlay()
-    private final InlineValuesOverlay inlineValues = new InlineValuesOverlay(area);
+    private InlineValuesOverlay inlineValues; // lazily attached when a debug session first suspends here
     /** Git change bars + blame column, kept on the right lines through unsaved edits. */
     private final GitGutterLines gitLines = new GitGutterLines(area, dirty, this::refreshGutter, minimap);
     /** Fixed annotation-column width in px, computed from the widest author+date when blame is set, so
@@ -561,14 +576,17 @@ public class EditorBuffer implements TabContent {
     private static final double BLAME_FONT_SIZE = 10;
 
     private MermaidLintOverlay lintOverlay; // lazily attached — see lintOverlay()
-    private final MarkdownLintOverlay mdLintOverlay = new MarkdownLintOverlay(area);
+    private MarkdownLintOverlay mdLintOverlay; // lazily attached when Markdown linting turns on — see mdLintOverlay()
     private LspDiagnosticOverlay lspOverlay; // lazily attached — see lspOverlay()
-    /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable. */
-    private final DiagnosticStripe diagnosticStripe = new DiagnosticStripe(area);
-    /** TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe). */
-    private final TodoStripe todoStripe = new TodoStripe(area);
-    /** Markdown-lint overview stripe over the scrollbar (beside the TODO/diagnostic stripes). */
-    private final MarkdownLintStripe mdLintStripe = new MarkdownLintStripe(area);
+    /** Severity stripe over the editor scrollbar (shown whenever LSP is active), so diagnostics stay locatable;
+     *  lazily attached when LSP first activates for this buffer — see {@link #diagnosticStripe()}. */
+    private DiagnosticStripe diagnosticStripe;
+    /** TODO/highlight overview stripe over the scrollbar (beside the diagnostic stripe); lazily attached with
+     *  the first non-empty scan result — see {@link #todoStripe()}. */
+    private TodoStripe todoStripe;
+    /** Markdown-lint overview stripe over the scrollbar (beside the TODO/diagnostic stripes); lazily attached
+     *  with the Markdown-lint overlay — see {@link #mdLintStripe()}. */
+    private MarkdownLintStripe mdLintStripe;
     /** Files above this size are never scanned for compact-source detection (keeps it off the hot path). */
     private static final int COMPACT_SCAN_LIMIT = 256 * 1024;
     /** Whether this buffer can run as a local file (remote buffers cannot). */
@@ -616,8 +634,10 @@ public class EditorBuffer implements TabContent {
 
     private SearchHighlightOverlay searchOverlay; // lazily attached — see searchOverlay()
     private OccurrenceHighlightOverlay occurrenceOverlay; // lazily attached — see occurrenceOverlay() (#675)
-    /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text. */
-    private final TodoHighlightOverlay todoOverlay = new TodoHighlightOverlay(area);
+    /** Highlights configured TODO/FIXME-style patterns (per-pattern color), behind the text; lazily attached
+     *  with the first non-empty scan result (TODO highlighting is on by default, but most files have no
+     *  marks) — see {@link #todoOverlay()}. */
+    private TodoHighlightOverlay todoOverlay;
     /** Injected matcher (compiled patterns) + on/off gate; null/false = no highlight. */
     private TodoMatcher todoMatcher;
 
@@ -639,10 +659,9 @@ public class EditorBuffer implements TabContent {
     private boolean markdownLintEnabled;
     private javafx.scene.control.Tooltip mdLintTooltip;
     private String mdLintTooltipText;
-    /** Injected handler for image files dropped onto a Markdown buffer (controller copies + inserts links). */
-    private java.util.function.Consumer<java.util.List<java.io.File>> imageDropHandler;
-    /** Injected handler for a raw image / image URL dragged from a browser (image, url — either may be null). */
-    private java.util.function.BiConsumer<javafx.scene.image.Image, String> webImageDropHandler;
+    /** Image files and browser images dropped onto a Markdown or Typst buffer; see {@link ImageDrop}. */
+    private final ImageDrop imageDrop =
+            new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::caretToDrop);
     /** LSP: overlay active (diagnostics + hover), the debounced didChange sink, and the hover tooltip. */
     private boolean lspActive;
 
@@ -716,8 +735,9 @@ public class EditorBuffer implements TabContent {
     private boolean noteIndicators = true;
     /** Invoked when the user clicks a note's inline start marker — the controller opens the note editor. */
     private java.util.function.BiConsumer<EditorBuffer, com.editora.config.PersonalNote> noteMarkerClick = (b, n) -> {};
-    /** Reused hover tooltip + the id of the note it's currently showing (so we only update on change). */
-    private final javafx.scene.control.Tooltip noteTip = PersonalNoteTooltip.create();
+    /** Reused hover tooltip (a popup window with its own scene, so built on the first hover over a note) +
+     *  the id of the note it's currently showing (so we only update on change). */
+    private javafx.scene.control.Tooltip noteTip;
 
     private java.util.UUID hoverNoteId;
 
@@ -1070,7 +1090,10 @@ public class EditorBuffer implements TabContent {
         // keystroke — O(n) allocation per char on a very large single buffer (e.g. minified JS on one
         // line, past the line-count heavy-file tier). See dirtyAfterEdit for when the text is compared.
         // A log filter or followed append rewrites the area without being a user edit: dirty is carried over.
-        area.plainTextChanges().filter(c -> !logView.adjusting()).subscribe(c -> dirtyAfterEdit());
+        area.plainTextChanges()
+                .filter(c -> !logView.adjusting())
+                .subscribe(c -> dirtyAfterEdit(
+                        c.getRemoved().length() == c.getInserted().length()));
         // Auto-fill: break the line at a word boundary when it grows past the fill column (off by default,
         // so the very first check short-circuits for every buffer that hasn't turned it on).
         area.plainTextChanges().subscribe(this::maybeAutoFill);
@@ -1100,6 +1123,7 @@ public class EditorBuffer implements TabContent {
     private void configureSettledEditDispatcher() {
         settledEdits.at(Duration.ofMillis(150), () -> true, () -> {
             resolveDirty();
+            sealBaselineIfDirty();
             applyHighlighting();
             recomputeRun(true); // re-evaluate the Run glyph when a top-level main / __main__ appears/leaves
         });
@@ -1270,19 +1294,20 @@ public class EditorBuffer implements TabContent {
             scheduleAiActionsBar();
             selectionChanged.run();
         });
+        // One vertical-scroll listener for the four per-scroll features (each gated on its own flag and
+        // coalesced per pulse), in the order the former separate listeners ran: RichTextFX notifies every
+        // listener on every scroll step, so three of them cost three dispatches for one boolean each.
         a.estimatedScrollYProperty().addListener((obs, old, now) -> {
             scheduleFormatBar();
             scheduleAiActionsBar();
-        });
-        a.estimatedScrollYProperty().addListener((obs, old, now) -> scheduleStickyScroll());
-        a.estimatedScrollXProperty().addListener((obs, old, now) -> {
-            scheduleFormatBar();
-            scheduleAiActionsBar();
-        });
-        a.estimatedScrollYProperty().addListener((obs, old, now) -> {
+            scheduleStickyScroll();
             if (semanticActive) {
                 semanticScrollDebounce.playFromStart(); // re-request tokens for the scrolled-to region
             }
+        });
+        a.estimatedScrollXProperty().addListener((obs, old, now) -> {
+            scheduleFormatBar();
+            scheduleAiActionsBar();
         });
         a.focusedProperty().addListener((obs, was, now) -> {
             if (!now) {
@@ -2054,54 +2079,33 @@ public class EditorBuffer implements TabContent {
         });
 
         // Editor scroll pane fills the area, leaving room on the right for the minimap; the minimap
-        // is docked to the right edge; the column ruler floats on top of everything.
+        // is docked to the right edge; the column ruler floats on top of everything. Only what every
+        // buffer uses is built here: the note and spell overlays are on by default, and the ruler is one
+        // Line. Every other overlay and stripe is attached on first activation (see their accessors and
+        // attachLazyOverlay / attachLazyStripe) at the Layer that keeps this stacking order, so an
+        // off-feature buffer never builds their Canvas, subscriptions or listeners.
         root.getChildren()
                 .addAll(
-                        scrollPane,
-                        noteOverlay,
-                        todoOverlay,
-                        whitespace,
-                        spellOverlay,
-                        mdLintOverlay,
-                        inlineValues,
-                        minimap,
-                        diagnosticStripe,
-                        mdLintStripe,
-                        todoStripe,
-                        columnRuler);
-        // searchOverlay / logOverlay / lintOverlay / lspOverlay / aceJump are attached lazily on first
-        // activation (see their getters) so an off-feature buffer never builds their Canvas/subscriptions.
+                        OverlayLayer.layered(scrollPane, OverlayLayer.TEXT),
+                        OverlayLayer.layered(noteOverlay, OverlayLayer.NOTE),
+                        OverlayLayer.layered(spellOverlay, OverlayLayer.SPELL),
+                        OverlayLayer.layered(minimap, OverlayLayer.MINIMAP),
+                        OverlayLayer.layered(columnRuler, OverlayLayer.RULER));
         AnchorPane.setTopAnchor(scrollPane, 0d);
         AnchorPane.setBottomAnchor(scrollPane, 0d);
         AnchorPane.setLeftAnchor(scrollPane, 0d);
         AnchorPane.setRightAnchor(scrollPane, Minimap.WIDTH);
         // The overlays share the text rectangle with the scroll pane (and track it when the minimap is
         // toggled — see anchorOverText); they are mouse-transparent so clicks reach the editor.
-        anchorOverText(whitespace);
         anchorOverText(spellOverlay); // red squiggles
-        anchorOverText(mdLintOverlay);
-        installImageDrop(area);
-        anchorOverText(inlineValues); // inline debugger values (active only while suspended in this file)
-        anchorOverText(todoOverlay);
+        imageDrop.install(area);
         anchorOverText(noteOverlay);
-        noteOverlay.setSpans(notes::activeSpans);
+        noteOverlay.setSpans(notes::activeSpans, notes::hasActiveSpans); // inert until a note is positioned
         noteOverlay.setActive(true);
         installPointerHovers(area);
         AnchorPane.setTopAnchor(minimap, 0d);
         AnchorPane.setBottomAnchor(minimap, 0d);
         AnchorPane.setRightAnchor(minimap, 0d);
-        AnchorPane.setTopAnchor(diagnosticStripe, 0d);
-        AnchorPane.setBottomAnchor(diagnosticStripe, 0d);
-        AnchorPane.setRightAnchor(diagnosticStripe, 0d);
-        diagnosticStripe.setOnActivate(this::jumpToLine);
-        AnchorPane.setTopAnchor(todoStripe, 0d);
-        AnchorPane.setBottomAnchor(todoStripe, 0d);
-        AnchorPane.setRightAnchor(todoStripe, 0d);
-        todoStripe.setOnActivate(this::jumpToLine);
-        AnchorPane.setTopAnchor(mdLintStripe, 0d);
-        AnchorPane.setBottomAnchor(mdLintStripe, 0d);
-        AnchorPane.setRightAnchor(mdLintStripe, 0d);
-        mdLintStripe.setOnActivate(this::jumpToLine);
     }
 
     /** Moves the caret to the start of {@code line} (0-based), scrolls it into view, and focuses the editor. */
@@ -2116,7 +2120,9 @@ public class EditorBuffer implements TabContent {
         area.requestFocus();
     }
 
-    private final ContextMenu contextMenu = new ContextMenu();
+    /** The editor's right-click menu, built on the first request: a {@code ContextMenu} is a popup window
+     *  with a scene of its own, which most buffers never open. */
+    private ContextMenu contextMenu;
     /** The view the context menu was last asked for: its items act where the user clicked, in either pane. */
     private CodeArea menuView = area;
     /** Supplies extra right-click items (plugin contributions), injected by the controller; null = none. */
@@ -2124,9 +2130,17 @@ public class EditorBuffer implements TabContent {
     /** Build-tool actions for this file, shown next to the LSP submenu rather than at the menu's foot. */
     private java.util.function.Supplier<List<MenuItem>> buildMenuContributor;
 
+    private ContextMenu contextMenu() {
+        if (contextMenu == null) {
+            contextMenu = new ContextMenu();
+            contextMenu.getStyleClass().setAll("context-menu", "editor-context-menu");
+        }
+        return contextMenu;
+    }
+
     private void installContextMenu(CodeArea a) {
-        contextMenu.getStyleClass().setAll("context-menu", "editor-context-menu");
         a.setOnContextMenuRequested(e -> {
+            ContextMenu contextMenu = contextMenu();
             menuView = a;
             a.requestFocus(); // "at the caret" items read the focused view
             List<MenuItem> items = new java.util.ArrayList<>();
@@ -2245,7 +2259,7 @@ public class EditorBuffer implements TabContent {
         // mouse press before the popup's auto-hide fires, so close it explicitly. The event is
         // not consumed, so the click still positions the caret as usual.
         a.addEventFilter(MouseEvent.MOUSE_PRESSED, e -> {
-            if (contextMenu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
+            if (contextMenu != null && contextMenu.isShowing() && e.getButton() == MouseButton.PRIMARY) {
                 contextMenu.hide();
             }
         });
@@ -2553,35 +2567,120 @@ public class EditorBuffer implements TabContent {
         overlay.getProperties().put(OVER_TEXT, Boolean.TRUE);
     }
 
-    /** Attaches {@code overlay} to the editor pane just below {@code below}, with the standard text-rect anchors. */
-    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, javafx.scene.Node below) {
+    /**
+     * Attaches {@code overlay} to the editor pane at {@code layer} (see {@link Layer}), with the standard
+     * text-rect anchors. The split's second view, if there is one, gets its twin at once; a split opened
+     * later finds it with the rest (see {@link SecondaryPane#follow}).
+     */
+    private <T extends javafx.scene.layout.Region> T attachLazyOverlay(T overlay, int layer) {
         anchorOverText(overlay);
-        if (overlay instanceof TabSurface surface) {
+        return attachLazy(overlay, layer);
+    }
+
+    /** Attaches {@code stripe} docked at the right edge, top to bottom; the caller sets its right inset. */
+    private <T extends javafx.scene.layout.Region> T attachLazyStripe(T stripe, int layer) {
+        AnchorPane.setTopAnchor(stripe, 0d);
+        AnchorPane.setBottomAnchor(stripe, 0d);
+        AnchorPane.setRightAnchor(stripe, 0d);
+        return attachLazy(stripe, layer);
+    }
+
+    private <T extends Node> T attachLazy(T node, int layer) {
+        if (node instanceof TabSurface surface) {
             surface.setRenderingActive(renderingActive); // first activated while its tab is in the background
         }
-        int idx = root.getChildren().indexOf(below);
-        if (idx < 0) {
-            idx = root.getChildren().indexOf(minimap); // fallback: just under the minimap
+        OverlayLayer.layered(node, layer);
+        List<Node> children = root.getChildren();
+        int idx = children.size();
+        for (int i = 0; i < children.size(); i++) {
+            if (OverlayLayer.of(children.get(i)) > layer) {
+                idx = i;
+                break;
+            }
         }
-        root.getChildren().add(idx < 0 ? root.getChildren().size() : idx, overlay);
+        children.add(idx, node);
         if (pane2 != null) {
-            pane2.follow(root.getChildren()); // the split's second view gets its twin
+            pane2.follow(children); // the split's second view gets its twin
         }
-        return overlay;
+        return node;
     }
 
     private SearchHighlightOverlay searchOverlay() {
         if (searchOverlay == null) {
-            searchOverlay = attachLazyOverlay(new SearchHighlightOverlay(area), todoOverlay);
+            searchOverlay = attachLazyOverlay(new SearchHighlightOverlay(area), OverlayLayer.SEARCH);
         }
         return searchOverlay;
     }
 
     private OccurrenceHighlightOverlay occurrenceOverlay() {
         if (occurrenceOverlay == null) {
-            occurrenceOverlay = attachLazyOverlay(new OccurrenceHighlightOverlay(area), todoOverlay);
+            occurrenceOverlay = attachLazyOverlay(new OccurrenceHighlightOverlay(area), OverlayLayer.OCCURRENCE);
         }
         return occurrenceOverlay;
+    }
+
+    private TodoHighlightOverlay todoOverlay() {
+        if (todoOverlay == null) {
+            todoOverlay = attachLazyOverlay(new TodoHighlightOverlay(area), OverlayLayer.TODO);
+        }
+        return todoOverlay;
+    }
+
+    private WhitespaceOverlay whitespace() {
+        if (whitespace == null) {
+            WhitespaceOverlay made = new WhitespaceOverlay(area);
+            if (fontApplied) {
+                made.setFont(fontFamily, fontSize);
+            }
+            made.setSuppressed(largeFile);
+            whitespace = attachLazyOverlay(made, OverlayLayer.WHITESPACE);
+        }
+        return whitespace;
+    }
+
+    private MarkdownLintOverlay mdLintOverlay() {
+        if (mdLintOverlay == null) {
+            mdLintOverlay = attachLazyOverlay(new MarkdownLintOverlay(area), OverlayLayer.MARKDOWN_LINT);
+        }
+        return mdLintOverlay;
+    }
+
+    private InlineValuesOverlay inlineValues() {
+        if (inlineValues == null) {
+            InlineValuesOverlay made = new InlineValuesOverlay(area);
+            if (fontApplied) {
+                made.setFont(fontFamily, fontSize);
+            }
+            inlineValues = attachLazyOverlay(made, OverlayLayer.INLINE_VALUES);
+        }
+        return inlineValues;
+    }
+
+    private DiagnosticStripe diagnosticStripe() {
+        if (diagnosticStripe == null) {
+            diagnosticStripe = attachLazyStripe(new DiagnosticStripe(area), OverlayLayer.DIAGNOSTIC_STRIPE);
+            diagnosticStripe.setOnActivate(this::jumpToLine);
+            updateDiagnosticStripe(); // its inset and on/off state, as if it had been there all along
+        }
+        return diagnosticStripe;
+    }
+
+    private MarkdownLintStripe mdLintStripe() {
+        if (mdLintStripe == null) {
+            mdLintStripe = attachLazyStripe(new MarkdownLintStripe(area), OverlayLayer.MARKDOWN_LINT_STRIPE);
+            mdLintStripe.setOnActivate(this::jumpToLine);
+            updateMarkdownLintStripe(); // its inset and on/off state, as if it had been there all along
+        }
+        return mdLintStripe;
+    }
+
+    private TodoStripe todoStripe() {
+        if (todoStripe == null) {
+            todoStripe = attachLazyStripe(new TodoStripe(area), OverlayLayer.TODO_STRIPE);
+            todoStripe.setOnActivate(this::jumpToLine);
+            updateTodoStripe(); // its inset and on/off state, as if it had been there all along
+        }
+        return todoStripe;
     }
 
     private LogHighlightOverlay logOverlay() {
@@ -2598,28 +2697,28 @@ public class EditorBuffer implements TabContent {
                             return logView.levelAt(paragraph);
                         }
                     }),
-                    whitespace);
+                    OverlayLayer.LOG);
         }
         return logOverlay;
     }
 
     private MermaidLintOverlay lintOverlay() {
         if (lintOverlay == null) {
-            lintOverlay = attachLazyOverlay(new MermaidLintOverlay(area), mdLintOverlay);
+            lintOverlay = attachLazyOverlay(new MermaidLintOverlay(area), OverlayLayer.MERMAID_LINT);
         }
         return lintOverlay;
     }
 
     private LspDiagnosticOverlay lspOverlay() {
         if (lspOverlay == null) {
-            lspOverlay = attachLazyOverlay(new LspDiagnosticOverlay(area), inlineValues);
+            lspOverlay = attachLazyOverlay(new LspDiagnosticOverlay(area), OverlayLayer.LSP);
         }
         return lspOverlay;
     }
 
     private AceJumpOverlay aceJump() {
         if (aceJump == null) {
-            aceJump = attachLazyOverlay(new AceJumpOverlay(area), minimap);
+            aceJump = attachLazyOverlay(new AceJumpOverlay(area), OverlayLayer.ACE_JUMP);
         }
         return aceJump;
     }
@@ -2930,9 +3029,7 @@ public class EditorBuffer implements TabContent {
         }
         long gen = ++todoGen; // any newer pulse (or dispose) supersedes an in-flight scan
         if (!todoEnabled || todoMatcher == null || largeFile) {
-            todoOverlay.setMarks(java.util.List.of());
-            todoStripe.setMarks(java.util.List.of());
-            minimap.setTodoMarks(java.util.List.of());
+            applyTodoMarks(java.util.List.of());
             return;
         }
         TodoMatcher matcher = todoMatcher; // may be reassigned on the FX thread; capture the current one
@@ -2948,11 +3045,21 @@ public class EditorBuffer implements TabContent {
                 if (gen != todoGen) {
                     return; // a newer edit/scan superseded this pass
                 }
-                todoOverlay.setMarks(marks);
-                todoStripe.setMarks(marks);
-                minimap.setTodoMarks(marks);
+                applyTodoMarks(marks);
             });
         });
+    }
+
+    /** Pushes a scan result to the overlay, the stripe and the minimap; the first non-empty one attaches the
+     *  overlay and the stripe (an empty result for a buffer that never had them leaves them unbuilt). */
+    private void applyTodoMarks(java.util.List<TodoMark> marks) {
+        if (!marks.isEmpty() || todoOverlay != null) {
+            todoOverlay().setMarks(marks);
+        }
+        if (!marks.isEmpty() || todoStripe != null) {
+            todoStripe().setMarks(marks);
+        }
+        minimap.setTodoMarks(marks);
     }
 
     /** Starts AceJump: the next typed character labels its visible occurrences to jump the caret. */
@@ -3516,13 +3623,17 @@ public class EditorBuffer implements TabContent {
     /** Turns Markdown linting on/off for this buffer (controller gates on the setting; Markdown buffers only). */
     public void setMarkdownLintEnabled(boolean on) {
         this.markdownLintEnabled = on && isMarkdown() && !hugeFile;
-        mdLintOverlay.setActive(this.markdownLintEnabled);
+        if (this.markdownLintEnabled || mdLintOverlay != null) {
+            mdLintOverlay().setActive(this.markdownLintEnabled);
+        }
         minimap.setLintEnabled(this.markdownLintEnabled);
         updateMarkdownLintStripe();
         if (this.markdownLintEnabled) {
             scheduleMarkdownLint();
         } else {
-            mdLintStripe.setDiagnostics(java.util.List.of());
+            if (mdLintStripe != null) {
+                mdLintStripe.setDiagnostics(java.util.List.of());
+            }
             minimap.setLintMarks(java.util.List.of());
         }
     }
@@ -3536,15 +3647,20 @@ public class EditorBuffer implements TabContent {
 
     /** Pushes fresh lint diagnostics to the squiggle overlay + the scrollbar stripe + the minimap ticks. */
     private void applyMarkdownLintDiagnostics(java.util.List<MarkdownLint.Diagnostic> diags) {
-        mdLintOverlay.setDiagnostics(diags);
-        mdLintStripe.setDiagnostics(diags);
+        if (!markdownLintEnabled) {
+            return; // a result that arrived after linting was turned off (the overlay may not even exist)
+        }
+        mdLintOverlay().setDiagnostics(diags);
+        mdLintStripe().setDiagnostics(diags);
         minimap.setLintMarks(diags);
     }
 
     /** Shows the lint message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
     private void installMarkdownLintHover(CodeArea a) {
         a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!markdownLintEnabled || mdLintOverlay.diagnostics().isEmpty()) {
+            if (!markdownLintEnabled
+                    || mdLintOverlay == null
+                    || mdLintOverlay.diagnostics().isEmpty()) {
                 if (mdLintTooltip != null) {
                     mdLintTooltip.hide();
                 }
@@ -3594,7 +3710,7 @@ public class EditorBuffer implements TabContent {
 
     /** Injects the handler for image files dropped onto a Markdown buffer; null disables the drop affordance. */
     public void setImageDropHandler(java.util.function.Consumer<java.util.List<java.io.File>> handler) {
-        this.imageDropHandler = handler;
+        imageDrop.setImageDropHandler(handler);
     }
 
     /**
@@ -3603,62 +3719,7 @@ public class EditorBuffer implements TabContent {
      * {@code Image} (or null) and the image URL/data-URI (or null) — at least one is non-null.
      */
     public void setWebImageDropHandler(java.util.function.BiConsumer<javafx.scene.image.Image, String> handler) {
-        this.webImageDropHandler = handler;
-    }
-
-    /** The image URL a browser drag carries (its URL, an {@code <img src>} in the HTML, or an image string). */
-    private static String webImageUrl(javafx.scene.input.Dragboard db) {
-        return com.editora.markdown.MarkdownImagePaste.imageUrlFromDrag(
-                db.hasUrl() ? db.getUrl() : null,
-                db.hasHtml() ? db.getHtml() : null,
-                db.hasString() ? db.getString() : null);
-    }
-
-    /**
-     * Accepts dropped images on a Markdown buffer (copy/download into {@code assets/} + insert {@code ![](…)}):
-     * image <em>files</em> from the OS, and a raw image / image URL dragged from a web browser.
-     */
-    private void installImageDrop(CodeArea a) {
-        a.addEventHandler(javafx.scene.input.DragEvent.DRAG_OVER, e -> {
-            if ((!isMarkdown() && !isTypst()) || !isEditable()) {
-                return;
-            }
-            javafx.scene.input.Dragboard db = e.getDragboard();
-            boolean file = imageDropHandler != null && db.hasFiles() && hasImageFile(db.getFiles());
-            boolean web = webImageDropHandler != null && (db.hasImage() || webImageUrl(db) != null);
-            if (file || web) {
-                e.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
-                e.consume();
-            }
-        });
-        a.addEventHandler(javafx.scene.input.DragEvent.DRAG_DROPPED, e -> {
-            if ((!isMarkdown() && !isTypst()) || !isEditable()) {
-                return;
-            }
-            javafx.scene.input.Dragboard db = e.getDragboard();
-            // Prefer real image files (self-contained copy); fall back to a browser image (download/encode).
-            if (imageDropHandler != null && db.hasFiles()) {
-                java.util.List<java.io.File> images =
-                        db.getFiles().stream().filter(EditorBuffer::isImageFile).toList();
-                if (!images.isEmpty()) {
-                    caretToDrop(a, e);
-                    imageDropHandler.accept(images);
-                    e.setDropCompleted(true);
-                    e.consume();
-                    return;
-                }
-            }
-            if (webImageDropHandler != null) {
-                String url = webImageUrl(db);
-                javafx.scene.image.Image img = db.hasImage() ? db.getImage() : null;
-                if (url != null || img != null) {
-                    caretToDrop(a, e);
-                    webImageDropHandler.accept(img, url);
-                    e.setDropCompleted(true);
-                    e.consume();
-                }
-            }
-        });
+        imageDrop.setWebImageDropHandler(handler);
     }
 
     /** A drop lands under the pointer, in the view it was dropped on — a window dragged into has no focus yet. */
@@ -3666,21 +3727,6 @@ public class EditorBuffer implements TabContent {
         focusedArea = a;
         focusedView.set(a);
         EditorMouse.moveCaretToDrop(a, e.getX(), e.getY());
-    }
-
-    private static boolean hasImageFile(java.util.List<java.io.File> files) {
-        return files.stream().anyMatch(EditorBuffer::isImageFile);
-    }
-
-    private static boolean isImageFile(java.io.File f) {
-        String n = f.getName().toLowerCase(java.util.Locale.ROOT);
-        return n.endsWith(".png")
-                || n.endsWith(".jpg")
-                || n.endsWith(".jpeg")
-                || n.endsWith(".gif")
-                || n.endsWith(".bmp")
-                || n.endsWith(".webp")
-                || n.endsWith(".svg");
     }
 
     // --- LSP (Language Server Protocol) integration ---------------------------------------------
@@ -4038,6 +4084,19 @@ public class EditorBuffer implements TabContent {
 
     /** Discards an in-flight background run scan whose result would be stale (mirrors {@link #todoGen}). */
     private long runScanGen;
+    /** True while the load's (or a settle's) text scan is on the pool and its result has not landed. */
+    private boolean runScanInFlight;
+
+    /**
+     * Lands a background Run scan now when one is still in flight. The load's scan runs off the FX thread, so
+     * a Run or Debug command issued right after a file opens asks for the answer here before deciding how to
+     * launch; nothing happens when the result has already landed.
+     */
+    public void settleRunScan() {
+        if (runScanInFlight) {
+            recomputeRun(false);
+        }
+    }
 
     /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
     private void recomputeRun() {
@@ -4045,9 +4104,11 @@ public class EditorBuffer implements TabContent {
     }
 
     /**
-     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles, whose scan of the text
-     * ({@link RunScan}) runs off the FX thread — a generation counter drops a superseded result, as for
-     * {@link #refreshTodoMarks}. Every other caller (load, Save As, a feature toggle) needs the answer now.
+     * As {@link #recomputeRun()}; {@code settled} is the pass after an edit settles — or after a load — whose
+     * scan of the text ({@link RunScan}) runs off the FX thread: a generation counter drops a superseded
+     * result, as for {@link #refreshTodoMarks}. The load's pass lands a few milliseconds after the document
+     * does rather than scanning up to 256 KiB on the FX thread inside the open. Every other caller (Save As,
+     * a feature toggle) needs the answer now.
      */
     private void recomputeRun(boolean settled) {
         maybeApplyShebang(); // an interpreter shebang can set the language before we gate the Run glyph
@@ -4070,13 +4131,16 @@ public class EditorBuffer implements TabContent {
         // every 150 ms edit pulse just to discard it as run-ineligible.
         String text = in.needsText() ? documentTextSnapshot() : "";
         if (!settled || !in.needsText()) {
+            runScanInFlight = false;
             applyRunScan(RunScan.scan(in, text));
             return;
         }
+        runScanInFlight = true;
         HIGHLIGHT_POOL.execute(() -> {
             RunScan.Result found = RunScan.scan(in, text);
             Platform.runLater(() -> {
                 if (gen == runScanGen) {
+                    runScanInFlight = false;
                     applyRunScan(found);
                 }
             });
@@ -4131,7 +4195,9 @@ public class EditorBuffer implements TabContent {
                 lspOverlay.setDiagnostics(java.util.List.of());
             }
             minimap.setDiagnostics(java.util.List.of());
-            diagnosticStripe.setDiagnostics(java.util.List.of());
+            if (diagnosticStripe != null) {
+                diagnosticStripe.setDiagnostics(java.util.List.of());
+            }
         }
         updateDiagnosticStripe();
     }
@@ -4146,7 +4212,9 @@ public class EditorBuffer implements TabContent {
             lspOverlay().setDiagnostics(diagnostics);
         }
         minimap.setDiagnostics(diagnostics);
-        diagnosticStripe.setDiagnostics(diagnostics);
+        if (lspActive || diagnosticStripe != null) {
+            diagnosticStripe().setDiagnostics(diagnostics);
+        }
     }
 
     /** Clears the diagnostic overlay/stripe/minimap on an edit so their line/col-anchored marks don't paint on
@@ -4156,7 +4224,9 @@ public class EditorBuffer implements TabContent {
             lspOverlay.setDiagnostics(java.util.List.of());
         }
         minimap.setDiagnostics(java.util.List.of());
-        diagnosticStripe.setDiagnostics(java.util.List.of());
+        if (diagnosticStripe != null) {
+            diagnosticStripe.setDiagnostics(java.util.List.of());
+        }
     }
 
     /** The debounced semantic-tokens request (fired on the 300 ms didChange pulse while active); null = none.
@@ -4272,8 +4342,10 @@ public class EditorBuffer implements TabContent {
      *  inside the minimap (over the editor scrollbar, which ends at the minimap's left edge). */
     private void updateDiagnosticStripe() {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
-        AnchorPane.setRightAnchor(diagnosticStripe, minimapShown ? Minimap.WIDTH : 0d);
-        diagnosticStripe.setActive(lspActive);
+        if (lspActive || diagnosticStripe != null) {
+            AnchorPane.setRightAnchor(diagnosticStripe(), minimapShown ? Minimap.WIDTH : 0d);
+            diagnosticStripe.setActive(lspActive);
+        }
         updateMarkdownLintStripe();
     }
 
@@ -4282,8 +4354,11 @@ public class EditorBuffer implements TabContent {
     private void updateMarkdownLintStripe() {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
-        AnchorPane.setRightAnchor(mdLintStripe, base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
-        mdLintStripe.setActive(markdownLintEnabled && !largeFile);
+        boolean on = markdownLintEnabled && !largeFile;
+        if (on || mdLintStripe != null) {
+            AnchorPane.setRightAnchor(mdLintStripe(), base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
+            mdLintStripe.setActive(on);
+        }
         updateTodoStripe();
     }
 
@@ -4294,8 +4369,10 @@ public class EditorBuffer implements TabContent {
         double base = minimapShown ? Minimap.WIDTH : 0d;
         double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
                 + (markdownLintEnabled && !largeFile ? MarkdownLintStripe.WIDTH : 0d);
-        AnchorPane.setRightAnchor(todoStripe, base + offset);
-        todoStripe.setActive(todoEnabled && !largeFile);
+        if (todoStripe != null) { // attached with the first marks (todoStripe()), positioned from then on
+            AnchorPane.setRightAnchor(todoStripe, base + offset);
+            todoStripe.setActive(todoEnabled && !largeFile);
+        }
     }
 
     /** Injects the LSP actions surfaced in the right-click menu while {@link #isLspActive()} (Format and
@@ -4494,7 +4571,10 @@ public class EditorBuffer implements TabContent {
     /** While suspended: the frame's variable name → value map painted as grey end-of-line annotations on the
      *  visible lines of the function stopped at {@code frameLine}; null/empty clears (resume/terminate). */
     public void setInlineValues(java.util.Map<String, String> values, int frameLine) {
-        inlineValues.setValues(hugeFile ? null : values, frameLine);
+        java.util.Map<String, String> shown = hugeFile ? null : values;
+        if ((shown != null && !shown.isEmpty()) || inlineValues != null) {
+            inlineValues().setValues(shown, frameLine);
+        }
     }
 
     /** IntelliJ-style blame "Annotate" gutter column: per-0-based-line annotations (null/empty clears it).
@@ -5410,8 +5490,13 @@ public class EditorBuffer implements TabContent {
         // largest thing hanging off it -- up to MAX whole-document snapshots -- and releasing them at the
         // moment the tab closes returns that memory now rather than at the next collection.
         undoHistory.clear();
+        // The undo queue too: its removed-and-inserted text counts against the app-wide UndoQueueBudget until
+        // it is forgotten, and a closed tab should give the budget back now, not when the queue is collected.
+        area.getUndoManager().forgetHistory();
         documentSnapshots.invalidate();
+        hiddenRelease.cancel(); // (a pending wait holds this buffer weakly, so it is collectable either way)
         PreviewSurfaces.release(path, this); // rendered Mermaid/Typst pages only this document could show
+        minimap.dispose(); // its retained content pixels (MinimapRetention) and its split follower's
         if (settledEditSub != null) {
             settledEditSub.unsubscribe();
             settledEditSub = null;
@@ -6509,7 +6594,7 @@ public class EditorBuffer implements TabContent {
         completionActions.installCompletionTrigger(area2);
         installOccurrenceTrigger(area2); // LSP document highlight (#675)
         installCodeLensClick(area2);
-        installImageDrop(area2);
+        imageDrop.install(area2);
         if (multiCaretEnabled && !hugeFile && multiCaret2 == null) {
             multiCaret2 = MultiCarets.install(area2, this::tabEdit); // same multi-caret add-on in the split view
         }
@@ -6558,9 +6643,13 @@ public class EditorBuffer implements TabContent {
         if (area2 != null) {
             area2.setStyle(style);
         }
-        whitespace.setFont(family, size);
+        if (whitespace != null) {
+            whitespace.setFont(family, size); // an overlay attached later takes the font from the fields
+        }
         spell.geometryChanged();
-        inlineValues.setFont(family, size);
+        if (inlineValues != null) {
+            inlineValues.setFont(family, size);
+        }
         stickyScroll.setFont(family, size);
         if (gitLines.blame() != null) {
             // The blame annotation column width is font-relative — recompute + rebuild so it stays aligned.
@@ -6668,9 +6757,11 @@ public class EditorBuffer implements TabContent {
 
     /**
      * Marks whether this buffer is the active (visible) tab. A background tab releases per-buffer
-     * GPU-backed caches — currently the minimap snapshot — so retained VRAM doesn't scale with the
-     * number of open files; they regenerate when the tab is shown again. Called by the controller on
-     * tab selection and when a tab is added in the background.
+     * GPU-backed caches at once — the minimap snapshot and every {@link TabSurface} overlay's canvas — so
+     * retained VRAM doesn't scale with the number of open files; they regenerate when the tab is shown
+     * again. What it holds on the heap only for drawing goes later, if it stays hidden (see
+     * {@link #releaseHiddenCaches}). Called by the controller on tab selection and when a tab is added in
+     * the background.
      */
     public void setRenderingActive(boolean active) {
         boolean wasInactive = !renderingActive;
@@ -6687,6 +6778,64 @@ public class EditorBuffer implements TabContent {
                 surface.setRenderingActive(active);
             }
         }
+        if (active) {
+            hiddenRelease.cancel();
+        } else {
+            hiddenRelease.start(); // heap-side caches go later, if the tab stays hidden (releaseHiddenCaches)
+        }
+    }
+
+    /**
+     * How long a tab stays in the background before {@link #releaseHiddenCaches} runs. The textures go at
+     * once (above); these caches are rebuilt on the FX thread in O(document) when next asked for, and a tab
+     * switched away from is often switched back to within seconds, so they are kept for a while first.
+     */
+    static final Duration HIDDEN_RELEASE_DELAY = Duration.ofMinutes(3);
+
+    private final HiddenTabTimer hiddenRelease = new HiddenTabTimer(HIDDEN_RELEASE_DELAY, this::releaseHiddenCaches);
+
+    /**
+     * What a tab hidden for {@link #HIDDEN_RELEASE_DELAY} gives back — only what is cheaply rebuilt on
+     * demand: the cached whole-document String when it is a second copy (a dirty buffer's; a clean buffer's
+     * snapshot <em>is</em> its saved baseline, so dropping it would free nothing), and the spell overlay's
+     * per-line spans and squiggle geometry. Undo entries and Undo History checkpoints are user data and stay.
+     * Package-private so a test can run it without waiting.
+     */
+    void releaseHiddenCaches() {
+        if (renderingActive || disposed) {
+            return;
+        }
+        documentSnapshots.releaseUnless(baseline == null ? null : baseline.heldText());
+        spellOverlay.releaseHiddenCaches();
+    }
+
+    /**
+     * Holds the syntax highlighter back while this buffer's editor is not in the scene.
+     *
+     * <p>A restored background tab is filled while its editor is detached ({@code DeferredTabContent}); the
+     * load marks the whole document dirty, and without this the tab would be tokenised on the highlight
+     * pool and restyled on the FX thread a pause later — for every restored tab, shortly after its fill,
+     * while the user is looking at a different file. Deferred, the first pass runs when the tab is first
+     * shown instead, which is when its styles are first visible. Every other document consumer (folds, the
+     * caret, LSP sync, the snapshot) is unaffected: only the style pass waits.
+     *
+     * <p>Ending the deferral runs the owed pass at once, if one was requested; a buffer that was never asked
+     * to highlight while deferred dispatches nothing.
+     */
+    public void setHighlightDeferred(boolean deferred) {
+        if (highlightDeferred == deferred) {
+            return;
+        }
+        highlightDeferred = deferred;
+        if (!deferred && highlightOwed) {
+            highlightOwed = false;
+            applyHighlighting();
+        }
+    }
+
+    /** True while {@link #setHighlightDeferred} is holding the highlighter back. */
+    public boolean isHighlightDeferred() {
+        return highlightDeferred;
     }
 
     /**
@@ -6969,7 +7118,8 @@ public class EditorBuffer implements TabContent {
     /** Captures a LINE note anchor for a specific line, independent of the current selection/caret. */
     public NoteDraft captureLineNoteDraft(int requestedLine) {
         int line = Math.max(0, Math.min(requestedLine, area.getParagraphs().size() - 1));
-        String doc = area.getText();
+        String doc =
+                documentTextSnapshot(); // the area's text (the narrowed region when narrowed), one copy per version
         String lineText = area.getParagraph(line).getText();
         int lineLen = lineText.length();
         // Capture surrounding context for a LINE note too (like WORD/RANGE): the lines a LINE note lands on
@@ -7038,6 +7188,9 @@ public class EditorBuffer implements TabContent {
                 hideNoteTip();
             } else if (!n.id().equals(hoverNoteId)) {
                 hoverNoteId = n.id();
+                if (noteTip == null) {
+                    noteTip = PersonalNoteTooltip.create();
+                }
                 noteTip.setText(null);
                 noteTip.setGraphic(renderNoteTooltip(n.body()));
                 if (noteTip.isShowing()) {
@@ -7103,7 +7256,7 @@ public class EditorBuffer implements TabContent {
         if (todoMatcher == null || !todoEnabled || largeFile) {
             return false;
         }
-        java.util.List<TodoMark> marks = todoMatcher.match(area.getText());
+        java.util.List<TodoMark> marks = todoMatcher.match(documentTextSnapshot());
         if (marks.isEmpty()) {
             return false;
         }
@@ -7189,7 +7342,7 @@ public class EditorBuffer implements TabContent {
 
     private void hideNoteTip() {
         hoverNoteId = null;
-        if (noteTip.isShowing()) {
+        if (noteTip != null && noteTip.isShowing()) {
             noteTip.hide();
         }
     }
@@ -7321,7 +7474,9 @@ public class EditorBuffer implements TabContent {
 
     /** Show/hide the "hidden characters" markers (spaces, tabs, line ends). */
     public void setWhitespaceVisible(boolean visible) {
-        whitespace.setActive(visible);
+        if (visible || whitespace != null) { // turning it off on a buffer that never had it builds nothing
+            whitespace().setActive(visible);
+        }
     }
 
     /**
@@ -7814,7 +7969,9 @@ public class EditorBuffer implements TabContent {
         folds.setHeuristicEnabled(!large); // never schedule a whole-document fold scan for a large file
         setMinimapVisible(minimapVisible); // re-apply with the large-file guard
         spell.applyActive(); // spell checking is off in large-file mode (like highlighting)
-        whitespace.setSuppressed(large); // so are the whitespace markers, whatever the setting says
+        if (whitespace != null) {
+            whitespace.setSuppressed(large); // so are the whitespace markers, whatever the setting says
+        }
         // Large files don't need (and shouldn't pay the memory for) undo history.
         applyUndoMode();
         if (!large) {
@@ -8155,7 +8312,7 @@ public class EditorBuffer implements TabContent {
 
     private void snippetSessionChanged() {
         if (snippetOverlay == null && snippetSession.isActive()) {
-            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), todoOverlay);
+            snippetOverlay = attachLazyOverlay(new SnippetFieldOverlay(area, snippetSession), OverlayLayer.SNIPPET);
         }
         if (snippetOverlay != null) snippetOverlay.refresh();
         snippetProgress.accept(snippetSession.progress());
@@ -9204,9 +9361,13 @@ public class EditorBuffer implements TabContent {
                 segmentLongLines ? InitialDocument.prepare(area, content, true) : InitialDocument.ofText(content));
     }
 
-    /** Builds a load's paragraphs for {@link #setInitialContent(InitialDocument)}; safe off the FX thread. */
+    /**
+     * Builds a load's paragraphs for {@link #setInitialContent(InitialDocument)}; safe off the FX thread. Meant
+     * for the read worker, so the text's fingerprint — what the saved baseline keeps once the buffer is edited —
+     * is computed here too, and never on the FX thread.
+     */
     public InitialDocument prepareInitialContent(String content, boolean segmentLongLines) {
-        return InitialDocument.prepare(area, content, segmentLongLines);
+        return InitialDocument.prepare(area, content, segmentLongLines).fingerprinted();
     }
 
     /** Installs a prepared load: one document swap, with the loaded String shared as baseline and snapshot. */
@@ -9221,7 +9382,7 @@ public class EditorBuffer implements TabContent {
         // Establish the baseline before the change event. Otherwise an async loading shell briefly becomes
         // dirty during replace(), which promotes a disposable preview tab before the method can clear it.
         // A truncated load has no baseline (null): it is never compared, and pins no copy once a log tail moves on.
-        cleanText = truncatedLoad ? null : initial;
+        baseline = truncatedLoad ? null : SavedBaseline.of(initial, loaded.textFingerprint());
         forcedDirty = false;
         documentSnapshots.expect(initial); // the dirty check inside the change event must not copy it back out
         if (loaded.document() != null) {
@@ -9240,7 +9401,32 @@ public class EditorBuffer implements TabContent {
         refilter.run();
         dirty.set(false);
         gitLines.reset(); // freshly loaded: buffer lines are the disk's lines again
-        recomputeRun(); // detect a runnable file on load (drives the Run glyph)
+        recomputeRun(true); // detect a runnable file on load (drives the Run glyph), scanning off the FX thread
+    }
+
+    /**
+     * Installs a re-read of the file into a buffer that already shows it. Unlike {@link #setInitialContent},
+     * which swaps the whole document, only the span that differs is rewritten ({@link WholeDocumentEdit}):
+     * the paragraphs, styles and folds outside it survive and nothing is split again on the FX thread. Like a
+     * load, it is not an undo step — the history is forgotten, so undo cannot resurrect text the disk no
+     * longer has — and the loaded text becomes the snapshot, the Undo History baseline and, through the
+     * caller's {@link #markClean}, the saved baseline. Not for a load that needs the segmented or capped
+     * profile ({@code longLine}, truncated): those install through {@link #setInitialContent}.
+     */
+    public void reloadContent(InitialDocument loaded) {
+        lineEnding = loaded.lineEnding();
+        String text = loaded.text();
+        widen(); // the disk's text is the whole document; a narrowed view would duplicate the held-aside part
+        Runnable refilter = logView.suspendFilter(true);
+        replaceVisibleText(area, text);
+        if (area.getLength() == text.length()) {
+            documentSnapshots.seed(docVersion, text); // the rewrite left the document equal to the loaded String
+        }
+        forgetHistoryAtNarrowBoundary(false);
+        captureUndoCheckpoint();
+        refilter.run();
+        gitLines.reset(); // the disk's lines again
+        recomputeRun(true);
     }
 
     /**
@@ -9340,7 +9526,7 @@ public class EditorBuffer implements TabContent {
         if (isNarrowed()) {
             widenInternal(); // re-narrow from the whole document: narrowing does not nest, as in Emacs
         }
-        String full = area.getText();
+        String full = documentTextSnapshot(); // widened just above, so this is the whole document
         int s = Math.max(0, Math.min(start + base, full.length()));
         int e = Math.max(0, Math.min(end + base, full.length()));
         if (s >= e) {
@@ -9375,7 +9561,7 @@ public class EditorBuffer implements TabContent {
 
     private void widenInternal() {
         String prefix = narrowPrefix;
-        String visible = area.getText();
+        String visible = documentTextSnapshot(); // the region the area holds while narrowed
         String suffix = narrowSuffix;
         int caret = area.getCaretPosition();
         int caret2 = area2 == null ? 0 : area2.getCaretPosition();
@@ -9493,15 +9679,21 @@ public class EditorBuffer implements TabContent {
     /**
      * The per-edit dirty check. A length (or line-ending) difference decides without reading the text. At
      * the saved length the text has to be compared, which builds the whole document: a clean buffer does
-     * that at once — it must never show as modified when it is not — but an already-dirty one stays dirty
-     * and is compared when the edit settles (or when {@link #isDirty()} is asked), so a run of same-length
-     * edits (move line up/down, overwrite, transpose) no longer copies the document on every one of them.
+     * that at once — it must never show as modified when it is not — and so does a dirty buffer that a
+     * length-changing edit (a deletion, an undo of an insert) brought back to the saved length: that is how
+     * a user lands on the saved text, and the tab marker, the Save button and the Git gutter's reset
+     * ({@code GitGutterLines.cleaned}) expect the flag to clear then, not 150 ms later. A dirty buffer edited
+     * with a {@code sameLength} change stays dirty and is compared when the edit settles (or when
+     * {@link #isDirty()} is asked), so a run of same-length edits (move line up/down, overwrite, transpose)
+     * no longer copies the document on every one of them — those runs, not a single landing, were the cost.
      */
-    private void dirtyAfterEdit() {
-        dirtyUnresolved = dirty.get()
+    private void dirtyAfterEdit(boolean sameLength) {
+        dirtyUnresolved = sameLength
+                && dirty.get()
                 && !forcedDirty
                 && lineEnding.equals(cleanLineEnding)
-                && contentLength() == cleanText.length();
+                && baseline != null
+                && contentLength() == baseline.length();
         if (!dirtyUnresolved) {
             dirty.set(differsFromSaved());
         }
@@ -9514,9 +9706,26 @@ public class EditorBuffer implements TabContent {
         }
     }
 
+    /**
+     * Once the edits of a dirty buffer have settled, the baseline's text is no longer the snapshot and would be
+     * a second document-sized String for as long as the tab stays modified: keep its fingerprint only.
+     */
+    private void sealBaselineIfDirty() {
+        if (baseline != null && dirty.get() && !dirtyUnresolved) {
+            baseline.seal();
+        }
+    }
+
+    /** Whether the saved baseline still holds its text rather than a fingerprint alone (tests). */
+    boolean baselineHoldsText() {
+        return baseline != null && baseline.holdsText();
+    }
+
     /** Marks the current content as the saved baseline (after load/save); clears the dirty flag. */
     public void markClean() {
-        cleanText = getContent(); // the whole document, so narrowing never fakes a dirty flag
+        // The whole document, so narrowing never fakes a dirty flag. Widened, this is the snapshot String
+        // itself — shared, not copied — and it stays shared until the next edit settles.
+        baseline = SavedBaseline.of(getContent());
         cleanLineEnding = lineEnding;
         forcedDirty = false;
         dirty.set(false);
@@ -9526,9 +9735,7 @@ public class EditorBuffer implements TabContent {
     private boolean differsFromSaved() {
         return forcedDirty
                 || !lineEnding.equals(cleanLineEnding)
-                || (cleanText != null
-                        && (contentLength() != cleanText.length()
-                                || !getContent().equals(cleanText)));
+                || (baseline != null && (contentLength() != baseline.length() || !baseline.matches(getContent())));
     }
 
     /** Marks content as not durably saved, even when it still equals its in-memory baseline. */
@@ -9542,7 +9749,28 @@ public class EditorBuffer implements TabContent {
      * line-ending conversion made while the write was in flight is still unsaved, and undoing either is clean.
      */
     public void acknowledgeSavedContent(String savedContent, String savedLineEnding) {
-        cleanText = savedContent == null ? "" : savedContent;
+        acknowledgeSavedBaseline(SavedBaseline.of(savedContent == null ? "" : savedContent), savedLineEnding);
+    }
+
+    /**
+     * As above, from what the save worker kept of the text it wrote: its {@link #docVersion() document version},
+     * length and {@link TextFingerprint fingerprint}, never the text. When the document has not changed since
+     * the save was captured, the current snapshot <em>is</em> the saved text and is shared as the baseline;
+     * otherwise the baseline starts sealed and the comparison is by hash.
+     */
+    public void acknowledgeSavedContent(
+            long savedVersion, int savedLength, String savedTextFingerprint, String savedLineEnding) {
+        SavedBaseline saved = savedVersion == docVersion
+                        && narrowPrefix == null
+                        && !logView.filtered()
+                        && area.getLength() == savedLength
+                ? SavedBaseline.of(documentTextSnapshot(), savedTextFingerprint)
+                : SavedBaseline.sealed(savedLength, savedTextFingerprint);
+        acknowledgeSavedBaseline(saved, savedLineEnding);
+    }
+
+    private void acknowledgeSavedBaseline(SavedBaseline saved, String savedLineEnding) {
+        baseline = saved;
         boolean current = savedLineEnding == null || savedLineEnding.equals(getLineEnding());
         cleanLineEnding = current ? lineEnding : savedLineEnding;
         forcedDirty = !current && eolOverride != null; // a rule that arrived mid-save: no converting back to it
@@ -9652,6 +9880,10 @@ public class EditorBuffer implements TabContent {
         }
         if (largeFile) {
             dropHighlightState(); // large-file mode: leave the document as plain text
+            return;
+        }
+        if (highlightDeferred) {
+            highlightOwed = true; // the dirty range is kept; setHighlightDeferred(false) dispatches the pass
             return;
         }
         if (csvRainbow && isCsv() && !heavyFile) {

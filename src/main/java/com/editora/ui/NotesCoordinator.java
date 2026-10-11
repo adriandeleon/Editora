@@ -96,7 +96,10 @@ final class NotesCoordinator {
 
     private final CoordinatorHost host;
     private final Ops ops;
-    private final NotesPanel panel;
+    /** The Notes panel, built on its first use (the tool window's first open). */
+    private NotesPanel panel;
+
+    private final NotesPanel.Actions panelActions;
     private final QuickOpen<NoteEntry> jumpPalette;
     private final QuickOpen<NoteEntry> searchPalette;
     private Runnable onChanged = () -> {};
@@ -121,7 +124,7 @@ final class NotesCoordinator {
         this.host = host;
         this.ops = ops;
         persistDebounce.setOnFinished(e -> flushPendingPersist());
-        this.panel = new NotesPanel(this::scope, new NotesPanel.Actions() {
+        this.panelActions = new NotesPanel.Actions() {
             @Override
             public void openAndJump(String projectKey, String fileKey, PersonalNote note) {
                 noteActivate(projectKey, fileKey, note);
@@ -146,7 +149,7 @@ final class NotesCoordinator {
             public void deleteAll(String projectKey, String fileKey) {
                 noteDeleteAll(projectKey, fileKey);
             }
-        });
+        };
         this.jumpPalette = new QuickOpen<>(
                 tr("notes.jumpTitle"),
                 tr("notes.jumpPrompt"),
@@ -169,6 +172,10 @@ final class NotesCoordinator {
     }
 
     NotesPanel panel() {
+        if (panel == null) {
+            panel = new NotesPanel(this::scope, panelActions);
+            panel.refresh(); // the refreshes before now had no panel to fill
+        }
         return panel;
     }
 
@@ -319,7 +326,9 @@ final class NotesCoordinator {
     }
 
     private void refreshViews() {
-        panel.refresh();
+        if (panel != null) {
+            panel.refresh(); // an unbuilt panel reads the store when it is built
+        }
         onChanged.run();
     }
 

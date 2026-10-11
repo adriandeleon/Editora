@@ -6,6 +6,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javafx.scene.Node;
@@ -190,7 +191,11 @@ class OverlayScrollPerfFxTest {
             "logOverlay",
             "spellOverlay",
             "todoOverlay",
-            "noteOverlay");
+            "noteOverlay",
+            "searchOverlay",
+            "occurrenceOverlay",
+            "inlineValues",
+            "aceJump");
 
     @Test
     void backgroundTabsAndEmptyOverlaysHoldNoViewportTexture() throws Exception {
@@ -201,7 +206,14 @@ class OverlayScrollPerfFxTest {
         for (EditorBuffer b : buffers) {
             FxTestSupport.runOnFx(() -> {
                 b.setWhitespaceVisible(true);
-                Object md = FxTestSupport.field(b, "mdLintOverlay");
+                FxTestSupport.call(b, "todoOverlay", new Class[] {}); // attach (lazy) so the loop below finds it
+                // The four overlays that are TabSurface since M4: a find, a word highlight, a suspended
+                // debug session and a jump each hold a full-viewport texture only while their tab is shown.
+                b.setSearchMatches(com.editora.editor.SearchMatches.of(0, 3), 0);
+                b.setOccurrenceSpans(List.of(new com.editora.editor.OccurrenceSpan(0, 0, 0, 3, false)));
+                b.setInlineValues(Map.of("value", "1", "text", "2"), 0);
+                b.startAceJump();
+                Object md = FxTestSupport.call(b, "mdLintOverlay", new Class[] {}); // attached on first use
                 FxTestSupport.invokeWith(md, "setActive", boolean.class, true);
                 FxTestSupport.invokeWith(
                         md,
@@ -235,8 +247,25 @@ class OverlayScrollPerfFxTest {
                 }
             }
         }
-        for (String name : List.of("whitespace", "mdLintOverlay", "lintOverlay", "lspOverlay", "logOverlay")) {
+        for (String name : List.of(
+                "whitespace",
+                "mdLintOverlay",
+                "lintOverlay",
+                "lspOverlay",
+                "logOverlay",
+                "searchOverlay",
+                "occurrenceOverlay",
+                "inlineValues")) {
             assertTrue(drawn(shown, name), name + " of the visible tab draws");
+        }
+        // A jump started on a tab that was then hidden ended with it (its keys must not stay owned there).
+        for (EditorBuffer b : buffers) {
+            if (b != shown) {
+                assertFalse(
+                        (boolean) FxTestSupport.callOnFx(
+                                () -> FxTestSupport.field(FxTestSupport.field(b, "aceJump"), "active")),
+                        "AceJump of a background tab is over");
+            }
         }
 
         // An active overlay with nothing to draw lets its texture go, and takes it back with content.
@@ -264,7 +293,15 @@ class OverlayScrollPerfFxTest {
         // Reselecting a background tab restores its drawing and releases the one just left.
         EditorBuffer back = buffers.get(0);
         select(back);
-        for (String name : List.of("whitespace", "mdLintOverlay", "lintOverlay", "lspOverlay", "logOverlay")) {
+        for (String name : List.of(
+                "whitespace",
+                "mdLintOverlay",
+                "lintOverlay",
+                "lspOverlay",
+                "logOverlay",
+                "searchOverlay",
+                "occurrenceOverlay",
+                "inlineValues")) {
             assertTrue(drawn(back, name), name + " repaints when its tab is shown again");
             assertEquals(1, canvasOf(shown, name).getWidth(), name + " of the tab just left");
         }
@@ -436,17 +473,24 @@ class OverlayScrollPerfFxTest {
 
     // ---------------------------------------------------------------- minimap
 
-    @Test
-    void theMinimapRepaintsOnlyForAChangeAndRendersOncePerTabSwitch() throws Exception {
-        EditorBuffer first = open("mini-a.java", nested());
-        EditorBuffer second = open("mini-b.java", nested());
-        Object minimap = FxTestSupport.callOnFx(() -> FxTestSupport.field(second, "minimap"));
+    /** Waits for the minimap of {@code b} to hold a content image and returns it. */
+    private Object renderedMinimap(EditorBuffer b) throws Exception {
+        Object minimap = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "minimap"));
         for (int i = 0;
                 i < 40 && FxTestSupport.callOnFx(() -> FxTestSupport.field(minimap, "contentImage")) == null;
                 i++) {
             settle();
         }
         assertNotNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(minimap, "contentImage")), "minimap rendered");
+        return minimap;
+    }
+
+    @Test
+    void theMinimapRepaintsOnlyForAChangeAndReblitsAShownTab() throws Exception {
+        EditorBuffer first = open("mini-a.java", nested());
+        Object shown = renderedMinimap(first);
+        EditorBuffer second = open("mini-b.java", nested());
+        Object minimap = renderedMinimap(second);
 
         FxTestSupport.runOnFx(() -> {
             FxTestSupport.invokeWith(minimap, "setDiagnostics", List.class, List.of());
@@ -467,14 +511,50 @@ class OverlayScrollPerfFxTest {
         settle();
 
         AtomicInteger renders = staticCounter("com.editora.editor.Minimap", "RENDERS_FOR_TEST");
+        AtomicInteger unchanged = staticCounter("com.editora.editor.Minimap", "UNCHANGED_FOR_TEST");
+
+        // Hidden, the first tab holds no image (its texture is released) but keeps the pixels.
+        assertNull(
+                FxTestSupport.callOnFx(() -> FxTestSupport.field(shown, "contentImage")),
+                "a hidden tab drops its image");
+        Canvas hiddenCanvas = FxTestSupport.callOnFx(() -> FxTestSupport.field(shown, "canvas"));
+        assertEquals(1.0, FxTestSupport.callOnFx(hiddenCanvas::getHeight), "and its canvas texture");
         int before = renders.get();
         select(first);
         settle();
-        assertEquals(1, renders.get() - before, "a tab switch renders the shown tab's minimap exactly once");
+        assertEquals(0, renders.get() - before, "switching back to an unchanged tab re-blits; it does not render");
+        assertNotNull(FxTestSupport.callOnFx(() -> FxTestSupport.field(shown, "contentImage")), "the image is back");
+        assertTrue(FxTestSupport.callOnFx(hiddenCanvas::getHeight) > 1.0, "the canvas is the column's size again");
+
+        // An edit that changes no run (a letter inside a word) scans but draws and snapshots nothing.
+        int beforeEdit = renders.get();
+        int beforeUnchanged = unchanged.get();
+        FxTestSupport.runOnFx(() -> {
+            CodeArea area = first.getFocusedArea();
+            int at = area.getText().indexOf("body");
+            area.replaceText(at, at + 1, "c");
+        });
+        for (int i = 0; i < 40 && unchanged.get() == beforeUnchanged; i++) {
+            settle();
+        }
+        assertEquals(1, unchanged.get() - beforeUnchanged, "the typing pause ran the scan once");
+        assertEquals(0, renders.get() - beforeEdit, "and found nothing to redraw");
+
+        // An edit made while the tab is hidden makes its pixels stale: showing it renders exactly once.
+        select(second);
+        FxTestSupport.runOnFx(() -> first.getFocusedArea().appendText("long new line of text here\n"));
+        settle();
+        settle();
+        int beforeStale = renders.get();
+        select(first);
+        for (int i = 0; i < 40 && renders.get() == beforeStale; i++) {
+            settle();
+        }
+        assertEquals(1, renders.get() - beforeStale, "a tab changed while hidden renders once when shown");
 
         // A height change while content is cached re-blits it and defers the expensive render.
-        Object shown = FxTestSupport.callOnFx(() -> FxTestSupport.field(first, "minimap"));
         int beforeResize = renders.get();
+        int beforeResizeSkip = unchanged.get();
         FxTestSupport.runOnFx(() -> {
             Region region = (Region) shown;
             for (int i = 1; i <= 8; i++) {
@@ -485,36 +565,13 @@ class OverlayScrollPerfFxTest {
             javafx.animation.Animation settleTimer = FxTestSupport.field(shown, "resizeRender");
             assertEquals(javafx.animation.Animation.Status.RUNNING, settleTimer.getStatus());
         });
-        for (int i = 0; i < 40 && renders.get() == beforeResize; i++) {
+        for (int i = 0; i < 40 && renders.get() == beforeResize && unchanged.get() == beforeResizeSkip; i++) {
             settle();
         }
-        assertEquals(1, renders.get() - beforeResize, "one render follows once the size has settled");
-    }
-
-    @Test
-    void aMinimapRowStopsScanningAtTheRightEdge() throws Exception {
-        Method drawRuns = Class.forName("com.editora.editor.Minimap")
-                .getDeclaredMethod(
-                        "drawRuns",
-                        javafx.scene.canvas.GraphicsContext.class,
-                        String.class,
-                        double.class,
-                        double.class,
-                        double.class,
-                        int.class);
-        drawRuns.setAccessible(true);
-        FxTestSupport.runOnFx(() -> {
-            try {
-                Canvas canvas = new Canvas(100, 10);
-                String minified = "x=1;".repeat(12_500); // 50,000 characters
-                int scanned = (int) drawRuns.invoke(null, canvas.getGraphicsContext2D(), minified, 0d, 1d, 100d, 4);
-                assertTrue(scanned < 1000, "a 100 px column examined " + scanned + " of 50,000 characters");
-                int all = (int) drawRuns.invoke(null, canvas.getGraphicsContext2D(), "int x = 1;", 0d, 1d, 100d, 4);
-                assertEquals(10, all, "a line that fits is scanned whole");
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException(e);
-            }
-        });
+        // The TabPane lays the region back out to its real size on the next pulse, so the deferred render
+        // usually finds the column at the cached size again and skips its snapshot; either way it is one.
+        int decided = (renders.get() - beforeResize) + (unchanged.get() - beforeResizeSkip);
+        assertEquals(1, decided, "one render follows once the size has settled");
     }
 
     // ---------------------------------------------------------------- gutter

@@ -38,6 +38,26 @@ final class ImageCacheBudget {
     /** Formulas are small; this is a backstop, not a working limit. */
     static final long MATH_BUDGET_BYTES = 32L * 1024 * 1024;
 
+    /**
+     * Content pixels of hidden tabs' minimaps ({@link MinimapRetention}): CPU-side only, a few hundred KB
+     * per tab at a 90 px column, so this binds only on a very tall screen with many tabs.
+     */
+    static final long MINIMAP_BUDGET_BYTES = 16L * 1024 * 1024;
+
+    /** Parsed SVG documents ({@link SvgImages}): plain heap, weighed by {@link #svgFootprint}. */
+    static final long SVG_BUDGET_BYTES = 32L * 1024 * 1024;
+
+    /**
+     * Heap a parsed SVG DOM holds per character of its source, estimated: element and attribute objects,
+     * parsed path data and the strings in between come to several times the text they were read from.
+     */
+    static final long SVG_BYTES_PER_SOURCE_CHAR = 8;
+
+    /** Estimated resident cost of a parsed SVG of {@code sourceChars} characters of source. */
+    static long svgFootprint(int sourceChars) {
+        return Math.max(0, sourceChars) * SVG_BYTES_PER_SOURCE_CHAR;
+    }
+
     private ImageCacheBudget() {}
 
     /**

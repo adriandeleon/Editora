@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import javafx.application.Platform;
 import javafx.beans.value.ChangeListener;
 import javafx.geometry.HPos;
 import javafx.geometry.Insets;
@@ -67,6 +68,11 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
     private final TextField charCategoryValue = value();
 
     private EditorBuffer attached;
+    /** Generation of the latest disk read / word count; a result for an older one is dropped (FX thread). */
+    private long fileGen;
+
+    private long wordGen;
+
     private final ChangeListener<Number> caretListener = (o, w, n) -> refreshCaret();
     // Edits fire the whole-document word count, so ride the debounced delta stream (not textProperty, which
     // materializes the whole document on every keystroke just to notify) — and only while the panel is visible.
@@ -292,43 +298,72 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         }
     }
 
+    /**
+     * The disk facts of {@code path}. They are read away from the FX thread — a stat can stall on a cold
+     * network mount, and for an SFTP file it is a server round trip — and applied when they arrive, unless a
+     * newer attach has superseded them; until then the previous values stay (a few milliseconds, no flash).
+     */
     private void refreshFile(Path path) {
         tagsValue.setText("–");
+        long gen = ++fileGen;
         if (path == null) {
-            createdValue.setText("–");
-            modifiedValue.setText("–");
-            sizeValue.setText("–");
-            permissionsValue.setText("–");
-            ownerValue.setText("–");
+            showFileFacts(FileFacts.NONE);
             fullPathValue.setText(tr("common.untitled"));
             return;
         }
         fullPathValue.setText(path.toString());
-        try {
-            BasicFileAttributes basic = Files.readAttributes(path, BasicFileAttributes.class);
-            // SFTP (and some filesystems) don't report a creation/modified time — guard the nulls.
-            createdValue.setText(
-                    basic.creationTime() != null
-                            ? formatTime(basic.creationTime().toInstant())
-                            : "–");
-            modifiedValue.setText(
-                    basic.lastModifiedTime() != null
-                            ? formatTime(basic.lastModifiedTime().toInstant())
-                            : "–");
-            sizeValue.setText(formatSize(basic.size()));
-        } catch (IOException e) {
-            createdValue.setText("–");
-            modifiedValue.setText("–");
-            sizeValue.setText("–");
-        }
-        try {
-            PosixFileAttributes posix = Files.readAttributes(path, PosixFileAttributes.class);
-            // SFTP returns POSIX attributes but with a null owner/permissions — guard them.
-            permissionsValue.setText(posix.permissions() != null ? formatPermissions(posix.permissions()) : "–");
-            ownerValue.setText(posix.owner() != null ? posix.owner().getName() : "–");
-        } catch (IOException | UnsupportedOperationException e) {
-            permissionsValue.setText("–");
-            ownerValue.setText("–");
+        Thread.ofVirtual().name("editora-file-info").start(() -> {
+            FileFacts facts = FileFacts.read(path);
+            Platform.runLater(() -> {
+                if (gen == fileGen) {
+                    showFileFacts(facts);
+                }
+            });
+        });
+    }
+
+    private void showFileFacts(FileFacts facts) {
+        createdValue.setText(facts.created());
+        modifiedValue.setText(facts.modified());
+        sizeValue.setText(facts.size());
+        permissionsValue.setText(facts.permissions());
+        ownerValue.setText(facts.owner());
+    }
+
+    /** What the panel shows about a file on disk, formatted; read on a worker thread by {@link #read}. */
+    record FileFacts(String created, String modified, String size, String permissions, String owner) {
+
+        static final FileFacts NONE = new FileFacts("–", "–", "–", "–", "–");
+
+        /** Reads {@code path}'s attributes; a fact the filesystem does not report, or a missing file, is a dash. */
+        static FileFacts read(Path path) {
+            String created = "–";
+            String modified = "–";
+            String size = "–";
+            try {
+                BasicFileAttributes basic = Files.readAttributes(path, BasicFileAttributes.class);
+                // SFTP (and some filesystems) don't report a creation/modified time — guard the nulls.
+                created = basic.creationTime() != null
+                        ? formatTime(basic.creationTime().toInstant())
+                        : "–";
+                modified = basic.lastModifiedTime() != null
+                        ? formatTime(basic.lastModifiedTime().toInstant())
+                        : "–";
+                size = formatSize(basic.size());
+            } catch (IOException | RuntimeException e) {
+                // a file that is gone, or a provider that refuses: dashes
+            }
+            String permissions = "–";
+            String owner = "–";
+            try {
+                PosixFileAttributes posix = Files.readAttributes(path, PosixFileAttributes.class);
+                // SFTP returns POSIX attributes but with a null owner/permissions — guard them.
+                permissions = posix.permissions() != null ? formatPermissions(posix.permissions()) : "–";
+                owner = posix.owner() != null ? posix.owner().getName() : "–";
+            } catch (IOException | RuntimeException e) {
+                // UnsupportedOperationException on a non-POSIX filesystem; a vanished file
+            }
+            return new FileFacts(created, modified, size, permissions, owner);
         }
     }
 
@@ -346,11 +381,24 @@ public class FileInformationPanel extends VBox implements ToolWindowContent {
         return lang.substring(0, 1).toUpperCase(Locale.ROOT) + lang.substring(1);
     }
 
-    /** Full counts: the O(n) word count (materializes the whole document) plus the cheap position/totals. Only on
-     *  an edit (debounced) or on attach/open — never per caret move. */
+    /**
+     * Full counts: the cheap position/totals now, and the O(n) word count on a worker thread. Only on an edit
+     * (debounced) or on attach/open — never per caret move. The text is the buffer's versioned snapshot, shared
+     * with every other whole-document consumer rather than copied out of RichTextFX again; the count of a
+     * superseded snapshot (a newer attach or edit) is dropped.
+     */
     private void refreshCounts(EditorBuffer buffer) {
-        wordsValue.setText(formatNum(countWords(buffer.getArea().getText())));
         refreshPositionAndTotals(buffer);
+        String text = buffer.getContent();
+        long gen = ++wordGen;
+        Thread.ofVirtual().name("editora-file-info").start(() -> {
+            int words = countWords(text);
+            Platform.runLater(() -> {
+                if (gen == wordGen && attached == buffer) {
+                    wordsValue.setText(formatNum(words));
+                }
+            });
+        });
     }
 
     /** Line/char totals, selection, and caret location — all cheap (no whole-document {@code getText()}: char count

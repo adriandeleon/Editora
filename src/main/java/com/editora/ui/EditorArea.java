@@ -3,6 +3,7 @@ package com.editora.ui;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
@@ -122,6 +123,9 @@ final class EditorArea {
         }
     }
 
+    /** See {@link #setTabMaterializer}. */
+    private Consumer<Tab> tabMaterializer;
+
     EditorArea(TabPane initial) {
         this.primary = initial;
         this.singleGroupView = Collections.unmodifiableList(initial.getTabs());
@@ -238,7 +242,11 @@ final class EditorArea {
         group.getSelectionModel().selectedItemProperty().addListener((obs, was, now) -> {
             if (now != null && !activeTabHeld) {
                 // Before the active tab is published: its listeners (the controller's tab-switch work) are
-                // entitled to find the editor they are told about in the scene.
+                // entitled to find the editor they are told about in the scene — built first, when the tab
+                // is still a restore placeholder, then attached.
+                if (tabMaterializer != null) {
+                    tabMaterializer.accept(now);
+                }
                 DeferredTabContent.show(now);
             }
             if (group == focused && !activeTabHeld) {
@@ -275,6 +283,15 @@ final class EditorArea {
             e.setDropCompleted(moved);
             e.consume();
         });
+    }
+
+    /**
+     * Runs before a newly selected tab is published as the active one: the session restore uses it to build
+     * the editor of a tab that is still a placeholder, so no listener ever sees a selected tab without its
+     * buffer. Skipped while the active tab is {@linkplain #holdActiveTab held}, like the publication itself.
+     */
+    void setTabMaterializer(Consumer<Tab> materializer) {
+        this.tabMaterializer = materializer;
     }
 
     /** Makes {@code group} the focused one, republishing its selection as the active tab. */

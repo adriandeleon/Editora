@@ -195,7 +195,6 @@ class EditorMouseFxTest {
     void aKeyboardOpenedMenuActsOnTheCaretAndOpensThere() throws Exception {
         EditorBuffer b = open("keys.txt", PROSE);
         CodeArea area = b.getArea();
-        ContextMenu menu = FxTestSupport.field(b, "contextMenu");
         FxTestSupport.runOnFx(() -> {
             area.requestFocus();
             area.moveTo(2, 3);
@@ -216,6 +215,7 @@ class EditorMouseFxTest {
                             true,
                             null));
         });
+        ContextMenu menu = FxTestSupport.field(b, "contextMenu"); // built by that first request
         Bounds caret = FxTestSupport.callOnFx(() -> area.getCaretBounds().orElseThrow());
         assertTrue(FxTestSupport.callOnFx(menu::isShowing));
         assertEquals(caret.getMinX(), FxTestSupport.callOnFx(menu::getAnchorX), 1.0, "opens at the caret");

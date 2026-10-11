@@ -57,7 +57,14 @@ final class TodoCoordinator {
     private final CoordinatorHost host;
     private final Ops ops;
     private final TodoService service = new TodoService();
-    private final TodoPanel panel;
+    /** The TODO panel, built on its first use (the tool window's first open, or a scan). */
+    private TodoPanel panel;
+
+    private final TodoPanel.Actions panelActions;
+    /** State pushed to the panel while it did not exist, replayed when it is built. */
+    private Path activeFile;
+
+    private List<String> keywords = List.of();
 
     private CommandRegistry registry;
     private TodoMatcher matcher = text -> List.of();
@@ -67,7 +74,7 @@ final class TodoCoordinator {
     TodoCoordinator(CoordinatorHost host, Ops ops) {
         this.host = host;
         this.ops = ops;
-        this.panel = new TodoPanel(new TodoPanel.Actions() {
+        this.panelActions = new TodoPanel.Actions() {
             @Override
             public void openMatch(Path file, int line, int col) {
                 ops.openMatch(file, line, col);
@@ -104,17 +111,7 @@ final class TodoCoordinator {
                                 com.editora.todo.TodoEdit.withDescription(
                                         m.lineText(), m.col() - 1, m.parsed(), text)));
             }
-        });
-        // Persist any group-by change the user makes. The lambda reads settings lazily (config isn't set at
-        // construction time — the coordinator is a MainController field), and the restore below is guarded so
-        // it doesn't re-save the value it just restored.
-        panel.setGroupByChangeHandler(g -> {
-            if (restoringGroupBy) {
-                return;
-            }
-            host.settings().setTodoGroupBy(g.name());
-            host.requestSave();
-        });
+        };
     }
 
     /** True while {@link #restoreGroupByOnce} is programmatically setting the group-by (suppresses re-saving). */
@@ -128,6 +125,13 @@ final class TodoCoordinator {
             return;
         }
         groupByRestored = true;
+        if (panel != null) {
+            applyGroupBy(); // else when the panel is built
+        }
+    }
+
+    /** Sets the panel's group-by from the persisted setting without re-saving it. */
+    private void applyGroupBy() {
         restoringGroupBy = true;
         panel.setGroupBy(parseGroupBy(host.settings().getTodoGroupBy()));
         restoringGroupBy = false;
@@ -151,12 +155,34 @@ final class TodoCoordinator {
     }
 
     TodoPanel panel() {
+        if (panel == null) {
+            panel = new TodoPanel(panelActions);
+            // Persist any group-by change the user makes. The lambda reads settings lazily (config isn't set
+            // when the coordinator is constructed — it is a MainController field), and the restore is guarded
+            // so it doesn't re-save the value it just restored.
+            panel.setGroupByChangeHandler(g -> {
+                if (restoringGroupBy) {
+                    return;
+                }
+                host.settings().setTodoGroupBy(g.name());
+                host.requestSave();
+            });
+            if (groupByRestored) {
+                applyGroupBy();
+            }
+            panel.setKeywords(keywords);
+            panel.setActiveFile(activeFile);
+            refreshScope();
+        }
         return panel;
     }
 
     /** Sorts the TODO tree so the active file's group is on top (pass the normalized path; on tab switch). */
     void setActiveFile(java.nio.file.Path normalizedActive) {
-        panel.setActiveFile(normalizedActive);
+        activeFile = normalizedActive;
+        if (panel != null) {
+            panel.setActiveFile(normalizedActive);
+        }
     }
 
     void registerCommands(CommandRegistry registry) {
@@ -202,7 +228,10 @@ final class TodoCoordinator {
         for (TodoPatterns.Compiled c : compiled) {
             names.add(c.name());
         }
-        panel.setKeywords(names);
+        keywords = names;
+        if (panel != null) {
+            panel.setKeywords(names);
+        }
         refreshPanelIfOpen();
     }
 
@@ -264,7 +293,7 @@ final class TodoCoordinator {
         refreshScope(); // keep the panel's "scanning in" label in step with what we scan
         Settings s = host.settings();
         if (!s.isTodoHighlight()) {
-            panel.setResults(new TodoService.Outcome(List.of(), 0, 0, false));
+            panel().setResults(new TodoService.Outcome(List.of(), 0, 0, false));
             return;
         }
         List<TodoPatterns.Compiled> compiled = TodoPatterns.compile(s.getTodoPatterns());
@@ -280,7 +309,7 @@ final class TodoCoordinator {
         service.setRespectGitignore(s.isSearchRespectGitignore()); // same "exclude .gitignore" setting as search
         host.setStatus(tr("todo.scanning"));
         service.scan(compiled, root, open, outcome -> {
-            panel.setResults(outcome);
+            panel().setResults(outcome);
             host.setStatus(
                     outcome.totalMatches() == 0
                             ? tr("todo.none")
@@ -311,6 +340,9 @@ final class TodoCoordinator {
     /** Pushes the current TODO scan scope to the panel's label: this window's project tree (when one is
      *  open), else the open-files-only scope — matching what {@link #runScan} actually scans. */
     private void refreshScope() {
+        if (panel == null) {
+            return; // applied when the panel is built
+        }
         Path root = ops.projectRoot();
         if (root == null) {
             panel.setScope(tr("search.scopeOpenFiles"), null);

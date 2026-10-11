@@ -31,7 +31,7 @@
         <!-- Personal fork of RichTextFX (adds multiple cursors + column/box selection).
              groupId io.github.adriandeleon, vendored in the in-project m2-repo (see <repositories>).
              Source: https://github.com/adriandeleon/RichTextFX (feat/multi-caret-box-selection). -->
-        <richtextfx.version>0.11.7-inlay.1</richtextfx.version>
+        <richtextfx.version>0.11.7-inlay.2</richtextfx.version>
         <atlantafx.version>3.0.0</atlantafx.version>
         <jackson.version>2.22.3</jackson.version>
         <junit.version>6.1.3</junit.version>
@@ -122,8 +122,9 @@
             <groupId>io.github.adriandeleon</groupId>
             <artifactId>richtextfx</artifactId>
             <version>${richtextfx.version}</version>
-            <!-- The fork's pom pins JavaFX 21.0.5 (with a mac-aarch64 classifier baked in). Letting that
-                 transitively onto the path mixes javafx.base/graphics 21.0.5 with our javafx.controls 27 —
+            <!-- The fork's pom pins JavaFX 21.0.5 (with the classifier of whichever platform built it baked
+                 in: mac-aarch64 for inlay.1, linux for inlay.2). Letting that transitively onto the path
+                 mixes javafx.base/graphics 21.0.5 with our javafx.controls 27 —
                  e.g. Spinner crashes with NoSuchFieldError AccessibleAttribute.VALUE_STRING. Exclude it so
                  only our JavaFX 27 (declared above) is used. -->
             <exclusions>
@@ -890,6 +891,60 @@
                     <jlinkImageName>editora</jlinkImageName>
                     <jlinkZipName>editora</jlinkZipName>
                 </configuration>
+            </plugin>
+            <!-- Precompile the JavaFX stylesheets to their binary form (.bss beside each .css) in
+                 target/classes, so every artifact built from the compiled classes carries them: javafx:run,
+                 the test classpath, the jlink image behind the installers and the fat jar. JavaFX's
+                 StyleManager looks for name.bss before parsing name.css whatever the sheet was named by, and
+                 falls back to the text when the binary is missing — so nothing in the application names a
+                 .bss, and a build that skips this step still runs, only slower: the 165 KB user-agent theme
+                 and the 190 KB app.css cost 180–340 ms to parse as text at the first window, 12–17 ms as
+                 binary. The converter is scripts/css2bss.java, run on the build JDK with only javafx.base
+                 and javafx.graphics on its classpath (no toolkit starts); build-classpath resolves those two
+                 jars (the host-classified ones) into the property the exec consumes. Bound to process-classes:
+                 the fatjar profile wipes target/classes at initialize and the dist profile cleans, and both
+                 pass through here again before packaging. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.11.0</version>
+                <executions>
+                    <execution>
+                        <id>css-to-bss-classpath</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <includeArtifactIds>javafx-base,javafx-graphics</includeArtifactIds>
+                            <outputProperty>css2bss.classpath</outputProperty>
+                            <silent>true</silent>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.4</version>
+                <executions>
+                    <execution>
+                        <id>css-to-bss</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <arguments>
+                                <argument>-cp</argument>
+                                <argument>${css2bss.classpath}</argument>
+                                <argument>${project.basedir}/scripts/css2bss.java</argument>
+                                <argument>${project.build.outputDirectory}/com/editora/styles</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.moditect</groupId>

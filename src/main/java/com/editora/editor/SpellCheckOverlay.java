@@ -30,6 +30,10 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
     private static final double STEP = 2.0; // half-wavelength (px)
 
     private final CodeArea area;
+    private final java.util.function.Supplier<String> textSnapshot;
+    /** Generation of the latest code-line scan; an older scan's result is dropped (FX thread). */
+    private long codeLinesGen;
+
     private final Canvas canvas = new Canvas(1, 1);
     private SpellChecker checker;
     private SpellMode mode = SpellMode.PROSE;
@@ -144,7 +148,16 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
     }
 
     SpellCheckOverlay(CodeArea area) {
+        this(area, area::getText);
+    }
+
+    /**
+     * @param textSnapshot the document text for the code-line scan, read on the FX thread and scanned off it:
+     *     the buffer's versioned snapshot, so the scan copies nothing out of RichTextFX
+     */
+    SpellCheckOverlay(CodeArea area, java.util.function.Supplier<String> textSnapshot) {
         this.area = area;
+        this.textSnapshot = textSnapshot;
         getStyleClass().add("spellcheck-overlay");
         setMouseTransparent(true);
         getChildren().add(canvas);
@@ -181,17 +194,39 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
         return mode;
     }
 
+    /**
+     * Re-derives which lines are code, off the FX thread: the scan is O(lines) over the whole document, and
+     * it ran on every activation and every settled edit of a prose buffer. A generation counter drops a
+     * result the next edit or mode change has superseded; until the result lands the previous lines stand,
+     * as they already did for the 300 ms the settle waits.
+     */
     private void recomputeCodeLines() {
-        BitSet before = codeLines;
-        if (!active && before.isEmpty()) {
+        if (!active && codeLines.isEmpty()) {
             return; // nothing is drawn or asked while inactive; setActive(true) recomputes
         }
-        // Straight off the paragraph list: the whole-document String this used to build and split (two
-        // O(document) copies on the FX thread per settled edit) held nothing the paragraphs do not.
-        var paragraphs = area.getParagraphs();
-        codeLines = mode.codeLines(paragraphs.size(), i -> paragraphs.get(i).getText());
-        if (!codeLines.equals(before)) {
+        long gen = ++codeLinesGen;
+        if (!mode.marksCodeLines()) {
+            applyCodeLines(new BitSet()); // no scan to run: the answer is known without the text
+            return;
+        }
+        String text = textSnapshot.get();
+        SpellMode scanned = mode;
+        Thread.ofVirtual().name("editora-spell-code-lines").start(() -> {
+            BitSet found = scanned.codeLines(text);
+            javafx.application.Platform.runLater(() -> {
+                if (gen == codeLinesGen) {
+                    applyCodeLines(found);
+                }
+            });
+        });
+    }
+
+    private void applyCodeLines(BitSet found) {
+        BitSet before = codeLines;
+        codeLines = found;
+        if (!found.equals(before)) {
             geometry.clear(); // a line that became (or stopped being) code has squiggles to drop or draw
+            scheduleRedraw();
         }
     }
 
@@ -244,7 +279,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
      */
     @Override
     public SpellCheckOverlay follower(CodeArea view) {
-        SpellCheckOverlay second = new SpellCheckOverlay(view);
+        SpellCheckOverlay second = new SpellCheckOverlay(view, textSnapshot);
         second.checker = checker;
         second.setMode(mode);
         second.setRenderingActive(rendering);
@@ -294,6 +329,20 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
         flaggedCache.clear();
         geometry.clear();
         scheduleRedraw();
+    }
+
+    /**
+     * What a tab hidden for a while gives back: the per-line flagged spans (each entry keys a line's text)
+     * and the squiggle positions, both rebuilt from the word verdicts on the next repaint. The verdicts
+     * themselves ({@link #spellCache}) stay — they are Hunspell lookups, not geometry — and so does the
+     * code-line set the hover and the menu consult. Nothing is scheduled: the tab is not on screen.
+     */
+    void releaseHiddenCaches() {
+        if (follower != null) {
+            follower.releaseHiddenCaches();
+        }
+        flaggedCache.clear();
+        geometry.clear();
     }
 
     /** Forgets where the squiggles go, not what is misspelled: the font or the tab size changed. */

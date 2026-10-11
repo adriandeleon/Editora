@@ -25,12 +25,14 @@ Do not pass the controller itself or add inheritance to share its fields.
 | `GitBlameCoordinator` | The blame column: fetch, formatting, click-to-commit, the per-window options (`BlameOptions`, held by the window's `GitService` and part of its cache key) and *annotate previous revision*. A revision tab is a path-less, read-only buffer registered with its `(root, commit, path)`; `GitCoordinator.contextPath()` asks for that root so the tab keeps its repository, and blame for it is `git blame <commit> -- <path>`. Owned by `GitCoordinator`. |
 | `GitPatchCoordinator` | `git.applyPatch` / `git.createPatch` and the patch review tab's Apply pair. Applies the patch file's own bytes through `GitService.applyPatch` (`--check` first; `--3way` only on request after a rejection) in the repository the review was opened in. Owned by `GitCoordinator`; the three share `GitCoordinator.attachWindow(diff, openTab)` for the two window surfaces they open tabs through. |
 | `WindowChromeCoordinator` | Chrome visibility, focus modes and overlays |
+| `TabHeaders` | The graphic header of an editor tab — icon, title, pin/dirty/read-only/remote markers, tooltip — for any `TabContent` and for a buffer, plus the drag handle that reorders the strip (it tracks the dragged tab for `EditorArea`'s group drops). `MainController.updateTabMeta` keeps the window-title and preview-tab bookkeeping around its calls |
 | `WindowMcpBridge` | Window-facing MCP operations; the controller retains the public facade |
 | `FileWorkflowCoordinator` | Loading, saving, autosave and elevated saves |
 | `CloseCoordinator` | Exact-state tab/window close prompts and cross-prompt revalidation |
 | `WindowSessionCoordinator` | Session restoration/persistence and command-line startup |
 | `TestNavigationCoordinator` | Test/stack navigation and test/main-method gutter gates |
 | `InstallPromptCoordinator` | Language-support install prompts and server picker |
+| `UpdateCoordinator` | The release check: the automatic one (`UpdateCheckScheduler`: once per session and per day, a few seconds after the first painted frame), the manual "Check for Updates", the status-bar notice and the download page; the newest release found is shared across windows |
 
 The existing service coordinators continue to use `CoordinatorHost` and the shared `Services`
 adapter. Feature-specific hosts can refer to those owners when they need their capabilities. Keep
@@ -84,9 +86,37 @@ load, through `NavigationCoordinator.landJump`.
 `WindowManager.launch` builds the primary window (the one that had focus), returns to the event loop, and
 then builds each remaining restored window after a painted frame. External open requests that arrive
 meanwhile are queued until every window exists, a quit pauses the queue, and windows not yet built keep
-their saved sessions. Within a window, a restored background tab is loaded, highlighted and has its folds
-and caret restored as before, but its editor node is attached to the scene only when the tab is first
-selected (`DeferredTabContent`); the first restored tab the `TabPane` auto-selects is not treated as active
-(`EditorArea.holdActiveTab`). Tab context menus (`LazyContextMenu`) and the build-tool task trees
+their saved sessions. Within a window, only the selected tab (in a split, each group's selected tab) gets an editor
+before the first frame; every other saved file is a `RestorePlaceholder` tab — a `TabContent` with the
+file's title, icon and pin and an empty node, in its saved group and position, in the same `Tab` object the
+editor is later swapped into. After the selected file has painted, `WindowSessionCoordinator` builds and
+fills the rest on the `RestoreSchedule` cadence: a batch per pulse within a time budget (at least one), a
+painted frame (`afterNextPaint`) between batches, in selected-then-tab order. A background tab is loaded and
+has its folds and caret restored as before, but its editor node is attached to the scene only when the tab
+is first selected (`DeferredTabContent`), and its first syntax-highlight pass waits for that moment too
+(`EditorBuffer.setHighlightDeferred`); the first restored tab the `TabPane` auto-selects is not treated as
+active (`EditorArea.holdActiveTab`). A placeholder that something needs earlier is built out of order
+(`materialize`): `EditorArea`'s tab materializer runs before a newly selected tab is published, so no
+selection listener ever sees a placeholder as the active tab; `MainController.ensureBuffer` serves
+`whenLoaded`, crash-recovery records, MCP buffer operations and the test-method jump; `openBackgroundBuffer`
+(diff apply, agent writes, LSP workspace edits) builds and loads a placeholder's file rather than opening a
+second tab on it. Everything else that iterates buffers sees a placeholder as "no buffer" (`bufferOf` is
+null, `tabPath` is the file): a setting pushed to open buffers reaches the editor when it is built, since
+the wiring reads the current settings; search in open files, Replace in Files, Problems and the tab-close
+paths treat the file as on disk, which is what the placeholder's content is; session capture writes the
+placeholder's saved caret and pin; a rename or folder move relocates the placeholder's path. The restore is
+complete (`restoreComplete`, the `session-restored` startup mark) once every entry is built and filled, in
+or out of order. Tab context menus (`LazyContextMenu`) and the build-tool task trees
 (`ToolWindow` content suppliers) are built on first use, and build-file detection runs on one shared worker
 that skips unchanged marker files (`BuildDetection`).
+
+Which saved entries can be reopened is decided before the window exists: the launch's config-prefetch thread
+scans them (`config/SessionScan` — readable, kept-but-missing, or dropped, the rules `SessionEntries` used
+to apply inline) and `WindowSessionCoordinator.openInitialBuffer` takes that scan from its `ConfigManager`
+(`takeStartupSessionScan`, only when it is of the session's current list), so the restore stats nothing on
+the FX thread; a window built outside a launch scans inline. The focus a window gains by being shown runs
+none of the regain fan-out (`MainController.onWindowFocusGained`): Git status and build-tool detection are
+computed by the tab-switch path when a session is restored, and by that first focus only when no tab switch
+did. The startup probes (login-shell PATH, `rg`, `gh`, the spell dictionary, the release check, the
+Paste button's clipboard read) wait behind `perf/AfterFirstPaint` until the first content has painted; see
+[performance.md](../performance.md#startup).

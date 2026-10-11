@@ -149,7 +149,7 @@ class MarkupContextMenuFxTest {
         Path java = dir.resolve("Main.java");
         String src = "void main() {\n    IO.println(\"hi\");\n}\n";
         Files.writeString(java, src);
-        List<MenuItem> top = openContextMenu(java, src);
+        List<MenuItem> top = openContextMenu(java, src, true);
 
         boolean runAtTop = top.stream()
                 .anyMatch(i -> !(i instanceof Menu) && tr("command.file.run").equals(i.getText()));
@@ -158,11 +158,27 @@ class MarkupContextMenuFxTest {
 
     /** Opens the real context menu for a buffer holding {@code text} and returns its top-level items. */
     private static List<MenuItem> openContextMenu(Path file, String text) throws Exception {
+        return openContextMenu(file, text, false);
+    }
+
+    /**
+     * @param runnable wait for the load's Run-glyph scan, which runs off the FX thread, to find the file
+     *     runnable before the menu is opened
+     */
+    private static List<MenuItem> openContextMenu(Path file, String text, boolean runnable) throws Exception {
+        EditorBuffer buffer = FxTestSupport.callOnFx(() -> {
+            EditorBuffer b = new EditorBuffer();
+            b.setPath(file);
+            b.setContent(text);
+            b.setRunHandler(() -> {});
+            return b;
+        });
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);
+        while (runnable && !FxTestSupport.callOnFx(buffer::isRunnable)) {
+            assertTrue(System.nanoTime() < deadline, "the load's Run scan never found the file runnable");
+            Thread.sleep(10);
+        }
         return FxTestSupport.callOnFx(() -> {
-            EditorBuffer buffer = new EditorBuffer();
-            buffer.setPath(file);
-            buffer.setContent(text);
-            buffer.setRunHandler(() -> {});
             Stage stage = new Stage();
             stage.setScene(new Scene(new StackPane(buffer.getNode()), 600, 400));
             stage.show();

@@ -196,7 +196,8 @@ final class HistoryCoordinator {
     private final boolean ownsHistoryService;
     private final RestoreSupport restoreSupport;
     private final ExecutorService restoreExecutor;
-    private final FileHistoryPanel panel;
+    /** The File History panel, built on its first use (the tool window's first open, or a jump into it). */
+    private FileHistoryPanel panel;
 
     HistoryCoordinator(CoordinatorHost host, DiffCoordinator diff, Ops ops) {
         this(host, diff, ops, new HistoryService(new com.editora.history.HistoryBlobStore(ops.blobsDir())), true, null);
@@ -252,8 +253,6 @@ final class HistoryCoordinator {
             thread.setDaemon(true);
             return thread;
         });
-        this.panel = new FileHistoryPanel(historyActions());
-        this.panel.setDiffSupport(diffSupport());
     }
 
     private static RestoreSupport standaloneRestoreSupport(HistoryService historyService) {
@@ -341,6 +340,11 @@ final class HistoryCoordinator {
 
     /** The File History tool-window content (the {@code ToolWindow} itself stays in {@code MainController}). */
     FileHistoryPanel panel() {
+        if (panel == null) {
+            panel = new FileHistoryPanel(historyActions());
+            panel.setDiffSupport(diffSupport());
+            refresh(); // show the active file's revisions: the refreshes before now had no panel to fill
+        }
         return panel;
     }
 
@@ -748,7 +752,7 @@ final class HistoryCoordinator {
     void refresh() {
         EditorBuffer b = host.activeBuffer();
         boolean available = isEnabled() && b != null && b.getPath() != null && host.isLocalBuffer(b);
-        Path folder = isEnabled() ? panel.folderShown() : null;
+        Path folder = isEnabled() && panel != null ? panel.folderShown() : null;
         if (folder != null) {
             // The folder view is not "the active file's history": restoring one deleted file opens it, a save
             // is recorded, a tab is clicked — and the listing the user was working through must still be
@@ -767,6 +771,9 @@ final class HistoryCoordinator {
         folderGroupsShown = null;
         ops.setToolWindowAvailable(available);
         watchEditorText(available ? b : null);
+        if (panel == null) {
+            return; // nothing to fill yet; panel() refreshes when it builds
+        }
         if (available) {
             panel.setRevisions(
                     revisionsOf(historyKey(b.getPath())),
@@ -995,7 +1002,7 @@ final class HistoryCoordinator {
             }
             EditorBuffer active = host.activeBuffer();
             if ((listed || adopted)
-                    && (panel.folderShown() != null
+                    && ((panel != null && panel.folderShown() != null)
                             || (active != null
                                     && active.getPath() != null
                                     && historyKey(active.getPath()).equals(key)))) {
@@ -1041,6 +1048,22 @@ final class HistoryCoordinator {
      * save worker, so a later save can tell "the bytes I am replacing are my own" without hashing them twice.
      */
     private final Map<String, Long> lastSavedStamps = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * The last tab of {@code file} closed: its stamp goes, or the map grows by one entry per path ever saved in
+     * the window. If the file is opened and saved again, that save records what it replaces as a baseline
+     * revision — which the history worker drops when it equals the newest revision, as our own last save does.
+     */
+    void pathClosed(Path file) {
+        if (file != null) {
+            lastSavedStamps.remove(historyKey(file));
+        }
+    }
+
+    /** Paths with a recorded last-save stamp (tests). */
+    int savedStampCount() {
+        return lastSavedStamps.size();
+    }
 
     private static long stamp(byte[] bytes) {
         java.util.zip.CRC32 crc = new java.util.zip.CRC32();
@@ -1309,7 +1332,11 @@ final class HistoryCoordinator {
         }
         watchedBuffer = buffer;
         if (buffer != null) {
-            watchedText = buffer.getArea().plainTextChanges().subscribe(change -> panel.editorTextChanged());
+            watchedText = buffer.getArea().plainTextChanges().subscribe(change -> {
+                if (panel != null) {
+                    panel.editorTextChanged();
+                }
+            });
         }
     }
 
@@ -1394,8 +1421,8 @@ final class HistoryCoordinator {
             host.setStatus(tr("status.history.noFile"));
             return;
         }
-        if (panel.folderShown() != null) {
-            panel.showFileView(); // refreshes
+        if (panel().folderShown() != null) {
+            panel().showFileView(); // refreshes
         } else {
             refresh();
         }
@@ -1415,7 +1442,7 @@ final class HistoryCoordinator {
             return;
         }
         folderGroupsShown = groups;
-        panel.setFolderHistory(folder, groups);
+        panel().setFolderHistory(folder, groups);
         ops.setToolWindowAvailable(true);
         ops.openToolWindow();
     }
@@ -1891,7 +1918,7 @@ final class HistoryCoordinator {
                                     finishBufferRestore(target, completion, RestoreResult.BUFFER_CHANGED);
                                     return;
                                 }
-                                RestoreResult result = diff.applyToLocal(target, text)
+                                RestoreResult result = diff.applyToLocal(b, text)
                                         ? RestoreResult.RESTORED
                                         : RestoreResult.APPLY_FAILED;
                                 finishBufferRestore(target, completion, result);
@@ -2061,7 +2088,7 @@ final class HistoryCoordinator {
             return; // it did not open (the reason is in the status bar): not another file's history
         }
         openForActive();
-        panel.selectRevision(r);
+        panel().selectRevision(r);
     }
 
     /** Localized capture-reason label (mirrors {@code FileHistoryPanel.reasonLabel} for cross-file pickers). */

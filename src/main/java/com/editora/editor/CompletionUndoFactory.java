@@ -16,9 +16,10 @@ import org.reactfx.EventStream;
 /** Keeps UndoFX's replay/merge/mark machinery, with a bounded queue able to rebase delayed imports. */
 final class CompletionUndoFactory implements UndoManagerFactory {
     /**
-     * Most text (removed plus inserted characters) the undo queue of one document retains. The entry count
-     * alone bounds nothing: one entry can hold a rewrite of a multi-megabyte document. 64 M characters is at
-     * most 128 MB of UTF-16 text, and far beyond any history made of ordinary edits.
+     * Most text (removed plus inserted characters) the undo queue of one document retains — and, through
+     * {@link UndoQueueBudget#APP}, the queues of all documents together. The entry count alone bounds nothing:
+     * one entry can hold a rewrite of a multi-megabyte document. 64 M characters is at most 128 MB of UTF-16
+     * text, and far beyond any history made of ordinary edits.
      */
     static final long RETAINED_CHARS = 64L << 20;
 
@@ -121,7 +122,8 @@ final class CompletionUndoFactory implements UndoManagerFactory {
         private Consumer<IdentityHashMap<C, C>> replaced = ignored -> {};
 
         RebasableQueue(int capacity) {
-            delegate = new BudgetedChangeQueue<>(capacity, RETAINED_CHARS, CompletionUndoFactory::retainedChars);
+            delegate = new BudgetedChangeQueue<>(
+                    capacity, RETAINED_CHARS, CompletionUndoFactory::retainedChars, UndoQueueBudget.APP);
         }
 
         /** Entries held, for tests of the bounds. */
