@@ -155,6 +155,21 @@ class EditorBufferFxTest {
         assertFalse(FxTestSupport.callOnFx(py::isRunnable));
     }
 
+    @Test
+    void settleRunScanAnswersBeforeTheBackgroundScanLands() throws Exception {
+        // Run and Debug ask for the load's scan result at once; the answer must not depend on timing.
+        boolean runnable = FxTestSupport.callOnFx(() -> {
+            EditorBuffer buf = new EditorBuffer();
+            buf.setDisplayName("Main.java");
+            buf.setLanguageOverride("java");
+            buf.setRunEnabled(true);
+            buf.setContent("void main() {\n    IO.println(\"hi\");\n}\n");
+            buf.settleRunScan();
+            return buf.isRunnable() && buf.isCompactSource();
+        });
+        assertTrue(runnable, "settleRunScan lands the compact-source scan synchronously");
+    }
+
     /** The load's Run-glyph text scan runs off the FX thread; wait for it to flip the glyph. */
     private static void awaitRunnable(EditorBuffer buffer, String message) throws Exception {
         long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20);

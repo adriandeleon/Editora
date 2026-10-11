@@ -47,7 +47,9 @@ void request(String input, Consumer<Result> onResult) {
 ```
 
 Later additions with the same shape: the find bar's large-document search (`LatestOnly`), the status
-bar's byte count, the Run-glyph scan (`RunScan`, at a load as well as at a settled edit), external-change and
+bar's byte count, the Run-glyph scan (`RunScan`, at a load as well as at a settled edit; the Run and Debug
+commands call `EditorBuffer.settleRunScan()` so a command issued before the load's result lands still decides
+from the real scan), external-change and
 recent-file checks, directory listings for Find File and the breadcrumb (`DirectoryListing`), the File
 Information panel's word count and disk facts, and the spell checker's code-line scan of a prose buffer.
 

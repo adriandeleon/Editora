@@ -746,6 +746,9 @@ final class RunCoordinator {
 
     private void runActiveFile(boolean promptArgs) {
         EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null) {
+            buffer.settleRunScan(); // the load's scan runs off FX; the answer is needed now
+        }
         if (buffer == null || !buffer.isRunnable()) {
             host.setStatus(tr("status.run.notCompact"));
             return;

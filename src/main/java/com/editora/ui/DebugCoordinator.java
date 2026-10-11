@@ -1301,6 +1301,7 @@ final class DebugCoordinator {
         if ((b.isDirty() || b.getPath() == null) && !ops.saveBuffer(b)) {
             return;
         }
+        b.settleRunScan(); // compact-source detection is the load's off-FX scan; decide from its result
         Integer shebangSource = b.getShebangJavaSource();
         if ("java".equals(language) && b.isCompactSource() && shebangSource != null && shebangSource < 25) {
             host.setStatus(tr("status.debug.needSource25", shebangSource));

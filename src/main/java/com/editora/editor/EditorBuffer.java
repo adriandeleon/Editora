@@ -4084,6 +4084,19 @@ public class EditorBuffer implements TabContent {
 
     /** Discards an in-flight background run scan whose result would be stale (mirrors {@link #todoGen}). */
     private long runScanGen;
+    /** True while the load's (or a settle's) text scan is on the pool and its result has not landed. */
+    private boolean runScanInFlight;
+
+    /**
+     * Lands a background Run scan now when one is still in flight. The load's scan runs off the FX thread, so
+     * a Run or Debug command issued right after a file opens asks for the answer here before deciding how to
+     * launch; nothing happens when the result has already landed.
+     */
+    public void settleRunScan() {
+        if (runScanInFlight) {
+            recomputeRun(false);
+        }
+    }
 
     /** Recomputes runnable status + the gutter entry line(s); refreshes the gutter and fires the callback. */
     private void recomputeRun() {
@@ -4118,13 +4131,16 @@ public class EditorBuffer implements TabContent {
         // every 150 ms edit pulse just to discard it as run-ineligible.
         String text = in.needsText() ? documentTextSnapshot() : "";
         if (!settled || !in.needsText()) {
+            runScanInFlight = false;
             applyRunScan(RunScan.scan(in, text));
             return;
         }
+        runScanInFlight = true;
         HIGHLIGHT_POOL.execute(() -> {
             RunScan.Result found = RunScan.scan(in, text);
             Platform.runLater(() -> {
                 if (gen == runScanGen) {
+                    runScanInFlight = false;
                     applyRunScan(found);
                 }
             });
