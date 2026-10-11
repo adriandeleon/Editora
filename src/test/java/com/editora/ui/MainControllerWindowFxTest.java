@@ -77,11 +77,24 @@ class MainControllerWindowFxTest {
         }
     }
 
+    /** A per-application static: the MCP server lives on {@code MainController}, the known update on
+     *  {@code UpdateCoordinator}. */
+    private static java.lang.reflect.Field staticField(String field) throws NoSuchFieldException {
+        for (Class<?> owner : List.of(MainController.class, UpdateCoordinator.class)) {
+            try {
+                java.lang.reflect.Field f = owner.getDeclaredField(field);
+                f.setAccessible(true);
+                return f;
+            } catch (NoSuchFieldException notHere) {
+                // try the next owner
+            }
+        }
+        throw new NoSuchFieldException(field);
+    }
+
     private static void setStatic(String field, Object value) {
         try {
-            java.lang.reflect.Field f = MainController.class.getDeclaredField(field);
-            f.setAccessible(true);
-            f.set(null, value);
+            staticField(field).set(null, value);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
@@ -89,9 +102,7 @@ class MainControllerWindowFxTest {
 
     private static Object getStatic(String field) {
         try {
-            java.lang.reflect.Field f = MainController.class.getDeclaredField(field);
-            f.setAccessible(true);
-            return f.get(null);
+            return staticField(field).get(null);
         } catch (ReflectiveOperationException e) {
             throw new AssertionError(e);
         }
@@ -120,8 +131,8 @@ class MainControllerWindowFxTest {
 
     private void outcome(UpdateService.Outcome outcome, boolean manual) {
         FxTestSupport.call(
-                controller,
-                "onUpdateOutcome",
+                FxTestSupport.field(controller, "updates"),
+                "apply",
                 new Class<?>[] {UpdateService.Outcome.class, boolean.class},
                 outcome,
                 manual);
@@ -154,7 +165,7 @@ class MainControllerWindowFxTest {
             assertEquals(tr("statusbar.update", "99.0.0"), notice.getText());
             assertEquals(tr("status.update.available", "99.0.0"), echoNow());
 
-            FxTestSupport.invoke(controller, "openUpdateDownloadPage");
+            FxTestSupport.invoke(FxTestSupport.field(controller, "updates"), "openDownloadPage");
             assertEquals("99.0.0", settings.getDismissedUpdateVersion(), "seen: not announced again");
             assertFalse(notice.isVisible());
 
@@ -197,7 +208,7 @@ class MainControllerWindowFxTest {
 
             // With no update known, "open the download page" has nothing to dismiss.
             String dismissed = settings.getDismissedUpdateVersion();
-            FxTestSupport.invoke(controller, "openUpdateDownloadPage");
+            FxTestSupport.invoke(FxTestSupport.field(controller, "updates"), "openDownloadPage");
             assertEquals(dismissed, settings.getDismissedUpdateVersion());
         });
     }

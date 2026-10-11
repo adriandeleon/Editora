@@ -31,6 +31,7 @@ Do not pass the controller itself or add inheritance to share its fields.
 | `WindowSessionCoordinator` | Session restoration/persistence and command-line startup |
 | `TestNavigationCoordinator` | Test/stack navigation and test/main-method gutter gates |
 | `InstallPromptCoordinator` | Language-support install prompts and server picker |
+| `UpdateCoordinator` | The release check: the automatic one (`UpdateCheckScheduler`: once per session and per day, a few seconds after the first painted frame), the manual "Check for Updates", the status-bar notice and the download page; the newest release found is shared across windows |
 
 The existing service coordinators continue to use `CoordinatorHost` and the shared `Services`
 adapter. Feature-specific hosts can refer to those owners when they need their capabilities. Keep
@@ -90,3 +91,14 @@ selected (`DeferredTabContent`); the first restored tab the `TabPane` auto-selec
 (`EditorArea.holdActiveTab`). Tab context menus (`LazyContextMenu`) and the build-tool task trees
 (`ToolWindow` content suppliers) are built on first use, and build-file detection runs on one shared worker
 that skips unchanged marker files (`BuildDetection`).
+
+Which saved entries can be reopened is decided before the window exists: the launch's config-prefetch thread
+scans them (`config/SessionScan` — readable, kept-but-missing, or dropped, the rules `SessionEntries` used
+to apply inline) and `WindowSessionCoordinator.openInitialBuffer` takes that scan from its `ConfigManager`
+(`takeStartupSessionScan`, only when it is of the session's current list), so the restore stats nothing on
+the FX thread; a window built outside a launch scans inline. The focus a window gains by being shown runs
+none of the regain fan-out (`MainController.onWindowFocusGained`): Git status and build-tool detection are
+computed by the tab-switch path when a session is restored, and by that first focus only when no tab switch
+did. The startup probes (login-shell PATH, `rg`, `gh`, the spell dictionary, the release check, the
+Paste button's clipboard read) wait behind `perf/AfterFirstPaint` until the first content has painted; see
+[performance.md](../performance.md#startup).

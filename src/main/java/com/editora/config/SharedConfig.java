@@ -476,6 +476,15 @@ public class SharedConfig {
         return writer;
     }
 
+    /**
+     * Saves the projects index on the config-writer thread ({@link ProjectManager#saveQueued}): for the launch
+     * path, where {@link ProjectManager#save()} would {@code fsync} on the FX thread before the first frame.
+     * Flushed with every other queued write at quit.
+     */
+    public void saveProjectsQueued() {
+        projects.saveQueued(writer);
+    }
+
     /** Serializes the current preferences and queues a write to {@code settings.json} (non-blocking). */
     void enqueueSettings() {
         enqueueSettings(null);

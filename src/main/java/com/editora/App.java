@@ -119,14 +119,22 @@ public class App extends Application {
         // See installUiFont.
         installUiFont();
 
+        // Hold back the probes nothing on screen needs (login-shell PATH, rg, gh, the release check, the spell
+        // dictionary) until the first content has painted; see AfterFirstPaint. Only a real launch holds —
+        // a window built by a test or a later New Window runs them at once.
+        com.editora.perf.AfterFirstPaint.hold();
         // WindowManager builds each window (reusing the primary stage for the first) and, with projects
         // enabled, restores every window that was open at last quit. CLI targets go to the first window.
-        com.editora.ui.WindowManager windows = new com.editora.ui.WindowManager(shared, keymap, getHostServices());
+        // The plugin manifests were read by the prefetch thread; a discover() on FX is skipped.
+        com.editora.ui.WindowManager windows =
+                new com.editora.ui.WindowManager(shared, keymap, getHostServices(), boot.plugins());
         com.editora.ui.WindowManager.DiffUiRequest diffUi = diffUiArg(rawArgs);
         if (diffUi != null) {
             windows.launchDiffUi(stage, diffUi);
         } else {
-            windows.adoptBootstrapConfig(bootstrap); // its session is already parsed; don't re-read it on FX
+            // Its session is already parsed (and, for the project window the launch will focus, that
+            // project's); neither is re-read on FX.
+            windows.adoptBootstrapConfig(bootstrap, boot.projectWindow());
             windows.launch(
                     stage,
                     projectArg(rawArgs),
@@ -367,6 +375,13 @@ public class App extends Application {
         // A launch that is more than "open these files" needs a running editor that knows what to do with it;
         // one from before that (still running across an upgrade) would acknowledge it and show nothing.
         boolean filesOnly = !fileTargets(argList).isEmpty() && projectArg(argList) == null;
+        // The config prefetch starts before the single-instance probe so the two overlap: a stale endpoint
+        // (a crash left the file behind, and something else now holds the port) costs the probe up to its
+        // connect timeout. Only the read-only warm-up runs meanwhile; the load itself waits at loadGate,
+        // because loading can move files (a migration backup, a restored set-aside copy, the TOML
+        // conversion) and a launch about to be handed to the running editor must not touch its directory.
+        java.util.concurrent.CountDownLatch loadGate = new java.util.concurrent.CountDownLatch(1);
+        configPrefetch = prefetchConfig(configDir, argList, loadGate);
         singleInstance = com.editora.ipc.SingleInstance.start(
                 configDir,
                 forward ? forwardArgs(argList, java.nio.file.Path.of("").toAbsolutePath()) : argList,
@@ -393,13 +408,25 @@ public class App extends Application {
         // the time we reach this line there is nothing left to overlap with. Entering through Launcher moves
         // toolkit startup after main(), which measured (Linux app image) as a ~135 ms window; the config
         // load is ~85 ms of file I/O and Jackson with no toolkit involvement, so it now finishes inside that
-        // window instead of running after it. start() takes whatever is ready.
-        configPrefetch = prefetchConfig(configDir);
+        // window instead of running after it. start() takes whatever is ready. (The prefetch thread was
+        // started above, ahead of the single-instance probe; this process is now known to be the one that
+        // will run, so the load may go ahead.)
+        loadGate.countDown();
         launch(args);
     }
 
-    /** The shared config, loaded off-thread by {@link #prefetchConfig} and consumed once by {@link #start}. */
-    private record Bootstrap(ConfigManager manager, Settings settings, String language) {}
+    /**
+     * What the prefetch thread loaded, consumed once by {@link #start}: the shared config with the default
+     * session; the plugin manifests ({@code null} when not discovered off-thread); and, when the launch will
+     * focus a project or untitled window, that window's session ({@code null} otherwise) — all parsed while
+     * the toolkit started, so the first window builds without reading them on the FX thread.
+     */
+    private record Bootstrap(
+            ConfigManager manager,
+            Settings settings,
+            String language,
+            com.editora.plugin.PluginManager plugins,
+            ConfigManager projectWindow) {}
 
     /** The UI language to load: the explicit setting, else the system language, else English. */
     private static String uiLanguage(Settings settings) {
@@ -411,14 +438,25 @@ public class App extends Application {
 
     private static volatile CompletableFuture<Bootstrap> configPrefetch;
 
-    /** Loads the config on a daemon thread while the caller starts the FX toolkit. Never throws: a failure
-     *  is handed to {@link #takeBootstrap}, which falls back to loading inline so the prefetch can only ever
-     *  make startup faster, never introduce a failure mode of its own. */
-    private static CompletableFuture<Bootstrap> prefetchConfig(java.nio.file.Path configDir) {
+    /**
+     * Loads the config on a daemon thread while the caller probes the single-instance endpoint and starts the
+     * FX toolkit. Never throws: a failure is handed to {@link #takeBootstrap}, which falls back to loading
+     * inline so the prefetch can only ever make startup faster, never introduce a failure mode of its own.
+     *
+     * <p>Two stages. Until {@code loadGate} opens only {@link #warmConfigLoad} runs — reads with no side
+     * effect — so a launch that is then forwarded (and exits) has changed nothing in a directory another
+     * process owns. After it, the load proper, plus everything else the first window used to read on the FX
+     * thread: the plugin manifests, the session of the project window the launch will focus, and the
+     * readability of every saved session entry ({@link com.editora.config.SessionScan}).
+     */
+    static CompletableFuture<Bootstrap> prefetchConfig(
+            java.nio.file.Path configDir, java.util.List<String> args, java.util.concurrent.CountDownLatch loadGate) {
         CompletableFuture<Bootstrap> future = new CompletableFuture<>();
         Thread t = new Thread(
                 () -> {
                     try {
+                        warmConfigLoad(configDir);
+                        loadGate.await();
                         ConfigManager manager = new ConfigManager(configDir);
                         Settings settings = manager.load();
                         // The message catalog (a few hundred KB of properties) is parsed here too rather than
@@ -426,7 +464,12 @@ public class App extends Application {
                         // Completing the future publishes it — start() reads no message before join().
                         String language = uiLanguage(settings);
                         com.editora.i18n.Messages.init(language);
-                        future.complete(new Bootstrap(manager, settings, language));
+                        SharedConfig shared = manager.shared();
+                        com.editora.plugin.PluginManager plugins = com.editora.ui.WindowManager.discoverPlugins(shared);
+                        manager.setStartupSessionScan(com.editora.config.SessionScan.of(
+                                manager.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
+                        ConfigManager projectWindow = prefetchProjectWindow(shared, args);
+                        future.complete(new Bootstrap(manager, settings, language, plugins, projectWindow));
                     } catch (Throwable e) { // NOSONAR: deliberately broad — see takeBootstrap
                         future.completeExceptionally(e);
                     }
@@ -435,6 +478,46 @@ public class App extends Application {
         t.setDaemon(true);
         t.start();
         return future;
+    }
+
+    /**
+     * The read-only part of loading: the JSON mapper and the store classes are initialized and the main
+     * files' bytes parsed and dropped, which pulls Jackson and the page cache in without creating, moving or
+     * writing anything. What the load proper then does is mostly already resident.
+     */
+    static void warmConfigLoad(java.nio.file.Path configDir) {
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            for (String name : java.util.List.of("settings.json", "workspace-state.json", "projects.json")) {
+                java.nio.file.Path file = configDir.resolve(name);
+                if (java.nio.file.Files.isRegularFile(file)) {
+                    mapper.readTree(java.nio.file.Files.readAllBytes(file));
+                }
+            }
+            com.editora.config.migration.ConfigSchema.SETTINGS.currentVersion();
+            new Settings();
+            new com.editora.config.WorkspaceState();
+        } catch (java.io.IOException | RuntimeException ignored) {
+            // A warm-up only; the load proper reports what is wrong with the files.
+        }
+    }
+
+    /**
+     * The session of the project (or untitled) window this launch will build first and focus, read here so
+     * {@code WindowManager.buildWindow} does not read, migrate and serialize it on the FX thread; {@code null}
+     * when that window is the default one (its session is the bootstrap's) or has no session file yet.
+     */
+    private static ConfigManager prefetchProjectWindow(SharedConfig shared, java.util.List<String> args) {
+        java.nio.file.Path stateFile = com.editora.ui.WindowManager.primaryWindowStateFile(
+                shared, projectArg(args), singleWindowArg(args) != null);
+        if (stateFile == null || !java.nio.file.Files.isRegularFile(stateFile)) {
+            return null;
+        }
+        ConfigManager config = new ConfigManager(shared, stateFile);
+        config.setWorkspaceStateFile(stateFile);
+        config.setStartupSessionScan(com.editora.config.SessionScan.of(
+                config.getWorkspaceState().getOpenFiles(), com.editora.vfs.Vfs::parseStorable));
+        return config;
     }
 
     /**
@@ -462,7 +545,8 @@ public class App extends Application {
             }
         }
         ConfigManager manager = new ConfigManager(configDir);
-        return new Bootstrap(manager, manager.load(), null); // null: the catalog is still to be loaded
+        // null language: the catalog is still to be loaded; null plugins/project window: read on FX as before
+        return new Bootstrap(manager, manager.load(), null, null, null);
     }
 
     /**

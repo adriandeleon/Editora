@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Pins the update-notice wiring against a real window ({@link FxWindowFixture}): the status-bar "update"
- * segment shows/hides from the shared {@code latestKnownUpdate} + the dismissed-version setting, opening the
+ * segment shows/hides from the shared {@code UpdateCoordinator.latestKnownUpdate} + the dismissed-version setting, opening the
  * download page dismisses that version, and the three update commands are registered. The pure compare/parse
  * logic is covered separately by {@code com.editora.update.UpdateCheckTest}.
  */
@@ -51,7 +51,7 @@ class UpdateNoticeFxTest {
     }
 
     private static void setLatestKnownUpdate(ReleaseInfo info) throws Exception {
-        Field f = MainController.class.getDeclaredField("latestKnownUpdate");
+        Field f = UpdateCoordinator.class.getDeclaredField("latestKnownUpdate");
         f.setAccessible(true);
         f.set(null, info);
     }
@@ -67,7 +67,8 @@ class UpdateNoticeFxTest {
     }
 
     private boolean segmentVisible() throws Exception {
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(fx.controller, "refreshUpdateNotice"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.invoke(FxTestSupport.field(fx.controller, "updates"), "refreshNotice"));
         return FxTestSupport.callOnFx(() -> updateSegment().isVisible());
     }
 
@@ -96,7 +97,8 @@ class UpdateNoticeFxTest {
         setLatestKnownUpdate(new ReleaseInfo("9.9.9", "https://example.test/r/9.9.9", "9.9.9"));
         assertTrue(segmentVisible());
         // HostServices is null in the test, so openExternalUrl is a no-op — only the dismiss/hide side runs.
-        FxTestSupport.runOnFx(() -> FxTestSupport.invoke(fx.controller, "openUpdateDownloadPage"));
+        FxTestSupport.runOnFx(
+                () -> FxTestSupport.invoke(FxTestSupport.field(fx.controller, "updates"), "openDownloadPage"));
         assertEquals("9.9.9", settings().getDismissedUpdateVersion(), "clicking the notice dismisses that version");
         assertFalse(FxTestSupport.callOnFx(() -> updateSegment().isVisible()), "and hides the segment");
     }

@@ -109,10 +109,10 @@ public final class LspManager {
     public LspManager(BiConsumer<Path, List<LspDiagnostic>> onDiagnostics, BiConsumer<String, String> onStatus) {
         this.onDiagnostics = onDiagnostics == null ? (p, d) -> {} : onDiagnostics;
         this.onStatus = onStatus == null ? (t, m) -> {} : onStatus;
-        // Warm the augmented PATH off-thread now (it spawns a login shell to recover nvm/fnm/asdf dirs):
-        // server detection and the FX-thread session start both read it, and this caches the result
-        // before either needs it so neither blocks.
-        detectExec.submit(ProcessRunner::augmentedPath);
+        // The augmented PATH (a login shell, to recover nvm/fnm/asdf dirs) is warmed by configure(): at once
+        // when LSP is on, since server detection and the FX-thread session start both read it; otherwise
+        // after the first painted frame, for Run/Build/Debug, so a launch with LSP off spawns no shell
+        // while the user's file is still loading.
     }
 
     public void setOnRefreshRequested(RefreshHandler handler) {
@@ -166,8 +166,11 @@ public final class LspManager {
             serverCommands.forEach(this::putCommand);
         }
         this.enabled = enabled;
-        if (!enabled) {
+        if (enabled) {
+            ProcessRunner.warmAugmentedPathAsync(); // before the first session start reads it on FX
+        } else {
             shutdownAll();
+            com.editora.perf.AfterFirstPaint.run(ProcessRunner::warmAugmentedPathAsync);
         }
     }
 
@@ -330,6 +333,12 @@ public final class LspManager {
         cancelEviction(session); // a reopened document keeps an idle session alive (#669)
         String uri = uri(file);
         sessionByDocUri.put(uri, session);
+        if (session.isDisposed()) {
+            // The start executor withheld or failed this session's start while this thread was between
+            // sessionForRoot and the put above: dropSession ran already, so its removal missed this entry.
+            sessionByDocUri.remove(uri, session);
+            return;
+        }
         session.didOpen(uri, LspServerRegistry.protocolLanguageId(routeLanguageId), text);
     }
 

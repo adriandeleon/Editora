@@ -117,23 +117,23 @@ final class WindowSessionCoordinator {
      */
     public void openInitialBuffer() {
         WorkspaceState state = host.config().getWorkspaceState();
-        List<WorkspaceState.OpenFile> files = new ArrayList<>();
         missingSessionFiles.clear();
-        for (WorkspaceState.OpenFile f : skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles()) {
-            // parseStorable reconstructs a local path directly, or a remote (sftp://) one via the resolver —
-            // which is null until its connection is open, so a remote entry is skipped at startup rather than
-            // reopened as a same-named *local* file.
-            Path rp = f.getPath() == null || f.getPath().isBlank()
-                    ? null
-                    : com.editora.vfs.Vfs.parseStorable(f.getPath());
-            if (rp != null && Files.isReadable(rp)) {
-                files.add(f);
-            } else if (SessionEntries.keepUnreadable(rp, Files::isDirectory, Files::notExists)) {
-                // Not openable right now, but not known to be gone either (its folder is missing — an
-                // unmounted volume). Dropping it here made the next save persist a session without it.
-                missingSessionFiles.add(f);
-            }
+        // Which entries can be reopened takes a stat per entry (more for one that cannot be read), each able
+        // to stall on a network mount. A launch made that scan on its config-prefetch thread; a window built
+        // any other way scans here, with the same rules. parseStorable reconstructs a local path directly, or
+        // a remote (sftp://) one via the resolver — which is null until its connection is open, so a remote
+        // entry is skipped at startup rather than reopened as a same-named *local* file.
+        com.editora.config.SessionScan scan =
+                skipSessionFiles ? null : host.config().takeStartupSessionScan();
+        if (scan == null) {
+            scan = com.editora.config.SessionScan.of(
+                    skipSessionFiles ? List.<WorkspaceState.OpenFile>of() : state.getOpenFiles(),
+                    com.editora.vfs.Vfs::parseStorable);
         }
+        List<WorkspaceState.OpenFile> files = new ArrayList<>(scan.openable());
+        // Not openable right now, but not known to be gone either (its folder is missing — an unmounted
+        // volume). Dropping these here made the next save persist a session without them.
+        missingSessionFiles.addAll(scan.missing());
         restoreStarted = true; // the saved list has been read: a live capture can no longer pre-empt it
         if (files.isEmpty()) {
             // No session to restore (empty, or --no-session): open the CLI action's file (--new-file / FILE
