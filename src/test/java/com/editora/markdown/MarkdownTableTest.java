@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -382,5 +383,18 @@ class MarkdownTableTest {
             }
         }
         assertEquals(0, line, "caret falls back to the header, not the '---' row");
+    }
+
+    @Test
+    void pipesInACodeBlockAreNotATable() {
+        // Tab and Enter used to reflow, and add rows to, a table shown as an example in a fenced block.
+        String fenced = "```\n| a | b |\n|---|---|\n| 1 | 2 |\n```\n";
+        assertNull(MarkdownTable.blockBounds(fenced, fenced.indexOf("| 1")));
+        String tilde = "- item\n\n      ~~~~\n      | a | b |\n      |---|---|\n      ~~~~\n";
+        assertNull(MarkdownTable.blockBounds(tilde, tilde.indexOf("| a")));
+        String indented = "text\n\n    | a | b |\n    |---|---|\n";
+        assertNull(MarkdownTable.blockBounds(indented, indented.indexOf("| a")));
+        String after = fenced + "\n| a | b |\n|---|---|\n";
+        assertNotNull(MarkdownTable.blockBounds(after, after.lastIndexOf("| a")), "a table after the block is one");
     }
 }

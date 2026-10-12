@@ -20,6 +20,7 @@ import com.editora.markdown.MarkdownLint;
 import com.editora.markdown.MarkdownLint.Diagnostic;
 import com.editora.markdown.MarkdownLintConfig;
 import com.editora.markdown.MarkdownLintFix;
+import com.editora.markdown.MarkdownLintOptions;
 import org.fxmisc.richtext.CodeArea;
 
 import static com.editora.i18n.Messages.tr;
@@ -48,10 +49,14 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     /** Opens a URL in the browser; a test replaces it so none is ever launched. */
     Consumer<String> openUrl;
 
-    /** A project config in effect: the file and the rules it turns off. */
-    record ConfigHit(Path file, Set<String> disabled) {}
+    /**
+     * A project config in effect: the file, the rules it turns off, the rules it switches on by name (those win
+     * over the user's global "off"), and its rule options.
+     */
+    record ConfigHit(Path file, Set<String> disabled, Set<String> enabled, MarkdownLintOptions options) {}
 
-    private record CacheEntry(long mtime, Set<String> disabled, boolean valid) {}
+    private record CacheEntry(
+            long mtime, Set<String> disabled, Set<String> enabled, MarkdownLintOptions options, boolean valid) {}
 
     private final Map<Path, CacheEntry> cache = new HashMap<>();
     /** Unreadable configs already reported ({@code path@mtime}), so each is announced once. */
@@ -75,7 +80,8 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             for (String name : MarkdownLintConfig.FILE_NAMES) {
                 Path cfg = dir.resolve(name);
                 if (Files.isRegularFile(cfg)) {
-                    return new ConfigHit(cfg, load(cfg, 0));
+                    CacheEntry loaded = load(cfg, 0);
+                    return new ConfigHit(cfg, loaded.disabled(), loaded.enabled(), loaded.options());
                 }
             }
             if (dir.equals(stop)) {
@@ -104,7 +110,9 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         return dir.getParent() == null || (home != null && dir.equals(Path.of(home)));
     }
 
-    private Set<String> load(Path cfg, int depth) {
+    private static final CacheEntry NOTHING = new CacheEntry(0, Set.of(), Set.of(), MarkdownLintOptions.DEFAULT, true);
+
+    private CacheEntry load(Path cfg, int depth) {
         try {
             long mtime = Files.getLastModifiedTime(cfg).toMillis();
             CacheEntry cached = cache.get(cfg);
@@ -112,26 +120,42 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
                 MarkdownLintConfig.Parsed parsed =
                         MarkdownLintConfig.parseFile(cfg.getFileName().toString(), Files.readString(cfg));
                 Set<String> disabled = new HashSet<>();
+                Set<String> enabled = new HashSet<>();
+                MarkdownLintOptions options = MarkdownLintOptions.DEFAULT;
                 if (parsed.valid() && parsed.extendsPath() != null && depth < MAX_EXTENDS_DEPTH) {
                     Path base = cfg.resolveSibling(parsed.extendsPath()).normalize();
                     if (Files.isRegularFile(base)) {
-                        disabled.addAll(load(base, depth + 1));
+                        CacheEntry inherited = load(base, depth + 1);
+                        disabled.addAll(inherited.disabled());
+                        enabled.addAll(inherited.enabled());
+                        options = inherited.options();
                     }
                 }
-                MarkdownLintConfig.apply(parsed, disabled);
-                cached = new CacheEntry(mtime, Set.copyOf(disabled), parsed.valid());
+                MarkdownLintConfig.apply(parsed, disabled, enabled);
+                options = MarkdownLintConfig.options(parsed, options);
+                cached = new CacheEntry(mtime, Set.copyOf(disabled), Set.copyOf(enabled), options, parsed.valid());
                 cache.put(cfg, cached);
             }
             if (!cached.valid() && reported.add(cfg + "@" + mtime)) {
                 host.setStatus(tr("status.markdownLint.configError", cfg.getFileName()));
             }
-            return cached.disabled();
+            return cached;
         } catch (IOException e) {
-            return Set.of();
+            return NOTHING;
         }
     }
 
-    /** "2 rules disabled by .markdownlint.json" for {@code buffer}, or "" when no config disables anything. */
+    /** The project's rule options for {@code buffer} (markdownlint's defaults without a config). */
+    MarkdownLintOptions options(EditorBuffer buffer) {
+        Path path = buffer == null ? null : buffer.getPath();
+        ConfigHit hit = path != null && com.editora.vfs.Vfs.isLocal(path) ? configFor(path) : null;
+        return hit == null ? MarkdownLintOptions.DEFAULT : hit.options();
+    }
+
+    /**
+     * What {@code buffer}'s project config does to the rule list: "2 rules disabled by .markdownlint.json", and
+     * the rules it switches on although Settings has them off; "" when it changes nothing.
+     */
     String configNote(EditorBuffer buffer) {
         Path path = buffer == null ? null : buffer.getPath();
         if (path == null || !com.editora.vfs.Vfs.isLocal(path)) {
@@ -141,8 +165,16 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         if (hit == null) {
             return "";
         }
-        long n = hit.disabled().stream().filter(MarkdownLint.CODES::contains).count();
-        return n == 0 ? "" : tr("markdownLint.configNote", n, hit.file().getFileName());
+        long off = hit.disabled().stream().filter(MarkdownLint.CODES::contains).count();
+        Set<String> userOff = previews.settingsDisabledRules();
+        long on = hit.enabled().stream().filter(userOff::contains).count();
+        Object file = hit.file().getFileName();
+        if (on == 0) {
+            return off == 0 ? "" : tr("markdownLint.configNote", off, file);
+        }
+        return off == 0
+                ? tr("markdownLint.configNoteEnabled", on, file)
+                : tr("markdownLint.configNoteBoth", off, on, file);
     }
 
     // --- fixing ---------------------------------------------------------------------------------------
@@ -155,10 +187,11 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         }
         String text = b.getContent();
         Set<String> off = previews.effectiveMarkdownLintDisabled(b);
+        MarkdownLintOptions options = options(b);
         MarkdownLintFix.Result fixed =
-                MarkdownLintFix.fix(text, off, host.config().getSettings().getTabSize(), scope);
+                MarkdownLintFix.fix(text, off, host.config().getSettings().getTabSize(), scope, options);
         if (fixed.text().equals(text)) {
-            int manual = MarkdownLint.lint(text, off).size();
+            int manual = MarkdownLint.lint(text, off, options).size();
             host.setStatus(
                     manual == 0 ? tr("status.markdownLint.fixNone") : tr("status.markdownLint.fixNoneManual", manual));
             return;
@@ -167,8 +200,8 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
             return;
         }
         replaceKeepingPlace(b, fixed);
-        List<Diagnostic> before = MarkdownLint.lint(text, off);
-        List<Diagnostic> after = MarkdownLint.lint(fixed.text(), off);
+        List<Diagnostic> before = MarkdownLint.lint(text, off, options);
+        List<Diagnostic> after = MarkdownLint.lint(fixed.text(), off, options);
         long done = Math.max(1, fixable(before) - fixable(after));
         host.setStatus(
                 after.isEmpty()

@@ -40,6 +40,8 @@ final class MarkdownLintDirectives {
             Pattern.compile("^\\s*(?:<!--\\s*markdownlint-[^>]*-->\\s*)+$", Pattern.CASE_INSENSITIVE);
 
     private final Set<String>[] perLine;
+    /** The {@code configure-file} objects of the document, in order (their rule options refine the project's). */
+    private final java.util.List<MarkdownLintConfig.Parsed> configured = new java.util.ArrayList<>();
 
     @SuppressWarnings("unchecked")
     private MarkdownLintDirectives(int lineCount) {
@@ -75,7 +77,11 @@ final class MarkdownLintDirectives {
                 switch (m.group(1).toLowerCase(Locale.ROOT)) {
                     case "disable-file" -> initial.addAll(codes(m.group(2)));
                     case "enable-file" -> initial.removeAll(codes(m.group(2)));
-                    case "configure-file" -> MarkdownLintConfig.apply(MarkdownLintConfig.parse(m.group(2)), initial);
+                    case "configure-file" -> {
+                        MarkdownLintConfig.Parsed parsed = MarkdownLintConfig.parse(m.group(2));
+                        MarkdownLintConfig.apply(parsed, initial);
+                        d.configured.add(parsed);
+                    }
                     default -> {}
                 }
             }
@@ -125,6 +131,15 @@ final class MarkdownLintDirectives {
             d.perLine[i] = eff;
         }
         return d;
+    }
+
+    /** {@code base} refined by the rule options of the document's {@code configure-file} comments. */
+    MarkdownLintOptions options(MarkdownLintOptions base) {
+        MarkdownLintOptions out = base;
+        for (MarkdownLintConfig.Parsed parsed : configured) {
+            out = MarkdownLintConfig.options(parsed, out);
+        }
+        return out;
     }
 
     /** Whether {@code code} is suppressed on the 0-based {@code line}. */

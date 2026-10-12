@@ -492,7 +492,11 @@ final class EditingCoordinator {
         if ((!b.isMarkdown() && !b.isTypst()) || !b.isEditable()) {
             return false;
         }
-        if (!javafx.scene.input.Clipboard.getSystemClipboard().hasImage()) {
+        javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
+        // A spreadsheet or a word processor puts a picture of the copied cells beside their text: the text
+        // is what was copied. Only a clipboard that holds nothing but an image is pasted as one.
+        String text = clipboard.hasString() ? clipboard.getString() : null;
+        if (!clipboard.hasImage() || (text != null && !text.isBlank())) {
             return false;
         }
         if (!host.isLocalBuffer(b) || b.getPath() == null) {
@@ -506,7 +510,8 @@ final class EditingCoordinator {
         }
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
+                    baseDir, host.config().getSettings().getMarkdownAssetsFolder());
             java.nio.file.Files.createDirectories(assets);
             String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
                     n -> java.nio.file.Files.exists(assets.resolve(n)), "pasted-image", "png");
@@ -529,7 +534,8 @@ final class EditingCoordinator {
         }
         try {
             java.nio.file.Path baseDir = b.getPath().toAbsolutePath().getParent();
-            java.nio.file.Path assets = baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
+            java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
+                    baseDir, host.config().getSettings().getMarkdownAssetsFolder());
             java.nio.file.Files.createDirectories(assets);
             StringBuilder out = new StringBuilder();
             for (java.io.File f : files) {
@@ -586,8 +592,8 @@ final class EditingCoordinator {
                             String snippet;
                             try {
                                 if (found.bytes() != null) {
-                                    java.nio.file.Path assets =
-                                            baseDir.resolve(com.editora.markdown.MarkdownImagePaste.ASSETS_DIR);
+                                    java.nio.file.Path assets = com.editora.markdown.MarkdownImagePaste.assetsDir(
+                                            baseDir, host.config().getSettings().getMarkdownAssetsFolder());
                                     java.nio.file.Files.createDirectories(assets);
                                     String name = com.editora.markdown.MarkdownImagePaste.uniqueFileName(
                                             n -> java.nio.file.Files.exists(assets.resolve(n)),
@@ -881,6 +887,16 @@ final class EditingCoordinator {
     /** Applies a pure {@link com.editora.editops.LineOps} edit to the active area (duplicate / move line). */
     void lineOp(java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op) {
         lineOp(op, null);
+    }
+
+    /** Move line up/down: the move, then — in an ordered Markdown list — the list numbered in sequence again. */
+    void moveLines(
+            java.util.function.BiFunction<String, Integer, com.editora.editops.LineOps.Edit> op, LineBlockOp blockOp) {
+        lineOp(op, blockOp);
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null && buffer.isMarkdown()) {
+            buffer.markdown().renumberListAtCaret();
+        }
     }
 
     private static int paragraphOf(CodeArea area, int offset) {

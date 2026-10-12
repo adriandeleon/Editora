@@ -20,6 +20,20 @@ public final class MarkdownImagePaste {
 
     private MarkdownImagePaste() {}
 
+    /**
+     * The folder pasted and dropped images go into for a document in {@code baseDir}: {@code folder} (the
+     * "assets folder" setting) relative to it. A blank value, an absolute path or one that climbs out with
+     * {@code ..} falls back to {@link #ASSETS_DIR}; {@code "."} is the document's own folder.
+     */
+    public static Path assetsDir(Path baseDir, String folder) {
+        String f = folder == null ? "" : folder.strip().replace('\\', '/');
+        boolean usable = !f.isEmpty() && !f.startsWith("/") && !f.matches("^[A-Za-z]:.*");
+        for (String part : f.split("/")) {
+            usable &= !part.equals("..");
+        }
+        return baseDir.resolve(usable ? f : ASSETS_DIR).normalize();
+    }
+
     /** A non-colliding file name {@code base.ext} / {@code base-N.ext}; {@code exists} tests the target dir. */
     public static String uniqueFileName(Predicate<String> exists, String base, String ext) {
         String name = base + "." + ext;
