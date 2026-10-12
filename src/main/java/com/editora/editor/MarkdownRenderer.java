@@ -193,7 +193,11 @@ public final class MarkdownRenderer {
             if (url == null || url.isBlank()) {
                 return false;
             }
-            return this == DOCUMENT || url.stripLeading().regionMatches(true, 0, "data:", 0, 5);
+            if (this == DOCUMENT) {
+                // (the one switch the user has: no http(s) image is fetched while it is off)
+                return PreviewImageLoader.remoteImages() || !PreviewImageLoader.isRemote(url);
+            }
+            return url.stripLeading().regionMatches(true, 0, "data:", 0, 5);
         }
     }
 
