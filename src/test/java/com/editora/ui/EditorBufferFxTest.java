@@ -191,7 +191,7 @@ class EditorBufferFxTest {
         });
         assertEquals("python", FxTestSupport.callOnFx(py::getLanguage), "python shebang ⇒ python");
         assertTrue(FxTestSupport.callOnFx(py::isPython));
-        assertTrue(FxTestSupport.callOnFx(py::isRunnable));
+        awaitRunnable(py, "python shebang ⇒ runnable");
 
         // A bash shebang ⇒ shell (still gated by the shell-run toggle for the glyph).
         EditorBuffer sh = FxTestSupport.callOnFx(() -> {
@@ -212,7 +212,7 @@ class EditorBufferFxTest {
             return buf;
         });
         assertEquals("java", FxTestSupport.callOnFx(javaBuf::getLanguage), "java --source shebang ⇒ java");
-        assertTrue(FxTestSupport.callOnFx(javaBuf::isRunnable), "shebang compact source ⇒ runnable");
+        awaitRunnable(javaBuf, "shebang compact source ⇒ runnable");
         assertTrue(FxTestSupport.callOnFx(javaBuf::isCompactSource));
         assertEquals(25, FxTestSupport.callOnFx(javaBuf::getShebangJavaSource));
 
