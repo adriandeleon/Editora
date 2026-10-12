@@ -669,8 +669,6 @@ public class EditorBuffer implements TabContent {
             markdownLintValidator;
 
     private boolean markdownLintEnabled;
-    private javafx.scene.control.Tooltip mdLintTooltip;
-    private String mdLintTooltipText;
     /** Image files and browser images dropped onto a Markdown or Typst buffer; see {@link ImageDrop}. */
     private final ImageDrop imageDrop =
             new ImageDrop(() -> (isMarkdown() || isTypst()) && isEditable(), this::caretToDrop);
@@ -3667,57 +3665,9 @@ public class EditorBuffer implements TabContent {
         minimap.setLintMarks(diags);
     }
 
-    /** Shows the lint message(s) in a tooltip when hovering a squiggled span (overlay is mouse-transparent). */
-    private void installMarkdownLintHover(CodeArea a) {
-        a.addEventHandler(MouseEvent.MOUSE_MOVED, e -> {
-            if (!markdownLintEnabled
-                    || mdLintOverlay == null
-                    || mdLintOverlay.diagnostics().isEmpty()) {
-                if (mdLintTooltip != null) {
-                    mdLintTooltip.hide();
-                }
-                return;
-            }
-            try {
-                var hit = a.hit(e.getX(), e.getY());
-                var pos = a.offsetToPosition(
-                        hit.getInsertionIndex(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward);
-                var hits = mdLintOverlay.at(pos.getMajor(), pos.getMinor());
-                if (hits.isEmpty()) {
-                    if (mdLintTooltip != null) {
-                        mdLintTooltip.hide();
-                    }
-                    return;
-                }
-                StringBuilder sb = new StringBuilder();
-                for (var d : hits) {
-                    if (sb.length() > 0) {
-                        sb.append('\n');
-                    }
-                    sb.append(d.code()).append(": ").append(d.message());
-                }
-                String text = sb.toString();
-                if (mdLintTooltip != null && mdLintTooltip.isShowing() && text.equals(mdLintTooltipText)) {
-                    return;
-                }
-                if (mdLintTooltip == null) {
-                    mdLintTooltip = new javafx.scene.control.Tooltip();
-                    mdLintTooltip.getStyleClass().add("mermaid-lint-tooltip");
-                    mdLintTooltip.setWrapText(true);
-                    mdLintTooltip.setMaxWidth(420);
-                }
-                mdLintTooltip.setText(text);
-                mdLintTooltipText = text;
-                mdLintTooltip.show(a, e.getScreenX() + 12, e.getScreenY() + 16);
-            } catch (RuntimeException ignored) {
-                // viewport mid-layout / hit miss — ignore
-            }
-        });
-        a.addEventHandler(MouseEvent.MOUSE_EXITED, e -> {
-            if (mdLintTooltip != null) {
-                mdLintTooltip.hide();
-            }
-        });
+    /** The diagnostics currently underlined in this buffer (empty while linting is off). */
+    public java.util.List<MarkdownLint.Diagnostic> markdownLintDiagnostics() {
+        return markdownLintEnabled && mdLintOverlay != null ? mdLintOverlay.diagnostics() : java.util.List.of();
     }
 
     /** Injects the handler for image files dropped onto a Markdown buffer; null disables the drop affordance. */
@@ -4366,7 +4316,7 @@ public class EditorBuffer implements TabContent {
     private void updateMarkdownLintStripe() {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
-        boolean on = markdownLintEnabled && !largeFile;
+        boolean on = markdownLintEnabled && !largeFile && !minimapShown; // the minimap carries the same marks
         if (on || mdLintStripe != null) {
             AnchorPane.setRightAnchor(mdLintStripe(), base + (lspActive ? DiagnosticStripe.WIDTH : 0d));
             mdLintStripe.setActive(on);
@@ -4380,7 +4330,7 @@ public class EditorBuffer implements TabContent {
         boolean minimapShown = minimapVisible && !largeFile && !heavyFile;
         double base = minimapShown ? Minimap.WIDTH : 0d;
         double offset = (lspActive ? DiagnosticStripe.WIDTH : 0d)
-                + (markdownLintEnabled && !largeFile ? MarkdownLintStripe.WIDTH : 0d);
+                + (markdownLintEnabled && !largeFile && !minimapShown ? MarkdownLintStripe.WIDTH : 0d);
         if (todoStripe != null) { // attached with the first marks (todoStripe()), positioned from then on
             AnchorPane.setRightAnchor(todoStripe, base + offset);
             todoStripe.setActive(todoEnabled && !largeFile);
@@ -7171,7 +7121,7 @@ public class EditorBuffer implements TabContent {
     /** The popups that follow the pointer over {@code area} (either pane), each shown at the pointer. */
     private void installPointerHovers(CodeArea a) {
         installLintHover(a); // reads lintOverlay only while mermaid lint is active (lazily attached)
-        installMarkdownLintHover(a);
+        MarkdownLintHover.install(a, () -> markdownLintEnabled ? mdLintOverlay : null);
         installLspHover(a); // reads lspOverlay only while LSP is active (lazily attached)
         installDebugHover(a);
         installNoteHover(a);

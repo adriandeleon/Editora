@@ -27,7 +27,8 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
 
     static final double WIDTH = 6;
     private static final double HIT_PAD = 3;
-    private static final Color WARNING = Color.web("#e2a03f");
+    /** The warning colour for the current editor background (see {@link OverlayPalette}). */
+    private Color warning = OverlayPalette.of(Color.WHITE).warning();
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -51,6 +52,10 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
         setMaxWidth(WIDTH);
         getChildren().add(canvas);
         area.multiPlainChanges().subscribe(ignore -> scheduleRedraw());
+        OverlayPalette.track(area, palette -> {
+            warning = palette.warning(); // resolved on a theme change, not per paint
+            scheduleRedraw();
+        });
         addEventHandler(MouseEvent.MOUSE_MOVED, this::onHover);
         addEventHandler(MouseEvent.MOUSE_EXITED, e -> hideTooltip());
         addEventHandler(MouseEvent.MOUSE_CLICKED, this::onClick);
@@ -158,7 +163,7 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
             return;
         }
         double markH = markHeight(h, total);
-        g.setFill(WARNING);
+        g.setFill(warning);
         for (MarkdownLint.Diagnostic d : marks) {
             double y = yForLine(d.line() - 1, h, total);
             g.fillRect(0, Math.min(y, h - markH), w, markH);
@@ -216,7 +221,7 @@ final class MarkdownLintStripe extends Region implements SecondaryPane.Followed 
             return;
         }
         setCursor(Cursor.HAND);
-        String text = hit.code() + ": " + hit.message();
+        String text = MarkdownLintText.labelled(hit);
         if (tooltip != null && tooltip.isShowing() && text.equals(shownText)) {
             return;
         }

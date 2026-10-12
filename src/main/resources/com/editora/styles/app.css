@@ -3537,6 +3537,7 @@
 
 /* Markdown Lint tool window: a flat list of diagnostics with a severity dot. */
 .markdown-lint-panel .markdown-lint-summary { -fx-text-fill: -color-fg-muted; }
+.markdown-lint-panel .markdown-lint-file { -fx-font-weight: bold; }
 .markdown-lint-panel .markdown-lint-tag { -fx-background-radius: 5; }
 .markdown-lint-panel .markdown-lint-tag.lint-error { -fx-background-color: -color-danger-fg; }
 .markdown-lint-panel .markdown-lint-tag.lint-warning { -fx-background-color: -color-warning-fg; }
