@@ -84,7 +84,7 @@ class EditorInteractionFxTest {
         Bounds screen = area.getCharacterBoundsOnScreen(offset, offset + 1)
                 .orElseThrow(() -> new AssertionError("character " + offset + " is not on screen"));
         Point2D local = area.screenToLocal(screen.getCenterX(), screen.getCenterY());
-        return EditorFx.mouse(
+        return EditorFx.mouseWithShortcut(
                 pressed ? MouseEvent.MOUSE_PRESSED : MouseEvent.MOUSE_MOVED,
                 local.getX(),
                 local.getY(),
