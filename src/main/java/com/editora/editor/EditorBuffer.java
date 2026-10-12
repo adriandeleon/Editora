@@ -5687,6 +5687,10 @@ public class EditorBuffer implements TabContent {
         StackPane.setAlignment(zoomControl(), Pos.TOP_LEFT);
         StackPane.setMargin(zoomControl(), new Insets(6, 0, 0, 6));
         StackPane.setAlignment(previewLoadingOverlay(), Pos.CENTER);
+        if (isMarkdown() && !previewLive()) {
+            // Too large to follow every edit: say so, and offer the render the pulse no longer does.
+            previewHost.getChildren().add(PreviewButtons.pausedStrip(this::refreshPreview));
+        }
         return previewHost;
     }
 

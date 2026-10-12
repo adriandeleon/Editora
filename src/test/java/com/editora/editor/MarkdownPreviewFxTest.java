@@ -938,6 +938,16 @@ class MarkdownPreviewFxTest {
             assertTrue(EditorFx.<Boolean>call(small, "previewLive"));
             assertTrue(
                     EditorBuffer.PREVIEW_LIVE_MAX_CHARS < EditorBuffer.LARGE_FILE_BYTES, "a truly large file is not");
+            // A document past that limit says its preview is paused and offers a refresh; a live one does not.
+            EditorBuffer huge = markdown("x".repeat(EditorBuffer.PREVIEW_LIVE_MAX_CHARS + 1));
+            huge.setLargeFile(true);
+            assertFalse(EditorFx.<Boolean>call(huge, "previewLive"));
+            Node strip = EditorFx.styled(EditorFx.<Node>call(huge, "previewHost"), "md-preview-paused");
+            assertNotNull(strip, "the reader is told the preview no longer follows edits");
+            assertTrue(EditorFx.textOf(strip).contains(tr("markdown.preview.paused")));
+            assertTrue(EditorFx.textOf(strip).contains(tr("markdown.preview.refresh")));
+            assertNull(EditorFx.styled(EditorFx.<Node>call(md, "previewHost"), "md-preview-paused"));
+            huge.dispose();
             md.dispose();
             code.dispose();
             small.dispose();

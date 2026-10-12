@@ -718,6 +718,16 @@
 .markdown-preview .md-details-summary:focused .md-text { -fx-underline: true; }
 .markdown-preview .md-details-arrow { -fx-text-fill: -color-fg-muted; -fx-min-width: 14; }
 .markdown-preview .md-details-body { -fx-spacing: 14; -fx-padding: 4 0 4 20; }
+/* A preview too large to follow edits: a note and a Refresh button at its foot. */
+.md-preview-paused {
+    -fx-background-color: -color-bg-overlay;
+    -fx-border-color: -color-border-default;
+    -fx-border-radius: 6;
+    -fx-background-radius: 6;
+    -fx-padding: 6 10 6 12;
+}
+.md-preview-paused-label { -fx-text-fill: -color-fg-default; -fx-font-size: 12px; }
+.md-preview-paused-button { -fx-font-size: 12px; -fx-padding: 2 10 2 10; }
 /* Find in the preview: a match is a label cut out of its run of text (a Text has no background). */
 .markdown-preview .md-find-match {
     -fx-background-color: -color-warning-muted;
