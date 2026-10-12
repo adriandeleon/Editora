@@ -28,8 +28,15 @@ final class SnippetTyping {
         int caret = a.getCaretPosition();
         int base =
                 Math.max(a.getAbsolutePosition(a.getCurrentParagraph(), 0), caret - BufferCompletion.PREFIX_LOOKBACK);
-        TabExpansion.Match m = TabExpansion.find(a.getText(base, caret), prefix -> provider.apply(language, prefix));
+        String before = a.getText(base, caret);
+        TabExpansion.Match m = TabExpansion.find(before, prefix -> provider.apply(language, prefix));
         if (m == null) {
+            return null;
+        }
+        // base is the line start unless the line is longer than the lookback — then nothing is at its start.
+        boolean lineStart = base == a.getAbsolutePosition(a.getCurrentParagraph(), 0);
+        boolean block = TabExpansion.blockLevel(m.snippet().body());
+        if (prose && block && !(lineStart && TabExpansion.fitsInProse(before, m.start(), m.snippet()))) {
             return null;
         }
         // The highlighter's classes say where the trigger sits. A trigger typed a moment ago may not be

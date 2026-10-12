@@ -53,10 +53,19 @@ class MarkupContextMenuFxTest {
         EditorBuffer buffer = new EditorBuffer();
         buffer.setPath(file);
         @SuppressWarnings("unchecked")
-        List<MenuItem> actions = (List<MenuItem>)
-                FxTestSupport.call(buffer, markdown ? "markdownMenuItems" : "typstMenuItems", new Class[0]);
+        List<MenuItem> actions = markdown
+                ? (List<MenuItem>) markdownMenus("items", EditorBuffer.class, buffer)
+                : (List<MenuItem>) FxTestSupport.call(buffer, "typstMenuItems", new Class[0]);
         return (Menu)
                 FxTestSupport.call(buffer, "markupMenu", new Class[] {String.class, List.class}, tr(titleKey), actions);
+    }
+
+    /** {@code editor.MarkdownMenus} is package-private: the Markdown submenu's builder and its labelling rule. */
+    private static Object markdownMenus(String method, Class<?> type, Object arg) throws Exception {
+        java.lang.reflect.Method m =
+                Class.forName("com.editora.editor.MarkdownMenus").getDeclaredMethod(method, type);
+        m.setAccessible(true);
+        return m.invoke(null, arg);
     }
 
     private static List<String> labels(Menu menu) {
@@ -102,7 +111,10 @@ class MarkupContextMenuFxTest {
                     "command.markdown.code",
                     "command.markdown.link",
                     "command.markdown.toc")) {
-                assertTrue(labels.contains(tr(key)), tr(key) + " was dropped by the regrouping");
+                // Inside the submenu an item drops the command's group: "Bold", not "Markdown: Bold".
+                String label = (String) call(() -> markdownMenus("label", String.class, tr(key)));
+                assertTrue(labels.contains(label), label + " was dropped by the regrouping");
+                assertTrue(!label.contains(":"), label);
             }
             // The pre-existing Table submenu stays nested inside, not promoted alongside it.
             assertTrue(

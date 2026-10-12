@@ -15,14 +15,17 @@ import org.fxmisc.richtext.CodeArea;
 final class ImageDrop {
 
     private final BooleanSupplier eligible;
+    private final BooleanSupplier markdownLinks;
     private final BiConsumer<CodeArea, DragEvent> caretToDrop;
     private java.util.function.Consumer<java.util.List<java.io.File>> imageDropHandler;
     private java.util.function.BiConsumer<javafx.scene.image.Image, String> webImageDropHandler;
 
     /** @param eligible whether a drop is accepted right now (a Markdown/Typst buffer that is editable)
+     *  @param markdownLinks whether a dropped hyperlink becomes a Markdown link (a Markdown buffer)
      *  @param caretToDrop moves the caret under the pointer in the view the drop landed on */
-    ImageDrop(BooleanSupplier eligible, BiConsumer<CodeArea, DragEvent> caretToDrop) {
+    ImageDrop(BooleanSupplier eligible, BooleanSupplier markdownLinks, BiConsumer<CodeArea, DragEvent> caretToDrop) {
         this.eligible = eligible;
+        this.markdownLinks = markdownLinks;
         this.caretToDrop = caretToDrop;
     }
 
@@ -34,6 +37,14 @@ final class ImageDrop {
     /** The handler for a raw image (or image URL) dragged from a web browser; null disables it. */
     void setWebImageDropHandler(java.util.function.BiConsumer<javafx.scene.image.Image, String> handler) {
         this.webImageDropHandler = handler;
+    }
+
+    /** The Markdown link for a dragged hyperlink that is not an image, or null. Typst has its own link form. */
+    private String link(javafx.scene.input.Dragboard db) {
+        return markdownLinks.getAsBoolean()
+                ? com.editora.markdown.MarkdownImagePaste.linkFromDrag(
+                        db.hasUrl() ? db.getUrl() : null, db.hasHtml() ? db.getHtml() : null)
+                : null;
     }
 
     /** The image URL a browser drag carries (its URL, an {@code <img src>} in the HTML, or an image string). */
@@ -56,7 +67,7 @@ final class ImageDrop {
             javafx.scene.input.Dragboard db = e.getDragboard();
             boolean file = imageDropHandler != null && db.hasFiles() && hasImageFile(db.getFiles());
             boolean web = webImageDropHandler != null && (db.hasImage() || webImageUrl(db) != null);
-            if (file || web) {
+            if (file || web || link(db) != null) {
                 e.acceptTransferModes(javafx.scene.input.TransferMode.COPY);
                 e.consume();
             }
@@ -86,7 +97,17 @@ final class ImageDrop {
                     webImageDropHandler.accept(img, url);
                     e.setDropCompleted(true);
                     e.consume();
+                    return;
                 }
+            }
+            // A hyperlink that is no image: a link where it was dropped, not a download of the page.
+            String link = link(db);
+            if (link != null) {
+                caretToDrop.accept(a, e);
+                a.insertText(a.getCaretPosition(), link);
+                a.requestFocus();
+                e.setDropCompleted(true);
+                e.consume();
             }
         });
     }
@@ -96,13 +117,6 @@ final class ImageDrop {
     }
 
     private static boolean isImageFile(java.io.File f) {
-        String n = f.getName().toLowerCase(java.util.Locale.ROOT);
-        return n.endsWith(".png")
-                || n.endsWith(".jpg")
-                || n.endsWith(".jpeg")
-                || n.endsWith(".gif")
-                || n.endsWith(".bmp")
-                || n.endsWith(".webp")
-                || n.endsWith(".svg");
+        return com.editora.markdown.MarkdownImagePaste.isImageFileName(f.getName());
     }
 }

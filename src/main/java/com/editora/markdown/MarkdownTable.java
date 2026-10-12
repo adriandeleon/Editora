@@ -11,7 +11,12 @@ import java.util.regex.Pattern;
  * center, {@code --:} right). {@link #blockBounds(String, int)} finds the contiguous table block around a
  * caret so {@code EditorBuffer} can select + replace it. An escaped {@code \|} is content, not a separator:
  * cells are held unescaped inside this class and re-escaped on emit, and widths are measured on the emitted
- * (escaped) form. Column widths use {@code String.length()} (CJK double-width is not special-cased).
+ * (escaped) form, in display columns ({@link #displayWidth}: a CJK or emoji character takes two, a combining
+ * mark none).
+ *
+ * <p>A table is found from its delimiter row: the header is the one line above it, so a prose line with a
+ * pipe that happens to sit over the table is not a row. A table inside a blockquote or a list item keeps
+ * its {@code > } / indentation prefix: every operation works on the rows without it and puts it back.
  */
 public final class MarkdownTable {
 
@@ -36,8 +41,8 @@ public final class MarkdownTable {
     }
 
     /**
-     * The {@code [start, end)} offsets of the contiguous run of table rows containing {@code caret}, or
-     * {@code null} when the caret's line is not a table row.
+     * The {@code [start, end)} offsets of the GFM table containing {@code caret} — header row, delimiter row
+     * and the rows after it — or {@code null} when the caret's line is not part of one.
      */
     public static int[] blockBounds(String text, int caret) {
         if (text == null || caret < 0 || caret > text.length()) {
@@ -54,6 +59,10 @@ public final class MarkdownTable {
         if (!isRow(text.substring(ls, le))) {
             return null;
         }
+        // The run of lines with a pipe around the caret, then the table inside it: it starts one line above
+        // the first delimiter row. Lines of the run above that are prose that mentions a pipe.
+        List<Integer> starts = new ArrayList<>();
+        starts.add(ls);
         int start = ls;
         while (start > 0) {
             int prevEnd = start - 1;
@@ -62,7 +71,9 @@ public final class MarkdownTable {
                 break;
             }
             start = prevStart;
+            starts.add(0, start);
         }
+        int caretLine = starts.size() - 1;
         int end = le;
         while (end < text.length()) {
             int nextStart = end + 1;
@@ -73,9 +84,89 @@ public final class MarkdownTable {
             if (nextStart > text.length() || !isRow(text.substring(nextStart, nextEnd))) {
                 break;
             }
+            starts.add(nextStart);
             end = nextEnd;
         }
-        return new int[] {start, end};
+        for (int i = 1; i < starts.size(); i++) {
+            int lineEnd = i + 1 < starts.size() ? starts.get(i + 1) - 1 : end;
+            if (isDelimiterRow(unframed(text.substring(starts.get(i), lineEnd), false))) {
+                return caretLine >= i - 1 ? new int[] {starts.get(i - 1), end} : null;
+            }
+        }
+        return null;
+    }
+
+    // ---- container prefix (blockquote, list item) ----
+
+    private static final Pattern FRAME = Pattern.compile("^[ \\t]*(?:>[ \\t]*)*");
+    private static final Pattern FRAME_ITEM = Pattern.compile("^(?:[-*+]|\\d{1,9}[.)])[ \\t]+(?=\\|)");
+
+    /** Length of what stands in front of a row: indentation, {@code >} marks and — on the first row only — a list marker. */
+    private static int frameLength(String line, boolean first) {
+        Matcher m = FRAME.matcher(line);
+        int n = m.find() ? m.end() : 0;
+        if (first) {
+            Matcher item = FRAME_ITEM.matcher(line.substring(n));
+            if (item.find()) {
+                n += item.end();
+            }
+        }
+        return n;
+    }
+
+    private static String unframed(String line, boolean first) {
+        return line.substring(frameLength(line, first));
+    }
+
+    /**
+     * Runs {@code op} on {@code block} without its container prefix and puts the prefix back on the result:
+     * the first line keeps its own (it may carry the list marker), every other line gets the second line's.
+     */
+    private static Nav framed(String block, int caret, java.util.function.BiFunction<String, Integer, Nav> op) {
+        String[] lines = block.split("\n", -1);
+        String head = lines[0].substring(0, frameLength(lines[0], true));
+        String rest = lines.length > 1 ? lines[1].substring(0, frameLength(lines[1], false)) : head;
+        if (head.isEmpty() && rest.isEmpty()) {
+            return op.apply(block, caret);
+        }
+        StringBuilder body = new StringBuilder();
+        int bodyCaret = 0;
+        int at = 0;
+        for (int i = 0; i < lines.length; i++) {
+            int frame = frameLength(lines[i], i == 0);
+            if (i > 0) {
+                body.append('\n');
+            }
+            if (caret >= at && caret <= at + lines[i].length()) {
+                bodyCaret = body.length() + Math.max(0, caret - at - frame);
+            }
+            body.append(lines[i], frame, lines[i].length());
+            at += lines[i].length() + 1;
+        }
+        Nav n = op.apply(body.toString(), bodyCaret);
+        if (n == null) {
+            return null;
+        }
+        String[] out = n.block().split("\n", -1);
+        StringBuilder sb = new StringBuilder();
+        int outCaret = 0;
+        int pos = 0;
+        for (int i = 0; i < out.length; i++) {
+            String frame = i == 0 ? head : rest;
+            if (i > 0 && out[i].isEmpty()) {
+                // The line a table is left on (Enter on its empty last row) continues a quote, not an indent.
+                frame = rest.contains(">") ? rest.stripTrailing() + " " : "";
+            }
+            if (i > 0) {
+                sb.append('\n');
+            }
+            if (n.caret() >= pos && n.caret() <= pos + out[i].length()) {
+                outCaret = sb.length() + frame.length() + (n.caret() - pos);
+            }
+            sb.append(frame).append(out[i]);
+            pos += out[i].length() + 1;
+        }
+        return new Nav(sb.toString(), outCaret);
     }
 
     /**
@@ -86,22 +177,41 @@ public final class MarkdownTable {
         if (block == null) {
             return block;
         }
+        Nav n = framed(block, 0, (b, c) -> new Nav(reflowRows(b), 0));
+        return n.block();
+    }
+
+    /**
+     * {@link #reflow} that also says where the caret went: it stays in its cell, on the same character of
+     * the cell's text. Returns {@code null} when {@code block} is not a GFM table.
+     */
+    public static Nav reflowAt(String block, int caretInBlock) {
+        return framed(block, caretInBlock, (b, caret) -> {
+            String[] lines = b.split("\n", -1);
+            if (delimiterIndex(lines) < 0) {
+                return null;
+            }
+            int li = lineIndexAt(b, caret);
+            int ci = cellIndexAt(lines[li], caret - lineStartOffset(b, li));
+            int into = Math.max(0, caret - cellContentOffset(b, li, ci));
+            String out = reflowRows(b);
+            String cell = li == delimiterIndex(lines)
+                    ? ""
+                    : escapePipes(splitCells(lines[li]).get(ci));
+            return new Nav(out, cellContentOffset(out, li, ci) + Math.min(into, cell.length()));
+        });
+    }
+
+    private static String reflowRows(String block) {
         String[] lines = block.split("\n", -1);
         if (lines.length < 2) {
             return block;
         }
-        String indent = leadingWhitespace(lines[0]);
         List<List<String>> rows = new ArrayList<>();
         for (String line : lines) {
             rows.add(splitCells(line));
         }
-        int delim = -1;
-        for (int i = 0; i < rows.size(); i++) {
-            if (isDelimiterRow(lines[i])) {
-                delim = i;
-                break;
-            }
-        }
+        int delim = delimiterIndex(lines);
         if (delim < 0) {
             return block; // not a real GFM table — leave it alone
         }
@@ -128,7 +238,6 @@ public final class MarkdownTable {
             if (i > 0) {
                 out.append('\n');
             }
-            out.append(indent);
             if (i == delim) {
                 out.append(delimiterRow(width, align));
             } else {
@@ -147,6 +256,10 @@ public final class MarkdownTable {
      * new row. Returns {@code null} when the block is not a GFM table (no delimiter row).
      */
     public static Nav tab(String block, int caretInBlock, boolean forward) {
+        return framed(block, caretInBlock, (b, c) -> tabRows(b, c, forward));
+    }
+
+    private static Nav tabRows(String block, int caretInBlock, boolean forward) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -159,7 +272,18 @@ public final class MarkdownTable {
         int targetLine = li;
         int targetCell = ci;
         String working = block;
-        if (forward) {
+        if (li == delim) {
+            // The delimiter row holds no text: Tab leaves it for the row below, Shift-Tab for the header.
+            int next = forward ? nextNonDelim(lines, li, delim) : delim - 1;
+            if (next < 0) {
+                working = block + "\n" + emptyRow(columnCount(lines));
+                next = lines.length;
+            }
+            targetLine = next;
+            targetCell = forward ? 0 : Math.max(0, cellCount(lines[next]) - 1);
+        } else if (forward && beforeFirstCell(lines[li], caretInBlock - lineStart)) {
+            targetCell = 0; // the caret stood in front of the row's opening pipe
+        } else if (forward) {
             if (ci + 1 < cellCount(lines[li])) {
                 targetCell = ci + 1;
             } else {
@@ -179,31 +303,46 @@ public final class MarkdownTable {
             } else {
                 int prev = prevNonDelim(lines, li, delim);
                 if (prev < 0) {
-                    return new Nav(reflow(block), caretInBlock); // already at the first cell
+                    return new Nav(
+                            reflowRows(block), cellContentOffset(reflowRows(block), 0, 0)); // already at the first cell
                 }
                 targetLine = prev;
                 targetCell = Math.max(0, cellCount(lines[prev]) - 1);
             }
         }
-        String reflowed = reflow(working);
+        String reflowed = reflowRows(working);
         return new Nav(reflowed, cellContentOffset(reflowed, targetLine, targetCell));
     }
 
     /**
-     * Enter within a table: if the caret is on the last row, append a new empty row and put the caret in its
-     * first cell. Returns {@code null} otherwise (caller does a normal newline).
+     * Enter within a table. On the last row it appends an empty row and puts the caret in its first cell —
+     * unless that last row is already empty, which is how a table is left: the row goes and the caret lands
+     * on the blank line after the table. On any other row the caret moves to the same cell of the row
+     * below; a cell is never split in two. Returns {@code null} when the block is not a GFM table.
      */
     public static Nav enter(String block, int caretInBlock) {
+        return framed(block, caretInBlock, MarkdownTable::enterRows);
+    }
+
+    private static Nav enterRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
-        if (delimiterIndex(lines) < 0) {
+        int delim = delimiterIndex(lines);
+        if (delim < 0) {
             return null;
         }
         int li = lineIndexAt(block, caretInBlock);
         if (li != lines.length - 1) {
-            return null; // only the last row adds a row; mid-table Enter is a normal split
+            int next = nextNonDelim(lines, li, delim);
+            int ci = li == delim ? 0 : cellIndexAt(lines[li], caretInBlock - lineStartOffset(block, li));
+            String reflowed = reflowRows(block);
+            return new Nav(reflowed, cellContentOffset(reflowed, next, Math.min(ci, cellCount(lines[next]) - 1)));
+        }
+        if (li > delim && splitCells(lines[li]).stream().allMatch(String::isEmpty)) {
+            String kept = reflowRows(block.substring(0, block.lastIndexOf('\n')));
+            return new Nav(kept + "\n", kept.length() + 1);
         }
         String working = block + "\n" + emptyRow(columnCount(lines));
-        String reflowed = reflow(working);
+        String reflowed = reflowRows(working);
         int newLine = reflowed.split("\n", -1).length - 1;
         return new Nav(reflowed, cellContentOffset(reflowed, newLine, 0));
     }
@@ -244,16 +383,21 @@ public final class MarkdownTable {
      * The {@link Nav} caret lands in the first header cell. {@code rowsTotal}/{@code cols} are clamped to ≥1.
      */
     public static Nav generate(int rowsTotal, int cols) {
+        return generate(rowsTotal, cols, i -> "Column " + i);
+    }
+
+    /** {@link #generate(int, int)} with the header text of column {@code n} (1-based) supplied by {@code header}. */
+    public static Nav generate(int rowsTotal, int cols, java.util.function.IntFunction<String> header) {
         int c = Math.max(1, cols);
         int body = Math.max(0, rowsTotal - 1);
         List<List<String>> grid = new ArrayList<>();
-        List<String> header = new ArrayList<>();
+        List<String> cells = new ArrayList<>();
         List<String> delim = new ArrayList<>();
         for (int i = 0; i < c; i++) {
-            header.add("Column " + (i + 1));
+            cells.add(header.apply(i + 1));
             delim.add("---");
         }
-        grid.add(header);
+        grid.add(cells);
         grid.add(delim);
         for (int r = 0; r < body; r++) {
             List<String> row = new ArrayList<>();
@@ -262,7 +406,7 @@ public final class MarkdownTable {
             }
             grid.add(row);
         }
-        String reflowed = reflow(joinRows(grid));
+        String reflowed = reflowRows(joinRows(grid));
         return new Nav(reflowed, cellContentOffset(reflowed, 0, 0));
     }
 
@@ -272,6 +416,10 @@ public final class MarkdownTable {
      * block is not a GFM table.
      */
     public static Nav addRow(String block, int caretInBlock) {
+        return framed(block, caretInBlock, MarkdownTable::addRowRows);
+    }
+
+    private static Nav addRowRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -282,7 +430,7 @@ public final class MarkdownTable {
         List<List<String>> rows = rowsOf(block);
         int insertAt = (li <= delim) ? delim + 1 : li + 1;
         rows.add(insertAt, emptyCells(ncol, ""));
-        String reflowed = reflow(joinRows(rows));
+        String reflowed = reflowRows(joinRows(rows));
         return new Nav(reflowed, cellContentOffset(reflowed, insertAt, 0));
     }
 
@@ -292,6 +440,10 @@ public final class MarkdownTable {
      * deleted).
      */
     public static Nav deleteRow(String block, int caretInBlock) {
+        return framed(block, caretInBlock, MarkdownTable::deleteRowRows);
+    }
+
+    private static Nav deleteRowRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -304,7 +456,7 @@ public final class MarkdownTable {
         int ci = cellIndexAt(lines[li], caretInBlock - lineStartOffset(block, li));
         List<List<String>> rows = rowsOf(block);
         rows.remove(li);
-        String reflowed = reflow(joinRows(rows));
+        String reflowed = reflowRows(joinRows(rows));
         // Clamp to the last surviving row — but never onto the delimiter row, which is where deleting the
         // only data row landed the caret: typing there mangles the `---` line and the table stops parsing.
         int newLine = Math.min(li, rows.size() - 1);
@@ -319,6 +471,10 @@ public final class MarkdownTable {
      * the new cell. Returns {@code null} when not a GFM table.
      */
     public static Nav addColumn(String block, int caretInBlock) {
+        return framed(block, caretInBlock, MarkdownTable::addColumnRows);
+    }
+
+    private static Nav addColumnRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -337,7 +493,7 @@ public final class MarkdownTable {
             }
             r.add(Math.min(insertAt, r.size()), fill);
         }
-        String reflowed = reflow(joinRows(rows));
+        String reflowed = reflowRows(joinRows(rows));
         return new Nav(reflowed, cellContentOffset(reflowed, li, insertAt));
     }
 
@@ -346,6 +502,10 @@ public final class MarkdownTable {
      * {@code null} when not a GFM table or when there is only one column left.
      */
     public static Nav deleteColumn(String block, int caretInBlock) {
+        return framed(block, caretInBlock, MarkdownTable::deleteColumnRows);
+    }
+
+    private static Nav deleteColumnRows(String block, int caretInBlock) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -368,7 +528,7 @@ public final class MarkdownTable {
                 r.remove(ci);
             }
         }
-        String reflowed = reflow(joinRows(rows));
+        String reflowed = reflowRows(joinRows(rows));
         int newCell = Math.max(0, Math.min(ci, ncol - 2));
         return new Nav(reflowed, cellContentOffset(reflowed, li, newCell));
     }
@@ -379,6 +539,10 @@ public final class MarkdownTable {
      * table.
      */
     public static Nav setAlignment(String block, int caretInBlock, Align align) {
+        return framed(block, caretInBlock, (b, c) -> alignRows(b, c, align));
+    }
+
+    private static Nav alignRows(String block, int caretInBlock, Align align) {
         String[] lines = block.split("\n", -1);
         int delim = delimiterIndex(lines);
         if (delim < 0) {
@@ -393,7 +557,7 @@ public final class MarkdownTable {
             d.add("---");
         }
         d.set(Math.min(ci, d.size() - 1), delimCellFor(align));
-        String reflowed = reflow(joinRows(rows));
+        String reflowed = reflowRows(joinRows(rows));
         return new Nav(reflowed, cellContentOffset(reflowed, li, ci));
     }
 
@@ -447,6 +611,9 @@ public final class MarkdownTable {
     public static String fromCsv(String csv) {
         if (csv == null || csv.isBlank()) {
             return null;
+        }
+        if (csv.charAt(0) == '\uFEFF') {
+            csv = csv.substring(1); // a byte-order mark is not part of the first header
         }
         char delim = detectDelimiter(csv);
         List<List<String>> rows = parseCsv(csv, delim);
@@ -502,6 +669,9 @@ public final class MarkdownTable {
             return null;
         }
         String[] lines = block.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            lines[i] = unframed(lines[i], i == 0);
+        }
         if (delimiterIndex(lines) < 0) {
             return null;
         }
@@ -584,7 +754,8 @@ public final class MarkdownTable {
                 } else {
                     f.append(c);
                 }
-            } else if (c == '"' && f.length() == 0) {
+            } else if (c == '"' && f.toString().isBlank()) {
+                f.setLength(0); // `a, "b,c"`: blanks between the delimiter and the quote are not content
                 inQuotes = true;
                 pending = true;
             } else if (c == delim) {
@@ -609,8 +780,9 @@ public final class MarkdownTable {
         return rows;
     }
 
+    /** The delimiter row: never the first line — that is the header, even when its cells are dashes. */
     private static int delimiterIndex(String[] lines) {
-        for (int i = 0; i < lines.length; i++) {
+        for (int i = 1; i < lines.length; i++) {
             if (isDelimiterRow(lines[i])) {
                 return i;
             }
@@ -671,6 +843,12 @@ public final class MarkdownTable {
         return Math.max(0, Math.min(ci, Math.max(0, cellCount(line) - 1)));
     }
 
+    /** True when {@code col} is in front of the row's opening pipe. */
+    private static boolean beforeFirstCell(String line, int col) {
+        int pipe = line.indexOf('|');
+        return line.strip().startsWith("|") && col <= pipe;
+    }
+
     /** Absolute offset (within the reflowed block) of the start of cell {@code cell} on line {@code line}. */
     private static int cellContentOffset(String block, int line, int cell) {
         int lineStart = lineStartOffset(block, line);
@@ -682,6 +860,9 @@ public final class MarkdownTable {
                     int content = i + 1;
                     while (content < text.length() && text.charAt(content) == ' ') {
                         content++;
+                    }
+                    if (content >= text.length() || text.charAt(content) == '|') {
+                        content = Math.min(i + 2, content); // an empty cell: one blank in, not against its closing pipe
                     }
                     return lineStart + content;
                 }
@@ -812,23 +993,49 @@ public final class MarkdownTable {
 
     /** Display width of a cell as it will be emitted — i.e. with its pipes escaped. */
     private static int cellWidth(String cell) {
-        return escapePipes(cell).length();
+        return displayWidth(escapePipes(cell));
+    }
+
+    /**
+     * The number of monospace columns {@code s} takes: two for East Asian wide and fullwidth characters and
+     * for emoji, none for combining marks, joiners and variation selectors, one for everything else.
+     * {@code String.length()} counts UTF-16 units, which left every row with CJK text out of line.
+     */
+    public static int displayWidth(String s) {
+        int w = 0;
+        for (int i = 0; i < s.length(); ) {
+            int cp = s.codePointAt(i);
+            i += Character.charCount(cp);
+            int type = Character.getType(cp);
+            if (type == Character.NON_SPACING_MARK
+                    || type == Character.ENCLOSING_MARK
+                    || type == Character.FORMAT
+                    || (cp >= 0xFE00 && cp <= 0xFE0F)) {
+                continue;
+            }
+            w += isWide(cp) ? 2 : 1;
+        }
+        return w;
+    }
+
+    private static boolean isWide(int cp) {
+        return (cp >= 0x1100 && cp <= 0x115F)
+                || (cp >= 0x2E80 && cp <= 0xA4CF)
+                || (cp >= 0xAC00 && cp <= 0xD7A3)
+                || (cp >= 0xF900 && cp <= 0xFAFF)
+                || (cp >= 0xFE30 && cp <= 0xFE4F)
+                || (cp >= 0xFF00 && cp <= 0xFF60)
+                || (cp >= 0xFFE0 && cp <= 0xFFE6)
+                || (cp >= 0x1F300 && cp <= 0x1FAFF)
+                || (cp >= 0x20000 && cp <= 0x3FFFD);
     }
 
     private static String pad(String v, int w, Align align) {
-        int extra = Math.max(0, w - v.length());
+        int extra = Math.max(0, w - displayWidth(v));
         return switch (align) {
             case RIGHT -> " ".repeat(extra) + v;
             case CENTER -> " ".repeat(extra / 2) + v + " ".repeat(extra - extra / 2);
             default -> v + " ".repeat(extra);
         };
-    }
-
-    private static String leadingWhitespace(String line) {
-        int i = 0;
-        while (i < line.length() && (line.charAt(i) == ' ' || line.charAt(i) == '\t')) {
-            i++;
-        }
-        return line.substring(0, i);
     }
 }

@@ -24,6 +24,21 @@ public final class MarkdownToc {
 
     private MarkdownToc() {}
 
+    /**
+     * Whether the document's title — a single level-1 heading that comes first — is listed. It is, as it
+     * always was; the method is the one place a later setting has to reach.
+     */
+    static boolean includesTitle() {
+        return true;
+    }
+
+    private static final java.util.regex.Pattern BEGIN_MARK =
+            java.util.regex.Pattern.compile("<!--\\s*toc\\s*-->", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern END_MARK =
+            java.util.regex.Pattern.compile("<!--\\s*/toc\\s*-->", java.util.regex.Pattern.CASE_INSENSITIVE);
+    private static final java.util.regex.Pattern ENTRY =
+            java.util.regex.Pattern.compile("^\\s*[-*+] \\[.*\\]\\(#[^)]*\\)\\s*$");
+
     /** The TOC body (no markers) for {@code markdown}, all heading levels — or {@code ""} when there are none. */
     public static String build(String markdown) {
         return build(markdown, 1, 6);
@@ -31,31 +46,71 @@ public final class MarkdownToc {
 
     /**
      * The TOC body (no markers) for headings in {@code [minLevel, maxLevel]}, or {@code ""} when none match.
-     * Indentation is two spaces per level below the shallowest matching heading, so a doc whose top heading is
-     * {@code ##} still starts flush-left.
+     * An entry shows the heading's plain text ({@link MarkdownText#plain}) and links to the anchor made from
+     * that text; entries nest by the headings actually above them, two spaces a step, so a document that
+     * jumps from {@code #} to {@code ####} still yields a list rather than an indented code block.
      */
     public static String build(String markdown, int minLevel, int maxLevel) {
-        List<MarkdownOutline.Heading> headings = MarkdownOutline.headings(markdown).stream()
-                .filter(h -> h.level() >= minLevel
-                        && h.level() <= maxLevel
-                        && !h.title().isBlank())
-                .toList();
-        if (headings.isEmpty()) {
-            return "";
+        return build(markdown, minLevel, maxLevel, -1);
+    }
+
+    /**
+     * {@link #build(String, int, int)} for a TOC that stands at 0-based line {@code tocLine}: the heading the
+     * TOC sits directly under ("Contents") is not an entry of it.
+     */
+    static String build(String markdown, int minLevel, int maxLevel, int tocLine) {
+        List<MarkdownOutline.Heading> all = MarkdownOutline.headings(markdown);
+        int own = ownHeading(markdown, all, tocLine);
+        if (own == 0 && all.get(0).level() == 1) {
+            own = -1; // directly under the title: that is the document's heading, not the TOC's own
         }
-        int base =
-                headings.stream().mapToInt(MarkdownOutline.Heading::level).min().orElse(1);
+        boolean skipTitle = !includesTitle()
+                && !all.isEmpty()
+                && all.get(0).level() == 1
+                && all.stream().filter(h -> h.level() == 1).count() == 1;
         Map<String, Integer> seen = new HashMap<>();
+        java.util.ArrayDeque<Integer> open = new java.util.ArrayDeque<>(); // levels of the entries we are inside
         StringBuilder sb = new StringBuilder();
-        for (MarkdownOutline.Heading h : headings) {
-            sb.append("  ".repeat(Math.max(0, h.level() - base)))
+        for (int i = 0; i < all.size(); i++) {
+            MarkdownOutline.Heading h = all.get(i);
+            String text = MarkdownText.plain(h.title());
+            // Every heading takes its anchor, listed or not: the -1, -2 suffixes count them all.
+            String anchor = uniqueAnchor(slug(text), seen);
+            if (h.level() < minLevel || h.level() > maxLevel || text.isBlank() || i == own || (skipTitle && i == 0)) {
+                continue;
+            }
+            while (!open.isEmpty() && open.peek() >= h.level()) {
+                open.pop();
+            }
+            sb.append("  ".repeat(open.size()))
                     .append("- [")
-                    .append(h.title())
+                    .append(text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]"))
                     .append("](#")
-                    .append(uniqueAnchor(slug(h.title()), seen))
+                    .append(anchor)
                     .append(")\n");
+            open.push(h.level());
         }
         return sb.toString();
+    }
+
+    /** Index of the heading with nothing but blank lines between it and {@code tocLine}; -1 if none. */
+    private static int ownHeading(String markdown, List<MarkdownOutline.Heading> all, int tocLine) {
+        if (tocLine < 0) {
+            return -1;
+        }
+        String[] lines = markdown.split("\n", -1);
+        int at = Math.min(tocLine, lines.length) - 1;
+        while (at >= 0 && lines[at].isBlank()) {
+            at--;
+        }
+        for (int i = 0; i < all.size(); i++) {
+            int line = all.get(i).line();
+            // A Setext heading ends on its underline, one line below where it starts.
+            if (line == at || (line == at - 1 && lines[at].strip().matches("=+|-+"))) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     /** Wraps a TOC {@code body} in {@link #BEGIN}/{@link #END} markers (each on its own line). */
@@ -66,23 +121,73 @@ public final class MarkdownToc {
     /**
      * If {@code doc} already contains a {@link #BEGIN}…{@link #END} marker block, replaces it with a freshly
      * built TOC and returns the new document; returns {@code null} when there is no marker block (the caller
-     * then inserts a new one). The rebuild scans the whole document — the existing TOC's bullet links aren't
-     * headings, so they never feed back into the new TOC.
+     * then inserts a new one). See {@link #update}.
      */
     public static String updated(String doc, int minLevel, int maxLevel) {
+        MarkdownEdit e = update(doc, minLevel, maxLevel);
+        return e == null ? null : doc.substring(0, e.from()) + e.replacement() + doc.substring(e.to());
+    }
+
+    /**
+     * The edit that regenerates the document's managed TOC block, or {@code null} when it has none. The
+     * markers are matched whatever their case and spacing ({@code <!--TOC-->}); a marker inside a fenced code
+     * block is an example, not the TOC; an opening marker whose closing one is missing takes the list under
+     * it as the stale TOC, so a second block is never added beside it. The edit's caret is its start.
+     */
+    public static MarkdownEdit update(String doc, int minLevel, int maxLevel) {
         if (doc == null) {
             return null;
         }
-        int b = doc.indexOf(BEGIN);
-        if (b < 0) {
-            return null;
+        java.util.regex.Matcher begin = BEGIN_MARK.matcher(doc);
+        while (begin.find()) {
+            int lineStart = doc.lastIndexOf('\n', begin.start() - 1) + 1;
+            if (MarkdownLines.insideFence(doc, lineStart)) {
+                continue;
+            }
+            int end = staleEnd(doc, begin.end());
+            java.util.regex.Matcher close = END_MARK.matcher(doc);
+            if (close.find(begin.end())
+                    && !MarkdownLines.insideFence(doc, doc.lastIndexOf('\n', close.start() - 1) + 1)) {
+                end = close.end();
+            }
+            int line = (int) doc.substring(0, begin.start())
+                    .chars()
+                    .filter(c -> c == '\n')
+                    .count();
+            String block = wrapped(build(doc, minLevel, maxLevel, line));
+            return new MarkdownEdit(begin.start(), end, block, begin.start(), begin.start());
         }
-        int e = doc.indexOf(END, b + BEGIN.length());
-        if (e < 0) {
-            return null;
+        return null;
+    }
+
+    /** End of the TOC entries directly under an opening marker that ends at {@code from}. */
+    private static int staleEnd(String doc, int from) {
+        int end = from;
+        int at = doc.indexOf('\n', from);
+        while (at >= 0 && at < doc.length()) {
+            int next = doc.indexOf('\n', at + 1);
+            String line = doc.substring(at + 1, next < 0 ? doc.length() : next);
+            if (!ENTRY.matcher(line).matches()) {
+                break;
+            }
+            end = next < 0 ? doc.length() : next;
+            at = next;
         }
-        String block = wrapped(build(doc, minLevel, maxLevel));
-        return doc.substring(0, b) + block + doc.substring(e + END.length());
+        return end;
+    }
+
+    /**
+     * A new, marker-wrapped TOC for {@code doc} to insert at {@code offset}; {@code ""} when the document has
+     * no heading to list.
+     */
+    public static String insertion(String doc, int offset, int minLevel, int maxLevel) {
+        int at = Math.max(0, Math.min(offset, doc.length()));
+        int line = (int) doc.substring(0, at).chars().filter(c -> c == '\n').count();
+        if (at > 0 && doc.charAt(at - 1) != '\n') {
+            line++; // mid-line: the block goes on a line of its own, below
+        }
+        String body = build(doc, minLevel, maxLevel, line);
+        return body.isEmpty() ? "" : wrapped(body);
     }
 
     /** GitHub-style anchor slug: lowercase, drop everything but letters/digits/space/hyphen/underscore, space → hyphen. */

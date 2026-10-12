@@ -3310,6 +3310,12 @@
 .markdown-format-bar .md-fmt-btn {
     -fx-padding: 2 7 2 7;
     -fx-background-radius: 4;
+    -fx-min-width: 30;
+    -fx-min-height: 28;
+}
+/* The selection already carries this marker: the button reads as pressed. */
+.markdown-format-bar .md-fmt-btn:selected {
+    -fx-background-color: -state-sel;
 }
 .markdown-format-bar .md-fmt-bold {
     -fx-font-weight: bold;

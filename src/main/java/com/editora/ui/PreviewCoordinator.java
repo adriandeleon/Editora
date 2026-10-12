@@ -2,7 +2,6 @@ package com.editora.ui;
 
 import java.nio.file.Path;
 
-import javafx.scene.control.Label;
 import javafx.scene.control.Tab;
 import javafx.scene.input.Clipboard;
 import javafx.scene.input.ClipboardContent;
@@ -356,19 +355,49 @@ final class PreviewCoordinator {
 
     /** Runs a Markdown format action on the active buffer; reports when it isn't an editable Markdown file. */
     void withMarkdown(java.util.function.Consumer<EditorBuffer> action) {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-            return;
+        EditorBuffer b = editableMarkdown();
+        if (b != null) {
+            action.accept(b);
         }
-        action.accept(b);
+    }
+
+    /**
+     * The active buffer when a Markdown editing command can run on it, else null after saying why not: not a
+     * Markdown file, or a read-only one (which is not "not a Markdown file"). The commands edit at one caret,
+     * so extra carets are dropped first — with a message, rather than silently changing one line of several.
+     */
+    private EditorBuffer editableMarkdown() {
+        EditorBuffer b = host.activeBuffer();
+        if (b == null || !b.isMarkdown()) {
+            host.setStatus(tr("status.notMarkdown"));
+            return null;
+        }
+        if (!b.canFormatMarkdown()) {
+            host.setStatus(tr("status.lsp.readOnly"));
+            return null;
+        }
+        if (b.hasMultipleCarets()) {
+            b.collapseCarets();
+            host.setStatus(tr("status.markdown.multiCaret"));
+        }
+        return b;
+    }
+
+    /**
+     * Runs a table command that needs the caret in a table, and says why when it did nothing: the caret is
+     * not on a table, or ({@code refusedKey}) the command does not apply to that row or column.
+     */
+    void markdownTable(java.util.function.Predicate<EditorBuffer> command, String refusedKey) {
+        EditorBuffer b = editableMarkdown();
+        if (b != null && !command.test(b)) {
+            host.setStatus(tr(b.markdown().caretInTable() ? refusedKey : "status.markdown.notTable"));
+        }
     }
 
     /** Opens the table-size grid picker; on pick, inserts a fresh GFM table into the active Markdown buffer. */
     void markdownInsertTable() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
             return;
         }
         showTableSizePicker((rows, cols) -> b.insertTable(rows, cols));
@@ -379,9 +408,8 @@ final class PreviewCoordinator {
      * mouse grid picker. The grid picker stays the format-bar button / right-click "Insert Table" UI.
      */
     void markdownInsertTableViaText() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
             return;
         }
         host.promptText(tr("table.size.title"), tr("table.size.label"), "3x3", input -> {
@@ -395,60 +423,26 @@ final class PreviewCoordinator {
     }
 
     /**
-     * A Typora/Word-style table-size grid picker shown as an in-scene overlay: hover to highlight an
-     * {@code R × C} block (rows include the header), click to commit. Max {@value #TABLE_PICKER_MAX_ROWS} ×
-     * {@value #TABLE_PICKER_MAX_COLS}.
+     * The table-size grid ({@link TableSizePicker}) as an in-scene overlay under the caret of the active
+     * editor: hover and click, or arrow keys and Enter, to pick {@code R × C} (rows include the header). Max
+     * {@value #TABLE_PICKER_MAX_ROWS} × {@value #TABLE_PICKER_MAX_COLS}.
      */
     void showTableSizePicker(java.util.function.BiConsumer<Integer, Integer> onPick) {
-        final int maxR = TABLE_PICKER_MAX_ROWS;
-        final int maxC = TABLE_PICKER_MAX_COLS;
-        javafx.scene.layout.VBox card = new javafx.scene.layout.VBox(8);
-        card.getStyleClass().add("table-size-picker");
-        card.setPadding(new javafx.geometry.Insets(12));
-        // Hug the grid + padding — without a max-size cap the StackPane overlay stretches the card to fill
-        // the whole editor area (like QuickOpen's card, which caps to its preferred size).
-        card.setMaxSize(javafx.scene.layout.Region.USE_PREF_SIZE, javafx.scene.layout.Region.USE_PREF_SIZE);
-        Label heading = new Label(tr("table.picker.prompt"));
-        heading.getStyleClass().add("table-size-label");
-        javafx.scene.layout.GridPane grid = new javafx.scene.layout.GridPane();
-        grid.setHgap(3);
-        grid.setVgap(3);
-        javafx.scene.shape.Rectangle[][] cells = new javafx.scene.shape.Rectangle[maxR][maxC];
-        int[] sel = {0, 0}; // selected rows, cols (1-based; 0 = nothing yet)
-        Runnable[] repaint = new Runnable[1];
-        repaint[0] = () -> {
-            for (int r = 0; r < maxR; r++) {
-                for (int c = 0; c < maxC; c++) {
-                    boolean on = r < sel[0] && c < sel[1];
-                    cells[r][c]
-                            .getStyleClass()
-                            .setAll("table-size-cell", on ? "table-size-cell-on" : "table-size-cell-off");
-                }
-            }
-            heading.setText(sel[0] == 0 ? tr("table.picker.prompt") : tr("table.picker.size", sel[0], sel[1]));
-        };
-        for (int r = 0; r < maxR; r++) {
-            for (int c = 0; c < maxC; c++) {
-                javafx.scene.shape.Rectangle cell = new javafx.scene.shape.Rectangle(16, 16);
-                cell.getStyleClass().setAll("table-size-cell", "table-size-cell-off");
-                final int rr = r + 1;
-                final int cc = c + 1;
-                cell.setOnMouseEntered(e -> {
-                    sel[0] = rr;
-                    sel[1] = cc;
-                    repaint[0].run();
-                });
-                cell.setOnMouseClicked(e -> {
-                    host.overlayHost().hide();
-                    onPick.accept(rr, cc);
-                });
-                cells[r][c] = cell;
-                grid.add(cell, c, r);
-            }
+        TableSizePicker picker =
+                new TableSizePicker(TABLE_PICKER_MAX_ROWS, TABLE_PICKER_MAX_COLS, host.overlayHost()::hide, onPick);
+        Runnable focus = picker.card()::requestFocus; // or the editor keeps the keyboard under the scrim
+        EditorBuffer b = host.activeBuffer();
+        org.fxmisc.richtext.CodeArea area = b == null ? null : b.getFocusedArea();
+        javafx.geometry.Bounds caret =
+                area == null ? null : area.getCaretBounds().orElse(null);
+        javafx.geometry.Bounds inScene =
+                caret == null || area.getScene() == null ? null : area.localToScene(area.screenToLocal(caret));
+        if (inScene == null) {
+            host.overlayHost().show(picker.card(), true, focus, () -> {}); // no caret on screen: centered
+        } else {
+            host.overlayHost()
+                    .showAt(picker.card(), inScene.getMinX(), inScene.getMaxY(), inScene.getMinY(), focus, () -> {});
         }
-        card.getChildren().addAll(heading, grid);
-        card.getProperties().put("editora.ownsKeys", true);
-        host.overlayHost().show(card, true, () -> {}, () -> {}); // centered — it's a small grid, not a top palette
     }
 
     void markdownInline(String marker) {
@@ -477,20 +471,22 @@ final class PreviewCoordinator {
 
     /** {@code markdown.reflowTable}: normalize/align the GFM table around the caret. */
     void markdownReflowTable() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.reflowTable()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.reflowTable()) {
             host.setStatus(tr("status.markdown.notTable"));
         }
     }
 
     /** {@code markdown.toc}: insert a table of contents at the caret, or regenerate the existing TOC block. */
     void markdownToc() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.insertOrUpdateToc()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.insertOrUpdateToc()) {
             host.setStatus(tr("status.markdown.tocNoHeadings"));
         } else {
             host.setStatus(tr("status.markdown.tocDone"));
@@ -499,20 +495,22 @@ final class PreviewCoordinator {
 
     /** {@code markdown.tableFromCsv}: convert the selected CSV (else clipboard CSV) into a GFM table. */
     void markdownTableFromCsv() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.tableFromCsv()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.tableFromCsv()) {
             host.setStatus(tr("status.markdown.csvEmpty"));
         }
     }
 
     /** {@code markdown.tableToCsv}: copy the caret's GFM table to the clipboard as CSV. */
     void markdownTableToCsv() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.tableToCsv()) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.tableToCsv()) {
             host.setStatus(tr("status.markdown.notTable"));
         } else {
             host.setStatus(tr("status.markdown.csvCopied"));
@@ -521,10 +519,11 @@ final class PreviewCoordinator {
 
     /** {@code markdown.tableExport*}: file-export the caret's GFM table ({@code format} = csv|xlsx|ods). */
     void markdownTableExport(String format) {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.canFormatMarkdown()) {
-            host.setStatus(tr("status.notMarkdown"));
-        } else if (!b.exportTableFile(format)) {
+        EditorBuffer b = editableMarkdown();
+        if (b == null) {
+            return;
+        }
+        if (!b.exportTableFile(format)) {
             host.setStatus(tr("status.markdown.notTable"));
         }
     }
