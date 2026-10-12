@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-11
+
 ### Changed
 
 - **Faster typing, file opening and tab switching, and less memory per open file.** A performance pass over
