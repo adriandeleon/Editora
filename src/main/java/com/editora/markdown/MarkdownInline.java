@@ -1,5 +1,7 @@
 package com.editora.markdown;
 
+import java.util.regex.Pattern;
+
 /**
  * Pure (no-toolkit, unit-tested) inline Markdown formatting: wrap/unwrap a selection in a symmetric
  * marker ({@code **} bold, {@code *} italic, {@code ~~} strikethrough, {@code `} code), turn a selection
