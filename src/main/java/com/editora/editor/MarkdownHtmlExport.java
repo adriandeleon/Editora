@@ -11,7 +11,8 @@ import org.commonmark.renderer.html.HtmlRenderer;
  * Exports a Markdown document to a standalone HTML string: commonmark-java's {@link HtmlRenderer} over
  * the same extensions the preview uses (tables, strikethrough, task lists, autolinks, front matter,
  * footnotes, ins) plus heading anchors (for in-document links), wrapped in a self-contained page with an
- * embedded GitHub-style stylesheet ({@code markdown-export.css}).
+ * embedded GitHub-style stylesheet ({@code markdown-export.css}, light and dark) and a Content-Security-Policy
+ * that keeps the document's raw HTML from running script.
  *
  * <p>When math is enabled, {@code $…$}/{@code $$…$$} spans are rasterized (JLaTeXMath → PNG data URIs)
  * in a source pre-pass so they survive into the static HTML; fenced code lines are skipped. Mermaid
@@ -22,7 +23,20 @@ public final class MarkdownHtmlExport {
 
     private MarkdownHtmlExport() {}
 
-    /** Renders {@code markdown} to a complete HTML document titled {@code title}. */
+    /**
+     * The exported page forbids script: the document's raw HTML is kept (an author's {@code <details>} or
+     * {@code <kbd>} belongs in the export), and with it would come a {@code <script>} or an {@code onerror=}
+     * from a README someone else wrote. The policy stops both from running in the reader's browser while
+     * every other tag still renders.
+     */
+    static final String CONTENT_SECURITY_POLICY = "script-src 'none'; object-src 'none'; base-uri 'none'";
+
+    /**
+     * Renders {@code markdown} to a complete HTML document. Its title is the document's own — the front
+     * matter's {@code title:}, else its first level-1 heading — and {@code title} (the file name) only when
+     * it states none; its language is the front matter's {@code lang:}, and is left unstated otherwise
+     * rather than claimed to be English.
+     */
     public static String toHtml(String markdown, String title, boolean mathEnabled) {
         String src =
                 mathEnabled ? substituteMath(markdown == null ? "" : markdown) : (markdown == null ? "" : markdown);
@@ -34,17 +48,52 @@ public final class MarkdownHtmlExport {
                 .extensions(MarkdownRenderer.EXTENSIONS)
                 .extensions(java.util.List.of(HeadingAnchorExtension.create()))
                 .sanitizeUrls(true)
-                // sanitizeUrls also stamps rel="nofollow" on every link; an author's own document has no use
-                // for that, so drop it again.
-                .attributeProviderFactory(ctx -> (node, tag, attrs) -> attrs.remove("rel", "nofollow"))
+                .attributeProviderFactory(ctx -> new SemanticAttributes())
                 .build();
         String body = renderer.render(doc);
-        return page(title, body);
+        return page(MarkdownDocInfo.title(doc, title), MarkdownDocInfo.language(doc, null), body);
     }
 
-    private static String page(String title, String body) {
-        return "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n"
-                + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>"
+    /**
+     * The attributes HTML needs and commonmark does not write: the classes that let a stylesheet drop the
+     * bullet in front of a task-list checkbox ({@code contains-task-list} / {@code task-list-item}, GitHub's
+     * names), and a table cell's alignment as CSS instead of the obsolete {@code align} attribute.
+     */
+    static final class SemanticAttributes implements org.commonmark.renderer.html.AttributeProvider {
+        @Override
+        public void setAttributes(
+                org.commonmark.node.Node node, String tagName, java.util.Map<String, String> attributes) {
+            // sanitizeUrls also stamps rel="nofollow" on every link; an author's own document has no use
+            // for that, so drop it again.
+            attributes.remove("rel", "nofollow");
+            String align = "td".equals(tagName) || "th".equals(tagName) ? attributes.remove("align") : null;
+            if (align != null) {
+                attributes.merge("style", "text-align:" + align, (old, add) -> old + ";" + add);
+            }
+            if (node instanceof org.commonmark.node.ListItem item && isTask(item)) {
+                attributes.merge("class", "task-list-item", (old, add) -> old + " " + add);
+            } else if (node instanceof org.commonmark.node.ListBlock) {
+                for (org.commonmark.node.Node c = node.getFirstChild(); c != null; c = c.getNext()) {
+                    if (c instanceof org.commonmark.node.ListItem item && isTask(item)) {
+                        attributes.merge("class", "contains-task-list", (old, add) -> old + " " + add);
+                        break;
+                    }
+                }
+            }
+        }
+
+        private static boolean isTask(org.commonmark.node.ListItem item) {
+            return item.getFirstChild() instanceof org.commonmark.ext.task.list.items.TaskListItemMarker;
+        }
+    }
+
+    private static String page(String title, String lang, String body) {
+        return "<!DOCTYPE html>\n<html" + (lang == null ? "" : " lang=\"" + escape(lang) + "\"")
+                + ">\n<head>\n<meta charset=\"utf-8\">\n"
+                + "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
+                + "<meta http-equiv=\"Content-Security-Policy\" content=\"" + CONTENT_SECURITY_POLICY + "\">\n"
+                + "<meta name=\"color-scheme\" content=\"light dark\">\n"
+                + "<meta name=\"generator\" content=\"Editora\">\n<title>"
                 + escape(title)
                 + "</title>\n<style>\n"
                 + stylesheet()

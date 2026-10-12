@@ -459,7 +459,7 @@ class ExportCoordinatorOutputsFxTest {
         assertEquals(tr("status.html.exported", out.toString()), host.last());
         assertEquals(List.of("guide.final.html"), saveDialogs, "only the last extension is replaced");
         String html = Files.readString(out.toPath());
-        assertTrue(html.contains("<title>guide.final</title>"), html);
+        assertTrue(html.contains("<title>Guide</title>"), "the document's own title, from its heading: " + html);
         assertTrue(html.contains("Guide") && html.contains("Text."), html);
         assertEquals(List.of("tab " + out.toPath()), host.opened);
     }
