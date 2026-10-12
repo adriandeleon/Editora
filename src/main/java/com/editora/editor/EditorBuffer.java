@@ -5310,6 +5310,17 @@ public class EditorBuffer implements TabContent {
         scheduleRenderPreview();
     }
 
+    /**
+     * Scrolls the rendered Markdown preview so the heading with the GitHub-style anchor {@code slug} (as
+     * {@code MarkdownToc} writes them; a leading {@code #}, case and {@code %XX} escapes are tolerated) is at
+     * its top. False when the preview is not showing, has not rendered yet, or has no such heading.
+     */
+    public boolean scrollPreviewToAnchor(String slug) {
+        return markdownViewMode != MarkdownViewMode.EDITOR
+                && markdownPreview != null
+                && markdownPreview.scrollToAnchor(slug);
+    }
+
     private void scheduleRenderPreview() {
         if (markdownViewMode == MarkdownViewMode.EDITOR) {
             return;

@@ -430,6 +430,11 @@ class MarkdownPreviewFxTest {
             assertEquals("top", p.anchors().get(0));
             assertTrue(p.anchors().contains("marker-40"));
             assertFalse(p.scrollToAnchor("no-such-heading"));
+            // The public way in, for whoever follows a link from outside the preview.
+            assertTrue(buffer.scrollPreviewToAnchor("#Marker-7"));
+            assertEquals(lineOf(buffer, "## Marker 7"), p.topLine(), 0.5);
+            assertFalse(buffer.scrollPreviewToAnchor("no-such-heading"));
+            assertFalse(markdown("# A\n").scrollPreviewToAnchor("a"), "no preview showing: nothing to scroll");
 
             Text jump = textNode(pane(buffer).getContent(), "Jump");
             jump.fireEvent(click(MouseButton.PRIMARY, true));
