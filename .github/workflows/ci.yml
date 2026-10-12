@@ -5,6 +5,9 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # The release workflow's `bump` job dispatches this on its `chore/reopen-X.Y.Z` branch: a pull request
+  # opened with the default GITHUB_TOKEN triggers no `pull_request` run, and master requires these checks.
+  workflow_dispatch: {}
 
 # Nothing here writes to the repository. Every action is pinned to a full commit SHA with its version in a
 # trailing comment (Dependabot keeps both current, see .github/dependabot.yml), and no checkout leaves the
