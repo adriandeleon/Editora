@@ -112,31 +112,89 @@ public final class PreviewImageLoader {
 
     /** Loads {@code url} into {@code view} (cached), sizing it to its logical width capped at {@code maxWidth}. */
     static void loadInto(ImageView view, String url, double maxWidth) {
+        loadInto(view, url, maxWidth, false, null);
+    }
+
+    /**
+     * As {@link #loadInto(ImageView, String, double)}; with {@code exactWidth} the view is {@code maxWidth}
+     * wide whatever the image's own size (an HTML {@code width}). {@code onFail} runs on the FX thread when
+     * the image cannot be shown — missing, unreachable, blocked, not an image — so the caller can say so
+     * instead of leaving a 0×0 view that looks like nothing was written there.
+     */
+    static void loadInto(ImageView view, String url, double maxWidth, boolean exactWidth, Runnable onFail) {
         Loaded hit = CACHE.get(url);
+        if (hit != null && !fileStamp(url).equals(STAMPS.getOrDefault(url, ""))) {
+            CACHE.remove(url); // the file behind a file: URL was replaced since it was decoded
+            hit = null;
+        }
         if (hit != null) {
-            apply(view, hit, maxWidth);
+            apply(view, hit, maxWidth, exactWidth);
             return;
         }
         Long failedAt = FAILED.get(url);
-        if (failedAt != null && System.currentTimeMillis() - failedAt < FAILURE_TTL_MS) {
-            return; // recently unreachable — leave the slot blank rather than refetch on every re-render
+        if (failedAt != null
+                && System.currentTimeMillis() - failedAt < FAILURE_TTL_MS
+                && fileStamp(url).isEmpty()) {
+            // recently unreachable — don't refetch on every re-render (a local file is cheap to try again)
+            if (onFail != null) {
+                onFail.run();
+            }
+            return;
         }
         EXEC.submit(() -> {
             Loaded loaded = loadAndCache(url);
             if (loaded != null) {
-                Platform.runLater(() -> apply(view, loaded, maxWidth));
+                Platform.runLater(() -> apply(view, loaded, maxWidth, exactWidth));
+            } else if (onFail != null) {
+                Platform.runLater(onFail);
             }
         });
     }
 
+    /** Size and modification time of each cached {@code file:} image when it was read (see {@link #fileStamp}). */
+    private static final Map<String, String> STAMPS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * What identifies the current content of the local file behind a {@code file:} URL — its size and
+     * modification time — or "" for any other URL, or a file that is not there. The cache is keyed by URL, and
+     * a URL says nothing about a file that was exported again: without this a changed image kept showing its
+     * old picture until the app restarted. A {@code stat}; cheap enough for the FX thread on a local disk.
+     */
+    static String fileStamp(String url) {
+        if (url == null || !url.regionMatches(true, 0, "file:", 0, 5)) {
+            return "";
+        }
+        try {
+            Path file = Path.of(URI.create(url));
+            if (file.getFileSystem() != java.nio.file.FileSystems.getDefault()) {
+                return "";
+            }
+            java.nio.file.attribute.BasicFileAttributes a =
+                    Files.readAttributes(file, java.nio.file.attribute.BasicFileAttributes.class);
+            return a.size() + ":" + a.lastModifiedTime().toMillis();
+        } catch (IOException | RuntimeException e) {
+            return "";
+        }
+    }
+
     /** Loads {@code url} on the calling thread and records the outcome in the cache or the failure memory. */
     private static Loaded loadAndCache(String url) {
+        String stamp = fileStamp(url); // before the read: a write that lands meanwhile is then seen as a change
         Loaded loaded = load(url);
         if (loaded == null) {
             FAILED.put(url, System.currentTimeMillis());
             return null;
         }
         FAILED.remove(url);
+        if (stamp.isEmpty()) {
+            STAMPS.remove(url);
+        } else {
+            STAMPS.put(url, stamp);
+            if (STAMPS.size() > 4 * MAX_CACHED_IMAGES) {
+                STAMPS.keySet().retainAll(java.util.Set.copyOf(CACHE.keySet())); // forget evicted images
+                STAMPS.put(url, stamp);
+            }
+        }
         CACHE.put(url, loaded);
         synchronized (CACHE) { // byte cap behind the count cap: one huge image is not 1/64th of a budget
             ImageCacheBudget.trim(
@@ -192,9 +250,9 @@ public final class PreviewImageLoader {
         }
     }
 
-    private static void apply(ImageView view, Loaded loaded, double maxWidth) {
+    private static void apply(ImageView view, Loaded loaded, double maxWidth, boolean exactWidth) {
         view.setImage(loaded.image());
-        view.setFitWidth(Math.min(loaded.logicalWidth(), maxWidth));
+        view.setFitWidth(exactWidth ? maxWidth : Math.min(loaded.logicalWidth(), maxWidth));
     }
 
     private static Loaded load(String url) {
@@ -206,15 +264,49 @@ public final class PreviewImageLoader {
             if (looksLikeSvg(bytes)) {
                 return rasterizeSvg(bytes, url);
             }
-            Image img = new Image(new ByteArrayInputStream(bytes));
+            // A picture far wider than it can ever be shown is decoded at a bounded width: 32 MB of JPEG can be
+            // a gigabyte of pixels, and the preview caps what it shows at the column anyway.
+            int natural = naturalWidth(bytes);
+            double decodeWidth = decodeWidth(natural);
+            Image img = decodeWidth > 0
+                    ? new Image(new ByteArrayInputStream(bytes), decodeWidth, 0, true, true)
+                    : new Image(new ByteArrayInputStream(bytes));
             if (img.isError() || img.getWidth() <= 0) {
                 return null;
             }
-            return new Loaded(img, img.getWidth());
+            return new Loaded(img, decodeWidth > 0 ? natural : img.getWidth());
         } catch (Exception | LinkageError | OutOfMemoryError e) {
             // unreachable host, malformed SVG, decode failure, or a decompression bomb whose bitmap does not
             // fit — leave the image blank (an OOM here is one failed allocation, not a wrecked heap)
             return null;
+        }
+    }
+
+    /** The widest an image is kept in memory: twice the widest it is shown (HiDPI), rounded up. */
+    static final int MAX_DECODE_WIDTH = 2400;
+
+    /** The width to decode an image {@code natural} px wide at, or 0 to decode it as it is. Pure. */
+    static double decodeWidth(int natural) {
+        return natural > MAX_DECODE_WIDTH ? MAX_DECODE_WIDTH : 0;
+    }
+
+    /** The pixel width in an image's header, read without decoding it; 0 when the format is unknown here. */
+    static int naturalWidth(byte[] bytes) {
+        try (javax.imageio.stream.ImageInputStream in =
+                javax.imageio.ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            java.util.Iterator<javax.imageio.ImageReader> readers = javax.imageio.ImageIO.getImageReaders(in);
+            if (!readers.hasNext()) {
+                return 0;
+            }
+            javax.imageio.ImageReader reader = readers.next();
+            try {
+                reader.setInput(in, true, true);
+                return reader.getWidth(0);
+            } finally {
+                reader.dispose();
+            }
+        } catch (IOException | RuntimeException e) {
+            return 0;
         }
     }
 

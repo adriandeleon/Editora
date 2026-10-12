@@ -197,10 +197,7 @@ public final class PrReviewPane extends Region implements TabContent {
             // Links in a description or a comment open through the pane's own opener (the window's link choke
             // point): rendered without one they looked like links and did nothing.
             Node node = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(markdown),
-                    null,
-                    onOpenUrl,
-                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                    MarkdownRenderer.parseForRender(markdown), null, onOpenUrl, MarkdownRenderer.ImagePolicy.DATA_ONLY);
             node.getStyleClass().add("pr-review-md");
             return node;
         } catch (RuntimeException e) {

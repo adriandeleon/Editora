@@ -43,6 +43,7 @@ public final class MathImages {
     /** Enables math rendering and sets the glyph color theme; clears the cache when either changes. */
     public static void configure(boolean on, boolean darkTheme) {
         if (enabled != on || dark != darkTheme) {
+            EPOCH.incrementAndGet();
             CACHE.clear();
         }
         enabled = on;
@@ -51,6 +52,13 @@ public final class MathImages {
 
     public static boolean isEnabled() {
         return enabled;
+    }
+
+    private static final java.util.concurrent.atomic.AtomicLong EPOCH = new java.util.concurrent.atomic.AtomicLong();
+
+    /** Changes when the feature switch or the app theme did: a formula node built before is out of date. */
+    static long epoch() {
+        return EPOCH.get();
     }
 
     public static Node inlineNode(String latex, double fontSize) {

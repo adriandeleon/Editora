@@ -231,6 +231,42 @@ listener.
 forces work the [hot path](glossary.md#hot-path) can't afford. Defer it (e.g. read it on the next
 pulse) rather than mid-event. See [performance.md](performance.md#3-work-incrementally-and-only-on-whats-visible).
 
+## `applyCss()` restyles everything below the node it is called on
+
+**Symptom:** a change to one node of a large scene graph (one block of a long Markdown preview) costs
+as much as building the whole thing: hundreds of milliseconds in `CssStyleHelper.transitionToState`,
+then again in layout.
+
+**Why/fix:** `Node.applyCss()` is not "process whatever is dirty". It marks the node `UPDATE`, and a
+parent in that state pushes it down to **every** descendant, clean or not; each restyled `Text` then
+reports new layout bounds, so its parent asks for layout and the whole tree is measured again. Call it
+on the nodes that are new (`MarkdownPreview.show` does: `fresh.forEach(Node::applyCss)`), never on the
+scene root or a big container, when all you need is the new nodes styled before measuring. The pulse's
+own CSS pass *is* incremental; `layout()` is too.
+
+## A `VBox` measures every width-biased child on every layout pass
+
+**Symptom:** a column of thousands of wrapping `TextFlow`s (or tables) takes hundreds of milliseconds
+to lay out although one child changed; the profile is all `TextFlow.computePrefHeight`.
+
+**Why/fix:** JavaFX caches a region's size only for the unconstrained (`-1`) case. A child whose height
+depends on its width is asked again each pass — twice, in a `ScrollPane`, which measures its content
+with and without room for a scrollbar. `BlockColumn` (the Markdown preview's column) keeps each child's
+height per width and re-measures only children whose `isNeedsLayout()` is set: `requestLayout()` is the
+one thing that can change a region's size, and it sets that flag until the child is laid out.
+
+## Math in Markdown is part of the parse, not found in the text afterwards
+
+**Symptom:** `\,` renders as a comma, `\\` (a row break) disappears, `$a*b*c$` comes out half italic,
+`\$5` is typeset as a formula.
+
+**Why/fix:** CommonMark has consumed backslash escapes and turned `*`/`_` into emphasis by the time a
+renderer sees text nodes, so `$…$` cannot be recovered from them. `markdown/MarkdownMath` recognises
+math in the inline/block parser, on the raw line, and yields `MarkdownMath.Inline` / `Block` nodes
+carrying the LaTeX verbatim. `MarkdownRenderer.parseForRender` uses it (preview, print, popups). The
+exporters that still call `parseToDocument` and scan text with `MathSpans` have the old defect until
+they adopt the same extension.
+
 ## GUI-launched `.app` inherits a stripped PATH
 
 **Symptom:** `mmdc`/`npx`/`git`/an LSP server "not found" only when Editora is launched from Finder
