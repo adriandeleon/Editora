@@ -188,6 +188,10 @@ public final class PrReviewPane extends Region implements TabContent {
 
     /** Renders a Markdown string to a native JavaFX node (the shared preview renderer); a plain-text label is
      *  the fallback if rendering fails, so a malformed body never breaks the tab. */
+    private static Node renderMarkdown(String markdown) {
+        return renderMarkdown(markdown, null);
+    }
+
     private static Node renderMarkdown(String markdown, Consumer<String> onOpenUrl) {
         try {
             // Links in a description or a comment open through the pane's own opener (the window's link choke
