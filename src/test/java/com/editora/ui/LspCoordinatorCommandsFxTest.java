@@ -592,6 +592,44 @@ class LspCoordinatorCommandsFxTest {
         assertFalse(FxTestSupport.callOnFx(third::isShowing), "the popup belongs to the place the caret was");
     }
 
+    /** A link in hover documentation was drawn as a link and did nothing; it goes to the window's opener. */
+    @Test
+    void aLinkInHoverDocumentationOpensThroughTheWindow() throws Exception {
+        EditorBuffer b = fx.open("A.java", SOURCE);
+        fx.awaitHighlighted(b);
+        fx.caret(b, 1, 9);
+        fx.server().hoverResponse =
+                new Hover(new MarkupContent("markdown", "See [the docs](https://example.com/docs) for more."));
+        fx.run(() -> fx.coordinator.showHover());
+        Popup popup = hoverPopup();
+        assertNotNull(popup);
+        FxTestSupport.runOnFx(() -> {
+            javafx.scene.Node link = popup.getScene().getRoot().lookup(".md-link");
+            assertNotNull(link, "the link is rendered");
+            link.getOnMouseClicked()
+                    .handle(new javafx.scene.input.MouseEvent(
+                            javafx.scene.input.MouseEvent.MOUSE_CLICKED,
+                            0,
+                            0,
+                            0,
+                            0,
+                            javafx.scene.input.MouseButton.PRIMARY,
+                            1,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            false,
+                            false,
+                            false,
+                            false,
+                            true,
+                            null));
+        });
+        assertEquals(List.of("https://example.com/docs"), fx.host.urls);
+    }
+
     @Test
     void hoverWithNothingToSaySaysSoAndAStaleAnswerShowsNothing() throws Exception {
         EditorBuffer b = fx.open("A.java", SOURCE);
