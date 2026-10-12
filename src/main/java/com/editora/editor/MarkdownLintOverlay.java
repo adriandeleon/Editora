@@ -24,6 +24,9 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
     private OverlayPalette.Colors colors = OverlayPalette.of(Color.WHITE);
     private static final double AMP = 1.6;
     private static final double STEP = 2.0;
+    private static final double STROKE = 1.5;
+    /** Width of the squiggle drawn on an empty line (about two characters). */
+    private static final double EMPTY_LINE_WIDTH = 16;
 
     private final CodeArea area;
     private final Canvas canvas = new Canvas(1, 1);
@@ -160,34 +163,86 @@ final class MarkdownLintOverlay extends Region implements SecondaryPane.Followed
             int total = area.getParagraphs().size();
             int first = Math.max(0, area.firstVisibleParToAllParIndex());
             int last = Math.min(total - 1, area.lastVisibleParToAllParIndex());
-            g.setLineWidth(1.0);
+            g.setLineWidth(STROKE);
+            double textLeft = Double.NaN; // where text starts, found on the first empty line that needs it
             for (MarkdownLint.Diagnostic d : diagnostics) {
                 int p = d.line() - 1;
                 if (p < first || p > last || p < 0 || p >= total || area.isFolded(p)) {
                     continue;
                 }
-                drawDiagnostic(g, p, d, w, h);
+                g.setStroke(d.isError() ? colors.error() : colors.warning());
+                int lineLen = area.getParagraph(p).getText().length();
+                if (lineLen == 0) {
+                    if (Double.isNaN(textLeft)) {
+                        textLeft = textLeft(first, last);
+                    }
+                    drawOnEmptyLine(g, p, textLeft);
+                    continue;
+                }
+                int start = Math.max(0, Math.min(d.column() - 1, lineLen - 1));
+                int end = Math.max(start + 1, Math.min(d.column() - 1 + Math.max(1, d.length()), lineLen));
+                drawRange(g, p, start, end, w, h, 0);
             }
         } catch (RuntimeException ignored) {
             // Viewport mid-layout — skip this frame; a later event will redraw.
         }
     }
 
-    private void drawDiagnostic(GraphicsContext g, int paragraph, MarkdownLint.Diagnostic d, double w, double h) {
-        int lineLen = area.getParagraph(paragraph).getText().length();
-        if (lineLen == 0) {
+    /**
+     * Underlines {@code [start, end)} of {@code paragraph}, one squiggle per visual row. The bounds of a range
+     * that wraps are the box around all of its rows, so underlining that box put one line across the whole
+     * editor under the last row; a range taller than its first character is halved until each piece is one row.
+     */
+    private void drawRange(GraphicsContext g, int paragraph, int start, int end, double w, double h, int depth) {
+        Bounds b = bounds(paragraph, start, end);
+        if (b == null || b.getMaxY() < 0 || b.getMinY() > h) {
             return;
         }
-        int start = Math.max(0, Math.min(d.column() - 1, lineLen - 1));
-        int dEnd = Math.max(start + 1, Math.min(d.column() - 1 + Math.max(1, d.length()), lineLen));
-        Bounds b = toLocal(area.getCharacterBoundsOnScreen(
-                        area.getAbsolutePosition(paragraph, start), area.getAbsolutePosition(paragraph, dEnd))
-                .orElse(null));
-        if (b == null || b.getMaxX() < 0 || b.getMinX() > w || b.getMaxY() < 0 || b.getMinY() > h) {
+        if (end - start > 1 && depth < 32) {
+            Bounds one = bounds(paragraph, start, start + 1);
+            if (one != null && b.getHeight() > one.getHeight() * 1.5) {
+                int mid = (start + end) >>> 1;
+                drawRange(g, paragraph, start, mid, w, h, depth + 1);
+                drawRange(g, paragraph, mid, end, w, h, depth + 1);
+                return;
+            }
+        }
+        if (b.getMaxX() < 0 || b.getMinX() > w) {
             return;
         }
-        g.setStroke(d.isError() ? colors.error() : colors.warning());
         squiggle(g, b.getMinX(), b.getMaxX(), b.getMaxY() - 1);
+    }
+
+    /**
+     * A short squiggle at the start of an empty line — "too many blank lines" and "one newline too many" sit on
+     * lines with no character to underline, and used to be invisible in the editor.
+     */
+    private void drawOnEmptyLine(GraphicsContext g, int paragraph, double textLeft) {
+        Bounds box = toLocal(area.getParagraphBoundsOnScreen(paragraph).orElse(null));
+        if (box == null || Double.isNaN(textLeft)) {
+            return;
+        }
+        squiggle(g, textLeft, textLeft + EMPTY_LINE_WIDTH, box.getMaxY() - 1);
+    }
+
+    /** The x where text starts (right of the gutter), read off the first visible line that has any. */
+    private double textLeft(int first, int last) {
+        for (int p = first; p <= last; p++) {
+            if (area.getParagraph(p).getText().isEmpty() || area.isFolded(p)) {
+                continue;
+            }
+            Bounds b = bounds(p, 0, 1);
+            if (b != null) {
+                return b.getMinX();
+            }
+        }
+        return Double.NaN;
+    }
+
+    private Bounds bounds(int paragraph, int start, int end) {
+        return toLocal(area.getCharacterBoundsOnScreen(
+                        area.getAbsolutePosition(paragraph, start), area.getAbsolutePosition(paragraph, end))
+                .orElse(null));
     }
 
     /** The diagnostics whose span covers the character at {@code (paragraph, column)} (for hover tooltips). */

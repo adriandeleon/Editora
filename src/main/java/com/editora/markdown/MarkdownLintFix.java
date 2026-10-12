@@ -141,6 +141,53 @@ public final class MarkdownLintFix {
         return new Result(result, lineMap);
     }
 
+    /**
+     * Returns {@code text} with rule {@code code} suppressed on 0-based line {@code line}: a
+     * {@code <!-- markdownlint-disable-next-line CODE -->} comment is inserted above it, inside the same block
+     * quote / list indentation — or {@code code} is added to such a comment when one already sits there (two
+     * stacked comments would each apply to the other, not to the line).
+     */
+    public static Result disableForLine(String text, int line, String code) {
+        String[] lines = (text == null ? "" : text).split("\n", -1);
+        int at = Math.max(0, Math.min(line, lines.length - 1));
+        int[] lineMap = new int[lines.length];
+        for (int i = 0; i < lines.length; i++) {
+            lineMap[i] = i;
+        }
+        boolean crlf = lines.length > 1 && lines[0].endsWith("\r");
+        String above = at > 0 ? MarkdownLint.stripCr(lines[at - 1]) : "";
+        List<String> out = new ArrayList<>(List.of(lines));
+        if (MarkdownLintDirectives.isDirectiveLine(above) && above.contains("markdownlint-disable-next-line")) {
+            int close = above.lastIndexOf("-->");
+            String names = above.substring(above.indexOf("disable-next-line") + "disable-next-line".length(), close)
+                    .strip();
+            if (names.isEmpty() || java.util.Arrays.asList(names.split("\\s+")).contains(code)) {
+                return new Result(text, lineMap); // already covers it
+            }
+            String merged = above.substring(0, close).stripTrailing() + " " + code + " -->";
+            out.set(at - 1, lines[at - 1].endsWith("\r") ? merged + "\r" : merged);
+        } else {
+            String target = MarkdownLint.stripCr(lines[at]);
+            int start = Math.min(MarkdownBlocks.scan(lines).contentStart(at), target.length());
+            // The line's own container prefix: block-quote markers and indentation, up to a list marker (a
+            // comment for the line that opens an item goes before the item, not into it).
+            StringBuilder prefix = new StringBuilder();
+            for (int p = 0; p < start; p++) {
+                char c = target.charAt(p);
+                if (c != '>' && c != ' ' && c != '\t') {
+                    break;
+                }
+                prefix.append(c);
+            }
+            String comment = prefix + "<!-- markdownlint-disable-next-line " + code + " -->";
+            out.add(at, crlf ? comment + "\r" : comment);
+            for (int i = at; i < lines.length; i++) {
+                lineMap[i] = i + 1;
+            }
+        }
+        return new Result(String.join("\n", out), lineMap);
+    }
+
     /** The heading fixes (MD023, MD018/MD019, MD026) on a heading's text inside its container. */
     private static String fixHeading(String body, int hashes, Gate gate, int i) {
         String fixed = body;

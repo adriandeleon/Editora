@@ -1698,6 +1698,24 @@ final class WindowCommandRegistrar {
         host.registry().register(Command.of("markdownLint.toggleRule", host.previews()::chooseMarkdownLintRule));
         host.registry()
                 .register(Command.of(
+                        "markdownLint.next", () -> host.previews().lint().go(1)));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.previous", () -> host.previews().lint().go(-1)));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.fixAtCaret", () -> host.previews().lint().fixAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.disableLine", () -> host.previews().lint().disableLineAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.disableRule", () -> host.previews().lint().disableRuleAtCaret()));
+        host.registry()
+                .register(Command.of(
+                        "markdownLint.ruleHelp", () -> host.previews().lint().ruleHelpAtCaret()));
+        host.registry()
+                .register(Command.of(
                         "view.toggleMath",
                         () -> host.editorSettings()
                                 .toggleSetting(

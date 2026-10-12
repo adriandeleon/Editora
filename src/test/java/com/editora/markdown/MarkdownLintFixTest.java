@@ -220,4 +220,60 @@ class MarkdownLintFixTest {
         assertEquals(once, fix(once));
         assertTrue(MarkdownLint.lint(once).stream().noneMatch(d -> MarkdownLint.fixable(d.code())), once);
     }
+
+    // --- C16: silencing one line -----------------------------------------------------------------------
+
+    @Test
+    void disableForLineInsertsACommentInTheLinesContainer() {
+        assertEquals(
+                "# T\n\n<!-- markdownlint-disable-next-line MD034 -->\nsee http://x.io\n",
+                MarkdownLintFix.disableForLine("# T\n\nsee http://x.io\n", 2, "MD034")
+                        .text());
+        // The line that opens a list item: before the item. A continuation line: inside it.
+        assertEquals(
+                "<!-- markdownlint-disable-next-line MD034 -->\n- see http://x.io\n",
+                MarkdownLintFix.disableForLine("- see http://x.io\n", 0, "MD034")
+                        .text());
+        assertEquals(
+                "- item\n\n  <!-- markdownlint-disable-next-line MD034 -->\n  see http://x.io\n",
+                MarkdownLintFix.disableForLine("- item\n\n  see http://x.io\n", 2, "MD034")
+                        .text());
+        assertEquals(
+                "> <!-- markdownlint-disable-next-line MD034 -->\n> see http://x.io\n",
+                MarkdownLintFix.disableForLine("> see http://x.io\n", 0, "MD034")
+                        .text());
+        assertEquals(
+                "a\r\n<!-- markdownlint-disable-next-line MD009 -->\r\nb   \r\n",
+                MarkdownLintFix.disableForLine("a\r\nb   \r\n", 1, "MD009").text());
+    }
+
+    @Test
+    void disableForLineAddsToACommentThatIsAlreadyThere() {
+        String once = MarkdownLintFix.disableForLine("# T\n\nsee http://x.io   \n", 2, "MD034")
+                .text();
+        MarkdownLintFix.Result twice = MarkdownLintFix.disableForLine(once, 3, "MD009");
+        assertEquals("# T\n\n<!-- markdownlint-disable-next-line MD034 MD009 -->\nsee http://x.io   \n", twice.text());
+        assertEquals(3, twice.mapLine(3), "nothing moved");
+        assertEquals(
+                twice.text(),
+                MarkdownLintFix.disableForLine(twice.text(), 3, "MD009").text());
+        String all = "<!-- markdownlint-disable-next-line -->\nsee http://x.io\n";
+        assertEquals(all, MarkdownLintFix.disableForLine(all, 1, "MD034").text());
+        assertTrue(MarkdownLint.lint(twice.text()).isEmpty(), "both rules are silent on that line");
+    }
+
+    @Test
+    void theLineMapOfAnInsertedCommentShiftsTheLinesBelow() {
+        MarkdownLintFix.Result r = MarkdownLintFix.disableForLine("a\nb\nc\n", 1, "MD009");
+        assertEquals(0, r.mapLine(0));
+        assertEquals(2, r.mapLine(1));
+        assertEquals(3, r.mapLine(2));
+    }
+
+    @Test
+    void aDirectiveAboveAHeadingOrAFenceIsNotTextTouchingIt() {
+        String md = "# T\n\ntext\n\n<!-- markdownlint-disable-next-line MD026 -->\n## Why not.\n\n"
+                + "<!-- markdownlint-disable-next-line MD040 -->\n```\nx\n```\n";
+        assertEquals(java.util.List.of(), MarkdownLint.lint(md));
+    }
 }

@@ -674,7 +674,11 @@ class EditorInteractionFxTest {
             Stage mdStage = EditorFx.show(markdown, 600, 300);
             markdown.setMarkdownLintEnabled(true);
             markdown.getArea().fireEvent(mouseAt(markdown, 3, false, false));
-            Tooltip mdTip = EditorFx.field(markdown, "mdLintTooltip");
+            Tooltip mdTip = javafx.stage.Window.getWindows().stream()
+                    .filter(w -> w instanceof Tooltip t && t.getText().startsWith("MD018"))
+                    .map(w -> (Tooltip) w)
+                    .findFirst()
+                    .orElse(null);
             assertNotNull(mdTip);
             assertTrue(mdTip.isShowing());
             assertEquals("MD018: No space after #", mdTip.getText());

@@ -54,6 +54,12 @@ final class PreviewCoordinator {
         boolean appThemeDark();
 
         void promptText(String title, String label, String initial, java.util.function.Consumer<String> onAccept);
+
+        /** Opens {@code url} through the app's external-link opener (the rule documentation of a lint issue). */
+        void openExternalUrl(String url);
+
+        /** The active project's root, or null with no project open (bounds the lint-config lookup). */
+        java.nio.file.Path activeProjectRoot();
     }
 
     private final Host host;
@@ -69,6 +75,16 @@ final class PreviewCoordinator {
 
     final com.editora.editor.MarkdownLintService markdownLintService = new com.editora.editor.MarkdownLintService();
 
+    /** Acting on lint issues (fix, disable, rule help, next/previous) and the project's lint config. */
+    private MarkdownLintActions lintActions;
+
+    MarkdownLintActions lint() {
+        if (lintActions == null) {
+            lintActions = new MarkdownLintActions(host, this);
+        }
+        return lintActions;
+    }
+
     /** Whether Markdown linting is effective (the setting; the per-buffer gate adds Markdown + non-huge). */
     boolean markdownLintEnabled() {
         return host.config().getSettings().isMarkdownLint();
@@ -83,7 +99,28 @@ final class PreviewCoordinator {
                 b.setMarkdownLintEnabled(on);
             }
         }
-        if (host.markdownLintToolWindow() != null && host.toolWindows().isOpen(host.markdownLintToolWindow())) {
+        if (lintWindowOpen()) {
+            runMarkdownLintScan();
+        }
+    }
+
+    private boolean lintWindowOpen() {
+        return host.markdownLintToolWindow() != null && host.toolWindows().isOpen(host.markdownLintToolWindow());
+    }
+
+    /**
+     * The active tab changed to {@code buffer} (null for a non-editor tab): the Lint tool window follows it.
+     * Its stripe button is offered on a Markdown buffer; an <em>open</em> window stays open on any other tab —
+     * it says the file is not Markdown instead of closing, and fills again on the way back.
+     */
+    void activeBufferChanged(EditorBuffer buffer) {
+        if (host.markdownLintToolWindow() == null) {
+            return;
+        }
+        boolean markdown = buffer != null && buffer.isMarkdown();
+        host.toolWindows()
+                .setAvailable(host.markdownLintToolWindow(), markdownLintEnabled() && (markdown || lintWindowOpen()));
+        if (lintWindowOpen()) {
             runMarkdownLintScan();
         }
     }
@@ -92,22 +129,36 @@ final class PreviewCoordinator {
     void runMarkdownLintScan() {
         EditorBuffer b = host.activeBuffer();
         if (b == null || !b.isMarkdown() || !markdownLintEnabled()) {
-            host.markdownLintPanel().setResults(null, java.util.List.of());
+            host.markdownLintPanel().showNotLinted(b == null ? null : b.getPath());
             return;
         }
         markdownLintService.validate(
                 this, // the tool window's own request: it must not cancel a buffer's live lint
-                b.getContent(),
+                b.getVisibleContent(), // what the editor shows: the same lines the squiggles are drawn on
                 effectiveMarkdownLintDisabled(b),
-                diags -> host.markdownLintPanel().setResults(b.getPath(), diags));
+                diags -> showInLintPanel(b, diags));
     }
 
-    /** Lints {@code buffer}'s {@code text} for its live overlay; only a newer request for the same buffer supersedes it. */
+    /** Fills the Lint tool window with {@code buffer}'s diagnostics, when it is still the active buffer. */
+    private void showInLintPanel(
+            EditorBuffer buffer, java.util.List<com.editora.markdown.MarkdownLint.Diagnostic> diags) {
+        if (host.activeBuffer() == buffer && lintWindowOpen()) {
+            host.markdownLintPanel().setResults(buffer.getPath(), buffer.getTitle(), diags, lint().configNote(buffer));
+        }
+    }
+
+    /**
+     * Lints {@code buffer}'s {@code text} for its live overlay (only a newer request for the same buffer
+     * supersedes it) and mirrors the result into the Lint tool window while the buffer is the active one.
+     */
     void lintMarkdown(
             EditorBuffer buffer,
             String text,
             java.util.function.Consumer<java.util.List<com.editora.markdown.MarkdownLint.Diagnostic>> onResult) {
-        markdownLintService.validate(buffer, text, effectiveMarkdownLintDisabled(buffer), onResult);
+        markdownLintService.validate(buffer, text, effectiveMarkdownLintDisabled(buffer), diags -> {
+            onResult.accept(diags);
+            showInLintPanel(buffer, diags);
+        });
     }
 
     /** Toggles the Markdown Lint tool window; opening it auto-scans via {@code focusFirstItem}. */
@@ -115,12 +166,10 @@ final class PreviewCoordinator {
         host.toolWindows().toggle(host.markdownLintToolWindow());
     }
 
-    private record MarkdownLintConfigEntry(long mtime, java.util.Set<String> disabled) {}
-
-    final java.util.Map<java.nio.file.Path, MarkdownLintConfigEntry> markdownLintConfigCache =
-            new java.util.HashMap<>();
-
-    /** The rule codes disabled for {@code buffer}: the Settings list ∪ the nearest {@code .markdownlint.json}. */
+    /**
+     * The rule codes disabled for {@code buffer}: the Settings list ∪ the project's markdownlint config. A
+     * narrowed buffer shows a fragment, so the two rules about the file's first and last line are off there.
+     */
     java.util.Set<String> effectiveMarkdownLintDisabled(EditorBuffer buffer) {
         java.util.Set<String> off = new java.util.HashSet<>();
         for (String code : host.config().getSettings().getMarkdownLintDisabledRules()) {
@@ -132,59 +181,21 @@ final class PreviewCoordinator {
         if (path != null && com.editora.vfs.Vfs.isLocal(path)) {
             off.addAll(markdownLintConfigDisabled(path));
         }
+        if (buffer != null && buffer.isNarrowed()) {
+            off.addAll(java.util.List.of("MD041", "MD047"));
+        }
         return off;
     }
 
-    /** Walks up from {@code file} for the nearest {@code .markdownlint.json} and returns the rules it disables. */
+    /** The rules the nearest markdownlint config above {@code file} (inside its project) turns off. */
     java.util.Set<String> markdownLintConfigDisabled(java.nio.file.Path file) {
-        java.nio.file.Path dir = file.getParent();
-        while (dir != null) {
-            java.nio.file.Path cfg = dir.resolve(".markdownlint.json");
-            if (java.nio.file.Files.isRegularFile(cfg)) {
-                try {
-                    long mtime = java.nio.file.Files.getLastModifiedTime(cfg).toMillis();
-                    MarkdownLintConfigEntry cached = markdownLintConfigCache.get(cfg);
-                    if (cached == null || cached.mtime() != mtime) {
-                        java.util.Set<String> rules = com.editora.markdown.MarkdownLintConfig.disabledRules(
-                                java.nio.file.Files.readString(cfg));
-                        cached = new MarkdownLintConfigEntry(mtime, rules);
-                        markdownLintConfigCache.put(cfg, cached);
-                    }
-                    return cached.disabled();
-                } catch (java.io.IOException e) {
-                    return java.util.Set.of();
-                }
-            }
-            dir = dir.getParent();
-        }
-        return java.util.Set.of();
+        MarkdownLintActions.ConfigHit hit = lint().configFor(file);
+        return hit == null ? java.util.Set.of() : hit.disabled();
     }
 
     /** Applies the safe-to-automate Markdown-lint fixes to the active buffer (undoable). */
     void fixMarkdownLint() {
-        EditorBuffer b = host.activeBuffer();
-        if (b == null || !b.isMarkdown()) {
-            host.setStatus(tr("status.markdownLint.notMarkdown"));
-            return;
-        }
-        if (!markdownLintEnabled()) {
-            host.setStatus(tr("status.markdownLint.off"));
-            return;
-        }
-        String text = b.getContent();
-        String fixed = com.editora.markdown.MarkdownLintFix.fix(
-                text,
-                effectiveMarkdownLintDisabled(b),
-                host.config().getSettings().getTabSize());
-        if (fixed.equals(text)) {
-            host.setStatus(tr("status.markdownLint.fixNone"));
-            return;
-        }
-        if (!NoUndoGuard.allow(b, tr("command.markdownLint.fix"))) {
-            return;
-        }
-        b.replaceWholeDocument(fixed); // computed from getContent(): widens a narrowed buffer first (undoable)
-        host.setStatus(tr("status.markdownLint.fixed"));
+        lint().fixAll();
     }
 
     /** Picker to enable/disable an individual Markdown-lint rule (writes Settings + re-lints live). */

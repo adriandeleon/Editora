@@ -31,6 +31,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import static com.editora.i18n.Messages.tr;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -364,7 +365,7 @@ class PreviewCommandsFxTest {
     void lintFixRewritesTheFixableIssuesAndSaysWhenThereAreNone() throws Exception {
         EditorBuffer b = document("lint.md", "# Title\n\ntext with trailing spaces   \n");
         run("markdownLint.fix");
-        assertEquals(tr("status.markdownLint.fixed"), status());
+        assertEquals(tr("status.markdownLint.fixed", 1), status());
         assertEquals("# Title\n\ntext with trailing spaces\n", text(b));
 
         run("markdownLint.fix");
@@ -445,5 +446,264 @@ class PreviewCommandsFxTest {
         document("data.json", "{\"a\": 1}\n");
         run("structured.toggleView");
         assertEquals(tr("status.structured.notOpenApi"), status());
+    }
+
+    // --- markdown lint: acting on issues (C4, C5, C11, C16, C18) -----------------------------------------
+
+    /** Waits until the lint service has answered everything asked of it so far. */
+    private void lintSettled() throws Exception {
+        java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+        FxTestSupport.runOnFx(
+                () -> previews.markdownLintService.validate(new Object(), "x", Set.of(), d -> done.countDown()));
+        assertTrue(done.await(30, java.util.concurrent.TimeUnit.SECONDS), "the lint service never answered");
+        FxTestSupport.drainFx();
+    }
+
+    /** A Markdown document whose squiggles are in place. */
+    private EditorBuffer linted(String name, String text) throws Exception {
+        EditorBuffer b = document(name, text);
+        lintSettled();
+        return b;
+    }
+
+    /** The buffer's diagnostics once the debounced re-lint after an edit has left {@code expected} of them. */
+    private List<com.editora.markdown.MarkdownLint.Diagnostic> diagnosticsAfterRelint(EditorBuffer b, int expected)
+            throws Exception {
+        List<com.editora.markdown.MarkdownLint.Diagnostic> now = List.of();
+        for (int attempt = 0; attempt < 100; attempt++) {
+            lintSettled();
+            now = FxTestSupport.callOnFx(b::markdownLintDiagnostics);
+            if (now.size() == expected) {
+                break;
+            }
+            Thread.sleep(50);
+        }
+        return now;
+    }
+
+    private void caretAt(EditorBuffer b, int line, int column) throws Exception {
+        FxTestSupport.runOnFx(() -> b.getArea().moveTo(line, column));
+    }
+
+    private int[] caretOf(EditorBuffer b) throws Exception {
+        return FxTestSupport.callOnFx(
+                () -> new int[] {b.getArea().getCurrentParagraph(), b.getArea().getCaretColumn()});
+    }
+
+    @Test
+    void lintFixKeepsTheCaretOnItsLineAndCountsWhatIsLeft() throws Exception {
+        EditorBuffer b = linted("lint.md", "# Title\n\n\n\nline three   \nhttps://bare.example\n");
+        caretAt(b, 4, 4);
+        run("markdownLint.fix");
+        assertEquals("# Title\n\nline three\nhttps://bare.example\n", text(b));
+        assertArrayEquals(new int[] {2, 4}, caretOf(b), "the caret follows its line, not the end of the file");
+        assertEquals(tr("status.markdownLint.fixedManual", 3, 1), status());
+
+        run("markdownLint.fix");
+        assertEquals(tr("status.markdownLint.fixNoneManual", 1), status());
+
+        FxTestSupport.runOnFx(() -> b.getArea().undo());
+        assertEquals("# Title\n\n\n\nline three   \nhttps://bare.example\n", text(b), "one undo step");
+    }
+
+    @Test
+    void nextAndPreviousIssueWalkTheFileAndWrap() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\na   \n\nb   \n");
+        String message = "MD009: " + tr("mdlint.msg.MD009");
+        run("markdownLint.next");
+        assertArrayEquals(new int[] {2, 1}, caretOf(b));
+        assertEquals(tr("status.markdownLint.issue", message, 1, 2), status());
+        run("markdownLint.next");
+        assertArrayEquals(new int[] {4, 1}, caretOf(b));
+        run("markdownLint.next");
+        assertArrayEquals(new int[] {2, 1}, caretOf(b), "wraps to the first");
+        run("markdownLint.previous");
+        assertArrayEquals(new int[] {4, 1}, caretOf(b), "and back to the last");
+        assertEquals(tr("status.markdownLint.issue", message, 2, 2), status());
+
+        linted("clean.md", "# T\n");
+        run("markdownLint.next");
+        assertEquals(tr("status.markdownLint.noIssues"), status());
+    }
+
+    @Test
+    void oneIssueIsFixedAtTheCaret() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\na   \n\nb   \nhttps://bare.example\n");
+        caretAt(b, 2, 0);
+        run("markdownLint.fixAtCaret");
+        assertEquals("# T\n\na\n\nb   \nhttps://bare.example\n", text(b), "only that one");
+        assertEquals(2, diagnosticsAfterRelint(b, 2).size());
+
+        caretAt(b, 5, 3);
+        run("markdownLint.fixAtCaret");
+        assertEquals(tr("status.markdownLint.notFixable", "MD034"), status());
+
+        caretAt(b, 0, 0);
+        run("markdownLint.fixAtCaret");
+        assertEquals(tr("status.markdownLint.noIssueHere"), status());
+    }
+
+    @Test
+    void anIssueIsSilencedForItsLine() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\n- see https://bare.example now\n");
+        caretAt(b, 2, 10);
+        run("markdownLint.disableLine");
+        assertEquals("# T\n\n<!-- markdownlint-disable-next-line MD034 -->\n- see https://bare.example now\n", text(b));
+        assertEquals(tr("status.markdownLint.lineDisabled", "MD034"), status());
+        assertArrayEquals(new int[] {3, 10}, caretOf(b), "the caret stays on the line it was on");
+        assertEquals(List.of(), diagnosticsAfterRelint(b, 0));
+    }
+
+    @Test
+    void theRuleOfAnIssueIsSwitchedOffAndItsDocumentationOpened() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\nsee https://bare.example now\n");
+        caretAt(b, 2, 6);
+        List<String> opened = new java.util.ArrayList<>();
+        FxTestSupport.runOnFx(() -> previews.lint().openUrl = opened::add); // never a real browser
+        run("markdownLint.ruleHelp");
+        assertEquals(List.of("https://github.com/DavidAnson/markdownlint/blob/main/doc/md034.md"), opened);
+
+        run("markdownLint.disableRule");
+        assertEquals(List.of("MD034"), fx.shared.getSettings().getMarkdownLintDisabledRules());
+        assertEquals(tr("status.markdownLint.ruleDisabled", "MD034"), status());
+    }
+
+    @Test
+    void theEditorMenuOffersTheActionsForTheIssueAtTheCaret() throws Exception {
+        EditorBuffer b = linted("lint.md", "# T\n\nsee https://bare.example now   \n");
+        caretAt(b, 2, 6);
+        List<javafx.scene.control.MenuItem> menu =
+                FxTestSupport.callOnFx(() -> previews.lint().editorMenu(b));
+        assertEquals(1, menu.size());
+        javafx.scene.control.Menu sub = (javafx.scene.control.Menu) menu.get(0);
+        assertEquals(tr("markdownLint.menu.title", "MD034: " + tr("mdlint.msg.MD034")), sub.getText());
+        assertEquals(
+                List.of(
+                        tr("markdownLint.menu.fix"),
+                        tr("markdownLint.menu.disableLine"),
+                        tr("markdownLint.menu.disableRule", "MD034"),
+                        tr("markdownLint.menu.help")),
+                sub.getItems().stream()
+                        .map(javafx.scene.control.MenuItem::getText)
+                        .toList());
+        assertTrue(sub.getItems().get(0).isDisable(), "a bare URL has no automatic fix");
+
+        caretAt(b, 2, 30); // in the trailing whitespace
+        javafx.scene.control.Menu ws = (javafx.scene.control.Menu)
+                FxTestSupport.callOnFx(() -> previews.lint().editorMenu(b)).get(0);
+        FxTestSupport.runOnFx(() -> ws.getItems().get(0).fire());
+        assertEquals("# T\n\nsee https://bare.example now\n", text(b));
+
+        caretAt(b, 0, 0);
+        assertEquals(List.of(), FxTestSupport.callOnFx(() -> previews.lint().editorMenu(b)));
+    }
+
+    @Test
+    void theLintWindowFollowsTheActiveTab() throws Exception {
+        EditorBuffer dirty = linted("dirty.md", "# T\n\na   \n\nb   \n");
+        EditorBuffer clean = linted("clean.md", "# T\n");
+        EditorBuffer notes = document("notes.txt", "plain text   \n");
+        ToolWindowManager windows = FxTestSupport.field(fx.controller, "toolWindows");
+        ToolWindow window = FxTestSupport.field(fx.controller, "markdownLintToolWindow");
+        FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(clean.getPath(), 0));
+        run("markdownLint.refresh");
+        lintSettled();
+        MarkdownLintPanel panel = FxTestSupport.field(fx.controller, "markdownLintPanel");
+        javafx.scene.control.ListView<?> list = FxTestSupport.field(panel, "list");
+        javafx.scene.control.Label summary = FxTestSupport.field(panel, "summary");
+        javafx.scene.control.Label fileName = FxTestSupport.field(panel, "fileName");
+        assertEquals(0, list.getItems().size());
+        assertEquals("clean.md", fileName.getText());
+
+        FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(dirty.getPath(), 0));
+        lintSettled();
+        assertEquals(2, list.getItems().size(), "the rows are the active tab's, without an edit or a refresh");
+        assertEquals("dirty.md", fileName.getText());
+        assertEquals(tr("markdownLint.summary", 2), summary.getText());
+
+        FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(notes.getPath(), 0));
+        lintSettled();
+        assertTrue(FxTestSupport.callOnFx(() -> windows.isOpen(window)), "the window is not closed behind your back");
+        assertEquals(0, list.getItems().size());
+        assertEquals(tr("status.markdownLint.notMarkdown"), summary.getText());
+        assertEquals("notes.txt", fileName.getText());
+
+        FxTestSupport.runOnFx(() -> fx.controller.openAndNavigate(dirty.getPath(), 0));
+        lintSettled();
+        assertEquals(2, list.getItems().size());
+        FxTestSupport.runOnFx(() -> windows.close(window));
+    }
+
+    @Test
+    void projectConfigFilesAreReadAsMarkdownlintReadsThem() throws Exception {
+        EditorBuffer b = document("lint.md", "# Title\n");
+        Path folder = b.getPath().getParent();
+        Path file = b.getPath();
+
+        // JSONC with an alias and an options object.
+        Path json = Files.writeString(
+                folder.resolve(".markdownlint.json"),
+                "{\n  // house style\n  \"default\": false,\n  \"no-hard-tabs\": true,\n  \"MD009\": { \"br_spaces\": 2 },\n}");
+        Set<String> off = FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file));
+        assertFalse(off.contains("MD010"));
+        assertFalse(off.contains("MD009"));
+        assertTrue(off.contains("MD034"));
+        assertEquals(
+                tr("markdownLint.configNote", 14, ".markdownlint.json"),
+                FxTestSupport.callOnFx(() -> previews.lint().configNote(b)));
+        Files.delete(json);
+
+        // YAML, extending a base file.
+        Files.writeString(folder.resolve("base.json"), "{\"MD034\": false, \"MD040\": false}");
+        Path yaml = Files.writeString(
+                folder.resolve(".markdownlint.yaml"), "extends: base.json\nMD040: true\nwhitespace: false\n");
+        assertEquals(
+                Set.of("MD034", "MD009", "MD010", "MD012"),
+                FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+        Files.delete(yaml);
+
+        // .jsonc wins over .json; a file that cannot be parsed is reported once and disables nothing.
+        Files.writeString(folder.resolve(".markdownlint.json"), "{\"MD009\": false}");
+        Path jsonc = Files.writeString(folder.resolve(".markdownlint.jsonc"), "{ nope");
+        mark("before");
+        assertEquals(Set.of(), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+        assertEquals(tr("status.markdownLint.configError", ".markdownlint.jsonc"), status());
+        mark("again");
+        assertEquals(Set.of(), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+        assertEquals("again", status(), "not repeated on every lint");
+        assertEquals("", FxTestSupport.callOnFx(() -> previews.lint().configNote(b)));
+        Files.delete(jsonc);
+        assertEquals(Set.of("MD009"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(file)));
+    }
+
+    @Test
+    void theConfigLookupStopsAtTheRepositoryRoot() throws Exception {
+        EditorBuffer b = document("lint.md", "# Title\n");
+        Path outer = b.getPath().getParent();
+        Files.writeString(outer.resolve(".markdownlint.json"), "{\"MD009\": false}");
+        Path repo = Files.createDirectories(outer.resolve("repo"));
+        Files.createDirectory(repo.resolve(".git"));
+        Path inside =
+                Files.writeString(Files.createDirectories(repo.resolve("docs")).resolve("a.md"), "# A\n");
+        assertEquals(
+                Set.of(),
+                FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(inside)),
+                "a config above the repository does not govern it");
+        Files.writeString(repo.resolve(".markdownlint.json"), "{\"MD010\": false}");
+        assertEquals(Set.of("MD010"), FxTestSupport.callOnFx(() -> previews.markdownLintConfigDisabled(inside)));
+    }
+
+    @Test
+    void aNarrowedBufferIsNotJudgedAsAWholeFile() throws Exception {
+        EditorBuffer b = linted("lint.md", "# Title\n\nfirst paragraph\n\nsecond paragraph\n");
+        assertEquals(Set.of(), FxTestSupport.callOnFx(() -> previews.effectiveMarkdownLintDisabled(b)));
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().selectRange(2, 0, 2, 15);
+            registry.run("edit.narrowToRegion");
+        });
+        assertTrue(FxTestSupport.callOnFx(b::isNarrowed));
+        assertEquals(Set.of("MD041", "MD047"), FxTestSupport.callOnFx(() -> previews.effectiveMarkdownLintDisabled(b)));
+        assertEquals(List.of(), diagnosticsAfterRelint(b, 0), "a fragment has no first line");
+        FxTestSupport.runOnFx(() -> registry.run("edit.widen"));
     }
 }
