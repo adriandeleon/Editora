@@ -1159,6 +1159,9 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Sets the {@link javafx.application.HostServices} used to open external links (from {@code App}). */
     public void setHostServices(javafx.application.HostServices hostServices) {
         this.hostServices = hostServices;
+        exports.systemOpener = hostServices == null
+                ? null
+                : f -> hostServices.showDocument(f.toUri().toString());
     }
 
     /**
