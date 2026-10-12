@@ -65,17 +65,24 @@ final class OverlayTestKit {
                                         .toList()));
                     }
                     answered.countDown();
-                    if (answer == null) {
-                        javafx.event.Event.fireEvent(
-                                window,
-                                new javafx.stage.WindowEvent(window, javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST));
-                    } else {
-                        ((Button) pane.lookupButton(pane.getButtonTypes().stream()
-                                        .filter(type -> type.getButtonData() == answer)
-                                        .findFirst()
-                                        .orElseThrow()))
-                                .fire();
-                    }
+                    // Not from inside this frame. Where a resize repaints at once (macOS, Windows) the frame
+                    // can run while the dialog is still being shown; closing it there, before showAndWait
+                    // has started waiting, leaves showAndWait waiting for good. Posted, the answer arrives
+                    // once the dialog is up and waiting.
+                    javafx.application.Platform.runLater(() -> {
+                        if (answer == null) {
+                            javafx.event.Event.fireEvent(
+                                    window,
+                                    new javafx.stage.WindowEvent(
+                                            window, javafx.stage.WindowEvent.WINDOW_CLOSE_REQUEST));
+                        } else {
+                            ((Button) pane.lookupButton(pane.getButtonTypes().stream()
+                                            .filter(type -> type.getButtonData() == answer)
+                                            .findFirst()
+                                            .orElseThrow()))
+                                    .fire();
+                        }
+                    });
                     return;
                 }
             }
