@@ -276,4 +276,15 @@ class MarkdownLintFixTest {
                 + "<!-- markdownlint-disable-next-line MD040 -->\n```\nx\n```\n";
         assertEquals(java.util.List.of(), MarkdownLint.lint(md));
     }
+
+    // --- wave 2 — C9 -------------------------------------------------------------------------------------
+
+    @Test
+    void blockLevelHtmlIsCopiedThrough() {
+        assertUntouched("# T\n\n<div>\n#x   \n\t<p>y</p>\n</div>\n\ntext\n");
+        assertEquals(
+                "# T\n\n<details>\n<summary>S</summary>   \n\n# Inside\n\n</details>\n",
+                fix("# T\n\n<details>\n<summary>S</summary>   \n\n#Inside   \n\n</details>\n"),
+                "the Markdown between the tags is fixed, the tag lines are not");
+    }
 }

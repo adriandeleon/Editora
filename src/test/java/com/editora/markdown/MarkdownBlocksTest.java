@@ -294,7 +294,49 @@ class MarkdownBlocksTest {
         assertKinds("<STYLE type=\"text/css\">\n# id { }\n</style>", H, H, H);
         assertKinds("<pre>one line</pre>\n# T", H, T);
         assertKinds("<pretty>\n# T", T, T); // not a <pre>
-        assertKinds("<div>\n# T\n</div>", T, T, T); // other HTML is left to the caller
+    }
+
+    @Test
+    void blockLevelElementsRunToTheNextBlankLine() {
+        assertKinds("<div>\n# not a heading\n</div>\n\n# T", H, H, H, T, T);
+        assertKinds("text\n<table>\n<tr><td>x</td></tr>\n</table>\n\nafter", T, H, H, H, T, T);
+        assertKinds("<p align=\"center\">\n  <img src=\"http://x.io/a.png\">\n</p>\n\n# T", H, H, H, T, T);
+        assertKinds("<hr/>\n\n</div>\ntext", H, T, H, H);
+        assertKinds("<H2>Title</H2>\n# T", H, H);
+    }
+
+    @Test
+    void markdownResumesInsideDetailsAfterABlankLine() {
+        // The usual collapsible section: the tags are HTML, the body between blank lines is Markdown.
+        assertKinds(
+                "<details>\n<summary>More</summary>\n\n## Inside\n\n```sh\nls\n```\n\n</details>\n",
+                H,
+                H,
+                T,
+                T,
+                T,
+                O,
+                B,
+                C,
+                T,
+                H,
+                T);
+    }
+
+    @Test
+    void inlineAndUnknownTagsDoNotOpenAnHtmlBlock() {
+        assertKinds("<span>inline</span> text\n# T", T, T);
+        assertKinds("<img src=\"a.png\">\n# T", T, T);
+        assertKinds("<divider>\n# T", T, T);
+        assertKinds("a < b and <div> later\n# T", T, T); // only at the start of the line
+        assertKinds("    <div>\n", I, T); // four columns in: indented code
+    }
+
+    @Test
+    void anHtmlBlockInAListItemOrABlockQuote() {
+        assertKinds("- item\n\n  <div>\n  # x\n  </div>\n\n- next", T, T, H, H, H, T, T);
+        assertKinds("> <div>\n> # x\n\n# T", H, H, T, T);
+        assertKinds("> <div>\n> # x\n# T", H, H, T); // the quote ended, and the block with it
     }
 
     // --- container content ----------------------------------------------------------------------------

@@ -135,6 +135,7 @@ final class PreviewCoordinator {
                 this, // the tool window's own request: it must not cancel a buffer's live lint
                 b.getVisibleContent(), // what the editor shows: the same lines the squiggles are drawn on
                 effectiveMarkdownLintDisabled(b),
+                lint().options(b),
                 diags -> showInLintPanel(b, diags));
     }
 
@@ -154,10 +155,11 @@ final class PreviewCoordinator {
             EditorBuffer buffer,
             String text,
             java.util.function.Consumer<java.util.List<com.editora.markdown.MarkdownLint.Diagnostic>> onResult) {
-        markdownLintService.validate(buffer, text, effectiveMarkdownLintDisabled(buffer), diags -> {
-            onResult.accept(diags);
-            showInLintPanel(buffer, diags);
-        });
+        markdownLintService.validate(
+                buffer, text, effectiveMarkdownLintDisabled(buffer), lint().options(buffer), diags -> {
+                    onResult.accept(diags);
+                    showInLintPanel(buffer, diags);
+                });
     }
 
     /** Toggles the Markdown Lint tool window; opening it auto-scans via {@code focusFirstItem}. */
@@ -166,22 +168,34 @@ final class PreviewCoordinator {
     }
 
     /**
-     * The rule codes disabled for {@code buffer}: the Settings list ∪ the project's markdownlint config. A
-     * narrowed buffer shows a fragment, so the two rules about the file's first and last line are off there.
+     * The rule codes disabled for {@code buffer}: the user's Settings list, minus the rules its project's
+     * markdownlint config switches on by name (the project's choice wins inside the project), plus the rules
+     * that config switches off. A narrowed buffer shows a fragment, so the two rules about the file's first and
+     * last line are off there.
      */
     java.util.Set<String> effectiveMarkdownLintDisabled(EditorBuffer buffer) {
+        java.util.Set<String> off = settingsDisabledRules();
+        java.nio.file.Path path = buffer == null ? null : buffer.getPath();
+        if (path != null && com.editora.vfs.Vfs.isLocal(path)) {
+            MarkdownLintActions.ConfigHit hit = lint().configFor(path);
+            if (hit != null) {
+                off.removeAll(hit.enabled());
+                off.addAll(hit.disabled());
+            }
+        }
+        if (buffer != null && buffer.isNarrowed()) {
+            off.addAll(java.util.List.of("MD041", "MD047"));
+        }
+        return off;
+    }
+
+    /** The rule codes switched off in Settings, normalized. */
+    java.util.Set<String> settingsDisabledRules() {
         java.util.Set<String> off = new java.util.HashSet<>();
         for (String code : host.config().getSettings().getMarkdownLintDisabledRules()) {
             if (code != null && !code.isBlank()) {
                 off.add(code.strip().toUpperCase(java.util.Locale.ROOT));
             }
-        }
-        java.nio.file.Path path = buffer == null ? null : buffer.getPath();
-        if (path != null && com.editora.vfs.Vfs.isLocal(path)) {
-            off.addAll(markdownLintConfigDisabled(path));
-        }
-        if (buffer != null && buffer.isNarrowed()) {
-            off.addAll(java.util.List.of("MD041", "MD047"));
         }
         return off;
     }
@@ -194,7 +208,7 @@ final class PreviewCoordinator {
 
     /**
      * What the active buffer's project markdownlint config does to the rule list, as one localized line for
-     * display ("2 rules disabled by .markdownlint.json"); "" when no config applies (no file, not Markdown, a
+     * display ("2 rules disabled by .markdownlint.json", or which rules it switches on over Settings); "" when no config applies (no file, not Markdown, a
      * remote or unsaved buffer, or a config that changes nothing). The Lint tool window and the Settings card
      * both show it; call on the FX thread.
      */

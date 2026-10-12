@@ -453,4 +453,178 @@ class MarkdownLintTest {
         long ms = (System.nanoTime() - start) / 1_000_000;
         assertTrue(ms < 3_000, "took " + ms + " ms (was ~10 s)");
     }
+
+    // --- wave 2 — C9: block-level HTML ------------------------------------------------------------------
+
+    @Test
+    void blockLevelHtmlIsNotLinted() {
+        assertEquals(List.of(), at("# T\n\n<div>\n# not a heading\nhttp://x.io\n\t<p>x</p>   \n</div>\n"));
+        assertEquals(
+                List.of(),
+                at(
+                        "# T\n\n<p align=\"center\">\n  <a href=\"https://x.io\"><img src=\"https://x.io/a.png\"></a>\n</p>\n"));
+        assertEquals(List.of(), at("# T\n\n<table>\n<tr><td>[a][b] http://x.io</td></tr>\n</table>\n"));
+    }
+
+    @Test
+    void markdownBetweenBlankLinesInsideDetailsIsStillLinted() {
+        assertEquals(
+                List.of("MD034@6:5+11"),
+                at("# T\n\n<details>\n<summary>More http://quiet.io</summary>\n\nsee http://x.io\n\n</details>\n"));
+    }
+
+    @Test
+    void anHtmlHeadingStillSatisfiesMd041() {
+        assertEquals(List.of(), at("<h1 align=\"center\">X</h1>\n\ntext\n"));
+        assertEquals(List.of("MD041@1:1+12"), at("<h2>Sub</h2>\n\ntext\n"));
+    }
+
+    // --- wave 2 — C18: bare e-mail addresses -------------------------------------------------------------
+
+    @Test
+    void md034FlagsABareEmailAddress() {
+        assertEquals(List.of("MD034@3:7+16"), at("# T\n\nWrite jane@example.com today.\n"));
+        assertEquals(List.of("MD034@3:1+21"), at("# T\n\njane.doe+x@mail.co.uk, please\n"));
+        assertEquals(List.of("MD034@3:2+9"), at("# T\n\n(joe@x.org)\n"));
+    }
+
+    @Test
+    void md034LeavesLinkedQuotedAndLookalikeAddressesAlone() {
+        assertEquals(List.of(), at("# T\n\n<jane@example.com> and [mail](mailto:jane@example.com)\n"));
+        assertEquals(List.of(), at("# T\n\n[jane@example.com](mailto:jane@example.com) `jane@example.com`\n"));
+        assertEquals(List.of(), at("# T\n\n<a href=\"mailto:jane@example.com\">write</a> <!-- jane@example.com -->\n"));
+        assertEquals(List.of(), at("# T\n\nclone git@github.com:owner/repo.git or scp user@host.example:/tmp\n"));
+        assertEquals(List.of(), at("# T\n\ninstall pkg@1.2.3 and @scope/name@2.0.0, mention @someone\n"));
+        assertEquals(List.of(), at("# T\n\n[x](https://user@host.example/path)\n\n[ref]: jane@example.com\n"));
+        assertEquals(List.of(), at("# T\n\n    jane@example.com\n\n```text\njane@example.com\n```\n"));
+    }
+
+    @Test
+    void aLineOfAtSignsLintsQuickly() {
+        long start = System.nanoTime();
+        MarkdownLint.lint("# T\n\n" + "a@".repeat(50_000) + "\n" + "x".repeat(200_000) + "@example.com\n");
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(ms < 2_000, "took " + ms + " ms");
+    }
+
+    // --- wave 2 — C11: rule options ----------------------------------------------------------------------
+
+    private static List<String> at(String md, MarkdownLintOptions options) {
+        return MarkdownLint.lint(md, Set.of(), options).stream()
+                .map(d -> d.code() + "@" + d.line() + ":" + d.column() + "+" + d.length())
+                .toList();
+    }
+
+    private static MarkdownLintOptions with(String code, String option, Object value) {
+        return MarkdownLintOptions.DEFAULT.with(code, option, value);
+    }
+
+    @Test
+    void md009BrSpaces() {
+        String md = "# T\n\ntwo  \nthree   \nend\n";
+        assertEquals(List.of("MD009@4:6+3"), at(md));
+        assertEquals(List.of("MD009@3:4+2"), at(md, with("MD009", "br_spaces", 3)));
+        assertEquals(List.of("MD009@3:4+2", "MD009@4:6+3"), at(md, with("MD009", "br_spaces", 0)));
+        assertEquals(
+                "# T\n\ntwo\nthree   \nend\n",
+                MarkdownLintFix.fix(md, Set.of(), 4, MarkdownLintFix.Scope.ALL, with("MD009", "br_spaces", 3))
+                        .text());
+    }
+
+    @Test
+    void md026Punctuation() {
+        String md = "# T\n\n## Why?\n\n## Done.\n";
+        assertEquals(List.of("MD026@5:8+1"), at(md));
+        MarkdownLintOptions question = with("MD026", "punctuation", "?");
+        assertEquals(List.of("MD026@3:7+1"), at(md, question));
+        assertEquals(
+                "# T\n\n## Why\n\n## Done.\n",
+                MarkdownLintFix.fix(md, Set.of(), 4, MarkdownLintFix.Scope.ALL, question)
+                        .text());
+    }
+
+    @Test
+    void frontMatterTitleAndLevels() {
+        String titled = "---\nheadline: X\n---\n\ntext\n";
+        assertEquals(List.of("MD041@5:1+4"), at(titled));
+        assertEquals(List.of(), at(titled, with("MD041", "front_matter_title", "^\\s*headline\\s*:")));
+        // "" switches the front-matter title off: the body needs its own heading again.
+        assertEquals(
+                List.of("MD041@5:1+4"), at("---\ntitle: X\n---\n\ntext\n", with("MD025", "front_matter_title", "")));
+
+        String sections = "## A\n\n## B\n";
+        assertEquals(List.of("MD041@1:1+4"), at(sections));
+        assertEquals(List.of(), at(sections, with("MD041", "level", 2)));
+        assertEquals(List.of("MD041@1:1+4", "MD025@3:1+2"), at(sections, with("MD025", "level", 2)));
+        assertEquals(List.of(), at("<h2>A</h2>\n\ntext\n", with("MD041", "level", 2)));
+    }
+
+    @Test
+    void md010CodeBlocksAndMd012Maximum() {
+        String code = "# T\n\n```make\nall:\n\tgcc\n```\n";
+        assertEquals(List.of(), at(code));
+        assertEquals(List.of("MD010@5:1+1"), at(code, with("MD010", "code_blocks", true)));
+        assertEquals(
+                code,
+                MarkdownLintFix.fix(code, Set.of(), 4, MarkdownLintFix.Scope.ALL, with("MD010", "code_blocks", true))
+                        .text(),
+                "reported when asked for, never rewritten");
+
+        String blanks = "# T\n\n\n\n\ntext\n";
+        assertEquals(List.of("MD012@3:1+1", "MD012@4:1+1", "MD012@5:1+1"), at(blanks));
+        MarkdownLintOptions two = with("MD012", "maximum", 2);
+        assertEquals(List.of("MD012@4:1+1", "MD012@5:1+1"), at(blanks, two));
+        assertEquals(
+                "# T\n\n\ntext\n",
+                MarkdownLintFix.fix(blanks, Set.of(), 4, MarkdownLintFix.Scope.ALL, two)
+                        .text());
+    }
+
+    @Test
+    void md010SpacesPerTabDrivesTheFix() {
+        assertEquals(
+                "a  b\n",
+                MarkdownLintFix.fix(
+                                "a\tb\n", Set.of(), 4, MarkdownLintFix.Scope.ALL, with("MD010", "spaces_per_tab", 2))
+                        .text());
+        assertEquals(
+                "a    b\n",
+                MarkdownLintFix.fix("a\tb\n", Set.of(), 4, MarkdownLintFix.Scope.ALL, MarkdownLintOptions.DEFAULT)
+                        .text());
+    }
+
+    @Test
+    void md022LinesAboveAndBelow() {
+        String md = "# T\n\ntext\n## B\ntext\n";
+        assertEquals(List.of("MD022@4:1+2", "MD022@4:1+2"), at(md));
+        assertEquals(List.of("MD022@4:1+2"), at(md, with("MD022", "lines_above", 0)));
+        assertEquals(List.of(), at(md, with("MD022", "lines_above", 0).with("MD022", "lines_below", -1)));
+        String one = "# T\n\ntext\n\n## B\n\ntext\n";
+        assertEquals(List.of(), at(one));
+        assertEquals(List.of("MD022@5:1+2"), at(one, with("MD022", "lines_above", 2)));
+    }
+
+    @Test
+    void optionsThatAreUnknownOrMalformedChangeNothing() {
+        MarkdownLintOptions d = MarkdownLintOptions.DEFAULT;
+        assertEquals(d, d.with("MD009", "strict", true));
+        assertEquals(d, d.with("MD013", "line_length", 120));
+        assertEquals(d, d.with("MD009", "br_spaces", "two"));
+        assertEquals(d, d.with("MD041", "level", 9));
+        assertEquals(d, d.with("MD025", "front_matter_title", "([unclosed"));
+        assertEquals(d, d.with("MD012", "maximum", 0));
+        assertEquals(d, d.with("MD010", "spaces_per_tab", 0));
+    }
+
+    @Test
+    void aConfigureFileCommentCarriesOptionsToo() {
+        String md =
+                "<!-- markdownlint-configure-file { \"MD026\": { \"punctuation\": \"?\" }, \"MD012\": { \"maximum\": 2 } } -->\n"
+                        + "# T\n\n\n## Done.\n\n## Why?\n";
+        assertEquals(List.of("MD026@7:7+1"), at(md));
+        assertEquals(
+                "<!-- markdownlint-configure-file { \"MD026\": { \"punctuation\": \"?\" }, \"MD012\": { \"maximum\": 2 } } -->\n"
+                        + "# T\n\n\n## Done.\n\n## Why\n",
+                MarkdownLintFix.fix(md, Set.of(), 4));
+    }
 }

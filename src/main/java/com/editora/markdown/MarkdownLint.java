@@ -163,11 +163,8 @@ public final class MarkdownLint {
     private static final Pattern LABEL_ONLY_DEF = Pattern.compile("^ {0,3}\\[(?:\\\\.|[^\\[\\]\\\\])++\\]:\\s*$");
     // A bare URL (no surrounding markdown link / autolink syntax); its tail is trimmed by trimUrl.
     private static final Pattern BARE_URL = Pattern.compile("https?://[^\\s<>\\[\\]]+");
-    private static final Pattern FRONT_MATTER_TITLE = Pattern.compile("^\\s*\"?title\"?\\s*[:=]");
     private static final Pattern ENTITY_AT_END =
             Pattern.compile("&(?:[A-Za-z][A-Za-z0-9]*|#[0-9]+|#[xX][0-9A-Fa-f]+);$");
-    // Trailing punctuation flagged by MD026 (markdownlint's default set: no question mark).
-    private static final String HEADING_PUNCTUATION = ".,;:!。，；：！";
     private static final String URL_TAIL = ".,;:!?'\"*_~";
 
     /** Lints with no rules disabled. */
@@ -177,25 +174,41 @@ public final class MarkdownLint {
 
     /** Lints {@code text}; {@code disabled} rule codes (and inline directives) suppress those diagnostics. */
     public static List<Diagnostic> lint(String text, Set<String> disabled) {
+        return lint(text, disabled, MarkdownLintOptions.DEFAULT);
+    }
+
+    /**
+     * As {@link #lint(String, Set)}, with the project's rule {@code options}; a
+     * {@code markdownlint-configure-file} comment in the document refines both.
+     */
+    public static List<Diagnostic> lint(String text, Set<String> disabled, MarkdownLintOptions options) {
         List<Diagnostic> out = new ArrayList<>();
         if (text == null || text.isEmpty()) {
             return out;
         }
         String[] lines = text.split("\n", -1);
         MarkdownBlocks blocks = MarkdownBlocks.scan(lines);
-        Emitter emit = new Emitter(out, disabled == null ? Set.of() : disabled, MarkdownLintDirectives.compute(blocks));
+        MarkdownLintDirectives directives = MarkdownLintDirectives.compute(blocks);
+        MarkdownLintOptions opts = directives.options(options == null ? MarkdownLintOptions.DEFAULT : options);
+        Emitter emit = new Emitter(out, disabled == null ? Set.of() : disabled, directives, opts);
         Set<String> defined = definitions(blocks);
         int n = blocks.lineCount();
 
         boolean tagOpen = false; // an HTML tag opened on an earlier line and not closed yet
+        int blankRun = 0; // consecutive blank prose lines, this one included
         for (int i = 0; i < n; i++) {
             if (!blocks.isText(i)) {
                 tagOpen = false;
-                continue; // code, front matter, raw HTML: no line-level rules
+                blankRun = 0;
+                if (opts.tabsInCode() && blocks.isCode(i)) {
+                    hardTabs(emit, blocks.line(i), i + 1); // MD010.code_blocks: asked for explicitly
+                }
+                continue; // code, front matter, raw HTML: no other line-level rules
             }
             String line = blocks.line(i);
             int lineNo = i + 1;
-            whitespaceRules(emit, blocks, lines, i);
+            blankRun = line.isBlank() ? blankRun + 1 : 0;
+            whitespaceRules(emit, blocks, lines, i, blankRun);
             headingRules(emit, blocks, i);
             if (line.isBlank()) {
                 tagOpen = false;
@@ -203,7 +216,9 @@ public final class MarkdownLint {
             }
             int tagEnd = tagOpen ? line.indexOf('>') : -1; // up to here the line is still inside that tag
             boolean attributesOnly = tagOpen && tagEnd < 0;
-            bareUrls(emit, blocks, i, tagOpen ? (attributesOnly ? line.length() : tagEnd) : 0);
+            int inTag = tagOpen ? (attributesOnly ? line.length() : tagEnd) : 0;
+            bareUrls(emit, blocks, i, inTag);
+            bareEmails(emit, blocks, i, inTag);
             tagOpen = attributesOnly || endsInsideTag(line, Math.max(0, tagEnd));
 
             // MD052: [text][label] / [text][] with no matching definition.
@@ -237,7 +252,8 @@ public final class MarkdownLint {
     }
 
     /** Collects diagnostics, dropping the ones a setting or an inline directive turned off. */
-    private record Emitter(List<Diagnostic> out, Set<String> off, MarkdownLintDirectives directives) {
+    private record Emitter(
+            List<Diagnostic> out, Set<String> off, MarkdownLintDirectives directives, MarkdownLintOptions options) {
         void add(int line, int column, int length, String code, String message) {
             if (off.contains(code) || directives.disabled(line - 1, code)) {
                 return;
@@ -247,11 +263,8 @@ public final class MarkdownLint {
         }
     }
 
-    /** MD010, MD009, MD012 on prose line {@code i}. */
-    private static void whitespaceRules(Emitter emit, MarkdownBlocks blocks, String[] lines, int i) {
-        String line = blocks.line(i);
-        int lineNo = i + 1;
-        // MD010: every run of hard tabs.
+    /** MD010: every run of hard tabs of {@code line}. */
+    private static void hardTabs(Emitter emit, String line, int lineNo) {
         for (int tab = line.indexOf('\t'); tab >= 0; ) {
             int run = tab;
             while (run < line.length() && line.charAt(run) == '\t') {
@@ -260,21 +273,26 @@ public final class MarkdownLint {
             emit.add(lineNo, tab + 1, run - tab, "MD010", "MD010");
             tab = line.indexOf('\t', run);
         }
+    }
+
+    /** MD010, MD009, MD012 on prose line {@code i}, the {@code blankRun}-th blank line in a row (0: not blank). */
+    private static void whitespaceRules(Emitter emit, MarkdownBlocks blocks, String[] lines, int i, int blankRun) {
+        String line = blocks.line(i);
+        int lineNo = i + 1;
+        hardTabs(emit, line, lineNo);
         // MD009: trailing whitespace — except a hard line break.
         int end = line.length();
         while (end > 0 && (line.charAt(end - 1) == ' ' || line.charAt(end - 1) == '\t')) {
             end--;
         }
-        if (end < line.length() && !isHardLineBreak(line, end, lines, i)) {
+        if (end < line.length()
+                && !isHardLineBreak(line, end, lines, i, emit.options().brSpaces())) {
             emit.add(lineNo, end + 1, line.length() - end, "MD009", "MD009");
         }
-        // MD012: multiple consecutive blank lines. (The empty element after a file's only "\n" is not a line.)
+        // MD012: more consecutive blank lines than allowed. (The empty element after a file's only "\n" is not
+        // a line.)
         boolean phantom = i == 1 && blocks.lineCount() == 2;
-        if (line.isBlank()
-                && i > 0
-                && blocks.isText(i - 1)
-                && blocks.line(i - 1).isBlank()
-                && !phantom) {
+        if (blankRun > emit.options().maxBlankLines() && !phantom) {
             emit.add(lineNo, 1, 1, "MD012", "MD012");
         }
     }
@@ -349,19 +367,35 @@ public final class MarkdownLint {
             }
         }
         // MD026: trailing punctuation in a heading.
-        int punct = trailingPunctuation(c, after);
+        int punct = trailingPunctuation(c, after, emit.options().punctuation());
         if (punct >= 0) {
             emit.add(lineNo, off + punct + 1, 1, "MD026", "MD026");
         }
         // MD022: a heading should be surrounded by blank lines.
-        int prev = neighbour(blocks, i, -1);
-        if (prev >= 0 && blocks.kind(prev) != MarkdownBlocks.Kind.FRONT_MATTER && !blocks.isBlank(prev)) {
+        if (!blankLines(blocks, i, -1, emit.options().linesAbove())) {
             emit.add(lineNo, off + indent + 1, hashes, "MD022", "MD022.before");
         }
-        int next = neighbour(blocks, i, 1);
-        if (next < blocks.lineCount() && !blocks.isBlank(next)) {
+        if (!blankLines(blocks, i, 1, emit.options().linesBelow())) {
             emit.add(lineNo, off + indent + 1, hashes, "MD022", "MD022.after");
         }
+    }
+
+    /**
+     * Whether {@code need} blank lines stand before ({@code step} -1) or after (+1) line {@code i}. The start
+     * and the end of the document, and the front matter, count as all the blank lines one could want; directive
+     * lines are looked past.
+     */
+    private static boolean blankLines(MarkdownBlocks blocks, int i, int step, int need) {
+        int j = neighbour(blocks, i, step);
+        for (int k = 0; k < need; k++, j += step) {
+            if (j < 0 || j >= blocks.lineCount() || blocks.kind(j) == MarkdownBlocks.Kind.FRONT_MATTER) {
+                return true;
+            }
+            if (!blocks.isBlank(j)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -406,6 +440,66 @@ public final class MarkdownLint {
             }
             emit.add(i + 1, s + 1, end - s, "MD034", "MD034");
         }
+    }
+
+    /**
+     * MD034 for bare e-mail addresses on prose line {@code i} ({@code name@example.com} outside {@code <…>}, a
+     * link, code or a URL). Deliberately narrower than GFM's autolink: the domain must end in a letters-only label
+     * ({@code pkg@1.2.3} is a version, not an address) and {@code git@host:path} is a remote, not a mailbox.
+     */
+    private static void bareEmails(Emitter emit, MarkdownBlocks blocks, int i, int skipUntil) {
+        String line = blocks.line(i);
+        int at = line.indexOf('@');
+        if (at < 0 || REF_DEF.matcher(blocks.content(i)).find()) {
+            return;
+        }
+        LineScan scan = new LineScan(line);
+        for (; at >= 0; at = line.indexOf('@', at + 1)) {
+            int s = at;
+            while (s > 0 && localPartChar(line.charAt(s - 1))) {
+                s--;
+            }
+            int end = at + 1;
+            while (end < line.length()
+                    && (Character.isLetterOrDigit(line.charAt(end)) || ".-".indexOf(line.charAt(end)) >= 0)) {
+                end++;
+            }
+            while (end > at + 1 && ".-".indexOf(line.charAt(end - 1)) >= 0) {
+                end--;
+            }
+            int lastDot = line.lastIndexOf('.', end - 1);
+            if (s == at || lastDot <= at + 1 || end - lastDot < 3 || !letters(line, lastDot + 1, end)) {
+                continue; // no local part, no dot in the domain, or no letters-only last label
+            }
+            char before = s > 0 ? line.charAt(s - 1) : ' ';
+            char after = end < line.length() ? line.charAt(end) : ' ';
+            if (!Character.isWhitespace(before) && "([{\"'*_~>,;".indexOf(before) < 0
+                    || before == '(' && s > 1 && line.charAt(s - 2) == ']') {
+                continue; // <a@b.co>, mailto:a@b.co, https://user@host.io, path/a@b.co, [x](a@b.co)
+            }
+            if (after == '/'
+                    || after == '@'
+                    || (after == ':' && end + 1 < line.length() && !Character.isWhitespace(line.charAt(end + 1)))) {
+                continue; // git@github.com:owner/repo.git, user@host/path
+            }
+            if (s < skipUntil || blocks.inCodeSpan(i, s) || blocks.inHtmlComment(i, s) || scan.inLinkTextOrTag(s)) {
+                continue;
+            }
+            emit.add(i + 1, s + 1, end - s, "MD034", "MD034");
+        }
+    }
+
+    private static boolean localPartChar(char c) {
+        return c < 128 && (Character.isLetterOrDigit(c) || "._%+-".indexOf(c) >= 0);
+    }
+
+    private static boolean letters(String s, int from, int to) {
+        for (int p = from; p < to; p++) {
+            if (!Character.isLetter(s.charAt(p))) {
+                return false;
+            }
+        }
+        return to > from;
     }
 
     /** The end of the URL at {@code [start, end)} without sentence punctuation or an unbalanced {@code )}. */
@@ -544,7 +638,7 @@ public final class MarkdownLint {
 
     /** MD041, MD025, MD001: the heading structure of the whole document. */
     private static void structureRules(Emitter emit, MarkdownBlocks blocks) {
-        boolean titled = frontMatterTitle(blocks);
+        boolean titled = frontMatterTitle(blocks, emit.options());
 
         // MD041: the first content line (after front matter, blank lines and HTML comments) is an H1.
         if (!titled) {
@@ -553,7 +647,7 @@ public final class MarkdownLint {
                         || blocks.line(j).isBlank()) {
                     continue;
                 }
-                if (!topLevelHeading(blocks, j)) {
+                if (!headingOfLevel(blocks, j, emit.options().firstLineLevel())) {
                     int off = blocks.contentStart(j);
                     emit.add(j + 1, off + 1, blocks.line(j).length() - off, "MD041", "MD041");
                 }
@@ -571,7 +665,7 @@ public final class MarkdownLint {
             int hashes = leadingHashes(c);
             int column = blocks.contentStart(h[0]) + leadingSpaces(c) + 1;
             int length = hashes > 0 ? hashes : Math.max(1, c.stripTrailing().length() - leadingSpaces(c));
-            if (level == 1 && ++h1Count > 1) {
+            if (level == emit.options().titleLevel() && ++h1Count > 1) {
                 emit.add(lineNo, column, length, "MD025", "MD025");
             }
             if (prevLevel > 0 && level > prevLevel + 1) {
@@ -627,29 +721,31 @@ public final class MarkdownLint {
         return plainText ? (mark == '=' ? 1 : 2) : 0;
     }
 
-    /** Whether line {@code j} is an H1: {@code # Title}, a {@code ===} setext title, or an HTML {@code <h1>}. */
-    private static boolean topLevelHeading(MarkdownBlocks blocks, int j) {
+    /**
+     * Whether line {@code j} is a heading of {@code level}: {@code # Title}, a setext title ({@code ===} level 1,
+     * {@code ---} level 2), or an HTML {@code <hN>}.
+     */
+    private static boolean headingOfLevel(MarkdownBlocks blocks, int j, int level) {
+        String c = blocks.content(j);
+        if (blocks.kind(j) == MarkdownBlocks.Kind.HTML_BLOCK || blocks.isText(j)) {
+            if (c.stripLeading().regionMatches(true, 0, "<h" + level, 0, 3)) {
+                return true;
+            }
+        }
         if (!blocks.isText(j)) {
             return false;
         }
-        String c = blocks.content(j);
-        if (leadingHashes(c) == 1) {
+        if (leadingHashes(c) == level) {
             return true;
         }
-        if (c.stripLeading().regionMatches(true, 0, "<h1", 0, 3)) {
-            return true;
-        }
-        if (j + 1 < blocks.lineCount() && blocks.isText(j + 1)) {
-            String under = blocks.content(j + 1).strip();
-            return !under.isEmpty() && under.chars().allMatch(ch -> ch == '=');
-        }
-        return false;
+        return level <= 2 && j + 1 < blocks.lineCount() && setextLevel(blocks, j) == level;
     }
 
     /** Whether the front matter names the document ({@code title: …} in YAML, {@code title = …} in TOML). */
-    static boolean frontMatterTitle(MarkdownBlocks blocks) {
-        for (int j = 1; j < blocks.frontMatterEnd(); j++) {
-            if (FRONT_MATTER_TITLE.matcher(blocks.line(j)).find()) {
+    static boolean frontMatterTitle(MarkdownBlocks blocks, MarkdownLintOptions options) {
+        Pattern title = options.frontMatterTitlePattern();
+        for (int j = 1; title != null && j < blocks.frontMatterEnd(); j++) {
+            if (title.matcher(blocks.line(j)).find()) {
                 return true;
             }
         }
@@ -658,6 +754,11 @@ public final class MarkdownLint {
 
     /** The 0-based index of trailing punctuation in an ATX heading whose marker ends at {@code after}, else -1. */
     static int trailingPunctuation(String line, int after) {
+        return trailingPunctuation(line, after, MarkdownLintOptions.DEFAULT_PUNCTUATION);
+    }
+
+    /** As {@link #trailingPunctuation(String, int)}, for the given set of {@code punctuation} characters. */
+    static int trailingPunctuation(String line, int after, String punctuation) {
         int e = line.length();
         while (e > after && (line.charAt(e - 1) == ' ' || line.charAt(e - 1) == '\t')) {
             e--;
@@ -677,7 +778,7 @@ public final class MarkdownLint {
             return -1; // empty heading text
         }
         char last = line.charAt(e - 1);
-        if (HEADING_PUNCTUATION.indexOf(last) < 0) {
+        if (punctuation.indexOf(last) < 0) {
             return -1;
         }
         if (last == ';' && ENTITY_AT_END.matcher(line).region(after, e).find()) {
@@ -728,11 +829,18 @@ public final class MarkdownLint {
      * flagged — those aren't a break either.
      */
     static boolean isHardLineBreak(String line, int contentEnd, String[] lines, int i) {
-        if (contentEnd == 0 || line.length() - contentEnd != 2) {
-            return false; // a blank/whitespace-only line, or not exactly two trailing chars
+        return isHardLineBreak(line, contentEnd, lines, i, 2);
+    }
+
+    /** As above with {@code MD009.br_spaces}: exactly {@code brSpaces} trailing spaces (fewer than 2: never). */
+    static boolean isHardLineBreak(String line, int contentEnd, String[] lines, int i, int brSpaces) {
+        if (brSpaces < 2 || contentEnd == 0 || line.length() - contentEnd != brSpaces) {
+            return false; // a blank/whitespace-only line, or not exactly the break's trailing chars
         }
-        if (line.charAt(contentEnd) != ' ' || line.charAt(contentEnd + 1) != ' ') {
-            return false; // tabs don't make a break
+        for (int p = contentEnd; p < line.length(); p++) {
+            if (line.charAt(p) != ' ') {
+                return false; // tabs don't make a break
+            }
         }
         return i + 1 < lines.length && !stripCr(lines[i + 1]).isBlank(); // a break needs a line to break to
     }

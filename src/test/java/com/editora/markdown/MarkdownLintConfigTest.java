@@ -103,4 +103,49 @@ class MarkdownLintConfigTest {
                 .valid());
         assertTrue(MarkdownLintConfig.parse("").valid());
     }
+
+    // --- wave 2 — C11: options and explicit enables -------------------------------------------------------
+
+    @Test
+    void anOptionsObjectCarriesItsOptions() {
+        var parsed = MarkdownLintConfig.parse("{\"no-trailing-spaces\": {\"br_spaces\": 0, \"strict\": true},"
+                + " \"MD026\": {\"punctuation\": \".,;\"}, \"MD012\": {\"maximum\": 3}, \"MD013\": {\"line_length\": 120},"
+                + " \"MD010\": {\"code_blocks\": true, \"spaces_per_tab\": 2}, \"MD041\": {\"level\": 2}}");
+        MarkdownLintOptions o = MarkdownLintConfig.options(parsed, MarkdownLintOptions.DEFAULT);
+        assertEquals(0, o.brSpaces());
+        assertEquals(".,;", o.punctuation());
+        assertEquals(3, o.maxBlankLines());
+        assertTrue(o.tabsInCode());
+        assertEquals(2, o.spacesPerTab());
+        assertEquals(2, o.firstLineLevel());
+        assertEquals(1, o.titleLevel());
+    }
+
+    @Test
+    void optionsLayerOverAnInheritedConfigAndYamlCarriesThemToo() {
+        MarkdownLintOptions base = MarkdownLintConfig.options(
+                MarkdownLintConfig.parse("{\"MD012\": {\"maximum\": 3}, \"MD009\": {\"br_spaces\": 4}}"),
+                MarkdownLintOptions.DEFAULT);
+        MarkdownLintOptions o = MarkdownLintConfig.options(
+                MarkdownLintConfig.parseFile(".markdownlint.yaml", "MD012:\n  maximum: 2\nMD022:\n  lines_above: 2\n"),
+                base);
+        assertEquals(2, o.maxBlankLines());
+        assertEquals(4, o.brSpaces(), "inherited");
+        assertEquals(2, o.linesAbove());
+        assertEquals(MarkdownLintOptions.DEFAULT, MarkdownLintConfig.options(MarkdownLintConfig.parse("{ nope"), null));
+    }
+
+    @Test
+    void rulesSwitchedOnByNameAreRemembered() {
+        Set<String> off = new java.util.HashSet<>();
+        Set<String> on = new java.util.HashSet<>();
+        MarkdownLintConfig.apply(
+                MarkdownLintConfig.parse("{\"default\": true, \"MD034\": true, \"MD009\": {\"br_spaces\": 2},"
+                        + " \"MD040\": \"error\", \"MD012\": false, \"MD010\": true, \"no-hard-tabs\": false}"),
+                off,
+                on);
+        assertEquals(Set.of("MD012", "MD010"), off);
+        assertEquals(
+                Set.of("MD034", "MD009", "MD040"), on, "default: true names no rule; a later false takes MD010 back");
+    }
 }
