@@ -4,6 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.editora.config.HistoryRevision;
@@ -98,6 +100,59 @@ class HistoryShutdownFxTest {
         FxTestSupport.runOnFx(() -> hashes.add(submitTen(shared, delivered)));
         assertTrue(shared.shutdown());
         assertAllRecorded(dir, hashes.get(0), delivered);
+    }
+
+    /**
+     * A result the FX thread had already <em>started</em> handing over was no longer counted as undelivered,
+     * so a shutdown from another thread that found nothing else waiting returned at once — and closed the
+     * index writer under the callback that was about to publish the revision.
+     */
+    @Test
+    void aShutdownFromAnotherThreadWaitsForAResultTheFxThreadIsStillHandingOver(@TempDir Path dir) throws Exception {
+        SharedConfig shared = new SharedConfig(dir, false);
+        shared.load();
+        String file = "/w/slow.txt";
+        String content = "handed over while the application stops\n";
+        CountDownLatch handingOver = new CountDownLatch(1);
+        CountDownLatch shutdownCalled = new CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> shared.historyService()
+                .snapshotWithOutcome(
+                        Path.of(file),
+                        content,
+                        HistoryRevision.REASON_SAVE,
+                        "",
+                        false,
+                        List.of(),
+                        POLICY,
+                        1,
+                        outcome -> {
+                            handingOver.countDown();
+                            awaitQuietly(shutdownCalled);
+                            sleepQuietly(200); // long enough for a shutdown that does not wait to close the writer
+                            shared.historyBucket("").put(file, List.of(outcome.revision()));
+                            shared.saveHistory();
+                        }));
+        assertTrue(handingOver.await(10, TimeUnit.SECONDS), "the result reached the FX thread");
+        shutdownCalled.countDown();
+        assertTrue(shared.shutdown(), "the index write made by the callback was accepted and durable");
+        String index = Files.readString(dir.resolve("history").resolve("index.json"));
+        assertTrue(index.contains(HistoryBlobStore.sha256(content)), "the index lists the revision");
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            latch.await(10, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static void sleepQuietly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Test
