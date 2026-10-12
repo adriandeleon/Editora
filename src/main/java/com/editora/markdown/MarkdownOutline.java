@@ -15,7 +15,10 @@ public final class MarkdownOutline {
 
     private MarkdownOutline() {}
 
-    /** A heading: its level (1–6), title text (markers stripped), and 0-based line. */
+    /**
+     * A heading: its level (1–6), title text (heading markers stripped, inline markup as written — see
+     * {@link OutlineTitles#plain}), and the 0-based line it starts on.
+     */
     public record Heading(int level, String title, int line) {}
 
     public static List<Heading> headings(String text) {
@@ -63,12 +66,29 @@ public final class MarkdownOutline {
                 continue;
             }
 
-            // Setext: a *paragraph* line underlined by all '=' (H1) or all '-' (H2).
-            if (!trimmed.isEmpty() && i + 1 < lines.length && isParagraphStart(trimmed)) {
-                int setext = setextLevel(stripCr(lines[i + 1]));
-                if (setext > 0 && atxLevel(line) == 0 && fenceToken(line) == null) {
-                    out.add(new Heading(setext, trimmed, i));
-                    i++; // consume the underline line
+            // Setext: a *paragraph* underlined by all '=' (H1) or all '-' (H2). The paragraph may run over
+            // several lines — all of them are the heading — so look ahead to where it ends.
+            if (!trimmed.isEmpty() && isParagraphStart(trimmed)) {
+                StringBuilder title = new StringBuilder(trimmed);
+                for (int j = i + 1; j < lines.length; j++) {
+                    String next = stripCr(lines[j]);
+                    int setext = setextLevel(next);
+                    if (setext > 0) {
+                        out.add(new Heading(setext, title.toString(), i));
+                        i = j; // consume the paragraph and its underline
+                        break;
+                    }
+                    String nextTrimmed = next.strip();
+                    if (nextTrimmed.isEmpty()
+                            || atxLevel(next) > 0
+                            || fenceToken(next) != null
+                            || !isParagraphStart(nextTrimmed)) {
+                        // The paragraph ended without an underline: none of its lines is a heading, so the
+                        // scan resumes at the line that ended it (which keeps a long paragraph linear).
+                        i = j - 1;
+                        break;
+                    }
+                    title.append(' ').append(nextTrimmed);
                 }
             }
         }

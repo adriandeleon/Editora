@@ -28,13 +28,19 @@ public final class MarkdownAnchors {
             return -1;
         }
         String folded = wanted.toLowerCase(Locale.ROOT);
-        Map<String, Integer> seen = new HashMap<>();
-        for (MarkdownOutline.Heading h : MarkdownOutline.headings(markdown)) {
-            if (h.title().isBlank()) {
-                continue; // the table of contents leaves these out of the numbering too
-            }
-            if (MarkdownToc.uniqueAnchor(MarkdownToc.slug(h.title()), seen).equals(folded)) {
-                return h.line();
+        java.util.List<MarkdownOutline.Heading> headings = MarkdownOutline.headings(markdown);
+        // The anchor of the heading as written (what the table of contents has always linked to), then of
+        // the text a reader sees — the anchor GitHub and the exports give a heading that contains markup.
+        for (boolean plain : new boolean[] {false, true}) {
+            Map<String, Integer> seen = new HashMap<>();
+            for (MarkdownOutline.Heading h : headings) {
+                String title = plain ? OutlineTitles.plain(h.title()) : h.title();
+                if (title.isBlank()) {
+                    continue; // the table of contents leaves these out of the numbering too
+                }
+                if (MarkdownToc.uniqueAnchor(MarkdownToc.slug(title), seen).equals(folded)) {
+                    return h.line();
+                }
             }
         }
         String[] lines = markdown.split("\n", -1);

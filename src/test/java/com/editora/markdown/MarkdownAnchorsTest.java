@@ -55,4 +55,12 @@ class MarkdownAnchorsTest {
         }
         assertEquals(5, entries);
     }
+
+    /** A heading with markup is reachable by the anchor of its source text and by the anchor of what is read. */
+    @Test
+    void aHeadingWithMarkupAnswersToBothOfItsAnchors() {
+        String doc = "# Plain\n\n## The `code` and [link](http://x.y) part\n";
+        assertEquals(2, MarkdownAnchors.lineOf(doc, "the-code-and-linkhttpxy-part"), "as the TOC has written it");
+        assertEquals(2, MarkdownAnchors.lineOf(doc, "the-code-and-link-part"), "as GitHub and the exports name it");
+    }
 }

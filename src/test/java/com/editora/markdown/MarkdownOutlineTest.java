@@ -80,4 +80,27 @@ class MarkdownOutlineTest {
         assertEquals(List.of(new Heading(2, "Title", 0)), MarkdownOutline.headings("Title\n---\n"));
         assertEquals(List.of(new Heading(1, "Title", 0)), MarkdownOutline.headings("Title\n===\n"));
     }
+
+    /** CommonMark: the whole paragraph above the underline is the heading, not just its last line. */
+    @Test
+    void aSetextHeadingMayRunOverSeveralLines() {
+        List<Heading> h = MarkdownOutline.headings("intro\n\nMulti line\nsetext heading\n==============\n\nafter\n");
+        assertEquals(List.of(new Heading(1, "Multi line setext heading", 2)), h);
+    }
+
+    @Test
+    void aParagraphWithoutAnUnderlineIsNotAHeadingAndWhatEndsItIsStillRead() {
+        String md =
+                "one\ntwo\n# Atx ends the paragraph\n\nthree\nfour\n\n---\n\nfive\n- item\n---\n\nsix\n```\n===\n```\n";
+        assertEquals(List.of(new Heading(1, "Atx ends the paragraph", 2)), MarkdownOutline.headings(md));
+    }
+
+    @Test
+    void aLongParagraphIsScannedOnce() {
+        String md = "word\n".repeat(200_000) + "\nTitle\n=====\n";
+        long start = System.nanoTime();
+        List<Heading> h = MarkdownOutline.headings(md);
+        assertEquals(List.of(new Heading(1, "Title", 200_001)), h);
+        assertTrue(System.nanoTime() - start < 5_000_000_000L, "linear, not quadratic, in the paragraph's length");
+    }
 }

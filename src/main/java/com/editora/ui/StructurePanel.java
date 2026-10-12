@@ -713,7 +713,21 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         if (buffer == null || nodes.isEmpty()) {
             return;
         }
+        if (buffer.isMarkdown()) {
+            // A heading's label is its text without the markup, so it has no source tokens to borrow
+            // colours from: one heading colour for the whole label. (Borrowing them coloured only the
+            // first word of a setext heading, whose source line the grammar leaves unstyled.)
+            attachHeadingStyle(nodes);
+            return;
+        }
         attachSyntaxStyles(buffer.getArea(), nodes);
+    }
+
+    private static void attachHeadingStyle(List<StructureNode> nodes) {
+        for (StructureNode node : nodes) {
+            node.setNameRuns(List.of(fallbackRun(node.label() == null ? "" : node.label(), node.kind())));
+            attachHeadingStyle(node.children());
+        }
     }
 
     private static void attachSyntaxStyles(CodeArea area, List<StructureNode> nodes) {
@@ -1175,7 +1189,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         }
         // No grammar/symbols: keep the old header-text label and show every region.
         String text = area.getParagraph(start).getText().trim();
-        return new StructureNode(r, text.isEmpty() ? "line " + (start + 1) : text, null, start);
+        return new StructureNode(r, text.isEmpty() ? tr("structure.line", start + 1) : text, null, start);
     }
 
     /** How far above a block's opening line the start of its wrapped signature is looked for. */
@@ -1257,8 +1271,9 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> levels = new ArrayDeque<>();
         for (com.editora.markdown.MarkdownOutline.Heading h : com.editora.markdown.MarkdownOutline.headings(text)) {
-            StructureNode node = new StructureNode(
-                    null, h.title().isBlank() ? tr("common.untitled") : h.title(), "heading", h.line());
+            String title = com.editora.markdown.OutlineTitles.plain(h.title()); // "**Bold** `x`" reads "Bold x"
+            StructureNode node =
+                    new StructureNode(null, title.isBlank() ? tr("common.untitled") : title, "heading", h.line());
             while (!levels.isEmpty() && levels.peek() >= h.level()) {
                 stack.pop();
                 levels.pop();
@@ -1437,7 +1452,7 @@ public class StructurePanel extends VBox implements ToolWindowContent {
                     box.getChildren().add(styledText(run, "structure-return-type"));
                 }
             }
-            javafx.scene.text.Text line = new javafx.scene.text.Text("  line " + (item.line() + 1));
+            javafx.scene.text.Text line = new javafx.scene.text.Text("  " + tr("structure.line", item.line() + 1));
             line.getStyleClass().add("structure-line-number");
             box.getChildren().add(line);
             setGraphic(box);
