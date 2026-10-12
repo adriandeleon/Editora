@@ -33,6 +33,13 @@ public final class LanguageRegistry {
             Map.entry("markdown", "markdown"),
             Map.entry("mdown", "markdown"),
             Map.entry("mkd", "markdown"),
+            // Other spellings of the extension, and Markdown dialects: MDX, R Markdown and Quarto documents are
+            // Markdown with extras, and reading them as Markdown (preview, outline, lint) beats plain text.
+            Map.entry("mkdn", "markdown"),
+            Map.entry("mdwn", "markdown"),
+            Map.entry("mdx", "markdown"),
+            Map.entry("rmd", "markdown"),
+            Map.entry("qmd", "markdown"),
             Map.entry("mmd", "mermaid"),
             Map.entry("mermaid", "mermaid"),
             Map.entry("mw", "markwhen"),

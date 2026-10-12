@@ -246,7 +246,7 @@ public final class GrammarRegistry {
         mapExtensions("source.rust", "rs");
         mapExtensions("source.go", "go");
         mapExtensions("source.cs", "cs", "csx");
-        mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd");
+        mapExtensions("text.html.markdown", "md", "markdown", "mdown", "mkd", "mkdn", "mdwn", "mdx", "rmd", "qmd");
         mapExtensions("source.json", "json", "jsonc", "json5");
         mapExtensions("source.css", "css");
         mapExtensions("text.html.basic", "html", "htm", "xhtml");
