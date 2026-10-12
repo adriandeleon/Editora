@@ -717,7 +717,12 @@ class WindowManagerLaunchFxTest {
             FxTestSupport.call(app.wm, "cascadeIfOverlapping", new Class<?>[] {Stage.class}, more[1]);
             assertFalse(
                     more[1].getX() == more[0].getX() && more[1].getY() == more[0].getY(), "nor on top of the second");
-
+        });
+        // The sizes and positions set above reach the window on the next pulse. Let them land before the
+        // window is maximized: where a resize repaints at once (macOS, Windows) they would otherwise be
+        // applied in the middle of the maximize, which the headless window cannot take.
+        awaitPulse();
+        FxTestSupport.runOnFx(() -> {
             // A maximized window covers the screen on purpose: it is left where it is.
             more[1].setMaximized(true);
             double x = more[1].getX();
@@ -748,6 +753,23 @@ class WindowManagerLaunchFxTest {
     }
 
     /** Small enough that a cascade step stays on the (small) headless screen. */
+    /** Returns once a whole pulse has run, so bounds set on a showing stage have been applied. */
+    private static void awaitPulse() throws Exception {
+        java.util.concurrent.CountDownLatch pulsed = new java.util.concurrent.CountDownLatch(1);
+        FxTestSupport.runOnFx(() -> new javafx.animation.AnimationTimer() {
+            private int frames;
+
+            @Override
+            public void handle(long now) {
+                if (++frames == 2) { // the second frame starts after the first pulse has finished
+                    stop();
+                    pulsed.countDown();
+                }
+            }
+        }.start());
+        assertTrue(pulsed.await(10, java.util.concurrent.TimeUnit.SECONDS), "a pulse ran");
+    }
+
     private static void small(Stage stage) {
         stage.setWidth(320);
         stage.setHeight(240);

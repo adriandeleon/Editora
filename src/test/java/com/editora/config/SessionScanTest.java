@@ -32,7 +32,8 @@ class SessionScanTest {
         List<WorkspaceState.OpenFile> files = List.of(readable, unmounted, deleted, remote, blank);
 
         Set<Path> readableSet = Set.of(Path.of("/home/me/a.txt"));
-        Set<Path> dirs = Set.of(Path.of("/home/me"));
+        // Absolute, the way the scan asks about a folder: on Windows "/home/me" is relative to a drive.
+        Set<Path> dirs = Set.of(Path.of("/home/me").toAbsolutePath());
         SessionScan scan =
                 SessionScan.of(files, RESOLVE, readableSet::contains, dirs::contains, p -> !readableSet.contains(p));
 
