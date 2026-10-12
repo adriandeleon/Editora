@@ -66,9 +66,9 @@ class RenderedMarkdownLinksFxTest {
                         true,
                         false,
                         false,
-                        true,
                         false,
                         false,
+                        true, // still since press: a link is followed by a plain click, not at the end of a drag
                         null));
     }
 

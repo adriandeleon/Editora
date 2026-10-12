@@ -144,6 +144,15 @@ public class Settings {
     private String markdownPreviewTheme = "";
     /** Show the floating format bar on a text selection in Markdown buffers. */
     private boolean markdownFormatBar = true;
+    /** Load remote ({@code http}/{@code https}) images in the Markdown preview. On by default; off shows
+     *  each remote image's alt text instead and nothing is fetched. */
+    private boolean markdownRemoteImages = true;
+    /** Folder, relative to the document, that pasted and dropped images are written to. */
+    private String markdownAssetsFolder = "assets";
+    /** Shallowest and deepest heading level listed by "Markdown: Insert/Update Table of Contents" (1–6). */
+    private int markdownTocMinLevel = 1;
+
+    private int markdownTocMaxLevel = 6;
     /** Multiple cursors + Alt+drag column/box selection (RichTextFX fork). Transparent with one caret. */
     private boolean multiCaret = true;
     /** With no selection, Copy/Cut act on the whole current line (VS Code {@code editor.emptySelectionClipboard}). */
@@ -1603,6 +1612,38 @@ public class Settings {
 
     public void setMarkdownFormatBar(boolean markdownFormatBar) {
         this.markdownFormatBar = markdownFormatBar;
+    }
+
+    public boolean isMarkdownRemoteImages() {
+        return markdownRemoteImages;
+    }
+
+    public void setMarkdownRemoteImages(boolean markdownRemoteImages) {
+        this.markdownRemoteImages = markdownRemoteImages;
+    }
+
+    public String getMarkdownAssetsFolder() {
+        return markdownAssetsFolder;
+    }
+
+    public void setMarkdownAssetsFolder(String markdownAssetsFolder) {
+        this.markdownAssetsFolder = markdownAssetsFolder;
+    }
+
+    public int getMarkdownTocMinLevel() {
+        return markdownTocMinLevel;
+    }
+
+    public void setMarkdownTocMinLevel(int markdownTocMinLevel) {
+        this.markdownTocMinLevel = markdownTocMinLevel;
+    }
+
+    public int getMarkdownTocMaxLevel() {
+        return markdownTocMaxLevel;
+    }
+
+    public void setMarkdownTocMaxLevel(int markdownTocMaxLevel) {
+        this.markdownTocMaxLevel = markdownTocMaxLevel;
     }
 
     public boolean isMultiCaret() {
