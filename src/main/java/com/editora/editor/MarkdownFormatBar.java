@@ -8,7 +8,7 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Tooltip;
-import javafx.scene.layout.HBox;
+import javafx.scene.layout.FlowPane;
 import javafx.util.StringConverter;
 
 import static com.editora.i18n.Messages.tr;
@@ -28,7 +28,10 @@ final class MarkdownFormatBar {
 
     private static final double GAP = 4;
 
-    private final HBox node = new HBox();
+    private final FlowPane node = new FlowPane(2, 2);
+    /** Button property: the catalog key of its tooltip (the command it stands for is derived from it). */
+    private static final String HINT = "editora.formatBar.hint";
+
     private final EditorBuffer buffer;
     /** The inline markers whose buttons light up when the selection already carries them. */
     private final java.util.Map<Button, String> toggles = new java.util.LinkedHashMap<>();
@@ -42,9 +45,9 @@ final class MarkdownFormatBar {
         node.getStyleClass().add("markdown-format-bar");
         node.setManaged(false); // free-positioned by EditorBuffer via resizeRelocate
         node.setFocusTraversable(false);
-        node.setSpacing(2);
         node.setPadding(new Insets(3));
         node.setAlignment(Pos.CENTER_LEFT);
+        node.setRowValignment(javafx.geometry.VPos.CENTER);
 
         // Icon glyphs (the same MenuIcons used by the editor right-click menu) instead of letter labels —
         // an italic "I" barely slants, and icons keep the bar consistent with the menu. Typst uses a
@@ -154,8 +157,12 @@ final class MarkdownFormatBar {
         sync();
         node.setVisible(true);
         node.applyCss();
-        double w = node.prefWidth(-1);
-        double h = node.prefHeight(-1);
+        // In a pane narrower than the bar the controls wrap onto a second row instead of being cut off.
+        double room = Math.max(60, pane.getWidth());
+        node.setPrefWrapLength(
+                room - node.getInsets().getLeft() - node.getInsets().getRight());
+        double w = Math.min(node.prefWidth(-1), room);
+        double h = node.prefHeight(w);
         var sel = view.getSelection();
         boolean oneLine = view.offsetToPosition(sel.getStart(), org.fxmisc.richtext.model.TwoDimensional.Bias.Forward)
                         .getMajor()
@@ -172,12 +179,36 @@ final class MarkdownFormatBar {
     private void sync() {
         toggles.forEach((b, marker) ->
                 b.pseudoClassStateChanged(SELECTED, buffer.markdown().isMarked(marker)));
+        for (Node n : node.getChildren()) {
+            if (n instanceof Button b && b.getProperties().get(HINT) instanceof String key) {
+                b.getTooltip().setText(hint(tr(key), buffer.markdown().chord(commandFor(key, buffer.isTypst()))));
+            }
+        }
         syncing = true;
         try {
             heading.setValue(buffer.markdown().headingLevel());
         } finally {
             syncing = false;
         }
+    }
+
+    /** A tooltip naming the key binding of its command when the active keymap has one. Pure. */
+    static String hint(String text, String chord) {
+        return chord == null ? text : text + "  ·  " + chord;
+    }
+
+    /** The command a button with tooltip {@code tooltipKey} runs: {@code markdown.bold}, or its Typst twin. Pure. */
+    static String commandFor(String tooltipKey, boolean typst) {
+        String name = tooltipKey.substring(tooltipKey.lastIndexOf('.') + 1);
+        if (!typst) {
+            return "markdown." + name;
+        }
+        return "typst."
+                + switch (name) {
+                    case "italic" -> "emph";
+                    case "code" -> "raw";
+                    default -> name;
+                };
     }
 
     private Button toggle(Node icon, String tooltipKey, String marker) {
@@ -192,6 +223,7 @@ final class MarkdownFormatBar {
         b.getStyleClass().addAll("flat", "md-fmt-btn");
         b.setFocusTraversable(false);
         b.setTooltip(new Tooltip(tr(tooltipKey)));
+        b.getProperties().put(HINT, tooltipKey);
         b.setAccessibleText(tr(tooltipKey)); // icon-only: the tooltip text is its name
         b.setOnAction(e -> action.run());
         return b;

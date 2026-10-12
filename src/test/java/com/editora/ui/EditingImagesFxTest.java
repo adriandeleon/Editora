@@ -259,6 +259,43 @@ class EditingImagesFxTest {
     }
 
     @Test
+    void aClipboardWithTextAndAPictureOfItPastesTheText() throws Exception {
+        // What a spreadsheet puts on the clipboard for a copied range: the cells as text and as an image.
+        EditorBuffer b = document("notes.md", "");
+        FxTestSupport.runOnFx(() -> {
+            ClipboardContent content = new ClipboardContent();
+            content.putImage(pixels());
+            content.putString("cell A1\tcell B1");
+            Clipboard.getSystemClipboard().setContent(content);
+            assertFalse(editing.tryMarkdownImagePaste(b), "the text is what was copied");
+            registry.run("edit.paste");
+        });
+        assertEquals("cell A1\tcell B1", text(b));
+        assertEquals(List.of(), names(assets(b)), "no screenshot of the cells was written");
+        clearClipboard();
+    }
+
+    @Test
+    void picturesGoIntoTheConfiguredAssetsFolder() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path source = Files.write(Files.createDirectory(dir.resolve("src-cfg")).resolve("shot.png"), png(2, 2));
+        fx.shared.getSettings().setMarkdownAssetsFolder("img/shots");
+        try {
+            FxTestSupport.runOnFx(() -> editing.insertDroppedImages(b, List.of(source.toFile())));
+            assertEquals("![shot](img/shots/shot.png)", text(b));
+            assertTrue(Files.exists(b.getPath().getParent().resolve("img/shots/shot.png")));
+            fx.shared.getSettings().setMarkdownAssetsFolder("../outside");
+            FxTestSupport.runOnFx(() -> {
+                b.getArea().replaceText("");
+                editing.insertDroppedImages(b, List.of(source.toFile()));
+            });
+            assertEquals("![shot](assets/shot.png)", text(b), "a folder outside the document's falls back");
+        } finally {
+            fx.shared.getSettings().setMarkdownAssetsFolder("assets");
+        }
+    }
+
+    @Test
     void aTypstDocumentGetsAnImageCallInsteadOfAMarkdownLink() throws Exception {
         EditorBuffer b = document("paper.typ", "= Paper\n");
         Path picture = Files.write(Files.createDirectory(dir.resolve("src-typ")).resolve("fig.png"), png(2, 2));

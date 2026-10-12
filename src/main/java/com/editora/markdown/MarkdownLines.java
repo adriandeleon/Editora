@@ -351,6 +351,69 @@ public final class MarkdownLines {
         return new MarkdownEdit(ls, end, moved.text() + tail, ls, ls);
     }
 
+    /**
+     * Numbers the ordered list around {@code offset} in sequence again, from the smallest number it holds —
+     * after a line was moved up or down inside it. Returns {@code null} when the offset's line is not an
+     * ordered item, the list is numbered lazily (every item the same number) or is already in order; the
+     * edit's caret is {@code offset} on its text.
+     */
+    public static MarkdownEdit renumber(String text, int offset) {
+        int ls = lineStart(text, offset);
+        int le = lineEnd(text, offset);
+        String line = text.substring(ls, le);
+        MarkdownLine l = MarkdownLine.parse(line);
+        if (!l.isOrdered() || insideFence(text, ls)) {
+            return null;
+        }
+        // Up to the first item of the run: siblings at this level, with their deeper lines in between.
+        int first = ls;
+        int at = ls;
+        while (at > 0) {
+            int prevStart = lineStart(text, at - 1);
+            String prev = text.substring(prevStart, at - 1);
+            MarkdownLine p = MarkdownLine.parse(prev);
+            int w = p.indent().length();
+            if (prev.isBlank() || w < l.indent().length() || !sameQuote(p, l)) {
+                break;
+            }
+            at = prevStart;
+            if (w == l.indent().length()) {
+                if (!p.isOrdered() || p.markerKind() != l.markerKind()) {
+                    break;
+                }
+                first = prevStart;
+            }
+        }
+        int firstEnd = lineEnd(text, first);
+        MarkdownLine head = MarkdownLine.parse(text.substring(first, firstEnd));
+        int end = runEnd(text, firstEnd, head);
+        long min = head.number();
+        boolean lazy = true;
+        for (String s : text.substring(firstEnd, end).split("\n", -1)) {
+            MarkdownLine n = MarkdownLine.parse(s);
+            if (n.isOrdered() && n.indent().length() == head.indent().length()) {
+                lazy &= n.number() == head.number();
+                min = Math.min(min, n.number());
+            }
+        }
+        String before = text.substring(first, end);
+        String after = head.withMarker(head.markerNumbered(min)).text()
+                + renumberTail(text.substring(firstEnd, end), head, min + 1);
+        if (lazy || after.equals(before)) {
+            return null;
+        }
+        // The caret's line may have changed width in front of it and in its own marker.
+        int lineIndex =
+                (int) text.substring(first, ls).chars().filter(c -> c == '\n').count();
+        String[] lines = after.split("\n", -1);
+        int newStart = first;
+        for (int i = 0; i < lineIndex; i++) {
+            newStart += lines[i].length() + 1;
+        }
+        int caret = newStart + LineEdits.mapColumn(offset - ls, line, lines[lineIndex]);
+        return new MarkdownEdit(first, end, after, caret, caret);
+    }
+
     /** The number of the last ordered item directly above {@code ls} at exactly {@code width} columns; 0 if none. */
     private static long lastChildNumber(String text, int ls, int width, MarkdownLine l) {
         int at = ls;

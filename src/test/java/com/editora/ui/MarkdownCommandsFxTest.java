@@ -181,6 +181,19 @@ class MarkdownCommandsFxTest {
     }
 
     @Test
+    void movingAnItemOfAnOrderedListRenumbersIt() throws Exception {
+        EditorBuffer b = open("1. a\n2. b\n3. c\n", 8);
+        FxTestSupport.runOnFx(() -> registry.run("edit.moveLineUp"));
+        assertEquals("1. b\n2. a\n3. c\n", text(b));
+        FxTestSupport.runOnFx(() -> registry.run("edit.moveLineDown"));
+        FxTestSupport.runOnFx(() -> registry.run("edit.moveLineDown"));
+        assertEquals("1. a\n2. c\n3. b\n", text(b));
+        EditorBuffer bullets = open("- a\n- b\n", 6);
+        FxTestSupport.runOnFx(() -> registry.run("edit.moveLineUp"));
+        assertEquals("- b\n- a\n", text(bullets));
+    }
+
+    @Test
     void tabExpandsABlockSnippetOnlyAtTheStartOfALine() throws Exception {
         EditorBuffer sentence = open("take a note\n", 11);
         FxTestSupport.runOnFx(() ->

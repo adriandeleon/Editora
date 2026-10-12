@@ -329,4 +329,18 @@ class MarkdownLinesTest {
         assertNull(MarkdownLines.indentItem(nested, nested.indexOf("- a") + 3, false));
         assertEquals("- a\n  - b\n  - ‸", enter("- a\n  - b‸"), "a nested item is still an item");
     }
+
+    @Test
+    void aListIsNumberedInSequenceAgainAfterAnItemMoved() {
+        assertEquals("1. b‸\n2. a\n3. c", run("2. b‸\n1. a\n3. c", (t, s) -> MarkdownLines.renumber(t, s[0])));
+        assertEquals(
+                "5. a\n6. c‸\n   1. sub\n7. b",
+                run("5. a\n7. c‸\n   1. sub\n6. b", (t, s) -> MarkdownLines.renumber(t, s[0])),
+                "from the smallest number; nested lines are left alone");
+        assertEquals("9. a\n10. b‸", run("10. a\n9. b‸", (t, s) -> MarkdownLines.renumber(t, s[0])));
+        assertNull(MarkdownLines.renumber("1. a\n1. b\n1. c", 5), "a list numbered 1. 1. 1. keeps its style");
+        assertNull(MarkdownLines.renumber("1. a\n2. b", 5), "already in order");
+        assertNull(MarkdownLines.renumber("- a\n- b", 5));
+        assertNull(MarkdownLines.renumber("plain", 2));
+    }
 }
