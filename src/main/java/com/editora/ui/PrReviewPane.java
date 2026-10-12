@@ -170,7 +170,7 @@ public final class PrReviewPane extends Region implements TabContent {
                 String shown = bodyExpanded
                         ? body
                         : PrReviewSummary.collapseDescription(body, DESC_COLLAPSED_LINES, DESC_COLLAPSED_CHARS);
-                rendered.getChildren().setAll(renderMarkdown(shown));
+                rendered.getChildren().setAll(renderMarkdown(shown, onOpenUrl));
                 toggle.setText(tr(bodyExpanded ? "github.review.showLess" : "github.review.showMore"));
                 toggle.setGraphic(bodyExpanded ? Icons.arrowUp() : Icons.arrowDown());
             };
@@ -181,17 +181,22 @@ public final class PrReviewPane extends Region implements TabContent {
             });
             box.getChildren().add(toggle);
         } else {
-            rendered.getChildren().setAll(renderMarkdown(body));
+            rendered.getChildren().setAll(renderMarkdown(body, onOpenUrl));
         }
         return box;
     }
 
     /** Renders a Markdown string to a native JavaFX node (the shared preview renderer); a plain-text label is
      *  the fallback if rendering fails, so a malformed body never breaks the tab. */
-    private static Node renderMarkdown(String markdown) {
+    private static Node renderMarkdown(String markdown, Consumer<String> onOpenUrl) {
         try {
+            // Links in a description or a comment open through the pane's own opener (the window's link choke
+            // point): rendered without one they looked like links and did nothing.
             Node node = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                    MarkdownRenderer.parseToDocument(markdown),
+                    null,
+                    onOpenUrl,
+                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
             node.getStyleClass().add("pr-review-md");
             return node;
         } catch (RuntimeException e) {
