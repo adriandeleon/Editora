@@ -3,9 +3,7 @@ package com.editora.editor;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -75,10 +73,11 @@ class MarkdownPreviewTest {
         assertEquals("set-x-up", u.get(1).slug());
         assertEquals("hello-world-1", u.get(2).slug());
         assertNull(u.get(3).slug());
-        Map<String, Integer> seen = new HashMap<>();
-        assertEquals("a", MarkdownPreview.unique("a", seen));
-        assertEquals("a-1", MarkdownPreview.unique("a", seen));
-        assertEquals("a-2", MarkdownPreview.unique("a", seen));
+        // The same anchors the table of contents writes (one numbering: MarkdownToc.uniqueAnchor).
+        String toc = com.editora.markdown.MarkdownToc.build("# Hello, World!\n\n## Set `x` up\n\n# Hello, World!\n");
+        for (int i = 0; i < 3; i++) {
+            assertTrue(toc.contains("(#" + u.get(i).slug() + ")"), toc);
+        }
     }
 
     @Test

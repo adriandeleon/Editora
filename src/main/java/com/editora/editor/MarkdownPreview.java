@@ -14,16 +14,13 @@ import javafx.scene.Parent;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.StackPane;
 
-import com.editora.markdown.MarkdownToc;
 import org.commonmark.node.AbstractVisitor;
-import org.commonmark.node.Code;
 import org.commonmark.node.Heading;
 import org.commonmark.node.HtmlBlock;
 import org.commonmark.node.HtmlInline;
 import org.commonmark.node.Image;
 import org.commonmark.node.LinkReferenceDefinition;
 import org.commonmark.node.SourceSpan;
-import org.commonmark.node.Text;
 
 /**
  * The rendered Markdown document of one buffer's live preview: its nodes, which source lines each top-level
@@ -193,7 +190,8 @@ final class MarkdownPreview {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
         String definitions = definitions(ast);
-        Map<String, Integer> slugs = new HashMap<>();
+        // The anchors the table of contents and the link opener use: one numbering for all three.
+        Map<Heading, String> slugs = MarkdownDocInfo.headingAnchors(ast);
         List<Unit> units = new ArrayList<>();
         for (org.commonmark.node.Node n = ast.getFirstChild(); n != null; ) {
             org.commonmark.node.Node last = MarkdownRenderer.groupEnd(n, false);
@@ -211,7 +209,7 @@ final class MarkdownPreview {
                         + text
                         + dependencies(n, last, text, definitions, baseDir);
             }
-            String slug = n instanceof Heading h ? unique(MarkdownToc.slug(plainText(h)), slugs) : null;
+            String slug = n instanceof Heading h ? slugs.get(h) : null;
             units.add(new Unit(n, last, key, start, end, slug));
             n = last.getNext();
         }
@@ -303,34 +301,6 @@ final class MarkdownPreview {
             }
         });
         return sb.toString();
-    }
-
-    /** A heading's text as a reader sees it (markup stripped, code kept) — what its slug is made from. */
-    static String plainText(org.commonmark.node.Node node) {
-        StringBuilder sb = new StringBuilder();
-        node.accept(new AbstractVisitor() {
-            @Override
-            public void visit(Text text) {
-                sb.append(text.getLiteral());
-            }
-
-            @Override
-            public void visit(Code code) {
-                sb.append(code.getLiteral());
-            }
-        });
-        return sb.toString();
-    }
-
-    /** GitHub's sequence for a repeated slug: {@code a}, {@code a-1}, {@code a-2} (as {@code MarkdownToc}). */
-    static String unique(String base, Map<String, Integer> seen) {
-        Integer n = seen.get(base);
-        if (n == null) {
-            seen.put(base, 0);
-            return base;
-        }
-        seen.put(base, n + 1);
-        return base + "-" + (n + 1);
     }
 
     /**
