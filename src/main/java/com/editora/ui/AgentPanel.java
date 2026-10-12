@@ -430,7 +430,7 @@ public final class AgentPanel extends VBox implements ToolWindowContent {
         Node rendered;
         try {
             rendered = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(md), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                    MarkdownRenderer.parseForRender(md), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
         } catch (RuntimeException ex) {
             Label fallback = new Label(md);
             fallback.setWrapText(true);

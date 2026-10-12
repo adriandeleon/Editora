@@ -46,7 +46,7 @@ class MarkdownPrintLayoutFxTest {
         double ph = 700; // ~ letter printable height (points)
 
         List<Double> heights = FxTestSupport.callOnFx(() -> {
-            Node wrap = MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(md), null);
+            Node wrap = MarkdownRenderer.renderDocument(MarkdownRenderer.parseForRender(md), null);
             VBox content = (VBox) ((StackPane) wrap).getChildren().get(0);
             return MarkdownPrintLayout.measureBlockHeights(content, pw, ph);
         });
@@ -145,7 +145,7 @@ class MarkdownPrintLayoutFxTest {
     private static final double PAGE_H = 684;
 
     private static List<Node> paginate(String md) throws Exception {
-        return paginate(MarkdownRenderer.parseToDocument(md), null);
+        return paginate(MarkdownRenderer.parseForRender(md), null);
     }
 
     /** Resolves the document's assets off the FX thread, as {@code PrintService} does, then paginates. */
@@ -167,7 +167,7 @@ class MarkdownPrintLayoutFxTest {
     void aPageIsLightUnderADarkAppTheme() throws Exception {
         String md = "# Title\n\nSome body text, long enough to leave plenty of ink on the page.\n\n"
                 + "| A | B |\n|---|---|\n| 1 | 2 |\n\n```\ncode\n```\n";
-        org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+        org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
         javafx.scene.image.WritableImage shot = FxTestSupport.callOnFx(() -> {
             String before = javafx.application.Application.getUserAgentStylesheet();
             javafx.application.Application.setUserAgentStylesheet(Themes.stylesheetFor("Primer Dark"));
@@ -200,10 +200,11 @@ class MarkdownPrintLayoutFxTest {
     /** Math is rasterised dark-on-white for print even when the app (and so the preview) is dark. */
     @Test
     void mathPrintsDarkOnWhiteUnderADarkAppTheme() throws Exception {
-        org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument("Inline $x^2 + y^2$ here.\n");
         double brightness = FxTestSupport.callOnFx(() -> {
             com.editora.editor.MathImages.configure(true, true);
             try {
+                // (parsed with the feature on: math is recognised by the parser, not found in text afterwards)
+                org.commonmark.node.Node ast = MarkdownRenderer.parseForRender("Inline $x^2 + y^2$ here.\n");
                 Node page =
                         MarkdownPrintLayout.paginate(ast, null, PAGE_W, PAGE_H).get(0);
                 javafx.scene.image.ImageView formula = (javafx.scene.image.ImageView) page.lookup(".md-math-inline");
@@ -487,7 +488,7 @@ class MarkdownPrintLayoutFxTest {
         String lorem = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor. ".repeat(12);
         String md = "# Images\n\n" + (lorem + "\n\n").repeat(3) + "![mid](mid.png)\n\nText after mid image.\n\n"
                 + "Missing: ![missing alt](nope.png) end.\n\n![huge](huge.png)\n\nText after huge.\n";
-        org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+        org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
 
         List<Node> pages = paginate(ast, dir);
         double[] lowest = FxTestSupport.callOnFx(() -> {
@@ -810,12 +811,12 @@ class MarkdownPrintLayoutFxTest {
         }
         assertEquals(command + path + command + "code", code.toString(), "all of the code, in order");
         assertTrue(pills > 10, "the long ones are in pieces");
-        // …and only in print: the preview keeps one label per code span
+        // The preview cuts them the same way: one label per span was cut off at the pane's edge there too.
         int preview =
-                FxTestSupport.callOnFx(() -> MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(md), null)
+                FxTestSupport.callOnFx(() -> MarkdownRenderer.renderDocument(MarkdownRenderer.parseForRender(md), null)
                         .lookupAll(".md-inline-code")
                         .size());
-        assertEquals(4, preview, "the live preview is unchanged");
+        assertEquals(pills, preview, "the live preview breaks long code like the page does");
     }
 
     // --- links ----------------------------------------------------------------------------------------
@@ -830,14 +831,14 @@ class MarkdownPrintLayoutFxTest {
         assertEquals(1, printed.split("https://example.org/auto", -1).length - 1, "an autolink is not repeated");
         assertFalse(printed.contains("#x"), "an in-document anchor is not shown");
         String preview = FxTestSupport.callOnFx(
-                () -> pageText(MarkdownRenderer.renderDocument(MarkdownRenderer.parseToDocument(md), null)));
+                () -> pageText(MarkdownRenderer.renderDocument(MarkdownRenderer.parseForRender(md), null)));
         assertFalse(preview.contains("(https://example.org/docs)"), "the live preview is unchanged");
     }
 
     // --- the page footer ------------------------------------------------------------------------------
 
     private static List<Node> paginate(String md, com.editora.print.PageFooter footer) throws Exception {
-        org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+        org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
         MarkdownPrintAssets assets = MarkdownPrintAssets.resolve(ast, null);
         return FxTestSupport.callOnFx(() -> MarkdownPrintLayout.paginate(ast, null, assets, PAGE_W, PAGE_H, footer));
     }

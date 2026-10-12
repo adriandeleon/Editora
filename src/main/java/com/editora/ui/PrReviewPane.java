@@ -191,7 +191,7 @@ public final class PrReviewPane extends Region implements TabContent {
     private static Node renderMarkdown(String markdown) {
         try {
             Node node = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                    MarkdownRenderer.parseForRender(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
             node.getStyleClass().add("pr-review-md");
             return node;
         } catch (RuntimeException e) {

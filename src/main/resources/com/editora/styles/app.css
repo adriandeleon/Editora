@@ -629,6 +629,9 @@
     -fx-padding: 16 24 16 24;
     -fx-spacing: 14;
 }
+/* In the preview pane the zoom/theme buttons (top-left) and the Editor/Split/Preview toggle (top-right)
+   float over the first 34px: the document starts below them instead of under them. */
+.markdown-preview-pane .markdown-preview-wrap { -fx-padding: 34 24 24 24; }
 
 /* Markwhen timeline preview — theme-aware via AtlantaFX looked-up colors (no per-theme override). */
 .markwhen-title { -fx-font-size: 1.5em; -fx-font-weight: bold; -fx-text-fill: -color-fg-default; }
@@ -694,6 +697,29 @@
 .markdown-preview .md-strike { -fx-strikethrough: true; }
 .markdown-preview .md-ins { -fx-underline: true; }
 .markdown-preview .md-link { -fx-fill: -color-accent-fg; }
+/* A link reached with Tab (its first run takes the focus) is underlined; Enter or Space follows it. */
+.markdown-preview .md-link:focused { -fx-underline: true; }
+/* The safe HTML subset: <sub>/<sup>, <kbd> key caps, blocks of HTML, <details>. */
+.markdown-preview .md-sub { -fx-font-size: 0.78em; -fx-translate-y: 0.3em; }
+.markdown-preview .md-sup { -fx-font-size: 0.78em; -fx-translate-y: -0.35em; }
+.markdown-preview .md-inline-code.md-kbd {
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 4;
+    -fx-border-width: 1 1 2 1;
+}
+.markdown-preview .md-html { -fx-spacing: 10; }
+.markdown-preview .md-details {
+    -fx-spacing: 8;
+    -fx-border-color: -color-border-muted;
+    -fx-border-radius: 6;
+    -fx-padding: 6 10 6 10;
+}
+.markdown-preview .md-details-summary { -fx-spacing: 6; -fx-alignment: center-left; }
+.markdown-preview .md-details-summary:focused .md-text { -fx-underline: true; }
+.markdown-preview .md-details-arrow { -fx-text-fill: -color-fg-muted; -fx-min-width: 14; }
+.markdown-preview .md-details-body { -fx-spacing: 14; -fx-padding: 4 0 4 20; }
+/* An image that could not be shown: its alt text, muted, where the picture would be. */
+.markdown-preview .md-inline-code.md-image-missing { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 /* Footnote reference: a small, raised, accent-colored [label] marker. */
 .markdown-preview .md-footnote-ref {
     -fx-fill: -color-accent-fg;
@@ -732,6 +758,11 @@
 .markdown-preview .md-list-item { -fx-spacing: 8; }
 .markdown-preview .md-list-content { -fx-spacing: 6; }
 .markdown-preview .md-list-marker { -fx-text-fill: -color-fg-muted; -fx-min-width: 22; }
+/* A task box shows the source's state and cannot be clicked; it is still content, so it is drawn at full
+   strength rather than as a faded disabled control (an unchecked one was all but invisible on dark themes). */
+.markdown-preview .md-task:disabled,
+.markdown-preview .md-task:disabled > .box { -fx-opacity: 1; }
+.markdown-preview .md-task > .box { -fx-border-color: -color-fg-muted; }
 .markdown-preview .md-quote {
     -fx-border-color: -color-border-muted;
     -fx-border-width: 0 0 0 3;
@@ -1031,6 +1062,10 @@
     -color-bg-subtle: #f6f8fa;
     -color-border-muted: #d0d7de;
     -color-accent-fg: #0969da;
+    -color-border-default: #d0d7de;
+    -color-danger-fg: #d1242f;
+    -color-danger-subtle: #ffebe9;
+    -color-danger-muted: #ff818266;
     -fx-background: #ffffff;
 }
 .markdown-preview-pane.md-dark {
@@ -1040,6 +1075,10 @@
     -color-bg-subtle: #161b22;
     -color-border-muted: #30363d;
     -color-accent-fg: #2f81f7;
+    -color-border-default: #30363d;
+    -color-danger-fg: #f85149;
+    -color-danger-subtle: #f8514926;
+    -color-danger-muted: #f8514966;
     -fx-background: #0d1117;
 }
 

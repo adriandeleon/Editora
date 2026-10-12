@@ -4938,7 +4938,7 @@ final class LspCoordinator {
         Node content;
         try {
             content = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                    MarkdownRenderer.parseForRender(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
         } catch (RuntimeException e) {
             Label label = new Label(markdown);
             label.setWrapText(true);
@@ -5198,7 +5198,7 @@ final class LspCoordinator {
         if (!active.documentation().isBlank()) {
             try {
                 Node doc = MarkdownRenderer.renderDocument(
-                        MarkdownRenderer.parseToDocument(active.documentation()),
+                        MarkdownRenderer.parseForRender(active.documentation()),
                         null,
                         null,
                         MarkdownRenderer.ImagePolicy.DATA_ONLY);

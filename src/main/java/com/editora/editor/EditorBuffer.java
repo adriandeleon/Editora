@@ -336,8 +336,10 @@ public class EditorBuffer implements TabContent {
     private MarkwhenView markwhenView = MarkwhenView.TIMELINE;
     /** Fired (FX thread) when the Markwhen view flips, so the controller persists it. */
     private Runnable onMarkwhenViewChanged = () -> {};
-    /** Re-entrancy guard for the SPLIT-mode editor↔preview scroll sync. */
-    private boolean syncingScroll;
+    /** Split scroll sync and position keeping between the editor and the preview ({@link PreviewScrollSync}). */
+    private PreviewScrollSync scrollSync;
+    /** The rendered Markdown document shown in {@link #previewPane} (lazy; see {@link MarkdownPreview}). */
+    private MarkdownPreview markdownPreview;
     /** Rendered-preview pane (lazy); its content is rebuilt by {@link MarkdownRenderer}. */
     private ScrollPane previewPane;
     /** Wraps the preview so the floating control can overlay it in PREVIEW mode (no code pane then). */
@@ -532,6 +534,10 @@ public class EditorBuffer implements TabContent {
     private Runnable previewExportJsonHandler = () -> {};
 
     private javafx.scene.control.ContextMenu previewContextMenu;
+    /** The link destination / code block under the pointer when the preview menu was last asked for. */
+    private String previewMenuLink;
+
+    private String previewMenuCode;
     private javafx.scene.control.ContextMenu treePreviewContextMenu;
     /** Active snippet expansion (Tab cycles its fields), or null when none is in progress. */
     private final SnippetSessions snippetSession = new SnippetSessions(CompletionUndoManager::joinLast);
@@ -1123,7 +1129,7 @@ public class EditorBuffer implements TabContent {
         });
         installContextMenu(area);
         installFormatBarListeners(area);
-        installSplitScrollSync();
+        scrollSync = new PreviewScrollSync(area, () -> markdownViewMode, () -> previewPane, () -> markdownPreview);
         installOverlays();
     }
 
@@ -1142,12 +1148,12 @@ public class EditorBuffer implements TabContent {
         settledEdits.at(
                 Duration.ofMillis(250),
                 () -> (isHtml() && htmlPreviewDirtyListener != null)
-                        || (!largeFile && markdownViewMode != MarkdownViewMode.EDITOR),
+                        || (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR),
                 () -> {
                     if (isHtml() && htmlPreviewDirtyListener != null) {
                         htmlPreviewDirtyListener.run();
                     }
-                    if (!largeFile && markdownViewMode != MarkdownViewMode.EDITOR) {
+                    if (previewLive() && markdownViewMode != MarkdownViewMode.EDITOR) {
                         scheduleRenderPreview();
                     }
                 });
@@ -1194,107 +1200,16 @@ public class EditorBuffer implements TabContent {
                 () -> completionActions.maybeRequestAiCompletion(focusedArea));
     }
 
-    /**
-     * Keeps the editor and the rendered preview aligned in Markdown SPLIT mode: the pane the mouse is over
-     * drives the other, mapped by scroll <i>fraction</i> so the two track even though their content heights
-     * differ. Gating on which pane is <b>hovered</b> (the wheel target) makes the sync strictly
-     * one-directional at any moment — the mouse is over at most one pane — so it cannot oscillate (RichTextFX
-     * refines {@code estimatedScrollY} as paragraphs are measured, and a naïve bidirectional copy would feed
-     * that back, the same pitfall {@code DiffViewerPane} guards against). A {@code syncingScroll} re-entrancy
-     * flag wraps each programmatic set as a second guard. The preview→editor half is wired in
-     * {@link #previewPane()}.
-     */
-    private void installSplitScrollSync() {
-        area.estimatedScrollYProperty().addListener((o, ov, nv) -> {
-            if (markdownViewMode == MarkdownViewMode.SPLIT
-                    && !syncingScroll
-                    && previewPane != null
-                    && !previewPane.isHover()) {
-                syncPreviewToEditorScroll();
-            }
-        });
-    }
-
-    /** Preview content height last seen by the scroll-sync listener; see the listener in {@link #previewPane()}. */
-    private double previewContentHeight = -1;
-    /** When the preview's content height last changed, so layout-driven vvalue moves can be ignored. */
-    private long previewLayoutChangedAt;
-    /** How long after a preview content-height change to keep treating vvalue moves as layout, not scrolling. */
-    private static final long PREVIEW_SETTLE_NANOS = 250_000_000L;
+    /** A Markdown document up to this long keeps its live preview even in large-file mode (see below). */
+    static final int PREVIEW_LIVE_MAX_CHARS = 2_000_000;
 
     /**
-     * Whether the preview's content height moved enough to call this vvalue change layout-driven. Pure.
-     * The epsilon keeps sub-pixel layout noise from being mistaken for a real resize.
+     * Whether an edit refreshes the preview. Large-file mode stops it — except for a Markdown document that
+     * is "large" only for one very long line (a pasted {@code data:} image passes the 64K-character line
+     * limit at once): its preview used to render once and then silently stay as it was.
      */
-    static boolean previewHeightChanged(double lastHeight, double newHeight) {
-        return Math.abs(newHeight - lastHeight) > 0.5;
-    }
-
-    /**
-     * Whether we're still inside the settle window after the preview's content last resized, i.e. a vvalue
-     * change should be read as the pane re-anchoring rather than as the user scrolling. Pure.
-     *
-     * <p>A window rather than a single-event check because a progressive render (typst pages, diagrams,
-     * images) resizes over many pulses, and the vvalue changes it provokes don't all land on the same pulse
-     * as the resize itself.
-     */
-    static boolean previewSettling(long nanosSinceResize, long settleNanos) {
-        return nanosSinceResize < settleNanos;
-    }
-
-    /** The rendered preview's current content height, or -1 when there's nothing to measure. */
-    private double previewContentHeight() {
-        javafx.scene.Node c = previewPane == null ? null : previewPane.getContent();
-        return c == null ? -1 : c.getLayoutBounds().getHeight();
-    }
-
-    /** editor → preview: copy the editor's scroll fraction onto the preview's vvalue. */
-    private void syncPreviewToEditorScroll() {
-        if (previewPane == null) {
-            return;
-        }
-        double scrollable = editorScrollableHeight();
-        if (scrollable <= 1) {
-            return;
-        }
-        Double y = area.estimatedScrollYProperty().getValue();
-        double frac = clamp01((y == null ? 0 : y) / scrollable);
-        double vmin = previewPane.getVmin();
-        double vmax = previewPane.getVmax();
-        syncingScroll = true;
-        try {
-            previewPane.setVvalue(vmin + frac * (vmax - vmin));
-        } finally {
-            syncingScroll = false;
-        }
-    }
-
-    /** preview → editor: copy the preview's scroll fraction onto the editor's estimated scroll-Y. */
-    private void syncEditorToPreviewScroll() {
-        if (previewPane == null) {
-            return;
-        }
-        double scrollable = editorScrollableHeight();
-        if (scrollable <= 1) {
-            return;
-        }
-        double range = previewPane.getVmax() - previewPane.getVmin();
-        double frac = range > 0 ? clamp01((previewPane.getVvalue() - previewPane.getVmin()) / range) : 0;
-        syncingScroll = true;
-        try {
-            area.estimatedScrollYProperty().setValue(frac * scrollable);
-        } finally {
-            syncingScroll = false;
-        }
-    }
-
-    private double editorScrollableHeight() {
-        Double total = area.totalHeightEstimateProperty().getValue();
-        return (total == null ? 0 : total) - area.getHeight();
-    }
-
-    private static double clamp01(double v) {
-        return v < 0 ? 0 : (v > 1 ? 1 : v);
+    private boolean previewLive() {
+        return !largeFile || (isMarkdown() && area.getLength() <= PREVIEW_LIVE_MAX_CHARS);
     }
 
     /** Show/reposition the Markdown format bar + the AI selection-actions bar as the selection or scroll
@@ -5207,12 +5122,18 @@ public class EditorBuffer implements TabContent {
     public void setMarkdownViewMode(MarkdownViewMode mode) {
         MarkdownViewMode target = mode == null ? MarkdownViewMode.EDITOR : mode;
         boolean changed = this.markdownViewMode != target;
+        MarkdownViewMode from = this.markdownViewMode;
+        if (changed) {
+            scrollSync.leaving(from); // the view that comes on screen takes over this one's place
+        }
         this.markdownViewMode = target;
         scheduleFormatBar(); // hide the format bar when entering pure PREVIEW, re-evaluate otherwise
         scheduleAiActionsBar(); // same, for the AI selection-actions bar
         if (target != MarkdownViewMode.EDITOR) {
             this.split = Split.NONE; // preview supersedes any code split
             scheduleRenderPreview();
+        } else if (markdownPreview != null) {
+            markdownPreview.clear(); // nothing shows it: give its nodes back
         }
         rebuildViewHost();
         setMinimapVisible(minimapVisible); // re-apply: the minimap is hidden while the preview is shown
@@ -5222,10 +5143,8 @@ public class EditorBuffer implements TabContent {
             if (target == MarkdownViewMode.PREVIEW) {
                 // Focus the preview so the paging keys (Space/PageDown/Backspace/PageUp) work without a click.
                 Platform.runLater(previewPane()::requestFocus);
-            } else if (target == MarkdownViewMode.SPLIT) {
-                // Align the freshly-shown preview to the editor's current scroll position (metrics settle first).
-                Platform.runLater(this::syncPreviewToEditorScroll);
             }
+            scrollSync.entered(from, target); // same source line in the view that is now showing
         }
         if (changed) {
             onViewModeChanged.run();
@@ -5255,8 +5174,11 @@ public class EditorBuffer implements TabContent {
                 }
                 previewPane.requestFocus();
             });
-            // Right-click menu: Select All / Copy (rendered plain text) + Export to PDF / Print.
+            // Right-click menu: Copy (rendered text), the link or code block under the pointer, exports, Print.
             previewPane.setOnContextMenuRequested(e -> {
+                Node hit = e.getPickResult() == null ? null : e.getPickResult().getIntersectedNode();
+                previewMenuLink = MarkdownRenderer.property(hit, MarkdownRenderer.LINK_KEY);
+                previewMenuCode = MarkdownRenderer.property(hit, MarkdownRenderer.CODE_KEY);
                 showPreviewContextMenu(e.getScreenX(), e.getScreenY());
                 e.consume();
             });
@@ -5272,37 +5194,7 @@ public class EditorBuffer implements TabContent {
                     e.consume();
                 }
             });
-            // SPLIT-mode scroll sync (preview → editor); the editor → preview half is in installSplitScrollSync.
-            previewPane.vvalueProperty().addListener((o, ov, nv) -> {
-                if (syncingScroll) {
-                    return; // our own programmatic set
-                }
-                // A ScrollPane's vvalue moves for two quite different reasons: the user wheeling, and the
-                // pane re-anchoring as its content grows. isHover() can't tell them apart, and a preview
-                // that renders progressively (typst pages, Mermaid diagrams, images resolving) changes
-                // height many times over a second or two — each one arriving here looking exactly like a
-                // scroll and dragging the editor with it. That was visible as the editor drifting ~100
-                // lines down and back over ~2 s after opening a file in SPLIT, with the mouse merely
-                // resting over the preview.
-                double h = previewContentHeight();
-                if (previewHeightChanged(previewContentHeight, h)) {
-                    previewContentHeight = h;
-                    previewLayoutChangedAt = System.nanoTime();
-                }
-                if (previewSettling(System.nanoTime() - previewLayoutChangedAt, PREVIEW_SETTLE_NANOS)) {
-                    // Still settling: the editor is the source of truth, so re-anchor the preview to it
-                    // rather than letting a layout-driven vvalue move the editor. Only in SPLIT: in PREVIEW
-                    // the editor is off screen, and following its stale scroll position threw away the
-                    // user's paging (and the position kept across a re-render).
-                    if (markdownViewMode == MarkdownViewMode.SPLIT) {
-                        syncPreviewToEditorScroll();
-                    }
-                    return;
-                }
-                if (markdownViewMode == MarkdownViewMode.SPLIT && previewPane.isHover()) {
-                    syncEditorToPreviewScroll();
-                }
-            });
+            scrollSync.install(previewPane); // SPLIT-mode scroll sync, preview → editor half
         }
         return previewPane;
     }
@@ -5380,16 +5272,26 @@ public class EditorBuffer implements TabContent {
 
     private void showPreviewContextMenu(double screenX, double screenY) {
         if (previewContextMenu == null) {
-            MenuItem selectAll = new MenuItem(tr("editmenu.selectAll"));
-            selectAll.setGraphic(MenuIcons.selectAll());
-            selectAll.setOnAction(ev -> copyPreviewToClipboard());
-            MenuItem copy = new MenuItem(tr("editmenu.copy"));
+            // No "Select All": nothing in the preview can be selected, and the item only ever copied.
+            MenuItem copy = new MenuItem(tr("previewmenu.copyAll"));
             copy.setGraphic(MenuIcons.copy());
             copy.setOnAction(ev -> copyPreviewToClipboard());
-            previewContextMenu = new javafx.scene.control.ContextMenu(selectAll, copy);
+            previewContextMenu = new javafx.scene.control.ContextMenu(copy);
             if (isMarkdown()) {
+                // What the pointer was on when the menu opened: shown only when it was on one.
+                MenuItem copyLink = new MenuItem(tr("previewmenu.copyLink"));
+                copyLink.setGraphic(MenuIcons.copy());
+                copyLink.setOnAction(ev -> MarkdownRenderer.copyToClipboard(previewMenuLink));
+                MenuItem copyCode = new MenuItem(tr("previewmenu.copyCode"));
+                copyCode.setGraphic(MenuIcons.copy());
+                copyCode.setOnAction(ev -> MarkdownRenderer.copyToClipboard(previewMenuCode));
+                previewContextMenu.getItems().addAll(0, List.of(copyLink, copyCode));
+                previewContextMenu.setOnShowing(ev -> {
+                    copyLink.setVisible(previewMenuLink != null);
+                    copyCode.setVisible(previewMenuCode != null);
+                });
                 // Copy puts rendered rich text on the clipboard; this one puts the HTML markup itself.
-                MenuItem copyHtml = new MenuItem(tr("command.preview.copyHtml"));
+                MenuItem copyHtml = new MenuItem(tr("previewmenu.copyHtml"));
                 copyHtml.setGraphic(MenuIcons.code());
                 copyHtml.setOnAction(ev -> copyPreviewHtmlSource());
                 previewContextMenu.getItems().add(copyHtml);
@@ -5403,10 +5305,10 @@ public class EditorBuffer implements TabContent {
                 MenuItem viewToggle = new MenuItem();
                 viewToggle.setGraphic(MenuIcons.table());
                 viewToggle.setOnAction(ev -> toggleMarkwhenView());
-                MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+                MenuItem pdf = new MenuItem(tr("previewmenu.exportPdf"));
                 pdf.setGraphic(MenuIcons.download());
                 pdf.setOnAction(ev -> previewExportPdfHandler.run());
-                MenuItem print = new MenuItem(tr("command.preview.print"));
+                MenuItem print = new MenuItem(tr("previewmenu.print"));
                 print.setGraphic(MenuIcons.print());
                 print.setOnAction(ev -> previewPrintHandler.run());
                 previewContextMenu.getItems().addAll(json, viewToggle, new SeparatorMenuItem(), pdf, print);
@@ -5415,7 +5317,7 @@ public class EditorBuffer implements TabContent {
                                 ? tr("markwhen.switchToCalendar")
                                 : tr("markwhen.switchToTimeline")));
             } else {
-                MenuItem pdf = new MenuItem(tr("command.preview.exportPdf"));
+                MenuItem pdf = new MenuItem(tr("previewmenu.exportPdf"));
                 pdf.setGraphic(MenuIcons.download());
                 pdf.setOnAction(ev -> previewExportPdfHandler.run());
                 previewContextMenu.getItems().add(pdf);
@@ -5431,15 +5333,15 @@ public class EditorBuffer implements TabContent {
                 }
                 // Word / OpenDocument export — Markdown only (not standalone diagrams).
                 if (isMarkdown()) {
-                    MenuItem docx = new MenuItem(tr("command.preview.exportDocx"));
+                    MenuItem docx = new MenuItem(tr("previewmenu.exportDocx"));
                     docx.setGraphic(MenuIcons.download());
                     docx.setOnAction(ev -> previewExportDocxHandler.run());
-                    MenuItem odt = new MenuItem(tr("command.preview.exportOdt"));
+                    MenuItem odt = new MenuItem(tr("previewmenu.exportOdt"));
                     odt.setGraphic(MenuIcons.download());
                     odt.setOnAction(ev -> previewExportOdtHandler.run());
                     previewContextMenu.getItems().addAll(docx, odt);
                 }
-                MenuItem print = new MenuItem(tr("command.preview.print"));
+                MenuItem print = new MenuItem(tr("previewmenu.print"));
                 print.setGraphic(MenuIcons.print());
                 print.setOnAction(ev -> previewPrintHandler.run());
                 previewContextMenu.getItems().addAll(new SeparatorMenuItem(), print);
@@ -6091,15 +5993,19 @@ public class EditorBuffer implements TabContent {
             // fall back to plain text instead). Unguarded, submit() parks that in a Future nobody reads, so
             // the preview would sit blank with nothing logged and no way to tell it apart from a slow render.
             try {
-                org.commonmark.node.Node ast = MarkdownRenderer.parseToDocument(md);
+                MarkdownPreview.Plan plan = MarkdownPreview.plan(md, baseDir); // parse + per-block keys
                 Platform.runLater(() -> {
                     if (gen != previewGen) {
                         return; // a newer render superseded this one
                     }
-                    double v = previewPane().getVvalue();
-                    previewPane().setContent(MarkdownRenderer.renderDocument(ast, baseDir, openUrlHandler));
+                    if (markdownPreview == null) {
+                        markdownPreview = new MarkdownPreview();
+                        markdownPreview.attach(previewPane());
+                    }
+                    // Only the blocks that changed are rebuilt; the reader's source line stays at the top.
+                    Boolean dark = previewThemeMode.isEmpty() ? null : Boolean.valueOf("dark".equals(previewThemeMode));
+                    markdownPreview.show(plan, openUrlHandler, dark, scrollSync.anchorLine());
                     applyPreviewScale(); // keep the current zoom on the freshly rendered content
-                    Platform.runLater(() -> previewPane().setVvalue(v)); // best-effort scroll preserve
                 });
             } catch (Throwable t) {
                 surfaceMarkdownPreviewError(gen, t);
@@ -6412,8 +6318,12 @@ public class EditorBuffer implements TabContent {
      * looked-up colors for the preview subtree) and refreshes the toggle glyph.
      */
     public void applyPreviewTheme(String mode, boolean appDark) {
+        boolean changed = !previewThemeMode.equals(mode == null ? "" : mode);
         this.previewThemeMode = mode == null ? "" : mode;
         this.previewAppDark = appDark;
+        if (changed && isMarkdown()) {
+            scheduleRenderPreview(); // formulas and diagrams are bitmaps: draw them for the new theme
+        }
         if (previewPane != null) {
             previewPane.getStyleClass().removeAll("md-light", "md-dark");
             if ("light".equals(previewThemeMode)) {
@@ -7311,7 +7221,7 @@ public class EditorBuffer implements TabContent {
         javafx.scene.Node node;
         try {
             node = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseToDocument(body), path != null ? path.getParent() : null);
+                    MarkdownRenderer.parseForRender(body), path != null ? path.getParent() : null);
         } catch (RuntimeException ex) {
             javafx.scene.control.Label fallback = new javafx.scene.control.Label(body);
             fallback.setWrapText(true);
