@@ -59,20 +59,30 @@ public final class MarkdownLintFix {
 
     /** As {@link #fix(String, Set, int)}, limited to the issues in {@code scope}. */
     public static Result fix(String text, Set<String> disabled, int spacesPerTab, Scope scope) {
+        return fix(text, disabled, spacesPerTab, scope, MarkdownLintOptions.DEFAULT);
+    }
+
+    /**
+     * As {@link #fix(String, Set, int, Scope)}, with the project's rule {@code options} — the same ones the
+     * linter was given, so the two agree on what an issue is.
+     */
+    public static Result fix(
+            String text, Set<String> disabled, int spacesPerTab, Scope scope, MarkdownLintOptions options) {
         if (text == null || text.isEmpty()) {
             return new Result(text, new int[0]);
         }
         Set<String> off = disabled == null ? Set.of() : disabled;
-        int tabWidth = Math.max(1, spacesPerTab);
         String[] lines = text.split("\n", -1);
         MarkdownBlocks blocks = MarkdownBlocks.scan(lines);
         MarkdownLintDirectives dir = MarkdownLintDirectives.compute(blocks);
+        MarkdownLintOptions opts = dir.options(options == null ? MarkdownLintOptions.DEFAULT : options);
+        int tabWidth = Math.max(1, opts.spacesPerTab() > 0 ? opts.spacesPerTab() : spacesPerTab);
         Gate gate = new Gate(off, dir, scope == null ? Scope.ALL : scope);
         boolean crlf = lines.length > 1 && lines[0].endsWith("\r");
 
         List<String> outLines = new ArrayList<>(lines.length);
         int[] lineMap = new int[lines.length];
-        boolean prevBlank = false;
+        int blankRun = 0; // blank prose lines kept in a row so far
         for (int i = 0; i < lines.length; i++) {
             String raw = lines[i];
             boolean cr = !raw.isEmpty() && raw.charAt(raw.length() - 1) == '\r';
@@ -81,7 +91,7 @@ public final class MarkdownLintFix {
             if (!blocks.isText(i)) {
                 lineMap[i] = outLines.size();
                 outLines.add(raw); // verbatim inside code / front matter / raw HTML
-                prevBlank = false; // a blank line that belongs to a code block is content, not spacing
+                blankRun = 0; // a blank line that belongs to a code block is content, not spacing
                 continue;
             }
 
@@ -97,26 +107,26 @@ public final class MarkdownLintFix {
             // and must not turn into a heading because this pass rewrote its indentation.
             int hashes = MarkdownLint.headingHashes(blocks, i);
             if (hashes > 0) {
-                fixed = fixed.substring(0, off0) + fixHeading(fixed.substring(off0), hashes, gate, i);
+                fixed = fixed.substring(0, off0) + fixHeading(fixed.substring(off0), hashes, gate, i, opts);
             }
             if (gate.on(i, "MD009")) {
-                fixed = stripTrailing(fixed, lines, i);
+                fixed = stripTrailing(fixed, lines, i, opts.brSpaces());
             }
 
             if (fixed.isBlank()) {
                 boolean phantom = i == 1 && lines.length == 2; // the empty element after a lone "\n"
-                if (prevBlank && line.isBlank() && !phantom && gate.on(i, "MD012")) {
+                if (blankRun >= opts.maxBlankLines() && line.isBlank() && !phantom && gate.on(i, "MD012")) {
                     lineMap[i] = Math.max(0, outLines.size() - 1);
                     continue; // collapse the run
                 }
                 lineMap[i] = outLines.size();
                 outLines.add(cr ? fixed + "\r" : fixed);
-                prevBlank = true;
+                blankRun++;
                 continue;
             }
             lineMap[i] = outLines.size();
             outLines.add(cr ? fixed + "\r" : fixed);
-            prevBlank = false;
+            blankRun = 0;
         }
 
         String result = String.join("\n", outLines);
@@ -189,7 +199,7 @@ public final class MarkdownLintFix {
     }
 
     /** The heading fixes (MD023, MD018/MD019, MD026) on a heading's text inside its container. */
-    private static String fixHeading(String body, int hashes, Gate gate, int i) {
+    private static String fixHeading(String body, int hashes, Gate gate, int i, MarkdownLintOptions opts) {
         String fixed = body;
         int indent = MarkdownLint.leadingSpaces(fixed);
         if (indent > 0 && gate.on(i, "MD023")) {
@@ -213,9 +223,9 @@ public final class MarkdownLintFix {
         if (gate.on(i, "MD026")) {
             int hb = MarkdownLint.leadingSpaces(fixed) + MarkdownLint.leadingHashes(fixed);
             // Strip the whole run (`# Wait...` → `# Wait`), not one character per pass.
-            for (int punct = MarkdownLint.trailingPunctuation(fixed, hb);
+            for (int punct = MarkdownLint.trailingPunctuation(fixed, hb, opts.punctuation());
                     punct >= 0;
-                    punct = MarkdownLint.trailingPunctuation(fixed, hb)) {
+                    punct = MarkdownLint.trailingPunctuation(fixed, hb, opts.punctuation())) {
                 fixed = fixed.substring(0, punct) + fixed.substring(punct + 1);
             }
         }
@@ -256,12 +266,12 @@ public final class MarkdownLintFix {
     }
 
     /** Strips trailing whitespace, but never a hard line break (see {@link MarkdownLint#isHardLineBreak}). */
-    private static String stripTrailing(String line, String[] lines, int i) {
+    private static String stripTrailing(String line, String[] lines, int i, int brSpaces) {
         int e = line.length();
         while (e > 0 && (line.charAt(e - 1) == ' ' || line.charAt(e - 1) == '\t')) {
             e--;
         }
-        if (e == line.length() || MarkdownLint.isHardLineBreak(line, e, lines, i)) {
+        if (e == line.length() || MarkdownLint.isHardLineBreak(line, e, lines, i, brSpaces)) {
             return line;
         }
         return line.substring(0, e);

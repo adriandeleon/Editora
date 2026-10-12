@@ -651,6 +651,10 @@ class PreviewCommandsFxTest {
         assertEquals(
                 tr("markdownLint.configNote", 14, ".markdownlint.json"),
                 FxTestSupport.callOnFx(() -> previews.lint().configNote(b)));
+        assertEquals(
+                tr("markdownLint.configNote", 14, ".markdownlint.json"),
+                FxTestSupport.callOnFx(previews::markdownLintConfigNote),
+                "the accessor the Settings card reads: the active buffer's note");
         Files.delete(json);
 
         // YAML, extending a base file.
@@ -705,5 +709,64 @@ class PreviewCommandsFxTest {
         assertEquals(Set.of("MD041", "MD047"), FxTestSupport.callOnFx(() -> previews.effectiveMarkdownLintDisabled(b)));
         assertEquals(List.of(), diagnosticsAfterRelint(b, 0), "a fragment has no first line");
         FxTestSupport.runOnFx(() -> registry.run("edit.widen"));
+    }
+
+    // --- wave 2 — C11: the project's choice wins inside the project, and its options apply ----------------
+
+    @Test
+    void aRuleTheProjectSwitchesOnWinsOverTheUsersGlobalOff() throws Exception {
+        EditorBuffer b = document("lint.md", "# Title\n\nsee https://bare.example   \n");
+        Path folder = b.getPath().getParent();
+        FxTestSupport.runOnFx(() -> fx.shared.getSettings().setMarkdownLintDisabledRules(List.of("MD034", "MD009")));
+        assertEquals(Set.of("MD034", "MD009"), FxTestSupport.callOnFx(() -> previews.effectiveMarkdownLintDisabled(b)));
+        assertEquals("", FxTestSupport.callOnFx(previews::markdownLintConfigNote));
+
+        Path config = Files.writeString(folder.resolve(".markdownlint.json"), "{\"default\": true, \"MD034\": true}");
+        assertEquals(
+                Set.of("MD009"),
+                FxTestSupport.callOnFx(() -> previews.effectiveMarkdownLintDisabled(b)),
+                "named by the project: on here; MD009 is only on by default, so the user's off stands");
+        assertEquals(
+                tr("markdownLint.configNoteEnabled", 1, ".markdownlint.json"),
+                FxTestSupport.callOnFx(previews::markdownLintConfigNote));
+
+        Files.writeString(config, "{\"MD034\": true, \"MD012\": false, \"MD040\": false}");
+        Files.setLastModifiedTime(
+                config,
+                java.nio.file.attribute.FileTime.fromMillis(
+                        Files.getLastModifiedTime(config).toMillis() + 5_000));
+        assertEquals(
+                Set.of("MD009", "MD012", "MD040"),
+                FxTestSupport.callOnFx(() -> previews.effectiveMarkdownLintDisabled(b)));
+        assertEquals(
+                tr("markdownLint.configNoteBoth", 2, 1, ".markdownlint.json"),
+                FxTestSupport.callOnFx(previews::markdownLintConfigNote));
+        Files.delete(config);
+    }
+
+    @Test
+    void theProjectsRuleOptionsReachTheSquigglesAndTheFix() throws Exception {
+        Path folder = Files.createDirectory(dir.resolve("options" + counter++));
+        Files.writeString(
+                folder.resolve(".markdownlint.jsonc"),
+                "{ \"MD012\": { \"maximum\": 2 }, \"MD026\": { \"punctuation\": \"?\" }, \"MD010\": { \"spaces_per_tab\": 2 } }");
+        String text = "# Title\n\n\n## Done.\n\n\n\n## Why?\n\na\tb\n";
+        Path file = Files.writeString(folder.resolve("doc.md"), text);
+        EditorBuffer b = FxTestSupport.callOnFx(() -> {
+            EditorBuffer made = new EditorBuffer();
+            made.setPath(file);
+            made.setContent(text);
+            made.setDiskSnapshot(Files.getLastModifiedTime(file).toMillis(), Files.size(file));
+            FxTestSupport.call(fx.controller, "addBuffer", new Class[] {EditorBuffer.class, boolean.class}, made, true);
+            return made;
+        });
+        assertEquals(
+                List.of("MD012@7", "MD026@8", "MD010@10"),
+                diagnosticsAfterRelint(b, 3).stream()
+                        .map(d -> d.code() + "@" + d.line())
+                        .toList());
+        run("markdownLint.fix");
+        assertEquals("# Title\n\n\n## Done.\n\n\n## Why\n\na  b\n", text(b));
+        assertEquals(tr("status.markdownLint.fixed", 3), status());
     }
 }

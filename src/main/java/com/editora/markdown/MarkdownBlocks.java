@@ -20,8 +20,10 @@ import java.util.Locale;
  *       and no backtick in a backtick fence's info string. A fence ends with its container.
  *   <li><b>Indented code</b>: four or more columns past the container's content column, when no paragraph is
  *       open (an indented line right under paragraph text is a continuation, not code).
- *   <li><b>HTML comments</b> ({@code <!-- … -->}, single- or multi-line) and the verbatim HTML blocks
- *       {@code <pre>}, {@code <script>}, {@code <style>}, {@code <textarea>} up to their closing tag.
+ *   <li><b>HTML comments</b> ({@code <!-- … -->}, single- or multi-line), the verbatim HTML blocks
+ *       {@code <pre>}, {@code <script>}, {@code <style>}, {@code <textarea>} up to their closing tag, and
+ *       block-level HTML elements ({@code <div>}, {@code <details>}, {@code <table>}…: a line that starts with
+ *       such a tag) up to the next blank line.
  *   <li><b>Code spans</b> inside a prose line, matched by backtick run length ({@code `` ` ``} is one span).
  * </ul>
  *
@@ -52,7 +54,11 @@ public final class MarkdownBlocks {
         INDENTED_CODE,
         /** A line that starts with, or continues, an HTML comment. */
         HTML_COMMENT,
-        /** A line of a {@code <pre>}/{@code <script>}/{@code <style>}/{@code <textarea>} block. */
+        /**
+         * A line of a raw HTML block: {@code <pre>}/{@code <script>}/{@code <style>}/{@code <textarea>} up to its
+         * closing tag, or a block-level element ({@code <div>}, {@code <details>}, {@code <table>}, {@code <p>}…)
+         * up to the next blank line — after which Markdown resumes, as CommonMark has it.
+         */
         HTML_BLOCK
     }
 
@@ -89,6 +95,70 @@ public final class MarkdownBlocks {
 
     private static final int[] NO_RANGES = new int[0];
     private static final String[] VERBATIM_TAGS = {"pre", "script", "style", "textarea"};
+    /** The element names that open a CommonMark "type 6" HTML block (it ends at the next blank line). */
+    private static final java.util.Set<String> BLOCK_TAGS = java.util.Set.of(
+            "address",
+            "article",
+            "aside",
+            "base",
+            "basefont",
+            "blockquote",
+            "body",
+            "caption",
+            "center",
+            "col",
+            "colgroup",
+            "dd",
+            "details",
+            "dialog",
+            "dir",
+            "div",
+            "dl",
+            "dt",
+            "fieldset",
+            "figcaption",
+            "figure",
+            "footer",
+            "form",
+            "frame",
+            "frameset",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6",
+            "head",
+            "header",
+            "hr",
+            "html",
+            "iframe",
+            "legend",
+            "li",
+            "link",
+            "main",
+            "menu",
+            "menuitem",
+            "nav",
+            "noframes",
+            "ol",
+            "optgroup",
+            "option",
+            "p",
+            "param",
+            "search",
+            "section",
+            "summary",
+            "table",
+            "tbody",
+            "td",
+            "tfoot",
+            "th",
+            "thead",
+            "title",
+            "tr",
+            "track",
+            "ul");
 
     private final String[] lines;
     private final Kind[] kinds;
@@ -321,6 +391,7 @@ public final class MarkdownBlocks {
         List<Integer> listColumns = new ArrayList<>(); // content columns of the open list items, outermost first
         OpenFence fence = null;
         String htmlBlockEnd = null; // the closing tag of the open <pre>/<script>/… block
+        int tagBlockDepth = -1; // the quote depth of the open <div>-style block (ends at a blank line), or -1
         boolean inComment = false;
         boolean paragraphOpen = false;
         int quoteDepth = 0;
@@ -389,6 +460,13 @@ public final class MarkdownBlocks {
                     htmlBlockEnd = null;
                 }
                 continue;
+            }
+            if (tagBlockDepth >= 0) {
+                if (!blank && depth >= tagBlockDepth) {
+                    kinds[i] = Kind.HTML_BLOCK;
+                    continue;
+                }
+                tagBlockDepth = -1; // a blank line (or the end of its block quote) ends it; Markdown resumes
             }
             if (inComment) {
                 kinds[i] = Kind.HTML_COMMENT;
@@ -495,6 +573,12 @@ public final class MarkdownBlocks {
                 kinds[i] = Kind.HTML_BLOCK;
                 String lower = line.toLowerCase(Locale.ROOT);
                 htmlBlockEnd = lower.indexOf(verbatimEnd, at) >= 0 ? null : verbatimEnd;
+                paragraphOpen = false;
+                continue;
+            }
+            if (opensTagBlock(line, at)) {
+                kinds[i] = Kind.HTML_BLOCK;
+                tagBlockDepth = depth;
                 paragraphOpen = false;
                 continue;
             }
@@ -719,6 +803,28 @@ public final class MarkdownBlocks {
             }
         }
         return null;
+    }
+
+    /** Whether a block-level HTML element ({@code <div …>}, {@code </table>}, {@code <hr/>}) starts at {@code at}. */
+    private static boolean opensTagBlock(String line, int at) {
+        if (at >= line.length() || line.charAt(at) != '<') {
+            return false;
+        }
+        int p = at + 1;
+        if (p < line.length() && line.charAt(p) == '/') {
+            p++;
+        }
+        int nameStart = p;
+        while (p < line.length() && Character.isLetterOrDigit(line.charAt(p))) {
+            p++;
+        }
+        if (p == nameStart || !BLOCK_TAGS.contains(line.substring(nameStart, p).toLowerCase(Locale.ROOT))) {
+            return false;
+        }
+        return p >= line.length()
+                || line.charAt(p) == '>'
+                || Character.isWhitespace(line.charAt(p))
+                || line.startsWith("/>", p);
     }
 
     /** The offset in {@code line}, at or after {@code from}, where whitespace reaches {@code column}. */

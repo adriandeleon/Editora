@@ -56,6 +56,16 @@ public final class MarkdownLintService {
             String source,
             java.util.Set<String> disabled,
             Consumer<List<MarkdownLint.Diagnostic>> onResult) {
+        validate(requester, source, disabled, com.editora.markdown.MarkdownLintOptions.DEFAULT, onResult);
+    }
+
+    /** As above, with the project's rule {@code options} (see {@link com.editora.markdown.MarkdownLintOptions}). */
+    public void validate(
+            Object requester,
+            String source,
+            java.util.Set<String> disabled,
+            com.editora.markdown.MarkdownLintOptions options,
+            Consumer<List<MarkdownLint.Diagnostic>> onResult) {
         Object key = requester == null ? this : requester;
         long mine = gen.incrementAndGet();
         latest.put(key, mine);
@@ -64,7 +74,7 @@ public final class MarkdownLintService {
             if (!isLatest(key, mine)) {
                 return; // superseded while queued: skip the scan as well as the delivery
             }
-            List<MarkdownLint.Diagnostic> diags = MarkdownLint.lint(source, off);
+            List<MarkdownLint.Diagnostic> diags = MarkdownLint.lint(source, off, options);
             if (isLatest(key, mine)) {
                 Platform.runLater(() -> {
                     if (isLatest(key, mine)) {

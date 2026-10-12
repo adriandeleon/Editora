@@ -28,8 +28,8 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
  *   <li>{@code "extends": "path"} — reported in {@link Parsed#extendsPath} for the caller to load first.
  * </ul>
  *
- * <p>Rule <em>options</em> ({@code line_length}, {@code br_spaces}…) are not interpreted — an options object only
- * counts as "enabled". Pure (parse-only) and tolerant: a file that cannot be parsed is reported as
+ * <p>An options object switches its rule on and carries the rule's options; the ones this linter honours are
+ * listed on {@link MarkdownLintOptions}, the rest are ignored. Pure (parse-only) and tolerant: a file that cannot be parsed is reported as
  * {@link Parsed#valid() invalid} and changes nothing. Unit-tested directly.
  */
 public final class MarkdownLintConfig {
@@ -53,8 +53,15 @@ public final class MarkdownLintConfig {
             .build();
     private static final ObjectMapper YAML = new YAMLMapper();
 
-    /** One rule entry of a config: the name as written and whether it switches the rule(s) on. */
-    public record Entry(String name, boolean on) {}
+    /**
+     * One rule entry of a config: the name as written, whether it switches the rule(s) on, and the options it
+     * carries (option name → {@code Number}/{@code Boolean}/{@code String}; empty for a plain on/off entry).
+     */
+    public record Entry(String name, boolean on, Map<String, Object> options) {
+        public Entry(String name, boolean on) {
+            this(name, on, Map.of());
+        }
+    }
 
     /**
      * A parsed config.
@@ -119,8 +126,21 @@ public final class MarkdownLintConfig {
                 }
             } else if (v.isBoolean()) {
                 entries.add(new Entry(key, v.asBoolean()));
-            } else if (v.isObject() || v.isTextual()) {
-                entries.add(new Entry(key, true)); // options or a severity: the rule is in use
+            } else if (v.isObject()) {
+                Map<String, Object> options = new java.util.LinkedHashMap<>();
+                for (Map.Entry<String, JsonNode> o : (Iterable<Map.Entry<String, JsonNode>>) v::fields) {
+                    JsonNode ov = o.getValue();
+                    if (ov.isNumber()) {
+                        options.put(o.getKey(), ov.numberValue());
+                    } else if (ov.isBoolean()) {
+                        options.put(o.getKey(), ov.asBoolean());
+                    } else if (ov.isTextual()) {
+                        options.put(o.getKey(), ov.asText());
+                    }
+                }
+                entries.add(new Entry(key, true, options)); // an options object: the rule is in use
+            } else if (v.isTextual()) {
+                entries.add(new Entry(key, true)); // a severity: the rule is in use
             }
         }
         return new Parsed(true, defaults, List.copyOf(entries), extendsPath);
@@ -128,6 +148,15 @@ public final class MarkdownLintConfig {
 
     /** Applies {@code config} on top of {@code disabled} (the state inherited from an extended file or none). */
     public static void apply(Parsed config, Set<String> disabled) {
+        apply(config, disabled, new HashSet<>());
+    }
+
+    /**
+     * As {@link #apply(Parsed, Set)}, also keeping in {@code enabled} the rules the config switches on <em>by
+     * name</em> ({@code "MD009": true}, an options object, a severity) — those a project insists on, as opposed
+     * to the ones that are merely on by default.
+     */
+    public static void apply(Parsed config, Set<String> disabled, Set<String> enabled) {
         if (config == null || !config.valid()) {
             return;
         }
@@ -142,10 +171,28 @@ public final class MarkdownLintConfig {
             Set<String> codes = MarkdownLint.resolve(e.name());
             if (e.on()) {
                 disabled.removeAll(codes);
+                enabled.addAll(codes);
             } else {
                 disabled.addAll(codes);
+                enabled.removeAll(codes);
             }
         }
+    }
+
+    /** {@code base} with the rule options {@code config} sets (later entries win; unknown options ignored). */
+    public static MarkdownLintOptions options(Parsed config, MarkdownLintOptions base) {
+        MarkdownLintOptions out = base == null ? MarkdownLintOptions.DEFAULT : base;
+        if (config == null || !config.valid()) {
+            return out;
+        }
+        for (Entry e : config.entries()) {
+            for (String code : MarkdownLint.resolve(e.name())) {
+                for (Map.Entry<String, Object> o : e.options().entrySet()) {
+                    out = out.with(code, o.getKey(), o.getValue());
+                }
+            }
+        }
+        return out;
     }
 
     /** The rule codes disabled by JSON/JSONC {@code json}; empty on malformed input. */
