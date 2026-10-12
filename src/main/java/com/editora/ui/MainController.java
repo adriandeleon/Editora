@@ -1977,6 +1977,7 @@ public class MainController implements com.editora.mcp.McpBridge {
         String key = path.toString();
         ws.getFoldedRegions().remove(key);
         ws.getMarkdownViewModes().remove(key);
+        ws.getMarkdownPreviewLayouts().remove(key);
         ws.getSpellLanguages().remove(key);
         ws.getReadOnlyFiles().remove(key);
         if (recentFiles != null) {
@@ -2805,6 +2806,8 @@ public class MainController implements com.editora.mcp.McpBridge {
     /** Reconciles LaTeX math rendering with its setting + the app theme; re-renders open previews. */
     private void applyMathSupport() {
         com.editora.editor.MathImages.configure(config.getSettings().isMathSupport(), appThemeDark());
+        com.editora.editor.PreviewImageLoader.setRemoteImages(
+                config.getSettings().isMarkdownRemoteImages());
         for (Tab tab : editorArea.tabs()) {
             EditorBuffer b = bufferOf(tab);
             if (b != null && b.hasPreview()) {

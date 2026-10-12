@@ -267,6 +267,30 @@ carrying the LaTeX verbatim. `MarkdownRenderer.parseForRender` uses it (preview,
 exporters that still call `parseToDocument` and scan text with `MathSpans` have the old defect until
 they adopt the same extension.
 
+## A buffer in Preview mode is not "read-only" — it refuses *commands*
+
+**Symptom:** an agent, MCP or AI edit of a file whose tab shows only its rendered preview is refused; or
+the reverse, a new editing command changes text nobody can see.
+
+**Why/fix:** with only the preview on screen (`EditorBuffer.isPreviewOnly()`), an edit at the hidden caret
+is refused — but by the *command* guards (`EditingCoordinator.activeEditable()`, undo/redo, the Markdown
+and lint entry points, Replace), not by `isEditable()`. `isEditable()` must stay true: programmatic writers
+(the AI "explain" stream that fills a buffer it has just put in Preview, an agent or language-server edit,
+a reload) still write, and the preview follows. A new command that edits the active buffer goes through
+`activeEditable()` like the others; `CommandSweepFxTest`'s `MARKDOWN_PREVIEW` state fails if one changes
+the text of a buffer it leaves in Preview. Find in that state searches the rendering (`PreviewFind`).
+
+## The preview's image fetch opens its own socket
+
+**Symptom:** a remote image loads in a browser but not in the preview behind an unusual network setup; or
+a temptation to "simplify" `PreviewImageLoader.fetch` back to `URLConnection`.
+
+**Why/fix:** the loader refuses internal addresses, and decides that from what the host resolves to.
+`URLConnection` resolves the host again to connect, so a rebinding DNS server could pass the check and
+then answer `127.0.0.1`. `PinnedHttp` connects to the address that was checked and uses the name only
+for `Host`, SNI and the certificate. When the system routes the URL through a proxy
+(`ProxySelector`), the `URLConnection` path is used instead — the proxy makes the connection.
+
 ## GUI-launched `.app` inherits a stripped PATH
 
 **Symptom:** `mmdc`/`npx`/`git`/an LSP server "not found" only when Editora is launched from Finder

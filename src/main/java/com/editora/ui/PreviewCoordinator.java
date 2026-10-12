@@ -269,6 +269,16 @@ final class PreviewCoordinator {
         return b != null && b.pagePreview(down);
     }
 
+    /** A line's worth of the preview, as a fraction of its viewport (line up / line down). */
+    static final double PREVIEW_LINE = 0.08;
+
+    /** Scrolls the active buffer's preview by {@code pages} viewports when it is the scroll target: with
+     *  only the preview showing, line and start/end navigation move what is on screen, not a hidden caret. */
+    boolean scrollActivePreview(double pages) {
+        EditorBuffer b = host.activeBuffer();
+        return b != null && b.scrollPreview(pages);
+    }
+
     /** Persists the buffer's Markdown view mode, keyed by file path (EDITOR is the unset default). */
     void persistMarkdownMode(EditorBuffer buffer) {
         Path file = buffer.getPath();
@@ -306,6 +316,7 @@ final class PreviewCoordinator {
                 toggle.sync();
             });
             buffer.setViewModeControl(toggle);
+            restorePreviewLayout(buffer);
             if (buffer.isMarkdown()) {
                 buffer.setPreviewThemeToggle(this::toggleMarkdownPreviewTheme);
                 buffer.applyPreviewTheme(host.config().getSettings().getMarkdownPreviewTheme(), host.appThemeDark());
@@ -316,6 +327,27 @@ final class PreviewCoordinator {
         }
         // Keep live linting in step when a Save As / rename flips the buffer to/from .mmd.
         host.mermaid().refreshLint(buffer);
+    }
+
+    /** Gives {@code buffer} the preview zoom and Split divider remembered for its file, and has later changes
+     *  of either stored (the default pair is not: a file left as it came takes no entry). */
+    private void restorePreviewLayout(EditorBuffer buffer) {
+        Path file = buffer.getPath();
+        var layouts = host.config().getWorkspaceState().getMarkdownPreviewLayouts();
+        String saved = file == null ? null : layouts.get(file.toString());
+        buffer.restorePreviewLayout(saved == null ? null : com.editora.editor.PreviewLayout.parse(saved), () -> {
+            Path now = buffer.getPath();
+            if (now == null) {
+                return;
+            }
+            com.editora.editor.PreviewLayout layout = buffer.getPreviewLayout();
+            if (layout.isDefault()) {
+                layouts.remove(now.toString());
+            } else {
+                layouts.put(now.toString(), layout.text());
+            }
+            host.requestSave();
+        });
     }
 
     /** Restores a Markdown/CSV/.http file's saved view mode after it is opened (and its toggle is wired). */
@@ -401,6 +433,9 @@ final class PreviewCoordinator {
             host.setStatus(tr("status.lsp.readOnly"));
             return null;
         }
+        if (!host.editing().activeEditable()) {
+            return null; // only the preview is showing: said so in the status line
+        }
         if (b.hasMultipleCarets()) {
             b.collapseCarets();
             host.setStatus(tr("status.markdown.multiCaret"));
@@ -480,6 +515,9 @@ final class PreviewCoordinator {
         if (b == null || !b.isTypst() || !b.canFormatMarkup()) {
             host.setStatus(tr("status.typst.notTypst"));
             return;
+        }
+        if (!host.editing().activeEditable()) {
+            return; // only the preview is showing
         }
         action.accept(b);
     }
@@ -673,12 +711,17 @@ final class PreviewCoordinator {
      */
     void toggleMarkdownPreviewTheme() {
         String mode = host.config().getSettings().getMarkdownPreviewTheme();
-        boolean currentlyDark = "dark".equals(mode) || (mode.isEmpty() && host.appThemeDark());
-        String next = currentlyDark ? "light" : "dark";
+        // Three states, so the toggle can let go again: follow the app → the other theme → the app's own,
+        // pinned → follow the app.
+        String next = com.editora.editor.PreviewButtons.nextTheme(mode, host.appThemeDark());
         host.config().getSettings().setMarkdownPreviewTheme(next);
         host.requestSave();
         applyMarkdownPreviewTheme();
-        host.setStatus(tr("status.markdownPreviewTheme", tr("markdown.previewTheme." + next)));
+        if (host.settingsWindow() != null) {
+            host.settingsWindow().syncAll(); // the Markdown page shows the same three-state choice
+        }
+        host.setStatus(
+                tr("status.markdownPreviewTheme", tr("markdown.previewTheme." + (next.isEmpty() ? "follow" : next))));
     }
 
     /** Zooms the active Markdown buffer's preview text: {@code >0} in, {@code <0} out, {@code 0} reset. */

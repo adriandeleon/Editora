@@ -193,7 +193,11 @@ public final class MarkdownRenderer {
             if (url == null || url.isBlank()) {
                 return false;
             }
-            return this == DOCUMENT || url.stripLeading().regionMatches(true, 0, "data:", 0, 5);
+            if (this == DOCUMENT) {
+                // (the one switch the user has: no http(s) image is fetched while it is off)
+                return PreviewImageLoader.remoteImages() || !PreviewImageLoader.isRemote(url);
+            }
+            return url.stripLeading().regionMatches(true, 0, "data:", 0, 5);
         }
     }
 
@@ -208,7 +212,13 @@ public final class MarkdownRenderer {
         return renderDocument(
                 ast,
                 new RenderContext(
-                        baseDir, onLinkClick, images == null ? ImagePolicy.DATA_ONLY : images, false, null, null));
+                        baseDir,
+                        onLinkClick,
+                        images == null ? ImagePolicy.DATA_ONLY : images,
+                        false,
+                        null,
+                        null,
+                        null));
     }
 
     /**
@@ -227,13 +237,21 @@ public final class MarkdownRenderer {
      * background as the preview's do and code prints uncoloured. Only for callers that cannot block first.
      */
     public static Node renderForPrint(org.commonmark.node.Node ast, Path baseDir, MarkdownPrintAssets assets) {
-        return renderDocument(ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null));
+        return renderDocument(ast, new RenderContext(baseDir, null, ImagePolicy.DOCUMENT, true, assets, null, null));
     }
 
     private static Node renderDocument(org.commonmark.node.Node ast, RenderContext ctx) {
         VBox content = newColumn();
         if (ast != null) {
-            appendBlocks(ast, content, ctx);
+            RenderContext numbered = new RenderContext(
+                    ctx.baseDir(),
+                    ctx.onLinkClick(),
+                    ctx.images(),
+                    ctx.print(),
+                    ctx.assets(),
+                    ctx.dark(),
+                    footnoteNumbers(ast));
+            appendBlocks(ast, content, numbered);
         }
         return wrapColumn(content);
     }
@@ -262,8 +280,45 @@ public final class MarkdownRenderer {
 
     /** The context of the live document preview. {@code dark} is the preview's own theme when it has one
      *  (the light/dark toggle), or null to follow the app theme. */
-    static RenderContext previewContext(Path baseDir, java.util.function.Consumer<String> onLinkClick, Boolean dark) {
-        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark);
+    static RenderContext previewContext(
+            Path baseDir,
+            java.util.function.Consumer<String> onLinkClick,
+            Boolean dark,
+            Map<String, Integer> footnotes) {
+        return new RenderContext(baseDir, onLinkClick, ImagePolicy.DOCUMENT, false, null, dark, footnotes);
+    }
+
+    /**
+     * The number of each footnote, by label: 1, 2, 3… in the order the document first refers to them — what a
+     * reader expects to see instead of the author's labels ({@code [^long-note]} is "2"). A definition nobody
+     * refers to has no number. Pure.
+     */
+    static Map<String, Integer> footnoteNumbers(org.commonmark.node.Node ast) {
+        Map<String, Integer> numbers = new java.util.LinkedHashMap<>();
+        ast.accept(new org.commonmark.node.AbstractVisitor() {
+            @Override
+            public void visit(org.commonmark.node.CustomNode node) {
+                if (node instanceof FootnoteReference ref && ref.getLabel() != null) {
+                    numbers.putIfAbsent(footnoteKey(ref.getLabel()), numbers.size() + 1);
+                }
+                visitChildren(node);
+            }
+        });
+        return numbers;
+    }
+
+    /** A footnote label as compared (labels match case-insensitively, like link references). */
+    static String footnoteKey(String label) {
+        return label == null ? "" : label.strip().toLowerCase(Locale.ROOT);
+    }
+
+    /** The in-document anchor of footnote {@code label}'s definition, and of the place that refers to it. */
+    static String footnoteAnchor(String label) {
+        return "fn-" + footnoteKey(label);
+    }
+
+    static String footnoteBackAnchor(String label) {
+        return "fnref-" + footnoteKey(label);
     }
 
     /** Threaded through every block/inline renderer alongside {@code baseDir} (for image resolution) so a
@@ -275,7 +330,14 @@ public final class MarkdownRenderer {
             ImagePolicy images,
             boolean print,
             MarkdownPrintAssets assets,
-            Boolean dark) {
+            Boolean dark,
+            Map<String, Integer> footnotes) {
+
+        /** What a reference to (or the definition of) footnote {@code label} shows: its number, else the label. */
+        String footnoteMark(String label) {
+            Integer n = footnotes == null ? null : footnotes.get(footnoteKey(label));
+            return n == null ? (label == null ? "" : label) : String.valueOf(n);
+        }
 
         /**
          * Whether math and diagrams are drawn light-on-dark: never on paper; as the surface's own theme says
@@ -1155,19 +1217,27 @@ public final class MarkdownRenderer {
     private static Node footnoteDefinition(FootnoteDefinition def, RenderContext ctx) {
         HBox row = new HBox();
         row.getStyleClass().add("md-footnote-def");
-        Label marker = new Label("[" + def.getLabel() + "]");
+        Label marker = new Label("[" + ctx.footnoteMark(def.getLabel()) + "]");
         marker.getStyleClass().add("md-footnote-def-marker");
         VBox content = new VBox();
         content.getStyleClass().add("md-footnote-def-content");
         HBox.setHgrow(content, Priority.ALWAYS);
         appendBlocks(def, content, ctx);
         row.getChildren().addAll(marker, content);
+        if (ctx.onLinkClick() != null
+                && ctx.footnotes() != null
+                && ctx.footnotes().containsKey(footnoteKey(def.getLabel()))) {
+            // Back to where the note was referred to (the surface that follows links scrolls there).
+            TextFlow back = new TextFlow(styledText("\u21A9", List.of("md-link", "md-footnote-back")));
+            wireLink(back, 0, "#" + footnoteBackAnchor(def.getLabel()), null, ctx);
+            row.getChildren().add(back);
+        }
         return row;
     }
 
     /** An inline footnote reference, rendered as a small raised {@code [label]} marker. */
-    private static Text footnoteRef(String label) {
-        Text t = new Text("[" + (label == null ? "" : label) + "]");
+    private static Text footnoteRef(String mark) {
+        Text t = new Text("[" + mark + "]");
         t.getStyleClass().addAll("md-text", "md-footnote-ref");
         return t;
     }
@@ -1293,7 +1363,11 @@ public final class MarkdownRenderer {
         } else if (n instanceof Ins) {
             appendInline(n, flow, with(styles, "md-ins"), ctx);
         } else if (n instanceof FootnoteReference ref) {
-            flow.getChildren().add(footnoteRef(ref.getLabel()));
+            int from = flow.getChildren().size();
+            flow.getChildren().add(footnoteRef(ctx.footnoteMark(ref.getLabel())));
+            if (ctx.footnotes() != null && ctx.footnotes().containsKey(footnoteKey(ref.getLabel()))) {
+                wireLink(flow, from, "#" + footnoteAnchor(ref.getLabel()), null, ctx); // to its definition
+            }
         } else if (n instanceof InlineFootnote) {
             appendInline(n, flow, with(styles, "md-footnote-ref"), ctx);
         } else if (n instanceof Link link) {

@@ -430,6 +430,11 @@ class MarkdownPreviewFxTest {
             assertEquals("top", p.anchors().get(0));
             assertTrue(p.anchors().contains("marker-40"));
             assertFalse(p.scrollToAnchor("no-such-heading"));
+            // The public way in, for whoever follows a link from outside the preview.
+            assertTrue(buffer.scrollPreviewToAnchor("#Marker-7"));
+            assertEquals(lineOf(buffer, "## Marker 7"), p.topLine(), 0.5);
+            assertFalse(buffer.scrollPreviewToAnchor("no-such-heading"));
+            assertFalse(markdown("# A\n").scrollPreviewToAnchor("a"), "no preview showing: nothing to scroll");
 
             Text jump = textNode(pane(buffer).getContent(), "Jump");
             jump.fireEvent(click(MouseButton.PRIMARY, true));
@@ -811,6 +816,186 @@ class MarkdownPreviewFxTest {
                 "not only the direct text: " + EditorFx.textOf(root)));
     }
 
+    // --- A9: remote images can be switched off, and open previews follow --------------------------------
+
+    @Test
+    void switchingRemoteImagesOffTurnsThemIntoPlaceholdersInAnOpenPreview() throws Exception {
+        // (An address the loader refuses by itself, so the test never reaches the network either way.)
+        String md = "Text.\n\n![pic](http://127.0.0.1:9/x.png)\n";
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        EditorFx.onFx(() -> {
+            ref[0] = markdown(md);
+            stage[0] = EditorFx.show(ref[0], 600, 300);
+        });
+        EditorBuffer buffer = ref[0];
+        try {
+            open(buffer, MarkdownViewMode.PREVIEW);
+            Node[] image = new Node[1];
+            EditorFx.onFx(() -> {
+                image[0] = column(buffer).getChildren().get(1);
+                assertNotNull(EditorFx.styled(image[0], "md-image-slot"), "on by default: an image to load");
+            });
+            rerender(buffer, () -> PreviewImageLoader.setRemoteImages(false));
+            EditorFx.onFx(() -> {
+                Node now = column(buffer).getChildren().get(1);
+                assertNotSame(image[0], now, "the setting changed: the block is rebuilt");
+                assertNull(EditorFx.styled(now, "md-image-slot"), "nothing is fetched");
+                assertTrue(
+                        EditorFx.textOf(now).contains("[image: pic] http://127.0.0.1:9/x.png"), EditorFx.textOf(now));
+            });
+        } finally {
+            EditorFx.onFx(() -> {
+                PreviewImageLoader.setRemoteImages(true);
+                stage[0].close();
+                buffer.dispose();
+            });
+        }
+    }
+
+    // --- A18: footnotes are numbered and linked both ways -----------------------------------------------
+
+    @Test
+    void footnotesAreNumberedInOrderOfUseAndLinkedToTheirDefinitionsAndBack() throws Exception {
+        StringBuilder md = new StringBuilder(
+                "# Notes\n\nFirst claim[^zeta] and a second[^alpha], and the first again[^zeta].\n\n");
+        for (int i = 0; i < 60; i++) {
+            md.append("Filler paragraph ").append(i).append(".\n\n");
+        }
+        md.append("[^alpha]: The alpha note.\n\n[^zeta]: The zeta note.\n\n[^unused]: Never referred to.\n");
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        List<String> opened = new ArrayList<>();
+        EditorFx.onFx(() -> {
+            ref[0] = markdown(md.toString());
+            ref[0].setOpenUrlHandler(opened::add);
+            stage[0] = EditorFx.show(ref[0], 700, 400);
+        });
+        EditorBuffer buffer = ref[0];
+        open(buffer, MarkdownViewMode.PREVIEW);
+        EditorFx.onFx(() -> {
+            Node root = pane(buffer).getContent();
+            List<String> refs = collect(root, Text.class).stream()
+                    .filter(t -> t.getStyleClass().contains("md-footnote-ref"))
+                    .map(Text::getText)
+                    .toList();
+            assertEquals(List.of("[1]", "[2]", "[1]"), refs, "numbers by first use, not the author's labels");
+            List<String> markers = collect(root, Label.class).stream()
+                    .filter(l -> l.getStyleClass().contains("md-footnote-def-marker"))
+                    .map(Label::getText)
+                    .toList();
+            assertEquals(List.of("[2]", "[1]", "[unused]"), markers, "a definition carries its reference's number");
+
+            MarkdownPreview p = preview(buffer);
+            Text first = textNode(root, "[1]");
+            first.fireEvent(click(MouseButton.PRIMARY, true));
+            assertTrue(opened.isEmpty(), "a footnote link stays in the preview");
+            Node definition = textNode(root, "The zeta note.");
+            double top =
+                    pane(buffer).localToScene(pane(buffer).getBoundsInLocal()).getMinY();
+            double y = definition.localToScene(definition.getBoundsInLocal()).getMinY() - top;
+            assertTrue(
+                    y >= 0 && y < pane(buffer).getViewportBounds().getHeight(),
+                    "scrolled to the definition (as far as the document goes): y=" + y);
+
+            List<Text> back = collect(root, Text.class).stream()
+                    .filter(t -> t.getStyleClass().contains("md-footnote-back"))
+                    .toList();
+            assertEquals(2, back.size(), "one way back per referenced note; none for the unused one");
+            back.get(0).fireEvent(click(MouseButton.PRIMARY, true));
+            assertTrue(p.topLine() < 5, "and back to the paragraph that referred to it: " + p.topLine());
+            assertTrue(opened.isEmpty());
+        });
+        // A new reference ahead of the others renumbers them: the blocks that show numbers are rebuilt.
+        rerender(
+                buffer,
+                () -> buffer.getArea()
+                        .insertText(buffer.getArea().getText().indexOf("First claim"), "Before[^alpha]. "));
+        EditorFx.onFx(() -> {
+            List<String> refs = collect(pane(buffer).getContent(), Text.class).stream()
+                    .filter(t -> t.getStyleClass().contains("md-footnote-ref"))
+                    .map(Text::getText)
+                    .toList();
+            assertEquals(List.of("[1]", "[2]", "[1]", "[2]"), refs);
+            List<String> markers = collect(pane(buffer).getContent(), Label.class).stream()
+                    .filter(l -> l.getStyleClass().contains("md-footnote-def-marker"))
+                    .map(Label::getText)
+                    .toList();
+            assertEquals(List.of("[1]", "[2]", "[unused]"), markers);
+            stage[0].close();
+            buffer.dispose();
+        });
+    }
+
+    // --- A17: zoom reaches formulas and images; zoom and divider are kept ----------------------------
+
+    @Test
+    void zoomSizesFormulasAndTheSplitDividerStaysWhereItWasPut() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        List<PreviewLayout> stored = new ArrayList<>();
+        EditorFx.onFx(() -> {
+            MathImages.configure(true, false);
+            ref[0] = markdown("Euler $e^{i\\pi} + 1 = 0$ here.\n");
+            // What the window does on open: the layout remembered for the file, and a listener for changes.
+            ref[0].restorePreviewLayout(new PreviewLayout(1.0, 0.3), () -> stored.add(ref[0].getPreviewLayout()));
+            stage[0] = EditorFx.show(ref[0], 900, 300);
+        });
+        EditorBuffer buffer = ref[0];
+        try {
+            open(buffer, MarkdownViewMode.SPLIT);
+            double[] base = new double[1];
+            EditorFx.onFx(() -> {
+                javafx.scene.control.SplitPane split = (javafx.scene.control.SplitPane)
+                        pane(buffer).getParent().getParent().getParent();
+                assertEquals(0.3, split.getDividerPositions()[0], 0.02, "the remembered divider, not the middle");
+                ImageView formula =
+                        collect(pane(buffer).getContent(), ImageView.class).get(0);
+                base[0] = formula.getFitWidth();
+                buffer.zoomPreviewIn();
+                buffer.zoomPreviewIn();
+                assertEquals(base[0] * 1.21, formula.getFitWidth(), 0.5, "a formula grows with the text");
+                assertEquals(
+                        1.21, stored.get(stored.size() - 1).zoom(), 1e-6, "and the zoom is reported, to be stored");
+            });
+            // A block built while zoomed is zoomed too.
+            rerender(buffer, () -> buffer.getArea().appendText("\nMore $e^{i\\pi} + 1 = 0$ later.\n"));
+            EditorFx.onFx(() -> {
+                List<ImageView> formulas = collect(pane(buffer).getContent(), ImageView.class);
+                assertEquals(2, formulas.size());
+                assertEquals(base[0] * 1.21, formulas.get(1).getFitWidth(), 0.5);
+            });
+            // Dragging the divider is remembered, and survives a trip through Preview.
+            EditorFx.onFx(() -> {
+                javafx.scene.control.SplitPane split = (javafx.scene.control.SplitPane)
+                        pane(buffer).getParent().getParent().getParent();
+                split.setDividerPositions(0.6);
+                assertEquals(0.3, buffer.getPreviewLayout().divider(), 1e-6, "a programmatic move is not the user's");
+                EditorFx.pressed(split, true);
+                split.setDividerPositions(0.7);
+                EditorFx.pressed(split, false);
+                assertEquals(0.7, buffer.getPreviewLayout().divider(), 0.01);
+                assertEquals(0.7, stored.get(stored.size() - 1).divider(), 0.01);
+                buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
+                buffer.setMarkdownViewMode(MarkdownViewMode.SPLIT);
+            });
+            layout(buffer);
+            EditorFx.onFx(() -> {
+                javafx.scene.control.SplitPane split = (javafx.scene.control.SplitPane)
+                        pane(buffer).getParent().getParent().getParent();
+                assertEquals(0.7, split.getDividerPositions()[0], 0.02);
+                buffer.resetPreviewZoom();
+                assertEquals(1.0, buffer.getPreviewLayout().zoom(), 1e-9);
+            });
+        } finally {
+            EditorFx.onFx(() -> {
+                MathImages.configure(false, false);
+                stage[0].close();
+                buffer.dispose();
+            });
+        }
+    }
+
     // --- A15: a long line does not stop the live preview --------------------------------------------
 
     @Test
@@ -827,6 +1012,16 @@ class MarkdownPreviewFxTest {
             assertTrue(EditorFx.<Boolean>call(small, "previewLive"));
             assertTrue(
                     EditorBuffer.PREVIEW_LIVE_MAX_CHARS < EditorBuffer.LARGE_FILE_BYTES, "a truly large file is not");
+            // A document past that limit says its preview is paused and offers a refresh; a live one does not.
+            EditorBuffer huge = markdown("x".repeat(EditorBuffer.PREVIEW_LIVE_MAX_CHARS + 1));
+            huge.setLargeFile(true);
+            assertFalse(EditorFx.<Boolean>call(huge, "previewLive"));
+            Node strip = EditorFx.styled(EditorFx.<Node>call(huge, "previewHost"), "md-preview-paused");
+            assertNotNull(strip, "the reader is told the preview no longer follows edits");
+            assertTrue(EditorFx.textOf(strip).contains(tr("markdown.preview.paused")));
+            assertTrue(EditorFx.textOf(strip).contains(tr("markdown.preview.refresh")));
+            assertNull(EditorFx.styled(EditorFx.<Node>call(md, "previewHost"), "md-preview-paused"));
+            huge.dispose();
             md.dispose();
             code.dispose();
             small.dispose();

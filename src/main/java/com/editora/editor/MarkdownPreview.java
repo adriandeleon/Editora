@@ -10,19 +10,17 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.StackPane;
 
-import com.editora.markdown.MarkdownToc;
 import org.commonmark.node.AbstractVisitor;
-import org.commonmark.node.Code;
 import org.commonmark.node.Heading;
 import org.commonmark.node.HtmlBlock;
 import org.commonmark.node.HtmlInline;
 import org.commonmark.node.Image;
 import org.commonmark.node.LinkReferenceDefinition;
 import org.commonmark.node.SourceSpan;
-import org.commonmark.node.Text;
 
 /**
  * The rendered Markdown document of one buffer's live preview: its nodes, which source lines each top-level
@@ -50,13 +48,15 @@ final class MarkdownPreview {
             String key,
             int startLine,
             int endLine,
-            String slug) {}
+            String slug,
+            List<String> refs) {}
 
-    /** A document cut into units, ready to {@link #show}. Built off the FX thread. */
-    record Plan(List<Unit> units, Path baseDir) {}
+    /** A document cut into units, ready to {@link #show}. Built off the FX thread. {@code footnotes} is the
+     *  number of each footnote label ({@link MarkdownRenderer#footnoteNumbers}). */
+    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes) {}
 
     /** A rendered unit: {@code node} is null for one that shows nothing (a comment, a link definition). */
-    private record Entry(String key, Node node, int startLine, int endLine, String slug) {}
+    private record Entry(String key, Node node, int startLine, int endLine, String slug, List<String> refs) {}
 
     private final BlockColumn column = MarkdownRenderer.styleColumn(new BlockColumn());
     private final StackPane root = MarkdownRenderer.wrapColumn(column);
@@ -101,6 +101,45 @@ final class MarkdownPreview {
         return anchorLine >= 0 && System.nanoTime() < anchorUntil && pane != null && pane.getContent() == root;
     }
 
+    private final PreviewFind find = new PreviewFind(this);
+
+    /** The search over this document's rendered text (the Find bar, while only the preview is showing). */
+    PreviewFind find() {
+        return find;
+    }
+
+    private double zoom = 1.0;
+
+    /** Sizes the document's images, formulas and diagrams for {@code zoom} (1 = 100%); text follows the font. */
+    void setZoom(double zoom) {
+        if (Math.abs(zoom - this.zoom) > 1e-9) {
+            this.zoom = zoom;
+            PreviewImageLoader.zoomAll(column, zoom);
+        }
+    }
+
+    /** The column of rendered blocks. */
+    Parent column() {
+        return column;
+    }
+
+    /** How far below the top of the document {@code node} (somewhere inside a block) is, in px. */
+    double offsetOf(Node node) {
+        double y = 0;
+        for (Node n = node; n != null && n != root; n = n.getParent()) {
+            y += n.getBoundsInParent().getMinY();
+        }
+        return y;
+    }
+
+    /** Scrolls so that {@code node} is in view, a third of the way down the pane. */
+    void reveal(Node node) {
+        if (pane != null) {
+            anchorUntil = 0;
+            setScrollY(Math.max(0, offsetOf(node) - pane.getViewportBounds().getHeight() / 3));
+        }
+    }
+
     /** The node that is the scroll pane's content while this document is showing. Stable across renders. */
     Node root() {
         return root;
@@ -138,6 +177,7 @@ final class MarkdownPreview {
 
     /** Forgets every node (the preview was closed, or what it showed is no longer this document). */
     void clear() {
+        find.clear();
         buildSeq++;
         entries = List.of();
         column.getChildren().clear();
@@ -152,7 +192,11 @@ final class MarkdownPreview {
         String md = markdown == null ? "" : markdown;
         org.commonmark.node.Node ast = MarkdownRenderer.parseForRender(md);
         String definitions = definitions(ast);
-        Map<String, Integer> slugs = new HashMap<>();
+        // The anchors the table of contents and the link opener use: one numbering for all three.
+        Map<Heading, String> slugs = MarkdownDocInfo.headingAnchors(ast);
+        Map<String, Integer> footnotes = MarkdownRenderer.footnoteNumbers(ast);
+        String definitionsAndNotes = definitions + '\u0003' + footnotes;
+        java.util.Set<String> referred = new java.util.HashSet<>();
         List<Unit> units = new ArrayList<>();
         for (org.commonmark.node.Node n = ast.getFirstChild(); n != null; ) {
             org.commonmark.node.Node last = MarkdownRenderer.groupEnd(n, false);
@@ -168,13 +212,16 @@ final class MarkdownPreview {
                 key = n.getClass().getSimpleName()
                         + '\u0000'
                         + text
-                        + dependencies(n, last, text, definitions, baseDir);
+                        + dependencies(n, last, text, definitionsAndNotes, baseDir);
             }
-            String slug = n instanceof Heading h ? unique(MarkdownToc.slug(plainText(h)), slugs) : null;
-            units.add(new Unit(n, last, key, start, end, slug));
+            String slug = n instanceof Heading h ? slugs.get(h) : null;
+            if (n instanceof org.commonmark.ext.footnotes.FootnoteDefinition def) {
+                slug = MarkdownRenderer.footnoteAnchor(def.getLabel()); // where a reference to it scrolls to
+            }
+            units.add(new Unit(n, last, key, start, end, slug, firstReferences(n, last, referred)));
             n = last.getNext();
         }
-        return new Plan(units, baseDir);
+        return new Plan(units, baseDir, footnotes);
     }
 
     private static SourceSpan firstSpan(org.commonmark.node.Node n) {
@@ -209,6 +256,32 @@ final class MarkdownPreview {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * The back-anchors ({@link MarkdownRenderer#footnoteBackAnchor}) of the footnotes this unit is the first to
+     * refer to — where a definition's "back" link scrolls. {@code referred} collects the labels seen so far.
+     */
+    private static List<String> firstReferences(
+            org.commonmark.node.Node first, org.commonmark.node.Node last, java.util.Set<String> referred) {
+        List<String> out = new ArrayList<>();
+        AbstractVisitor v = new AbstractVisitor() {
+            @Override
+            public void visit(org.commonmark.node.CustomNode node) {
+                if (node instanceof org.commonmark.ext.footnotes.FootnoteReference ref
+                        && referred.add(MarkdownRenderer.footnoteKey(ref.getLabel()))) {
+                    out.add(MarkdownRenderer.footnoteBackAnchor(ref.getLabel()));
+                }
+                visitChildren(node);
+            }
+        };
+        for (org.commonmark.node.Node n = first; n != null; n = n.getNext()) {
+            n.accept(v);
+            if (n == last) {
+                break;
+            }
+        }
+        return out.isEmpty() ? List.of() : out;
     }
 
     /** The destinations of every image in the siblings {@code first}…{@code last}, Markdown and HTML. */
@@ -264,34 +337,6 @@ final class MarkdownPreview {
         return sb.toString();
     }
 
-    /** A heading's text as a reader sees it (markup stripped, code kept) — what its slug is made from. */
-    static String plainText(org.commonmark.node.Node node) {
-        StringBuilder sb = new StringBuilder();
-        node.accept(new AbstractVisitor() {
-            @Override
-            public void visit(Text text) {
-                sb.append(text.getLiteral());
-            }
-
-            @Override
-            public void visit(Code code) {
-                sb.append(code.getLiteral());
-            }
-        });
-        return sb.toString();
-    }
-
-    /** GitHub's sequence for a repeated slug: {@code a}, {@code a-1}, {@code a-2} (as {@code MarkdownToc}). */
-    static String unique(String base, Map<String, Integer> seen) {
-        Integer n = seen.get(base);
-        if (n == null) {
-            seen.put(base, 0);
-            return base;
-        }
-        seen.put(base, n + 1);
-        return base + "-" + (n + 1);
-    }
-
     /**
      * How many leading and trailing keys two renders have in common: {@code {prefix, suffix}}, never
      * overlapping. A null key matches nothing. Pure; unit-tested.
@@ -341,13 +386,14 @@ final class MarkdownPreview {
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
-                + MermaidImages.isEnabled() + "|" + plan.baseDir();
+                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir();
         if (!signature.equals(contextSignature)) {
             entries = List.of(); // a theme, a tool or the folder changed: every node is out of date
             column.getChildren().clear();
             contextSignature = signature;
         }
-        MarkdownRenderer.RenderContext ctx = MarkdownRenderer.previewContext(plan.baseDir(), this::follow, dark);
+        MarkdownRenderer.RenderContext ctx =
+                MarkdownRenderer.previewContext(plan.baseDir(), this::follow, dark, plan.footnotes());
         List<Unit> units = plan.units();
         List<Entry> before = entries;
         int[] ends = commonEnds(
@@ -397,9 +443,10 @@ final class MarkdownPreview {
                 built++;
                 if (node != null) {
                     fresh.add(node);
+                    zoomed(node);
                 }
             }
-            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug()));
+            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
             if (i >= prefix && i < n - suffix && node != null) {
                 newMiddle.add(node);
             }
@@ -454,6 +501,7 @@ final class MarkdownPreview {
             anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
             setScrollY(yOfLine(anchorLine));
         }
+        find.reapply(); // rebuilt blocks lost their marks
         if (complete) {
             shows.set(shows.get() + 1);
         } else {
@@ -482,8 +530,8 @@ final class MarkdownPreview {
         List<Node> nodes = new ArrayList<>();
         for (int i = from; i < to; i++) {
             Unit u = units.get(i);
-            Node node = MarkdownRenderer.renderGroup(u.first(), u.last(), ctx);
-            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug()));
+            Node node = zoomed(MarkdownRenderer.renderGroup(u.first(), u.last(), ctx));
+            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
             if (node != null) {
                 nodes.add(node);
             }
@@ -504,7 +552,16 @@ final class MarkdownPreview {
             anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
             setScrollY(yOfLine(line));
         }
+        find.reapply();
         shows.set(shows.get() + 1);
+    }
+
+    /** A block just built, with its images sized for the current zoom. */
+    private Node zoomed(Node node) {
+        if (node != null && zoom != 1.0) {
+            PreviewImageLoader.zoomAll(node, zoom);
+        }
+        return node;
     }
 
     /** A click on a rendered link: a {@code #slug} of this document scrolls to it, anything else is opened. */
@@ -526,7 +583,7 @@ final class MarkdownPreview {
         String want = MarkdownRenderer.localPath(slug.startsWith("#") ? slug.substring(1) : slug)
                 .toLowerCase(Locale.ROOT);
         for (Entry e : entries) {
-            if (e.slug() != null && e.node() != null && e.slug().equals(want)) {
+            if (e.node() != null && (want.equals(e.slug()) || e.refs().contains(want))) {
                 anchorUntil = 0;
                 setScrollY(top(e.node()));
                 return true;

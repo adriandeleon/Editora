@@ -105,6 +105,8 @@ class CommandSweepFxTest {
         TEXT,
         /** A Markdown file with a selection. */
         MARKDOWN,
+        /** That Markdown file showing only its rendered preview: no command may change text nobody can see. */
+        MARKDOWN_PREVIEW,
         /** A project window on a Git repository, with a modified tracked file open. */
         GIT_PROJECT
     }
@@ -412,6 +414,7 @@ class CommandSweepFxTest {
                         runOne(async, id);
                     }
                     try {
+                        FxTestSupport.runOnFx(() -> editedBehindThePreview(id));
                         FxTestSupport.runOnFx(this::restore);
                         async.awaitFx();
                     } catch (Throwable failure) {
@@ -543,7 +546,7 @@ class CommandSweepFxTest {
                     text = TEXT;
                     select("fooBar");
                 }
-                case MARKDOWN -> {
+                case MARKDOWN, MARKDOWN_PREVIEW -> {
                     file = Files.writeString(dir.resolve("guide.md"), MARKDOWN);
                     text = MARKDOWN;
                     select("prose");
@@ -613,8 +616,24 @@ class CommandSweepFxTest {
                     buffer.getArea().replaceText(text); // typed, not loaded: the buffer has unsaved changes
                 }
                 buffer.getArea().selectRange(selectionStart, selectionEnd);
+                if (state == State.MARKDOWN_PREVIEW) {
+                    buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.PREVIEW);
+                }
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
+            }
+        }
+
+        /**
+         * In {@link State#MARKDOWN_PREVIEW}: a command that left the buffer in Preview and changed its text has
+         * edited at a caret that was not on screen. (One that switches to Editor or Split first is fine.)
+         */
+        private void editedBehindThePreview(String id) {
+            if (state == State.MARKDOWN_PREVIEW
+                    && buffer != null
+                    && buffer.isPreviewOnly()
+                    && !text.equals(buffer.getContent())) {
+                problems.add(id + ": changed the document while only its preview was showing");
             }
         }
 
@@ -647,6 +666,9 @@ class CommandSweepFxTest {
                     && !buffer.isNarrowed()
                     && !buffer.isReadOnly()
                     && text.equals(buffer.getContent());
+            if (intact && state == State.MARKDOWN_PREVIEW && !buffer.isPreviewOnly()) {
+                buffer.setMarkdownViewMode(EditorBuffer.MarkdownViewMode.PREVIEW);
+            }
             if (intact) {
                 buffer.getArea().selectRange(selectionStart, selectionEnd);
             } else {

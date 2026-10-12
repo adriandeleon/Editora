@@ -2589,20 +2589,24 @@ final class WindowCommandRegistrar {
             // killed the rest of it. The two are the same position when the line is not wrapped.
             host.editing().moveAndFollow(a -> a.paragraphEnd(host.selPolicy()));
         }));
-        host.registry()
-                .register(Command.of(
-                        "nav.docStart",
-                        () -> host.editing().moveAndFollow(a -> {
-                            host.editing().collapseCarets(); // one place in the document: one caret
-                            a.start(host.selPolicy());
-                        })));
-        host.registry()
-                .register(Command.of(
-                        "nav.docEnd",
-                        () -> host.editing().moveAndFollow(a -> {
-                            host.editing().collapseCarets();
-                            a.end(host.selPolicy());
-                        })));
+        host.registry().register(Command.of("nav.docStart", () -> {
+            if (host.previews().scrollActivePreview(Double.NEGATIVE_INFINITY)) {
+                return;
+            }
+            host.editing().moveAndFollow(a -> {
+                host.editing().collapseCarets(); // one place in the document: one caret
+                a.start(host.selPolicy());
+            });
+        }));
+        host.registry().register(Command.of("nav.docEnd", () -> {
+            if (host.previews().scrollActivePreview(Double.POSITIVE_INFINITY)) {
+                return;
+            }
+            host.editing().moveAndFollow(a -> {
+                host.editing().collapseCarets();
+                a.end(host.selPolicy());
+            });
+        }));
         host.registry().register(Command.of("nav.charForward", () -> {
             if (host.editing()
                     .multiCaretMove(
@@ -2620,8 +2624,16 @@ final class WindowCommandRegistrar {
             }
             host.editing().moveAndFollow(a -> a.previousChar(host.selPolicy()));
         }));
-        host.registry().register(Command.of("nav.lineDown", () -> host.editing().moveLine(1)));
-        host.registry().register(Command.of("nav.lineUp", () -> host.editing().moveLine(-1)));
+        host.registry().register(Command.of("nav.lineDown", () -> {
+            if (!host.previews().scrollActivePreview(PreviewCoordinator.PREVIEW_LINE)) {
+                host.editing().moveLine(1);
+            }
+        }));
+        host.registry().register(Command.of("nav.lineUp", () -> {
+            if (!host.previews().scrollActivePreview(-PreviewCoordinator.PREVIEW_LINE)) {
+                host.editing().moveLine(-1);
+            }
+        }));
         host.registry().register(Command.of("nav.wordForward", () -> {
             if (host.editing()
                     .multiCaretMove(

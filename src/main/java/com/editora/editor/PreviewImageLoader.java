@@ -151,6 +151,48 @@ public final class PreviewImageLoader {
         });
     }
 
+    private static final String BASE_WIDTH = "editora.md.baseWidth";
+    private static final String ZOOM = "editora.md.zoom";
+
+    /**
+     * Shows {@code view} {@code baseWidth} px wide at 100% zoom — and at the preview's zoom when it has one
+     * ({@link #zoom}). An image, a formula or a diagram is not text: the preview's font size does not reach it,
+     * so at 180% the prose grew and everything else stayed small.
+     */
+    static void fit(ImageView view, double baseWidth) {
+        view.getProperties().put(BASE_WIDTH, baseWidth);
+        Object zoom = view.getProperties().get(ZOOM);
+        view.setFitWidth(Math.max(1, baseWidth * (zoom instanceof Double z ? z : 1.0)));
+    }
+
+    /** Sets the zoom {@code view} is shown at; applied at once when its size is known, else when it loads. */
+    static void zoom(ImageView view, double zoom) {
+        view.getProperties().put(ZOOM, zoom);
+        if (view.getProperties().get(BASE_WIDTH) instanceof Double base) {
+            view.setFitWidth(Math.max(1, base * zoom));
+        }
+    }
+
+    /** Applies {@code zoom} to every image under {@code root} that is sized through {@link #fit}; a diagram
+     *  host still waiting for its render is told too, and passes it on ({@link #zoomOf}). */
+    static void zoomAll(javafx.scene.Node root, double zoom) {
+        if (root instanceof ImageView view) {
+            zoom(view, zoom);
+        } else if (root instanceof javafx.scene.Parent parent) {
+            if (parent.getStyleClass().contains("md-mermaid")) {
+                parent.getProperties().put(ZOOM, zoom);
+            }
+            for (javafx.scene.Node child : parent.getChildrenUnmodifiable()) {
+                zoomAll(child, zoom);
+            }
+        }
+    }
+
+    /** The zoom recorded on {@code host} by {@link #zoomAll}, or 1. */
+    static double zoomOf(javafx.scene.Node host) {
+        return host.getProperties().get(ZOOM) instanceof Double z ? z : 1.0;
+    }
+
     /** Size and modification time of each cached {@code file:} image when it was read (see {@link #fileStamp}). */
     private static final Map<String, String> STAMPS = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -252,7 +294,7 @@ public final class PreviewImageLoader {
 
     private static void apply(ImageView view, Loaded loaded, double maxWidth, boolean exactWidth) {
         view.setImage(loaded.image());
-        view.setFitWidth(exactWidth ? maxWidth : Math.min(loaded.logicalWidth(), maxWidth));
+        fit(view, exactWidth ? maxWidth : Math.min(loaded.logicalWidth(), maxWidth));
     }
 
     private static Loaded load(String url) {
@@ -338,6 +380,9 @@ public final class PreviewImageLoader {
         }
         String s = src.strip();
         try {
+            if (isRemote(s) && !remoteImages) {
+                return null; // remote images are switched off: an export does not fetch what the preview will not
+            }
             if (s.matches("(?i)^(https?|file|data):.*")) {
                 return fetch(s);
             }
@@ -429,31 +474,23 @@ public final class PreviewImageLoader {
             return readLocal(Path.of(uri)); // regular files only: never a directory listing or a device
         }
         // Follow redirects manually so EACH hop is re-checked: a public URL must not be able to 30x-pivot to a
-        // loopback/internal target past the guard (the JDK's automatic redirect following wouldn't re-check).
+        // loopback/internal target past the guard. Each hop connects to the address that passed the check
+        // (PinnedHttp), not to whatever the name resolves to a moment later.
         for (int hop = 0; hop < MAX_REDIRECTS; hop++) {
-            URLConnection con = uri.toURL().openConnection();
-            con.setConnectTimeout(TIMEOUT_MS);
-            con.setReadTimeout(TIMEOUT_MS);
-            con.setRequestProperty("User-Agent", "Editora"); // some CDNs (shields.io) reject a missing UA
-            if (con instanceof java.net.HttpURLConnection http) {
-                http.setInstanceFollowRedirects(false);
-                int code = http.getResponseCode();
-                if (code >= 300 && code < 400) {
-                    String location = http.getHeaderField("Location");
-                    http.disconnect();
-                    if (location == null) {
-                        return null;
-                    }
-                    uri = uri.resolve(location);
-                    if (isBlockedTarget(uri)) {
-                        return null; // the redirect points somewhere we won't reach
-                    }
-                    continue;
+            java.net.InetAddress address = publicAddress(uri);
+            if (address == null) {
+                return null; // SSRF / internal-network guard — see isBlockedTarget
+            }
+            PinnedHttp.Response response =
+                    viaProxy(uri) ? proxied(uri) : PinnedHttp.get(uri, address, TIMEOUT_MS, MAX_IMAGE_BYTES);
+            if (response.status() >= 300) {
+                if (response.location() == null) {
+                    return null;
                 }
+                uri = uri.resolve(response.location());
+                continue;
             }
-            try (InputStream in = con.getInputStream()) {
-                return readCapped(in);
-            }
+            return response.body();
         }
         return null; // too many redirects
     }
@@ -514,6 +551,95 @@ public final class PreviewImageLoader {
         }
     }
 
+    /** Whether the system sends {@code uri} through a proxy: then the proxy makes the connection, not us. */
+    static boolean viaProxy(URI uri) {
+        try {
+            java.net.ProxySelector selector = java.net.ProxySelector.getDefault();
+            if (selector == null) {
+                return false;
+            }
+            for (java.net.Proxy proxy : selector.select(uri)) {
+                if (proxy.type() != java.net.Proxy.Type.DIRECT) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * One hop through the configured proxy, by {@code URLConnection} (which knows how to talk to one). The
+     * address cannot be pinned here — the proxy resolves the name — but neither can a rebound name reach this
+     * machine: the request leaves from the proxy.
+     */
+    private static PinnedHttp.Response proxied(URI uri) throws IOException {
+        URLConnection con = uri.toURL().openConnection();
+        con.setConnectTimeout(TIMEOUT_MS);
+        con.setReadTimeout(TIMEOUT_MS);
+        con.setRequestProperty("User-Agent", "Editora"); // some CDNs (shields.io) reject a missing UA
+        if (con instanceof java.net.HttpURLConnection http) {
+            http.setInstanceFollowRedirects(false);
+            int code = http.getResponseCode();
+            if (code >= 300 && code < 400) {
+                String location = http.getHeaderField("Location");
+                http.disconnect();
+                return new PinnedHttp.Response(code, location, null);
+            }
+        }
+        try (InputStream in = con.getInputStream()) {
+            return new PinnedHttp.Response(200, null, readCapped(in));
+        }
+    }
+
+    /**
+     * The address to fetch an {@code http(s)} {@code uri} from: the first one its host resolves to, provided
+     * <em>every</em> address it resolves to is public — else null (also for another scheme, or no host).
+     */
+    static java.net.InetAddress publicAddress(URI uri) {
+        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+        String host = uri.getHost();
+        if (!(scheme.equals("http") || scheme.equals("https")) || host == null || host.isBlank()) {
+            return null;
+        }
+        try {
+            java.net.InetAddress[] all = java.net.InetAddress.getAllByName(host);
+            for (java.net.InetAddress a : all) {
+                if (isInternalAddress(a)) {
+                    return null;
+                }
+            }
+            return all.length == 0 ? null : all[0];
+        } catch (java.net.UnknownHostException e) {
+            return null;
+        }
+    }
+
+    private static volatile boolean remoteImages = true;
+
+    /**
+     * Whether a document's {@code http(s)} images are fetched ({@code Settings.markdownRemoteImages}; on by
+     * default). Off, a remote image is shown as its alt text and address and nothing leaves the machine when
+     * a document is previewed, printed or exported.
+     */
+    public static void setRemoteImages(boolean fetch) {
+        remoteImages = fetch;
+    }
+
+    public static boolean remoteImages() {
+        return remoteImages;
+    }
+
+    /** Whether {@code url} is an {@code http(s)} URL — the kind the setting above is about. Pure. */
+    public static boolean isRemote(String url) {
+        if (url == null) {
+            return false;
+        }
+        String u = url.stripLeading();
+        return u.regionMatches(true, 0, "http://", 0, 7) || u.regionMatches(true, 0, "https://", 0, 8);
+    }
+
     /** Pure: an address the preview must not fetch from — loopback, link-local (incl. {@code 169.254.169.254}
      *  cloud metadata), any-local, multicast, IPv4 site-local (RFC-1918), or IPv6 ULA ({@code fc00::/7}). */
     static boolean isInternalAddress(java.net.InetAddress a) {
@@ -525,6 +651,9 @@ public final class PreviewImageLoader {
             return true;
         }
         byte[] bytes = a.getAddress();
+        if (bytes.length == 4 && (bytes[0] & 0xFF) == 100 && (bytes[1] & 0xC0) == 64) {
+            return true; // 100.64.0.0/10: carrier-grade NAT (RFC 6598) — a provider's or a VPN's inside
+        }
         return bytes.length == 16 && (bytes[0] & 0xFE) == 0xFC; // IPv6 unique-local (fc00::/7)
     }
 
