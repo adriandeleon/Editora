@@ -40,6 +40,9 @@
 .text.link       { -fx-fill: #0969da; -fx-underline: true; }
 .text.bold       { -fx-fill: #24292f; -fx-font-weight: bold; }
 .text.italic     { -fx-fill: #24292f; -fx-font-style: italic; }
+.text.strikethrough { -fx-fill: #6e7781; -fx-strikethrough: true; }
+.text.quote      { -fx-fill: #6e7781; }
+.text.md-marker  { -fx-fill: #cf222e; }
 
 /* Log-viewer levels (source.log grammar). These use AtlantaFX semantic looked-up colors so they
    track the active theme with no per-editor-theme override (the brace-match / overlay convention).
@@ -207,6 +210,9 @@
 .md-light .md-code-block .text.link       { -fx-fill: #0969da; }
 .md-light .md-code-block .text.bold       { -fx-fill: #24292f; }
 .md-light .md-code-block .text.italic     { -fx-fill: #24292f; }
+.md-light .md-code-block .text.strikethrough { -fx-fill: #6e7781; }
+.md-light .md-code-block .text.quote      { -fx-fill: #6e7781; }
+.md-light .md-code-block .text.md-marker  { -fx-fill: #cf222e; }
 
 .md-dark .md-code-block .text.keyword    { -fx-fill: #ff7b72; }
 .md-dark .md-code-block .text.string     { -fx-fill: #a5d6ff; }
@@ -229,3 +235,6 @@
 .md-dark .md-code-block .text.link       { -fx-fill: #58a6ff; }
 .md-dark .md-code-block .text.bold       { -fx-fill: #c9d1d9; }
 .md-dark .md-code-block .text.italic     { -fx-fill: #c9d1d9; }
+.md-dark .md-code-block .text.strikethrough { -fx-fill: #8b949e; }
+.md-dark .md-code-block .text.quote      { -fx-fill: #8b949e; }
+.md-dark .md-code-block .text.md-marker  { -fx-fill: #ff7b72; }

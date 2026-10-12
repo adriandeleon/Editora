@@ -38,6 +38,9 @@
 .text.link       { -fx-fill: #88c0d0; -fx-underline: true; }
 .text.bold       { -fx-fill: #d8dee9; -fx-font-weight: bold; }
 .text.italic     { -fx-fill: #d8dee9; -fx-font-style: italic; }
+.text.strikethrough { -fx-fill: #7b88a1; -fx-strikethrough: true; }
+.text.quote      { -fx-fill: #7b88a1; }
+.text.md-marker  { -fx-fill: #81a1c1; }
 
 /* LSP semantic tokens — mirror this theme's lexical token colors (overlaid on TextMate). */
 .text.sem-parameter { -fx-fill: #d8dee9; -fx-font-style: italic; }
