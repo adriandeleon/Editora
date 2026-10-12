@@ -30,9 +30,28 @@ public final class MarkdownEditing {
     private final EditorBuffer buffer;
     private Runnable insertTableHandler;
     private java.util.function.BiConsumer<String, String> tableFileExporter;
+    private int tocMinLevel = 1;
+    private int tocMaxLevel = 6;
+    private java.util.function.Function<String, String> chords = id -> null;
 
     MarkdownEditing(EditorBuffer buffer) {
         this.buffer = buffer;
+    }
+
+    /**
+     * Pushes what the commands take from the settings and the keymap: the heading levels a table of contents
+     * lists, and the lookup from a command id to the chord the active keymap binds it to (null when unbound).
+     */
+    public void configure(int tocMinLevel, int tocMaxLevel, java.util.function.Function<String, String> chords) {
+        this.tocMinLevel = Math.max(1, Math.min(6, tocMinLevel));
+        this.tocMaxLevel = Math.max(this.tocMinLevel, Math.min(6, tocMaxLevel));
+        this.chords = chords == null ? id -> null : chords;
+    }
+
+    /** The chord bound to {@code commandId} in the active keymap, as it is displayed; null when unbound. */
+    String chord(String commandId) {
+        String chord = chords.apply(commandId);
+        return chord == null || chord.isBlank() ? null : chord;
     }
 
     private CodeArea view() {
@@ -286,6 +305,27 @@ public final class MarkdownEditing {
         return true;
     }
 
+    /**
+     * After a line was moved up or down: when it is an item of an ordered list, numbers that list in sequence
+     * again, as part of the move's own undo step. A no-op anywhere else.
+     */
+    public void renumberListAtCaret() {
+        if (!buffer.canFormatMarkdown()) {
+            return;
+        }
+        CodeArea a = view();
+        if (a.getSelection().getLength() > 0 || MarkdownLines.markerLength(a.getText(a.getCurrentParagraph())) == 0) {
+            return;
+        }
+        MarkdownEdit e = MarkdownLines.renumber(a.getText(), a.getCaretPosition());
+        if (e != null) {
+            Runnable joined = CompletionUndoManager.joinLast(a);
+            a.replaceText(e.from(), e.to(), e.replacement());
+            a.moveTo(e.selStart());
+            joined.run();
+        }
+    }
+
     // ---- tables ----
 
     /** Replaces the table at {@code bounds} with {@code nav}'s block and moves the caret; false for null. */
@@ -463,7 +503,7 @@ public final class MarkdownEditing {
         CodeArea a = view();
         String doc = a.getText();
         int caret = a.getCaretPosition();
-        MarkdownEdit e = MarkdownToc.update(doc, 1, 6);
+        MarkdownEdit e = MarkdownToc.update(doc, tocMinLevel, tocMaxLevel);
         if (e != null) {
             if (!e.replacement().equals(doc.substring(e.from(), e.to()))) {
                 buffer.preventUndoMerge();
@@ -475,7 +515,7 @@ public final class MarkdownEditing {
             a.requestFocus();
             return true;
         }
-        String block = MarkdownToc.insertion(doc, caret, 1, 6);
+        String block = MarkdownToc.insertion(doc, caret, tocMinLevel, tocMaxLevel);
         if (block.isEmpty()) {
             return false; // no headings to list
         }

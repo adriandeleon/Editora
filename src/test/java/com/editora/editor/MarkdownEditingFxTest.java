@@ -4,7 +4,7 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.input.KeyCode;
-import javafx.scene.layout.HBox;
+import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 
 import org.fxmisc.richtext.CodeArea;
@@ -256,7 +256,7 @@ class MarkdownEditingFxTest {
             Stage stage = EditorFx.show(buffer, 700, 420);
             CodeArea area = buffer.getArea();
             MarkdownFormatBar bar = new MarkdownFormatBar(buffer);
-            HBox node = (HBox) bar.node();
+            Pane node = (Pane) bar.node();
             ComboBox<?> style =
                     (ComboBox<?>) node.getChildren().get(node.getChildren().size() - 1);
             Button bold = (Button) node.getChildren().get(0);
@@ -294,6 +294,74 @@ class MarkdownEditingFxTest {
             area.selectRange(blank, blank + 1);
             assertFalse(MarkdownFormatBar.wanted(area), "a selected blank is nothing to format");
             stage.hide();
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void aTooltipNamesTheKeyBindingAndTheBarWrapsInANarrowPane() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("some «words» to select\n");
+            buffer.markdown().configure(1, 6, id -> id.equals("markdown.bold") ? "C-c C-s b" : null);
+            Stage stage = EditorFx.show(buffer, 260, 300);
+            javafx.scene.layout.AnchorPane root = EditorFx.field(buffer, "root");
+            MarkdownFormatBar bar = new MarkdownFormatBar(buffer);
+            Pane node = (Pane) bar.node();
+            bar.showFor(buffer.getArea(), root);
+            Button bold = (Button) node.getChildren().get(0);
+            Button italic = (Button) node.getChildren().get(1);
+            assertTrue(
+                    bold.getTooltip().getText().endsWith("C-c C-s b"),
+                    bold.getTooltip().getText());
+            assertFalse(italic.getTooltip().getText().contains("·"), "unbound: just the name");
+
+            // 260 px is narrower than the bar's single row: it used to run out of the pane.
+            double rowHeight = bold.prefHeight(-1);
+            assertTrue(node.getWidth() <= root.getWidth() + 0.5, node.getWidth() + " in " + root.getWidth());
+            assertTrue(node.getHeight() > rowHeight * 1.5, "a second row instead: " + node.getHeight());
+            assertTrue(node.getLayoutX() >= 0 && node.getLayoutX() + node.getWidth() <= root.getWidth() + 0.5);
+            stage.hide();
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void tooltipHintsAndButtonCommands() {
+        assertEquals("Bold (**)  ·  Ctrl+B", MarkdownFormatBar.hint("Bold (**)", "Ctrl+B"));
+        assertEquals("Link", MarkdownFormatBar.hint("Link", null));
+        assertEquals("markdown.taskList", MarkdownFormatBar.commandFor("tooltip.markdown.taskList", false));
+        assertEquals("typst.emph", MarkdownFormatBar.commandFor("tooltip.markdown.italic", true));
+        assertEquals("typst.raw", MarkdownFormatBar.commandFor("tooltip.markdown.code", true));
+        assertEquals("typst.insertTable", MarkdownFormatBar.commandFor("tooltip.markdown.insertTable", true));
+    }
+
+    @Test
+    void theTableOfContentsListsTheConfiguredLevels() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("# T\n\n‸\n\n## A\n### B\n#### C\n");
+            buffer.markdown().configure(2, 3, id -> null);
+            assertTrue(buffer.insertOrUpdateToc());
+            String text = buffer.getArea().getText();
+            assertTrue(text.contains("<!-- toc -->\n- [A](#a)\n  - [B](#b)\n<!-- /toc -->"), text);
+            buffer.markdown().configure(1, 6, id -> null);
+            assertTrue(buffer.insertOrUpdateToc(), "the same block, regenerated with the new levels");
+            assertTrue(buffer.getArea().getText().contains("- [T](#t)\n  - [A](#a)\n    - [B](#b)\n      - [C](#c)"));
+            buffer.dispose();
+        });
+    }
+
+    @Test
+    void anOrderedListIsRenumberedAfterAMoveAsPartOfTheMove() throws Exception {
+        EditorFx.onFx(() -> {
+            EditorBuffer buffer = markdown("1. a\n2. b‸\n3. c\n");
+            CodeArea area = buffer.getArea();
+            area.getUndoManager().forgetHistory();
+            area.replaceText(0, 9, "2. b\n1. a"); // what "move line up" leaves
+            area.moveTo(4);
+            buffer.markdown().renumberListAtCaret();
+            assertEquals("1. b‸\n2. a\n3. c\n", shown(buffer));
+            area.undo();
+            assertEquals("1. a\n2. b\n3. c\n", area.getText(), "one undo takes back the move and its renumbering");
             buffer.dispose();
         });
     }

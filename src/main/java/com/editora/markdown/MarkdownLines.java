@@ -1,6 +1,5 @@
 package com.editora.markdown;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -25,8 +24,6 @@ public final class MarkdownLines {
     /** A thematic break written with spaces ({@code - - -}, {@code * * *}): a rule, not a list item. */
     private static final Pattern SPACED_RULE = Pattern.compile("^ {0,3}([-*_])(?:[ \\t]*\\1){2,}[ \\t]*$");
 
-    private static final Pattern FENCE = Pattern.compile("^ {0,3}(`{3,}|~{3,})(.*)$");
-
     /**
      * {@link #markerLength} for the Enter key: 0 when {@code line} — which starts at {@code lineStart} in
      * {@code text} — only looks like a list item. Inside a fenced code block a leading {@code -} is YAML,
@@ -50,33 +47,38 @@ public final class MarkdownLines {
         return marker;
     }
 
-    /** Whether the line starting at {@code lineStart} lies inside a fenced code block that is still open. */
+    /**
+     * Whether the line starting at {@code lineStart} is something other than Markdown text — a line of a
+     * fenced or indented code block (fences nested in a list item or a quote included), of the front matter,
+     * of an HTML comment or a verbatim HTML block — as {@link MarkdownBlocks} classifies it. The editing
+     * helpers leave such a line alone: a {@code -} there is YAML or a diff, a pipe is program output.
+     *
+     * <p>Only the text up to the end of that line is scanned where that is enough: what a line is depends on
+     * the lines above it.
+     */
     static boolean insideFence(String text, int lineStart) {
-        String open = null; // the fence run that opened the current block, null outside one
-        int end = Math.min(lineStart, text.length());
-        int at = 0;
-        while (at < end) {
-            int eol = text.indexOf('\n', at);
-            if (eol < 0 || eol > end) {
-                eol = end;
-            }
-            Matcher m = FENCE.matcher(text.substring(at, eol));
-            if (m.matches()) {
-                String run = m.group(1);
-                if (open == null) {
-                    // A backtick fence's info string cannot itself contain a backtick (that is inline code).
-                    if (run.charAt(0) != '`' || m.group(2).indexOf('`') < 0) {
-                        open = run;
-                    }
-                } else if (run.charAt(0) == open.charAt(0)
-                        && run.length() >= open.length()
-                        && m.group(2).isBlank()) {
-                    open = null;
-                }
-            }
-            at = eol + 1;
+        return !kindAt(text, lineStart).equals(MarkdownBlocks.Kind.TEXT);
+    }
+
+    /** Whether the line starting at {@code lineStart} is a line of a fenced or indented code block. */
+    static boolean insideCode(String text, int lineStart) {
+        return switch (kindAt(text, lineStart)) {
+            case FENCE_OPEN, FENCE_BODY, FENCE_CLOSE, INDENTED_CODE -> true;
+            default -> false;
+        };
+    }
+
+    private static MarkdownBlocks.Kind kindAt(String text, int lineStart) {
+        int start = Math.max(0, Math.min(lineStart, text.length()));
+        int eol = text.indexOf('\n', start);
+        // Front matter is only front matter once it is closed, which may be below this line: then scan it all.
+        boolean wholeDocument = eol < 0 || text.startsWith("---") || text.startsWith("+++");
+        MarkdownBlocks blocks = MarkdownBlocks.scan(wholeDocument ? text : text.substring(0, eol));
+        int line = 0;
+        for (int i = text.indexOf('\n'); i >= 0 && i < start; i = text.indexOf('\n', i + 1)) {
+            line++;
         }
-        return open != null;
+        return blocks.kind(Math.min(line, blocks.lineCount() - 1));
     }
 
     /**
@@ -347,6 +349,69 @@ public final class MarkdownLines {
             tail = renumberTail(tail, l, l.isOrdered() && (outdent || anchor.isOrdered()) ? oldLevelNext : -1);
         }
         return new MarkdownEdit(ls, end, moved.text() + tail, ls, ls);
+    }
+
+    /**
+     * Numbers the ordered list around {@code offset} in sequence again, from the smallest number it holds —
+     * after a line was moved up or down inside it. Returns {@code null} when the offset's line is not an
+     * ordered item, the list is numbered lazily (every item the same number) or is already in order; the
+     * edit's caret is {@code offset} on its text.
+     */
+    public static MarkdownEdit renumber(String text, int offset) {
+        int ls = lineStart(text, offset);
+        int le = lineEnd(text, offset);
+        String line = text.substring(ls, le);
+        MarkdownLine l = MarkdownLine.parse(line);
+        if (!l.isOrdered() || insideFence(text, ls)) {
+            return null;
+        }
+        // Up to the first item of the run: siblings at this level, with their deeper lines in between.
+        int first = ls;
+        int at = ls;
+        while (at > 0) {
+            int prevStart = lineStart(text, at - 1);
+            String prev = text.substring(prevStart, at - 1);
+            MarkdownLine p = MarkdownLine.parse(prev);
+            int w = p.indent().length();
+            if (prev.isBlank() || w < l.indent().length() || !sameQuote(p, l)) {
+                break;
+            }
+            at = prevStart;
+            if (w == l.indent().length()) {
+                if (!p.isOrdered() || p.markerKind() != l.markerKind()) {
+                    break;
+                }
+                first = prevStart;
+            }
+        }
+        int firstEnd = lineEnd(text, first);
+        MarkdownLine head = MarkdownLine.parse(text.substring(first, firstEnd));
+        int end = runEnd(text, firstEnd, head);
+        long min = head.number();
+        boolean lazy = true;
+        for (String s : text.substring(firstEnd, end).split("\n", -1)) {
+            MarkdownLine n = MarkdownLine.parse(s);
+            if (n.isOrdered() && n.indent().length() == head.indent().length()) {
+                lazy &= n.number() == head.number();
+                min = Math.min(min, n.number());
+            }
+        }
+        String before = text.substring(first, end);
+        String after = head.withMarker(head.markerNumbered(min)).text()
+                + renumberTail(text.substring(firstEnd, end), head, min + 1);
+        if (lazy || after.equals(before)) {
+            return null;
+        }
+        // The caret's line may have changed width in front of it and in its own marker.
+        int lineIndex =
+                (int) text.substring(first, ls).chars().filter(c -> c == '\n').count();
+        String[] lines = after.split("\n", -1);
+        int newStart = first;
+        for (int i = 0; i < lineIndex; i++) {
+            newStart += lines[i].length() + 1;
+        }
+        int caret = newStart + LineEdits.mapColumn(offset - ls, line, lines[lineIndex]);
+        return new MarkdownEdit(first, end, after, caret, caret);
     }
 
     /** The number of the last ordered item directly above {@code ls} at exactly {@code width} columns; 0 if none. */

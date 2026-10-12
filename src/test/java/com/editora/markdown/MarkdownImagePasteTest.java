@@ -182,4 +182,18 @@ class MarkdownImagePasteTest {
         assertFalse(MarkdownImagePaste.isImageFileName("notes.md"));
         assertFalse(MarkdownImagePaste.isImageFileName("noext"));
     }
+
+    @Test
+    void theAssetsFolderComesFromTheSettingButStaysBesideTheDocument() {
+        Path base = Path.of("/docs/guide");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "assets"));
+        assertEquals(base.resolve("img/shots"), MarkdownImagePaste.assetsDir(base, " img/shots "));
+        assertEquals(base, MarkdownImagePaste.assetsDir(base, "."), "the document's own folder");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, ""), "blank: the default");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, null));
+        assertEquals(
+                base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "../elsewhere"), "never out of the folder");
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "/tmp/x"));
+        assertEquals(base.resolve("assets"), MarkdownImagePaste.assetsDir(base, "C:\\pics"));
+    }
 }

@@ -141,13 +141,13 @@ public final class MarkdownToc {
         java.util.regex.Matcher begin = BEGIN_MARK.matcher(doc);
         while (begin.find()) {
             int lineStart = doc.lastIndexOf('\n', begin.start() - 1) + 1;
-            if (MarkdownLines.insideFence(doc, lineStart)) {
+            if (MarkdownLines.insideCode(doc, lineStart)) {
                 continue;
             }
             int end = staleEnd(doc, begin.end());
             java.util.regex.Matcher close = END_MARK.matcher(doc);
             if (close.find(begin.end())
-                    && !MarkdownLines.insideFence(doc, doc.lastIndexOf('\n', close.start() - 1) + 1)) {
+                    && !MarkdownLines.insideCode(doc, doc.lastIndexOf('\n', close.start() - 1) + 1)) {
                 end = close.end();
             }
             int line = (int) doc.substring(0, begin.start())

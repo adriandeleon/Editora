@@ -819,6 +819,11 @@ final class EditorSettingsCoordinator {
                 EditorThemes.editorForegroundFor(s.getEditorTheme()));
         spell.apply(buffer, s); // dictionary (per-file choice, else the default), switches, file types
         buffer.setFormatBarEnabled(s.isMarkdownFormatBar());
+        buffer.markdown()
+                .configure(
+                        s.getMarkdownTocMinLevel(),
+                        s.getMarkdownTocMaxLevel(),
+                        id -> host.keymap() == null ? null : host.keymap().displayChord(id));
         buffer.setAiActionsEnabled(host.aiCoordinator().isActionsAvailable()); // floating selection Explain/Rewrite bar
         buffer.setCsvRainbowEnabled(s.isCsvRainbow()); // per-column CSV coloring (no-op for non-CSV buffers)
         buffer.setBracketColorsEnabled(s.isBracketColors()); // bracket-pair colorization (rides the highlight)

@@ -2452,14 +2452,14 @@ final class WindowCommandRegistrar {
                 .register(Command.of(
                         "edit.moveLineUp",
                         () -> host.editing()
-                                .lineOp(
+                                .moveLines(
                                         com.editora.editops.LineOps::moveLineUp,
                                         com.editora.editops.LineOps::moveLinesUp)));
         host.registry()
                 .register(Command.of(
                         "edit.moveLineDown",
                         () -> host.editing()
-                                .lineOp(
+                                .moveLines(
                                         com.editora.editops.LineOps::moveLineDown,
                                         com.editora.editops.LineOps::moveLinesDown)));
         // Emacs fill commands: re-wrap paragraphs to the fill column (M-q / fill-region / set-fill-column).
