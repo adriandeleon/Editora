@@ -56,31 +56,44 @@ public final class WordWrap {
      * The longest run of non-whitespace a wrapped buffer is allowed to receive in one piece. Wrapping breaks
      * at whitespace, and a token with none in it is laid out pathologically: measured in a real window, a
      * plain-text file whose one line is 10,000 unbroken characters took 14 s to open wrapped and one of 20,000
-     * took 79 s, against half a second unwrapped (lines of words stay fast to 60,000 characters). Prose has
-     * no such token; a pasted {@code data:} image or a minified blob does.
+     * took 79 s, against half a second unwrapped. Prose has no such token; a pasted {@code data:} image or a
+     * minified blob does.
      */
     public static final int MAX_UNBROKEN_RUN = 2_000;
 
     /**
-     * Text is going into the buffer (a load, a paste, a reload). A piece holding an unbroken run of
-     * {@link #MAX_UNBROKEN_RUN} characters holds wrapping off for this buffer before the next layout — the
-     * same hold a file with a giant line gets — and <em>Toggle Word Wrap</em> remains the way to ask for it
-     * anyway. Costs nothing for ordinary typing: only a piece that long is scanned.
+     * The longest line a wrapped buffer is allowed to receive in one piece. A line of ordinary words costs
+     * far less than an unbroken one — 20,000 characters added a few hundred milliseconds to an open, 40,000
+     * about two seconds — but it grows with the line and has been seen to stall for much longer on a busy
+     * machine. A paragraph of prose on one line stays well under this.
+     */
+    public static final int MAX_WRAPPED_LINE = 10_000;
+
+    /**
+     * Text is going into the buffer (a load, a paste, a reload). A piece with a line or an unbroken run past
+     * those limits holds wrapping off for this buffer before the next layout — the same hold a file with a
+     * giant line gets — and <em>Toggle Word Wrap</em> remains the way to ask for it anyway. Costs nothing
+     * for ordinary typing: only a piece long enough to matter is scanned.
      */
     void inserted(String text) {
-        if (!suppressed && text.length() >= MAX_UNBROKEN_RUN && hasLongUnbrokenRun(text)) {
+        if (!suppressed && text.length() >= MAX_UNBROKEN_RUN && tooCostlyToWrap(text)) {
             suppressed = true;
             apply();
         }
     }
 
-    /** Whether {@code text} contains {@link #MAX_UNBROKEN_RUN} consecutive non-whitespace characters. Pure. */
-    public static boolean hasLongUnbrokenRun(CharSequence text) {
+    /**
+     * Whether {@code text} has a line of {@link #MAX_WRAPPED_LINE} characters or
+     * {@link #MAX_UNBROKEN_RUN} consecutive non-whitespace characters. Pure.
+     */
+    public static boolean tooCostlyToWrap(CharSequence text) {
         int run = 0;
+        int line = 0;
         for (int i = 0; i < text.length(); i++) {
-            if (Character.isWhitespace(text.charAt(i))) {
-                run = 0;
-            } else if (++run >= MAX_UNBROKEN_RUN) {
+            char c = text.charAt(i);
+            line = c == '\n' ? 0 : line + 1;
+            run = Character.isWhitespace(c) ? 0 : run + 1;
+            if (run >= MAX_UNBROKEN_RUN || line >= MAX_WRAPPED_LINE) {
                 return true;
             }
         }

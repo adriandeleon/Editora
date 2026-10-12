@@ -66,7 +66,7 @@ class WordWrapTest {
         WordWrap wrap = new WordWrap(applied::add);
         wrap.setPreference(true, true);
         wrap.inserted("x");
-        wrap.inserted("word ".repeat(20_000));
+        wrap.inserted(("word ".repeat(1_500) + "\n").repeat(40));
         wrap.inserted("x".repeat(WordWrap.MAX_UNBROKEN_RUN - 1) + " " + "y".repeat(WordWrap.MAX_UNBROKEN_RUN - 1));
         assertEquals(List.of(true), applied, "prose, however long, wraps");
         assertFalse(wrap.isSuppressed());
@@ -79,11 +79,13 @@ class WordWrapTest {
     }
 
     @Test
-    void theUnbrokenRunScan() {
-        assertFalse(WordWrap.hasLongUnbrokenRun(""));
-        assertFalse(WordWrap.hasLongUnbrokenRun("a".repeat(WordWrap.MAX_UNBROKEN_RUN - 1)));
-        assertTrue(WordWrap.hasLongUnbrokenRun("a".repeat(WordWrap.MAX_UNBROKEN_RUN)));
-        assertTrue(WordWrap.hasLongUnbrokenRun("lead\n" + "a".repeat(WordWrap.MAX_UNBROKEN_RUN) + "\ntail"));
-        assertFalse(WordWrap.hasLongUnbrokenRun(("a".repeat(100) + "\t").repeat(1000)));
+    void whatIsTooCostlyToWrap() {
+        assertFalse(WordWrap.tooCostlyToWrap(""));
+        assertFalse(WordWrap.tooCostlyToWrap("a".repeat(WordWrap.MAX_UNBROKEN_RUN - 1)));
+        assertTrue(WordWrap.tooCostlyToWrap("a".repeat(WordWrap.MAX_UNBROKEN_RUN)));
+        assertTrue(WordWrap.tooCostlyToWrap("lead\n" + "a".repeat(WordWrap.MAX_UNBROKEN_RUN) + "\ntail"));
+        assertFalse(WordWrap.tooCostlyToWrap(("a".repeat(100) + "\t").repeat(90)), "many short tokens");
+        assertTrue(WordWrap.tooCostlyToWrap("word ".repeat(WordWrap.MAX_WRAPPED_LINE / 5)), "one very long line");
+        assertFalse(WordWrap.tooCostlyToWrap(("word ".repeat(1_000) + "\n").repeat(50)), "many long paragraphs");
     }
 }
