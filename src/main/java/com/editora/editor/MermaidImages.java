@@ -326,7 +326,9 @@ public final class MermaidImages {
             ImageView view = new ImageView(c.loaded().image());
             view.setPreserveRatio(true);
             view.setSmooth(true);
-            view.setFitWidth(Math.max(1, sizer.applyAsDouble(c.loaded().logicalWidth())));
+            PreviewImageLoader.zoom(view, PreviewImageLoader.zoomOf(host)); // (1 outside a zoomed Markdown preview)
+            PreviewImageLoader.fit(
+                    view, Math.max(1, sizer.applyAsDouble(c.loaded().logicalWidth())));
             host.getChildren().setAll(view);
         } else {
             host.getChildren().setAll(errorNode(c.error()));

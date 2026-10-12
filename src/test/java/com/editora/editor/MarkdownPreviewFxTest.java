@@ -853,6 +853,75 @@ class MarkdownPreviewFxTest {
         }
     }
 
+    // --- A17: zoom reaches formulas and images; zoom and divider are kept ----------------------------
+
+    @Test
+    void zoomSizesFormulasAndTheSplitDividerStaysWhereItWasPut() throws Exception {
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        List<PreviewLayout> stored = new ArrayList<>();
+        EditorFx.onFx(() -> {
+            MathImages.configure(true, false);
+            ref[0] = markdown("Euler $e^{i\\pi} + 1 = 0$ here.\n");
+            // What the window does on open: the layout remembered for the file, and a listener for changes.
+            ref[0].restorePreviewLayout(new PreviewLayout(1.0, 0.3), () -> stored.add(ref[0].getPreviewLayout()));
+            stage[0] = EditorFx.show(ref[0], 900, 300);
+        });
+        EditorBuffer buffer = ref[0];
+        try {
+            open(buffer, MarkdownViewMode.SPLIT);
+            double[] base = new double[1];
+            EditorFx.onFx(() -> {
+                javafx.scene.control.SplitPane split = (javafx.scene.control.SplitPane)
+                        pane(buffer).getParent().getParent().getParent();
+                assertEquals(0.3, split.getDividerPositions()[0], 0.02, "the remembered divider, not the middle");
+                ImageView formula =
+                        collect(pane(buffer).getContent(), ImageView.class).get(0);
+                base[0] = formula.getFitWidth();
+                buffer.zoomPreviewIn();
+                buffer.zoomPreviewIn();
+                assertEquals(base[0] * 1.21, formula.getFitWidth(), 0.5, "a formula grows with the text");
+                assertEquals(
+                        1.21, stored.get(stored.size() - 1).zoom(), 1e-6, "and the zoom is reported, to be stored");
+            });
+            // A block built while zoomed is zoomed too.
+            rerender(buffer, () -> buffer.getArea().appendText("\nMore $e^{i\\pi} + 1 = 0$ later.\n"));
+            EditorFx.onFx(() -> {
+                List<ImageView> formulas = collect(pane(buffer).getContent(), ImageView.class);
+                assertEquals(2, formulas.size());
+                assertEquals(base[0] * 1.21, formulas.get(1).getFitWidth(), 0.5);
+            });
+            // Dragging the divider is remembered, and survives a trip through Preview.
+            EditorFx.onFx(() -> {
+                javafx.scene.control.SplitPane split = (javafx.scene.control.SplitPane)
+                        pane(buffer).getParent().getParent().getParent();
+                split.setDividerPositions(0.6);
+                assertEquals(0.3, buffer.getPreviewLayout().divider(), 1e-6, "a programmatic move is not the user's");
+                EditorFx.pressed(split, true);
+                split.setDividerPositions(0.7);
+                EditorFx.pressed(split, false);
+                assertEquals(0.7, buffer.getPreviewLayout().divider(), 0.01);
+                assertEquals(0.7, stored.get(stored.size() - 1).divider(), 0.01);
+                buffer.setMarkdownViewMode(MarkdownViewMode.PREVIEW);
+                buffer.setMarkdownViewMode(MarkdownViewMode.SPLIT);
+            });
+            layout(buffer);
+            EditorFx.onFx(() -> {
+                javafx.scene.control.SplitPane split = (javafx.scene.control.SplitPane)
+                        pane(buffer).getParent().getParent().getParent();
+                assertEquals(0.7, split.getDividerPositions()[0], 0.02);
+                buffer.resetPreviewZoom();
+                assertEquals(1.0, buffer.getPreviewLayout().zoom(), 1e-9);
+            });
+        } finally {
+            EditorFx.onFx(() -> {
+                MathImages.configure(false, false);
+                stage[0].close();
+                buffer.dispose();
+            });
+        }
+    }
+
     // --- A15: a long line does not stop the live preview --------------------------------------------
 
     @Test

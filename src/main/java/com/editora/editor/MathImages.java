@@ -85,7 +85,7 @@ public final class MathImages {
             ImageView v = new ImageView(img);
             v.getStyleClass().add(display ? "md-math-block" : "md-math-inline");
             v.setPreserveRatio(true);
-            v.setFitWidth(img.getWidth() / RENDER_SCALE);
+            PreviewImageLoader.fit(v, img.getWidth() / RENDER_SCALE);
             return v;
         } catch (RuntimeException ex) {
             // Invalid LaTeX (ParseException, etc.): show the raw source so the error is visible, not lost.

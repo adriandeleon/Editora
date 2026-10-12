@@ -109,6 +109,16 @@ final class MarkdownPreview {
         return find;
     }
 
+    private double zoom = 1.0;
+
+    /** Sizes the document's images, formulas and diagrams for {@code zoom} (1 = 100%); text follows the font. */
+    void setZoom(double zoom) {
+        if (Math.abs(zoom - this.zoom) > 1e-9) {
+            this.zoom = zoom;
+            PreviewImageLoader.zoomAll(column, zoom);
+        }
+    }
+
     /** The column of rendered blocks. */
     Parent column() {
         return column;
@@ -428,6 +438,7 @@ final class MarkdownPreview {
                 built++;
                 if (node != null) {
                     fresh.add(node);
+                    zoomed(node);
                 }
             }
             now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug()));
@@ -514,7 +525,7 @@ final class MarkdownPreview {
         List<Node> nodes = new ArrayList<>();
         for (int i = from; i < to; i++) {
             Unit u = units.get(i);
-            Node node = MarkdownRenderer.renderGroup(u.first(), u.last(), ctx);
+            Node node = zoomed(MarkdownRenderer.renderGroup(u.first(), u.last(), ctx));
             now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug()));
             if (node != null) {
                 nodes.add(node);
@@ -538,6 +549,14 @@ final class MarkdownPreview {
         }
         find.reapply();
         shows.set(shows.get() + 1);
+    }
+
+    /** A block just built, with its images sized for the current zoom. */
+    private Node zoomed(Node node) {
+        if (node != null && zoom != 1.0) {
+            PreviewImageLoader.zoomAll(node, zoom);
+        }
+        return node;
     }
 
     /** A click on a rendered link: a {@code #slug} of this document scrolls to it, anything else is opened. */

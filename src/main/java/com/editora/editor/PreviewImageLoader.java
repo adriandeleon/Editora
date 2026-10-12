@@ -151,6 +151,48 @@ public final class PreviewImageLoader {
         });
     }
 
+    private static final String BASE_WIDTH = "editora.md.baseWidth";
+    private static final String ZOOM = "editora.md.zoom";
+
+    /**
+     * Shows {@code view} {@code baseWidth} px wide at 100% zoom — and at the preview's zoom when it has one
+     * ({@link #zoom}). An image, a formula or a diagram is not text: the preview's font size does not reach it,
+     * so at 180% the prose grew and everything else stayed small.
+     */
+    static void fit(ImageView view, double baseWidth) {
+        view.getProperties().put(BASE_WIDTH, baseWidth);
+        Object zoom = view.getProperties().get(ZOOM);
+        view.setFitWidth(Math.max(1, baseWidth * (zoom instanceof Double z ? z : 1.0)));
+    }
+
+    /** Sets the zoom {@code view} is shown at; applied at once when its size is known, else when it loads. */
+    static void zoom(ImageView view, double zoom) {
+        view.getProperties().put(ZOOM, zoom);
+        if (view.getProperties().get(BASE_WIDTH) instanceof Double base) {
+            view.setFitWidth(Math.max(1, base * zoom));
+        }
+    }
+
+    /** Applies {@code zoom} to every image under {@code root} that is sized through {@link #fit}; a diagram
+     *  host still waiting for its render is told too, and passes it on ({@link #zoomOf}). */
+    static void zoomAll(javafx.scene.Node root, double zoom) {
+        if (root instanceof ImageView view) {
+            zoom(view, zoom);
+        } else if (root instanceof javafx.scene.Parent parent) {
+            if (parent.getStyleClass().contains("md-mermaid")) {
+                parent.getProperties().put(ZOOM, zoom);
+            }
+            for (javafx.scene.Node child : parent.getChildrenUnmodifiable()) {
+                zoomAll(child, zoom);
+            }
+        }
+    }
+
+    /** The zoom recorded on {@code host} by {@link #zoomAll}, or 1. */
+    static double zoomOf(javafx.scene.Node host) {
+        return host.getProperties().get(ZOOM) instanceof Double z ? z : 1.0;
+    }
+
     /** Size and modification time of each cached {@code file:} image when it was read (see {@link #fileStamp}). */
     private static final Map<String, String> STAMPS = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -252,7 +294,7 @@ public final class PreviewImageLoader {
 
     private static void apply(ImageView view, Loaded loaded, double maxWidth, boolean exactWidth) {
         view.setImage(loaded.image());
-        view.setFitWidth(exactWidth ? maxWidth : Math.min(loaded.logicalWidth(), maxWidth));
+        fit(view, exactWidth ? maxWidth : Math.min(loaded.logicalWidth(), maxWidth));
     }
 
     private static Loaded load(String url) {

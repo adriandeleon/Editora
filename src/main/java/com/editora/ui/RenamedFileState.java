@@ -108,6 +108,7 @@ final class RenamedFileState {
         rekey(ws.getManualFoldRegions(), oldKey, newKey, sep);
         rekey(ws.getMarkdownViewModes(), oldKey, newKey, sep);
         rekey(ws.getMarkwhenViews(), oldKey, newKey, sep);
+        rekey(ws.getMarkdownPreviewLayouts(), oldKey, newKey, sep);
         rekey(ws.getSpellLanguages(), oldKey, newKey, sep);
         rekey(ws.getProgramArgs(), oldKey, newKey, sep);
         rekey(ws.getReadOnlyFiles(), oldKey, newKey, sep);
@@ -126,6 +127,7 @@ final class RenamedFileState {
         String newKey = target.toString();
         copy(ws.getMarkdownViewModes(), oldKey, newKey);
         copy(ws.getMarkwhenViews(), oldKey, newKey);
+        copy(ws.getMarkdownPreviewLayouts(), oldKey, newKey);
         copy(ws.getSpellLanguages(), oldKey, newKey);
         copy(ws.getProgramArgs(), oldKey, newKey);
     }

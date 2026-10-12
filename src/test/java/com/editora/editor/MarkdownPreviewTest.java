@@ -163,4 +163,36 @@ class MarkdownPreviewTest {
         assertEquals(900, SideScroll.contentWidth(900, 800));
         assertEquals(800, SideScroll.contentWidth(-5, 800));
     }
+
+    @Test
+    void theThemeToggleGoesThroughThreeStatesAndCanLetGoAgain() {
+        // Light app: follow → dark (a visible change) → light, pinned → follow.
+        assertEquals("dark", PreviewButtons.nextTheme("", false));
+        assertEquals("light", PreviewButtons.nextTheme("dark", false));
+        assertEquals("", PreviewButtons.nextTheme("light", false));
+        // Dark app: follow → light → dark, pinned → follow.
+        assertEquals("light", PreviewButtons.nextTheme("", true));
+        assertEquals("dark", PreviewButtons.nextTheme("light", true));
+        assertEquals("", PreviewButtons.nextTheme("dark", true));
+        assertEquals("dark", PreviewButtons.nextTheme(null, false));
+        assertEquals("markdown.previewTheme.toFollow", PreviewButtons.themeActionKey(""));
+        assertEquals("markdown.previewTheme.toLight", PreviewButtons.themeActionKey("light"));
+        assertEquals("markdown.previewTheme.toDark", PreviewButtons.themeActionKey("dark"));
+    }
+
+    @Test
+    void aPreviewLayoutIsStoredAsTextAndReadBackWithinBounds() {
+        PreviewLayout layout = new PreviewLayout(1.21, 0.35);
+        assertEquals("1.21;0.35", layout.text());
+        assertEquals(layout, PreviewLayout.parse("1.21;0.35"));
+        assertEquals(PreviewLayout.DEFAULT, PreviewLayout.parse(null));
+        assertEquals(PreviewLayout.DEFAULT, PreviewLayout.parse("nonsense"));
+        assertEquals(PreviewLayout.DEFAULT, PreviewLayout.parse("1.2;x"));
+        assertEquals(new PreviewLayout(3.0, 0.9), PreviewLayout.parse("99;7"), "clamped to what the UI allows");
+        assertEquals(new PreviewLayout(0.5, 0.1), PreviewLayout.parse("0;-1"));
+        assertEquals(PreviewLayout.DEFAULT, new PreviewLayout(Double.NaN, Double.NaN));
+        assertTrue(PreviewLayout.DEFAULT.isDefault());
+        assertTrue(new PreviewLayout(1.001, 0.5).isDefault(), "a reset is the default again");
+        org.junit.jupiter.api.Assertions.assertFalse(layout.isDefault());
+    }
 }
