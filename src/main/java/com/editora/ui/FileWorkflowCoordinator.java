@@ -1028,7 +1028,7 @@ final class FileWorkflowCoordinator {
         }
         buffer.setLargeFile(load.large() || load.longLine());
         buffer.setHeavyFile(load.heavy());
-        buffer.setWrapSuppressed(load.longLine());
+        buffer.wrap().setSuppressed(load.longLine());
         if (load.longLine()) {
             // Wrapping a giant RichTextFX paragraph multiplies layout work. The user can explicitly turn it
             // back on after loading (Toggle Word Wrap on this buffer), but the first rendered frame must use the

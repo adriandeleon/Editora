@@ -51,10 +51,16 @@ final class LspCoordinatorFixture implements AutoCloseable {
         final List<String> statuses = new ArrayList<>();
         final List<String> errors = new ArrayList<>();
         final List<Prompt> prompts = new ArrayList<>();
+        final List<String> urls = new ArrayList<>();
         OverlayHost overlay;
         Window window;
         int saveRequests;
         int settingsSyncs;
+
+        @Override
+        public void openExternalUrl(String url) {
+            urls.add(url);
+        }
 
         @Override
         public Settings settings() {

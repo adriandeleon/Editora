@@ -1738,6 +1738,17 @@ final class WindowCommandRegistrar {
                                         () -> host.config().getSettings().isMathSupport(),
                                         v -> host.config().getSettings().setMathSupport(v),
                                         host::applyMathSupport)));
+        host.registry()
+                .register(Command.of(
+                        "view.toggleMarkdownRemoteImages", host.editorSettings()::toggleMarkdownRemoteImages));
+        host.registry()
+                .register(Command.of("markdown.setAssetsFolder", host.editorSettings()::promptMarkdownAssetsFolder));
+        host.registry()
+                .register(Command.of(
+                        "markdown.setTocMinLevel", () -> host.editorSettings().promptMarkdownTocLevel(false)));
+        host.registry()
+                .register(Command.of(
+                        "markdown.setTocMaxLevel", () -> host.editorSettings().promptMarkdownTocLevel(true)));
         host.registry().register(Command.of("nav.aceJump", host::startAceJump));
         host.registry().register(Command.of("nav.aceJumpLine", host::startAceJumpLine));
         // Run a Java 25 compact source file (also surfaced as the toolbar Run button when one is active).

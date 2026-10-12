@@ -100,6 +100,7 @@ final class MenuBarModel {
                                 "preview.print",
                                 "preview.exportPdf",
                                 "preview.exportDocx",
+                                "preview.exportOdt",
                                 "preview.exportHtml",
                                 SEPARATOR,
                                 "file.clearRecent",

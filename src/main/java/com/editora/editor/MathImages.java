@@ -14,7 +14,7 @@ import org.scilab.forge.jlatexmath.TeXConstants;
 import org.scilab.forge.jlatexmath.TeXFormula;
 
 /**
- * Renders LaTeX math (from {@link MathSpans}) to JavaFX nodes via JLaTeXMath. JLaTeXMath is pure-Java
+ * Renders LaTeX math (the {@code MarkdownMath} nodes of the parse) to JavaFX nodes via JLaTeXMath. JLaTeXMath is pure-Java
  * and fast, so rendering is synchronous on the FX thread; results are cached in a bounded LRU map keyed
  * by {@code (theme, style, size, latex)} so the debounced whole-document re-render never re-rasterizes an
  * unchanged formula. Rasterization uses headless Java2D (a {@link BufferedImage}) → a JavaFX

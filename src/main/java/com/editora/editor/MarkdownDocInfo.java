@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import com.editora.markdown.MarkdownMath;
 import com.editora.markdown.MarkdownToc;
 import org.commonmark.ext.front.matter.YamlFrontMatterBlock;
 import org.commonmark.ext.front.matter.YamlFrontMatterNode;
@@ -104,6 +105,46 @@ public final class MarkdownDocInfo {
         return anchors;
     }
 
+    /**
+     * The LaTeX of a block that is a formula on its own — a closed {@code $$} block, or a paragraph that is
+     * nothing but one display {@code $$…$$} — or null. Every renderer asks this the same way, so the preview
+     * and all exports agree on what is a centred formula and what is a formula in a line of text.
+     */
+    public static String blockFormula(Node block) {
+        if (block instanceof MarkdownMath.Block math) {
+            return math.isClosed() ? math.getLatex() : null;
+        }
+        if (block instanceof org.commonmark.node.Paragraph p
+                && p.getFirstChild() instanceof MarkdownMath.Inline m
+                && m.getNext() == null
+                && m.isDisplay()) {
+            return m.getLatex();
+        }
+        return null;
+    }
+
+    private static final java.util.regex.Pattern HTML_COMMENT =
+            java.util.regex.Pattern.compile("<!--.*?(?:-->|\\z)", java.util.regex.Pattern.DOTALL);
+
+    /**
+     * A raw-HTML block as the exports that show HTML as its source write it: without its comments, which are
+     * invisible everywhere, and without the blank lines they leave. {@code <!-- note --> text} is "text"; a
+     * block that is nothing but comments is "". Pure.
+     */
+    public static String htmlSourceShown(String literal) {
+        if (literal == null) {
+            return "";
+        }
+        String kept = HTML_COMMENT.matcher(literal).replaceAll("");
+        StringBuilder out = new StringBuilder();
+        for (String line : kept.split("\n", -1)) {
+            if (!line.isBlank()) {
+                out.append(out.isEmpty() ? "" : "\n").append(line.stripTrailing());
+            }
+        }
+        return out.toString().stripLeading();
+    }
+
     /** The fragment of an in-document link ({@code #Set-Up} → {@code set-up}), or null when it is not one. */
     public static String fragment(String href) {
         if (href == null || !href.startsWith("#") || href.length() < 2) {
@@ -127,6 +168,8 @@ public final class MarkdownDocInfo {
                 sb.append(code.getLiteral());
             } else if (c instanceof SoftLineBreak || c instanceof HardLineBreak) {
                 sb.append(' ');
+            } else if (MarkdownMath.source(c) != null) {
+                sb.append(MarkdownMath.source(c));
             } else {
                 collect(c, sb);
             }

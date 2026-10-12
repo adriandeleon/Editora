@@ -263,9 +263,23 @@ one thing that can change a region's size, and it sets that flag until the child
 **Why/fix:** CommonMark has consumed backslash escapes and turned `*`/`_` into emphasis by the time a
 renderer sees text nodes, so `$…$` cannot be recovered from them. `markdown/MarkdownMath` recognises
 math in the inline/block parser, on the raw line, and yields `MarkdownMath.Inline` / `Block` nodes
-carrying the LaTeX verbatim. `MarkdownRenderer.parseForRender` uses it (preview, print, popups). The
-exporters that still call `parseToDocument` and scan text with `MathSpans` have the old defect until
-they adopt the same extension.
+carrying the LaTeX verbatim. `MarkdownRenderer.parseForRender` uses it, and so does everything that draws
+a document: the preview, print, the popups, and every export (the HTML page, the clipboard fragment, DOCX,
+ODT, PDF). A new renderer takes its math from those nodes too — never from a scan of its own, and never
+from the raw source: the HTML export once did that and turned `$HOME:$PATH` inside a code span into an
+image tag. `MarkdownDocInfo.blockFormula` is the one rule for "this block is a centred formula";
+`ExportMathAgreementTest` holds the five outputs to the parse.
+
+## Word wrap on by default meets text that cannot wrap
+
+**Symptom:** opening a Markdown or plain-text file freezes the window for seconds to a minute.
+
+**Why/fix:** prose wraps by default (`Settings.wordWrapProse`), and RichTextFX lays a wrapped paragraph
+out pathologically when it has nowhere to break: one unbroken 10,000-character token took 14 s to open
+and 20,000 took 79 s (a pasted `data:` image is such a token). `editor/WordWrap` holds wrapping off for
+a buffer that receives a piece of text with an unbroken run of 2,000 characters or a line of 10,000,
+before the next layout; *Toggle Word Wrap* opts back in. Keep that hold in front of any new way text
+gets into a wrapped buffer.
 
 ## A buffer in Preview mode is not "read-only" — it refuses *commands*
 

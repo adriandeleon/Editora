@@ -18,8 +18,7 @@ import javax.imageio.ImageIO;
 
 import com.editora.editor.MarkdownDocInfo;
 import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
-import com.editora.editor.MathSpans;
+import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.gfm.tables.TableBlock;
 import org.commonmark.ext.gfm.tables.TableCell;
@@ -75,7 +74,7 @@ public final class OdtWriter {
     public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
         List<Embedded> images = new ArrayList<>();
         String content = contentXml(markdown, baseDir, mmdc, images);
-        String title = MarkdownDocInfo.title(MarkdownRenderer.parseToDocument(markdown), DocxWriter.fileTitle(out));
+        String title = MarkdownDocInfo.title(MarkdownRenderer.parseForRender(markdown), DocxWriter.fileTitle(out));
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(out))) {
             // The ODF spec requires `mimetype` to be the first entry and STORED (uncompressed).
             stored(zip, "mimetype", MIMETYPE.getBytes(StandardCharsets.US_ASCII));
@@ -92,7 +91,7 @@ public final class OdtWriter {
     // ---- content.xml (pure, unit-tested) ----
 
     static String contentXml(String markdown, Path baseDir, List<String> mmdc, List<Embedded> imageList) {
-        Node ast = MarkdownRenderer.parseToDocument(markdown);
+        Node ast = MarkdownRenderer.parseForRender(markdown);
         Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
         Pictures images = new Pictures(imageList, baseDir, anchors, new HashSet<>(anchors.values()));
         StringBuilder b = new StringBuilder();
@@ -121,6 +120,14 @@ public final class OdtWriter {
             }
             inline(b, InlineRun.flatten(h), images);
             b.append("</text:h>");
+        } else if (n instanceof MarkdownMath.Block block) {
+            // A $$ block: a picture when it is a finished formula that renders, else what was typed.
+            byte[] png = block.isClosed() ? OfficeImages.renderMath(block.getLatex(), true) : null;
+            b.append("<text:p text:style-name=\"Standard\">");
+            if (png == null || !imageFrameBytes(b, png, images)) {
+                b.append(esc(MarkdownMath.source(block)));
+            }
+            b.append("</text:p>");
         } else if (n instanceof Paragraph p) {
             String math = InlineRun.soleDisplayMath(p);
             byte[] mathPng = math == null ? null : OfficeImages.renderMath(math, true);
@@ -164,8 +171,9 @@ public final class OdtWriter {
             tableXml(b, t, images);
         } else if (n instanceof HtmlBlock hb) {
             // An HTML comment is invisible; other raw HTML is shown as its source, like the preview.
-            if (!MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
-                codeBlock(b, hb.getLiteral());
+            String shown = MarkdownDocInfo.htmlSourceShown(hb.getLiteral()); // "<!-- c --> text" keeps the text
+            if (!shown.isEmpty()) {
+                codeBlock(b, shown);
             }
         } else if (n instanceof FootnoteDefinition) {
             // written at the end of the document by contentXml()
@@ -365,24 +373,15 @@ public final class OdtWriter {
         return InlineRun.isSafeHref(href) ? href.strip() : null;
     }
 
-    /** Appends a run's text, splitting non-code text on inline {@code $…$}/{@code $$…$$} math → as-char frames. */
+    /** Appends a run's text; a formula ({@link InlineRun#isMath}) as an as-char picture, else as its source. */
     private static void emitText(StringBuilder b, InlineRun r, Pictures images) {
-        if (r.code() || r.text().indexOf('$') < 0 || !MathImages.isEnabled()) {
-            b.append(esc(r.text()));
-            return;
-        }
-        for (MathSpans.Segment seg : MathSpans.segments(r.text())) {
-            if (seg.text() != null) {
-                b.append(esc(seg.text()));
-            } else {
-                byte[] png =
-                        OfficeImages.renderMath(seg.span().latex(), seg.span().display());
-                if (!mathFrame(b, png, images, seg.span().display())) {
-                    String d = seg.span().display() ? "$$" : "$";
-                    b.append(esc(d + seg.span().latex() + d));
-                }
+        if (r.isMath()) {
+            boolean display = r.text().startsWith("$$");
+            if (mathFrame(b, OfficeImages.renderMath(r.latex(), display), images, display)) {
+                return;
             }
         }
+        b.append(esc(r.text()));
     }
 
     /** Embeds {@code png} as an as-char {@code <draw:frame>} sized to roughly the line height; false if undecodable. */

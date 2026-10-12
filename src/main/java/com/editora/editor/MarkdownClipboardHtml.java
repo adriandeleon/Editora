@@ -34,9 +34,8 @@ import org.commonmark.renderer.html.HtmlRenderer;
  * borders, the blockquote rule, and heading/spacing rhythm. Colors are literal, light-theme values (pasted
  * content nearly always lands on a white page), matching the export sheet's GitHub-ish palette.
  *
- * <p>Pure and unit-tested apart from the math pre-pass, which rasterizes {@code $…$} spans through
- * {@link MarkdownHtmlExport#substituteMath} exactly as the file export does, so equations survive the paste
- * as inline PNG data URIs.
+ * <p>Pure and unit-tested apart from math, which is rasterized by the file export's own
+ * {@link MarkdownHtmlExport.MathImagesRenderer}, so equations survive the paste as inline PNG data URIs.
  */
 public final class MarkdownClipboardHtml {
 
@@ -85,25 +84,20 @@ public final class MarkdownClipboardHtml {
     }
 
     private static String render(String markdown, boolean mathEnabled, java.nio.file.Path baseDir, boolean styled) {
-        String src = markdown == null ? "" : markdown;
-        java.util.Set<String> mathTags = new java.util.HashSet<>();
-        if (mathEnabled) {
-            src = MarkdownHtmlExport.substituteMath(src, mathTags);
-        }
         // What lands on the clipboard is pasted into mail clients, chat and word processors, which render it
         // with their own privileges — and the Markdown may be someone else's file. So the fragment carries no
         // raw HTML from the document (it shows as text, like the preview shows it) and no script-capable URL
-        // ([x](javascript:…) gets an empty href). The one exception is the math <img> tags generated just
-        // above: those are ours, matched exactly, and inline data: PNGs.
+        // ([x](javascript:…) gets an empty href). Equations are math nodes of the parse, drawn as inline
+        // data: PNGs by our own renderer — nothing the document wrote is let through as markup.
         HtmlRenderer renderer = HtmlRenderer.builder()
-                .extensions(MarkdownRenderer.EXTENSIONS)
+                .extensions(MarkdownRenderer.renderExtensions(mathEnabled))
                 .attributeProviderFactory(
                         ctx -> styled ? new InlineStyles(baseDir) : new MarkdownHtmlExport.SemanticAttributes())
                 .escapeHtml(true)
                 .sanitizeUrls(true)
-                .nodeRendererFactory(ctx -> new OwnMathOnly(ctx.getWriter(), mathTags))
+                .nodeRendererFactory(ctx -> new MarkdownHtmlExport.MathImagesRenderer(ctx.getWriter()))
                 .build();
-        return renderer.render(MarkdownRenderer.parseToDocument(src));
+        return renderer.render(MarkdownRenderer.parseForRender(markdown, mathEnabled));
     }
 
     /**
@@ -155,67 +149,6 @@ public final class MarkdownClipboardHtml {
             return "image/webp";
         }
         return b.length > 1 && b[0] == 'B' && b[1] == 'M' ? "image/bmp" : "image/png";
-    }
-
-    /**
-     * Renders the document's raw HTML nodes escaped, letting through only the exact {@code <img>} tags the
-     * math pre-pass generated ({@code known}). A tag the document merely <em>wrote</em> to look like one is not
-     * in the set unless it is byte-for-byte a tag we would have produced — which is then harmless by
-     * construction (a {@code data:image/png} source and an escaped {@code alt}).
-     */
-    private static final class OwnMathOnly implements org.commonmark.renderer.NodeRenderer {
-        private static final String OPEN = "<img class=\"md-math ";
-
-        private final org.commonmark.renderer.html.HtmlWriter html;
-        private final java.util.Set<String> known;
-
-        OwnMathOnly(org.commonmark.renderer.html.HtmlWriter html, java.util.Set<String> known) {
-            this.html = html;
-            this.known = known;
-        }
-
-        @Override
-        public java.util.Set<Class<? extends Node>> getNodeTypes() {
-            return java.util.Set.of(org.commonmark.node.HtmlInline.class, org.commonmark.node.HtmlBlock.class);
-        }
-
-        @Override
-        public void render(Node node) {
-            if (node instanceof org.commonmark.node.HtmlBlock block) {
-                html.line();
-                html.tag("p");
-                write(block.getLiteral());
-                html.tag("/p");
-                html.line();
-            } else if (node instanceof org.commonmark.node.HtmlInline inline) {
-                write(inline.getLiteral());
-            }
-        }
-
-        /** Writes {@code literal} escaped, except for each exact occurrence of a generated math tag. */
-        private void write(String literal) {
-            if (literal == null) {
-                return;
-            }
-            int from = 0;
-            while (from < literal.length()) {
-                int open = known.isEmpty() ? -1 : literal.indexOf(OPEN, from);
-                int close = open < 0 ? -1 : literal.indexOf('>', open);
-                if (close < 0) {
-                    break;
-                }
-                String tag = literal.substring(open, close + 1);
-                if (known.contains(tag)) {
-                    html.text(literal.substring(from, open));
-                    html.raw(tag);
-                    from = close + 1;
-                } else {
-                    html.text(literal.substring(from, open + 1)); // not ours: the '<' goes out escaped
-                    from = open + 1;
-                }
-            }
-            html.text(literal.substring(from));
-        }
     }
 
     /**

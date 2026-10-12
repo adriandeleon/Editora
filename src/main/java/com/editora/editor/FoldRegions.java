@@ -22,8 +22,9 @@ import com.editora.typst.TypstOutline;
  *       strings, char literals, and {@code //} / {@code /* *&#47;} comments.</li>
  *   <li><b>XML</b> ({@code xml} / {@code html}, and by extension fxml): matched element tags, skipping
  *       comments, CDATA, processing instructions, doctypes, and self-closing tags.</li>
- *   <li><b>Markdown</b>: fenced code blocks (```` ``` ````) and heading sections (a heading folds down to
- *       the line before the next heading of the same or higher level).</li>
+ *   <li><b>Markdown</b>: fenced code blocks (backticks or tildes), front matter, multi-line HTML comments
+ *       and heading sections, ATX or setext (a heading folds down to the line before the next heading of
+ *       the same or higher level).</li>
  *   <li><b>Line/indentation-based languages</b> (python, ruby, shell, yaml, ini, sql, powershell,
  *       batch) and plaintext: no delimiter folding.</li>
  * </ul>
@@ -429,53 +430,56 @@ public final class FoldRegions {
         return out;
     }
 
-    // --- Markdown (fenced code blocks + heading sections) ---
+    // --- Markdown (code fences, front matter, comment blocks + heading sections) ---
 
+    /**
+     * Folds on the document's real blocks ({@link com.editora.markdown.MarkdownBlocks}) and headings
+     * ({@link com.editora.markdown.MarkdownOutline}) rather than on a second, simpler reading of them: a
+     * {@code ~~~} fence folds, a fence inside a longer fence is its content and not a fence of its own, the
+     * front matter and a multi-line HTML comment fold, a setext heading opens a section like an ATX one, and
+     * a {@code #} line in code or in a commented-out section opens none.
+     */
     private static List<Region> markdown(String text) {
-        String[] lines = text.split("\n", -1);
+        com.editora.markdown.MarkdownBlocks blocks = com.editora.markdown.MarkdownBlocks.scan(text);
+        int count = blocks.lineCount();
         List<Region> out = new ArrayList<>();
-        boolean[] inFence = new boolean[lines.length];
-
-        int fenceStart = -1;
-        for (int i = 0; i < lines.length; i++) {
-            if (lines[i].trim().startsWith("```")) {
-                if (fenceStart < 0) {
-                    fenceStart = i;
-                } else {
-                    for (int j = fenceStart; j <= i; j++) {
-                        inFence[j] = true;
-                    }
-                    if (i > fenceStart) {
-                        out.add(new Region(fenceStart, i));
-                    }
-                    fenceStart = -1;
-                }
+        if (blocks.frontMatterEnd() > 0) {
+            out.add(new Region(0, blocks.frontMatterEnd()));
+        }
+        for (com.editora.markdown.MarkdownBlocks.Fence fence : blocks.fences()) {
+            if (fence.lastLine() > fence.openLine()) {
+                out.add(new Region(fence.openLine(), fence.lastLine()));
             }
         }
-
-        for (int i = 0; i < lines.length; i++) {
-            if (inFence[i]) {
-                continue;
+        for (int i = 0; i < count; i++) {
+            if (blocks.kind(i) == com.editora.markdown.MarkdownBlocks.Kind.HTML_COMMENT) {
+                int end = i;
+                while (end + 1 < count
+                        && blocks.kind(end + 1) == com.editora.markdown.MarkdownBlocks.Kind.HTML_COMMENT) {
+                    end++;
+                }
+                if (end > i) {
+                    out.add(new Region(i, end));
+                }
+                i = end;
             }
-            int level = headingLevel(lines[i]);
-            if (level == 0) {
-                continue;
-            }
-            int end = lines.length - 1;
-            for (int j = i + 1; j < lines.length; j++) {
-                if (!inFence[j]) {
-                    int l = headingLevel(lines[j]);
-                    if (l > 0 && l <= level) {
-                        end = j - 1;
-                        break;
-                    }
+        }
+        List<com.editora.markdown.MarkdownOutline.Heading> headings =
+                com.editora.markdown.MarkdownOutline.headings(text);
+        for (int h = 0; h < headings.size(); h++) {
+            int start = headings.get(h).line();
+            int end = count - 1;
+            for (int k = h + 1; k < headings.size(); k++) {
+                if (headings.get(k).level() <= headings.get(h).level()) {
+                    end = headings.get(k).line() - 1;
+                    break;
                 }
             }
-            while (end > i && lines[end].isBlank()) {
+            while (end > start && blocks.line(end).isBlank()) {
                 end--;
             }
-            if (end > i) {
-                out.add(new Region(i, end));
+            if (end > start) {
+                out.add(new Region(start, end));
             }
         }
         return out;

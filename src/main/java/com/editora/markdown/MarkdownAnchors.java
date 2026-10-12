@@ -34,7 +34,7 @@ public final class MarkdownAnchors {
         for (boolean plain : new boolean[] {false, true}) {
             Map<String, Integer> seen = new HashMap<>();
             for (MarkdownOutline.Heading h : headings) {
-                String title = plain ? OutlineTitles.plain(h.title()) : h.title();
+                String title = plain ? MarkdownText.plain(h.title()) : h.title();
                 if (title.isBlank()) {
                     continue; // the table of contents leaves these out of the numbering too
                 }

@@ -155,6 +155,19 @@ class SpellModeTest {
         assertEquals(3, SpellMode.MARKDOWN.codeLines("```\n[a]: b\n```\ntext\n").cardinality());
     }
 
+    @Test
+    void codeLinesFollowTheDocumentsBlocks() {
+        String md = "prose\n~~~\ntilde code\n~~~\n````\n```\nnested\n```\n````\nprose again\n\n    indented code\n\n"
+                + "<!-- a comment is prose -->\n```\nunterminated\nto the end\n";
+        BitSet code = SpellMode.MARKDOWN.codeLines(md);
+        for (int line : new int[] {1, 2, 3, 4, 5, 6, 7, 8, 11, 14, 15, 16}) {
+            assertTrue(code.get(line), "line " + line + " is code");
+        }
+        for (int line : new int[] {0, 9, 13}) {
+            assertFalse(code.get(line), "line " + line + " is prose");
+        }
+    }
+
     private static String prose(String line) {
         String out = SpellMode.MARKDOWN.prose(line);
         assertEquals(line.length(), out.length(), "offsets into the line stay valid");

@@ -107,18 +107,18 @@ public enum SpellMode {
      * URL; a footnote definition {@code [^1]: …} is prose and stays checked).
      */
     static BitSet markdownCodeLines(int count, IntFunction<String> lineAt) {
-        BitSet code = SpellCheckOverlay.fencedCodeLines(count, lineAt);
-        if (count > 1 && lineAt.apply(0).strip().equals("---")) {
-            for (int i = 1; i < count; i++) {
-                String line = lineAt.apply(i).strip();
-                if (line.equals("---") || line.equals("...")) {
-                    code.set(0, i + 1);
-                    break;
-                }
-            }
+        String[] lines = new String[count];
+        for (int i = 0; i < count; i++) {
+            lines[i] = lineAt.apply(i);
         }
-        for (int i = code.nextClearBit(0); i < count; i = code.nextClearBit(i + 1)) {
-            if (REFERENCE_DEFINITION.matcher(lineAt.apply(i)).lookingAt()) {
+        com.editora.markdown.MarkdownBlocks blocks = com.editora.markdown.MarkdownBlocks.scan(lines);
+        BitSet code = new BitSet();
+        for (int i = 0; i < count; i++) {
+            // Comments and raw HTML blocks stay checked (their text is prose; prose() blanks the tags).
+            if (blocks.isCode(i)
+                    || blocks.kind(i) == com.editora.markdown.MarkdownBlocks.Kind.FRONT_MATTER
+                    || (blocks.isText(i)
+                            && REFERENCE_DEFINITION.matcher(lines[i]).lookingAt())) {
                 code.set(i);
             }
         }

@@ -4,6 +4,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
+import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.heading.anchor.HeadingAnchorExtension;
 import org.commonmark.renderer.html.HtmlRenderer;
 
@@ -14,8 +15,8 @@ import org.commonmark.renderer.html.HtmlRenderer;
  * embedded GitHub-style stylesheet ({@code markdown-export.css}, light and dark) and a Content-Security-Policy
  * that keeps the document's raw HTML from running script.
  *
- * <p>When math is enabled, {@code $…$}/{@code $$…$$} spans are rasterized (JLaTeXMath → PNG data URIs)
- * in a source pre-pass so they survive into the static HTML; fenced code lines are skipped. Mermaid
+ * <p>When math is enabled the parse carries math nodes ({@link MarkdownMath}, as in the preview) and each is
+ * rasterized (JLaTeXMath → PNG data URI) so it survives into the static HTML. Mermaid
  * blocks render as code blocks (live Mermaid in exported HTML is deferred). The non-math path is pure
  * and unit-tested.
  */
@@ -38,17 +39,16 @@ public final class MarkdownHtmlExport {
      * rather than claimed to be English.
      */
     public static String toHtml(String markdown, String title, boolean mathEnabled) {
-        String src =
-                mathEnabled ? substituteMath(markdown == null ? "" : markdown) : (markdown == null ? "" : markdown);
-        org.commonmark.node.Node doc = MarkdownRenderer.parseToDocument(src);
+        org.commonmark.node.Node doc = MarkdownRenderer.parseForRender(markdown, mathEnabled);
         // Raw HTML is kept — an author who writes <details> or <kbd> in a document expects it in the export —
         // but link and image destinations are sanitized: [x](javascript:…) / vbscript: / file: become an empty
         // href instead of a live script URL in a page the reader will open in a browser.
         HtmlRenderer renderer = HtmlRenderer.builder()
-                .extensions(MarkdownRenderer.EXTENSIONS)
+                .extensions(MarkdownRenderer.renderExtensions(mathEnabled))
                 .extensions(java.util.List.of(HeadingAnchorExtension.create()))
                 .sanitizeUrls(true)
                 .attributeProviderFactory(ctx -> new SemanticAttributes())
+                .nodeRendererFactory(ctx -> new MathImagesRenderer(ctx.getWriter()))
                 .build();
         String body = renderer.render(doc);
         return page(MarkdownDocInfo.title(doc, title), MarkdownDocInfo.language(doc, null), body);
@@ -103,54 +103,40 @@ public final class MarkdownHtmlExport {
     }
 
     /**
-     * Replaces math spans with {@code <img>} data URIs, skipping fenced code blocks. Package-visible so the
-     * clipboard fragment ({@link MarkdownClipboardHtml}) rasterizes equations the same way this export does.
+     * Writes the parse's math nodes ({@link MarkdownMath}) as rasterized {@code <img>} data URIs, so an
+     * equation survives into static HTML: a formula on its own (see {@link MarkdownDocInfo#blockFormula}) as
+     * a centred block image, one in a line of text inline. The parser decided what is math — never code, and
+     * a {@code $$} block over several lines is one formula — so this only draws it. Shared with the
+     * clipboard fragment ({@link MarkdownClipboardHtml}).
      */
-    static String substituteMath(String markdown) {
-        return substituteMath(markdown, null);
-    }
+    static final class MathImagesRenderer implements org.commonmark.renderer.NodeRenderer {
+        private final org.commonmark.renderer.html.HtmlWriter html;
 
-    /** As {@link #substituteMath(String)}, also recording every {@code <img>} tag it generated in
-     *  {@code generated} (when non-null) — so a renderer that escapes raw HTML can let exactly these through. */
-    static String substituteMath(String markdown, java.util.Collection<String> generated) {
-        String[] lines = markdown.split("\n", -1);
-        StringBuilder out = new StringBuilder();
-        String fence = null;
-        for (int i = 0; i < lines.length; i++) {
-            String line = lines[i];
-            String tok = fenceToken(line);
-            boolean fenceLine = false;
-            if (fence != null) {
-                if (tok != null && tok.charAt(0) == fence.charAt(0) && tok.length() >= fence.length()) {
-                    fence = null;
-                }
-                fenceLine = true;
-            } else if (tok != null) {
-                fence = tok;
-                fenceLine = true;
-            }
-            if (fenceLine) {
-                out.append(line);
-            } else {
-                appendLineWithMath(line, out, generated);
-            }
-            if (i < lines.length - 1) {
-                out.append('\n');
-            }
+        MathImagesRenderer(org.commonmark.renderer.html.HtmlWriter html) {
+            this.html = html;
         }
-        return out.toString();
-    }
 
-    private static void appendLineWithMath(String line, StringBuilder out, java.util.Collection<String> generated) {
-        for (MathSpans.Segment seg : MathSpans.segments(line)) {
-            if (seg.span() == null) {
-                out.append(seg.text());
-            } else {
-                String img = mathImg(seg.span().latex(), seg.span().display());
-                out.append(img);
-                if (generated != null) {
-                    generated.add(img);
+        @Override
+        public java.util.Set<Class<? extends org.commonmark.node.Node>> getNodeTypes() {
+            return java.util.Set.of(MarkdownMath.Inline.class, MarkdownMath.Block.class);
+        }
+
+        @Override
+        public void render(org.commonmark.node.Node node) {
+            if (node instanceof MarkdownMath.Block block) {
+                html.line();
+                if (block.isClosed()) {
+                    html.raw(mathImg(block.getLatex(), true));
+                } else {
+                    html.tag("p"); // never closed: not a formula yet — what was typed, as the preview shows it
+                    html.text(MarkdownMath.source(block));
+                    html.tag("/p");
                 }
+                html.line();
+            } else if (node instanceof MarkdownMath.Inline inline) {
+                // Alone in its paragraph a display formula is the block image; in a line it sits in the line.
+                boolean block = MarkdownDocInfo.blockFormula(inline.getParent()) != null;
+                html.raw(mathImg(inline.getLatex(), block));
             }
         }
     }
@@ -164,27 +150,6 @@ public final class MarkdownHtmlExport {
         String data = "data:image/png;base64," + Base64.getEncoder().encodeToString(png);
         String cls = display ? "md-math md-math-block" : "md-math md-math-inline";
         return "<img class=\"" + cls + "\" alt=\"" + escape(latex) + "\" src=\"" + data + "\">";
-    }
-
-    private static String fenceToken(String line) {
-        int indent = 0;
-        while (indent < line.length() && line.charAt(indent) == ' ') {
-            indent++;
-        }
-        if (indent > 3 || indent >= line.length()) {
-            return null;
-        }
-        char c = line.charAt(indent);
-        if (c != '`' && c != '~') {
-            return null;
-        }
-        int n = 0;
-        int p = indent;
-        while (p < line.length() && line.charAt(p) == c) {
-            p++;
-            n++;
-        }
-        return n >= 3 ? line.substring(indent, indent + n) : null;
     }
 
     private static String stylesheet() {

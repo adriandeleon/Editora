@@ -4937,8 +4937,12 @@ final class LspCoordinator {
         hideHoverPopup();
         Node content;
         try {
+            // Links in a hover (documentation URLs) open through the window's link choke point.
             content = MarkdownRenderer.renderDocument(
-                    MarkdownRenderer.parseForRender(markdown), null, null, MarkdownRenderer.ImagePolicy.DATA_ONLY);
+                    MarkdownRenderer.parseForRender(markdown),
+                    null,
+                    host::openExternalUrl,
+                    MarkdownRenderer.ImagePolicy.DATA_ONLY);
         } catch (RuntimeException e) {
             Label label = new Label(markdown);
             label.setWrapText(true);
@@ -5200,7 +5204,7 @@ final class LspCoordinator {
                 Node doc = MarkdownRenderer.renderDocument(
                         MarkdownRenderer.parseForRender(active.documentation()),
                         null,
-                        null,
+                        host::openExternalUrl,
                         MarkdownRenderer.ImagePolicy.DATA_ONLY);
                 box.getChildren().add(doc);
             } catch (RuntimeException e) {

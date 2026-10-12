@@ -3,6 +3,8 @@ package com.editora.office;
 import java.util.ArrayList;
 import java.util.List;
 
+import com.editora.editor.MarkdownDocInfo;
+import com.editora.markdown.MarkdownMath;
 import org.commonmark.ext.footnotes.FootnoteDefinition;
 import org.commonmark.ext.footnotes.FootnoteReference;
 import org.commonmark.ext.gfm.strikethrough.Strikethrough;
@@ -22,7 +24,8 @@ import org.commonmark.node.Text;
  * {@code .docx} (POI) and hand-rolled {@code .odt} writers both consume. {@link #flatten(Node)} walks a
  * block's inline children (CommonMark + GFM) into a flat list, carrying bold/italic/strikethrough/
  * underline/code styling, an optional link {@code href} and, for an inline picture, its {@code image}
- * destination (the text is then its alt text); a hard break becomes a {@code "\n"} run, a soft
+ * destination (the text is then its alt text) or, for a formula, its {@code latex} (the text is then its
+ * source); a hard break becomes a {@code "\n"} run, a soft
  * break (a source line ending inside a paragraph) a space.
  */
 public record InlineRun(
@@ -33,12 +36,18 @@ public record InlineRun(
         boolean underline,
         boolean code,
         String href,
-        String image) {
+        String image,
+        String latex) {
 
     /** A run of text (no picture). */
     public InlineRun(
             String text, boolean bold, boolean italic, boolean strike, boolean underline, boolean code, String href) {
-        this(text, bold, italic, strike, underline, code, href, null);
+        this(text, bold, italic, strike, underline, code, href, null, null);
+    }
+
+    /** A formula in a line of text ({@code latex} non-null); its {@link #text} is its source, the fallback. */
+    public boolean isMath() {
+        return latex != null;
     }
 
     /**
@@ -110,8 +119,11 @@ public record InlineRun(
             String alt = textOf(img);
             String dest = img.getDestination();
             if (!alt.isEmpty() || (dest != null && !dest.isBlank())) {
-                out.add(new InlineRun(alt, b, i, s, u, code, href, dest == null || dest.isBlank() ? null : dest));
+                out.add(new InlineRun(alt, b, i, s, u, code, href, dest == null || dest.isBlank() ? null : dest, null));
             }
+        } else if (n instanceof MarkdownMath.Inline math) {
+            // A formula the parser recognised (as the preview's does): the LaTeX exactly as written.
+            out.add(new InlineRun(MarkdownMath.source(math), b, i, s, u, code, href, null, math.getLatex()));
         } else if (n instanceof FootnoteReference ref) {
             out.add(new InlineRun(footnoteMarker(ref.getLabel()), b, i, s, u, code, href)); // was dropped
         } else if (n instanceof HardLineBreak) {
@@ -164,29 +176,12 @@ public record InlineRun(
     }
 
     /**
-     * If {@code paragraph} is exactly one {@code $$…$$} display-math span, returns its LaTeX; else null
-     * (so the caller renders it as a normal paragraph). Mirrors the PDF writer's {@code soleDisplayMath}.
+     * If {@code block} is a formula on its own — a closed {@code $$} block or a paragraph that is exactly one
+     * display {@code $$…$$} — its LaTeX; else null (so the caller renders it as a normal paragraph). The
+     * rule every renderer shares: {@link MarkdownDocInfo#blockFormula}.
      */
-    public static String soleDisplayMath(Node paragraph) {
-        StringBuilder sb = new StringBuilder();
-        for (Node c = paragraph.getFirstChild(); c != null; c = c.getNext()) {
-            if (c instanceof Text t) {
-                sb.append(t.getLiteral());
-            } else if (c instanceof SoftLineBreak || c instanceof HardLineBreak) {
-                sb.append(' '); // a $$…$$ block spans lines as soft breaks — join them, don't bail
-            } else {
-                return null;
-            }
-        }
-        String trimmed = sb.toString().strip();
-        java.util.List<com.editora.editor.MathSpans.Span> spans = com.editora.editor.MathSpans.find(trimmed);
-        if (spans.size() == 1) {
-            com.editora.editor.MathSpans.Span s = spans.get(0);
-            if (s.display() && s.start() == 0 && s.end() == trimmed.length()) {
-                return s.latex();
-            }
-        }
-        return null;
+    public static String soleDisplayMath(Node block) {
+        return MarkdownDocInfo.blockFormula(block);
     }
 
     /** The concatenated plain text of a node's descendants (for image alt text). */

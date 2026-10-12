@@ -14,11 +14,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import com.editora.editor.MarkdownDocInfo;
 import com.editora.editor.MarkdownRenderer;
 import com.editora.editor.MathImages;
-import com.editora.editor.MathSpans;
 import com.editora.editor.PreviewImageLoader;
 import com.editora.editor.TextMateHighlighter;
+import com.editora.markdown.MarkdownMath;
 import com.editora.mermaid.Mermaid;
 import com.github.weisj.jsvg.SVGDocument;
 import com.github.weisj.jsvg.parser.LoaderContext;
@@ -159,7 +160,9 @@ public final class MarkdownPdfWriter {
     public static Outcome write(
             String markdown, Path baseDir, PdfPageSpec spec, PdfDocMeta meta, List<String> mmdcCommand, Path out)
             throws IOException {
-        Node ast = MarkdownRenderer.parseToDocument(markdown);
+        // The preview's parse: math is recognised by the parser (when the feature is on), not searched for
+        // in text the Markdown parser has already rewritten.
+        Node ast = MarkdownRenderer.parseForRender(markdown, MathImages.isEnabled());
         return write(ast, baseDir, spec, meta, mmdcCommand, out, SystemFontFiles.get(), MathImages.isEnabled());
     }
 
@@ -712,8 +715,17 @@ public final class MarkdownPdfWriter {
         void block(Node n, float left) throws IOException {
             if (n instanceof Heading h) {
                 heading(h, left);
+            } else if (n instanceof MarkdownMath.Block mb) {
+                Paragraph typed = new Paragraph(); // what was typed: the fallback, and all an unclosed block is
+                typed.appendChild(new Text(MarkdownMath.source(mb)));
+                if (mb.isClosed()) {
+                    blockMath(mb.getLatex(), left, typed);
+                } else {
+                    paragraph(typed, left, BODY);
+                    y -= PARA_GAP;
+                }
             } else if (n instanceof Paragraph p) {
-                String displayMath = math ? soleDisplayMath(p) : null;
+                String displayMath = MarkdownDocInfo.blockFormula(p);
                 Image alone = blockImage(p);
                 if (displayMath != null) {
                     blockMath(displayMath, left, p);
@@ -744,8 +756,9 @@ public final class MarkdownPdfWriter {
             } else if (n instanceof org.commonmark.node.HtmlBlock hb) {
                 // HTML comments are invisible; other raw HTML is shown as its source text. Both match the
                 // on-screen preview. (An HtmlBlock has no child nodes — its text is the literal.)
-                if (!MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
-                    codeBlock(hb.getLiteral(), null, left);
+                String shown = MarkdownDocInfo.htmlSourceShown(hb.getLiteral()); // "<!-- c --> text" keeps the text
+                if (!shown.isEmpty()) {
+                    codeBlock(shown, null, left);
                 }
             } else if (n instanceof FootnoteDefinition def) {
                 footnote(def, left);
@@ -1422,6 +1435,9 @@ public final class MarkdownPdfWriter {
                 } else if (n instanceof FootnoteReference ref) {
                     out.add(Word.of(
                             "[" + ref.getLabel() + "]", reg, size - 2f, PdfTheme.LINE_NUMBER, false, false, false));
+                } else if (n instanceof MarkdownMath.Inline m) {
+                    out.add(mathWord(m.getLatex(), m.isDisplay(), reg, size, color, underline));
+                    pendingSpace = false;
                 } else if (n instanceof org.commonmark.node.HtmlInline html) {
                     if (!MarkdownRenderer.isHtmlComment(html.getLiteral())) { // shown as source, like the preview
                         addWords(html.getLiteral(), out, mono, size - 0.5f, PdfTheme.hex("#0a3069"), underline);
@@ -1439,21 +1455,10 @@ public final class MarkdownPdfWriter {
             }
         }
 
-        /** Splits a text literal into flow words, turning inline {@code $…$}/{@code $$…$$} math into image words. */
+        /** Appends a text literal's words. (Math is not looked for here: the parser made it a node.) */
         void addInlineText(String literal, List<Word> out, PDFont reg, float size, Color color, boolean underline)
                 throws IOException {
-            if (!math || literal.indexOf('$') < 0) {
-                addWords(literal, out, reg, size, color, underline);
-                return;
-            }
-            for (MathSpans.Segment seg : MathSpans.segments(literal)) {
-                if (seg.text() != null) {
-                    addWords(seg.text(), out, reg, size, color, underline);
-                } else {
-                    out.add(mathWord(seg.span().latex(), seg.span().display(), reg, size, color, underline));
-                    pendingSpace = false;
-                }
-            }
+            addWords(literal, out, reg, size, color, underline);
         }
 
         /**
@@ -1811,29 +1816,6 @@ public final class MarkdownPdfWriter {
         } catch (RuntimeException | LinkageError e) {
             return 0f;
         }
-    }
-
-    /** If paragraph {@code p} is exactly one {@code $$…$$} display-math span, its LaTeX; else null. */
-    private static String soleDisplayMath(Paragraph p) {
-        StringBuilder sb = new StringBuilder();
-        for (Node c = p.getFirstChild(); c != null; c = c.getNext()) {
-            if (c instanceof Text t) {
-                sb.append(t.getLiteral());
-            } else if (c instanceof SoftLineBreak || c instanceof HardLineBreak) {
-                sb.append(' '); // a $$…$$ block spans lines as soft breaks — join them, don't bail
-            } else {
-                return null;
-            }
-        }
-        String trimmed = sb.toString().strip();
-        List<MathSpans.Span> spans = MathSpans.find(trimmed);
-        if (spans.size() == 1) {
-            MathSpans.Span s = spans.get(0);
-            if (s.display() && s.start() == 0 && s.end() == trimmed.length()) {
-                return s.latex();
-            }
-        }
-        return null;
     }
 
     private static boolean isMermaid(String info) {

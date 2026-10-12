@@ -8,7 +8,7 @@ import java.util.stream.Collectors;
 import com.editora.editor.MarkdownRenderer;
 import org.apache.poi.xwpf.usermodel.XWPFDocument;
 import org.apache.poi.xwpf.usermodel.XWPFParagraph;
-import org.commonmark.node.Paragraph;
+import org.commonmark.node.Node;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -113,20 +113,19 @@ class DocxWriterTest {
     }
 
     @Test
-    void soleDisplayMathSpansMultipleLines() {
-        // $$ on its own line, body, then $$ — commonmark inserts SoftLineBreaks; the detector must span them
-        // (regression: it bailed on the first break, so only single-line $$…$$ exported as a block image).
-        Paragraph multi = (Paragraph)
-                MarkdownRenderer.parseToDocument("$$\n\\int_0^1 x dx\n$$").getFirstChild();
+    void aFormulaOnItsOwnIsABlockOfMathHoweverItIsWritten() {
+        // $$ on its own line, body, then $$ is one math block of the parse; $$…$$ on one line too.
+        Node multi = MarkdownRenderer.parseForRender("$$\n\\int_0^1 x \\, dx\n$$", true)
+                .getFirstChild();
         String latex = InlineRun.soleDisplayMath(multi);
-        assertTrue(latex != null && latex.contains("\\int_0^1 x dx"), "multi-line $$ block, got: " + latex);
+        assertTrue(latex != null && latex.contains("\\int_0^1 x \\, dx"), "multi-line $$ block, verbatim: " + latex);
 
-        Paragraph single =
-                (Paragraph) MarkdownRenderer.parseToDocument("$$ a^2 + b^2 $$").getFirstChild();
+        Node single = MarkdownRenderer.parseForRender("$$ a^2 + b^2 $$", true).getFirstChild();
         assertTrue(InlineRun.soleDisplayMath(single) != null, "single-line $$ block");
 
-        Paragraph prose =
-                (Paragraph) MarkdownRenderer.parseToDocument("just some prose").getFirstChild();
+        Node prose = MarkdownRenderer.parseForRender("just some prose", true).getFirstChild();
         assertNull(InlineRun.soleDisplayMath(prose), "prose is not display math");
+        Node off = MarkdownRenderer.parseForRender("$$ a^2 $$", false).getFirstChild();
+        assertNull(InlineRun.soleDisplayMath(off), "with math off there are no formulas");
     }
 }

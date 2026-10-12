@@ -43,7 +43,7 @@ class MarkdownPdfPicturesTest {
     private static MarkdownPdfWriter.Outcome write(Path dir, String md, List<String> mmdc, boolean math)
             throws Exception {
         return MarkdownPdfWriter.write(
-                MarkdownRenderer.parseToDocument(md),
+                MarkdownRenderer.parseForRender(md, math),
                 dir,
                 PdfPageSpec.of("letter"),
                 PdfDocMeta.NONE,

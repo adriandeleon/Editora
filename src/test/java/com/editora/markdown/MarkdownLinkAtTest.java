@@ -114,6 +114,18 @@ class MarkdownLinkAtTest {
     }
 
     @Test
+    void indentedCodeIsCodeButAnIndentedListParagraphIsNot() {
+        String text = "para\n\n    [in code](http://in.indented)\n\n- item\n\n    [in a list](http://in.list)\n\n"
+                + "````\n```\n[nested](http://in.nested)\n```\n````\n\n---\n";
+        assertNull(at(text, "in code"));
+        assertEquals("http://in.list", at(text, "in a list"), "four spaces under a list item is its paragraph");
+        assertNull(at(text, "nested"), "a fence inside a longer fence is still code");
+        String front = "---\nhomepage: https://in.frontmatter\n---\n\nhttps://in.body\n";
+        assertNull(at(front, "in.frontmatter"));
+        assertEquals("https://in.body", at(front, "in.body"));
+    }
+
+    @Test
     void aCodeSpanInALinksTextIsStillPartOfTheLink() {
         String text = "[`Path.of`](api/path.md) and [a `]` b](c.md)";
         assertEquals("api/path.md", at(text, "Path.of"));
