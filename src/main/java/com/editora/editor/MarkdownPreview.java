@@ -48,13 +48,15 @@ final class MarkdownPreview {
             String key,
             int startLine,
             int endLine,
-            String slug) {}
+            String slug,
+            List<String> refs) {}
 
-    /** A document cut into units, ready to {@link #show}. Built off the FX thread. */
-    record Plan(List<Unit> units, Path baseDir) {}
+    /** A document cut into units, ready to {@link #show}. Built off the FX thread. {@code footnotes} is the
+     *  number of each footnote label ({@link MarkdownRenderer#footnoteNumbers}). */
+    record Plan(List<Unit> units, Path baseDir, Map<String, Integer> footnotes) {}
 
     /** A rendered unit: {@code node} is null for one that shows nothing (a comment, a link definition). */
-    private record Entry(String key, Node node, int startLine, int endLine, String slug) {}
+    private record Entry(String key, Node node, int startLine, int endLine, String slug, List<String> refs) {}
 
     private final BlockColumn column = MarkdownRenderer.styleColumn(new BlockColumn());
     private final StackPane root = MarkdownRenderer.wrapColumn(column);
@@ -192,6 +194,9 @@ final class MarkdownPreview {
         String definitions = definitions(ast);
         // The anchors the table of contents and the link opener use: one numbering for all three.
         Map<Heading, String> slugs = MarkdownDocInfo.headingAnchors(ast);
+        Map<String, Integer> footnotes = MarkdownRenderer.footnoteNumbers(ast);
+        String definitionsAndNotes = definitions + '\u0003' + footnotes;
+        java.util.Set<String> referred = new java.util.HashSet<>();
         List<Unit> units = new ArrayList<>();
         for (org.commonmark.node.Node n = ast.getFirstChild(); n != null; ) {
             org.commonmark.node.Node last = MarkdownRenderer.groupEnd(n, false);
@@ -207,13 +212,16 @@ final class MarkdownPreview {
                 key = n.getClass().getSimpleName()
                         + '\u0000'
                         + text
-                        + dependencies(n, last, text, definitions, baseDir);
+                        + dependencies(n, last, text, definitionsAndNotes, baseDir);
             }
             String slug = n instanceof Heading h ? slugs.get(h) : null;
-            units.add(new Unit(n, last, key, start, end, slug));
+            if (n instanceof org.commonmark.ext.footnotes.FootnoteDefinition def) {
+                slug = MarkdownRenderer.footnoteAnchor(def.getLabel()); // where a reference to it scrolls to
+            }
+            units.add(new Unit(n, last, key, start, end, slug, firstReferences(n, last, referred)));
             n = last.getNext();
         }
-        return new Plan(units, baseDir);
+        return new Plan(units, baseDir, footnotes);
     }
 
     private static SourceSpan firstSpan(org.commonmark.node.Node n) {
@@ -248,6 +256,32 @@ final class MarkdownPreview {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * The back-anchors ({@link MarkdownRenderer#footnoteBackAnchor}) of the footnotes this unit is the first to
+     * refer to — where a definition's "back" link scrolls. {@code referred} collects the labels seen so far.
+     */
+    private static List<String> firstReferences(
+            org.commonmark.node.Node first, org.commonmark.node.Node last, java.util.Set<String> referred) {
+        List<String> out = new ArrayList<>();
+        AbstractVisitor v = new AbstractVisitor() {
+            @Override
+            public void visit(org.commonmark.node.CustomNode node) {
+                if (node instanceof org.commonmark.ext.footnotes.FootnoteReference ref
+                        && referred.add(MarkdownRenderer.footnoteKey(ref.getLabel()))) {
+                    out.add(MarkdownRenderer.footnoteBackAnchor(ref.getLabel()));
+                }
+                visitChildren(node);
+            }
+        };
+        for (org.commonmark.node.Node n = first; n != null; n = n.getNext()) {
+            n.accept(v);
+            if (n == last) {
+                break;
+            }
+        }
+        return out.isEmpty() ? List.of() : out;
     }
 
     /** The destinations of every image in the siblings {@code first}…{@code last}, Markdown and HTML. */
@@ -358,7 +392,8 @@ final class MarkdownPreview {
             column.getChildren().clear();
             contextSignature = signature;
         }
-        MarkdownRenderer.RenderContext ctx = MarkdownRenderer.previewContext(plan.baseDir(), this::follow, dark);
+        MarkdownRenderer.RenderContext ctx =
+                MarkdownRenderer.previewContext(plan.baseDir(), this::follow, dark, plan.footnotes());
         List<Unit> units = plan.units();
         List<Entry> before = entries;
         int[] ends = commonEnds(
@@ -411,7 +446,7 @@ final class MarkdownPreview {
                     zoomed(node);
                 }
             }
-            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug()));
+            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
             if (i >= prefix && i < n - suffix && node != null) {
                 newMiddle.add(node);
             }
@@ -496,7 +531,7 @@ final class MarkdownPreview {
         for (int i = from; i < to; i++) {
             Unit u = units.get(i);
             Node node = zoomed(MarkdownRenderer.renderGroup(u.first(), u.last(), ctx));
-            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug()));
+            now.add(new Entry(u.key(), node, u.startLine(), u.endLine(), u.slug(), u.refs()));
             if (node != null) {
                 nodes.add(node);
             }
@@ -548,7 +583,7 @@ final class MarkdownPreview {
         String want = MarkdownRenderer.localPath(slug.startsWith("#") ? slug.substring(1) : slug)
                 .toLowerCase(Locale.ROOT);
         for (Entry e : entries) {
-            if (e.slug() != null && e.node() != null && e.slug().equals(want)) {
+            if (e.node() != null && (want.equals(e.slug()) || e.refs().contains(want))) {
                 anchorUntil = 0;
                 setScrollY(top(e.node()));
                 return true;

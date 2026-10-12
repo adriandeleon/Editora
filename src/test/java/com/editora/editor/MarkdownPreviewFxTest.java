@@ -853,6 +853,80 @@ class MarkdownPreviewFxTest {
         }
     }
 
+    // --- A18: footnotes are numbered and linked both ways -----------------------------------------------
+
+    @Test
+    void footnotesAreNumberedInOrderOfUseAndLinkedToTheirDefinitionsAndBack() throws Exception {
+        StringBuilder md = new StringBuilder(
+                "# Notes\n\nFirst claim[^zeta] and a second[^alpha], and the first again[^zeta].\n\n");
+        for (int i = 0; i < 60; i++) {
+            md.append("Filler paragraph ").append(i).append(".\n\n");
+        }
+        md.append("[^alpha]: The alpha note.\n\n[^zeta]: The zeta note.\n\n[^unused]: Never referred to.\n");
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        List<String> opened = new ArrayList<>();
+        EditorFx.onFx(() -> {
+            ref[0] = markdown(md.toString());
+            ref[0].setOpenUrlHandler(opened::add);
+            stage[0] = EditorFx.show(ref[0], 700, 400);
+        });
+        EditorBuffer buffer = ref[0];
+        open(buffer, MarkdownViewMode.PREVIEW);
+        EditorFx.onFx(() -> {
+            Node root = pane(buffer).getContent();
+            List<String> refs = collect(root, Text.class).stream()
+                    .filter(t -> t.getStyleClass().contains("md-footnote-ref"))
+                    .map(Text::getText)
+                    .toList();
+            assertEquals(List.of("[1]", "[2]", "[1]"), refs, "numbers by first use, not the author's labels");
+            List<String> markers = collect(root, Label.class).stream()
+                    .filter(l -> l.getStyleClass().contains("md-footnote-def-marker"))
+                    .map(Label::getText)
+                    .toList();
+            assertEquals(List.of("[2]", "[1]", "[unused]"), markers, "a definition carries its reference's number");
+
+            MarkdownPreview p = preview(buffer);
+            Text first = textNode(root, "[1]");
+            first.fireEvent(click(MouseButton.PRIMARY, true));
+            assertTrue(opened.isEmpty(), "a footnote link stays in the preview");
+            Node definition = textNode(root, "The zeta note.");
+            double top =
+                    pane(buffer).localToScene(pane(buffer).getBoundsInLocal()).getMinY();
+            double y = definition.localToScene(definition.getBoundsInLocal()).getMinY() - top;
+            assertTrue(
+                    y >= 0 && y < pane(buffer).getViewportBounds().getHeight(),
+                    "scrolled to the definition (as far as the document goes): y=" + y);
+
+            List<Text> back = collect(root, Text.class).stream()
+                    .filter(t -> t.getStyleClass().contains("md-footnote-back"))
+                    .toList();
+            assertEquals(2, back.size(), "one way back per referenced note; none for the unused one");
+            back.get(0).fireEvent(click(MouseButton.PRIMARY, true));
+            assertTrue(p.topLine() < 5, "and back to the paragraph that referred to it: " + p.topLine());
+            assertTrue(opened.isEmpty());
+        });
+        // A new reference ahead of the others renumbers them: the blocks that show numbers are rebuilt.
+        rerender(
+                buffer,
+                () -> buffer.getArea()
+                        .insertText(buffer.getArea().getText().indexOf("First claim"), "Before[^alpha]. "));
+        EditorFx.onFx(() -> {
+            List<String> refs = collect(pane(buffer).getContent(), Text.class).stream()
+                    .filter(t -> t.getStyleClass().contains("md-footnote-ref"))
+                    .map(Text::getText)
+                    .toList();
+            assertEquals(List.of("[1]", "[2]", "[1]", "[2]"), refs);
+            List<String> markers = collect(pane(buffer).getContent(), Label.class).stream()
+                    .filter(l -> l.getStyleClass().contains("md-footnote-def-marker"))
+                    .map(Label::getText)
+                    .toList();
+            assertEquals(List.of("[1]", "[2]", "[unused]"), markers);
+            stage[0].close();
+            buffer.dispose();
+        });
+    }
+
     // --- A17: zoom reaches formulas and images; zoom and divider are kept ----------------------------
 
     @Test

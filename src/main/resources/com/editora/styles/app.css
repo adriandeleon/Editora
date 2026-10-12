@@ -815,6 +815,8 @@
 }
 .markdown-preview .md-frontmatter-row { -fx-text-fill: -color-fg-muted; -fx-font-size: 0.92em; }
 
+/* The "back to where it was referred to" arrow at the end of a footnote definition. */
+.markdown-preview .md-footnote-back { -fx-font-size: 0.9em; }
 /* Footnote definitions: a small marker beside the definition body. */
 .markdown-preview .md-footnote-def { -fx-spacing: 8; -fx-padding: 1 0 1 0; }
 .markdown-preview .md-footnote-def-marker { -fx-text-fill: -color-accent-fg; -fx-min-width: 28; }
