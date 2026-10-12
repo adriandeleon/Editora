@@ -167,7 +167,14 @@ class OfficeDocumentContentTest {
             }
         }
         assertEquals(
-                List.of("mimetype", "content.xml", "styles.xml", "META-INF/manifest.xml", "Pictures/img0.png"), names);
+                List.of(
+                        "mimetype",
+                        "content.xml",
+                        "styles.xml",
+                        "meta.xml",
+                        "META-INF/manifest.xml",
+                        "Pictures/img0.png"),
+                names);
         assertArrayEquals(png, picture, "the picture is stored byte for byte");
         assertNotNull(manifest);
         assertTrue(
@@ -262,18 +269,34 @@ class OfficeDocumentContentTest {
     }
 
     @Test
-    void aPictureInsideASentenceIsReplacedByItsAltText() throws Exception {
+    void aPictureInsideASentenceIsEmbeddedInTheLine() throws Exception {
         Files.write(dir.resolve("pic.png"), image("png", 4, 4));
         String md = "See ![the *small* `icon`](pic.png) here and ![](pic.png) there.\n";
         Odt odt = odt(md);
-        assertEquals(List.of(), odt.images(), "only a picture on its own line is embedded");
-        assertEquals("See the small icon here and  there.\n", odt.text());
+        assertEquals(2, odt.images().size(), "a badge row or a screenshot in a sentence is a picture too");
+        assertEquals("See  here and  there.\n", odt.text());
+        assertEquals(2, odt.xml().split("<draw:frame text:anchor-type=\"as-char\"", -1).length - 1, odt.xml());
         try (XWPFDocument doc = docx(md)) {
-            assertEquals(List.of("See the small icon here and  there."), paragraphs(doc));
+            assertEquals(List.of("See  here and  there."), paragraphs(doc));
+            assertEquals(
+                    2,
+                    doc.getParagraphs().getFirst().getRuns().stream()
+                            .mapToInt(r -> r.getEmbeddedPictures().size())
+                            .sum());
         }
     }
 
-    // --- math -------------------------------------------------------------------------------------------
+    @Test
+    void aPictureInsideASentenceThatCannotBeEmbeddedIsItsAltText() throws Exception {
+        String md = "See ![the *small* `icon`](missing.png) here and ![](missing.png) there.\n";
+        Odt odt = odt(md);
+        assertEquals(List.of(), odt.images());
+        assertEquals("See the small icon here and  there.\n", odt.text());
+        try (XWPFDocument doc = docx(md)) {
+            assertEquals(List.of("See the small icon here and  there."), paragraphs(doc));
+            assertEquals(0, doc.getAllPictures().size());
+        }
+    }
 
     @Test
     void mathIsLeftAsSourceWhileMathRenderingIsOff() throws Exception {
@@ -543,9 +566,26 @@ class OfficeDocumentContentTest {
         try (XWPFDocument doc = docx(md)) {
             assertEquals(
                     List.of("• outer", "• inner bullet", "1. inner one", "2. inner two", "3. three", "4. four"),
-                    paragraphs(doc));
-            assertEquals(360, doc.getParagraphs().get(0).getIndentationLeft());
-            assertEquals(720, doc.getParagraphs().get(1).getIndentationLeft(), "a nested item is indented further");
+                    DocxLists.shown(doc));
+            assertEquals(
+                    List.of("outer", "inner bullet", "inner one", "inner two", "three", "four"),
+                    paragraphs(doc),
+                    "the number or bullet is Word's own, not text typed in front of the item");
+            XWPFParagraph outer = doc.getParagraphs().get(0);
+            XWPFParagraph inner = doc.getParagraphs().get(1);
+            assertEquals("bullet", outer.getNumFmt());
+            assertEquals(0, outer.getNumIlvl().intValue());
+            assertEquals(1, inner.getNumIlvl().intValue(), "a nested item is one level down");
+            assertEquals("decimal", doc.getParagraphs().get(2).getNumFmt());
+            assertEquals(720, outer.getIndentationLeft());
+            assertEquals(360, outer.getIndentationHanging());
+            assertEquals(1080, inner.getIndentationLeft(), "a nested item is indented further");
+            assertTrue(
+                    !doc.getParagraphs()
+                            .get(2)
+                            .getNumID()
+                            .equals(doc.getParagraphs().get(4).getNumID()),
+                    "each ordered list counts on its own");
         }
     }
 
@@ -553,9 +593,10 @@ class OfficeDocumentContentTest {
     void aListItemThatIsOnlyAPictureOrARuleStillShowsItsMarker() throws Exception {
         Files.write(dir.resolve("pic.png"), image("png", 4, 4));
         try (XWPFDocument doc = docx("1. ![p](pic.png)\n2. ---\n")) {
-            assertEquals("1. ", paragraphs(doc).getFirst());
+            assertEquals("1. ", DocxLists.shown(doc).getFirst());
             assertEquals(1, doc.getAllPictures().size());
-            assertTrue(paragraphs(doc).contains("2. "), paragraphs(doc).toString());
+            assertTrue(
+                    DocxLists.shown(doc).contains("2. "), DocxLists.shown(doc).toString());
         }
     }
 
@@ -566,7 +607,7 @@ class OfficeDocumentContentTest {
         assertTrue(odt.xml().contains("<text:p text:style-name=\"Quotations\">quoted</text:p>"), odt.xml());
         assertEquals("quoted\nlisted\ncoded\n", odt.text());
         try (XWPFDocument doc = docx(md)) {
-            assertEquals(List.of("quoted", "• listed", "coded"), paragraphs(doc));
+            assertEquals(List.of("quoted", "• listed", "coded"), DocxLists.shown(doc));
             assertEquals(480, doc.getParagraphs().getFirst().getIndentationLeft());
         }
     }
@@ -582,7 +623,7 @@ class OfficeDocumentContentTest {
         try (XWPFDocument doc = docx(md)) {
             List<String> all = paragraphs(doc);
             assertTrue(all.contains("[a] "), all.toString());
-            assertTrue(all.contains("• a list first"), all.toString());
+            assertTrue(DocxLists.shown(doc).contains("• a list first"), all.toString());
             assertTrue(all.contains("[b] "), all.toString());
         }
     }
