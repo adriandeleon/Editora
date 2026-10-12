@@ -192,6 +192,17 @@ final class PreviewCoordinator {
         return hit == null ? java.util.Set.of() : hit.disabled();
     }
 
+    /**
+     * What the active buffer's project markdownlint config does to the rule list, as one localized line for
+     * display ("2 rules disabled by .markdownlint.json"); "" when no config applies (no file, not Markdown, a
+     * remote or unsaved buffer, or a config that changes nothing). The Lint tool window and the Settings card
+     * both show it; call on the FX thread.
+     */
+    String markdownLintConfigNote() {
+        EditorBuffer b = host.activeBuffer();
+        return b == null || !b.isMarkdown() ? "" : lint().configNote(b);
+    }
+
     /** Applies the safe-to-automate Markdown-lint fixes to the active buffer (undoable). */
     void fixMarkdownLint() {
         lint().fixAll();

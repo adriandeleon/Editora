@@ -651,6 +651,10 @@ class PreviewCommandsFxTest {
         assertEquals(
                 tr("markdownLint.configNote", 14, ".markdownlint.json"),
                 FxTestSupport.callOnFx(() -> previews.lint().configNote(b)));
+        assertEquals(
+                tr("markdownLint.configNote", 14, ".markdownlint.json"),
+                FxTestSupport.callOnFx(previews::markdownLintConfigNote),
+                "the accessor the Settings card reads: the active buffer's note");
         Files.delete(json);
 
         // YAML, extending a base file.
