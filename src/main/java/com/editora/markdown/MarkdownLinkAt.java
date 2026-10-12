@@ -14,9 +14,10 @@ import java.util.Locale;
  * the sentence punctuation that follows it. An image inside a link ({@code [![badge](img)](url)}) opens the
  * image when the caret is on the image and the outer link otherwise.
  *
- * <p>Nothing inside a code span or a fenced block is a link: the text there is shown as written, so opening
- * it would follow something the document does not link to. (A code span inside a link's <em>text</em> is
- * still part of that link.) Indented code is not told apart from an indented list paragraph here.
+ * <p>Nothing inside a code span, a code block (fenced or indented, as {@link MarkdownBlocks} reads the
+ * document) or the front matter is a link: the text there is shown as written, so opening it would follow
+ * something the document does not link to. (A code span inside a link's <em>text</em> is still part of
+ * that link.)
  */
 public final class MarkdownLinkAt {
 
@@ -28,8 +29,10 @@ public final class MarkdownLinkAt {
             return null;
         }
         int lineStart = text.lastIndexOf('\n', caret - 1) + 1;
-        if (inCodeBlock(text, lineStart)) {
-            return null;
+        MarkdownBlocks blocks = MarkdownBlocks.scan(text);
+        int caretLine = lineOf(text, lineStart);
+        if (blocks.isCode(caretLine) || blocks.kind(caretLine) == MarkdownBlocks.Kind.FRONT_MATTER) {
+            return null; // code and front matter are shown as written: nothing in them is a link
         }
         // The paragraph around the caret: link text may wrap, a link never crosses a blank line.
         int from = lineStart;
@@ -53,7 +56,7 @@ public final class MarkdownLinkAt {
         if (definition != null) {
             return definition;
         }
-        String link = bracketLink(text, from, to, caret, code);
+        String link = bracketLink(text, blocks, from, to, caret, code);
         if (link != null) {
             return link;
         }
@@ -63,7 +66,7 @@ public final class MarkdownLinkAt {
     // --- [text](dest), [text][label], [label] -------------------------------------------------------------
 
     /** The innermost bracket link in {@code [from, to)} whose span contains {@code caret}. */
-    private static String bracketLink(String text, int from, int to, int caret, boolean[] code) {
+    private static String bracketLink(String text, MarkdownBlocks blocks, int from, int to, int caret, boolean[] code) {
         String found = null;
         for (int i = from; i < to; i++) {
             if (text.charAt(i) != '[' || isEscaped(text, i, from) || isCode(code, from, i)) {
@@ -75,7 +78,7 @@ public final class MarkdownLinkAt {
             }
             int start = i > from && text.charAt(i - 1) == '!' ? i - 1 : i;
             int[] end = {close + 1};
-            String dest = target(text, i, close, to, end);
+            String dest = target(text, blocks, i, close, to, end);
             if (dest != null && caret >= start && caret <= end[0]) {
                 found = dest; // keep looking: a link nested in this one's text (an image) starts further right
             }
@@ -84,7 +87,7 @@ public final class MarkdownLinkAt {
     }
 
     /** The destination of the link whose text is {@code [open, close]}; {@code end[0]} is set past the link. */
-    private static String target(String text, int open, int close, int to, int[] end) {
+    private static String target(String text, MarkdownBlocks blocks, int open, int close, int to, int[] end) {
         int next = close + 1;
         if (next < to && text.charAt(next) == '(') {
             String inline = inlineDestination(text, next, to, end);
@@ -97,7 +100,7 @@ public final class MarkdownLinkAt {
             int labelEnd = text.indexOf(']', next + 1);
             if (labelEnd > 0 && labelEnd < to) {
                 String explicit = text.substring(next + 1, labelEnd);
-                String dest = definition(text, explicit.isBlank() ? label : explicit);
+                String dest = definition(text, blocks, explicit.isBlank() ? label : explicit);
                 if (dest != null) {
                     end[0] = labelEnd + 1;
                     return dest;
@@ -108,7 +111,7 @@ public final class MarkdownLinkAt {
             return null; // "[label]: …" is the definition, read by definitionOn
         }
         end[0] = close + 1;
-        return definition(text, label);
+        return definition(text, blocks, label);
     }
 
     /** Parses {@code (dest "title")} starting at the {@code (} at {@code open}; null when it is not one. */
@@ -187,28 +190,15 @@ public final class MarkdownLinkAt {
     // --- reference definitions ----------------------------------------------------------------------------
 
     /** The destination defined for {@code label} ({@code [label]: dest}), or null. Footnotes are not links. */
-    static String definition(String text, String label) {
+    static String definition(String text, MarkdownBlocks blocks, String label) {
         String wanted = normalize(label);
         if (wanted.isEmpty() || wanted.startsWith("^")) {
             return null;
         }
-        boolean fenced = false;
-        char fenceChar = 0;
-        int fenceLen = 0;
-        for (int start = 0; start <= text.length(); ) {
+        int line = 0;
+        for (int start = 0; start <= text.length(); line++) {
             int end = lineEnd(text, start);
-            int run = fenceRun(text, start, end);
-            if (run != 0) {
-                char c = run > 0 ? '`' : '~';
-                int len = Math.abs(run);
-                if (!fenced) {
-                    fenced = true;
-                    fenceChar = c;
-                    fenceLen = len;
-                } else if (c == fenceChar && len >= fenceLen) {
-                    fenced = false;
-                }
-            } else if (!fenced) {
+            if (blocks.isText(line)) { // a "definition" inside code, a comment or front matter defines nothing
                 int close = definitionLabelEnd(text, start, end);
                 if (close > 0
                         && normalize(text.substring(text.indexOf('[', start) + 1, close))
@@ -362,58 +352,13 @@ public final class MarkdownLinkAt {
 
     // --- code -------------------------------------------------------------------------------------------
 
-    /**
-     * Whether the line starting at {@code lineStart} is inside a fenced block or is one of its fence lines.
-     * A small local scan: the shared block scanner replaces it when the outline, folding and spell check
-     * adopt that scanner.
-     */
-    private static boolean inCodeBlock(String text, int lineStart) {
-        boolean fenced = false;
-        char fenceChar = 0;
-        int fenceLen = 0;
-        for (int start = 0; start <= lineStart; ) {
-            int end = lineEnd(text, start);
-            int run = fenceRun(text, start, end);
-            boolean fenceLine = false;
-            if (run != 0) {
-                char c = run > 0 ? '`' : '~';
-                int len = Math.abs(run);
-                if (!fenced) {
-                    fenced = true;
-                    fenceChar = c;
-                    fenceLen = len;
-                    fenceLine = true;
-                } else if (c == fenceChar && len >= fenceLen) {
-                    fenced = false;
-                    fenceLine = true;
-                }
-            }
-            if (start == lineStart) {
-                return fenced || fenceLine;
-            }
-            start = end + 1;
+    /** The 0-based line that starts at offset {@code lineStart}. */
+    private static int lineOf(String text, int lineStart) {
+        int line = 0;
+        for (int i = text.indexOf('\n'); i >= 0 && i < lineStart; i = text.indexOf('\n', i + 1)) {
+            line++;
         }
-        return false;
-    }
-
-    /** {@code +n} for a line opening with n≥3 backticks, {@code -n} for n≥3 tildes (≤3 spaces indent), else 0. */
-    private static int fenceRun(String text, int start, int end) {
-        int i = start;
-        while (i < end && i - start < 4 && text.charAt(i) == ' ') {
-            i++;
-        }
-        if (i >= end || i - start > 3) {
-            return 0;
-        }
-        char c = text.charAt(i);
-        if (c != '`' && c != '~') {
-            return 0;
-        }
-        int n = 0;
-        while (i + n < end && text.charAt(i + n) == c) {
-            n++;
-        }
-        return n < 3 ? 0 : c == '`' ? n : -n;
+        return line;
     }
 
     /** Marks the characters of {@code [from, to)} that are inside a backtick code span (delimiters included). */

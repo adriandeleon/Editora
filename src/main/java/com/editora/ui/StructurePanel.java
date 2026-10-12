@@ -1271,7 +1271,8 @@ public class StructurePanel extends VBox implements ToolWindowContent {
         Deque<StructureNode> stack = new ArrayDeque<>();
         Deque<Integer> levels = new ArrayDeque<>();
         for (com.editora.markdown.MarkdownOutline.Heading h : com.editora.markdown.MarkdownOutline.headings(text)) {
-            String title = com.editora.markdown.OutlineTitles.plain(h.title()); // "**Bold** `x`" reads "Bold x"
+            String title = com.editora.markdown.MarkdownText.plain(h.title()) // "**Bold** `x`" reads "Bold x"
+                    .replaceAll("\\s+", " ");
             StructureNode node =
                     new StructureNode(null, title.isBlank() ? tr("common.untitled") : title, "heading", h.line());
             while (!levels.isEmpty() && levels.peek() >= h.level()) {
