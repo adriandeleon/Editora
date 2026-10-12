@@ -892,60 +892,6 @@
                     <jlinkZipName>editora</jlinkZipName>
                 </configuration>
             </plugin>
-            <!-- Precompile the JavaFX stylesheets to their binary form (.bss beside each .css) in
-                 target/classes, so every artifact built from the compiled classes carries them: javafx:run,
-                 the test classpath, the jlink image behind the installers and the fat jar. JavaFX's
-                 StyleManager looks for name.bss before parsing name.css whatever the sheet was named by, and
-                 falls back to the text when the binary is missing — so nothing in the application names a
-                 .bss, and a build that skips this step still runs, only slower: the 165 KB user-agent theme
-                 and the 190 KB app.css cost 180–340 ms to parse as text at the first window, 12–17 ms as
-                 binary. The converter is scripts/css2bss.java, run on the build JDK with only javafx.base
-                 and javafx.graphics on its classpath (no toolkit starts); build-classpath resolves those two
-                 jars (the host-classified ones) into the property the exec consumes. Bound to process-classes:
-                 the fatjar profile wipes target/classes at initialize and the dist profile cleans, and both
-                 pass through here again before packaging. -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-dependency-plugin</artifactId>
-                <version>3.11.0</version>
-                <executions>
-                    <execution>
-                        <id>css-to-bss-classpath</id>
-                        <phase>process-classes</phase>
-                        <goals>
-                            <goal>build-classpath</goal>
-                        </goals>
-                        <configuration>
-                            <includeArtifactIds>javafx-base,javafx-graphics</includeArtifactIds>
-                            <outputProperty>css2bss.classpath</outputProperty>
-                            <silent>true</silent>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.codehaus.mojo</groupId>
-                <artifactId>exec-maven-plugin</artifactId>
-                <version>3.6.4</version>
-                <executions>
-                    <execution>
-                        <id>css-to-bss</id>
-                        <phase>process-classes</phase>
-                        <goals>
-                            <goal>exec</goal>
-                        </goals>
-                        <configuration>
-                            <executable>${java.home}/bin/java</executable>
-                            <arguments>
-                                <argument>-cp</argument>
-                                <argument>${css2bss.classpath}</argument>
-                                <argument>${project.basedir}/scripts/css2bss.java</argument>
-                                <argument>${project.build.outputDirectory}/com/editora/styles</argument>
-                            </arguments>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
             <plugin>
                 <groupId>org.moditect</groupId>
                 <artifactId>moditect-maven-plugin</artifactId>
@@ -1381,6 +1327,65 @@
                                     </moduleInfoSource>
                                 </module>
                             </modules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <!-- Declared after moditect on purpose. The dist profile declares maven-dependency-plugin,
+                 antrun (assemble-module-path), jpackage and exec in that order, and Maven weaves a
+                 profile's new plugins in between the ones it shares with this list: with these two above
+                 moditect, assemble-module-path ran before patch-automatic-modules and failed on the missing
+                 target/modules. -->
+            <!-- Precompile the JavaFX stylesheets to their binary form (.bss beside each .css) in
+                 target/classes, so every artifact built from the compiled classes carries them: javafx:run,
+                 the test classpath, the jlink image behind the installers and the fat jar. JavaFX's
+                 StyleManager looks for name.bss before parsing name.css whatever the sheet was named by, and
+                 falls back to the text when the binary is missing — so nothing in the application names a
+                 .bss, and a build that skips this step still runs, only slower: the 165 KB user-agent theme
+                 and the 190 KB app.css cost 180–340 ms to parse as text at the first window, 12–17 ms as
+                 binary. The converter is scripts/css2bss.java, run on the build JDK with only javafx.base
+                 and javafx.graphics on its classpath (no toolkit starts); build-classpath resolves those two
+                 jars (the host-classified ones) into the property the exec consumes. Bound to process-classes:
+                 the fatjar profile wipes target/classes at initialize and the dist profile cleans, and both
+                 pass through here again before packaging. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>3.11.0</version>
+                <executions>
+                    <execution>
+                        <id>css-to-bss-classpath</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>build-classpath</goal>
+                        </goals>
+                        <configuration>
+                            <includeArtifactIds>javafx-base,javafx-graphics</includeArtifactIds>
+                            <outputProperty>css2bss.classpath</outputProperty>
+                            <silent>true</silent>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.6.4</version>
+                <executions>
+                    <execution>
+                        <id>css-to-bss</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>exec</goal>
+                        </goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <arguments>
+                                <argument>-cp</argument>
+                                <argument>${css2bss.classpath}</argument>
+                                <argument>${project.basedir}/scripts/css2bss.java</argument>
+                                <argument>${project.build.outputDirectory}/com/editora/styles</argument>
+                            </arguments>
                         </configuration>
                     </execution>
                 </executions>
