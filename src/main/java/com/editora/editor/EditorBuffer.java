@@ -4938,8 +4938,9 @@ public class EditorBuffer implements TabContent {
     /** As {@link #pagePreview}, by {@code pages} viewport heights: a small fraction for a line, an infinite
      *  one for the start or end of the document. */
     public boolean scrollPreview(double pages) {
-        boolean previewActive =
-                markdownViewMode == MarkdownViewMode.PREVIEW || (previewPane != null && previewPane.isFocusWithin());
+        // (Split only: a pane taken off the scene on the way back to Editor can still report focus.)
+        boolean previewActive = markdownViewMode == MarkdownViewMode.PREVIEW
+                || (markdownViewMode == MarkdownViewMode.SPLIT && previewPane != null && previewPane.isFocusWithin());
         if (!previewActive || previewPane == null) {
             return false;
         }
