@@ -1,6 +1,5 @@
 package com.editora.markdown;
 
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -25,8 +24,6 @@ public final class MarkdownLines {
     /** A thematic break written with spaces ({@code - - -}, {@code * * *}): a rule, not a list item. */
     private static final Pattern SPACED_RULE = Pattern.compile("^ {0,3}([-*_])(?:[ \\t]*\\1){2,}[ \\t]*$");
 
-    private static final Pattern FENCE = Pattern.compile("^ {0,3}(`{3,}|~{3,})(.*)$");
-
     /**
      * {@link #markerLength} for the Enter key: 0 when {@code line} — which starts at {@code lineStart} in
      * {@code text} — only looks like a list item. Inside a fenced code block a leading {@code -} is YAML,
@@ -50,33 +47,38 @@ public final class MarkdownLines {
         return marker;
     }
 
-    /** Whether the line starting at {@code lineStart} lies inside a fenced code block that is still open. */
+    /**
+     * Whether the line starting at {@code lineStart} is something other than Markdown text — a line of a
+     * fenced or indented code block (fences nested in a list item or a quote included), of the front matter,
+     * of an HTML comment or a verbatim HTML block — as {@link MarkdownBlocks} classifies it. The editing
+     * helpers leave such a line alone: a {@code -} there is YAML or a diff, a pipe is program output.
+     *
+     * <p>Only the text up to the end of that line is scanned where that is enough: what a line is depends on
+     * the lines above it.
+     */
     static boolean insideFence(String text, int lineStart) {
-        String open = null; // the fence run that opened the current block, null outside one
-        int end = Math.min(lineStart, text.length());
-        int at = 0;
-        while (at < end) {
-            int eol = text.indexOf('\n', at);
-            if (eol < 0 || eol > end) {
-                eol = end;
-            }
-            Matcher m = FENCE.matcher(text.substring(at, eol));
-            if (m.matches()) {
-                String run = m.group(1);
-                if (open == null) {
-                    // A backtick fence's info string cannot itself contain a backtick (that is inline code).
-                    if (run.charAt(0) != '`' || m.group(2).indexOf('`') < 0) {
-                        open = run;
-                    }
-                } else if (run.charAt(0) == open.charAt(0)
-                        && run.length() >= open.length()
-                        && m.group(2).isBlank()) {
-                    open = null;
-                }
-            }
-            at = eol + 1;
+        return !kindAt(text, lineStart).equals(MarkdownBlocks.Kind.TEXT);
+    }
+
+    /** Whether the line starting at {@code lineStart} is a line of a fenced or indented code block. */
+    static boolean insideCode(String text, int lineStart) {
+        return switch (kindAt(text, lineStart)) {
+            case FENCE_OPEN, FENCE_BODY, FENCE_CLOSE, INDENTED_CODE -> true;
+            default -> false;
+        };
+    }
+
+    private static MarkdownBlocks.Kind kindAt(String text, int lineStart) {
+        int start = Math.max(0, Math.min(lineStart, text.length()));
+        int eol = text.indexOf('\n', start);
+        // Front matter is only front matter once it is closed, which may be below this line: then scan it all.
+        boolean wholeDocument = eol < 0 || text.startsWith("---") || text.startsWith("+++");
+        MarkdownBlocks blocks = MarkdownBlocks.scan(wholeDocument ? text : text.substring(0, eol));
+        int line = 0;
+        for (int i = text.indexOf('\n'); i >= 0 && i < start; i = text.indexOf('\n', i + 1)) {
+            line++;
         }
-        return open != null;
+        return blocks.kind(Math.min(line, blocks.lineCount() - 1));
     }
 
     /**

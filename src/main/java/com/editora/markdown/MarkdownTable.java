@@ -56,8 +56,8 @@ public final class MarkdownTable {
         if (le < 0) {
             le = text.length();
         }
-        if (!isRow(text.substring(ls, le))) {
-            return null;
+        if (!isRow(text.substring(ls, le)) || MarkdownLines.insideFence(text, ls)) {
+            return null; // no pipe — or a pipe in a code block, front matter or raw HTML: not a table row
         }
         // The run of lines with a pipe around the caret, then the table inside it: it starts one line above
         // the first delimiter row. Lines of the run above that are prose that mentions a pipe.

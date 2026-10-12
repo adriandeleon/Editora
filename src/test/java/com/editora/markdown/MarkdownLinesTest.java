@@ -315,4 +315,18 @@ class MarkdownLinesTest {
                 shiftTab("1. a\n   1. b\n   2. c‸\n   3. d\n2. e").replace("   1. b\n", ""));
         assertNull(MarkdownLines.indentItem("- a", 3, true), "nothing to outdent: the ordinary Shift-Tab runs");
     }
+
+    @Test
+    void codeIsRecognisedWhereverItIsNested() {
+        // A fence inside a list item is indented past the three columns a top-level fence may have.
+        String nested = "1. step\n\n      ```yaml\n      - a\n      ```\n";
+        assertNull(MarkdownLines.enter(nested, nested.indexOf("- a") + 3));
+        String quoted = "> ~~~\n> - a\n> ~~~\n";
+        assertNull(MarkdownLines.enter(quoted, quoted.indexOf("- a") + 3));
+        assertNull(MarkdownLines.enter("text\n\n    - code\n", 16), "an indented code block");
+        assertNull(MarkdownLines.enter("---\ntags:\n- a\n---\n", 13), "front matter");
+        assertNull(MarkdownLines.enter("<!--\n- a\n-->\n", 8), "an HTML comment");
+        assertNull(MarkdownLines.indentItem(nested, nested.indexOf("- a") + 3, false));
+        assertEquals("- a\n  - b\n  - ‸", enter("- a\n  - b‸"), "a nested item is still an item");
+    }
 }
