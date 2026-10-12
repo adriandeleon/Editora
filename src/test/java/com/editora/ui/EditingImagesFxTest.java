@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
@@ -30,6 +31,7 @@ import static com.editora.i18n.Messages.tr;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -204,6 +206,56 @@ class EditingImagesFxTest {
         assertEquals("# Notes\n![shot](assets/shot.png)\n![shot](assets/shot-1.png)", text(b));
         assertEquals(tr("status.markdown.imageDropped", 2), status());
         assertTrue(Files.exists(a), "the source file is copied, not moved");
+    }
+
+    @Test
+    void aPictureAlreadyBesideTheDocumentIsLinkedNotCopiedAgain() throws Exception {
+        EditorBuffer b = document("notes.md", "");
+        Path own = Files.write(Files.createDirectories(assets(b)).resolve("logo.png"), png(2, 2));
+        Path sibling = Files.write(
+                Files.createDirectory(b.getPath().getParent().resolve("img")).resolve("a b.png"), png(2, 2));
+
+        FxTestSupport.runOnFx(() -> editing.insertDroppedImages(b, List.of(own.toFile(), sibling.toFile())));
+
+        assertEquals(List.of("logo.png"), names(assets(b)), "no logo-1.png");
+        assertEquals("![logo](assets/logo.png)\n![a b](<img/a b.png>)", text(b));
+    }
+
+    @Test
+    void aDownloadThatIsNotAPictureIsNeverSavedAsOne() throws Exception {
+        byte[] page = "<!doctype html><html><body>hello</body></html>".getBytes(StandardCharsets.UTF_8);
+        byte[] picture = png(2, 2);
+        // The address answered with a web page: a link, not assets/page.png holding HTML.
+        EditingCoordinator.WebImage link =
+                EditingCoordinator.resolveWebImage("https://example.com/page", null, u -> page);
+        assertNull(link.bytes());
+        assertEquals("<https://example.com/page>", link.link());
+        // The same address with the dragged pixels at hand: the pixels are the picture.
+        assertArrayEquals(
+                picture,
+                EditingCoordinator.resolveWebImage("https://example.com/page", picture, u -> page)
+                        .bytes());
+        // A picture served from an address without an extension gets its type from its bytes.
+        EditingCoordinator.WebImage typed =
+                EditingCoordinator.resolveWebImage("https://example.com/render?id=7", null, u -> picture);
+        assertEquals("png", typed.ext());
+        // Unreachable now: reference it by address, as before.
+        assertTrue(EditingCoordinator.resolveWebImage("https://example.com/a.png", null, u -> null)
+                .remote());
+        EditingCoordinator.WebImage nothing = EditingCoordinator.resolveWebImage(null, null, u -> null);
+        assertTrue(nothing.bytes() == null && !nothing.remote() && nothing.link() == null);
+    }
+
+    @Test
+    void aWebPictureLandsWhereItWasDroppedEvenIfTheCaretMovedOn() throws Exception {
+        EditorBuffer b = document("notes.md", "start end");
+        FxTestSupport.runOnFx(() -> {
+            b.getArea().moveTo(6); // the drop point
+            editing.insertWebImage(b, pixels(), null);
+            b.getArea().selectRange(0, 5); // the user carries on while the picture is being saved
+        });
+        awaitWebImage();
+        assertEquals("start ![image](assets/image.png)end", text(b), "not over the new selection");
     }
 
     @Test

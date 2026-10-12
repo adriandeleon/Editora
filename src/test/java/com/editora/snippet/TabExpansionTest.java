@@ -54,4 +54,33 @@ class TabExpansionTest {
         assertFalse(TabExpansion.allowed("csv", false, false), "Tab separates fields in a .tsv");
         assertFalse(TabExpansion.allowed("csv", true, false));
     }
+
+    private static Snippet snippet(String body) {
+        return new Snippet("n", "p", body, "", "markdown");
+    }
+
+    @Test
+    void aBlockSnippetExpandsInProseOnlyAtTheStartOfItsLine() {
+        Snippet note = snippet("> [!NOTE]\n> ");
+        assertTrue(TabExpansion.fitsInProse("note", 0, note));
+        assertTrue(TabExpansion.fitsInProse("  > note", 4, note), "indentation and quote marks do not count");
+        assertFalse(
+                TabExpansion.fitsInProse("take a note", 7, note), "a word in a sentence is not a request for an alert");
+        assertFalse(TabExpansion.fitsInProse("- tip", 2, snippet("> [!TIP]\n> ")), "nor in a list item");
+        assertFalse(TabExpansion.fitsInProse("see h2", 4, snippet("## ${0}")));
+        assertTrue(
+                TabExpansion.fitsInProse("see the code", 8, snippet("`${1}` $0")), "an inline snippet fits anywhere");
+    }
+
+    @Test
+    void bundledMarkdownSnippetsAreWellFormed(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        SnippetManager m = new SnippetManager(new com.editora.config.ConfigManager(dir));
+        assertEquals("<sub>${1}</sub>${0}", m.byPrefix("markdown", "sub").body());
+        assertEquals("<sup>${1}</sup>${0}", m.byPrefix("markdown", "sup").body());
+        assertTrue(m.byPrefix("markdown", "horizontal rule").body().startsWith("\n---\n"), "not a Setext underline");
+        assertFalse(m.byPrefix("markdown", "codeblock").body().contains("language"));
+        assertTrue(TabExpansion.blockLevel(m.byPrefix("markdown", "note").body()));
+        assertTrue(TabExpansion.blockLevel(m.byPrefix("markdown", "table").body()));
+        assertFalse(TabExpansion.blockLevel(m.byPrefix("markdown", "link").body()));
+    }
 }
