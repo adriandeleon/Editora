@@ -439,7 +439,12 @@ class LspManagerFeatureRequestsFxTest {
         assertEquals("quickfix", items.get(1).kind());
         assertEquals("", items.get(2).kind(), "a bare command has no kind");
         assertSame(bare, items.get(2).raw());
-        assertEquals(Map.of(file, "class A {}\n"), items.get(0).expectedDocuments());
+        // Keyed by the path as opened and by its canonical form: two keys where the temp folder is reached
+        // through a link (macOS: /var is /private/var), one everywhere else.
+        Map<Path, String> expected = new java.util.HashMap<>();
+        expected.put(file, "class A {}\n");
+        expected.put(com.editora.config.PathKeys.canonical(file), "class A {}\n");
+        assertEquals(expected, items.get(0).expectedDocuments());
         assertEquals(range(0, 1, 4), FakeLanguageServer.last(fake.codeActions).getRange());
     }
 

@@ -291,10 +291,15 @@ public final class HistoryService {
         @Override
         public void run() {
             if (done.compareAndSet(false, true)) {
-                synchronized (undelivered) {
-                    undelivered.remove(this);
+                try {
+                    callback.run();
+                } finally {
+                    // Only now: a result the FX thread is still handing over is still undelivered, and a
+                    // shutdown() on another thread has to wait for it — its callback publishes the index.
+                    synchronized (undelivered) {
+                        undelivered.remove(this);
+                    }
                 }
-                callback.run();
             }
         }
     }
