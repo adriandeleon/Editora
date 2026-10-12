@@ -186,7 +186,7 @@ jobs:
           fi
 
       - name: Upload installer
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Editora-${{ steps.ver.outputs.version }}-${{ matrix.target }}
           path: staging/*
@@ -306,7 +306,7 @@ jobs:
 
       - name: Upload native smoke diagnostics on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-smoke-diagnostics-${{ matrix.target }}
           path: |
@@ -328,14 +328,14 @@ jobs:
 
       - name: Upload unqualified native candidate
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-unqualified-${{ matrix.target }}
           path: staging/*.candidate
           if-no-files-found: ignore
 
       - name: Upload experimental native build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: Editora-${{ steps.ver.outputs.version }}-${{ matrix.target }}-native-experimental
           path: staging/*
@@ -413,7 +413,7 @@ jobs:
 
       - name: Upload JReleaser logs
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: jreleaser-output
           path: |
