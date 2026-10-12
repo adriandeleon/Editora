@@ -130,4 +130,20 @@ class MarkdownSettingsPageFxTest {
             max.getValueFactory().setValue(6);
         });
     }
+
+    /** The lint card says what a project's markdownlint config does; the row is absent when there is nothing to say. */
+    @Test
+    void theLintCardShowsTheProjectConfigNoteWhenThereIsOne() throws Exception {
+        javafx.scene.control.Label note = control("markdownLintConfigNoteLabel");
+        assertFalse(FxTestSupport.callOnFx(note::isManaged), "no Markdown file in front: nothing to say");
+        String[] text = {"2 rules disabled by .markdownlint.json"};
+        FxTestSupport.runOnFx(() -> window.setMarkdownLintConfigNote(() -> text[0]));
+        assertEquals(text[0], FxTestSupport.callOnFx(note::getText));
+        assertTrue(FxTestSupport.callOnFx(note::isManaged));
+        // Not observable: it is read again when the window is synced (and when the page is shown).
+        text[0] = "";
+        FxTestSupport.runOnFx(window::syncAll);
+        assertFalse(FxTestSupport.callOnFx(note::isManaged));
+        assertEquals("", FxTestSupport.callOnFx(note::getText));
+    }
 }

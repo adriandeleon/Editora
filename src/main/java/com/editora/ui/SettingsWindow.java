@@ -607,6 +607,26 @@ public class SettingsWindow {
         this.snippetManager = snippetManager;
     }
 
+    /**
+     * What the active file's project markdownlint config does to the rule list below, as one localized line
+     * ("" when none applies). Not observable: read again whenever the Markdown page is shown or synced.
+     */
+    public void setMarkdownLintConfigNote(java.util.function.Supplier<String> note) {
+        this.markdownLintConfigNote = note == null ? () -> "" : note;
+        refreshMarkdownLintConfigNote();
+    }
+
+    private java.util.function.Supplier<String> markdownLintConfigNote = () -> "";
+    private final Label markdownLintConfigNoteLabel = new Label();
+
+    private void refreshMarkdownLintConfigNote() {
+        String note = markdownLintConfigNote.get();
+        boolean show = note != null && !note.isBlank();
+        markdownLintConfigNoteLabel.setText(show ? note : "");
+        markdownLintConfigNoteLabel.setVisible(show);
+        markdownLintConfigNoteLabel.setManaged(show);
+    }
+
     /** Where a message about something this window did goes: the owning window's status bar. */
     public void setStatusSink(Consumer<String> onStatus) {
         this.onStatus = onStatus;
@@ -924,6 +944,9 @@ public class SettingsWindow {
         sidebar.getSelectionModel().selectedItemProperty().addListener((o, a, b) -> {
             if (b instanceof Category) { // group headers aren't pages
                 showContent();
+                if (b == Category.MARKDOWN) {
+                    refreshMarkdownLintConfigNote(); // the active file may have changed since last shown
+                }
                 // Every page starts at its top. A ScrollPane keeps its vvalue across a content swap, so
                 // opening a short page after scrolling down a long one landed mid-page — and on a page
                 // that fits, silently nowhere at all. Deferred: the new content has not been laid out
@@ -2768,6 +2791,16 @@ public class SettingsWindow {
                 "markdown math latex katex formula equation dollar");
         Card lint = card(p, tr("settings.section.markdownLint"));
         checkRow(lint, Category.MARKDOWN, markdownLintCheck, null, "markdown lint linting warnings squiggles rules");
+        // A project's .markdownlint file changes which of the rules below apply to the active file; say so
+        // here too, or a rule ticked in this list that the project switches off looks broken.
+        markdownLintConfigNoteLabel.getStyleClass().add("settings-hint");
+        markdownLintConfigNoteLabel.setWrapText(true);
+        refreshMarkdownLintConfigNote();
+        cardRow(
+                lint,
+                Category.MARKDOWN,
+                markdownLintConfigNoteLabel,
+                "markdown lint project config markdownlint rules");
         cardRow(
                 lint,
                 Category.MARKDOWN,
@@ -2855,6 +2888,7 @@ public class SettingsWindow {
             markdownTocMinSpinner.getValueFactory().setValue(s.getMarkdownTocMinLevel());
             markdownTocMaxSpinner.getValueFactory().setValue(s.getMarkdownTocMaxLevel());
             markdownPreviewThemeCombo.setValue(s.getMarkdownPreviewTheme());
+            refreshMarkdownLintConfigNote();
         } finally {
             loading = prev;
         }
