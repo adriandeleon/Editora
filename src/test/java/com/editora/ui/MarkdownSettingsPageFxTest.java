@@ -60,7 +60,7 @@ class MarkdownSettingsPageFxTest {
         ComboBox<String> theme = control("markdownPreviewThemeCombo");
         assertEquals(java.util.List.of("", "light", "dark"), FxTestSupport.callOnFx(theme::getItems));
         assertEquals(
-                tr("settings.markdownPreviewTheme.follow"),
+                tr("markdown.previewTheme.follow"),
                 FxTestSupport.callOnFx(() -> theme.getConverter().toString("")));
         assertEquals(
                 tr("markdown.previewTheme.dark"),

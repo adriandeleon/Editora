@@ -2858,7 +2858,7 @@ public class SettingsWindow {
             @Override
             public String toString(String key) {
                 return key == null || key.isEmpty()
-                        ? tr("settings.markdownPreviewTheme.follow")
+                        ? tr("markdown.previewTheme.follow")
                         : tr("markdown.previewTheme." + key);
             }
 

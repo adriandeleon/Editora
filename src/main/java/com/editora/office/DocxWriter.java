@@ -14,8 +14,7 @@ import javax.imageio.ImageIO;
 
 import com.editora.editor.MarkdownDocInfo;
 import com.editora.editor.MarkdownRenderer;
-import com.editora.editor.MathImages;
-import com.editora.editor.MathSpans;
+import com.editora.markdown.MarkdownMath;
 import org.apache.poi.util.Units;
 import org.apache.poi.xwpf.usermodel.Borders;
 import org.apache.poi.xwpf.usermodel.ParagraphAlignment;
@@ -91,7 +90,7 @@ public final class DocxWriter {
             Map<String, String> bookmarks) {}
 
     public static void write(String markdown, Path baseDir, List<String> mmdc, Path out) throws IOException {
-        Node ast = MarkdownRenderer.parseToDocument(markdown);
+        Node ast = MarkdownRenderer.parseForRender(markdown); // the preview's parse: math is nodes
         try (XWPFDocument doc = new XWPFDocument()) {
             Map<Heading, String> anchors = MarkdownDocInfo.headingAnchors(ast);
             Map<String, String> bookmarks = new HashMap<>();
@@ -147,6 +146,11 @@ public final class DocxWriter {
                 p.getCTP().addNewBookmarkEnd().setId(id);
             }
             addRuns(ctx, p, InlineRun.flatten(h), true, DocxScaffold.HEADING_POINTS[level - 1]);
+        } else if (n instanceof MarkdownMath.Block math) {
+            // A $$ block: a picture when it is a finished formula that renders, else what was typed.
+            if (!math.isClosed() || !embedBlock(doc, OfficeImages.renderMath(math.getLatex(), true))) {
+                paragraph(ctx, indent, quotes).createRun().setText(MarkdownMath.source(math));
+            }
         } else if (n instanceof Paragraph p) {
             String math = InlineRun.soleDisplayMath(p);
             if (math != null && embedBlock(doc, OfficeImages.renderMath(math, true))) {
@@ -180,8 +184,9 @@ public final class DocxWriter {
             table(ctx, t);
         } else if (n instanceof HtmlBlock hb) {
             // An HTML comment is invisible; other raw HTML is shown as its source, like the preview.
-            if (!MarkdownRenderer.isHtmlComment(hb.getLiteral())) {
-                codeBlock(ctx, hb.getLiteral(), indent, quotes);
+            String shown = MarkdownDocInfo.htmlSourceShown(hb.getLiteral()); // "<!-- c --> text" keeps the text
+            if (!shown.isEmpty()) {
+                codeBlock(ctx, shown, indent, quotes);
             }
         } else if (n instanceof FootnoteDefinition) {
             // written at the end of the document by write()
@@ -379,21 +384,14 @@ public final class DocxWriter {
                     continue;
                 }
             }
-            // Split non-code text on inline $…$ / $$…$$ math and embed each math span as an inline picture.
-            if (!ir.code() && ir.text().indexOf('$') >= 0 && MathImages.isEnabled()) {
-                for (MathSpans.Segment seg : MathSpans.segments(ir.text())) {
-                    if (seg.text() != null) {
-                        if (!seg.text().isEmpty()) {
-                            last = emitTextRun(ctx, p, ir, seg.text(), forceBold, size);
-                        }
-                    } else {
-                        byte[] png = OfficeImages.renderMath(
-                                seg.span().latex(), seg.span().display());
-                        XWPFRun m = embedInlineMath(p, png, seg.span().display());
-                        last = m != null ? m : emitTextRun(ctx, p, ir, rawMath(seg.span()), forceBold, size);
-                    }
+            if (ir.isMath()) {
+                // A formula in the line: a picture, or its source when it cannot be drawn (or math is off).
+                boolean display = ir.text().startsWith("$$");
+                XWPFRun m = embedInlineMath(p, OfficeImages.renderMath(ir.latex(), display), display);
+                if (m != null) {
+                    last = m;
+                    continue;
                 }
-                continue;
             }
             last = emitTextRun(ctx, p, ir, ir.text(), forceBold, size);
         }
@@ -460,12 +458,6 @@ public final class DocxWriter {
         } catch (RuntimeException e) {
             return null; // not a URI the package can hold a relationship to: keep the text
         }
-    }
-
-    /** The original {@code $…$}/{@code $$…$$} source for a math span — used as a text fallback when render fails. */
-    private static String rawMath(MathSpans.Span s) {
-        String d = s.display() ? "$$" : "$";
-        return d + s.latex() + d;
     }
 
     /** Embeds {@code png} as an inline picture sized to roughly the line height; null when it can't decode. */

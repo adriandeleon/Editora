@@ -106,9 +106,21 @@ public final class MarkdownRenderer {
      * The parse this class <em>renders</em> (preview, print, the popups): the shared extensions, plus inline
      * footnotes ({@code ^[note]}), parser-level math ({@link MarkdownMath}) when {@code math}, and the source
      * lines of every block — which is what lets the preview reuse an unchanged block's nodes and line itself up
-     * with the editor. The exporters still read {@link #parseToDocument}; they adopt this parse one by one.
+     * with the editor. The exporters (HTML, clipboard, DOCX, ODT, PDF) read the same parse, so a formula is
+     * the same formula in all of them.
      */
     private static Parser renderParser(boolean math) {
+        return Parser.builder()
+                .extensions(renderExtensions(math))
+                .includeSourceSpans(IncludeSourceSpans.BLOCKS)
+                .build();
+    }
+
+    /**
+     * The extensions of {@link #parseForRender}: what a renderer of that parse (the HTML export's) must be
+     * built with to know its nodes.
+     */
+    public static List<org.commonmark.Extension> renderExtensions(boolean math) {
         List<org.commonmark.Extension> ext = new ArrayList<>();
         for (org.commonmark.Extension e : EXTENSIONS) {
             if (!(e instanceof FootnotesExtension)) {
@@ -119,10 +131,7 @@ public final class MarkdownRenderer {
         if (math) {
             ext.add(MarkdownMath.extension());
         }
-        return Parser.builder()
-                .extensions(ext)
-                .includeSourceSpans(IncludeSourceSpans.BLOCKS)
-                .build();
+        return ext;
     }
 
     private static final Parser RENDER_PARSER = renderParser(false);
@@ -147,7 +156,8 @@ public final class MarkdownRenderer {
         return parseForRender(markdown, MathImages.isEnabled());
     }
 
-    static org.commonmark.node.Node parseForRender(String markdown, boolean math) {
+    /** {@link #parseForRender(String)} with math recognised or not, whatever the feature switch says. */
+    public static org.commonmark.node.Node parseForRender(String markdown, boolean math) {
         return (math ? MATH_PARSER : RENDER_PARSER).parse(markdown == null ? "" : markdown);
     }
 

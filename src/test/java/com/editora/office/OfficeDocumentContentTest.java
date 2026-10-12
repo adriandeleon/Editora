@@ -683,6 +683,7 @@ class OfficeDocumentContentTest {
     }
 
     private static String soleMath(String md) {
-        return InlineRun.soleDisplayMath(MarkdownRenderer.parseToDocument(md).getFirstChild());
+        return InlineRun.soleDisplayMath(
+                MarkdownRenderer.parseForRender(md, true).getFirstChild());
     }
 }
