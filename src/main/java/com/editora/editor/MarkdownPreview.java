@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.function.Consumer;
 
 import javafx.scene.Node;
+import javafx.scene.Parent;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.layout.StackPane;
 
@@ -101,6 +102,35 @@ final class MarkdownPreview {
         return anchorLine >= 0 && System.nanoTime() < anchorUntil && pane != null && pane.getContent() == root;
     }
 
+    private final PreviewFind find = new PreviewFind(this);
+
+    /** The search over this document's rendered text (the Find bar, while only the preview is showing). */
+    PreviewFind find() {
+        return find;
+    }
+
+    /** The column of rendered blocks. */
+    Parent column() {
+        return column;
+    }
+
+    /** How far below the top of the document {@code node} (somewhere inside a block) is, in px. */
+    double offsetOf(Node node) {
+        double y = 0;
+        for (Node n = node; n != null && n != root; n = n.getParent()) {
+            y += n.getBoundsInParent().getMinY();
+        }
+        return y;
+    }
+
+    /** Scrolls so that {@code node} is in view, a third of the way down the pane. */
+    void reveal(Node node) {
+        if (pane != null) {
+            anchorUntil = 0;
+            setScrollY(Math.max(0, offsetOf(node) - pane.getViewportBounds().getHeight() / 3));
+        }
+    }
+
     /** The node that is the scroll pane's content while this document is showing. Stable across renders. */
     Node root() {
         return root;
@@ -138,6 +168,7 @@ final class MarkdownPreview {
 
     /** Forgets every node (the preview was closed, or what it showed is no longer this document). */
     void clear() {
+        find.clear();
         buildSeq++;
         entries = List.of();
         column.getChildren().clear();
@@ -341,7 +372,7 @@ final class MarkdownPreview {
             }
         }
         String signature = dark + "|" + MathImages.epoch() + "|" + MermaidImages.epoch() + "|"
-                + MermaidImages.isEnabled() + "|" + plan.baseDir();
+                + MermaidImages.isEnabled() + "|" + PreviewImageLoader.remoteImages() + "|" + plan.baseDir();
         if (!signature.equals(contextSignature)) {
             entries = List.of(); // a theme, a tool or the folder changed: every node is out of date
             column.getChildren().clear();
@@ -454,6 +485,7 @@ final class MarkdownPreview {
             anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
             setScrollY(yOfLine(anchorLine));
         }
+        find.reapply(); // rebuilt blocks lost their marks
         if (complete) {
             shows.set(shows.get() + 1);
         } else {
@@ -504,6 +536,7 @@ final class MarkdownPreview {
             anchorUntil = System.nanoTime() + ANCHOR_HOLD_NANOS;
             setScrollY(yOfLine(line));
         }
+        find.reapply();
         shows.set(shows.get() + 1);
     }
 

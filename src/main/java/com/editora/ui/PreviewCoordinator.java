@@ -376,6 +376,9 @@ final class PreviewCoordinator {
             host.setStatus(tr("status.lsp.readOnly"));
             return null;
         }
+        if (!host.editing().activeEditable()) {
+            return null; // only the preview is showing: said so in the status line
+        }
         if (b.hasMultipleCarets()) {
             b.collapseCarets();
             host.setStatus(tr("status.markdown.multiCaret"));
@@ -455,6 +458,9 @@ final class PreviewCoordinator {
         if (b == null || !b.isTypst() || !b.canFormatMarkup()) {
             host.setStatus(tr("status.typst.notTypst"));
             return;
+        }
+        if (!host.editing().activeEditable()) {
+            return; // only the preview is showing
         }
         action.accept(b);
     }

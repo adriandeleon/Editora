@@ -816,6 +816,43 @@ class MarkdownPreviewFxTest {
                 "not only the direct text: " + EditorFx.textOf(root)));
     }
 
+    // --- A9: remote images can be switched off, and open previews follow --------------------------------
+
+    @Test
+    void switchingRemoteImagesOffTurnsThemIntoPlaceholdersInAnOpenPreview() throws Exception {
+        // (An address the loader refuses by itself, so the test never reaches the network either way.)
+        String md = "Text.\n\n![pic](http://127.0.0.1:9/x.png)\n";
+        EditorBuffer[] ref = new EditorBuffer[1];
+        Stage[] stage = new Stage[1];
+        EditorFx.onFx(() -> {
+            ref[0] = markdown(md);
+            stage[0] = EditorFx.show(ref[0], 600, 300);
+        });
+        EditorBuffer buffer = ref[0];
+        try {
+            open(buffer, MarkdownViewMode.PREVIEW);
+            Node[] image = new Node[1];
+            EditorFx.onFx(() -> {
+                image[0] = column(buffer).getChildren().get(1);
+                assertNotNull(EditorFx.styled(image[0], "md-image-slot"), "on by default: an image to load");
+            });
+            rerender(buffer, () -> PreviewImageLoader.setRemoteImages(false));
+            EditorFx.onFx(() -> {
+                Node now = column(buffer).getChildren().get(1);
+                assertNotSame(image[0], now, "the setting changed: the block is rebuilt");
+                assertNull(EditorFx.styled(now, "md-image-slot"), "nothing is fetched");
+                assertTrue(
+                        EditorFx.textOf(now).contains("[image: pic] http://127.0.0.1:9/x.png"), EditorFx.textOf(now));
+            });
+        } finally {
+            EditorFx.onFx(() -> {
+                PreviewImageLoader.setRemoteImages(true);
+                stage[0].close();
+                buffer.dispose();
+            });
+        }
+    }
+
     // --- A15: a long line does not stop the live preview --------------------------------------------
 
     @Test

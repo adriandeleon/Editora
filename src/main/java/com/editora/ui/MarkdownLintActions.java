@@ -150,7 +150,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     /** Applies the safe-to-automate fixes in {@code scope} to the active buffer (one undo step). */
     void fix(MarkdownLintFix.Scope scope) {
         EditorBuffer b = lintable();
-        if (b == null) {
+        if (b == null || refusedInPreview(b)) {
             return;
         }
         String text = b.getContent();
@@ -290,6 +290,15 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
         action.accept(d);
     }
 
+    /** With only the preview showing, the source is not edited behind it (as for every editing command). */
+    private boolean refusedInPreview(EditorBuffer b) {
+        if (b.isPreviewOnly()) {
+            host.setStatus(tr("status.previewCannotEdit"));
+            return true;
+        }
+        return false;
+    }
+
     /** The active buffer when it is Markdown and linting is on; otherwise says why not and returns null. */
     private EditorBuffer lintable() {
         EditorBuffer b = host.activeBuffer();
@@ -323,7 +332,7 @@ final class MarkdownLintActions implements MarkdownLintPanel.IssueActions {
     @Override
     public void disableLine(Diagnostic d) {
         EditorBuffer b = lintable();
-        if (b == null || !NoUndoGuard.allow(b, tr("command.markdownLint.disableLine"))) {
+        if (b == null || refusedInPreview(b) || !NoUndoGuard.allow(b, tr("command.markdownLint.disableLine"))) {
             return;
         }
         MarkdownLintFix.Result r = MarkdownLintFix.disableForLine(b.getContent(), d.line() - 1, d.code());

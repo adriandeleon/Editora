@@ -718,6 +718,17 @@
 .markdown-preview .md-details-summary:focused .md-text { -fx-underline: true; }
 .markdown-preview .md-details-arrow { -fx-text-fill: -color-fg-muted; -fx-min-width: 14; }
 .markdown-preview .md-details-body { -fx-spacing: 14; -fx-padding: 4 0 4 20; }
+/* Find in the preview: a match is a label cut out of its run of text (a Text has no background). */
+.markdown-preview .md-find-match {
+    -fx-background-color: -color-warning-muted;
+    -fx-background-radius: 2;
+    -fx-text-fill: -color-fg-default;
+    -fx-padding: 0;
+}
+.markdown-preview .md-find-match.md-find-current {
+    -fx-background-color: -color-warning-emphasis;
+    -fx-text-fill: -color-fg-emphasis;
+}
 /* An image that could not be shown: its alt text, muted, where the picture would be. */
 .markdown-preview .md-inline-code.md-image-missing { -fx-text-fill: -color-fg-muted; -fx-font-style: italic; }
 /* Footnote reference: a small, raised, accent-colored [label] marker. */

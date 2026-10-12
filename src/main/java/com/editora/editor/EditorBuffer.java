@@ -5315,6 +5315,20 @@ public class EditorBuffer implements TabContent {
      * {@code MarkdownToc} writes them; a leading {@code #}, case and {@code %XX} escapes are tolerated) is at
      * its top. False when the preview is not showing, has not rendered yet, or has no such heading.
      */
+    /**
+     * Whether only a rendering of this buffer is on screen (Preview mode; not the CSV grid, which edits). Its
+     * text is then out of sight, so editing commands are refused rather than applied at an invisible caret.
+     */
+    public boolean isPreviewOnly() {
+        return markdownViewMode == MarkdownViewMode.PREVIEW && !hasCsvPreview();
+    }
+
+    /** The search over the rendered Markdown preview (the Find bar uses it while {@link #isPreviewOnly()}),
+     *  or null when this buffer has rendered none. */
+    public PreviewFind previewFind() {
+        return markdownPreview == null ? null : markdownPreview.find();
+    }
+
     public boolean scrollPreviewToAnchor(String slug) {
         return markdownViewMode != MarkdownViewMode.EDITOR
                 && markdownPreview != null

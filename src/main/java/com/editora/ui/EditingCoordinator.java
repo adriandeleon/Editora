@@ -214,15 +214,25 @@ final class EditingCoordinator {
     }
 
     void onUndo() {
-        if (!undoIsOff()) {
+        if (!undoIsOff() && !previewOnly()) {
             undoOrRedo(false);
         }
     }
 
     void onRedo() {
-        if (!undoIsOff()) {
+        if (!undoIsOff() && !previewOnly()) {
             undoOrRedo(true);
         }
+    }
+
+    /** Whether the active buffer shows only its preview — an edit there is refused, with a message. */
+    private boolean previewOnly() {
+        EditorBuffer buffer = host.activeBuffer();
+        if (buffer != null && buffer.isPreviewOnly()) {
+            host.setStatus(tr("status.previewCannotEdit"));
+            return true;
+        }
+        return false;
     }
 
     /** Through the buffer, which keeps multiple carets in place and usable across the replayed edit. */
@@ -813,6 +823,11 @@ final class EditingCoordinator {
         EditorBuffer buffer = host.activeBuffer();
         if (buffer != null && !buffer.isEditable()) {
             host.setStatus(ChordHint.tr("status.bufferReadOnly", "view.toggleReadOnly"));
+            return false;
+        }
+        if (buffer != null && buffer.isPreviewOnly()) {
+            // Only the rendering is on screen: an edit would land at a caret nobody can see.
+            host.setStatus(tr("status.previewCannotEdit"));
             return false;
         }
         return true;
