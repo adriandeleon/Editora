@@ -4813,10 +4813,10 @@ public class EditorBuffer implements TabContent {
                     return; // leave modifier combos to the global keymap (e.g. C-v / M-v / zoom)
                 }
                 if (e.getCode() == KeyCode.SPACE || e.getCode() == KeyCode.PAGE_DOWN) {
-                    scrollPreviewPage(true);
+                    scrollPreviewPage(0.9);
                     e.consume();
                 } else if (e.getCode() == KeyCode.BACK_SPACE || e.getCode() == KeyCode.PAGE_UP) {
-                    scrollPreviewPage(false);
+                    scrollPreviewPage(-0.9);
                     e.consume();
                 }
             });
@@ -4977,8 +4977,9 @@ public class EditorBuffer implements TabContent {
         previewContextMenu.show(previewPane, screenX, screenY);
     }
 
-    /** Scrolls the preview by ~one viewport page (down or up); no-op if there's nothing to scroll. */
-    private void scrollPreviewPage(boolean down) {
+    /** Scrolls the preview by {@code pages} viewport heights (negative: up; infinite: to that end); no-op if
+     *  there's nothing to scroll. A "page" of 0.9 leaves a little overlap. */
+    private void scrollPreviewPage(double pages) {
         if (previewPane == null || previewPane.getContent() == null) {
             return;
         }
@@ -4988,9 +4989,10 @@ public class EditorBuffer implements TabContent {
         if (scrollable <= 0) {
             return; // content fits — nothing to page
         }
-        double pageFraction = (viewport * 0.9) / scrollable; // ~90% of a page, leaving a little overlap
         double range = previewPane.getVmax() - previewPane.getVmin();
-        double next = previewPane.getVvalue() + (down ? pageFraction : -pageFraction) * range;
+        double next = Double.isInfinite(pages)
+                ? (pages > 0 ? previewPane.getVmax() : previewPane.getVmin())
+                : previewPane.getVvalue() + (viewport * pages) / scrollable * range;
         previewPane.setVvalue(Math.max(previewPane.getVmin(), Math.min(previewPane.getVmax(), next)));
     }
 
@@ -5000,12 +5002,18 @@ public class EditorBuffer implements TabContent {
      * instead of the hidden/unfocused editor. Returns whether it handled the request.
      */
     public boolean pagePreview(boolean down) {
+        return scrollPreview(down ? 0.9 : -0.9);
+    }
+
+    /** As {@link #pagePreview}, by {@code pages} viewport heights: a small fraction for a line, an infinite
+     *  one for the start or end of the document. */
+    public boolean scrollPreview(double pages) {
         boolean previewActive =
                 markdownViewMode == MarkdownViewMode.PREVIEW || (previewPane != null && previewPane.isFocusWithin());
         if (!previewActive || previewPane == null) {
             return false;
         }
-        scrollPreviewPage(down);
+        scrollPreviewPage(pages);
         return true;
     }
 

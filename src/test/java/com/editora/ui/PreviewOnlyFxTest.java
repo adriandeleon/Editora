@@ -110,6 +110,50 @@ class PreviewOnlyFxTest {
         FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.EDITOR));
     }
 
+    @Test
+    void lineAndDocumentNavigationScrollThePreviewNotTheHiddenCaret() throws Exception {
+        StringBuilder md = new StringBuilder();
+        for (int i = 0; i < 200; i++) {
+            md.append("Paragraph ").append(i).append(".\n\n");
+        }
+        EditorBuffer b = open(md.toString());
+        FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.PREVIEW));
+        javafx.scene.control.ScrollPane[] pane = new javafx.scene.control.ScrollPane[1];
+        for (int i = 0; i < 300; i++) {
+            pane[0] = FxTestSupport.callOnFx(() -> FxTestSupport.field(b, "previewPane"));
+            boolean ready = FxTestSupport.callOnFx(() -> {
+                b.getNode().applyCss();
+                b.getNode().layout();
+                return pane[0] != null
+                        && pane[0].getContent() != null
+                        && pane[0].getContent().getLayoutBounds().getHeight()
+                                > pane[0].getViewportBounds().getHeight() + 500;
+            });
+            if (ready) {
+                break;
+            }
+            Thread.sleep(10);
+        }
+        int caret = FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition());
+        FxTestSupport.runOnFx(() -> pane[0].setVvalue(0));
+        run("nav.lineDown");
+        double line = FxTestSupport.callOnFx(() -> pane[0].getVvalue());
+        assertTrue(line > 0, "line-down scrolls the preview a little");
+        run("nav.lineUp");
+        assertEquals(0.0, FxTestSupport.callOnFx(() -> pane[0].getVvalue()), 1e-6);
+        run("nav.docEnd");
+        assertEquals(1.0, FxTestSupport.callOnFx(() -> pane[0].getVvalue()), 1e-6, "end of document: end of preview");
+        run("nav.docStart");
+        assertEquals(0.0, FxTestSupport.callOnFx(() -> pane[0].getVvalue()), 1e-6);
+        assertEquals(caret, FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition()), "the hidden caret stayed");
+        FxTestSupport.runOnFx(() -> b.setMarkdownViewMode(MarkdownViewMode.EDITOR));
+        run("nav.docEnd");
+        assertNotEquals(
+                caret,
+                FxTestSupport.callOnFx(() -> b.getArea().getCaretPosition()),
+                "in the editor it moves the caret");
+    }
+
     /** A find bar on a buffer in Preview, in a shown stage so the preview is laid out. */
     @Test
     void findSearchesTheRenderedPreviewAndReplaceIsRefusedThere() throws Exception {

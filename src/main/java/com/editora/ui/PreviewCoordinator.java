@@ -244,6 +244,16 @@ final class PreviewCoordinator {
         return b != null && b.pagePreview(down);
     }
 
+    /** A line's worth of the preview, as a fraction of its viewport (line up / line down). */
+    static final double PREVIEW_LINE = 0.08;
+
+    /** Scrolls the active buffer's preview by {@code pages} viewports when it is the scroll target: with
+     *  only the preview showing, line and start/end navigation move what is on screen, not a hidden caret. */
+    boolean scrollActivePreview(double pages) {
+        EditorBuffer b = host.activeBuffer();
+        return b != null && b.scrollPreview(pages);
+    }
+
     /** Persists the buffer's Markdown view mode, keyed by file path (EDITOR is the unset default). */
     void persistMarkdownMode(EditorBuffer buffer) {
         Path file = buffer.getPath();
