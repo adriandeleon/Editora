@@ -283,10 +283,20 @@ public final class MarkdownBlocks {
         return flat;
     }
 
-    /** Whether {@code offset} falls in one of the flat {@code [start, end)} {@code ranges}. */
+    /**
+     * Whether {@code offset} falls in one of the flat, ascending {@code [start, end)} {@code ranges} (binary
+     * search: a line with thousands of spans is asked about thousands of offsets).
+     */
     public static boolean inRanges(int[] ranges, int offset) {
-        for (int i = 0; i + 1 < ranges.length; i += 2) {
-            if (offset >= ranges[i] && offset < ranges[i + 1]) {
+        int lo = 0;
+        int hi = ranges.length / 2 - 1;
+        while (lo <= hi) {
+            int mid = (lo + hi) >>> 1;
+            if (offset < ranges[2 * mid]) {
+                hi = mid - 1;
+            } else if (offset >= ranges[2 * mid + 1]) {
+                lo = mid + 1;
+            } else {
                 return true;
             }
         }
