@@ -638,7 +638,7 @@ final class SpellCheckOverlay extends Region implements SecondaryPane.Followed, 
         linesScanned++;
         List<int[]> flagged = null;
         // checkableWords has already left out every word of a structured token, each token judged once.
-        for (int[] span : SpellChecker.checkableWords(line, mode.syntax())) {
+        for (int[] span : SpellChecker.checkableWords(mode.prose(line), mode.syntax())) {
             int start = span[0];
             int end = span[1];
             if (spellCache.computeIfAbsent(line.substring(start, end), checker::isMisspelled)) {
