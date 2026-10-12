@@ -21,8 +21,9 @@ import org.commonmark.node.Text;
  * A single styled run of inline text — the shared, pure (no-toolkit, unit-tested) intermediate the
  * {@code .docx} (POI) and hand-rolled {@code .odt} writers both consume. {@link #flatten(Node)} walks a
  * block's inline children (CommonMark + GFM) into a flat list, carrying bold/italic/strikethrough/
- * underline/code styling and an optional link {@code href}; soft/hard breaks become {@code "\n"} runs and
- * inline images degrade to their alt text (block images are handled by the writers).
+ * underline/code styling and an optional link {@code href}; a hard break becomes a {@code "\n"} run, a soft
+ * break (a source line ending inside a paragraph) a space, and inline images degrade to their alt text
+ * (block images are handled by the writers).
  */
 public record InlineRun(
         String text, boolean bold, boolean italic, boolean strike, boolean underline, boolean code, String href) {
@@ -32,7 +33,7 @@ public record InlineRun(
         return new InlineRun(text, false, false, false, false, false, null);
     }
 
-    /** A hard/soft line break within a paragraph. */
+    /** A hard line break within a paragraph. */
     boolean isBreak() {
         return "\n".equals(text);
     }
@@ -70,8 +71,12 @@ public record InlineRun(
             }
         } else if (n instanceof FootnoteReference ref) {
             out.add(new InlineRun(footnoteMarker(ref.getLabel()), b, i, s, u, code, href)); // was dropped
-        } else if (n instanceof SoftLineBreak || n instanceof HardLineBreak) {
+        } else if (n instanceof HardLineBreak) {
             out.add(new InlineRun("\n", b, i, s, u, code, href));
+        } else if (n instanceof SoftLineBreak) {
+            // A source line ending inside a paragraph is a space (CommonMark), not a break: written as one, a
+            // hard-wrapped paragraph came out of Word and LibreOffice with a manual break on every line.
+            out.add(new InlineRun(" ", b, i, s, u, code, href));
         } else {
             children(n, b, i, s, u, code, href, out); // unknown wrapper: descend
         }

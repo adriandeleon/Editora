@@ -447,25 +447,36 @@ class OfficeDocumentContentTest {
     }
 
     @Test
-    void aLineBreakInsideAParagraphIsKeptAsABreak() throws Exception {
-        String md = "first  \nsecond\nthird\n";
+    void aHardBreakIsKeptAsABreakAndASoftBreakIsASpace() throws Exception {
+        String md = "first  \nsecond\nthird\\\nfourth\n";
         Odt odt = odt(md);
-        assertTrue(odt.xml().contains("first<text:line-break/>second<text:line-break/>third"), odt.xml());
+        assertTrue(odt.xml().contains("first<text:line-break/>second third<text:line-break/>fourth"), odt.xml());
         try (XWPFDocument doc = docx(md)) {
             XWPFParagraph p = doc.getParagraphs().getFirst();
-            assertEquals(
-                    List.of("first\n", "second\n", "third"),
-                    p.getRuns().stream().map(XWPFRun::text).toList());
+            assertEquals("first\nsecond third\nfourth", p.getText());
         }
     }
 
     @Test
-    void aSoftBreakIsItsOwnRun() {
-        Node paragraph = MarkdownRenderer.parseToDocument("a\nb\n").getFirstChild();
+    void aHardWrappedParagraphReflows() throws Exception {
+        String md = "A wrapped paragraph line one\nline two of the same paragraph\nline three.\n";
+        assertFalse(odt(md).xml().contains("<text:line-break/>"), "a source line ending is not a break");
+        try (XWPFDocument doc = docx(md)) {
+            assertEquals(
+                    List.of("A wrapped paragraph line one line two of the same paragraph line three."),
+                    paragraphs(doc));
+        }
+    }
+
+    @Test
+    void aSoftBreakIsASpaceRunAndAHardBreakABreakRun() {
+        Node paragraph = MarkdownRenderer.parseToDocument("a\nb  \nc\n").getFirstChild();
         List<InlineRun> runs = InlineRun.flatten(paragraph);
-        assertEquals(List.of("a", "\n", "b"), runs.stream().map(InlineRun::text).toList());
-        assertTrue(runs.get(1).isBreak());
-        assertFalse(runs.get(0).isBreak());
+        assertEquals(
+                List.of("a", " ", "b", "\n", "c"),
+                runs.stream().map(InlineRun::text).toList());
+        assertFalse(runs.get(1).isBreak());
+        assertTrue(runs.get(3).isBreak());
     }
 
     // --- headings, rules, code, lists -------------------------------------------------------------------
